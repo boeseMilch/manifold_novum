@@ -53,6 +53,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(welded() && G.hz.hull.port === 0 && Math.abs(tw - 6) < 0.3, `on a spacewalk, holding click with a hull plate welds the hole shut in 6 s (${tw.toFixed(1)} s)`);
   // the laser floats out there: grab it
   const f = G.hz.floating.find(f => f.kind === 'drill'); me.x = f.x - 0.4; me.y = f.y; me.vx = me.vy = 0;
+  G.hz.floating.splice(0, G.hz.floating.length, f);                       // (the repair kit may be floating right next to it)
   G.withCrew(me, () => { G.inv.weapon = null; });
   const m = me.input.mouse; m.wx = f.x + Math.sin(f.t * 0.7) * 0.3; m.wy = f.y + Math.cos(f.t * 0.5) * 0.3; m.click = true; G.simTick(DT);
   check(me.inv.weapon === 'drill', 'on a spacewalk you can grab what got sucked out');
