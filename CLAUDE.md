@@ -1,8 +1,10 @@
 # Working on Manifold Novum
 
-## Commit after every finished request
+## Pull first, then commit and push after every finished request
 
-Whenever you finish a request from the user, commit the result before reporting back:
+Before starting work on a request, pull: `git pull --rebase origin main`.
+
+Whenever you finish a request from the user, commit the result and push it before reporting back:
 
 - Run the tests first: `for t in tests/*.js; do [ "$t" = tests/harness.js ] || node "$t"; done`.
   Commit only when they pass, or say clearly in your reply what fails.
@@ -12,6 +14,14 @@ Whenever you finish a request from the user, commit the result before reporting 
   config), never under a real name.
 - After committing, push to `origin` (github.com/boeseMilch/manifold_novum), pulling with rebase
   first if it moved.
+
+## Big requests: one sub-agent per sub-task
+
+When a request asks for many things at once (several new encounters, a batch of assets, ...),
+give each sub-task to its own sub-agent. The main agent does not build them itself: it splits
+the work, checks each result (quality control: tests pass, it fits the game, saves stay
+compatible), sends fixes back where needed, and owns the pull / test / commit / push workflow.
+Sub-agents do not commit or push.
 
 ## Saved progress must stay backwards compatible
 
