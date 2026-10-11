@@ -432,36 +432,6 @@ function drawDeckLock(L, t) {
   }
 }
 
-function drawLift(L, car, t) {
-  const s = L.shaft, x = s.x * T, y = s.y * T, w = s.w * T, h = s.h * T;
-  rr(x, y, w, h, 3); ctx.fillStyle = '#15181e'; ctx.fill();          // shaft pit
-  ctx.strokeStyle = '#3c4250'; ctx.lineWidth = 3;
-  for (const rx of [x + 7, x + w - 7]) { ctx.beginPath(); ctx.moveTo(rx, y); ctx.lineTo(rx, y + h); ctx.stroke(); }
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
-  for (let yy = y + 10; yy < y + h; yy += 14) { ctx.beginPath(); ctx.moveTo(x + 10, yy); ctx.lineTo(x + w - 10, yy); ctx.stroke(); }
-  rr(x, y, w, h, 3); stroke(2);
-  // car
-  const cx = car.x * T, cy = car.y * T, cw = car.w * T, ch = car.h * T;
-  shadowEllipse(cx + cw / 2 + 3, cy + ch / 2 + 5, cw * 0.5, ch * 0.5, 0.45);
-  rr(cx + 2, cy + 2, cw - 4, ch - 4, 5);
-  const g = ctx.createLinearGradient(cx, cy, cx + cw, cy + ch);
-  g.addColorStop(0, '#8f98aa'); g.addColorStop(1, '#5d6677');
-  ctx.fillStyle = g; ctx.fill(); stroke(2.5);
-  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1.5;               // tread plate
-  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(cx + i * cw / 6, cy + 8); ctx.lineTo(cx + i * cw / 6, cy + ch - 8); ctx.stroke(); }
-  hazardStripe(cx + 6, cy + ch / 2 - 3, 5, 6); hazardStripe(cx + cw - 11, cy + ch / 2 - 3, 5, 6);
-  // mouth gates (closed when the car is not docked at that deck) + lamps
-  for (const side of ['top', 'bottom']) {
-    const open = L.gates[side], gy = side === 'top' ? y : y + h - 8;
-    if (open < 0.99) {
-      const gw = w * (1 - open);
-      hazardStripe(x + (w - gw) / 2, gy, gw, 8);
-    }
-    const ly = side === 'top' ? y - 7 : y + h + 7;
-    const here = L.phase === 'docked' && (side === 'top') === (L.pos < 0.5);
-    lamp(x + w + 9, ly, L.phase !== 'docked' ? 'busy' : here ? 'open' : 'closed', t);
-  }
-}
 
 // Capacitor bank: a cabinet of cells, lit cells hold charge.
 function drawCapacitor(cap, max, t) {

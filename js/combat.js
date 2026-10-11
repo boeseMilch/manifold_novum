@@ -60,7 +60,7 @@ function combatClear() {
 const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 1.2;
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
-  if (!useEnergy(GUN_CAP[g.id])) { sfx.empty(); combatBanner(`No energy for the ${g.name.toLowerCase()} (its capacitor is empty)`); return false; }
+  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`No energy for the ${g.name.toLowerCase()} (its capacitor is empty)`); return false; }
   g.reload = RELOAD_TIME; sfx.hatch(); return true;
 }
 function fireCannon(g) {
@@ -85,7 +85,7 @@ function fireCannon(g) {
 // ---------------------------------------------------------------------------
 // Where an enemy's light gun aims next: the crew member outside (sometimes) or a hull spot.
 function pickEnemyTarget(e) {
-  const outside = crew.filter(isOutside);
+  const outside = crew.filter(c => isOutside(c) && standing(c));
   if (outside.length && Math.random() < 0.4) { const c = outside[Math.floor(Math.random() * outside.length)]; return { atCrew: true, crewId: c.id, tx: c.x, ty: c.y }; }
   const ty = 4 + Math.random() * 18;
   return { atCrew: false, tx: hullEdgeX(ty, e.side), ty };
@@ -125,7 +125,7 @@ function shipHit(side, x, y, large) {
   for (let i = 0; i < (large ? 30 : 12); i++) combatFx(x, y, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0.7, i % 2 ? '#ffb347' : '#e2574c', large ? 0.25 : 0.14);
 }
 function crewHit(side, c) {
-  combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false);
+  combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c);
   for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, '#e2574c', 0.12);
 }
 
@@ -134,7 +134,7 @@ function pressShield(side) {
   const s = combat.shields[side];
   if (broken(SHIELD_BUTTONS.find(b => b.side === side))) return 'broken';
   if (s.up > 0 || s.cd > 0) return false;
-  if (!useEnergy(SIDE_CAP[side])) { sfx.empty(); return 'noenergy'; }
+  if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
   s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; sfx.shieldUp();
   return true;
 }
@@ -277,26 +277,40 @@ function drawGoo() {
 // Shield curtain along one side of the hull while it is up: a band of hexagon cells.
 // Impacts flare up the cells around them and ripple outward; the shot itself is
 // shown being drained into the shield.
+const SHIELD_GROW = 0.1;                             // shields grow out of / shrink back into their generator
 function drawShields(t) {
-  for (const side of ['port', 'star']) {
+  for (const side of ['port', 'front', 'star']) {
     const s = combat.shields[side], hits = combat.shieldHits.filter(h => h.side === side);
     if (s.up <= 0 && !hits.length) continue;
-    const k = s.up > 0 ? Math.min(1, s.up / 0.15) * Math.min(1, (SHIELD_UP_TIME - s.up + 0.05) / 0.12) : 0;
-    const x0 = side === 'port' ? -4.6 : SHIP_W + 1.4, x1 = x0 + 3.2;
-    drawHexField(x0, -0.8, x1, 25.8, 0.45, (x, y) => clamp(1.15 - Math.abs(x - shieldX(side, y)) / 0.8, 0, 1), '140,210,255', 0.8 * k, hits);
-    ctx.beginPath();
-    for (let y = -0.5; y <= 25.5; y += 0.5) (y === -0.5 ? ctx.moveTo : ctx.lineTo).call(ctx, L(shieldX(side, y)), L(y));
-    ctx.strokeStyle = `rgba(200,240,255,${0.7 * k})`; ctx.lineWidth = 2.5; ctx.stroke();
-  }
-  { // front shield: an arc of hex cells around the nose
-    const s = combat.shields.front, hits = combat.shieldHits.filter(h => h.side === 'front');
-    if (s.up > 0 || hits.length) {
-      const k = s.up > 0 ? Math.min(1, s.up / 0.15) * Math.min(1, (SHIELD_UP_TIME - s.up + 0.05) / 0.12) : 0;
+    // reveal: a growing (then shrinking) circle around the shield generator (its button)
+    const gen = SHIELD_BUTTONS.find(b => b.side === side);
+    const grow = s.up > 0 ? Math.min(1, (SHIELD_UP_TIME - s.up) / SHIELD_GROW, s.up / SHIELD_GROW) : 0;
+    const R = 24 * grow;
+    const near = (x, y) => clamp((R - Math.hypot(x - gen.x, y - gen.y)) / 2.5, 0, 1);
+    if (side === 'front') {
       drawHexField(FRONT_SHIELD_X0, -6.8, FRONT_SHIELD_X1, 2.4, 0.45,
-        (x, y) => (x < FRONT_SHIELD_X0 + 0.3 || x > FRONT_SHIELD_X1 - 0.3) ? 0 : clamp(1.15 - Math.abs(y - shieldYFront(x)) / 0.8, 0, 1), '140,210,255', 0.8 * k, hits);
-      ctx.beginPath();
-      for (let x = FRONT_SHIELD_X0 + 0.3; x <= FRONT_SHIELD_X1 - 0.3; x += 0.5) (x === FRONT_SHIELD_X0 + 0.3 ? ctx.moveTo : ctx.lineTo).call(ctx, L(x), L(shieldYFront(x)));
-      ctx.strokeStyle = `rgba(200,240,255,${0.7 * k})`; ctx.lineWidth = 2.5; ctx.stroke();
+        (x, y) => (x < FRONT_SHIELD_X0 + 0.3 || x > FRONT_SHIELD_X1 - 0.3) ? 0 : clamp(1.15 - Math.abs(y - shieldYFront(x)) / 0.8, 0, 1) * near(x, y),
+        '140,210,255', 0.8 * (grow > 0 ? 1 : 0), hits);
+    } else {
+      const x0 = side === 'port' ? -4.6 : SHIP_W + 1.4, x1 = x0 + 3.2;
+      drawHexField(x0, -0.8, x1, 25.8, 0.45, (x, y) => clamp(1.15 - Math.abs(x - shieldX(side, y)) / 0.8, 0, 1) * near(x, y), '140,210,255', 0.8 * (grow > 0 ? 1 : 0), hits);
+    }
+    if (grow <= 0) continue;
+    // the curtain's edge line, only as far as it has grown
+    const pts = side === 'front'
+      ? Array.from({ length: 48 }, (_, i) => { const x = FRONT_SHIELD_X0 + 0.3 + i * (FRONT_SHIELD_X1 - FRONT_SHIELD_X0 - 0.6) / 47; return [x, shieldYFront(x)]; })
+      : Array.from({ length: 53 }, (_, i) => { const y = -0.5 + i * 0.5; return [shieldX(side, y), y]; });
+    ctx.strokeStyle = 'rgba(200,240,255,0.7)'; ctx.lineWidth = 2.5;
+    for (let i = 1; i < pts.length; i++) {
+      if (near(...pts[i]) <= 0 || near(...pts[i - 1]) <= 0) continue;
+      ctx.beginPath(); ctx.moveTo(L(pts[i - 1][0]), L(pts[i - 1][1])); ctx.lineTo(L(pts[i][0]), L(pts[i][1])); ctx.stroke();
+    }
+    if (grow < 1) {                                   // energy streaking out of the generator to the curtain
+      const tgt = pts.reduce((a, p) => Math.hypot(p[0] - gen.x, p[1] - gen.y) < Math.hypot(a[0] - gen.x, a[1] - gen.y) ? p : a);
+      const g = ctx.createLinearGradient(L(gen.x), L(gen.y), L(tgt[0]), L(tgt[1]));
+      g.addColorStop(0, 'rgba(230,250,255,0.9)'); g.addColorStop(1, 'rgba(140,210,255,0.2)');
+      ctx.strokeStyle = g; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(L(gen.x), L(gen.y)); ctx.lineTo(L(tgt[0]), L(tgt[1])); ctx.stroke();
     }
   }
   for (const h of combat.shieldHits) {             // shot being drained: shrinking orb + inward streaks

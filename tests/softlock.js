@@ -1,8 +1,8 @@
 // No softlocks: you can always get out. Each case traps the player the way it could happen
 // in play and checks there's a way out. Run: node tests/softlock.js
 const { loadGame } = require('./harness');
-const NAMES = ['tick', 'me', 'player', 'DECK_LOCKS', 'HATCHES', 'LIFTS', 'SYSTEMS', 'ui', 'overrideHit', 'prompt', 'inv', 'ITEMS', 'grab',
-  'carRect', 'sendLift', 'ROOM_RECTS', 'inRect', 'roomAt', 'SPINE_Y0', 'SPINE_Y1', 'boarding', 'spawnInvader', 'DOORWAYS'];
+const NAMES = ['tick', 'me', 'player', 'DECK_LOCKS', 'HATCHES', 'SYSTEMS', 'ui', 'overrideHit', 'prompt', 'inv', 'ITEMS', 'grab',
+  'ROOM_RECTS', 'inRect', 'roomAt', 'SPINE_Y0', 'SPINE_Y1', 'boarding', 'spawnInvader', 'DOORWAYS'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -50,16 +50,6 @@ const sysOf = (G, ref) => G.SYSTEMS.find(s => s.ref === ref);
     hold(G, s === 'top' ? 'KeyW' : 'KeyS', 1.5);
     check(G.roomAt(G.player.x, G.player.y), 'you can step out into the room');
   }
-  // 4. dropping an item while riding a lift doesn't lose it in the shaft
-  {
-    const G = loadGame(NAMES), L = G.LIFTS[0], car = G.carRect(L);
-    G.player.x = car.x + car.w / 2; G.player.y = car.y + car.h / 2; G.tick(DT);
-    press(G, 'KeyE');                              // ride
-    for (let i = 0; i < 20; i++) G.tick(DT);
-    G.inv.weapon = 'laser'; G.grab('repair');      // swap mid-ride: the laser gets dropped
-    const it = G.ITEMS.find(i => i.kind === 'laser' && Math.abs(i.x - G.player.x) < 3);
-    check(it && G.ROOM_RECTS.some(q => G.inRect(it.x, it.y, q)), `an item dropped mid-ride lands on a room floor (at ${it?.x.toFixed(1)}, ${it?.y.toFixed(1)})`);
-  }
   // 5. the intruder is shut inside a broken airlock: it bashes its way out
   {
     const G = loadGame(NAMES), L = G.DECK_LOCKS[1];
@@ -76,7 +66,7 @@ const sysOf = (G, ref) => G.SYSTEMS.find(s => s.ref === ref);
     G.spawnInvader('port'); const a = G.boarding.invaders[0];
     for (let i = 0; i < 60 * 3; i++) G.tick(DT);                     // let it in (port airlock room)
     a.x = 7.5; a.y = 19; a.path = []; a.linger = 4;                    // standing in the middle of the room
-    G.DOORWAYS[2].locked = true; G.DECK_LOCKS[0].locked = true; G.LIFTS[0].locked = true; G.HATCHES[0].locked = true;
+    G.DOORWAYS[2].locked = true; G.DECK_LOCKS[0].locked = true; G.HATCHES[0].locked = true;
     G.player.x = 37; G.player.y = 7;
     for (let i = 0; i < 60 * 3; i++) G.tick(DT);                     // doors finish shutting while it looks around
     let t = 0, sabotaged = 0;
@@ -106,34 +96,6 @@ const sysOf = (G, ref) => G.SYSTEMS.find(s => s.ref === ref);
       worstAll = Math.max(worstAll, worst);
     }
     check(worstAll < 20, `with random breakage and locks, the intruder never sits in an airlock for long (worst ${worstAll.toFixed(1)} s)`);
-  }
-  // 8. multiplayer: someone else takes the lift while you're on the car → you ride along
-  {
-    const G = loadGame([...NAMES, 'netServer', 'simTick', 'crew']);
-    G.netServer.init('intro'); G.mission && (G.mission.active = false);
-    G.netServer.addCrew(11, 'A'); G.netServer.addCrew(12, 'B');
-    const [A, B] = G.crew, L = G.LIFTS[0], car = G.carRect(L);
-    A.x = car.x + 0.6; A.y = car.y + car.h / 2; B.x = car.x + car.w - 0.6; B.y = car.y + car.h / 2;
-    G.netServer.input(11, { keys: [], pressed: ['KeyE'], mouse: {} });
-    for (let i = 0; i < 90; i++) G.simTick(DT);
-    const otherDeck = (y) => y > G.SPINE_Y1 - 1.6;
-    check(otherDeck(A.y) && otherDeck(B.y), `someone else sends the lift while you're on it: you ride along (A y=${A.y.toFixed(1)}, B y=${B.y.toFixed(1)})`);
-    for (let i = 0; i < 60; i++) { G.netServer.input(12, { keys: ['KeyS'], pressed: [], mouse: {} }); G.simTick(DT); }
-    check(G.roomAt(B.x, B.y), 'and you can walk off at the other end');
-  }
-  // 9. half on the car when it leaves: not frozen
-  {
-    const G = loadGame([...NAMES, 'netServer', 'simTick', 'crew']);
-    G.netServer.init('intro');
-    G.netServer.addCrew(11, 'A'); G.netServer.addCrew(12, 'B');
-    const [A, B] = G.crew, L = G.LIFTS[0], car = G.carRect(L);
-    A.x = car.x + car.w / 2; A.y = car.y + car.h / 2;
-    B.x = car.x + car.w / 2; B.y = car.y - 0.05;               // straddling the edge of the car (top deck)
-    G.netServer.input(11, { keys: [], pressed: ['KeyE'], mouse: {} });
-    for (let i = 0; i < 90; i++) G.simTick(DT);
-    const rode = B.y > G.SPINE_Y1 - 1.6, by0 = B.y, away = rode ? 'KeyS' : 'KeyW';   // rode along, or stayed on the top deck
-    for (let i = 0; i < 40; i++) { G.netServer.input(12, { keys: [away], pressed: [], mouse: {} }); G.simTick(DT); }
-    check(Math.abs(B.y - by0) > 0.5 && G.roomAt(B.x, B.y), `half on the car when it leaves: never stranded (${rode ? 'rode along, then walked off' : 'stayed and walked away'}: y ${by0.toFixed(2)} → ${B.y.toFixed(2)})`);
   }
   // 10. airlock: one player steps in and triggers the cycle while another stands in the doorway
   {

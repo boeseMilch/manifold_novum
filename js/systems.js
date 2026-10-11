@@ -17,6 +17,7 @@ const power = {
   reserve: 3,                                     // spare fuel cells in the crate
   lever: { pos: 1, jammed: false, angle: 0 },     // starts on MID; jammed = a wrench wedged in front of the handle
   bolts: [],                                      // energy travelling from the reactor to a capacitor
+  pulses: [],                                     // energy travelling from a capacitor to what used it
 };
 let inv = { weapon: null, item: null, cd: 0 };     // the acting crew member's inventory (see withCrew)
 const ITEMS = [
@@ -37,7 +38,6 @@ const SYSTEMS = [
   ...CAPACITORS.map((c, i) => ({ kind: 'capacitor', ref: c, col: i, x: c.x, y: c.y, name: `${['Left', 'Middle', 'Right'][i]} capacitor` })),
   { kind: 'reactor', ref: REACTOR, col: 1, x: REACTOR.x, y: REACTOR.y, name: 'Reactor', r: 1.9 },
   { kind: 'lever', ref: LEVER, col: 1, x: LEVER.x, y: LEVER.y, name: 'Power lever' },
-  ...LIFTS.map(L => ({ kind: 'lift', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} lift`, r: 2.4 })),
   ...DECK_LOCKS.map(L => ({ kind: 'lock', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} deck airlock`, r: 2.4 })),
   ...HATCHES.map(h => ({ kind: 'hatch', ref: h, col: h.side === 'port' ? 0 : 2, x: h.inside[0] - h.dir * 0.4, y: h.inside[1], name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock` })),
 ].map(s => ({ ...s, broken: false, r: s.r || 1.0 }));
@@ -61,10 +61,60 @@ function damageColumn(side, large) {
 // Energy
 // ---------------------------------------------------------------------------
 const capBroken = (i) => broken(CAPACITORS[i]);
-function useEnergy(i) {
+// line: the power line the energy leaves through (a pulse runs along it to the consumer)
+function useEnergy(i, line) {
   const c = CAPACITORS[i];
   if (capBroken(i) || c.charge <= 0) return false;
-  c.charge--; return true;
+  c.charge--;
+  if (line) power.pulses.push({ line, t: 0 });
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Power lines: the cables actually carry the energy. Reactor → each capacitor (feed), and each
+// capacitor → its shield button and its cannon ladder. A line glows while its capacitor holds
+// charge; energy runs along it as a pulse when it's delivered or used.
+// ---------------------------------------------------------------------------
+const POWER_LINES = [
+  { id: 'feed0', cap: 0, feed: true, pts: [[20.3, 20.2], [18.6, 21.2], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.6], [7.0, 22.1]] },
+  { id: 'feed1', cap: 1, feed: true, pts: [[24.1, 20.2], [25.4, 21.6], [26.2, 23.0], [27.0, 24.4]] },
+  { id: 'feed2', cap: 2, feed: true, pts: [[24.1, 19.8], [27.5, 20.4], [29.6, 19.8], [30.5, 19.6], [33.5, 20.6], [36.0, 21.6], [37.4, 22.4]] },
+  { id: 'shield_port', cap: 0, pts: [[6.4, 22.1], [6.6, 20.0], [7.0, 17.4], [7.0, 15.8]] },
+  { id: 'shield_front', cap: 1, pts: [[27.4, 24.4], [28.9, 22.8], [29.0, 18.5], [26.0, 16.6], [22.6, 15.9]] },
+  { id: 'shield_star', cap: 2, pts: [[37.6, 22.4], [37.4, 20.0], [37.2, 17.4], [37.2, 15.8]] },
+  { id: 'gun_port', cap: 0, pts: [[5.8, 22.4], [3.0, 21.2], [2.2, 18.0], [2.0, 15.0], [2.0, 11.4], [1.6, 9.4]] },
+  { id: 'gun_front', cap: 1, pts: [[27.4, 24.6], [29.6, 23.0], [29.8, 18.0], [29.6, 11.4], [28.6, 6.0], [27.2, 1.5], [25.6, -1.2]] },
+  { id: 'gun_star', cap: 2, pts: [[38.4, 22.6], [41.8, 21.0], [42.6, 18.0], [42.6, 15.0], [42.6, 11.4], [43.0, 9.2]] },
+].map(l => {
+  let len = 0; const seg = [0];
+  for (let i = 1; i < l.pts.length; i++) { len += Math.hypot(l.pts[i][0] - l.pts[i - 1][0], l.pts[i][1] - l.pts[i - 1][1]); seg.push(len); }
+  return { ...l, len, seg };
+});
+const LINE = Object.fromEntries(POWER_LINES.map(l => [l.id, l]));
+function linePoint(l, k) {                          // point at fraction k (0..1) along a power line
+  const d = clamp(k, 0, 1) * l.len;
+  let i = 1; while (i < l.seg.length - 1 && l.seg[i] < d) i++;
+  const q = (d - l.seg[i - 1]) / ((l.seg[i] - l.seg[i - 1]) || 1);
+  return [lerp(l.pts[i - 1][0], l.pts[i][0], q), lerp(l.pts[i - 1][1], l.pts[i][1], q)];
+}
+function drawPowerLines(t) {
+  for (const l of POWER_LINES) {
+    const cap = CAPACITORS[l.cap], dead = capBroken(l.cap);
+    const live = !dead && (l.feed ? power.reactor.fuel > 0 && !broken(REACTOR) : cap.charge > 0);
+    const path = () => { ctx.beginPath(); l.pts.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y)))); };
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    path(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 11; ctx.save(); ctx.translate(2, 3); ctx.stroke(); ctx.restore();
+    path(); ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.stroke();
+    path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? '#b8902e' : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
+    if (live) {                                       // energy flowing (slowly) towards the far end
+      ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
+      path(); ctx.strokeStyle = 'rgba(255,236,160,0.85)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
+    }
+    for (let d = 2.5; d < l.len - 1; d += 3.5) {      // clamps
+      const [x, y] = linePoint(l, d / l.len);
+      rr(L(x) - 4, L(y) - 4, 8, 8, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.2);
+    }
+  }
 }
 function deliverEnergy() {
   const i = power.lever.pos;
@@ -89,6 +139,8 @@ function updatePower(dt) {
     }
   }
   power.bolts = power.bolts.filter(b => b.t < 1.2);
+  for (const p of power.pulses) p.t += dt / 0.7;
+  power.pulses = power.pulses.filter(p => p.t < 1);
   for (const c of CAPACITORS) c.pulse = Math.max(0, (c.pulse || 0) - dt * 2);
   const target = leverAngle(power.lever.pos);                            // handle points at the active output
   power.lever.angle = lerp(power.lever.angle || target, target, 1 - Math.exp(-10 * dt));
@@ -103,7 +155,7 @@ function grab(kind) {
   inv[slot] = kind; sfx.clank();
 }
 // Somewhere on a fixed floor (a room or an airlock chamber), so a dropped item never ends
-// up somewhere unreachable like a lift shaft.
+// up somewhere unreachable like a doorway.
 function dropSpot(x, y) {
   const floors = [...ROOM_RECTS, ...DECK_LOCKS.map(Lk => Lk.chamber)];
   if (floors.some(q => inRect(x, y, q, -0.3))) return { x, y };
@@ -118,7 +170,16 @@ const near = (x, y, r = REACH) => Math.hypot(player.x - x, player.y - y) <= r;
 
 // What a left click on (mx, my) would do. Returns { text, ok, run?, repair?, x, y, r }.
 function clickTarget(mx, my) {
-  if (player.mode !== 'inside' || player.ride) return null;
+  // crew members you can treat (or yourself, when you're down)
+  for (const c of crew) {
+    if (Math.hypot(mx - c.x, my - c.y) > 0.55 || c.mode === 'gun') continue;
+    const info = treatInfo(c);
+    if (!info) continue;
+    if (c !== player && Math.hypot(player.x - c.x, player.y - c.y) > REACH) return { text: `${c.name} needs help — get closer`, ok: false, x: c.x, y: c.y, r: 0.55 };
+    return { text: `Hold click: ${info.label} (${info.time} s)`, ok: true, treat: c, time: info.time, x: c.x, y: c.y, r: 0.55 };
+  }
+  if (!standing(player)) return null;                                      // down: you can only patch yourself up
+  if (player.mode !== 'inside') return null;
   // broken systems first
   const m = missionClickTarget(mx, my);
   if (m) return m;
@@ -166,6 +227,49 @@ function clickTarget(mx, my) {
     return { ...t, ok: true, text: 'Click: load the fuel cell', run: () => { inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); } };
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Injuries. ok → (hit) hurt for HURT_TIME: tunnel vision, slower → (hit) down: patch yourself up
+// (hold click on yourself, SELF_TREAT s) → (hit while down) out: someone else has to treat you.
+// Anyone can treat anyone by holding click on them for TREAT_TIME (down / out → hurt, hurt → ok).
+// Alone on the ship, someone who's out can still crawl back slowly (SOLO_TREAT s) — no softlocks.
+// ---------------------------------------------------------------------------
+const HURT_TIME = 30, TREAT_TIME = 2, SELF_TREAT = 10, SOLO_TREAT = 20;
+const standing = (c) => (c.health || 'ok') === 'ok' || c.health === 'hurt';
+function hurtCrew(c) {
+  if (!c) return;
+  const h = c.health || 'ok';
+  c.health = h === 'ok' ? 'hurt' : h === 'hurt' ? 'down' : 'out';
+  c.hurtT = HURT_TIME; c.treat = null;
+  if (c.health === 'down' || c.health === 'out') {
+    if (c.mode === 'gun') { c.cover = 0; c.mode = 'inside'; [c.x, c.y] = c.gun.hatch; c.gun = null; }   // falls back down the ladder
+    combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT — someone has to treat them!' : 'down!'}`);
+  }
+}
+function updateInjury(c, dt) {
+  if (c.health === 'hurt' && (c.hurtT -= dt) <= 0) { c.health = 'ok'; c.hurtT = 0; }
+}
+// The treat action on crew member `who`, from the acting crew member: { time, label } or null.
+function treatInfo(who) {
+  if (!who || standing(who) && who.health !== 'hurt') return null;
+  if (who === player) {
+    if (who.health === 'down') return { time: SELF_TREAT, label: 'patch yourself up' };
+    if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'nobody can help — slowly patch yourself up' };
+    return null;
+  }
+  return standing(player) ? { time: TREAT_TIME, label: `treat ${who.name}` } : null;
+}
+function updateTreat(dt, target, holding) {
+  if (!holding || !target?.treat) { player.treat = null; return; }
+  const who = target.treat;
+  if (player.treat?.id !== who.id) player.treat = { id: who.id, t: 0 };
+  player.treat.t += dt;
+  if (player.treat.t >= target.time) {
+    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME;
+    sfx.poi(); combatBanner(who === player ? 'Patched up — still hurt for a while' : `${who.name} is back on their feet`);
+    player.treat = null;
+  }
 }
 
 // Repairing: hold the mouse on a broken system with the repair kit.
@@ -242,15 +346,15 @@ function drawLever(t) {
 }
 
 // Glowing energy packets flying from the reactor to a capacitor.
+// Energy pulses running along the power lines (deliveries from the reactor, and energy being used).
 function drawEnergyBolts() {
-  for (const b of power.bolts) {
-    if (b.t >= 1) continue;
-    const c = CAPACITORS[b.to], k = b.t * b.t * (3 - 2 * b.t);
-    const x = lerp(REACTOR.x, c.x, k), y = lerp(REACTOR.y + 0.6, c.y, k) - Math.sin(k * Math.PI) * 2.0;
-    const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), 16);
-    g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#7af0ff'); g.addColorStop(1, 'rgba(95,214,228,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), 16, 0, TAU); ctx.fill();
-  }
+  const orb = ([x, y]) => {
+    const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), 15);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#ffe08a'); g.addColorStop(1, 'rgba(255,200,90,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), 15, 0, TAU); ctx.fill();
+  };
+  for (const b of power.bolts) if (b.t < 1) orb(linePoint(LINE['feed' + b.to], b.t * b.t * (3 - 2 * b.t)));
+  for (const p of power.pulses) if (LINE[p.line]) orb(linePoint(LINE[p.line], p.t));
 }
 
 // Broken look: scorch, a loose panel, smoke and the odd spark.
@@ -354,7 +458,7 @@ function drawSystemsHUD(top) {
     const x = x0 + i * 74;
     rr(x, y0, 66, 66, 8); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
     ctx.fillStyle = '#6b7486'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(slot.toUpperCase(), x + 33, y0 + 4);
+    ctx.fillText(slot === 'weapon' ? 'WEAPON · R-CLICK' : 'ITEM', x + 33, y0 + 4);
     if (inv[slot]) {
       drawItemIcon(inv[slot], x + 33, y0 + 36, 1.2);
       if (slot === 'weapon' && inv.cd > 0) {
@@ -367,7 +471,7 @@ function drawSystemsHUD(top) {
   }
   ctx.textAlign = 'left';
   ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textBaseline = 'bottom';
-  ctx.fillText('L-click grab/use · R-click attack/spray', x0, y0 - 4);
+  ctx.fillText('Left click: interact · Right click: use weapon', x0, y0 - 4);
   // power panel
   const px = x0 + 156, R = power.reactor;
   const lines = [

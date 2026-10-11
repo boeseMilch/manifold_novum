@@ -1,4 +1,4 @@
-// Main loop, input, crew movement, deck airlocks, lifts, spacewalks, cannons,
+// Main loop, input, crew movement, deck airlocks, spacewalks, cannons,
 // shield buttons, debug menu, camera and HUD.
 // Simulation runs in layout units (see ship.js); rendering scales by T.
 
@@ -43,8 +43,7 @@ const WALK_SPEED = 4.2, WALK_ACCEL = 30;     // units/s, units/s²
 const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
 const CREW_R = 0.2;                          // half-size of the crew collision box
 const LOCK_DOOR_TIME = 0.55, LOCK_CYCLE = 1.3;   // deck airlock: per door, and pressure cycle
-const LIFT_GATE_TIME = 0.15, LIFT_TRAVEL = 0.55;
-const LIFT_CALLABLE = false;                 // false: the lift only works if it is on your deck
+const HURT_SPEED = 0.6;                       // walking speed while hurt
 const HATCH_TIME = 1.6;                      // going through an outer airlock
 const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
@@ -61,7 +60,7 @@ const CREW_COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a
 let crewIdCounter = 1;
 function makeCrew(name = 'Crew', x = 22.2, y = 4.5) {
   const id = crewIdCounter++;
-  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, ride: null, mode: 'inside', cover: 0,
+  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside', cover: 0, health: 'ok', hurtT: 0, treat: null,
            input: makeInput(), inv: { weapon: null, item: null, cd: 0 }, ui: { panel: null, override: null, hits: [] }, prompt: null, hover: null };
 }
 const crew = [makeCrew('You')];
@@ -109,15 +108,9 @@ function nearestFree(x, y, ok) {
 function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.y] = p; c.vx = c.vy = 0; } }
 
 function updateCrew(c, dt, ix, iy) {
-  if (c.ride) {                              // locked to the lift car
-    const car = carRect(c.ride);
-    c.x = clamp(c.x, car.x + CREW_R, car.x + car.w - CREW_R);
-    c.y = car.y + c.rideDy;
-    c.vx = c.vy = 0;
-    return;
-  }
+  if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
   const eva = c.mode === 'eva';
-  const len = Math.hypot(ix, iy), speed = eva ? EVA_SPEED : WALK_SPEED;
+  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1);
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
   const k = Math.min(1, (eva ? EVA_ACCEL : WALK_ACCEL) * dt / speed);
   c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);
@@ -194,54 +187,6 @@ function updateDeckLock(L, dt) {
 }
 
 // ---------------------------------------------------------------------------
-// Lifts: step onto the car and press E. Fast, but only if the car is on your deck.
-// ---------------------------------------------------------------------------
-function sendLift(L) {
-  if (broken(L) || L.locked) return;
-  // everyone standing on the car (even half on it) rides along, nobody is left on thin air
-  const car = carRect(L);
-  for (const c of crew) {
-    if (c.mode !== 'inside' || c.ride || !inRect(c.x, c.y, car, CREW_R)) continue;
-    c.ride = L; c.vx = c.vy = 0;
-    c.x = clamp(c.x, car.x + CREW_R, car.x + car.w - CREW_R); c.y = clamp(c.y, car.y + CREW_R, car.y + car.h - CREW_R);
-    c.rideDy = c.y - car.y;
-  }
-  L.target = 1 - Math.round(L.pos); L.phase = 'closing'; L.t = 0;
-}
-
-function updateLift(L, dt) {
-  const deck = L.pos < 0.5 ? 'top' : 'bottom';
-  const someoneOn = L.phase === 'docked' && L.gates[deck] > 0.5 && actors().some(c => inRect(c.x, c.y, carRect(L)));
-  if (L.phase === 'docked' && L.locked && !someoneOn) {                         // locked: gate shuts
-    L.gates[deck] = Math.max(0, L.gates[deck] - dt / LIFT_GATE_TIME);
-  } else if (L.phase === 'docked') {
-    L.gates[deck] = Math.min(1, L.gates[deck] + dt / LIFT_GATE_TIME);
-  } else if (L.phase === 'closing') {
-    L.gates[deck] = Math.max(0, L.gates[deck] - dt / LIFT_GATE_TIME);
-    if (L.gates[deck] === 0) L.phase = 'moving';
-  } else if (L.phase === 'moving') {
-    const dir = Math.sign(L.target - L.pos);
-    L.pos += dir * dt / LIFT_TRAVEL;
-    if ((dir > 0 && L.pos >= L.target) || (dir < 0 && L.pos <= L.target)) {
-      L.pos = L.target; L.phase = 'docked'; L.target = null;
-      for (const c of crew) if (c.ride === L) c.ride = null;
-    }
-  }
-}
-
-function liftUnder(c) {
-  return LIFTS.find(L => L.phase === 'docked' && inRect(c.x, c.y, carRect(L))) || null;
-}
-
-// Lift whose shaft mouth the crew member stands in front of, with the car away.
-function liftMouth(c) {
-  const deck = c.y < SPINE_Y0 ? 'top' : c.y > SPINE_Y1 ? 'bottom' : null;
-  if (!deck) return null;
-  return LIFTS.find(L => c.x > L.x - 0.2 && c.x < L.x + L.w + 0.2 &&
-    (deck === 'top' ? c.y > SPINE_Y0 - 1 : c.y < SPINE_Y1 + 1) && liftDeck(L) !== deck) || null;
-}
-
-// ---------------------------------------------------------------------------
 // Outer airlocks (hatches): inside ⇄ spacewalk. Visor goes down outside.
 // ---------------------------------------------------------------------------
 function startHatch(h, dir) {
@@ -275,10 +220,16 @@ function updatePlayer(dt) {
   if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; pressed.delete('KeyE'); }
   const ix = block ? 0 : (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
   const iy = block ? 0 : (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
-  const use = !block && pressed.has('KeyE');
+  const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
 
   if (player.mode === 'hatch') { updateHatch(dt); prompt = { text: 'Cycling outer airlock…' }; return; }
+  if (player.health === 'down' || player.health === 'out') {     // can't do anything but get patched up
+    updateCrew(player, dt, 0, 0);
+    const self = treatInfo(player);
+    prompt = { text: self ? `You're down — hold click on yourself to ${self.label.replace(' — ', ': ')} (${self.time} s)` : 'You are out cold — a crewmate has to treat you (hold click on you, 2 s)', screen: true };
+    return;
+  }
 
   if (player.mode === 'gun') {
     const g = player.gun;
@@ -298,16 +249,11 @@ function updatePlayer(dt) {
     if (!block && player.cover < 0.3 && ((mouse.down && !mouse.suppress) || held('Space'))) fireCannon(g);
     // the gunner always sits opposite the barrel
     player.x = g.x - Math.cos(g.aim) * GUNNER_OFFSET; player.y = g.y - Math.sin(g.aim) * GUNNER_OFFSET; player.face = g.aim;
-    const back = 'E to climb back down';
-    prompt = { text: player.cover > 0.5 ? 'Cover raised — let go of Shift / right mouse to fire again'
-                                        : broken(g) ? `${g.name} is BROKEN — repair it at its ladder · ${back}`
-                                        : g.shots ? `${g.name}: aim with mouse, click / Space to fire, Shift / right mouse = cover, ${back}`
-                                        : `${g.name} is empty — press R or click RELOAD (uses 1 energy) · ${back}`, screen: true };
-    if (use) {
-      player.cover = 0; player.vx = player.vy = 0;
-      player.mode = 'inside'; [player.x, player.y] = g.hatch;
-      player.gun = null;
-    }
+    prompt = { text: player.cover > 0.5 ? 'Cover raised — let go of the right mouse button to fire again'
+                                        : broken(g) ? `${g.name} is BROKEN — repair it at its ladder`
+                                        : g.shots ? `${g.name} · Left click: fire · Right click (hold): raise cover`
+                                        : `${g.name} is empty — click RELOAD (uses 1 energy)`, screen: true };
+    if (use) climbDown();
     return;
   }
 
@@ -317,94 +263,92 @@ function updatePlayer(dt) {
     // (cannons are only manned from inside, via their ladders; spacewalks are for other jobs)
     const h = HATCHES.find(h => Math.hypot(player.x - h.outside[0], player.y - h.outside[1]) < 1.5);
     if (h) {
-      if (broken(h)) { prompt = { text: 'Outer airlock is broken — E: manual override (force it)', ok: true }; if (use) startOverride(h, 'Broken outer airlock', () => startHatch(h, 'in')); }
-      else if (h.locked) { prompt = { text: 'Outer airlock locked — E: manual override', ok: true }; if (use) startOverride(h, 'Outer airlock'); }
-      else { prompt = { text: 'E — go back inside', ok: true }; if (use) startHatch(h, 'in'); }
+      const at = { x: h.x, y: h.y, r: 1.2 };
+      if (broken(h)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(h, 'Broken outer airlock', () => startHatch(h, 'in')) });
+      else if (h.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(h, 'Outer airlock') });
+      else act({ text: 'Click: go back inside', at, run: () => startHatch(h, 'in') });
     }
     return;
   }
 
-  // inside
-  const lift = liftUnder(player), mouth = !lift && liftMouth(player);
+  // inside: whatever you're standing next to
   const hatch = HATCHES.find(h => Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) < 1.3);
   const button = SHIELD_BUTTONS.find(b => Math.hypot(player.x - b.x, player.y - (b.y + 0.7)) < 1.1);
   const ladder = GUNS.find(g => Math.hypot(player.x - g.hatch[0], player.y - g.hatch[1]) < 0.9);
   const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
-  if (player.ride) {
-    prompt = { text: 'Riding the lift…' };
-  } else if (ladder) {
-    prompt = { text: `E — climb up into the ${ladder.name.toLowerCase()}`, ok: true };
-    if (use) { player.mode = 'gun'; player.gun = ladder; player.gunFrom = 'inside'; player.vx = player.vy = 0; mouse.moved = 0; }
+  if (ladder) {
+    act({ text: `Click: climb up into the ${ladder.name.toLowerCase()}`, at: { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 },
+          run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; } });
   } else if (button) {
-    const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]];
-    if (broken(button)) prompt = { text: 'Shield button is broken' };
-    else if (s.up > 0) prompt = { text: 'Shield is up!', ok: true };
-    else if (s.cd > 0) prompt = { text: `Shield recharging (${s.cd.toFixed(1)} s)` };
-    else if (cap.charge <= 0 || broken(cap)) prompt = { text: 'No energy for the shield (capacitor empty)' };
-    else {
-      prompt = { text: `E — raise ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, ok: true };
-      if (use) pressShield(button.side);
-    }
-  } else if (hatch && hatch.locked && !broken(hatch)) {
-    prompt = { text: 'Outer airlock locked — E: manual override', ok: true }; if (use) startOverride(hatch, 'Outer airlock');
+    const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
+    if (broken(button)) act({ text: 'Shield button is broken', at });
+    else if (s.up > 0) act({ text: 'Shield is up!', at, ok: true });
+    else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
+    else if (cap.charge <= 0 || broken(cap)) act({ text: 'No energy for the shield (capacitor empty)', at });
+    else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
   } else if (hatch) {
-    if (broken(hatch)) { prompt = { text: 'Outer airlock is broken — E: manual override (force it)', ok: true }; if (use) startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')); }
-    else { prompt = { text: 'E — go outside (spacewalk)', ok: true }; if (use) startHatch(hatch, 'out'); }
-  } else if (lift && broken(lift)) {
-    prompt = { text: 'Lift is broken' };
-  } else if (lift && lift.locked) {
-    prompt = { text: 'Lift locked by security — E: manual override', ok: true }; if (use) startOverride(lift, 'Lift');
-  } else if (lift) {
-    prompt = { text: `E — ride lift ${Math.round(lift.pos) ? 'up' : 'down'}`, ok: true };
-    if (use) {
-      sendLift(lift);
-      const car = carRect(lift);
-      player.ride = lift;
-      player.y = clamp(player.y, car.y + CREW_R, car.y + car.h - CREW_R);
-      player.rideDy = player.y - car.y;
-    }
-  } else if (mouth && mouth.locked) {
-    prompt = { text: 'Lift locked by security — E: manual override', ok: true }; if (use) startOverride(mouth, 'Lift');
+    const at = { x: hatch.x - hatch.dir * 0.2, y: hatch.y, r: 1.1 };
+    if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')) });
+    else if (hatch.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(hatch, 'Outer airlock') });
+    else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
   } else if (doorway && doorway.locked) {
-    prompt = { text: 'Door locked by security — E: manual override', ok: true }; if (use) startOverride(doorway, 'Door');
-  } else if (mouth) {
-    const where = mouth.phase !== 'docked' ? 'in transit' : `on the ${liftDeck(mouth) === 'top' ? 'upper' : 'lower'} deck`;
-    if (LIFT_CALLABLE && mouth.phase === 'docked') {
-      prompt = { text: `Lift is ${where} — E to call`, ok: true };
-      if (use) sendLift(mouth);
-    } else prompt = { text: `Lift is ${where}` };
+    act({ text: 'Click: door is locked by security — manual override', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 }, run: () => startOverride(doorway, 'Door') });
   } else {
     const L = DECK_LOCKS.find(L => player.x > L.x - 0.2 && player.x < L.x + L.w + 0.2 &&
                                    player.y > SPINE_Y0 - 1.2 && player.y < SPINE_Y1 + 1.2);
     if (L) {
-      const inside = player.y > SPINE_Y0 && player.y < SPINE_Y1;
+      const inside = player.y > SPINE_Y0 && player.y < SPINE_Y1, at = { x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, r: 1.8 };
       if (broken(L)) {
         const stuck = !(L.doors.top > 0.95 && L.doors.bottom > 0.95);
-        if (stuck) { prompt = { text: 'Deck airlock is broken — E: manual override (force a door open)', ok: true }; if (use) startOverride(L, 'Broken deck airlock', () => forceDeckLock(L)); }
-        else prompt = { text: 'Deck airlock is broken (doors forced open)' };
+        if (stuck) act({ text: 'Click: airlock is broken — force a door open (manual override)', at, run: () => startOverride(L, 'Broken deck airlock', () => forceDeckLock(L)) });
+        else act({ text: 'Deck airlock is broken (doors forced open)', at });
       }
-      else if (L.locked) { prompt = { text: 'Deck airlock locked by security — E: manual override', ok: true }; if (use) startOverride(L, 'Deck airlock'); }
-      else if (L.phase === 'cycling') prompt = { text: 'Airlock cycling…' };
-      else if (L.phase !== 'idle') prompt = { text: 'Airlock doors moving…' };
-      else if (inside) {
-        prompt = { text: 'E — cycle airlock', ok: true };
-        if (use) startCycle(L, other(L.open));
-      }
+      else if (L.locked) act({ text: 'Click: airlock is locked by security — manual override', at, run: () => startOverride(L, 'Deck airlock') });
+      else if (L.phase === 'cycling') act({ text: 'Airlock cycling…', at });
+      else if (L.phase !== 'idle') act({ text: 'Airlock doors moving…', at });
+      else if (inside) act({ text: 'Click: cycle the airlock', at, run: () => startCycle(L, other(L.open)) });
     }
   }
+}
+
+// Pointing at the spot of your current prompt shows it as the hover tooltip.
+function promptHover(c, mx, my) {
+  const p = c.prompt;
+  if (!p?.at || !standing(c) || Math.hypot(mx - p.at.x, my - p.at.y) > p.at.r) return null;
+  return { text: p.text, ok: p.ok, x: p.at.x, y: p.at.y, r: p.at.r };
+}
+
+// What you can do with the thing you're next to: shown as a prompt; clicking it (or E) does it.
+// p: { text, at: {x, y, r} (where to click), run?, ok? }
+function act(p) {
+  prompt = { ok: !!p.run || !!p.ok, ...p };
+  if (!p.run) return;
+  if ((debugOpen && player === me) || ui.panel || mission.over) return;
+  const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r;
+  if ((mouse.click && onIt) || (pressed.has('KeyE') && !ui.panel)) { mouse.click = false; pressed.delete('KeyE'); p.run(); }
 }
 
 // Mouse in the world: left click grabs / uses / repairs (hold), right click attacks.
 function updateInteraction(dt) {
   hover = null;
-  if (mission.over || ui.panel) { player.repair = null; return; }
-  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; return; }
+  if (mission.over || ui.panel) { player.repair = null; player.treat = null; return; }
+  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; return; }
   const [mx, my] = mouseWorld();
-  hover = clickTarget(mx, my);
+  hover = promptHover(player, mx, my) || clickTarget(mx, my);
   if (hover?.run && mouse.click) { hover.run(); mouse.click = false; }
   updateRepair(dt, hover, mouse.down);
+  updateTreat(dt, hover, mouse.down);
+  if (!standing(player)) return;                     // down: no weapons
   if (mouse.rightClick) attack(mx, my);
   if (mouse.right && inv.weapon === 'extinguisher' && player.mode === 'inside') spray(mx, my, dt);
+}
+
+function climbDown() {
+  if (player.mode !== 'gun') return;
+  const g = player.gun;
+  player.cover = 0; player.vx = player.vy = 0;
+  player.mode = 'inside'; [player.x, player.y] = g.hatch;
+  player.gun = null;
 }
 
 // Commands: actions that come from a browser's own UI (panels, buttons, debug menu) instead of
@@ -415,6 +359,7 @@ function runCommand(cmd) {
   else if (kind === 'bonk') { if (ui.override) overrideHit(); }
   else if (kind === 'closePanel') { ui.panel = null; ui.override = null; }
   else if (kind === 'reload') { if (player.mode === 'gun') reloadCannon(player.gun); }
+  else if (kind === 'climbDown') climbDown();
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
 }
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
@@ -434,7 +379,7 @@ function updateDoorways(dt) {
 // ---------------------------------------------------------------------------
 function teleportToGun(id) {
   const g = GUNS.find(g => g.id === id);
-  player.ride = null; player.mode = 'gun'; player.gun = g; player.gunFrom = 'inside'; mouse.moved = 0;
+  player.mode = 'gun'; player.gun = g; mouse.moved = 0;
 }
 const DEBUG_ITEMS = [
   { key: '1', label: 'Enemy left: Interceptor', run: () => combatSpawn('interceptor', 'port', true) },
@@ -445,7 +390,7 @@ const DEBUG_ITEMS = [
   { key: '6', label: 'Teleport: left cannon', run: () => teleportToGun('port') },
   { key: '7', label: 'Teleport: front cannon', run: () => teleportToGun('front') },
   { key: '8', label: 'Teleport: right cannon', run: () => teleportToGun('star') },
-  { key: '9', label: 'Teleport: bridge', run: () => { player.mode = 'inside'; player.gun = null; player.ride = null; player.x = 22.2; player.y = 4.5; } },
+  { key: '9', label: 'Teleport: bridge', run: () => { player.mode = 'inside'; player.gun = null; player.x = 22.2; player.y = 4.5; } },
   { key: 'i', label: 'Invader through the left airlock', run: () => spawnInvader('port') },
   { key: 'o', label: 'Invader through the right airlock', run: () => spawnInvader('star') },
   { key: '0', label: 'Clear threats and reset hit counts', run: () => { combatClear(); boarding.invaders = []; boarding.bolts = []; } },
@@ -457,7 +402,7 @@ const DEBUG_ITEMS = [
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => radarScan() },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
-  { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; LIFTS[1].locked = true; } },
+  { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; DECK_LOCKS[1].locked = true; } },
   { key: 'g', label: '', hidden: true, run: () => { ui.panel = 'diagnosis'; mission.diagRun = true; } },
   { key: 'v', label: '', hidden: true, run: () => { startOverride(DOORWAYS[0], 'Door'); ui.override.hits = 2; } },
   { key: 'q', label: '', hidden: true, run: () => pressShield('star') },          // debug only
@@ -550,6 +495,33 @@ function camera() {
 // ---------------------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------------------
+// Down / out: lying flat with a pulsing red cross above (out = greyed and limp).
+function drawCrewDown(c, t) {
+  ctx.save(); ctx.translate(c.x * T, c.y * T);
+  if (c.health === 'out') ctx.globalAlpha = 0.75;
+  ctx.rotate(c.face + Math.PI / 2); ctx.scale(1, 0.85);
+  drawCrew(0, 0, 0, 0, c.mode === 'eva', c.health === 'out' ? '#7a7f8a' : c.color);
+  ctx.restore();
+  const k = 0.6 + 0.4 * Math.sin(t * 5), x = c.x * T, y = (c.y - 0.6) * T;
+  ctx.fillStyle = `rgba(226,60,50,${k})`; ctx.fillRect(x - 3, y - 9, 6, 18); ctx.fillRect(x - 9, y - 3, 18, 6);
+  ctx.strokeStyle = 'rgba(20,22,27,0.8)'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 9, 6, 18); ctx.strokeRect(x - 9, y - 3, 18, 6);
+}
+// This browser's own injury on screen: tunnel vision while hurt, dark red while down, near black while out.
+function drawInjuryOverlay(t) {
+  const h = me.health || 'ok';
+  if (h === 'ok') return;
+  const cx = VW / 2, cy = VH / 2, r = Math.hypot(VW, VH) / 2;
+  const inner = h === 'hurt' ? 0.28 + 0.03 * Math.sin(t * 6) : h === 'down' ? 0.12 : 0.04;   // heartbeat while hurt
+  const g = ctx.createRadialGradient(cx, cy, r * inner, cx, cy, r);
+  const col = h === 'hurt' ? '8,4,6' : '30,0,0';
+  g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.55, `rgba(${col},${h === 'hurt' ? 0.75 : 0.85})`); g.addColorStop(1, `rgba(${col},${h === 'out' ? 0.98 : 0.95})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  if (h === 'hurt') {
+    ctx.fillStyle = 'rgba(255,140,120,0.8)'; ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(`HURT — ${Math.ceil(me.hurtT)} s (another hit puts you down)`, cx, HUD_H + 12); ctx.textAlign = 'left';
+  }
+}
+
 function drawCrewOutside(c, t) {
   if (c.mode === 'eva') {                     // safety line back to the nearest hatch
     const h = HATCHES.reduce((a, b) => Math.hypot(c.x - a.outside[0], c.y - a.outside[1]) < Math.hypot(c.x - b.outside[0], c.y - b.outside[1]) ? a : b);
@@ -572,14 +544,14 @@ function render(t) {
   drawHullDecor(t);
   drawShipDecals();
   for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
-  drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, [...DECK_LOCKS, ...LIFTS]);
+  drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   drawSpineDecor(t);
-  for (const L of LIFTS) drawLift(L, carRect(L), t);
   drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
   for (const r of ROOMS) drawRoomLabel(r);
   drawFloorDecor(t);
   drawJunk();
   drawGoo();
+  drawPowerLines(t);
   drawEngineHousing(t, ENGINE);
   for (const L of DECK_LOCKS) drawDeckLock(L, t);
   drawDoorways();
@@ -600,9 +572,15 @@ function render(t) {
   drawEnergyBolts();
   drawClickTarget(me.hover);
   for (const c of crew) {
-    if (c.mode === 'inside' || c.mode === 'hatch')
+    if (!standing(c)) drawCrewDown(c, t);
+    else if (c.mode === 'inside' || c.mode === 'hatch')
       drawCrew(c.x * T, c.y * T, c.face, c.walk, c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' && c.hatchT < HATCH_TIME * 0.7, c.color);
     else drawCrewOutside(c, t);
+    const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: progress ring
+    if (tr) {
+      const info = withCrew(tr, () => treatInfo(c));
+      if (info) { ctx.beginPath(); ctx.arc(c.x * T, c.y * T, T * 0.55, -Math.PI / 2, -Math.PI / 2 + Math.min(1, tr.treat.t / info.time) * TAU); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 5; ctx.stroke(); }
+    }
     if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
     if (c !== me && crew.length > 1) {                // name tags for the others
       ctx.font = `700 ${T * 0.26}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -629,6 +607,7 @@ function render(t) {
     rr(VW / 2 - w / 2, VH - 54, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, '#5fd6a0');
     ctx.fillStyle = '#c8ffe6'; ctx.fillText(prompt.text, VW / 2, VH - 37); ctx.textAlign = 'left';
   }
+  drawInjuryOverlay(t);
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);
   if (me.mode === 'gun') drawCannonHUD(me.gun);
@@ -651,10 +630,10 @@ function drawHUD() {
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText('WASD move · E use · Tab: overview · `: debug menu · M: mute · in a cannon: Shift / right mouse = cover', 200, 18);
+  ctx.fillText('WASD move · Left click: interact · Right click: use weapon · Tab: overview · M: mute · `: debug', 200, 18);
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
-    : player.ride ? 'Lift' : room ? room.name : 'Deck airlock';
+    : room ? room.name : 'Deck airlock';
   ctx.textAlign = 'right'; ctx.fillStyle = '#e8ecf4'; ctx.fillText(where, VW - 14, 18);
   const ww = ctx.measureText(where).width;
   ctx.fillStyle = '#6b7486'; ctx.fillText(sfx.muted ? '♪ muted' : `♪ ${music.title}`, VW - 30 - ww, 18);
@@ -664,6 +643,8 @@ function drawHUD() {
 // Cannon ammo panel (bottom right while manning a cannon): shells, energy left, RELOAD button.
 const reloadBtn = () => ({ x: VW - 176, y: VH - 62, w: 160, h: 40 });
 function inReloadBtn(x, y) { const b = reloadBtn(); return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
+const climbBtn = () => ({ x: VW - 176, y: VH - 200, w: 160, h: 34 });
+function inClimbBtn(x, y) { const b = climbBtn(); return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
 function drawCannonHUD(g) {
   const b = reloadBtn(), cap = CAPACITORS[GUN_CAP[g.id]], empty = !g.shots && !g.reload;
   rr(b.x - 10, b.y - 70, b.w + 20, b.h + 80, 10); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
@@ -683,7 +664,11 @@ function drawCannonHUD(g) {
   stroke(2, empty ? '#ffb07a' : '#6b7486');
   if (g.reload) { rr(b.x + 3, b.y + 3, (b.w - 6) * (1 - g.reload / RELOAD_TIME), b.h - 6, 6); ctx.fillStyle = '#5fd6a0'; ctx.fill(); }
   ctx.fillStyle = '#fff'; ctx.font = '800 14px system-ui, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText(g.reload ? 'RELOADING…' : 'RELOAD (R) · 1 energy', b.x + b.w / 2, b.y + b.h / 2); ctx.textAlign = 'left';
+  ctx.fillText(g.reload ? 'RELOADING…' : 'RELOAD · 1 energy', b.x + b.w / 2, b.y + b.h / 2); ctx.textAlign = 'left';
+  const c = climbBtn(), ch = inClimbBtn(mouse.x, mouse.y);                       // climb back down
+  rr(c.x, c.y, c.w, c.h, 8); ctx.fillStyle = ch ? '#4a515e' : '#2b303a'; ctx.fill(); stroke(2, '#6b7486');
+  ctx.fillStyle = '#e8ecf4'; ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('⬇ CLIMB DOWN', c.x + c.w / 2, c.y + c.h / 2); ctx.textAlign = 'left';
 }
 
 // Speaker icon; crossed out when muted.
@@ -709,11 +694,11 @@ function drawMuteButton() {
 // The shared simulation: every crew member (with their own input), then the world.
 function simTick(dt) {
   time += dt;
-  for (const L of LIFTS) updateLift(L, dt);
   for (const c of crew) withCrew(c, () => {
     updatePlayer(dt);
     updateInteraction(dt);
     updateOverride(dt);
+    updateInjury(player, dt);
     inv.cd = Math.max(0, inv.cd - dt);
     pressed.clear(); mouse.click = false; mouse.rightClick = false;
   });
@@ -747,9 +732,10 @@ function clientUpdate(dt) {
   music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm);
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
   if (me.mode === 'gun' && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
+  if (me.mode === 'gun' && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
   if (mission.over && localInput.pressed.has('KeyR')) backToLobby();
-  if (NET.on) me.hover = withCrew(me, () => clickTarget(m.wx, m.wy));   // the server doesn't send hover; work it out here
+  if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? promptHover(me, m.wx, m.wy) || clickTarget(m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
   updateSidebar(HUD_H, dt);
   updateCamera(dt);
 }

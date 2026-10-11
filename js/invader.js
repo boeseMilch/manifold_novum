@@ -87,7 +87,7 @@ function alienMove(a, tx, ty, speed, dt) {
 function alienStep(a, vx, vy, dt) {
   const rects = walkRects();
   if (a.mode === 'inside') unstick(a, (x, y) => canStand(x, y, rects));    // never frozen in place
-  // while fighting it stays out of airlock chambers and lift shafts (it would get shut in)
+  // while fighting it stays out of airlock chambers (it would get shut in)
   const inSpine = (y) => y > SPINE_Y0 - 0.25 && y < SPINE_Y1 + 0.25;
   const ok = (x, y) => canStand(x, y, rects) && (a.state !== 'fight' || inSpine(a.y) || !inSpine(y));
   let moved = 0;
@@ -120,7 +120,7 @@ function updateInvader(a, dt) {
   }
   if (a.stun > 0) { a.stun -= dt; return; }
   // the nearest crew member inside that it can see
-  const visible = crew.filter(c => c.mode === 'inside' && Math.hypot(c.x - a.x, c.y - a.y) < 14 && lineOfSight(a.x, a.y, c.x, c.y))
+  const visible = crew.filter(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < 14 && lineOfSight(a.x, a.y, c.x, c.y))
                       .sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
   if (a.state !== 'fight' || !a.target || !crew.includes(a.target) || (visible.length && !visible.includes(a.target))) a.target = visible[0] || a.target;
   const player = a.target && crew.includes(a.target) ? a.target : (visible[0] || crew[0] || { x: a.x, y: a.y, mode: 'none' });   // who it's after
@@ -152,7 +152,7 @@ function updateInvader(a, dt) {
           if (!act.leapt) { act.leapt = true; sfx.alienHurt(); }
           if (td > 0.2) alienStep(a, (tx - a.x) / td * POUNCE_SPEED, (ty - a.y) / td * POUNCE_SPEED, dt);
           if (!act.hit && Math.hypot(player.x - a.x, player.y - a.y) < 0.55) {
-            act.hit = true; combat.hits.crew++; combat.flashes[player.x < a.x ? 'port' : 'star'] = 1; sfx.hit(true);
+            act.hit = true; combat.hits.crew++; combat.flashes[player.x < a.x ? 'port' : 'star'] = 1; sfx.hit(true); hurtCrew(player);
             for (let i = 0; i < 12; i++) combatFx(player.x, player.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.5, '#e2574c', 0.11);
             const kx = player.x + ux * 0.9, ky = player.y + uy * 0.9;                  // knocked back
             if (canStand(kx, ky, walkRects())) { player.x = kx; player.y = ky; }
@@ -324,7 +324,7 @@ function updateBoarding(dt) {
     } else {
       const c = crew.find(c => c.mode === 'inside' && segCircle(x0, y0, b.x, b.y, c.x, c.y, 0.35));
       if (c) {
-        b.dead = true; combat.hits.crew++; combat.flashes[b.vx > 0 ? 'port' : 'star'] = 1; sfx.hit(false);
+        b.dead = true; combat.hits.crew++; combat.flashes[b.vx > 0 ? 'port' : 'star'] = 1; sfx.hit(false); hurtCrew(c);
         for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#9cff5a', 0.1);
       }
     }

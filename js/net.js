@@ -15,17 +15,17 @@ function netSerialize() {
     time,
     crew: crew.map(c => ({
       id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, face: c.face, walk: c.walk, mode: c.mode,
-      ride: c.ride ? LIFTS.indexOf(c.ride) : -1, rideDy: c.rideDy, gun: c.gun?.id || null, gunFrom: c.gunFrom,
+      gun: c.gun?.id || null,
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
-      repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt,
+      repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen },
+      health: c.health, hurtT: c.hurtT, treat: c.treat,
       ui: { panel: c.ui.panel, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
     })),
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
     caps: CAPACITORS.map(c => [c.charge, c.pulse || 0]),
-    power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts },
+    power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses },
     doors: DOORWAYS.map(d => [d.open, d.locked]),
     locks: DECK_LOCKS.map(L => ({ open: L.open, doors: L.doors, phase: L.phase, t: L.t, target: L.target, entry: L.entry, locked: L.locked })),
-    lifts: LIFTS.map(L => ({ pos: L.pos, target: L.target, phase: L.phase, t: L.t, gates: L.gates, locked: L.locked })),
     hatches: HATCHES.map(h => [h.open, h.locked]),
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
@@ -59,13 +59,13 @@ function netApply(s, myId) {
     let c = byId.get(d.id);
     const fresh = !c;
     if (fresh) { c = makeCrew(d.name); c.id = d.id; }
-    const { ride, gun, hatch, repair, inv: dInv, ui: dUi, x, y, face, ...rest } = d;
+    const { gun, hatch, repair, inv: dInv, ui: dUi, x, y, face, ...rest } = d;
     const mineNow = d.id === myId, predicted = mineNow && !fresh && canPredict(c) && rest.mode === c.mode;
     Object.assign(c, rest);
     if (!predicted) c.face = face;                    // your own facing comes from your own input
     if (fresh || Math.hypot(c.x - x, c.y - y) > 2.5) { c.x = x; c.y = y; }   // snap on big jumps
     c.nx = x; c.ny = y;                               // where the server has them (others glide there, you get corrected towards it)
-    c.ride = LIFTS[ride] || null; c.gun = GUNS.find(g => g.id === gun) || null; c.hatch = HATCHES[hatch] || null;
+    c.gun = GUNS.find(g => g.id === gun) || null; c.hatch = HATCHES[hatch] || null;
     c.repair = repair ? { sys: SYSTEMS[repair.sys], t: repair.t } : null;
     Object.assign(c.inv, dInv);
     c.ui.panel = dUi.panel; c.ui.override = dUi.override;
@@ -79,10 +79,9 @@ function netApply(s, myId) {
   }
   s.systems.forEach((b, i) => { SYSTEMS[i].broken = !!b; });
   s.caps.forEach(([ch, pu], i) => { CAPACITORS[i].charge = ch; CAPACITORS[i].pulse = pu; });
-  Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts;
+  Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts; power.pulses = s.power.pulses || [];
   s.doors.forEach(([o, l], i) => { DOORWAYS[i].open = o; DOORWAYS[i].locked = l; });
   s.locks.forEach((d, i) => Object.assign(DECK_LOCKS[i], d));
-  s.lifts.forEach((d, i) => Object.assign(LIFTS[i], d));
   s.hatches.forEach(([o, l], i) => { HATCHES[i].open = o; HATCHES[i].locked = l; });
   s.guns.forEach((d, i) => {
     const { aim, ...rest } = d;
@@ -248,9 +247,9 @@ function netClientMain() {
 // Latency hiding (simplest form): your own crew member moves right away on your keys, using the
 // same movement code as the server; the server's position only corrects you when you've stopped
 // or drifted off. The cannon you're manning aims from your mouse locally. Everyone else glides
-// towards their latest server position. Lifts, hatches and teleports come from the server.
+// towards their latest server position. Hatches and teleports come from the server.
 // ---------------------------------------------------------------------------
-const canPredict = (c) => (c.mode === 'inside' && !c.ride) || c.mode === 'eva';
+const canPredict = (c) => (c.mode === 'inside' || c.mode === 'eva') && (c.health || 'ok') !== 'down' && c.health !== 'out';
 const PREDICT_SNAP = 1.5, PREDICT_DRIFT = 0.6;
 function netPredict(dt) {
   const k = 1 - Math.exp(-25 * dt);

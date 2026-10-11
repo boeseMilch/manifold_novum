@@ -1,7 +1,7 @@
 // Ship layout: six rooms in two decks of three zones, Space Alert style.
 // All coordinates here are in layout units (multiply by T for pixels).
 // Movement is continuous: the walkable area is a union of rectangles, and doors
-// and lift cars add or remove rectangles as they open, close and move.
+// add or remove rectangles as they open and close.
 // The rooms are deliberately not uniform: this ship was built out of whatever was lying around.
 
 const SPINE_Y0 = 11.5, SPINE_Y1 = 15;            // hull between the decks
@@ -36,7 +36,7 @@ const DOORWAYS = [
   R(13.6, 18.0, 14.2, 20.2), R(30.2, 18.4, 30.8, 20.6),
 ].map(d => ({ ...d, open: 1, locked: false }));        // sliding doors, normally open; security can lock them
 
-// Every zone has two ways between the decks: a slow deck airlock and a fast lift.
+// Each zone has a deck airlock between the decks (the only way up or down).
 // Deck airlock: chamber with a door at each end; only one door is ever open.
 const LOCK_DOOR = 0.5;
 const DECK_LOCKS = COLS.map((C0, col) => {
@@ -51,18 +51,6 @@ const DECK_LOCKS = COLS.map((C0, col) => {
   };
 });
 
-// Lift: a car that shuttles along a short shaft. pos 0 = docked at the top deck, 1 = bottom.
-const CAR_H = 1.5;
-const LIFTS = COLS.map((C0, col) => {
-  const x = C0.x + C0.w - 5, w = 2.4, pos = col === 1 ? 1 : 0;
-  return {
-    col, x, w, shaft: R(x, SPINE_Y0, x + w, SPINE_Y1),
-    pos, target: null, phase: 'docked', t: 0,
-    gates: { top: 1 - pos, bottom: pos },          // shaft-mouth gates, openness
-  };
-});
-const carRect = (L) => ({ x: L.x, y: SPINE_Y0 + L.pos * (SPINE - CAR_H), w: L.w, h: CAR_H });
-const liftDeck = (L) => L.phase === 'docked' ? (L.pos < 0.5 ? 'top' : 'bottom') : null;
 
 // Capacitors: one in every bottom room, each starting at 1 charge.
 const CAP_MAX = 4;
@@ -179,6 +167,5 @@ function walkRects() {
     out.push(L.chamber);
     for (const s of ['top', 'bottom']) if (L.doors[s] > 0.95) out.push(L.doorRect[s]);
   }
-  for (const L of LIFTS) if (L.phase === 'docked' && !(L.locked && L.gates.top + L.gates.bottom < 0.95)) out.push(carRect(L));
   return out;
 }

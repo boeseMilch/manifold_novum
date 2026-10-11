@@ -73,13 +73,23 @@ this should feel close to playing solo.
 | | |
 |---|---|
 | WASD / arrows | move |
-| E | use (lifts, airlocks, ladders, hatches, shield buttons, manual override) |
-| Left click | grab / use items, click consoles, hold to repair (with the repair kit) |
-| Right click | attack with your weapon (laser gun, thrown wrench), hold to spray the extinguisher |
-| In a cannon | mouse to aim, click / Space to fire, R to reload (1 energy), Shift / right mouse to raise cover |
+| Left click | interact with whatever you point at: airlocks, ladders, hatches, shield buttons, consoles, items, manual override. Hold to repair (with the repair kit) or to treat someone |
+| Right click | use your weapon: laser gun, thrown wrench, hold to spray the extinguisher |
+| In a cannon | mouse to aim, left click / Space to fire, hold right click / Shift to raise cover, R or the button to reload (1 energy), the CLIMB DOWN button to leave |
 | Tab | hold for a ship overview |
 | M | mute (or the speaker button, top left) |
 | ` | debug menu (spawn threats, teleport, …) |
+
+The prompt at the bottom of the screen always says what a click will do. (E still works as a
+shortcut for the prompt.)
+
+## Getting hurt
+
+- The first hit hurts you for 30 s: tunnel vision, and you move slower.
+- A second hit puts you down. Hold click on yourself for 10 s to get back up (still hurt).
+- A hit while you're down knocks you out cold. Someone else has to treat you.
+- Anyone can treat anyone: hold click on them for 2 s. Alone on the ship, you crawl back up
+  on your own after 20 s.
 
 ## Missions
 

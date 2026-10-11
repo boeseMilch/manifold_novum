@@ -202,7 +202,6 @@ function spray(mx, my, dt) {
 const lockables = () => [
   ...DOORWAYS.map((d, i) => ({ ref: d, kind: 'door', name: `Door ${['left–bridge', 'bridge–right', 'left–reactor', 'reactor–right'][i]}`, x: d.x + d.w / 2, y: d.y + d.h / 2 })),
   ...DECK_LOCKS.map(Lk => ({ ref: Lk, kind: 'lock', name: `${['Left', 'Middle', 'Right'][Lk.col]} deck airlock`, x: Lk.x + Lk.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2 })),
-  ...LIFTS.map(Lf => ({ ref: Lf, kind: 'lift', name: `${['Left', 'Middle', 'Right'][Lf.col]} lift`, x: Lf.x + Lf.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2 })),
   ...HATCHES.map(h => ({ ref: h, kind: 'hatch', name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock`, x: h.x, y: h.y })),
 ];
 // onDone: what the third bonk does (default: unlock). Broken doors use it to force themselves open.
@@ -343,7 +342,7 @@ function panelFrame(w, h, title) {
   return [x, y];
 }
 function drawSecurityPanel() {
-  const w = Math.min(860, VW - 40), h = Math.min(560, VH - 40), [x, y] = panelFrame(w, h, 'SECURITY — click a door, airlock or lift to lock / unlock it');
+  const w = Math.min(860, VW - 40), h = Math.min(560, VH - 40), [x, y] = panelFrame(w, h, 'SECURITY — click a door or airlock to lock / unlock it');
   const s = Math.min((w - 60) / (SHIP_W + 4), (h - 90) / (SHIP_H + 6)), ox = x + w / 2 - (SHIP_W / 2) * s, oy = y + 60 + 3.5 * s;
   const P = (px, py) => [ox + px * s, oy + py * s];
   poly(HULL.map(([a, b]) => P(a, b))); ctx.fillStyle = '#262b35'; ctx.fill(); stroke(1.5, '#4b5263');
@@ -359,13 +358,13 @@ function drawSecurityPanel() {
     const [cx, cy] = P(l.x, l.y), hover = Math.hypot(mouse.x - cx, mouse.y - cy) < 15;
     ctx.beginPath(); ctx.arc(cx, cy, 13, 0, TAU); ctx.fillStyle = l.ref.locked ? '#7a2420' : '#1d4a36'; ctx.fill(); stroke(hover ? 3 : 1.5, l.ref.locked ? '#ff6a5a' : '#5fd6a0');
     ctx.fillStyle = '#ffffff'; ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText(l.ref.locked ? '🔒' : { door: 'D', lock: 'A', lift: 'L', hatch: 'H' }[l.kind], cx, cy + 1);
+    ctx.fillText(l.ref.locked ? '🔒' : { door: 'D', lock: 'A', hatch: 'H' }[l.kind], cx, cy + 1);
     ui.hits.push({ x: cx, y: cy, r: 15, cmd: ['lock', li] });
     if (hover) { ctx.fillStyle = '#e8ecf4'; ctx.fillText(`${l.name}: ${l.ref.locked ? 'locked' : 'open'}`, cx, cy + 24); }
   }
   ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText('D door · A deck airlock · L lift · H outer airlock — locked doors can still be forced with a manual override. Green dot: intruder.', x + 18, y + h - 18);
+  ctx.fillText('D door · A deck airlock · H outer airlock — locked doors can still be forced with a manual override. Green dot: intruder.', x + 18, y + h - 18);
 }
 function drawDiagnosisPanel() {
   const w = 520, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, 'HELM — systems diagnosis');

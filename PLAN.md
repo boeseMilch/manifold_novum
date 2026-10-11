@@ -24,7 +24,7 @@ walkable area, hull geometry), `js/decor.js` (clutter), `js/enemies.js` (enemy s
 asteroids), `js/combat.js` (shots, hits, shields, combat HUD), `js/audio.js` (synthesized
 sounds, mute), `js/music.js` (the soundtrack), `js/systems.js` (energy, breakable parts,
 inventory, hand weapons), `js/invader.js` (alien boarder), `js/mission.js` (mission script, radar, diagnosis,
-security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js` (loop, movement, airlocks, lifts, spacewalks, camera, HUD, debug menu).
+security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js` (loop, movement, airlocks, spacewalks, camera, HUD, debug menu).
 
 - **Camera:** zoomed in so about one room fills the screen. It aims at a blend of nearby
   room centers, weighted by how close you are, and eases slowly, so it glides between
@@ -45,7 +45,7 @@ security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js`
   the bell comes out of the stern.
 - **Crew:** always in a spacesuit. The visor is up inside and goes down outside.
 - **No grid.** Movement is continuous. The walkable area is a union of rectangles (rooms,
-  doorways, airlock chambers), plus open doors and docked lift cars. The floor panels
+  doorways, airlock chambers), plus open doors. The floor panels
   are purely visual.
 - **Six rooms** as in the table in `VISION.md`, with open doorways between neighboring
   rooms on the same deck. Floors are tinted by zone (red / white / blue).
@@ -53,21 +53,18 @@ security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js`
   of the hull (front, left, right; see Step 2), an outer airlock hatch in each lower
   side room, a shield button on each side of the lower deck, and a capacitor (1/3 charge,
   no function yet) in every lower room. The starfield drifts to suggest cruising.
-- **Lift** (one per zone): step onto the car and press **E**. The gate closes, the car
-  travels, the gate opens: about 1 s in total. It only works if the car is on your
-  deck. If it isn't, the prompt says where the car is, and you take the airlock or wait
-  for someone to bring it back. `LIFT_CALLABLE` in `js/game.js` switches calling on.
+- **Lifts:** removed (Step 6). The deck airlocks are the only way between decks.
 - **Deck airlock** (one per zone): only one door is ever open. Walk in through the open
   door and it closes behind you (0.55 s), the chamber cycles (1.3 s), and the far door
   opens (0.55 s). Walking up to the closed side cycles an empty chamber to you first, so
-  a worst-case trip takes about 6.5 s. **E** inside the chamber cycles it by hand.
+  a worst-case trip takes about 6.5 s. Clicking inside the chamber cycles it by hand.
   Lamps show the door state: green = open, red = closed, blinking amber = busy.
-- Starting state: the lifts and airlocks of the side zones sit at the upper deck, and the
-  center ones sit at the lower deck.
+- Starting state: the airlocks of the side zones sit at the upper deck, and the center
+  one sits at the lower deck.
 - Controls: WASD or arrow keys to move, E or Space to use, hold Tab for the overview.
 - Debug: `index.html#overview` starts in the overview, and `index.html#x,y` starts the player at x, y.
 
-Tuning constants are at the top of `js/game.js` (walk speed, door, cycle and lift times).
+Tuning constants are at the top of `js/game.js` (walk speed, door and cycle times).
 
 ## Step 2 — Combat mini-game (built, waiting for feedback)
 
@@ -179,11 +176,11 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   - Bolts stop at walls.
 - **Breakage:**
   - Breakable parts: cannons (at their ladder), shield buttons, capacitors, reactor,
-    lever, lifts, deck airlocks, outer airlocks.
+    lever, deck airlocks, outer airlocks.
   - Hull hits damage parts in the zone column that was hit: a large hit breaks 1 (30%: 2),
     a small hit breaks one 20% of the time.
   - A broken part is scorched and smoking with a loose panel and a "BROKEN" tag, and it
-    stops working. A broken cannon only sparks, a broken lift doesn't move, a broken
+    stops working. A broken cannon only sparks, a broken
     airlock's doors are stuck, and a broken capacitor neither stores nor gives energy.
   - Repair: hold left click on it for 5 s while carrying the repair kit (a progress ring
     shows; letting go restarts).
@@ -233,18 +230,17 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   - The results stay in the mission panel.
 - **Security console** (left cannon room, top wall): a ship map where you can lock or
   unlock every door.
-  - That covers the 4 doors between rooms (now real sliding doors), the 3 deck airlocks,
-    the 3 lifts and the 2 outer airlocks. It also shows the intruder and you.
+  - That covers the 4 doors between rooms (now real sliding doors), the 3 deck airlocks
+    and the 2 outer airlocks. It also shows the intruder and you.
   - A locked door never closes on someone standing in it.
 - **No softlocks:** broken doors can be forced with the same manual override.
   - A broken deck airlock: the third bonk forces open the closed door nearest you (it
     stays stuck open).
   - A broken outer airlock: forced, so you get in or out (no getting stranded on a
     spacewalk).
-  - Locked doors and lift gates never close on anyone.
-  - Dropped items always land on a room floor (never in a lift shaft).
-  - Multiplayer: when someone sends the lift, everyone standing on the car (even half on
-    it) rides along. An airlock door never closes while anyone is in its doorway (it
+  - Locked doors never close on anyone.
+  - Dropped items always land on a room floor (never in a doorway).
+  - Multiplayer: an airlock door never closes while anyone is in its doorway (it
     reopens and waits). As a safety net, anyone (crew or intruder) who ends up where they
     can't stand is moved to the nearest free spot instead of being frozen.
   - `tests/softlock.js` re-creates each trap.
@@ -329,13 +325,35 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
     `updateCrew` as the server.
   - The server's position corrects you only when you've stopped (you glide onto it),
     drifted more than 0.6 units (glide), or are more than 1.5 units off (snap).
-  - Lifts, hatches and teleports aren't predicted; you follow the server there.
+  - Hatches and teleports aren't predicted; you follow the server there.
   - The cannon you're manning aims from your mouse locally, by the same rule as the server.
   - Everyone else glides towards their latest server position.
   - There's no input replay or reconciliation yet; that would be the next step if it ever
     feels off.
 - Every crew member has a suit color, and the others show name tags.
 - Dev: `?mission=rush&autostart` skips the lobby (solo or networked).
+
+## Step 6 — Clean controls, injuries, power lines (built, waiting for feedback)
+
+- **One rule for input:** left click interacts with whatever you point at (airlocks,
+  ladders, hatches, shield buttons, consoles, items, treating people), right click uses
+  your weapon. Every prompt starts with "Click: …", pointing at its spot shows it, and E
+  stays as an unadvertised shortcut. In a cannon: left click fires, hold right click for
+  cover, a CLIMB DOWN button leaves.
+- **Lifts removed.** Only the deck airlocks connect the decks.
+- **Injuries** (`hurtCrew`, `updateInjury`, `updateTreat` in `js/systems.js`):
+  - First hit: hurt for 30 s (tunnel vision, 60% speed).
+  - Second hit: down (can't move or use anything). Hold click on yourself for 10 s to get
+    back to hurt.
+  - Hit while down: out. Someone else holds click on you for 2 s. Alone, you can still
+    crawl back in 20 s (no softlock).
+  - Treating anyone takes 2 s. Enemies and the intruder ignore downed crew.
+- **Shields** grow out of their generator in 0.1 s and shrink back into it in 0.1 s.
+- **Power lines:** real cables run from the reactor to the three capacitors and from each
+  capacitor to its shield button and cannon. They glow amber while the capacitor has
+  charge, and every spent unit of energy runs down the cable as a pulse. The random
+  decorative cables that looked like wiring are gone.
+- `node tests/controls.js` covers clicking, injuries, treating and the power pulses.
 
 ## Balance
 
@@ -377,13 +395,13 @@ dummy canvas):
   - The radar: 45 s range, the "????" for unscanned imminent threats, scanning replaces it.
   - Diagnosis: two yellow, orange countdown, red when broken; servicing prevents the
     breakdown.
-  - Locks: door closing, never on someone, 3 bonks to force; locked lift and airlock; the
+  - Locks: door closing, never on someone, 3 bonks to force; locked airlock; the
     intruder bashing a locked outer airlock for 8 s.
   - Fires: start rate, spreading or breaking, the extinguisher.
   - Win / lose: jump with energy, lose without, lose with more than 3 broken.
 - `node tests/softlock.js`: you can always get out. Covers being trapped in a broken
   airlock, stranded outside by a broken outer airlock, security locking the door you
-  stand in, and dropping an item mid-ride.
+  stand in, and multiplayer airlock doors.
 - `node tests/sidebar.js`: plates for radar contacts (countdown, no red light) and for
   active problems (red light, listed first). New plates slide up from the bottom, and
   dealt-with ones leave. Fires and broken parts get plates.
@@ -417,6 +435,4 @@ dummy canvas):
 ## Open questions
 
 - Capacitor capacity: 3 for now everywhere. Should the reactor's be bigger?
-- Should the lift be callable from the other deck (slower), or stay strictly "only if it's
-  here"?
 - Should the airlock open automatically as now, or only on E?

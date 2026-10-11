@@ -2,9 +2,9 @@
 // fires + extinguisher, and the jump / lose rules. Run: node tests/mission.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
-  'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS', 'LIFTS',
+  'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
-  'spawnInvader', 'sendLift', 'power', 'JUMP_WINDOW', 'MAINT_WARNING'];
+  'spawnInvader', 'power', 'JUMP_WINDOW', 'MAINT_WARNING'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -84,9 +84,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   setTimeout(() => {
     check(!d.locked && G.ui.panel === null, 'the third bonk opens it (and closes the panel)');
     // locked lift and deck airlock
-    const G2 = loadGame(NAMES); const lift = G2.LIFTS[0], lk = G2.DECK_LOCKS[0];
-    lift.locked = true; const pos = lift.pos; G2.sendLift(lift); for (let i = 0; i < 120; i++) G2.tick(DT);
-    check(lift.pos === pos && lift.phase === 'docked', 'a locked lift does not move');
+    const G2 = loadGame(NAMES); const lk = G2.DECK_LOCKS[0];
     lk.locked = true; G2.player.x = lk.x + lk.w / 2; G2.player.y = 15.8; for (let i = 0; i < 300; i++) G2.tick(DT);
     check(lk.doors.top === 0 && lk.doors.bottom === 0, 'a locked deck airlock keeps both doors shut, even with someone waiting');
     // locked outer airlock: the intruder has to bash it for 8 s

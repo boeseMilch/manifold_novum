@@ -1,0 +1,83 @@
+// Clean controls: left click does everything in the world (hatches, ladders, shield buttons,
+// airlocks, consoles, items, treating people); right click uses your weapon. Injuries:
+// hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
+const { loadGame } = require('./harness');
+const NAMES = ['tick', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
+  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission'];
+const DT = 1 / 60;
+let failed = 0;
+const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
+const clickAt = (G, x, y) => { const m = G.me.input.mouse; m.wx = x; m.wy = y; m.x = -999; m.y = -999; m.click = true; G.simTick(DT); };
+const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
+
+// --- left click on things you're next to
+{
+  const G = loadGame(NAMES); const h = G.HATCHES[0], me = G.me;
+  me.x = h.inside[0]; me.y = h.inside[1]; G.simTick(DT);
+  check(/^Click: go outside/.test(me.prompt?.text || ''), `prompts say what clicking does ("${me.prompt?.text}")`);
+  clickAt(G, h.x, h.y); tickN(G, 120);
+  check(me.mode === 'eva', 'clicking the outer airlock takes you outside');
+  const g = G.GUNS.find(g => g.id === 'port'); me.mode = 'inside'; me.x = g.hatch[0]; me.y = g.hatch[1] - 0.3; G.simTick(DT);
+  clickAt(G, g.hatch[0], g.hatch[1]);
+  check(me.mode === 'gun' && me.gun === g, 'clicking a ladder climbs into the cannon');
+  me.mode = 'inside'; me.gun = null;
+  const b = G.SHIELD_BUTTONS[0]; G.CAPACITORS[0].charge = 2; me.x = b.x; me.y = b.y + 0.8; G.simTick(DT);
+  clickAt(G, b.x, b.y);
+  check(G.combat.shields.port.up > 0, 'clicking a shield button raises the shield');
+  const L = G.DECK_LOCKS[0]; me.x = L.x + L.w / 2; me.y = (G.SPINE_Y0 + G.SPINE_Y1) / 2; tickN(G, 120);
+  const open0 = L.open; clickAt(G, L.x + L.w / 2, (G.SPINE_Y0 + G.SPINE_Y1) / 2);
+  check(L.phase !== 'idle' || L.open !== open0, 'clicking the airlock you stand in cycles it');
+  me.x = 22.2; me.y = 4.5; G.simTick(DT);
+  const far = G.HATCHES[0]; const wasMode = me.mode; clickAt(G, far.x, far.y);
+  check(me.mode === wasMode, 'clicking something far away does nothing');
+}
+// --- injuries
+{
+  const G = loadGame(NAMES); const me = G.me;
+  G.hurtCrew(me);
+  check(me.health === 'hurt', 'first hit: hurt');
+  const x0 = me.x; me.input.keys.add('KeyA'); tickN(G, 60); me.input.keys.delete('KeyA');
+  const hurtDist = x0 - me.x; me.health = 'ok'; const x1 = me.x; me.input.keys.add('KeyD'); tickN(G, 60); me.input.keys.delete('KeyD');
+  check(hurtDist < (me.x - x1) * 0.75, `hurt, you move slower (${hurtDist.toFixed(2)} vs ${(me.x - x1).toFixed(2)} units in 1 s)`);
+  me.health = 'hurt'; me.hurtT = 30; tickN(G, 60 * 31);
+  check(me.health === 'ok', 'after 30 s you are fine again');
+  G.hurtCrew(me); G.hurtCrew(me);
+  check(me.health === 'down', 'hit while hurt: down');
+  const xd = me.x; me.input.keys.add('KeyD'); tickN(G, 30); me.input.keys.delete('KeyD');
+  check(me.x === xd, 'down, you cannot move');
+  let t = 0; const m = me.input.mouse; m.wx = me.x; m.wy = me.y; m.down = true;
+  while (me.health === 'down' && t < 15) { G.simTick(DT); t += DT; }
+  m.down = false;
+  check(me.health === 'hurt' && Math.abs(t - 10) < 0.2, `holding click on yourself patches you up in 10 s (${t.toFixed(1)} s) → hurt`);
+  G.hurtCrew(me); G.hurtCrew(me);
+  check(me.health === 'out', 'hit again while down: out');
+}
+{
+  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  G.netServer.addCrew(1, 'A'); G.netServer.addCrew(2, 'B');
+  const [A, B] = G.crew; B.x = A.x + 1; B.y = A.y;
+  G.hurtCrew(B); G.hurtCrew(B); G.hurtCrew(B);
+  check(B.health === 'out', 'B is out cold');
+  G.netServer.input(2, { keys: [], pressed: [], mouse: { wx: B.x, wy: B.y, down: true } }); tickN(G, 60 * 5);
+  check(B.health === 'out', 'out with a crewmate around: you cannot treat yourself');
+  G.netServer.input(2, { keys: [], pressed: [], mouse: {} });
+  let t = 0;
+  while (B.health === 'out' && t < 5) { G.netServer.input(1, { keys: [], pressed: [], mouse: { wx: B.x, wy: B.y, down: true } }); G.simTick(DT); t += DT; }
+  check(B.health === 'hurt' && Math.abs(t - 2) < 0.15, `a crewmate treats you by holding click on you for 2 s (${t.toFixed(1)} s)`);
+}
+{
+  const G = loadGame(NAMES); const me = G.me;
+  G.hurtCrew(me); G.hurtCrew(me); G.hurtCrew(me);
+  let t = 0; const m = me.input.mouse; m.wx = me.x; m.wy = me.y; m.down = true;
+  while (me.health === 'out' && t < 30) { G.simTick(DT); t += DT; }
+  check(me.health === 'hurt' && t < 25, `alone on the ship, out cold is not a softlock: you crawl back in ${t.toFixed(0)} s`);
+}
+// --- power lines carry the energy
+{
+  const G = loadGame(NAMES); G.CAPACITORS[2].charge = 1;
+  G.useEnergy(2, 'shield_star');
+  check(G.power.pulses.some(p => p.line === 'shield_star'), 'using energy sends a pulse down the power line to what used it');
+  G.simTick(1);
+  check(!G.power.pulses.length, 'the pulse arrives and is gone');
+}
+process.exitCode = failed ? 1 : 0;
