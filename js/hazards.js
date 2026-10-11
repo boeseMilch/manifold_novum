@@ -7,7 +7,8 @@
 
 const hz = {
   hull: { port: 0, front: 0, star: 0 },   // big hits per side since the last weld: panels rattle, the next big hit breaches
-  breaches: [],                            // { room, tarp, leak, repress }
+  breaches: [],                            // { room, tarp, plated, leak, repress }
+  patches: [],                             // nailed-on repairs that stay visible { room, seed }
   floating: [],                            // items blown out into space: { uid, kind, x, y, t }
   vent: null,                              // { room, t } a room being vented
   surges: [],                              // ids of power lines that arc
@@ -39,6 +40,8 @@ const PLATE_CRATES = [{ x: 12.6, y: 22.4 }, { x: 33.1, y: 22.8 }];
 const COFFEE_MUG = { x: 22.75, y: -2.1 };
 
 const roomById = (id) => ROOMS.find(r => r.id === id);
+// Where the hole shows on the outside of the hull (on the wall itself), and where a patched one stays.
+const holeAt = (roomId) => { const s = BREACH_SPOTS[roomId]; return s.side === 'port' ? [0.55, s.y] : s.side === 'star' ? [SHIP_W - 0.55, s.y] : [s.x, -2.45]; };   // straddling the wall's inner edge: one hole, seen from both sides
 const breachAt = (roomId) => hz.breaches.find(b => b.room === roomId);
 // Vacuum: a breached room (not tarped, not repressurizing) or one being vented.
 function vacuumRoom(roomId) {
@@ -89,10 +92,10 @@ function onBigHit(side, x, y) {
 }
 function breachRoom(roomId) {
   if (breachAt(roomId) || !BREACH_SPOTS[roomId]) return false;
-  hz.breaches.push({ room: roomId, tarp: false, leak: 0, repress: 0 });
+  hz.breaches.push({ room: roomId, tarp: false, plated: false, leak: 0, repress: 0 });
   hz.stats.breaches++;
   const name = roomById(roomId).name;
-  combatBanner(`HULL BREACH — ${name}! Blast doors down. Weld a hull plate on from outside.`);
+  combatBanner(`HULL BREACH — ${name}! Blast doors down. Nail a hull plate over it from outside (plate + repair kit).`);
   sfx.explosion(); sfx.say?.(`Hull breach. ${name}. Please hold on.`);
   for (const f of fires) if (sysRooms(f.sys).some(r => r.id === roomId)) { f.hp = 0; scorch(f.x, f.y); }   // vacuum: no more fire
   const s = BREACH_SPOTS[roomId];
@@ -105,7 +108,8 @@ function sealBreach(roomId, how) {
   if (how === 'weld') {
     hz.breaches.splice(hz.breaches.indexOf(b), 1);
     hz.hull[BREACH_SPOTS[roomId].side] = 0;
-    combatBanner(`${roomById(roomId).name}: hull plate welded on — repressurizing`);
+    hz.patches = (hz.patches || []).filter(p => p.room !== roomId); hz.patches.push({ room: roomId, seed: Math.floor(Math.random() * 999) });
+    combatBanner(`${roomById(roomId).name}: hull plate nailed on — repressurizing`);
   } else { b.tarp = true; b.repress = REPRESS_TIME; combatBanner(`${roomById(roomId).name}: tarp taped over the hole — holds until the next hit`); }
   hz.repress = { room: roomId, t: REPRESS_TIME };
   hz.stats.repairs++; sfx.hatch(); sfx.win();
@@ -204,7 +208,7 @@ function updateHazards(dt) {
   for (const c of crew) c.coffeeT = Math.max(0, (c.coffeeT || 0) - dt);
 }
 function resetHazards() {
-  Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], floating: [], vent: null, surges: [], noGrav: [], tape: 3, plates: 4, coffee: 1, repress: null,
+  Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], patches: [], floating: [], vent: null, surges: [], noGrav: [], tape: 3, plates: 4, coffee: 1, repress: null,
                       stats: { fires: 0, firesOut: 0, breaches: 0, repairs: 0, pets: 0, treated: {} } });
 }
 
@@ -271,7 +275,7 @@ function hazardClickTarget(mx, my) {
     const t = { x: pc.x, y: pc.y, r: 0.6 };
     if (!hz.plates) return { ...t, text: 'Hull plate crate is empty', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Hull plates — get closer', ok: false };
-    return { ...t, ok: true, text: `Click: take a hull plate (${hz.plates} left; weld it over a breach from outside)${inv.item ? ` (drops your ${ITEM_NAMES[inv.item]})` : ''}`,
+    return { ...t, ok: true, text: `Click: take a hull plate (${hz.plates} left; nail it over a breach from outside with the repair kit)${inv.item ? ` (drops your ${ITEM_NAMES[inv.item]})` : ''}`,
              run: () => { hz.plates--; grab('plate'); } };
   }
   return null;
@@ -283,9 +287,13 @@ function hazardEvaTarget(mx, my) {
     const [x, y] = BREACH_SPOTS[b.room].out;
     if (!at(x, y, 0.9)) continue;
     if (!near(x, y)) return { text: 'Hull breach — get closer', ok: false, x, y, r: 0.9 };
-    if (inv.item !== 'plate') return { text: 'Hull breach — bring a hull plate (crates in the airlock rooms)', ok: false, x, y, r: 0.9 };
-    return holdTarget('weld' + b.room, WELD_TIME, `Hold click: weld the hull plate over the hole (${WELD_TIME} s)`, x, y, 0.9,
-                      () => { inv.item = null; sealBreach(b.room, 'weld'); });
+    if (!b.plated) {                                     // step 1: put a hull plate over the hole
+      if (inv.item !== 'plate') return { text: 'Hull breach — bring a hull plate (crates in the airlock rooms) and the repair kit', ok: false, x, y, r: 0.9 };
+      return { text: 'Click: hold the hull plate over the hole', ok: true, x, y, r: 0.9, run: () => { inv.item = null; b.plated = true; sfx.clank(); combatBanner('Plate in place — now nail it down with the repair kit'); } };
+    }
+    if (inv.weapon !== 'repair') return { text: 'The plate is loose over the hole — nail it down with the repair kit', ok: false, x, y, r: 0.9 };
+    return holdTarget('weld' + b.room, WELD_TIME, `Hold click: nail the plate down (${WELD_TIME} s)`, x, y, 0.9,   // step 2: the repair kit
+                      () => sealBreach(b.room, 'weld'));
   }
   for (const f of hz.floating) {
     const [x, y] = floatPos(f);
@@ -316,7 +324,7 @@ function hazardSpots() {
 // The hole, frost on the walls and air rushing out (inside); a jagged hole in the hull (outside).
 function drawBreaches(t) {
   for (const b of hz.breaches) {
-    const s = BREACH_SPOTS[b.room], x = L(s.x), y = L(s.y), vac = vacuumRoom(b.room);
+    const s = BREACH_SPOTS[b.room], [hx, hy] = holeAt(b.room), x = L(hx), y = L(hy), vac = vacuumRoom(b.room);
     ctx.save(); ctx.translate(x, y);
     poly(Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU, r = (i % 2 ? 0.28 : 0.42) * T; return [Math.cos(a) * r, Math.sin(a) * r]; }));
     ctx.fillStyle = '#05070c'; ctx.fill(); stroke(2.5, '#c96a3a');
@@ -340,21 +348,39 @@ function drawBreaches(t) {
     }
   }
 }
-function drawBreachesOutside(t) {                      // on the hull: the hole you weld from outside
+function drawBreachesOutside(t) {                      // on the hull: the hole, a loose plate, or the nailed-on patch
+  for (const p of hz.patches || []) if (!breachAt(p.room)) drawPatch(...holeAt(p.room), p.seed, true);
   for (const b of hz.breaches) {
-    const [ox, oy] = BREACH_SPOTS[b.room].out, s = BREACH_SPOTS[b.room];
-    const x = L((ox + s.x) / 2 + (s.side === 'port' ? 0.75 : s.side === 'star' ? -0.75 : 0)), y = L(s.side === 'front' ? -3.2 : oy);
-    ctx.save(); ctx.translate(x, y);
-    poly(Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU, r = (i % 2 ? 0.3 : 0.5) * T; return [Math.cos(a) * r, Math.sin(a) * r]; }));
+    const [ox, oy] = BREACH_SPOTS[b.room].out, [hx, hy] = holeAt(b.room);
+    ctx.save(); ctx.translate(L(hx), L(hy));
+    poly(Array.from({ length: 12 }, (_, i) => { const a = i / 12 * TAU, r = (i % 2 ? 0.28 : 0.48 + 0.08 * Math.sin(i * 3.1)) * T; return [Math.cos(a) * r, Math.sin(a) * r * 1.15]; }));
     ctx.fillStyle = '#05070c'; ctx.fill(); stroke(3, '#c96a3a');
+    ctx.strokeStyle = 'rgba(255,170,90,0.7)'; ctx.lineWidth = 1.5;                         // torn metal curling out
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + 0.3; ctx.beginPath(); ctx.moveTo(Math.cos(a) * T * 0.45, Math.sin(a) * T * 0.5); ctx.lineTo(Math.cos(a + 0.2) * T * 0.62, Math.sin(a + 0.2) * T * 0.7); ctx.stroke(); }
+    ctx.fillStyle = '#fff'; ctx.fillRect(-3, -2, 1.5, 1.5); ctx.fillRect(4, 5, 1.5, 1.5);   // stars through it
     ctx.restore();
-    if (!b.tarp && Math.random() < 0.5) combatFxLocal(L(ox), L(oy), t);
+    if (b.plated) drawPatch(hx, hy, 7, false);
+    else if (!b.tarp && Math.random() < 0.5) combatFxLocal(L(ox), L(oy), t);
   }
   for (const f of hz.floating) {                       // things that got sucked out, tumbling
     const [x, y] = floatPos(f);
     pickupHalo(L(x), L(y), T * 0.45, t, me.mode === 'eva' && Math.hypot(me.x - x, me.y - y) <= REACH, f.uid);
     ctx.save(); ctx.translate(L(x), L(y)); ctx.rotate(f.t * 0.8); drawItemIcon(f.kind, 0, 0, 1.1); ctx.restore();
   }
+}
+// An improvised patch: a scuffed plate over the hole, a few nails hammered through (or still loose).
+function drawPatch(hx, hy, seed, nailed) {
+  const r = rng(seed);
+  ctx.save(); ctx.translate(L(hx), L(hy)); ctx.rotate((r() - 0.5) * 0.5 + (nailed ? 0 : 0.25));
+  rr(-T * 0.55, -T * 0.6, T * 1.1, T * 1.2, 3); ctx.fillStyle = '#8a93a5'; ctx.fill(); stroke(2.2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1.5;                              // scuffs
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo((r() - 0.5) * T, (r() - 0.5) * T); ctx.lineTo((r() - 0.5) * T, (r() - 0.5) * T); ctx.stroke(); }
+  if (nailed) for (const [nx, ny] of [[-0.42, -0.45], [0.4, -0.5], [-0.45, 0.48], [0.38, 0.42], [0.05, -0.52]].slice(0, 4 + Math.floor(r() * 2))) {
+    const x = T * (nx + (r() - 0.5) * 0.08), y = T * (ny + (r() - 0.5) * 0.08);
+    ctx.beginPath(); ctx.arc(x, y, 3, 0, TAU); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(1);
+    if (r() < 0.35) { ctx.strokeStyle = '#c9ced8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 5, y - 3); ctx.stroke(); }   // a bent one
+  }
+  ctx.restore();
 }
 function combatFxLocal(x, y, t) {                      // a puff of escaping air (drawn only, not simulated)
   const k = (t * 2) % 1;

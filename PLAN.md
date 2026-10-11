@@ -603,6 +603,17 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   bubbles, veins, a skull mark and a drop forming underneath (shrivelled and leaking when hit). Its
   beak is a pale, hooked chitin beak.
 
+### 8p. Hull holes you patch on a spacewalk; a squid-shaped grappler
+- A hull breach is a visible, torn hole in the hull wall (one hole across the wall's inner edge,
+  seen from inside and outside). Fixing it from outside takes two steps: click to hold a hull plate
+  over the hole, then hold click with the repair kit to nail it down (6 s). The patch stays visible
+  for the rest of the mission: a scuffed plate with a few nails (one or two bent).
+- The grappler always grabs the upper room on its side (left / right cannon room), right where that
+  room's hole is; if it rips the plate off it's always a real breach there (any mission).
+- Its anatomy is a squid's now: the beak at the base of the arms, the eye just above it, the poison
+  sac up on the mantle's flank (a veined translucent bladder with glands, no symbols); the grabbing
+  arm comes out from among the arms.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

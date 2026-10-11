@@ -33,9 +33,10 @@ ENEMY_TYPES.grappler = {
   name: 'Grappler', organic: true, dist: 13, size: [2.2, 3.4], amp: [2.0, 2.6], omega: 0.4, wear: 99, noGun: true, shotSpeed: 11,
   solids: [{ poly: GRAPPLER_BODY }],
   pois: [   // on the edge of the body facing us (a shell stops at the first solid thing it touches)
-    { id: 'eye', name: 'Eye', effect: 'no new tentacle until it heals', shape: { circle: [1.35, -1.4, 0.32] } },
-    { id: 'sac', name: 'Poison sac', effect: 'the acid stops until it heals', shape: { circle: [1.65, 0.2, 0.48] } },
-    { id: 'beak', name: 'Beak', effect: 'no spitting until it heals', shape: { circle: [0.8, -2.45, 0.3] } },
+    // like a squid: the beak at the base of the arms, the eye just above it, the poison sac up on the mantle's flank
+    { id: 'eye', name: 'Eye', effect: 'no new tentacle until it heals', shape: { circle: [1.45, 0.45, 0.32] } },
+    { id: 'sac', name: 'Poison sac', effect: 'the acid stops until it heals', shape: { circle: [1.65, -0.85, 0.46] } },
+    { id: 'beak', name: 'Beak', effect: 'no spitting until it heals', shape: { circle: [1.05, 1.35, 0.3] } },
   ],
   update(e, dt) {
     const T0 = e.tent || (e.tent = { state: 'idle', t: 6, x: 0, y: 0, acid: 0 });
@@ -49,8 +50,8 @@ ENEMY_TYPES.grappler = {
     T0.t -= dt;
     if (T0.state === 'idle' && T0.t <= 0 && !poiHit(e, 'eye')) { T0.state = 'coil'; T0.t = TENTACLE_COIL; }   // (blinded: it can't aim a throw)
     else if (T0.state === 'coil' && T0.t <= 0) {
-      const spot = HULL_SPOTS[e.side][Math.floor(Math.random() * 4)];
-      Object.assign(T0, { state: 'attached', t: 0, x: spot[0], y: spot[1], acid: T0.acid || 0 });
+      const room = e.side === 'port' ? 'portGun' : 'starGun', [hx, hy] = holeAt(room);   // it always grabs the upper room's outer wall
+      Object.assign(T0, { state: 'attached', t: 0, x: hx + (e.side === 'port' ? -0.5 : 0.5), y: hy, room, acid: T0.acid || 0 });
       combat.shake = Math.max(combat.shake, 0.6); sfx.hit(true);
       combatBanner(`The grappler wrapped a tentacle around the ${SIDE_LABEL[e.side].toLowerCase()} side — no shield there, and its acid is eating the hull!`);
     } else if (T0.state === 'attached') {
@@ -65,7 +66,7 @@ ENEMY_TYPES.grappler = {
     if (e.spitT <= 0) {
       e.spitT = BEAK_EVERY;
       const c = eva.sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y))[0];
-      const [bx, by] = enemyToWorld(e, 0.95, -2.5);
+      const [bx, by] = enemyToWorld(e, 1.2, 1.5);
       enemyFire(e, bx, by, false, { atCrew: true, crewId: c.id, tx: c.x, ty: c.y });
       combat.shots[combat.shots.length - 1].acid = true; sfx.spit();
     }
@@ -80,16 +81,15 @@ function cutTentacle(e, how) {
   combatBanner(how === 'eva' ? 'Tentacle hacked off!' : 'Tentacle shot through — it lets go!');
   for (let i = 0; i < 16; i++) combatFx(e.tent.x, e.tent.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.7, '#7a3a8a', 0.14);
 }
-// Too late: it rips the weakened plate off (a breach, or a big hit on easier missions) and leaves with it.
+// Too late: it rips the weakened plate off — a hull breach right where it held on — and leaves with it.
 function ripHull(e) {
   const { x, y } = e.tent;
-  if (mission.rules?.breach) { breachRoom(roomNearHull(e.side, y, x)); combat.shake = 1; sfx.explosion(); }
-  else shipHit(e.side, x, y, true);
+  breachRoom(e.tent.room || roomNearHull(e.side, y, x)); combat.shake = 1; sfx.explosion();     // a real hole, right where it held on
   for (let i = 0; i < 24; i++) combatFx(x, y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.9, i % 2 ? '#8a93a5' : '#9cff5a', 0.16);
   combatBanner('The grappler ripped a hull plate off — and swims away munching on it!');
   e.tent.state = 'ripped'; e.phase = 'leaving';
 }
-function tentacleBase(e) { return enemyToWorld(e, 1.2, 0.9); }
+function tentacleBase(e) { return enemyToWorld(e, 0.6, 1.6); }   // the grabbing arm is one of the arms
 
 // ---------------------------------------------------------------------------
 // Spore mother
@@ -238,7 +238,7 @@ function drawGrappler(e, t) {
   // the grabbing arm: thick, coiling up before a throw (and holding the hull plate when leaving)
   if (e.tent?.state !== 'attached') {
     const k = 0.5 + coil * 0.5, pts = [];
-    for (let j = 0; j <= 16; j++) { const u = j / 16, a = -0.6 + u * (2.2 + coil * 2.6); pts.push([L(1.1 + Math.cos(a) * (0.5 + u * 0.9) * k + u * 0.3), L(0.8 - Math.sin(a) * (0.5 + u * 0.9) * k)]); }
+    for (let j = 0; j <= 16; j++) { const u = j / 16, a = -1.2 + u * (2.0 + coil * 2.6); pts.push([L(0.6 + Math.cos(a) * (0.4 + u * 1.0) * k + u * 0.4), L(1.6 - Math.sin(a) * (0.4 + u * 1.0) * k + u * 0.6)]); }
     tapered(pts, 9, 3, coil ? '#c06ad0' : '#a55ab5');
   }
   // fins at the back of the mantle
@@ -289,9 +289,10 @@ function drawGrappler(e, t) {
       ctx.beginPath(); ctx.moveTo(...a); ctx.quadraticCurveTo(...b, ...c2); ctx.stroke();
     }
     if (!sacHit) {
-      ctx.fillStyle = 'rgba(20,50,10,0.9)'; ctx.font = `900 ${R0 * 1.15}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('☠', 0, R0 * 0.25); ctx.textAlign = 'left';
-      ctx.beginPath(); ctx.ellipse(-R0 * 0.35, -R0 * 0.55, R0 * 0.25, R0 * 0.12, -0.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();   // shine
+      for (const [gx, gy, gr] of [[-0.35, 0.35, 0.22], [0.3, 0.5, 0.18], [0.1, -0.05, 0.15]]) {   // glands floating in it
+        ctx.beginPath(); ctx.arc(R0 * gx, R0 * gy, R0 * gr * (1 + 0.1 * Math.sin(t * 5 + gx * 9)), 0, TAU); ctx.fillStyle = 'rgba(40,120,20,0.55)'; ctx.fill();
+      }
+      ctx.beginPath(); ctx.ellipse(-R0 * 0.35, -R0 * 0.55, R0 * 0.25, R0 * 0.12, -0.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.fill();   // wet shine
     }
     const q = (t * (sacHit ? 1.2 : 0.5)) % 1;                                              // a drop forming at the tip, falling
     ctx.beginPath(); ctx.ellipse(R0 * 0.1, R0 * 1.15 + q * (sacHit ? 16 : 6), 2 + q * 1.5, 2.5 + q * 2, 0, 0, TAU); ctx.fillStyle = `rgba(140,240,70,${1 - q * 0.7})`; ctx.fill();
@@ -311,7 +312,7 @@ function drawGrappler(e, t) {
   const open = beakHit ? 0 : leaving ? 0.5 + 0.5 * Math.sin((e.munch || 0) * 12) : (e.wind || 0);
   ctx.save(); ctx.translate(L(bx), L(by));
   if (!beakHit) { ctx.beginPath(); ctx.arc(0, 0, L(br), 0, TAU); ctx.strokeStyle = '#3d8fe0'; ctx.lineWidth = 2; ctx.stroke(); }
-  ctx.rotate(-0.5);                                      // pointing forward-out, towards the ship
+  ctx.rotate(0.7);                                       // pointing out and down, from between the arms
   for (const sd of [-1, 1]) {                            // upper and lower jaw: curved, hooked, pale chitin
     const R0 = L(br) * 1.5;
     ctx.save(); ctx.rotate(sd * (0.15 + open * 0.55));

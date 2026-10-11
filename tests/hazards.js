@@ -1,4 +1,4 @@
-// Damage types and small things: hull breaches (blast doors, vacuum, items sucked out, tarp, weld),
+// Damage types and small things: hull breaches (blast doors, vacuum, items sucked out, tarp, plate + nails),
 // plasma fire and venting, power surges, failed gravity, snack machine, coffee, intercom, scorch marks.
 // Run: node tests/hazards.js
 const { loadGame } = require('./harness');
@@ -49,8 +49,14 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   // weld from outside
   me.mode = 'eva'; me.x = s.out[0] - 0.5; me.y = s.out[1]; me.vx = me.vy = 0; G.withCrew(me, () => { G.inv.item = 'plate'; });
   const welded = () => !G.hz.breaches.some(b => b.room === 'portLock');
+  const br = G.hz.breaches.find(b => b.room === 'portLock');
+  holdOn(G, s.out[0], s.out[1], () => false, 1);
+  check(!welded() && !br.plated, 'with only a plate and no repair kit you can\'t fix it yet… (it needs a click to place first)');
+  { const m = me.input.mouse; m.wx = s.out[0]; m.wy = s.out[1]; m.click = true; G.simTick(DT); }
+  check(br.plated && !me.inv.item && G.vacuumRoom('portLock'), 'step 1: click to hold the hull plate over the hole (still leaking)');
+  G.withCrew(me, () => { G.inv.weapon = 'repair'; });
   const tw = holdOn(G, s.out[0], s.out[1], welded);
-  check(welded() && G.hz.hull.port === 0 && Math.abs(tw - 6) < 0.3, `on a spacewalk, holding click with a hull plate welds the hole shut in 6 s (${tw.toFixed(1)} s)`);
+  check(welded() && G.hz.hull.port === 0 && Math.abs(tw - 6) < 0.3 && G.hz.patches.some(p => p.room === 'portLock'), `step 2: hold click with the repair kit to nail it down (${tw.toFixed(1)} s); the patch stays visible`);
   // the laser floats out there: grab it
   const f = G.hz.floating.find(f => f.kind === 'drill'); me.x = f.x - 0.4; me.y = f.y; me.vx = me.vy = 0;
   G.hz.floating.splice(0, G.hz.floating.length, f);                       // (the repair kit may be floating right next to it)

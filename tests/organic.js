@@ -42,10 +42,10 @@ const hit = (G, e, id) => { const p = e.pois.find(p => p.id === id); G.hitPoi(e,
   check(e.phase === 'burning', 'all three weak spots down at once: the grappler is done for');
 }
 {
-  const G = fresh(); G.mission.rules.breach = true; G.combatSpawn('grappler', 'star'); const e = G.combat.enemies[0];
+  const G = fresh(); G.combatSpawn('grappler', 'star'); const e = G.combat.enemies[0];   // (any mission: always a real hole)
   tickN(G, 60 * 9); const room = e.tent.y < 11.5 ? 'starGun' : 'starLock';
   tickN(G, 60 * 31);
-  check(G.hz.breaches.some(b => b.room === room) && e.phase !== 'fighting', `left alone, it rips the weakened hull plate off (a breach in the ${room}) and swims away with it`);
+  check(room === 'starGun' && G.hz.breaches.some(b => b.room === room) && e.phase !== 'fighting', `left alone, it always grabs the upper room and rips the weakened hull plate off (a breach in the ${room}) and swims away with it`);
   tickN(G, 60 * 25);
   check(!G.combat.enemies.includes(e), '…and that\'s the end of the encounter');
 }
