@@ -22,12 +22,13 @@ function resetOrganic() { org.leeches = []; org.lev = null; }
 // ---------------------------------------------------------------------------
 const GRAPPLER_BODY = [[0, -2.8], [1.1, -2.2], [1.5, -0.8], [1.3, 0.8], [0.7, 1.6], [-0.7, 1.6], [-1.3, 0.8], [-1.5, -0.8], [-1.1, -2.2]];
 ENEMY_TYPES.grappler = {
-  name: 'Grappler', special: true, dist: 13, size: [2.2, 3.4], amp: [2.0, 2.6], omega: 0.4, wear: 99, noGun: true,
+  name: 'Grappler', dist: 13, size: [2.2, 3.4], amp: [2.0, 2.6], omega: 0.4, wear: 99, noGun: true,
   solids: [{ poly: GRAPPLER_BODY }],
   pois: [
-    { id: 'eye', name: 'Eye', effect: 'heals in 15 s', shape: { circle: [0.75, -1.3, 0.32] } },
-    { id: 'sac', name: 'Ink sac', effect: 'heals in 15 s', shape: { circle: [0.8, 0.35, 0.36] } },
-    { id: 'beak', name: 'Beak', effect: 'heals in 15 s', shape: { circle: [0.2, -2.35, 0.3] } },
+    // on the edge of the body facing us (a shell stops at the first solid thing it touches)
+    { id: 'eye', name: 'Eye', effect: 'heals in 15 s', shape: { circle: [1.35, -1.4, 0.32] } },
+    { id: 'sac', name: 'Ink sac', effect: 'heals in 15 s', shape: { circle: [1.45, 0.15, 0.36] } },
+    { id: 'beak', name: 'Beak', effect: 'heals in 15 s', shape: { circle: [0.8, -2.45, 0.3] } },
   ],
   update(e, dt) {
     // weak spots heal unless all of them are hit within HEAL_TIME
@@ -59,7 +60,7 @@ function tentacleBase(e) { return enemyToWorld(e, 1.2, 0.9); }
 // ---------------------------------------------------------------------------
 const MOTHER_BODY = Array.from({ length: 14 }, (_, i) => { const a = i / 14 * TAU, r = 2.6 + 0.4 * Math.sin(i * 2.3); return [Math.cos(a) * r * 0.9, Math.sin(a) * r * 1.2]; });
 ENEMY_TYPES.mother = {
-  name: 'Spore mother', special: true, dist: 22, size: [2.6, 3.2], amp: [0.8, 1.0], omega: 0.15, wear: 99, noGun: true,
+  name: 'Spore mother', dist: 22, size: [2.6, 3.2], amp: [0.8, 1.0], omega: 0.15, wear: 99, noGun: true,
   solids: [{ poly: MOTHER_BODY }],
   pois: [
     { id: 'sac0', name: 'Upper sac', effect: 'burst', shape: { circle: [1.9, -1.6, 0.45] } },

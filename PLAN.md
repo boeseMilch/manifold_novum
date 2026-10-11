@@ -572,6 +572,13 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   cannon only fires after the button has been released once since climbing in (`player.gunReady`,
   tracked in the simulation, so it works online too).
 
+### 8m. Every weak spot is hittable
+- The grappler's eye and ink sac sat fully inside its body outline, so a shell always stopped on the
+  body first: it could not be killed. All three weak spots now sit on the edge facing the ship.
+- `tests/reachability.js` now covers every enemy kind (the grappler with its tentacle free to get
+  in the way, the spore mother at whichever sac is open): each weak spot is hit by aimed cannon fire
+  within 10 s over random sway patterns (all 49 within 2.3 s). The `special` exclusion is gone.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

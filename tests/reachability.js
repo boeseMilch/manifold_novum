@@ -1,4 +1,4 @@
-// Every weak spot must be hittable from its cannon within 10 s when aiming well.
+// Every weak spot of every enemy must be hittable from its cannon within 10 s when aiming well.
 // Aims with lead at the part's side facing us, respects the cannon's aim arc, and
 // runs several random sway patterns per part. Hull wear is disabled so only direct
 // hits count; the frigate's shield is kept down. Run: node tests/reachability.js
@@ -34,6 +34,7 @@ function tryPart(kind, side, partId) {
   let prev = null;
   for (let t = 0; t < TIME_LIMIT; t += DT) {
     e.shieldT = 3;                                  // keep the frigate's shield bubble down
+    if (kind === 'mother') { e.open = 1; e.openSac = e.pois.indexOf(part); }   // the spore mother: only open sacs can be hit (one opens after each puff)
     const pt = G.enemyToWorld(e, ...nearPoint(part));
     const vel = prev ? [(pt[0] - prev[0]) / DT, (pt[1] - prev[1]) / DT] : [0, 0];
     prev = pt;
@@ -70,7 +71,7 @@ const report = (label, times) => {
   console.log(`${misses ? 'FAIL' : 'ok  '}  ${label.padEnd(44)} worst ${worst === Infinity ? 'never' : worst.toFixed(1) + ' s'}${misses ? `  (${misses}/${times.length} trials missed)` : ''}`);
   if (misses) failed++;
 };
-for (const kind of Object.keys(G.ENEMY_TYPES).filter(k => !G.ENEMY_TYPES[k].special)) {   // (grappler, spore mother: own rules, see tests/organic.js)
+for (const kind of Object.keys(G.ENEMY_TYPES)) {   // every enemy (the grappler's tentacle may get in the way, as in play)
   for (const side of ['port', 'star']) {
     for (const p of G.ENEMY_TYPES[kind].pois) {
       report(`${kind} ${side} — ${p.name}`, Array.from({ length: TRIALS }, () => tryPart(kind, side, p.id)));
