@@ -614,6 +614,11 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   sac up on the mantle's flank (a veined translucent bladder with glands, no symbols); the grabbing
   arm comes out from among the arms.
 
+### 8q. Fires on their own clocks
+- Every fire rolls its own time until it next spreads or burns its part out: 75–125% of the usual
+  15 s (plasma: of 6 s), re-rolled each time. So a spreading fire and the one it started no longer
+  tick in step. The ring under each fire and its sidebar countdown show its own time.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

@@ -141,3 +141,11 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(me.inv.item === 'plate' && G.hz.plates === 3, 'hull plates come from the crates in the airlock rooms');
 }
 process.exitCode = failed ? 1 : 0;
+// --- fires spread on their own (slightly random) clocks, not all in step
+{
+  const G = loadGame(['fires', 'SYSTEMS', 'igniteSystem', 'mission', 'startMission']); G.startMission('intro'); G.mission.active = false;
+  for (const s of G.SYSTEMS.slice(0, 6)) G.igniteSystem(s);
+  const periods = G.fires.map(f => f.period);
+  check(new Set(periods.map(p => p.toFixed(2))).size >= 5 && periods.every(p => p >= 15 * 0.75 && p <= 15 * 1.25), `each fire gets its own spread time (${periods.map(p => p.toFixed(1)).join(', ')} s)`);
+}
+process.exitCode = failed ? 1 : 0;

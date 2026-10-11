@@ -251,11 +251,14 @@ function adjacentRooms(room) {
   return ROOMS.filter(r => r !== room && (r.col === room.col || (r.deck === room.deck && Math.abs(r.col - room.col) === 1)));
 }
 const burning = (s) => fires.some(f => f.sys === s && f.hp > 0);
+// Each fire's next spread comes after its own, slightly random time (so fires don't all spread in step).
+const firePeriod = (plasma) => (plasma ? PLASMA_TIME : FIRE_TIME) * (0.75 + Math.random() * 0.5);
+const fireLeft = (f) => (f.period || (f.plasma ? PLASMA_TIME : FIRE_TIME)) - f.t;
 function igniteSystem(s, plasma = false) {
   if (!s || burning(s)) return false;
   if (sysRooms(s).some(r => vacuumRoom(r.id))) return false;            // no air, no fire
   plasma = (plasma || (!!mission.rules?.plasma && plasmaPart(s))) && inPlasmaRoom(s);   // plasma fires only in the lower side rooms
-  fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100, plasma });
+  fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100, plasma, period: firePeriod(plasma) });
   hz.stats.fires++;
   if (plasma) { combatBanner(`PLASMA FIRE at the ${s.name.toLowerCase()}! Extinguishers won't do — vent the room at its airlock panel.`); sfx.say?.('Plasma fire. Vent the room.'); }
   else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
@@ -281,8 +284,8 @@ function spawnFire(x, y) {
 function updateFires(dt) {
   for (const f of [...fires]) {
     f.t += dt;
-    if (f.t < (f.plasma ? PLASMA_TIME : FIRE_TIME)) continue;
-    f.t = 0;
+    if (fireLeft(f) > 0) continue;
+    f.t = 0; f.period = firePeriod(f.plasma);
     if (!f.plasma && Math.random() < (lucky() ? 0.5 : 0.2)) continue;            // sometimes it just keeps burning
     if (!f.sys.broken && Math.random() < 0.5) { breakSystem(f.sys); continue; }   // burns out its part
     const rooms = sysRooms(f.sys), near = new Set([...rooms, ...rooms.flatMap(adjacentRooms)]);
@@ -411,7 +414,7 @@ function drawFires(t) {
       ctx.fillStyle = `rgba(60,60,64,${0.4 * (1 - q)})`; ctx.fill();
     }
     // time until it spreads / breaks something
-    ctx.beginPath(); ctx.arc(x, y + L(0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / (f.plasma ? PLASMA_TIME : FIRE_TIME)) * TAU);
+    ctx.beginPath(); ctx.arc(x, y + L(0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / (f.period || (f.plasma ? PLASMA_TIME : FIRE_TIME))) * TAU);
     ctx.strokeStyle = 'rgba(255,90,60,0.9)'; ctx.lineWidth = 3; ctx.stroke();
   }
 }
