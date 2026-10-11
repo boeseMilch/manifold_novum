@@ -8,7 +8,10 @@ Whenever you finish a request from the user, commit the result before reporting 
   Commit only when they pass, or say clearly in your reply what fails.
 - Commit on `main` (no feature branches unless asked), with a message that says what
   changed and why.
-- Don't push. There is no remote unless the user adds one.
+- Commit as `boeseMilch <10449052+boeseMilch@users.noreply.github.com>` (set in the repo's git
+  config), never under a real name.
+- After committing, push to `origin` (github.com/boeseMilch/manifold_novum), pulling with rebase
+  first if it moved.
 
 ## Saved progress must stay backwards compatible
 
