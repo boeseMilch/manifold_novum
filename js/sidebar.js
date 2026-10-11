@@ -30,6 +30,7 @@ function encounterPlates() {
   if (hz.vent) add('vent', { icon: 'breach', title: 'VENTING', sub: `${roomById(hz.vent.room).name} · ${Math.ceil(hz.vent.t)} s`, stripe: '#7ab8ff', red: true });
   for (const id of hz.surges) add('surge' + id, { icon: 'surge', title: 'POWER SURGE', sub: `${lineName(LINE[id])} · splice it (repair kit)`, stripe: '#bfe8ff', red: true });
   for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the breaker`, stripe: '#7af0ff', red: true });
+  evaPlates(add);
   for (const p of hz.pings) add('ping' + p.room, { icon: 'ping', title: 'HELP!', sub: `${p.name} · ${roomById(p.room).name}`, stripe: '#ffe08a', red: true });
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
@@ -176,6 +177,12 @@ function plateIcon(kind, cx, cy, t) {
       ctx.restore();
     }
     ctx.strokeStyle = '#2e7a44'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(3, 7, 2, 11); ctx.stroke();
+  } else if (kind === 'mine') {
+    ctx.beginPath(); ctx.arc(0, 0, 9, 0, TAU); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(1.5);
+    ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, TAU); ctx.fillStyle = Math.sin(t * 8) > 0 ? '#ff4a3a' : '#5a1a14'; ctx.fill();
+  } else if (kind === 'spore') {
+    for (let i = 0; i < 5; i++) { const a = i / 5 * TAU; ctx.beginPath(); ctx.arc(Math.cos(a) * 5, Math.sin(a) * 5, 4.5, 0, TAU); ctx.fillStyle = '#a89a7a'; ctx.fill(); stroke(1); }
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, TAU); ctx.fillStyle = '#3a2a48'; ctx.fill();
   } else if (kind === 'breach') {
     poly(Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU, r = i % 2 ? 6 : 11; return [Math.cos(a) * r, Math.sin(a) * r]; }));
     ctx.fillStyle = '#05070c'; ctx.fill(); stroke(2, '#7ab8ff');

@@ -30,7 +30,7 @@ function netSerialize() {
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
     fires: fires.map(f => ({ ...f, sys: sysIdx(f.sys) })),
-    luck, hz,
+    luck, hz, evs,
     mission: {
       ...mission, revealed: [...mission.revealed],
       events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined })),
@@ -90,7 +90,7 @@ function netApply(s, myId) {
   });
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
-  Object.assign(luck, s.luck); Object.assign(hz, s.hz);
+  Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs);
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
     events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined })),
@@ -268,7 +268,7 @@ function netPredict(dt) {
     }
   }
   if (me.mode === 'gun' && me.gun && !debugOpen && !me.ui.panel) {   // aim the cannon you're on locally, same rule as the server
-    const g = me.gun, m = localInput.mouse, arc = g.arc ?? GUN_ARC, ik = localInput.keys;
+    const g = me.gun, m = localInput.mouse, arc = gunArc(g), ik = localInput.keys;
     if (m.moved) g.aim = Math.atan2(m.wy - g.y, m.wx - g.x);
     g.aim += ((ik.has('KeyD') || ik.has('ArrowRight') ? 1 : 0) - (ik.has('KeyA') || ik.has('ArrowLeft') ? 1 : 0)) * GUN_TURN * dt;
     g.aim = g.a + clamp(wrapAngle(g.aim - g.a), -arc, arc);

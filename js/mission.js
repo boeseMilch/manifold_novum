@@ -30,8 +30,17 @@ function eventLabel(ev) {
   if (ev.kind === 'frigate') return `Frigate — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'swarm') return 'Asteroid swarm — front';
   if (ev.kind === 'intruder') return `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
-  return ev.kind;
+  if (ev.kind === 'mines') return `Mine drone — ${SIDE_NAME[ev.side]}`;
+  if (ev.kind === 'spores') return `Spore cloud — ${SIDE_NAME[ev.side]}`;
+  if (ev.kind === 'canister') return `Fuel canister — ${SIDE_NAME[ev.side]}`;
+  return EVENT_LABELS[ev.kind]?.(ev) || ev.kind;
 }
+// Labels for event kinds defined further on (filled in by the files that add them).
+const EVENT_LABELS = {
+  debris: (ev) => `Debris — ${GUNS.find(g => g.id === ev.gun)?.name.toLowerCase()}`,
+  antenna: () => 'Antenna strike — top',
+};
+let runMoreEvent = null;
 // Missions: each builds a timeline. The lobby picks one.
 const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
@@ -61,15 +70,36 @@ const MISSIONS = {
                                        sys: kind === 'maintenance' ? target : undefined, radar: kind !== 'maintenance' }));
     },
   },
+  deep: {
+    name: 'Deep drift', tier: 3, blurb: 'Hard. Hull breaches, plasma fires, failing gravity, things on the hull — and the jump coils need aligning outside.',
+    rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true },
+    build(target) {
+      return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister'], target, 25, 26);
+    },
+  },
 };
+// Build a shuffled timeline from a pool of event kinds, `gap` seconds apart from `start`.
+function shuffledTimeline(kinds, target, start, gap) {
+  for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
+  return kinds.map((kind, i) => makeEvent(kind, start + i * gap, target));
+}
+function makeEvent(kind, t, target) {
+  const ev = { t, kind };
+  if (['interceptor', 'frigate', 'intruder', 'mines', 'spores', 'canister'].includes(kind) || EVENT_SIDES[kind]) ev.side = EVENT_SIDES[kind]?.() || randSide();
+  if (kind === 'maintenance') { ev.sys = target; ev.radar = false; }
+  if (kind === 'debris') ev.gun = ['port', 'front', 'star'][Math.floor(Math.random() * 3)];
+  if (kind === 'antenna') ev.radar = false;
+  return ev;
+}
+const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
 function startMission(id = 'intro') {
   const candidates = SYSTEMS.filter(s => !s.broken);
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
-  resetHazards();
+  resetHazards(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) },
-    id, active: true, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
+    id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
     events: (MISSIONS[id] || MISSIONS.intro).build(target).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false })),
     maint: { target, decoy, serviced: false },
   });
@@ -83,6 +113,12 @@ function runEvent(ev) {
   else if (ev.kind === 'swarm') combatSpawn('swarm');
   else if (ev.kind === 'intruder') spawnInvader(ev.side);
   else if (ev.kind === 'maintenance' && !mission.maint.serviced && !ev.sys.broken) breakSystem(ev.sys);
+  else if (ev.kind === 'mines') spawnMineDrone(ev.side);
+  else if (ev.kind === 'spores') spawnSpores(ev.side);
+  else if (ev.kind === 'debris') jamCannon(ev.gun);
+  else if (ev.kind === 'antenna') knockAntenna();
+  else if (ev.kind === 'canister') spawnCanister(ev.side);
+  else runMoreEvent?.(ev);
 }
 
 function updateMission(dt) {
@@ -90,7 +126,12 @@ function updateMission(dt) {
   mission.t += dt;
   for (const ev of mission.events) if (!ev.done && mission.t >= ev.t) runEvent(ev);
   // jump: after the last encounter the drive tries for JUMP_WINDOW seconds; it needs energy in the engine room
-  if (mission.t >= mission.jumpAt && !mission.jump) { mission.jump = { t: 0 }; combatBanner('Jump drive spooling up — it needs energy in the middle capacitor!'); }
+  if (mission.t >= mission.jumpAt && !mission.jump && !mission.coilsChecked) {          // misaligned jump coils: the drive takes longer
+    mission.coilsChecked = true;
+    const extra = coilDelay();
+    if (extra) { mission.jumpAt += extra; combatBanner(`Jump coils misaligned — the jump drive needs ${extra} s longer!`); }
+  }
+  if (mission.t >= mission.jumpAt && !mission.jump) { mission.jump = { t: 0 }; combatBanner('Jump drive spooling up — it needs energy in the middle capacitor!'); sfx.say?.('Jump drive spooling up.'); }
   if (mission.jump) {
     mission.jump.t += dt;
     if (!broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) { CAPACITORS[1].charge--; endMission(true, 'Jumped out safely.'); return; }
@@ -108,6 +149,7 @@ function endMission(won, reason) {
 // Radar: reveals everything coming in the next RADAR_RANGE seconds, for the whole crew.
 function radarScan() {
   mission.scanT = mission.t; mission.lastScan = mission.t;
+  if (!evs.antenna) { sfx.empty(); combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return; }
   let n = 0;
   for (const ev of mission.events) if (ev.radar && !ev.done && ev.t - mission.t <= RADAR_RANGE && !mission.revealed.has(ev.id)) { mission.revealed.add(ev.id); n++; }
   sfx.poi();

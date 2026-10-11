@@ -9,7 +9,7 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 
 const PORT = +process.argv[2] || +process.env.PORT || 8080;
 const ROOT = __dirname;
-const SCRIPTS = ['audio', 'music', 'art', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'sidebar', 'game', 'net'];
+const SCRIPTS = ['audio', 'music', 'art', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'sidebar', 'game', 'net'];
 const TICK = 1 / 60, SEND_EVERY = 2;                // simulate at 60 Hz, send snapshots at 30 Hz
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 

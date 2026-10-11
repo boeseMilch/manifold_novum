@@ -412,6 +412,26 @@ get the rest.
 - Generic "hold click" jobs (`target.hold`, `updateHold`) power tarps, welds, splices etc.
 - `node tests/hazards.js` covers all of the above.
 
+### 8c. Spacewalk jobs (`js/eva.js`)
+- **Limpet mines** (event `mines`): a drone flies in and sticks 1–3 mines on the hull (shoot the
+  drone with a cannon first if you can). 30 s each, blinking faster. Pry off on a spacewalk
+  (4 s by hand, 2 s with the repair kit), or shoot with the laser (blows early, as a small hit).
+  Left alone: a big hit, and a breach on missions with breaches.
+- **Spore clouds / barnacles** (event `spores`): shoot the clouds with a cannon; the ones that
+  reach the hull seed barnacles. Full grown after 40 s, they drain that side's capacitor
+  (1 per 10 s); at 75 s they drill through (breach, or a broken part). Scrape off outside (3 s)
+  or burn off with two laser hits.
+- **Debris** (event `debris`): a cannon's track is jammed, half its arc, until a spacewalker pulls
+  it out (3 s).
+- **Antenna** (event `antenna`): radar scans come back garbled until it's straightened outside (2 s).
+- **Fuel canister** (event `canister`): drifts past one side for ~45 s; grab it for a spare cell.
+- **Jump coils** (rule `coils`): three misaligned coils outside (left, right, stern), 3 s each to
+  align. Each one still off when the jump drive spools up adds 15 s.
+- Spacewalk jobs get a pulsing dashed ring (brighter in reach). Large prompt zones (airlocks)
+  no longer swallow clicks on something more specific under the mouse.
+- First version of the hard mission **Deep drift** (all damage rules + coils).
+- `node tests/eva.js`.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

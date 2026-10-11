@@ -76,7 +76,7 @@ function withCrew(c, fn) {
 }
 const isOutside = (c) => c.mode === 'eva' || c.mode === 'gun';
 // Debug: index.html#overview shows the whole ship, index.html#x,y starts the player there.
-const DEBUG_OVERVIEW = location.hash === '#overview';
+const DEBUG_OVERVIEW = location.hash === '#overview' || /[&#]ov(&|$)/.test(location.hash);
 { const m = location.hash.match(/^#([\d.]+),([\d.]+)$/); if (m) { player.x = +m[1]; player.y = +m[2]; } }
 let prompt = null, time = 0, debugOpen = false, hover = null;
 // Debug: index.html#do=3,6 runs debug-menu entries 3 and 6 on start (see DEBUG_ITEMS);
@@ -239,7 +239,7 @@ function updatePlayer(dt) {
     }
     g.aim += ix * GUN_TURN * dt;
     const d = wrapAngle(g.aim - g.a);
-    const arc = g.arc ?? GUN_ARC;
+    const arc = gunArc(g);
     g.aim = g.a + clamp(d, -arc, arc);
     // cover: a metal plate that rises in front of you and the cannon; no firing while it's up
     const covering = !block && (held('ShiftLeft', 'ShiftRight') || mouse.right);
@@ -314,6 +314,11 @@ function updatePlayer(dt) {
   }
 }
 
+// What the mouse is on: a specific click target wins over the (larger) spot of the current prompt.
+function pickHover(c, mx, my) {
+  const p = promptHover(c, mx, my), t = clickTarget(mx, my);
+  return t && (t.ok || !p) ? t : p || t;
+}
 // Pointing at the spot of your current prompt shows it as the hover tooltip.
 function promptHover(c, mx, my) {
   const p = c.prompt;
@@ -327,7 +332,7 @@ function act(p) {
   prompt = { ok: !!p.run || !!p.ok, ...p };
   if (!p.run) return;
   if ((debugOpen && player === me) || ui.panel || mission.over) return;
-  const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r;
+  const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r && !clickTarget(m[0], m[1])?.ok;   // something more specific under the mouse wins
   if ((mouse.click && onIt) || (pressed.has('KeyE') && !ui.panel)) { mouse.click = false; pressed.delete('KeyE'); p.run(); }
 }
 
@@ -337,7 +342,7 @@ function updateInteraction(dt) {
   if (mission.over || ui.panel) { player.repair = null; player.treat = null; player.hold = null; return; }
   if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; return; }
   const [mx, my] = mouseWorld();
-  hover = promptHover(player, mx, my) || clickTarget(mx, my);
+  hover = pickHover(player, mx, my);
   if (hover?.run && mouse.click) { hover.run(); mouse.click = false; }
   updateRepair(dt, hover, mouse.down);
   updateHold(dt, hover, mouse.down);
@@ -405,6 +410,7 @@ const DEBUG_ITEMS = [
   { key: 'e', label: 'Fill all capacitors', run: () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; }) },
   { key: 'h', label: 'Hull breach in this room (or the nearest)', run: () => { const r = roomAt(player.x, player.y); breachRoom(r && BREACH_SPOTS[r.id] ? r.id : 'portLock'); } },
   { key: 'j', label: 'Surge, no gravity, plasma fire (here)', run: () => { const r = roomAt(player.x, player.y) || ROOMS[0]; surgeColumn(r.col); failGravity(r.id); const s = SYSTEMS.filter(s => !burning(s)).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; igniteSystem(s, true); } },
+  { key: 'k', label: 'Spacewalk jobs: mines, spores, debris, antenna, canister', run: () => { spawnMineDrone('port'); spawnSpores('star'); jamCannon('port'); knockAntenna(); spawnCanister('port'); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => radarScan() },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
@@ -550,6 +556,7 @@ function render(t) {
   drawHullDecor(t);
   drawShipDecals();
   drawBreachesOutside(t);
+  drawEvaJobs(t);
   for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
   drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   drawSpineDecor(t);
@@ -726,6 +733,7 @@ function simTick(dt) {
   updateMission(dt);
   updateLuck(dt);
   updateHazards(dt);
+  updateEva(dt);
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.
@@ -750,7 +758,7 @@ function clientUpdate(dt) {
   if (me.mode === 'gun' && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
   if (mission.over && localInput.pressed.has('KeyR')) backToLobby();
-  if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? promptHover(me, m.wx, m.wy) || clickTarget(m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
+  if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? pickHover(me, m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
   updateSidebar(HUD_H, dt);
   updateCamera(dt);
 }
