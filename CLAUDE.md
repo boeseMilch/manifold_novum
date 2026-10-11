@@ -14,6 +14,11 @@ Whenever you finish a request from the user, commit the result and push it befor
   config), never under a real name.
 - After committing, push to `origin` (github.com/boeseMilch/manifold_novum), pulling with rebase
   first if it moved.
+- Pulling and pushing in the sandbox: there is no `~/.ssh` there, but a deploy key is mounted at
+  `/run/secrets/deploy_key`. If that file exists, pass it per command, e.g.
+  `GIT_SSH_COMMAND="ssh -i /run/secrets/deploy_key -o IdentitiesOnly=yes" git push origin main`.
+  Don't put it in the repo's git config: the same checkout is also used outside the sandbox,
+  where plain `git pull` / `git push` with the user's own SSH setup must keep working.
 
 ## Big requests: one sub-agent per sub-task
 
