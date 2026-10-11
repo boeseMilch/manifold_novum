@@ -292,6 +292,16 @@ function suit(x, y, a, col) {
   ctx.restore();
 }
 
+// A spacesuit standing in a wall rack (rot: which way the rack faces; 0 = into the room to the right).
+function suitRack(x, y, rot, col) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+  rr(-T * 0.18, -T * 0.42, T * 0.36, T * 0.84, 4); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(2);      // the alcove
+  ctx.fillStyle = '#6b7486'; ctx.fillRect(-T * 0.18, -T * 0.44, T * 0.36, 4); ctx.fillRect(-T * 0.18, T * 0.4, T * 0.36, 4);
+  ctx.restore();
+  drawCrew(x + Math.cos(rot) * T * 0.08, y + Math.sin(rot) * T * 0.08, rot, 0, true, col);                // the suit itself, visor down
+  ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.1}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('SUIT', x + Math.cos(rot) * T * 0.34, y + T * 0.06); ctx.textAlign = 'left';
+}
 function sleepingBag(x, y, a) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
   shadowEllipse(4, 6, T * 0.9, T * 0.4, 0.3);
@@ -372,15 +382,6 @@ function hullPatch(x, y, w, h, a, seed) {
 // ---------------------------------------------------------------------------
 const U = (v) => v * T;
 function drawHullDecor(t) {
-  hullPatch(U(15.6), U(-0.6), U(1.4), U(0.9), 0.1, 11);
-  hullPatch(U(29.0), U(-0.1), U(1.1), U(0.7), -0.3, 12);
-  hullPatch(U(-0.8), U(4.4), U(0.7), U(0.9), 0.3, 13);
-  hullPatch(U(44.9), U(13.2), U(0.8), U(1.6), 0.05, 14);
-  hullPatch(U(8.0), U(23.65), U(1.6), U(0.7), 0, 15);
-  tapeX(U(44.8), U(9.0), U(0.5), 16);
-  tapeStrip(U(1.0), U(2.85), U(0.9), 0.5, 17);
-  tapeStrip(U(36.4), U(24.2), U(1.0), -0.1, 18);
-  tapeX(U(30.95), U(25.3), U(0.5), 19);
   // windows on the bridge nose
   for (const wx of [18.9, 25.5]) {
     rr(U(wx) - U(0.45), U(-3.05), U(0.9), U(0.5), 5);
@@ -393,38 +394,25 @@ function drawHullDecor(t) {
 }
 
 function drawSpineDecor(t) {
-  tapeX(U(7.0), U(12.5), U(0.5), 30);
-  tapeStrip(U(21.6), U(13.35), U(0.8), 1.4, 31);
-  tapeStrip(U(21.9), U(13.35), U(0.8), 1.7, 32);
-  steamPuff(U(22.0), U(13.2), t);
-  tapeX(U(37.0), U(12.7), U(0.5), 33);
-  sparks(U(29.4), U(12.0), t, 34);
+  steamPuff(U(22.0), U(13.2), t);                      // a leaky pipe between the decks
 }
 
 function drawFloorDecor(t) {
   // --- Left cannon room
-  stain(U(6.4), U(5.6), U(0.6), 'rgba(20,18,16,0.35)', 40);
   crack(U(4.6), U(6.6), U(1.6), 0.3, 41); tapeX(U(4.6), U(6.6), U(0.6), 42);
-  wrench(U(9.6), U(10.4), 2.2);
-  tapeRoll(U(9.8), U(6.0));
   stencil(U(5.2), U(8.6), '← LADDER UP TO THE CANNON', 0, 0.24);
   // --- Bridge
   stain(U(21.6), U(-0.9), U(0.35), 'rgba(80,45,20,0.45)', 50);          // spilled coffee
-  cable([[U(21.5), U(-1.7)], [U(18.4), U(0.3)], [U(16.4), U(2.4)], [U(15.2), U(4.4)], [U(14.6), U(6.0)]], '#2e6ec9', 3.5, 51);
-  cable([[U(22.9), U(-1.7)], [U(25.4), U(-0.6)], [U(27.0), U(1.4)], [U(29.6), U(1.6)]], '#d2a62e', 3, 52);
   papers(U(17.0), U(6.0), 53);
   plant(U(14.95), U(10.75), t);
   crack(U(25.0), U(8.0), U(2.0), -0.5, 54); tapeStrip(U(25.0), U(8.0), U(0.6), 1.0, 55); tapeStrip(U(25.6), U(7.7), U(0.6), 1.2, 56);
   stencil(U(22.2), U(10.4), 'NO RUNNING ON THE BRIDGE', 0, 0.26, 'rgba(232,236,244,0.25)');
   // --- Right cannon room
   sleepingBag(U(35.0), U(4.5), 0.12);                 // bunk five
-  toolbox(U(37.0), U(6.4), -0.3); wrench(U(38.0), U(7.0), 0.9);
-  stain(U(39.6), U(9.6), U(0.5), 'rgba(80,45,20,0.35)', 60);
+  toolbox(U(37.0), U(6.4), -0.3);
   crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62);
   // --- Left airlock room
   stencil(U(2.2), U(19.2), 'EVA', -Math.PI / 2, 0.45);
-  stain(U(9.6), U(17.4), U(0.5), 'rgba(20,18,16,0.3)', 71);
-  wrench(U(4.0), U(17.0), -0.6);
   // --- Reactor
   ctx.save(); ctx.setLineDash([12, 8]);
   ctx.strokeStyle = 'rgba(210,166,46,0.55)'; ctx.lineWidth = 5;
@@ -433,7 +421,6 @@ function drawFloorDecor(t) {
   stencil(U(22.2), U(21.2), 'DO NOT LICK THE REACTOR', 0, 0.2);
   cable([[U(20.8), U(20.6)], [U(19.9), U(22.3)], [U(20.3), U(23.8)]], '#c9662e', 5, 82);      // to the engine
   cable([[U(23.6), U(20.6)], [U(24.5), U(22.3)], [U(24.2), U(23.8)]], '#d2a62e', 4, 83);
-  stain(U(18.0), U(22.8), U(0.7), 'rgba(20,18,16,0.3)', 81);
   // --- Right airlock room
   stencil(U(42.2), U(19.4), 'EVA', Math.PI / 2, 0.45);
   crack(U(39.2), U(17.6), U(1.4), 0.2, 91); tapeX(U(39.2), U(17.6), U(0.6), 92);
@@ -447,10 +434,6 @@ function drawPropDecor(t) {
   coffee(U(22.75), U(-2.1), t);
   stickyNote(U(21.65), U(-2.1), 0.2); stickyNote(U(21.95), U(-1.95), -0.3, '#f29bc4');
   duck(U(42.6), U(6.4), Math.PI);
-  bucket(U(28.9), U(1.6), t);
-  ctx.fillStyle = '#4b5263'; ctx.fillRect(U(28.6), U(0.55), U(0.6), U(0.25));              // leaking pipe stub
-  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(U(28.6), U(0.55), U(0.6), U(0.25));
-  tapeStrip(U(28.9), U(0.68), U(0.4), Math.PI / 2, 99);
   // Left cannon room: ammo crates
   crate(U(11.6), U(4.5), U(1.0), U(0.9), 0.05, '#8a7a4a', 'AMMO');
   crate(U(12.8), U(4.4), U(0.8), U(0.8), -0.1, '#8a7a4a');
@@ -459,21 +442,19 @@ function drawPropDecor(t) {
   crate(U(42.4), U(3.6), U(1.0), U(0.9), -0.05, '#8a7a4a', 'AMMO');
   crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
   // Left airlock room: suits, extinguisher, flickering junk
-  suit(U(1.3), U(15.9), Math.PI / 2, '#e8e4dc'); suit(U(1.3), U(16.9), Math.PI / 2, '#d9a54a');
+  suitRack(U(9.1), U(15.25), Math.PI / 2, '#e8e4dc'); suitRack(U(10.1), U(15.25), Math.PI / 2, '#d9a54a');
   crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
-  crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#8a5a4a');
+  crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#4a8aa0', 'COOLANT');
   // Reactor
   duck(U(18.4), U(23.1), 0.5);
   cat(U(CAT.x), U(CAT.y), t);
   socks(U(15.0), U(19.0), U(24.6), t);
   fuelCrate(U(17.4), U(19.6), 0.08);
   // Right airlock room
-  suit(U(43.1), U(16.3), -Math.PI / 2, '#e8e4dc');
+  suitRack(U(43.2), U(16.3), Math.PI, '#e8e4dc');
   crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
   crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
   crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');
-  tapeRoll(U(34.4), U(21.8));
-  sparks(U(43.4), U(21.6), t, 95);
 }
 
 // Small junk scattered on every floor: nuts, soda cans, wrappers, tape scraps.
@@ -510,7 +491,8 @@ const JUNK = (() => {
       const x = q.x + 0.4 + r() * (q.w - 0.8), y = q.y + 0.4 + r() * (q.h - 0.8), k = r();
       if (Math.hypot(x - 22.8, y - 22.75) < 1.6) continue;          // keep the power lever clear
       if (SOLIDS.some(S => inRect(x, y, S, 0.25))) continue;          // nothing under the furniture
-      out.push({ kind: k < 0.4 ? 'nut' : k < 0.6 ? 'can' : k < 0.85 ? 'wrapper' : 'tape', x, y, a: r() * TAU,
+      if (k > 0.45) continue;                                         // just nuts and bolts (the rest only looked like blobs)
+      out.push({ kind: 'nut', x, y, a: r() * TAU,
                  col: k < 0.6 ? cans[i % 4] : wraps[i % 4], seed: 7000 + out.length });
     }
   }

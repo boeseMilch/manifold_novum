@@ -125,7 +125,6 @@ function bunkRoom(t) {
   ctx.save(); ctx.translate(lx + lw * 2, ly + lh); ctx.rotate(0.6);                      // the open door
   ctx.fillStyle = '#4a6288'; ctx.fillRect(-lw, 0, lw, 4); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(-lw, 0, lw, 4);
   ctx.restore();
-  rr(lx + lw * 1.3, ly + lh - 3, 9, 14, 3); ctx.fillStyle = '#e2574c'; ctx.fill(); stroke(1.2);   // sleeve
   plaque(U(34.4), U(2.25), U(1.5), U(0.5), [['HANG IN THERE', 0.12]], '#2d5f82', '#e8f4ff');
 }
 
@@ -137,21 +136,19 @@ function toiletStall(t) {
   ctx.fillStyle = '#a3abb8'; ctx.fillRect(0, -3, U(0.95), 6); ctx.strokeStyle = OUT; ctx.lineWidth = 1.8; ctx.strokeRect(0, -3, U(0.95), 6);
   ctx.fillStyle = '#47e07a'; ctx.fillRect(U(0.7), -2, 6, 4);                              // VACANT
   ctx.restore();
+  // the toilet, from above: tank against the wall, lid up (of course), seat and bowl
   const tl = FURNITURE.toilet, x = U(tl.x + tl.w / 2), y0 = U(tl.y);
-  shadowEllipse(x + 4, y0 + U(0.55), U(0.42), U(0.45), 0.3);
-  rr(x - U(0.38), y0, U(0.76), U(0.3), 4); ctx.fillStyle = '#eef0f2'; ctx.fill(); stroke(2);   // tank
-  rr(x - U(0.3), y0 + U(0.22), U(0.6), U(0.16), 6); ctx.fillStyle = '#dfe3e8'; ctx.fill(); stroke(1.4);   // the lid, up (of course)
-  ctx.beginPath(); ctx.ellipse(x, y0 + U(0.66), U(0.3), U(0.34), 0, 0, TAU); ctx.fillStyle = '#f4f5f6'; ctx.fill(); stroke(2);
-  ctx.beginPath(); ctx.ellipse(x, y0 + U(0.68), U(0.19), U(0.23), 0, 0, TAU); ctx.fillStyle = '#5a8fb0'; ctx.fill(); stroke(1.2);
-  // …and the air spirals down into it
-  ctx.save(); ctx.beginPath(); ctx.ellipse(x, y0 + U(0.68), U(0.19), U(0.23), 0, 0, TAU); ctx.clip();
-  ctx.strokeStyle = 'rgba(220,240,255,0.7)'; ctx.lineWidth = 1.5;
-  for (let i = 0; i < 3; i++) { const a = t * 3 + i * TAU / 3; ctx.beginPath(); ctx.arc(x, y0 + U(0.68), U(0.06 + i * 0.045), a, a + 2.2); ctx.stroke(); }
-  ctx.restore();
-  for (let i = 0; i < 5; i++) {                                                           // dust specks getting sucked in
-    const k = (t * 0.35 + i / 5) % 1, a = i * 1.3 + k * 5, r = U(0.75) * (1 - k);
-    ctx.beginPath(); ctx.arc(x + Math.cos(a) * r, y0 + U(0.68) + Math.sin(a) * r * 0.8, 1.6, 0, TAU);
-    ctx.fillStyle = `rgba(230,230,220,${0.7 * (1 - k)})`; ctx.fill();
+  shadowEllipse(x + 4, y0 + U(0.6), U(0.4), U(0.48), 0.3);
+  rr(x - U(0.36), y0 + 2, U(0.72), U(0.26), 5); ctx.fillStyle = '#e9ecef'; ctx.fill(); stroke(2);                  // tank
+  ctx.beginPath(); ctx.arc(x, y0 + U(0.15), 3, 0, TAU); ctx.fillStyle = '#b9bfc9'; ctx.fill();                     // flush button
+  rr(x - U(0.27), y0 + U(0.27), U(0.54), U(0.12), 4); ctx.fillStyle = '#f7f8f9'; ctx.fill(); stroke(1.5);         // the raised lid, seen edge-on
+  ctx.beginPath(); ctx.ellipse(x, y0 + U(0.66), U(0.27), U(0.33), 0, 0, TAU); ctx.fillStyle = '#f7f8f9'; ctx.fill(); stroke(2.2);   // seat
+  ctx.beginPath(); ctx.ellipse(x, y0 + U(0.68), U(0.16), U(0.22), 0, 0, TAU); ctx.fillStyle = '#c9d6df'; ctx.fill(); stroke(1.2);   // bowl
+  ctx.beginPath(); ctx.ellipse(x, y0 + U(0.72), U(0.09), U(0.12), 0, 0, TAU); ctx.fillStyle = 'rgba(120,170,200,0.55)'; ctx.fill(); // a little water
+  for (let i = 0; i < 4; i++) {                                                           // …and dust drifting into it
+    const k = (t * 0.35 + i / 4) % 1, a = i * 1.6 + k * 4, r = U(0.6) * (1 - k);
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * r, y0 + U(0.7) + Math.sin(a) * r * 0.8, 1.4, 0, TAU);
+    ctx.fillStyle = `rgba(230,230,220,${0.6 * (1 - k)})`; ctx.fill();
   }
   // toilet paper on the wall, a plunger, a magazine
   ctx.beginPath(); ctx.arc(U(11.6), U(15.85), 6, 0, TAU); ctx.fillStyle = '#f4f5f6'; ctx.fill(); stroke(1.2);
@@ -182,15 +179,16 @@ function couch() {
   ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1.5; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(-U(0.3), i * 7); ctx.lineTo(U(0.3), i * 7 + 3); ctx.stroke(); }
   ctx.restore();
 }
-function exerciseBike(t) {
-  const b = FURNITURE.bike, x = U(b.x + b.w / 2), y = U(b.y), h = U(b.h);
-  shadowEllipse(x + 4, y + h / 2 + 5, U(0.4), h * 0.5, 0.3);
-  rr(x - U(0.12), y + 4, U(0.24), h - 8, 4); ctx.fillStyle = '#c0392b'; ctx.fill(); stroke(2);    // frame
-  rr(x - U(0.15), y + h - U(0.35), U(0.3), U(0.3), 6); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);   // flywheel
-  ctx.fillStyle = '#3a3f4a'; ctx.fillRect(x - U(0.35), y + 6, U(0.7), 5); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - U(0.35), y + 6, U(0.7), 5);  // handlebar
-  ctx.beginPath(); ctx.ellipse(x, y + h * 0.55, U(0.13), U(0.18), 0, 0, TAU); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);  // seat
-  ctx.fillStyle = '#e8e4dc'; ctx.fillRect(x + U(0.2), y + h * 0.35, 9, 12); stroke(1);    // towel
-  stencil(U(40.6), U(22.5), 'PEDAL FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)');
+function exerciseBike(t) {                             // (a treadmill, actually: it reads better from above)
+  const b = FURNITURE.bike, x = U(b.x), y = U(b.y), w = U(b.w), h = U(b.h);
+  shadowEllipse(x + w / 2 + 4, y + h / 2 + 5, w * 0.6, h * 0.55, 0.3);
+  rr(x, y, w, h, 4); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);
+  rr(x + 4, y + 10, w - 8, h - 14, 3); ctx.fillStyle = '#1c2028'; ctx.fill();                          // the belt
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1.5;
+  for (let k = 0; k < 6; k++) { const yy = y + 12 + ((k * 8 + t * 20) % (h - 18)); ctx.beginPath(); ctx.moveTo(x + 5, yy); ctx.lineTo(x + w - 5, yy); ctx.stroke(); }
+  ctx.fillStyle = '#c0392b'; ctx.fillRect(x - 3, y + 2, w + 6, 6); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y + 2, w + 6, 6);   // handlebar
+  ctx.fillStyle = '#47e07a'; ctx.fillRect(x + w / 2 - 5, y + 3, 10, 4);                                // display
+  stencil(U(40.6), U(22.5), 'JOG FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)');
 }
 function incidentBoard() {
   plaque(U(16.1), U(0.32), U(2.6), U(0.5), [['DAYS SINCE LAST INCIDENT:  0', 0.13]], '#2b303a', '#ffcf6b');

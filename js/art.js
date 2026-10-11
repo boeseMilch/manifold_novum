@@ -609,7 +609,6 @@ function drawEngineHousing(t, E) {
   }
   ctx.fillStyle = 'rgba(232,236,244,0.5)'; ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('ENGINE', cx, y + h * 0.26 + 5); ctx.textAlign = 'left';
-  tapeX(x + w - 18, y + h * 0.75, T * 0.4, 820);
 }
 
 // Outer airlock hatch set into a side wall; h.open 0..1 slides the doors apart.
