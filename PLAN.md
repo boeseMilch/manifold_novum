@@ -432,6 +432,26 @@ get the rest.
 - First version of the hard mission **Deep drift** (all damage rules + coils).
 - `node tests/eva.js`.
 
+### 8d. Ship-wide encounters (`js/encounters.js`)
+- **Solar flare** (event `flare`): 10 s warning (orange glare), then 8 s of radiation: anyone on
+  the upper deck, on a spacewalk or in a cannon is hurt (twice if they stay). Nobody can fire
+  meanwhile, us or them.
+- **Ion storm** (`storm`): 30 s of darkness (a flashlight cone around you), radar and security
+  console show static, and full capacitors arc (lose 1) at the start and every 10 s.
+- **Coolant leak** (`coolant`): a heat gauge on the reactor climbs; at 100% the reactor scrams
+  (no energy for 30 s). Fix: a coolant canister from the crate in the left airlock room, screwed
+  into the reactor (hold 3 s).
+- **AI glitch** (`glitch`): every 3 s a door or deck airlock locks/unlocks itself (never the outer
+  airlocks). The security console turns into three reboot switches; the right order is shown on
+  the helm. Wrong order starts over. Rebooting unlocks what it locked.
+- **Stealth fighter** (`stealth`): an interceptor that's nearly invisible; a radar ping lights it
+  up for a few seconds, firing gives it away briefly.
+- **Tractor tug** (`tractor`): its beam freezes the jump countdown until its emitter (a 4th weak
+  spot on a mast) is shot.
+- Enemy kinds can now bring their own `draw` / `update` / `drawExtra` (registry in
+  `ENEMY_TYPES`), and event kinds their own runner and label (`EVENT_RUNNERS`, `EVENT_LABELS`).
+- `node tests/encounters.js`.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

@@ -73,6 +73,7 @@ function fireCannon(g) {
     return;
   }
   if (!(g.shots > 0) || g.reload > 0) { g.cd = 0.35; sfx.empty(); return; }   // empty: reload first
+  if (enc.flare?.phase === 'rad') { g.cd = 0.5; sfx.spark(); combatBanner('Solar flare — the cannon electronics are fried until it passes'); return; }
   g.shots--;
   g.cd = CANNON_COOLDOWN; g.flash = 1;
   const dx = Math.cos(g.aim), dy = Math.sin(g.aim);
@@ -418,7 +419,7 @@ function drawCombatHUD(view, top) {
   lines.forEach((l, i) => { ctx.fillStyle = l.col; ctx.fillText(l.text, VW - w - 4, top + 17 + i * 17); });
 
   // edge arrows towards threats that are off screen
-  const threats = [...combat.enemies.filter(e => e.phase === 'fighting'), ...combat.asteroids];
+  const threats = [...combat.enemies.filter(e => e.phase === 'fighting' && (!e.D.stealth || stealthAlpha(e) > 0.3)), ...combat.asteroids];
   for (const th of threats) {
     const sx = view.ox + L(th.x) * view.zoom, sy = view.oy + L(th.y) * view.zoom;
     if (sx > 0 && sx < VW && sy > top && sy < VH) continue;

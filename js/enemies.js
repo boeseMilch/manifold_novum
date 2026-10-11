@@ -134,9 +134,12 @@ function updateEnemy(e, dt) {
   }
   e.x = tx; e.y = ty; e.rot = 0.04 * Math.sin(w * e.t * 1.3 + p2);
 
+  e.D.update?.(e, dt);
+  if (e.D.noGun) return;
   // light gun: pick a target shortly before firing and swing the turret onto it
   if (e.blind > 0) e.blind -= dt;
   e.fireT -= dt;
+  if (enc.flare?.phase === 'rad') e.fireT = Math.max(e.fireT, 0.8);   // solar flare: nobody can fire
   if (!e.target && e.fireT < 0.7 && e.blind <= 0) e.target = pickEnemyTarget(e);
   if (e.target?.atCrew) { const c = crew.find(c => c.id === e.target.crewId); if (c) { e.target.tx = c.x; e.target.ty = c.y; } }
   {
@@ -155,7 +158,7 @@ function updateEnemy(e, dt) {
       if (poiHit(e, 'cable') && e.shotCount % 2 === 0) {        // damaged cable: fizzle
         for (let i = 0; i < 8; i++) combatFx(mx, my, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.3, '#ffe08a', 0.08);
         sfx.spark();
-      } else enemyFire(e, mx, my, false, e.target);
+      } else { enemyFire(e, mx, my, false, e.target); e.reveal = Math.max(e.reveal || 0, 0.8); }
     }
     e.target = null;
   }
@@ -169,7 +172,7 @@ function updateEnemy(e, dt) {
     // heavy cannon: long audible charge, then a big shot
     if (!poiHit(e, 'heavy')) {
       if (e.charge < 0) {
-        e.heavyT -= dt;
+        if (enc.flare?.phase !== 'rad') e.heavyT -= dt;
         if (e.heavyT <= 0) { e.charge = 0; e.stopCharge = sfx.charge(HEAVY_CHARGE); }
       } else {
         e.charge += dt;
@@ -604,9 +607,10 @@ function drawEnemyShield(e) {
 function drawEnemy(e, t) {
   ctx.save();
   if (e.phase === 'burning') ctx.globalAlpha = clamp(1 - (e.burnT - 3) / 2, 0, 1);
+  if (e.D.stealth) ctx.globalAlpha *= stealthAlpha(e);                // cloaked: only shows after a radar ping or when it fires
   ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.rot); ctx.scale(e.dir, 1);
   shadowEllipse(L(0.5), L(0.7), L(e.D.size[0]), L(e.D.size[1]), 0.22);
-  if (e.kind === 'interceptor') drawInterceptor(e, t); else drawFrigate(e, t);
+  if (e.D.draw) e.D.draw(e, t); else if (e.kind === 'interceptor') drawInterceptor(e, t); else drawFrigate(e, t);
   if (e.flash > 0) {                              // hit flash
     ctx.globalCompositeOperation = 'lighter';
     ctx.fillStyle = `rgba(255,200,150,${e.flash * 0.2})`;
@@ -616,7 +620,8 @@ function drawEnemy(e, t) {
   for (const p of e.pois) if (p.hit && p.id !== 'crack') drawSmoke(L(p.c[0]), L(p.c[1]), p.smoke, t + p.c[0]);
   drawEnemyShield(e);
   ctx.restore();
-  if (e.phase === 'fighting') drawEnemyTag(e);
+  if (e.phase === 'fighting' && (!e.D.stealth || stealthAlpha(e) > 0.3)) drawEnemyTag(e);
+  e.D.drawExtra?.(e, t);
 }
 
 function drawAsteroidBody(a, t) {

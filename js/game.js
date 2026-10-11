@@ -369,6 +369,7 @@ function runCommand(cmd) {
   else if (kind === 'closePanel') { ui.panel = null; ui.override = null; }
   else if (kind === 'reload') { if (player.mode === 'gun') reloadCannon(player.gun); }
   else if (kind === 'climbDown') climbDown();
+  else if (kind === 'reboot') rebootSwitch(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
 }
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
@@ -411,6 +412,8 @@ const DEBUG_ITEMS = [
   { key: 'h', label: 'Hull breach in this room (or the nearest)', run: () => { const r = roomAt(player.x, player.y); breachRoom(r && BREACH_SPOTS[r.id] ? r.id : 'portLock'); } },
   { key: 'j', label: 'Surge, no gravity, plasma fire (here)', run: () => { const r = roomAt(player.x, player.y) || ROOMS[0]; surgeColumn(r.col); failGravity(r.id); const s = SYSTEMS.filter(s => !burning(s)).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; igniteSystem(s, true); } },
   { key: 'k', label: 'Spacewalk jobs: mines, spores, debris, antenna, canister', run: () => { spawnMineDrone('port'); spawnSpores('star'); jamCannon('port'); knockAntenna(); spawnCanister('port'); } },
+  { key: 'l', label: 'Ship-wide: flare, storm, coolant leak, AI glitch', run: () => { startFlare(); startStorm(); startCoolantLeak(); startGlitch(); } },
+  { key: 'z', label: 'Stealth fighter left, tractor tug right', run: () => { combatSpawn('stealth', 'port', true); combatSpawn('tractor', 'star', true); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => radarScan() },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
@@ -585,6 +588,7 @@ function render(t) {
   drawPropDecor(t);
   drawInterior(t);
   drawHazardProps(t);
+  drawEncounterProps(t);
   drawInteractMarkers(t);
   drawItems(t);
   drawFires(t);
@@ -628,6 +632,7 @@ function render(t) {
     rr(VW / 2 - w / 2, VH - 54, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, '#5fd6a0');
     ctx.fillStyle = '#c8ffe6'; ctx.fillText(prompt.text, VW / 2, VH - 37); ctx.textAlign = 'left';
   }
+  drawEncounterOverlay(view, t);
   drawInjuryOverlay(t);
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);
@@ -734,6 +739,7 @@ function simTick(dt) {
   updateLuck(dt);
   updateHazards(dt);
   updateEva(dt);
+  updateEncounters(dt);
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.

@@ -127,7 +127,7 @@ function deliverEnergy() {
 }
 function updatePower(dt) {
   const R = power.reactor;
-  if (R.fuel > 0 && !broken(REACTOR)) {
+  if (R.fuel > 0 && !broken(REACTOR) && !(enc.scram > 0)) {
     R.t += dt;
     if (R.t >= ENERGY_TIME) { R.t = 0; R.fuel--; deliverEnergy(); }
   }
@@ -186,7 +186,7 @@ function clickTarget(mx, my) {
   if (player.mode === 'eva') return evaClickTarget(mx, my);
   if (player.mode !== 'inside') return null;
   // broken systems first
-  const m = hazardClickTarget(mx, my) || missionClickTarget(mx, my);
+  const m = hazardClickTarget(mx, my) || encounterClickTarget(mx, my) || missionClickTarget(mx, my);
   if (m) return m;
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;

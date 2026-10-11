@@ -40,7 +40,7 @@ const EVENT_LABELS = {
   debris: (ev) => `Debris — ${GUNS.find(g => g.id === ev.gun)?.name.toLowerCase()}`,
   antenna: () => 'Antenna strike — top',
 };
-let runMoreEvent = null;
+const EVENT_RUNNERS = {};                              // event kinds added by other files: kind → run(ev)
 // Missions: each builds a timeline. The lobby picks one.
 const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
@@ -88,7 +88,7 @@ function makeEvent(kind, t, target) {
   if (['interceptor', 'frigate', 'intruder', 'mines', 'spores', 'canister'].includes(kind) || EVENT_SIDES[kind]) ev.side = EVENT_SIDES[kind]?.() || randSide();
   if (kind === 'maintenance') { ev.sys = target; ev.radar = false; }
   if (kind === 'debris') ev.gun = ['port', 'front', 'star'][Math.floor(Math.random() * 3)];
-  if (kind === 'antenna') ev.radar = false;
+  if (kind === 'antenna' || kind === 'coolant' || kind === 'glitch') ev.radar = false;
   return ev;
 }
 const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
@@ -96,7 +96,7 @@ function startMission(id = 'intro') {
   const candidates = SYSTEMS.filter(s => !s.broken);
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
-  resetHazards(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
+  resetHazards(); resetEncounters(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) },
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
@@ -118,7 +118,7 @@ function runEvent(ev) {
   else if (ev.kind === 'debris') jamCannon(ev.gun);
   else if (ev.kind === 'antenna') knockAntenna();
   else if (ev.kind === 'canister') spawnCanister(ev.side);
-  else runMoreEvent?.(ev);
+  else EVENT_RUNNERS[ev.kind]?.(ev);
 }
 
 function updateMission(dt) {
@@ -150,6 +150,8 @@ function endMission(won, reason) {
 function radarScan() {
   mission.scanT = mission.t; mission.lastScan = mission.t;
   if (!evs.antenna) { sfx.empty(); combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return; }
+  if (enc.storm) { sfx.empty(); combatBanner('Radar: nothing but static — ion storm'); return; }
+  for (const e of combat.enemies) if (e.D.stealth) e.reveal = 3;           // the ping lights up cloaked ships for a moment
   let n = 0;
   for (const ev of mission.events) if (ev.radar && !ev.done && ev.t - mission.t <= RADAR_RANGE && !mission.revealed.has(ev.id)) { mission.revealed.add(ev.id); n++; }
   sfx.poi();
@@ -398,6 +400,12 @@ function panelFrame(w, h, title) {
   return [x, y];
 }
 function drawSecurityPanel() {
+  if (enc.glitch) return drawRebootPanel();
+  if (enc.storm) {                                   // ion storm: just static
+    const w = 520, h = 300, [x, y] = panelFrame(w, h, 'SECURITY — no signal (ion storm)');
+    for (let i = 0; i < 900; i++) { ctx.fillStyle = `rgba(200,210,220,${Math.random() * 0.5})`; ctx.fillRect(x + 20 + Math.random() * (w - 40), y + 50 + Math.random() * (h - 80), 2, 2); }
+    return;
+  }
   const w = Math.min(860, VW - 40), h = Math.min(560, VH - 40), [x, y] = panelFrame(w, h, 'SECURITY — click a door or airlock to lock / unlock it');
   const s = Math.min((w - 60) / (SHIP_W + 4), (h - 90) / (SHIP_H + 6)), ox = x + w / 2 - (SHIP_W / 2) * s, oy = y + 60 + 3.5 * s;
   const P = (px, py) => [ox + px * s, oy + py * s];
@@ -422,8 +430,22 @@ function drawSecurityPanel() {
   ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
   ctx.fillText('D door · A deck airlock · H outer airlock — locked doors can still be forced with a manual override. Green dot: intruder.', x + 18, y + h - 18);
 }
+// During an AI glitch the console only shows the reboot switches (the order is on the helm).
+function drawRebootPanel() {
+  const w = 520, h = 300, [x, y] = panelFrame(w, h, 'SECURITY — AI REBOOT (order is shown on the helm)');
+  const g = enc.glitch;
+  ['A', 'B', 'C'].forEach((name, i) => {
+    const cx = x + w / 2 + (i - 1) * 140, cy = y + 150, hover = Math.hypot(mouse.x - cx, mouse.y - cy) < 45;
+    rr(cx - 40, cy - 60, 80, 120, 10); ctx.fillStyle = '#262b35'; ctx.fill(); stroke(2, hover ? '#5fd6a0' : '#4b5263');
+    const done = g.order.indexOf(i) < g.step;
+    rr(cx - 12, done ? cy - 40 : cy, 24, 40, 6); ctx.fillStyle = done ? '#5fd6a0' : '#c9ced8'; ctx.fill(); stroke(2);
+    ctx.fillStyle = '#e8ecf4'; ctx.font = '800 20px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(name, cx, cy + 78);
+    ui.hits.push({ x: cx, y: cy, w: 80, h: 120, cmd: ['reboot', i] });
+  });
+  ctx.textAlign = 'left';
+}
 function drawDiagnosisPanel() {
-  const w = 520, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, 'HELM — systems diagnosis');
+  const w = 520, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — systems diagnosis');
   ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'top';
   SYSTEMS.forEach((s, i) => {
     const st = diagState(s), yy = y + 50 + i * 19;
