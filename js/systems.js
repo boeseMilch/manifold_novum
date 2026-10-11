@@ -2,7 +2,8 @@
 // repairs, the inventory (weapon slot + item slot) with items lying around, and the
 // hand weapons (laser gun, wrench toss). Units: layout units.
 
-const CELL_ENERGY = 5, ENERGY_TIME = 20, SHOTS_PER_ENERGY = 3, REPAIR_TIME = 5;
+const CELL_ENERGY = 5, ENERGY_TIME = 20, REPAIR_TIME = 5;
+let SHOTS_PER_ENERGY = 3;                              // (ship upgrades: see progress.js)
 // Power lever: its position is the capacitor index it feeds, laid out left → right on the
 // dial (port, middle, starboard). Auto mode steps right and wraps: mid → stbd → port → mid.
 const LEVER_NAMES = ['LEFT', 'MID', 'RIGHT'];
@@ -130,6 +131,7 @@ function deliverEnergy() {
 }
 function updatePower(dt) {
   const R = power.reactor;
+  updateInserter(dt);
   if (R.fuel > 0 && !broken(REACTOR) && !(enc.scram > 0)) {
     R.t += dt;
     if (R.t >= ENERGY_TIME) { R.t = 0; R.fuel--; deliverEnergy(); }
@@ -204,6 +206,11 @@ function clickTarget(mx, my) {
     return { text: `Click: take the ${ITEM_NAMES[it.kind]}${swap}`, ok: true, x: it.x, y: it.y, r: 0.45,
              run: () => { ITEMS.splice(ITEMS.indexOf(it), 1); grab(it.kind); } };
   }
+  if (power.inserter && Math.hypot(mx - (FUEL_CRATE.x - 0.8), my - FUEL_CRATE.y) < 0.3) {   // the inserter: scooch the cells out of its reach (or back)
+    const t = { x: FUEL_CRATE.x - 0.8, y: FUEL_CRATE.y, r: 0.3 };
+    if (!near(t.x, t.y)) return { ...t, text: 'Inserter handle — get closer', ok: false };
+    return { ...t, ok: true, text: power.inserter.on ? 'Click: scooch the cells left (the inserter stops loading)' : 'Click: scooch the cells back (the inserter loads again)', run: () => { power.inserter.on = !power.inserter.on; sfx.clank(); } };
+  }
   if (Math.hypot(mx - FUEL_CRATE.x, my - FUEL_CRATE.y) < 0.75) {
     const t = { x: FUEL_CRATE.x, y: FUEL_CRATE.y, r: 0.75 };
     if (!power.reserve) return { ...t, text: 'Fuel crate is empty', ok: false };
@@ -243,10 +250,12 @@ function clickTarget(mx, my) {
 // Anyone can treat anyone by holding click on them for TREAT_TIME (down / out → hurt, hurt → ok).
 // Alone on the ship, someone who's out can still crawl back slowly (SOLO_TREAT s) — no softlocks.
 // ---------------------------------------------------------------------------
-const HURT_TIME = 30, TREAT_TIME = 2, SELF_TREAT = 10, SOLO_TREAT = 20;
+const HURT_TIME = 30, SELF_TREAT = 10, SOLO_TREAT = 20;
+let TREAT_TIME = 2;
 const standing = (c) => (c.health || 'ok') === 'ok' || c.health === 'hurt';
 function hurtCrew(c) {
   if (!c) return;
+  if (c.armor > 0) { c.armor--; combatBanner(`${c.name}'s armor vest took the hit`); sfx.clank(); return; }   // (gear: see progress.js)
   const h = c.health || 'ok';
   c.health = h === 'ok' ? 'hurt' : h === 'hurt' ? 'down' : 'out';
   c.hurtT = HURT_TIME; c.treat = null;
@@ -262,11 +271,11 @@ function updateInjury(c, dt) {
 function treatInfo(who) {
   if (!who || standing(who) && who.health !== 'hurt') return null;
   if (who === player) {
-    if (who.health === 'down') return { time: SELF_TREAT, label: 'patch yourself up' };
+    if (who.health === 'down') return { time: perk(who, 'stim') ? 5 : who.kit?.profession === 'medic' ? 6 : SELF_TREAT, label: 'patch yourself up' };
     if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'nobody can help — slowly patch yourself up' };
     return null;
   }
-  return standing(player) ? { time: TREAT_TIME, label: `treat ${who.name}` } : null;
+  return standing(player) ? { time: player.kit?.profession === 'medic' ? Math.min(1, TREAT_TIME) : TREAT_TIME, label: `treat ${who.name}` } : null;
 }
 function updateTreat(dt, target, holding) {
   if (!target?.treat) { player.treat = null; return; }
@@ -295,7 +304,7 @@ function updateHold(dt, target, holding) {
   if (!holding || !target?.hold) { player.hold = null; return; }
   const h = target.hold;
   if (player.hold?.id !== h.id) player.hold = { id: h.id, t: 0, time: h.time };
-  player.hold.t += dt * (player.health === 'hurt' ? 0.8 : 1);
+  player.hold.t += dt * (player.health === 'hurt' ? 0.8 : 1) * holdSpeed(player);
   if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.hold.t >= h.time) { player.hold = null; h.done(); }
 }
@@ -309,7 +318,7 @@ function updateRepair(dt, target, holding) {
   if (!holding && player.repair && player.repair.t < 0.3 && target?.repair === player.repair.sys && !target.service) { const s = player.repair.sys; player.repair = null; openTape(s); return; }   // a quick click: the tape job
   if (!holding || !target?.repair) { player.repair = null; return; }
   if (player.repair?.sys !== target.repair) player.repair = { sys: target.repair, t: 0 };
-  player.repair.t += dt;
+  player.repair.t += dt * holdSpeed(player);
   if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.repair.t >= REPAIR_TIME) {
     if (target.service) { mission.maint.serviced = true; combatBanner(`${player.repair.sys.name} serviced — it won't break now`); }
@@ -325,7 +334,7 @@ function attack(mx, my) {
   const a = Math.atan2(my - player.y, mx - player.x), dx = Math.cos(a), dy = Math.sin(a);
   player.face = a;
   if (inv.weapon === 'laser') {
-    inv.cd = LASER_COOLDOWN;
+    inv.cd = LASER_COOLDOWN * (player.kit?.profession === 'security' ? 0.65 : 1);
     boarding.bolts.push({ x: player.x + dx * 0.4, y: player.y + dy * 0.4, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
     sfx.enemyShot();
   } else if (inv.weapon === 'repair') {

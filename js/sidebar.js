@@ -25,16 +25,16 @@ function encounterPlates() {
       : `in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'airlock'}`;
     add('inv' + uid(a), { icon: 'alien', title: 'INTRUDER', sub: `${where} · ${a.hp}/${ALIEN_HP} hp`, stripe: '#9cff5a', red: true });
   }
-  for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · ${Math.ceil((f.plasma ? PLASMA_TIME : FIRE_TIME) - f.t)} s${f.plasma ? ' · vent the room!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
+  for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · ${Math.ceil((f.plasma ? PLASMA_TIME : FIRE_TIME) - f.t)} s${f.plasma ? ' · vent it at the airlock panel!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
   for (const b of hz.breaches) add('breach' + b.room, { icon: 'breach', title: b.tarp ? 'TARPED BREACH' : 'HULL BREACH', sub: `${roomById(b.room).name}${b.tarp ? ' · holds until the next hit' : ' · weld a plate on outside'}`, stripe: b.tarp ? '#e8c34f' : '#7ab8ff', red: !b.tarp });
   if (hz.vent) add('vent', { icon: 'breach', title: 'VENTING', sub: `${roomById(hz.vent.room).name} · ${Math.ceil(hz.vent.t)} s`, stripe: '#7ab8ff', red: true });
   for (const id of hz.surges) add('surge' + id, { icon: 'surge', title: 'POWER SURGE', sub: `${lineName(LINE[id])} · splice it (repair kit)`, stripe: '#bfe8ff', red: true });
   for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the breaker`, stripe: '#7af0ff', red: true });
+  if (mission.active && mission.objective && !mission.over) { const o = objectiveStatus(); add('objective', { icon: 'jump', title: o.done ? 'OBJECTIVE ✔' : 'OBJECTIVE', sub: o.text, stripe: o.done ? '#5fd6a0' : '#ffe08a' }); }
   evaPlates(add);
   shipEventPlates(add);
   organicPlates(add);
   dockPlates(add);
-  for (const p of hz.pings) add('ping' + p.room, { icon: 'ping', title: 'HELP!', sub: `${p.name} · ${roomById(p.room).name}`, stripe: '#ffe08a', red: true });
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
   for (const s of SYSTEMS) if (s.broken) add('broken' + s.name, { icon: 'wrench', title: 'BROKEN', sub: s.name, stripe: '#e2574c', red: true });
@@ -126,7 +126,7 @@ function drawSidebarHeader(y) {
   ctx.fillText(`MISSION T+${fmt(mission.t)}`, x + 14, y + 15);
   const jumpIn = mission.jumpAt - mission.t;
   ctx.font = '800 18px system-ui, sans-serif'; ctx.fillStyle = mission.jump ? '#ffe08a' : '#f2f4f8';
-  ctx.fillText(mission.jump ? 'JUMPING…' : `JUMP IN ${fmt(jumpIn)}`, x + 14, y + 35);
+  ctx.fillText(mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : 'PRACTICE', x + 14, y + 35);
   ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
   ctx.fillText(mission.lastScan === null ? 'radar: not scanned (map table)' : `radar: scanned ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 54);
   // damage lights: one per broken system; more than MAX_DAMAGE loses the ship

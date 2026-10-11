@@ -511,6 +511,34 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   Deep drift gets the organic and ship-wide encounters. (Reworked into a campaign next.)
 - `node tests/dock.js`.
 
+### 8h. Campaign and progression (`js/progress.js`)
+- **Campaign** (`c1`–`c8`), each with a briefing, objective and pay: First Contract (defeat pirates,
+  $40 each, no intruder) → Strange Cargo (the intruder appears) → The Empty Lab (black box from
+  Dr. Varga's drifting lab) → Red Comet Cove (pirates took her) → Rescue Dr. Varga (pirate prison
+  barge) → Spore Season (living rock sample) → The Deep (coils + jump handle) → The Mother of All
+  (the leviathan). Each finished chapter unlocks the next.
+- **Rewards** (`computeRewards`): pay if the ship jumped (full with the objective, plus per pirate);
+  XP only if you're inside the ship and standing at the end (half without the objective);
+  reputation for finished objectives (+1 the first time). Levels at 100/250/450/… XP.
+- **Ship upgrades** (reputation, `SHIP_UPGRADES`): spare cell, coffee machine, fuel inserter (with a
+  handle to scooch the cells out of its reach), efficient cannons (4 shots), second repair kit,
+  faster airlocks, long-range radar, shield capacitors (3 s), bigger capacitors (5), reinforced
+  hull, sprinklers, auto-doc. Multiplayer: the union of everyone's upgrades.
+- **Gear** (money, `GEAR`) and **professions** (level 2+): paint, gravity boots, thrusters, armor
+  vest, stim pack, toolbelt; engineer, gunner, medic, security. Sent to the server with `hello`.
+- **Profile:** versioned, cookie + localStorage, `migrateProfile()` reads any older version (see
+  CLAUDE.md). Each browser credits its own player once per run (`mission.runId`).
+- **Lobby:** profile bar, Campaign / Skirmish / Practice tabs, briefing, Locker and Shipyard.
+- **Practice** (`js/practice.js`): free play with a panel of ~60 buttons for every encounter, damage,
+  mini-game, rule and tool. `tests/progress.js` runs every button.
+- Changes from feedback: no vent valves or intercoms. Plasma fires only happen in the two lower side
+  rooms (well charged capacitors), never spread out of the room, and are vented with a manual
+  override on the panel next to that room's outer airlock (it only lights up then). While such a room
+  has no pressure, its blast door to the reactor room is sealed for real (the cat lives there). The
+  patch board only works when a feed line arcs or a capacitor is broken.
+- Fixed: the first frame could tick with a negative dt; the diagnosis crashed in missions without a
+  maintenance failure.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

@@ -78,10 +78,29 @@ this should feel close to playing solo.
 | In a cannon | mouse to aim, left click / Space to fire, hold right click / Shift to raise cover, R or the button to reload (1 energy), the CLIMB DOWN button to leave |
 | Tab | hold for a ship overview |
 | M | mute (or the speaker button, top left) |
+| P | practice panel (in practice mode) |
 | ` | debug menu (spawn threats, teleport, …) |
 
 The prompt at the bottom of the screen always says what a click will do. (E still works as a
 shortcut for the prompt.)
+
+## Campaign, progression, practice
+
+- **Campaign:** eight chapters with a story (pirates, a stowaway alien, a kidnapped scientist, the
+  spore nebula, the deep). Each has a briefing and an objective; finishing one unlocks the next.
+- **Rewards:** if the ship jumps out, the crew gets paid (more when the objective is done; some
+  chapters pay per pirate). XP only if you're back aboard and on your feet at the end.
+  Reputation comes from finished objectives.
+- **Locker** (money): suit paint, gravity boots, suit thrusters, armor vest, stim pack, toolbelt;
+  from level 2 a profession (engineer, gunner, medic, security).
+- **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
+  bigger capacitors, shield capacitors, reinforced hull, sprinklers, auto-doc, … In multiplayer the
+  ship gets every upgrade anyone in the crew has bought.
+- Progress is saved in your browser (a cookie), separately for each player.
+- **Skirmish:** standalone missions, from the easy intro to Nightmare.
+- **Practice:** a free-play ship. The PRACTICE panel (button top right, or P) starts any encounter,
+  damage type or mini-game, toggles the harder rules, fills energy, repairs, gives items and
+  teleports you. The quickest way to try everything.
 
 ## Getting hurt
 

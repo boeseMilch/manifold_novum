@@ -42,7 +42,8 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 const WALK_SPEED = 4.2, WALK_ACCEL = 30;     // units/s, units/s²
 const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
 const CREW_R = 0.2;                          // half-size of the crew collision box
-const LOCK_DOOR_TIME = 0.55, LOCK_CYCLE = 1.3;   // deck airlock: per door, and pressure cycle
+const LOCK_DOOR_TIME = 0.55;
+let LOCK_CYCLE = 1.3;                        // deck airlock: per door, and pressure cycle (upgradeable)
 const HURT_SPEED = 0.6;                       // walking speed while hurt
 const HATCH_TIME = 1.6;                      // going through an outer airlock
 const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
@@ -109,8 +110,8 @@ function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.
 
 function updateCrew(c, dt, ix, iy) {
   if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
-  const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y));
-  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1) * crewSpeedMul(c) * (c.slow || 1);
+  const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y) && !perk(c, 'boots'));
+  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1) * crewSpeedMul(c) * (c.slow || 1) * gearSpeed(c);
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
   const k = Math.min(1, (floaty ? EVA_ACCEL * (eva ? 1 : 0.5) : WALK_ACCEL) * dt / speed);
   c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);
@@ -297,6 +298,8 @@ function updatePlayer(dt) {
     else if (hatch.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(hatch, 'Outer airlock') });
     else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
   } else if (dockAct()) {
+  } else if (doorway && doorway.blast && doorRooms(doorway).some(r => r.id === 'reactor')) {
+    act({ text: 'Blast door sealed — no pressure on the other side, and the cat lives in the reactor room. Go around.', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 } });
   } else if (doorway && doorway.blast) {
     act({ text: 'Click: blast door (vacuum behind it) — force it up for 5 s (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 },
           run: () => startOverride(doorway, 'Blast door', () => { doorway.blastHold = 5; doorway.blast = false; }) });
@@ -377,6 +380,7 @@ function runCommand(cmd) {
   else if (kind === 'reload') { if (player.mode === 'gun') reloadCannon(player.gun); }
   else if (kind === 'climbDown') climbDown();
   else if (kind === 'reboot') rebootSwitch(arg);
+  else if (kind === 'practice') runPractice(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
 }
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
@@ -603,6 +607,7 @@ function render(t) {
   drawHazardProps(t);
   drawEncounterProps(t);
   drawMinigameProps(t);
+  drawInserter(t);
   drawInteractMarkers(t);
   drawItems(t);
   drawFires(t);
@@ -783,10 +788,12 @@ function clientUpdate(dt) {
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
   music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm);
   miniClient(dt);
+  practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
   if (me.mode === 'gun' && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
+  if (mission.over) creditMission();                 // rewards for this browser's player (once per run)
   if (mission.over && localInput.pressed.has('KeyR')) backToLobby();
   if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? pickHover(me, m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
   updateSidebar(HUD_H, dt);
@@ -800,7 +807,7 @@ const NET = { on: false, frame: null };
 function backToLobby() { location.reload(); }
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = clamp((now - last) / 1000, 0, 0.05); last = now;   // (the first frame's timestamp can be a hair before `last`)
   if (NET.on) NET.frame(dt); else if (!lobbyOpen()) tick(dt); else clientUpdate(dt);
   render(now / 1000);
   requestAnimationFrame(frame);

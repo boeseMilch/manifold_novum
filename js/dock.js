@@ -38,6 +38,7 @@ function dockGeom(side) {
   };
 }
 const dockOn = () => !!dk.dock;
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const DG = () => dk.dock && dockGeom(dk.dock.side);
 function dockRects() {
   const g = DG();
@@ -61,6 +62,7 @@ function dockShip(kind, side, contents = {}) {
   dk.dock = { kind, side, doors: kind === 'derelict' ? [true, false] : [false, false], crate: kind === 'pirate' ? ['fuel', 'fuel'] : [], detachT: null, overloaded: false, fires: [] };
   const g = dockGeom(side);
   if (kind === 'pirate') {
+    if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, crumbs: [], face: 0, walk: 0 };
     for (let i = 0; i < 2; i++) dk.pirates.push({ uid: newUid(), x: g.entry.x + (side === 'port' ? -1 : 1) * i, y: g.y + (i ? 0.6 : -0.6), face: 0, walk: 0, hp: PIRATE_HP, carry: null, state: 'steal', cd: 1 + i, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 });
     combatBanner('The pirates docked at the ' + (side === 'port' ? 'left' : 'right') + ' airlock — they\'re coming aboard!'); sfx.explosion();
   } else {
@@ -94,6 +96,7 @@ function undock() {
 // The pirate raider: an enemy ship until it docks.
 ENEMY_TYPES.pirate = {
   ...ENEMY_TYPES.interceptor, name: 'Pirate raider', fire: [2.2, 3.4],
+  onHit(e) { if (e.pois.every(q => q.hit)) dk.defeated++; },   // a raider shot to scrap counts as a pirate defeated
   update(e, dt) {
     e.dockT = (e.dockT ?? DOCK_TIME) - dt;
     if (e.dockT <= 0 && !dk.dock && e.phase === 'fighting') { e.phase = 'gone'; dockShip('pirate', e.side); }
@@ -229,9 +232,9 @@ function updateDock(dt) {
       if (dd > 0.01) { N.x += dx / dd * sp; N.y += dy / dd * sp; N.face = Math.atan2(dy, dx); N.walk += sp * 3; }
       if (dd < 0.15) N.crumbs.shift();
     }
-    if (roomAt(N.x, N.y)) { N.state = 'safe'; N.crumbs = []; combatBanner('The engineer is safe aboard!'); sfx.win(); }
+    if (roomAt(N.x, N.y)) { N.state = 'safe'; N.crumbs = []; combatBanner(`${cap(npcName())} is safe aboard!`); sfx.win(); }
   }
-  if (N && N.state !== 'down') for (const b of boarding.bolts) if (b.owner !== 'crew' && Math.hypot(b.x - N.x, b.y - N.y) < 0.35) { b.dead = true; N.state = 'down'; N.crumbs = []; combatBanner('The engineer got hit — treat them again!'); }
+  if (N && N.state !== 'down') for (const b of boarding.bolts) if (b.owner !== 'crew' && Math.hypot(b.x - N.x, b.y - N.y) < 0.35) { b.dead = true; N.state = 'down'; N.crumbs = []; combatBanner(`${cap(npcName())} got hit — treat them again!`); }
   for (const c of crew) c.slow = c.inv.item === 'blackbox' ? 0.6 : 1;   // the black box is heavy
 }
 function sprayDock(a, dt) {                           // the extinguisher works on the derelict's fire
@@ -248,8 +251,8 @@ function dockClickTarget(mx, my) {
   const d = dk.dock, g = DG(), at = (p, r) => Math.hypot(mx - p.x, my - p.y) <= r;
   const N = dk.npc;
   if (N && N.state === 'down' && at(N, 0.55)) {
-    if (!near(N.x, N.y)) return { text: 'The engineer — get closer', ok: false, x: N.x, y: N.y, r: 0.55 };
-    return holdTarget('npc', TREAT_TIME, `Hold click: treat the engineer (${TREAT_TIME} s) — then they follow you`, N.x, N.y, 0.55,
+    if (!near(N.x, N.y)) return { text: `${cap(npcName())} — get closer`, ok: false, x: N.x, y: N.y, r: 0.55 };
+    return holdTarget('npc', TREAT_TIME, `Hold click: treat ${npcName()} (${TREAT_TIME} s) — then they follow you`, N.x, N.y, 0.55,
                       () => { N.state = 'follow'; N.leader = player.id; N.crumbs = []; combatBanner('"Thanks! Lead the way — I\'m right behind you."'); sfx.poi(); });
   }
   if (!d) return null;
@@ -345,7 +348,7 @@ function drawDock(t) {
   if (N) {
     if (N.state === 'down') { ctx.save(); ctx.translate(L(N.x), L(N.y)); ctx.rotate(Math.PI / 2); drawCrew(0, 0, 0, 0, true, '#e8e4dc'); ctx.restore(); }
     else drawCrew(L(N.x), L(N.y), N.face, N.walk, inVacuum(N.x, N.y) || inDock(N.x, N.y), '#e8e4dc');
-    ctx.fillStyle = '#ffe08a'; ctx.font = `700 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(N.state === 'down' ? 'ENGINEER (hurt)' : N.state === 'safe' ? 'ENGINEER — safe' : 'ENGINEER', L(N.x), L(N.y) - L(0.5)); ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffe08a'; ctx.font = `700 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; const nm = npcName().replace(/^the /, '').toUpperCase(); ctx.fillText(N.state === 'down' ? `${nm} (hurt)` : N.state === 'safe' ? `${nm} — safe` : nm, L(N.x), L(N.y) - L(0.5)); ctx.textAlign = 'left';
   }
   if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
 }
@@ -373,6 +376,6 @@ function dockPlates(add) {
   for (const e of combat.enemies) if (e.kind === 'pirate' && e.phase === 'fighting') add('dockT' + uid(e), { icon: 'frigate', title: 'PIRATES DOCKING', sub: `in ${Math.ceil(e.dockT ?? DOCK_TIME)} s unless driven off`, stripe: '#e2574c', red: true });
   if (dk.dock?.kind === 'pirate') add('pship', { icon: 'frigate', title: dk.dock.overloaded ? 'PIRATES CASTING OFF' : 'PIRATE SHIP DOCKED', sub: dk.dock.overloaded ? `in ${Math.ceil(dk.dock.detachT)} s — get off their ship!` : `${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · loot crate · jam their reactor`, stripe: '#e8c34f', red: !!dk.dock.overloaded });
   if (dk.dock?.kind === 'derelict') add('derelict', { icon: 'frigate', title: 'DERELICT', sub: `tethered at the ${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · no air inside`, stripe: '#7a8396' });
-  if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: 'ENGINEER', sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : 'following — lead them aboard', stripe: '#ffe08a', red: dk.npc.state === 'down' });
+  if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: npcName().replace(/^the /, '').toUpperCase(), sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : 'following — lead them aboard', stripe: '#ffe08a', red: dk.npc.state === 'down' });
   if (dk.rock) add('rock', { icon: 'asteroid', title: 'ORE ASTEROID', sub: 'front · drill it on a spacewalk', stripe: '#7af0ff' });
 }

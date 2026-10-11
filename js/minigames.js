@@ -66,7 +66,7 @@ function miniCommand(action, a, b) {
     }
   } else if (action === 'crank' && player.mode === 'gun') {
     const g = player.gun;
-    if (g.reload > 0) g.reload = Math.max(0.01, g.reload - Math.min(Math.abs(+a || 0), 3) * CRANK_K * (player.health === 'hurt' ? 0.6 : 1));
+    if (g.reload > 0) g.reload = Math.max(0.01, g.reload - Math.min(Math.abs(+a || 0), 3) * CRANK_K * (player.health === 'hurt' ? 0.6 : 1) * (player.kit?.profession === 'gunner' ? 1.5 : 1));
   }
 }
 
@@ -129,6 +129,7 @@ function minigameClickTarget(mx, my) {
   const at = (p, r) => Math.hypot(mx - p.x, my - p.y) <= r;
   if (at(PATCH_BOARD, 0.5)) {
     const t = { x: PATCH_BOARD.x, y: PATCH_BOARD.y, r: 0.5 };
+    if (!patchNeeded()) return { ...t, text: 'Patch board (only needed when a feed line arcs or a capacitor is broken)', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Patch board — get closer', ok: false };
     return { ...t, ok: true, text: 'Click: open the patch board (reroute the lever outputs)', run: openPatch };
   }
@@ -140,8 +141,10 @@ function minigameClickTarget(mx, my) {
   }
   return null;
 }
+// The patch board only matters when a feed line arcs or a capacitor is broken (or it's already rerouted).
+const patchNeeded = () => [0, 1, 2].some(i => surging('feed' + i) || capBroken(i)) || power.patch.some((c, i) => c !== i);
 function minigameSpots() {
-  return [{ x: PATCH_BOARD.x, y: PATCH_BOARD.y, r: 0.45 }, ...(mission.rules?.handle ? [{ x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, r: 0.4 }] : [])];
+  return [...(patchNeeded() ? [{ x: PATCH_BOARD.x, y: PATCH_BOARD.y, r: 0.45 }] : []), ...(mission.rules?.handle ? [{ x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, r: 0.4 }] : [])];
 }
 
 // ---------------------------------------------------------------------------
@@ -323,7 +326,8 @@ function drawCrank(g) {
 function drawMinigameProps(t) {
   const x = L(PATCH_BOARD.x), y = L(PATCH_BOARD.y);
   rr(x - 16, y - 12, 32, 24, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);
-  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x - 9 + i * 9, y - 4, 2.5, 0, TAU); ctx.fillStyle = ['#e2574c', '#e8c34f', '#3a8fc4'][i]; ctx.fill(); }
+  const live = patchNeeded();
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x - 9 + i * 9, y - 4, 2.5, 0, TAU); ctx.fillStyle = live ? ['#e2574c', '#e8c34f', '#3a8fc4'][i] : '#4a515e'; ctx.fill(); }
   ctx.fillStyle = 'rgba(232,236,244,0.7)'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('PATCH', x, y + 3);
   if (mission.rules?.handle) {
     const hx = L(JUMP_HANDLE.x), hy = L(JUMP_HANDLE.y), pull = mission.jump?.pull || 0;

@@ -303,7 +303,7 @@ function hurtInvader(a, dmg, stun = 0) {
   for (let i = 0; i < 8; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#9cff5a', 0.1);
   sfx.alienHurt();
   if (a.hp <= 0) {
-    a.dead = true;
+    a.dead = true; mission.kills = (mission.kills || 0) + 1;
     for (let i = 0; i < 30; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 1, i % 2 ? '#9cff5a' : '#5a2a6a', 0.16);
     combat.decals.push({ x: a.x, y: a.y, r: 0.6, goo: true });
     combatBanner('Intruder neutralized'); sfx.win();

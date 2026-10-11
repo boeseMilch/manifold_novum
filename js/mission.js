@@ -1,9 +1,11 @@
 // Mission script, radar, helm diagnosis, security console (door locks + manual override),
 // fires, and the win/lose rules. Units: layout units, times in seconds.
 
-const RADAR_RANGE = 45, MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
+let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
+const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
 const JUMP_DELAY = 60, JUMP_WINDOW = 15, MAX_DAMAGE = 3;
-const FIRE_TIME = 15, SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
+let FIRE_TIME = 15;
+const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
 
 const mission = {
   active: true, t: 0, events: [], revealed: new Set(), scanT: -10, lastScan: null,
@@ -120,7 +122,8 @@ function makeEvent(kind, t, target) {
   return ev;
 }
 const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
-function startMission(id = 'intro') {
+function startMission(id = 'intro', opts = {}) {
+  applyShipUpgrades(opts.ship || {});
   const candidates = SYSTEMS.filter(s => !s.broken);
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
@@ -132,7 +135,10 @@ function startMission(id = 'intro') {
     maint: { target, decoy, serviced: false },
   });
   if (mission.objective?.kind === 'ore' && !ITEMS.some(i => i.kind === 'drill')) ITEMS.push({ kind: 'drill', x: 4.2, y: 21.8 });   // the mining drill, left airlock room
-  mission.jumpAt = Math.max(...mission.events.map(e => e.t)) + JUMP_DELAY;
+  shipStartExtras(opts.ship || {});
+  mission.upgrades = { ...(opts.ship || {}) }; mission.runId = `${Date.now().toString(36)}-${newUid()}`; mission.kills = 0;
+  for (const c of crew) applyKit(c, c.kit);
+  mission.jumpAt = MISSIONS[id]?.practice ? Infinity : Math.max(...mission.events.map(e => e.t)) + JUMP_DELAY;
   combatBanner('Jumped into the hot zone. Survive until the jump drive is ready!');
 }
 
@@ -180,13 +186,14 @@ function objectiveStatus() {
   const o = mission.objective;
   if (!o) return { done: true };
   if (o.kind === 'blackbox') return { done: objectiveAboard('blackbox'), fail: 'without the black box', text: 'Bring the black box from the derelict aboard' };
-  if (o.kind === 'rescue') return { done: dk.npc?.state === 'safe', fail: 'without the engineer', text: 'Rescue the engineer from the derelict' };
+  if (o.kind === 'rescue') return { done: dk.npc?.state === 'safe', fail: `without ${npcName()}`, text: `Rescue ${npcName()}` };
   if (o.kind === 'ore') return { done: objectiveAboard('ore'), fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
+  if (o.kind === 'intruder') return { done: (mission.kills || 0) >= o.count, fail: 'with the intruder still alive', text: 'Kill the intruder' };
   if (o.kind === 'pirates') return { done: dk.defeated >= o.count, fail: `with only ${dk.defeated}/${o.count} pirates defeated`, text: `Defeat ${o.count} pirates (${dk.defeated} so far)` };
   return { done: true };
 }
 function endMission(won, reason, survived = won) {
-  mission.over = { won, reason, t: mission.t, survived };
+  mission.over = { won, reason, t: mission.t, survived, results: missionResults(!!survived) };
   for (const e of combat.enemies) e.stopCharge?.();
   if (won) sfx.win(); else sfx.explosion();
 }
@@ -209,6 +216,7 @@ function diagState(s) {
   const m = mission.maint;
   if (!mission.active || !m || m.serviced) return null;
   const ev = mission.events.find(e => e.kind === 'maintenance');
+  if (!ev) return null;                              // no maintenance failure in this mission
   if (s === m.target && !ev.done && ev.t - mission.t <= MAINT_WARNING) return { col: '#ff9a2e', text: `FAILING — breaks in ${Math.ceil(ev.t - mission.t)} s`, orange: true };
   if ((s === m.target && !ev.done) || s === m.decoy) return { col: '#ffd84a', text: 'irregular readings' };
   return null;
@@ -239,10 +247,10 @@ const burning = (s) => fires.some(f => f.sys === s && f.hp > 0);
 function igniteSystem(s, plasma = false) {
   if (!s || burning(s)) return false;
   if (sysRooms(s).some(r => vacuumRoom(r.id))) return false;            // no air, no fire
-  plasma = plasma || (!!mission.rules?.plasma && plasmaPart(s));
+  plasma = (plasma || (!!mission.rules?.plasma && plasmaPart(s))) && inPlasmaRoom(s);   // plasma fires only in the lower side rooms
   fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100, plasma });
   hz.stats.fires++;
-  if (plasma) { combatBanner(`PLASMA FIRE at the ${s.name.toLowerCase()}! Extinguishers won't do — vent the room.`); sfx.say?.('Plasma fire. Vent the room.'); }
+  if (plasma) { combatBanner(`PLASMA FIRE at the ${s.name.toLowerCase()}! Extinguishers won't do — vent the room at its airlock panel.`); sfx.say?.('Plasma fire. Vent the room.'); }
   else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
   return true;
 }
@@ -274,7 +282,7 @@ function updateFires(dt) {
     const pool = SYSTEMS.filter(s => s !== f.sys && !burning(s) && sysRooms(s).some(r => near.has(r)));
     const intact = pool.filter(s => !s.broken);
     const to = (intact.length ? intact : pool)[Math.floor(Math.random() * (intact.length || pool.length))];
-    if (to) igniteSystem(to, f.plasma); else if (!f.sys.broken) breakSystem(f.sys);
+    if (to) igniteSystem(to, f.plasma && sysRooms(to).some(r => sysRooms(f.sys).includes(r))); else if (!f.sys.broken) breakSystem(f.sys);   // (plasma stays in its room)
   }
   for (let i = fires.length - 1; i >= 0; i--) if (fires[i].hp <= 0) { scorch(fires[i].x, fires[i].y); hz.stats.firesOut++; fires.splice(i, 1); }
 }
@@ -597,7 +605,7 @@ function drawEndScreen() {
   ctx.fillStyle = o.won ? 'rgba(10,30,20,0.75)' : 'rgba(40,8,8,0.78)'; ctx.fillRect(0, 0, VW, VH);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = o.won ? '#7af0b0' : '#ff7a6a'; ctx.font = '800 48px system-ui, sans-serif';
-  ctx.fillText(o.won ? 'JUMP SUCCESSFUL' : 'MISSION FAILED', VW / 2, VH / 2 - 40);
+  ctx.fillText(o.won ? 'JUMP SUCCESSFUL' : o.survived ? 'JUMPED — OBJECTIVE FAILED' : 'MISSION FAILED', VW / 2, VH / 2 - 40);
   ctx.fillStyle = '#e8ecf4'; ctx.font = '18px system-ui, sans-serif'; ctx.fillText(o.reason, VW / 2, VH / 2 + 10);
   ctx.fillStyle = '#9aa3b5'; ctx.font = '14px system-ui, sans-serif';
   ctx.fillText(`Time ${fmt(o.t)} · hits taken: ${combat.hits.small} small, ${combat.hits.large} large, ${combat.hits.crew} crew · press R to play again`, VW / 2, VH / 2 + 46);
@@ -611,6 +619,7 @@ function drawEndScreen() {
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
   lines.forEach((l, i) => ctx.fillText(l, VW / 2, VH / 2 + 80 + i * 20));
   ctx.textAlign = 'left';
+  drawRewards(VW / 2, VH / 2 + 160);
 }
 // Click handling for panels (screen coords). Returns true if the click was used.
 function panelClick(mx, my) {

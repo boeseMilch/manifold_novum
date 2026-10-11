@@ -459,7 +459,7 @@ function drawPropDecor(t) {
   crate(U(42.4), U(3.6), U(1.0), U(0.9), -0.05, '#8a7a4a', 'AMMO');
   crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
   // Left airlock room: suits, extinguisher, flickering junk
-  suit(U(1.3), U(16.2), Math.PI / 2, '#e8e4dc'); suit(U(1.3), U(17.4), Math.PI / 2, '#d9a54a');
+  suit(U(1.3), U(15.9), Math.PI / 2, '#e8e4dc'); suit(U(1.3), U(16.9), Math.PI / 2, '#d9a54a');
   crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
   crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#8a5a4a');
   // Reactor

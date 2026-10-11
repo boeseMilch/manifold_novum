@@ -9,7 +9,7 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 
 const PORT = +process.argv[2] || +process.env.PORT || 8080;
 const ROOT = __dirname;
-const SCRIPTS = ['audio', 'music', 'art', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'sidebar', 'game', 'net'];
+const SCRIPTS = ['audio', 'music', 'art', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'progress', 'practice', 'sidebar', 'game', 'net'];
 const TICK = 1 / 60, SEND_EVERY = 2;                // simulate at 60 Hz, send snapshots at 30 Hz
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 
@@ -80,14 +80,15 @@ let phase = 'lobby', missionId = 'intro', game = null;
 const COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#c43a3a'];
 
 function lobbyState() {
-  return { t: 'lobby', phase, mission: missionId, players: [...clients].map(c => ({ id: c.id, name: c.name, color: COLORS[(c.id - 1) % COLORS.length] })) };
+  const unlocked = [...new Set([...clients].flatMap(c => c.unlocked || []))];
+  return { t: 'lobby', phase, mission: missionId, unlocked, players: [...clients].map(c => ({ id: c.id, name: c.name, color: COLORS[(c.id - 1) % COLORS.length], level: c.level || 1 })) };
 }
 const broadcast = (obj) => { const s = JSON.stringify(obj); for (const c of clients) sendFrame(c, s); };
 
 function join(c) {
   clients.add(c);
   send(c, { t: 'welcome', id: c.id });
-  if (phase === 'game') { game.sim.netServer.addCrew(c.id, c.name); send(c, { t: 'start', mission: missionId }); }
+  if (phase === 'game') { game.sim.netServer.addCrew(c.id, c.name, c.kit); send(c, { t: 'start', mission: missionId }); }
   broadcast(lobbyState());
 }
 function drop(c) {
@@ -98,7 +99,12 @@ function drop(c) {
   else broadcast(lobbyState());
 }
 function onMessage(c, m) {
-  if (m.t === 'hello') { c.name = String(m.name || 'Crew').slice(0, 20); if (game) { const cr = game.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; } broadcast(lobbyState()); }
+  if (m.t === 'hello') {
+    c.name = String(m.name || 'Crew').slice(0, 20);
+    if (m.kit && typeof m.kit === 'object') c.kit = m.kit;                  // the player's gear and profession (from their own saved profile)
+    if (m.ship && typeof m.ship === 'object') c.ship = m.ship;              // ship upgrades they bought
+    if (Array.isArray(m.unlocked)) c.unlocked = m.unlocked.map(String).slice(0, 50);
+    c.level = +m.level || 1; if (game) { const cr = game.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; } broadcast(lobbyState()); }
   else if (m.t === 'mission' && phase === 'lobby' && game === null) { missionId = String(m.id); broadcast(lobbyState()); }
   else if (m.t === 'start' && phase === 'lobby') startGame();
   else if (m.t === 'input' && game) game.sim.netServer.input(c.id, m);
@@ -124,8 +130,9 @@ function makeSim() {
 function startGame() {
   const sim = makeSim();
   const sfx = sim.netCaptureSfx();
-  sim.netServer.init(missionId);
-  for (const c of clients) sim.netServer.addCrew(c.id, c.name);
+  const ship = Object.assign({}, ...[...clients].map(c => c.ship || {}));       // the crew's ship has every upgrade anyone bought
+  sim.netServer.init(missionId, ship);
+  for (const c of clients) sim.netServer.addCrew(c.id, c.name, c.kit);
   phase = 'game';
   game = { sim, sfx, tick: 0, last: Date.now(), acc: 0 };
   broadcast({ t: 'start', mission: missionId });

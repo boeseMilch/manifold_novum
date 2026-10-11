@@ -4,7 +4,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
   'clickTarget', 'inv', 'fires', 'SYSTEMS', 'igniteSystem', 'spray', 'startVent', 'pressShield', 'combat', 'surgeColumn', 'LINE', 'linePoint',
-  'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'INTERCOMS', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENTS'];
+  'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENT_PANELS', 'CAP_MAX'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -64,32 +64,39 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(!G.hz.breaches.length, 'missions without the breach rule never breach (easy missions)');
 }
 {
-  const G = fresh({ breach: true }); G.breachRoom('portLock'); tickN(G, 30);
-  const me = G.me, d = G.DOORWAYS[2]; me.x = d.x + d.w + 0.5; me.y = d.y + d.h / 2; G.simTick(DT);
-  check(/blast door/.test(me.prompt?.text || ''), `next to a blast door you can force it ("${me.prompt?.text}")`);
+  const G = fresh({ breach: true }); G.breachRoom('portGun'); tickN(G, 30);
+  const me = G.me, d = G.DOORWAYS[0]; me.x = d.x + d.w + 0.5; me.y = d.y + d.h / 2; G.simTick(DT);
+  check(/force it up/.test(me.prompt?.text || ''), `next to a blast door (not to the reactor room) you can force it ("${me.prompt?.text}")`);
 }
-// --- plasma fire and venting
+// --- plasma fire and venting (only in the lower side rooms)
 {
   const G = fresh({ plasma: true });
-  const reactor = G.SYSTEMS.find(s => s.kind === 'reactor');
-  G.igniteSystem(reactor);
+  G.igniteSystem(G.SYSTEMS.find(s => s.kind === 'reactor'));
+  check(G.fires[0] && !G.fires[0].plasma, 'the reactor room never gets a plasma fire (the cat lives there)');
+  G.fires.length = 0; G.CAPACITORS[0].charge = 3;
+  G.igniteSystem(G.SYSTEMS.find(s => s.ref === G.CAPACITORS[0]));
   const f = G.fires[0];
-  check(f?.plasma, 'a fire on the reactor is a plasma fire (on missions with plasma fires)');
+  check(f?.plasma, 'a fire on a well charged capacitor in a lower side room is a plasma fire');
   const me = G.me; me.x = f.x + 1.5; me.y = f.y; G.withCrew(me, () => { G.inv.weapon = 'extinguisher'; for (let i = 0; i < 600; i++) G.spray(f.x, f.y, DT); });
   check(f.hp >= 0.6, `the extinguisher can't put it out (hp ${f.hp.toFixed(2)})`);
-  me.x = 22; me.y = 17;
-  G.startVent('reactor');
+  const [px, py] = G.VENT_PANELS.portLock; me.x = px + 0.9; me.y = py; G.simTick(DT);
+  const t = G.withCrew(me, () => G.clickTarget(px, py));
+  check(t?.ok && /vent/i.test(t.text), 'the panel next to the outer airlock lights up: vent the room (manual override)');
+  me.x = 6; me.y = 19;
+  G.startVent('portLock');
   check(me.health === 'hurt', 'venting hurts anyone still in the room');
   G.updateFires(DT);
-  check(!G.fires.length && G.vacuumRoom('reactor'), 'venting blows the plasma fire out; the room is in vacuum for a while');
+  check(!G.fires.length && G.vacuumRoom('portLock'), 'venting blows the plasma fire out; the room is in vacuum for a while');
+  me.x = 13; me.y = 19; me.health = 'ok'; tickN(G, 30);
+  check(/sealed/.test(me.prompt?.text || '') && !me.prompt.run, 'the blast door to the reactor room is sealed for real (no override)');
   tickN(G, 60 * 13);
-  check(!G.vacuumRoom('reactor'), 'after 10 s the vent closes again');
+  check(!G.vacuumRoom('portLock'), 'after 10 s the airlock closes again');
   check(G.combat.decals.some(d => d.scorch), 'the fire leaves a scorch mark');
 }
 {
-  const G = fresh({}); const me = G.me; const [vx, vy] = G.VENTS.reactor; me.x = vx + 0.6; me.y = vy;
-  const t = G.withCrew(me, () => G.clickTarget(vx, vy));
-  check(/EMERGENCY VENT/.test(t?.text || ''), 'every room has an emergency vent valve (manual override)');
+  const G = fresh({}); const me = G.me; const [px, py] = G.VENT_PANELS.starLock; me.x = px - 0.9; me.y = py;
+  const t = G.withCrew(me, () => G.clickTarget(px, py));
+  check(t && !t.ok, 'without a plasma fire the vent panel does nothing');
 }
 // --- surges
 {
@@ -124,8 +131,6 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(me.hurtT < h0 - 9 && G.CAPACITORS[0].charge === 1, 'a snack (1 energy) makes being hurt end 10 s sooner');
   me.x = G.COFFEE_MUG.x; me.y = G.COFFEE_MUG.y + 1.2; m.wx = G.COFFEE_MUG.x; m.wy = G.COFFEE_MUG.y; m.click = true; G.simTick(DT);
   check(me.coffeeT > 14 && G.hz.coffee < 0.01, 'coffee: a speed boost for 15 s, and the mug is empty');
-  const [ix, iy] = G.INTERCOMS.reactor; me.x = ix; me.y = iy + 1; m.wx = ix; m.wy = iy; m.click = true; G.simTick(DT);
-  check(G.hz.pings.some(p => p.room === 'reactor'), 'the intercom calls for help (a plate on everyone\'s sidebar)');
   const pc = G.PLATE_CRATES[0]; me.x = pc.x; me.y = pc.y - 1; m.wx = pc.x; m.wy = pc.y; m.click = true; G.simTick(DT);
   check(me.inv.item === 'plate' && G.hz.plates === 3, 'hull plates come from the crates in the airlock rooms');
 }

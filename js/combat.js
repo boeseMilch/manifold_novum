@@ -2,7 +2,8 @@
 // hit flashes and the combat HUD. Units: layout units (world == ship frame).
 
 const SHELL_SPEED = 45, SHELL_LIFE = 1.7, CANNON_COOLDOWN = 0.45;
-const SHIELD_UP_TIME = 2, SHIELD_COOLDOWN = 10;   // cooldown starts once the shield drops
+let SHIELD_UP_TIME = 2;                              // (ship upgrades: see progress.js)
+const SHIELD_COOLDOWN = 10;                          // cooldown starts once the shield drops
 const SWARM_SIZE = 2, SWARM_INTERVAL = 6;
 const ASTEROID_WEAR = 4;                         // body hits that split a big asteroid even without hitting the crack
 

@@ -10,6 +10,17 @@ Whenever you finish a request from the user, commit the result before reporting 
   changed and why.
 - Don't push. There is no remote unless the user adds one.
 
+## Saved progress must stay backwards compatible
+
+Every player's progress (XP, money, reputation, upgrades, gear, finished chapters) is saved in
+their own browser (cookie `mn-profile`, mirrored to localStorage; see `js/progress.js`).
+
+- Never rename or remove a profile field, or change what a value means, without a migration.
+- When the format changes: bump `PROFILE_VERSION` and add a step in `migrateProfile()` that turns
+  every older version into the new one. Unknown fields must be kept, missing ones defaulted.
+- Upgrade, gear and mission ids are stored in saves: don't rename them; add new ones instead.
+- `tests/progress.js` loads old-style profiles; add a case for every migration.
+
 ## Pointers
 
 - `README.md`: how to run the game (solo, or `node server.js` for LAN multiplayer).

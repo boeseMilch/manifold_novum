@@ -29,6 +29,39 @@
                  border: 2px solid #ff8a7a; background: #8e2f22; color: #fff; }
   #lobby-start:hover { background: #b8402e; }
   #lobby-status { margin-top: 10px; font-size: 12px; color: #c9ced8; text-align: center; }
+  .plate { max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; }
+  #lobby .plate { width: min(760px, calc(100vw - 32px)); }
+  #lobby .plate::before, #lobby .plate::after { box-shadow: calc(min(760px, 100vw - 32px) - 26px) 0 #2b303a; }
+  #lobby-profile { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: #dfe4ec; margin-top: 6px; }
+  #lobby-profile .bar { width: 120px; height: 8px; border-radius: 4px; background: #1c2028; border: 1px solid #14161b; overflow: hidden; }
+  #lobby-profile .bar i { display: block; height: 100%; background: #5fd6a0; }
+  #lobby-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+  #lobby-tabs button, .row button { flex: 1; padding: 8px; font: 700 13px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
+  #lobby-tabs button.chosen { background: #1d4a36; border-color: #5fd6a0; }
+  .row { display: flex; gap: 8px; margin-top: 12px; }
+  #lobby-missions { grid-template-columns: 1fr 1fr; }
+  .mission em { font-style: normal; color: #ffd38a; font-size: 12px; } .mission em.done { color: #5fd6a0; }
+  .mission.locked { opacity: 0.45; cursor: not-allowed; }
+  #lobby-brief { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: #1c2028; border: 2px solid #14161b; font-size: 13px; line-height: 1.45; color: #dfe4ec; }
+  #lobby-brief h3 { margin: 2px 0 6px; font-size: 15px; } #lobby-brief p { margin: 0 0 8px; } #lobby-brief .obj { color: #ffe08a; margin: 0; }
+  #shop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,6,12,0.7); color: #e8ecf4; z-index: 5; }
+  #shop[hidden] { display: none; }
+  #shop .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #shop .item { text-align: left; padding: 10px 12px; border-radius: 8px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; font: inherit; }
+  #shop .item b { display: block; font-size: 14px; margin-bottom: 3px; } #shop .item span { font-size: 12px; color: #c9ced8; }
+  #shop .item.chosen { background: #1d4a36; border-color: #5fd6a0; } #shop .item:disabled { opacity: 0.5; cursor: default; }
+  #shop .item.chosen:disabled { opacity: 1; }
+  #shop h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: 1px; color: #dfe4ec; }
+  #shop .paints { display: flex; gap: 6px; flex-wrap: wrap; } #shop .paint { width: 30px; height: 30px; border-radius: 50%; border: 3px solid #14161b; cursor: pointer; }
+  #shop .paint.chosen { border-color: #fff; } #shop .note { font-size: 12px; color: #9aa3b5; }
+  #practice-btn { position: fixed; top: 44px; right: 250px; z-index: 4; padding: 7px 12px; font: 800 12px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #5fd6a0; background: #1d4a36; color: #fff; cursor: pointer; }
+  #practice { position: fixed; top: 80px; right: 14px; bottom: 14px; width: 270px; overflow: auto; z-index: 4; padding: 8px 12px; border-radius: 10px; background: rgba(14,17,24,0.94); border: 2px solid #5fd6a0; color: #e8ecf4; font-family: system-ui, sans-serif; }
+  #practice[hidden] { display: none; }
+  #practice h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: 1px; color: #9aa3b5; }
+  #practice .grp { display: grid; gap: 4px; }
+  #practice button { text-align: left; padding: 6px 9px; font: 13px system-ui, sans-serif; border-radius: 5px; border: 1px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
+  #practice button:hover { background: #3a4252; }
+  #shop-close { margin-top: 14px; width: 100%; padding: 10px; font: 800 14px system-ui, sans-serif; border-radius: 8px; border: 2px solid #5fd6a0; background: #1d4a36; color: #fff; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -39,12 +72,23 @@
     <p class="sub">Jump in, keep the duct tape coming, jump out.</p>
     <label for="lobby-name">YOUR NAME</label>
     <input id="lobby-name" maxlength="20" autocomplete="off">
+    <div id="lobby-profile"></div>
     <label>MISSION</label>
+    <div id="lobby-tabs"><button data-tab="campaign">CAMPAIGN</button><button data-tab="skirmish">SKIRMISH</button><button data-tab="practice">PRACTICE</button></div>
     <div id="lobby-missions"></div>
+    <div id="lobby-brief"></div>
     <label>CREW</label>
     <ul id="lobby-players"><li>just you</li></ul>
+    <div class="row"><button id="lobby-locker">LOCKER (gear)</button><button id="lobby-shipyard">SHIPYARD (upgrades)</button></div>
     <button id="lobby-start">START MISSION</button>
     <div id="lobby-status">Solo</div>
+  </div>
+</div>
+<div id="shop" hidden>
+  <div class="plate">
+    <h1 id="shop-title" style="font-size:20px">LOCKER</h1>
+    <div id="shop-body"></div>
+    <button id="shop-close">DONE</button>
   </div>
 </div>
 <script src="js/audio.js"></script>
@@ -64,6 +108,8 @@
 <script src="js/minigames.js"></script>
 <script src="js/organic.js"></script>
 <script src="js/dock.js"></script>
+<script src="js/progress.js"></script>
+<script src="js/practice.js"></script>
 <script src="js/sidebar.js"></script>
 <script src="js/game.js"></script>
 <script src="js/net.js"></script>

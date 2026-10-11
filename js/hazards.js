@@ -12,27 +12,28 @@ const hz = {
   vent: null,                              // { room, t } a room being vented
   surges: [],                              // ids of power lines that arc
   noGrav: [],                              // room ids whose gravity plating failed
-  pings: [],                               // intercom calls { room, name, t }
   tape: 3, plates: 4,                      // duct tape rolls, hull plates left
   coffee: 1,                               // the helm mug: 1 = full; refills itself (someone makes more)
   stats: { fires: 0, firesOut: 0, breaches: 0, repairs: 0, pets: 0, treated: {} },
 };
 const BREACH_TIME = 8, TARP_TIME = 15, WELD_TIME = 6, LEAK_TIME = 20, REPRESS_TIME = 2, VENT_TIME = 10;
-const SPLICE_TIME = 5, GRAV_TIME = 4, VACUUM_SPEED = 0.7, COFFEE_TIME = 15, COFFEE_SPEED = 1.15, COFFEE_REFILL = 60;
+const SPLICE_TIME = 5, GRAV_TIME = 4, VACUUM_SPEED = 0.7, COFFEE_TIME = 15, COFFEE_SPEED = 1.15;
+let COFFEE_REFILL = 60;
 const PLASMA_TIME = 6;
 
 // Where each room can be holed: a spot on its outer wall (inside), and where to weld it from outside.
 const BREACH_SPOTS = {
   portGun: { x: 0.9, y: 10.4, out: [-0.8, 10.4], side: 'port' },
-  portLock: { x: 0.9, y: 21.0, out: [-0.8, 21.0], side: 'port' },
+  portLock: { x: 0.9, y: 21.3, out: [-0.8, 21.3], side: 'port' },
   bridge: { x: 20.2, y: -2.0, out: [20.2, -3.9], side: 'front' },
   starGun: { x: 43.5, y: 10.6, out: [45.2, 10.6], side: 'star' },
-  starLock: { x: 43.5, y: 17.6, out: [45.2, 17.6], side: 'star' },
+  starLock: { x: 43.5, y: 21.3, out: [45.2, 21.3], side: 'star' },
 };
 // Emergency vent valves (one per room) and the gravity breaker panels (under a floor plate).
-const VENTS = { portGun: [13.25, 9.6], bridge: [29.8, 10.6], starGun: [31.3, 10.8], portLock: [9.2, 22.9], reactor: [14.8, 21.6], starLock: [40.8, 23.1] };
+// Plasma fires only happen in the lower side rooms; the panel next to that room's outer airlock vents it.
+const VENT_PANELS = { portLock: [0.85, 17.75], starLock: [43.55, 17.95] };
+const PLASMA_ROOMS = new Set(Object.keys(VENT_PANELS));
 const GRAV_PANELS = { portGun: [6.0, 9.6], bridge: [19.0, 8.6], starGun: [36.0, 9.2], portLock: [9.6, 19.6], reactor: [26.6, 21.2], starLock: [35.4, 18.0] };
-const INTERCOMS = { portGun: [6.3, 3.6], bridge: [14.45, 3.2], starGun: [31.05, 4.4], portLock: [9.5, 15.2], reactor: [19.5, 15.2], starLock: [40.0, 15.2] };
 const SNACK = { x: 10.5, y: 3.85 };
 const PLATE_CRATES = [{ x: 12.6, y: 22.4 }, { x: 33.1, y: 22.8 }];
 const COFFEE_MUG = { x: 22.75, y: -2.1 };
@@ -141,7 +142,9 @@ function updateBreaches(dt) {
 // ---------------------------------------------------------------------------
 // Plasma fire and venting
 // ---------------------------------------------------------------------------
-const plasmaPart = (s) => s.kind === 'reactor' || (s.kind === 'capacitor' && s.ref.charge >= 3);
+const inPlasmaRoom = (s) => sysRooms(s).some(r => PLASMA_ROOMS.has(r.id));
+const plasmaPart = (s) => inPlasmaRoom(s) && s.kind === 'capacitor' && s.ref.charge >= 3;   // a well charged capacitor in a lower side room
+const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));
 function startVent(roomId) {
   hz.vent = { room: roomId, t: VENT_TIME };
   const room = roomById(roomId);
@@ -152,7 +155,7 @@ function startVent(roomId) {
 }
 function updateVent(dt) {
   if (!hz.vent) return;
-  const room = roomById(hz.vent.room), [vx, vy] = VENTS[hz.vent.room];
+  const room = roomById(hz.vent.room), [vx, vy] = VENT_PANELS[hz.vent.room] || roomCenter(room);
   if (Math.random() < dt * 20) combatFx(vx + (Math.random() - 0.5), vy + (Math.random() - 0.5), (Math.random() - 0.5) * 2, -2 - Math.random() * 3, 0.7, '#dfe8f0', 0.2);
   if ((hz.vent.t -= dt) <= 0) { hz.vent = null; hz.repress = { room: room.id, t: REPRESS_TIME }; combatBanner(`${room.name}: vent closed, repressurizing`); }
 }
@@ -197,13 +200,11 @@ function updateHazards(dt) {
   updateBlastDoors(dt);
   updateBreaches(dt);
   updateVent(dt);
-  for (const p of hz.pings) p.t -= dt;
-  hz.pings = hz.pings.filter(p => p.t > 0);
   if (hz.coffee < 1) hz.coffee = Math.min(1, hz.coffee + dt / COFFEE_REFILL);
   for (const c of crew) c.coffeeT = Math.max(0, (c.coffeeT || 0) - dt);
 }
 function resetHazards() {
-  Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], floating: [], vent: null, surges: [], noGrav: [], pings: [], tape: 3, plates: 4, coffee: 1, repress: null,
+  Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], floating: [], vent: null, surges: [], noGrav: [], tape: 3, plates: 4, coffee: 1, repress: null,
                       stats: { fires: 0, firesOut: 0, breaches: 0, repairs: 0, pets: 0, treated: {} } });
 }
 
@@ -240,20 +241,14 @@ function hazardClickTarget(mx, my) {
     return holdTarget('grav' + id, GRAV_TIME, `Hold click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
                       () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); });
   }
-  // emergency vent valves
-  for (const [id, [x, y]] of Object.entries(VENTS)) {
-    if (!at(x, y, 0.55)) continue;
-    if (!near(x, y)) return { text: 'Emergency vent — get closer', ok: false, x, y, r: 0.55 };
-    if (hz.vent) return { text: 'A room is already being vented', ok: false, x, y, r: 0.55 };
-    return { text: 'Click: EMERGENCY VENT this room (manual override) — anyone still inside gets hurt', ok: true, x, y, r: 0.55,
-             run: () => startOverride({ vent: id }, 'Emergency vent', () => startVent(id)) };
-  }
-  // intercoms
-  for (const [id, [x, y]] of Object.entries(INTERCOMS)) {
-    if (!at(x, y, 0.45)) continue;
-    if (!near(x, y)) return { text: 'Intercom — get closer', ok: false, x, y, r: 0.45 };
-    return { text: 'Click: call for help on the intercom', ok: true, x, y, r: 0.45,
-             run: () => { hz.pings = hz.pings.filter(p => p.room !== id); hz.pings.push({ room: id, name: player.name, t: 15 }); sfx.alarm(); combatBanner(`${player.name}: "Help in the ${roomById(id).name.toLowerCase()}!"`); } };
+  // plasma fire in a lower side room: the panel next to its outer airlock vents the room (manual override)
+  for (const [id, [x, y]] of Object.entries(VENT_PANELS)) {
+    if (!at(x, y, 0.5)) continue;
+    if (!near(x, y)) return { text: 'Airlock vent panel — get closer', ok: false, x, y, r: 0.5 };
+    if (!plasmaIn(id)) return { text: 'Airlock vent panel (only for plasma fires in this room)', ok: false, x, y, r: 0.5 };
+    if (hz.vent) return { text: 'The room is already being vented', ok: false, x, y, r: 0.5 };
+    return { text: 'Click: open BOTH airlock doors to vent the plasma fire (manual override) — anyone still inside gets hurt', ok: true, x, y, r: 0.5,
+             run: () => startOverride({ vent: id }, 'Airlock vent', () => startVent(id)) };
   }
   // snack machine: costs 1 energy from the left capacitor, shortens being hurt
   if (at(SNACK.x, SNACK.y, 0.6)) {
@@ -309,8 +304,7 @@ function hazardSpots() {
     ...hz.breaches.filter(b => !b.tarp).map(b => ({ x: BREACH_SPOTS[b.room].x, y: BREACH_SPOTS[b.room].y, r: 0.6 })),
     ...hz.surges.map(id => { const [x, y] = linePoint(LINE[id], 0.5); return { x, y, r: 0.5 }; }),
     ...hz.noGrav.map(id => ({ x: GRAV_PANELS[id][0], y: GRAV_PANELS[id][1], r: 0.5 })),
-    ...Object.values(VENTS).map(([x, y]) => ({ x, y, r: 0.4 })),
-    ...Object.values(INTERCOMS).map(([x, y]) => ({ x, y, r: 0.3 })),
+    ...Object.entries(VENT_PANELS).filter(([id]) => plasmaIn(id)).map(([, [x, y]]) => ({ x, y, r: 0.4 })),
     { x: SNACK.x, y: SNACK.y, r: 0.6 }, { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.3 },
     ...PLATE_CRATES.filter(() => hz.plates > 0).map(p => ({ x: p.x, y: p.y, r: 0.6 })),
   ];
@@ -368,29 +362,13 @@ function combatFxLocal(x, y, t) {                      // a puff of escaping air
   ctx.fillStyle = `rgba(220,235,250,${0.35 * (1 - k)})`; ctx.fill();
 }
 function drawHazardProps(t) {
-  // vent valves: red wheels with a hazard plate
-  for (const [id, [vx, vy]] of Object.entries(VENTS)) {
-    const x = L(vx), y = L(vy), on = hz.vent?.room === id;
-    hazardStripe(x - 14, y - 14, 28, 28);
-    ctx.beginPath(); ctx.arc(x, y, 11, 0, TAU); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);
-    ctx.save(); ctx.translate(x, y); ctx.rotate(on ? t * 6 : 0.3);
-    ctx.strokeStyle = '#e2574c'; ctx.lineWidth = 3.5;
-    ctx.beginPath(); ctx.arc(0, 0, 8, 0, TAU); ctx.stroke();
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(i * TAU / 3) * 8, Math.sin(i * TAU / 3) * 8); ctx.stroke(); }
-    ctx.restore();
-    ctx.fillStyle = 'rgba(255,160,140,0.8)'; ctx.font = `800 ${T * 0.1}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText('VENT', x, y + 15); ctx.textAlign = 'left';
-  }
-  // intercoms: small wall boxes with a speaker grille and a button
-  for (const [id, [ix, iy]] of Object.entries(INTERCOMS)) {
-    const x = L(ix), y = L(iy), ping = hz.pings.find(p => p.room === id);
-    rr(x - 9, y - 7, 18, 14, 3); ctx.fillStyle = '#4b5263'; ctx.fill(); stroke(1.5);
-    ctx.fillStyle = '#2b303a'; for (let i = 0; i < 3; i++) ctx.fillRect(x - 6, y - 4 + i * 3, 8, 1.5);
-    ctx.beginPath(); ctx.arc(x + 5, y, 2.6, 0, TAU); ctx.fillStyle = ping && Math.sin(t * 10) > 0 ? '#ffe08a' : '#e2574c'; ctx.fill();
-    if (ping) {                                      // a call: rings spreading out
-      const k = (t * 1.5) % 1;
-      ctx.beginPath(); ctx.arc(x, y, 10 + k * 30, 0, TAU); ctx.strokeStyle = `rgba(255,224,138,${1 - k})`; ctx.lineWidth = 2.5; ctx.stroke();
-    }
+  // the vent panels next to the outer airlocks: dark until a plasma fire burns in that room
+  for (const [id, [vx, vy]] of Object.entries(VENT_PANELS)) {
+    const x = L(vx), y = L(vy), live = plasmaIn(id), on = hz.vent?.room === id;
+    rr(x - 9, y - 12, 18, 24, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(1.5);
+    hazardStripe(x - 7, y - 10, 14, 5);
+    ctx.beginPath(); ctx.arc(x, y + 3, 4.5, 0, TAU); ctx.fillStyle = on ? '#7ab8ff' : live ? (Math.sin(t * 8) > 0 ? '#ff4a3a' : '#7a1a14') : '#2b303a'; ctx.fill(); stroke(1);
+    if (live) { ctx.fillStyle = 'rgba(255,170,150,0.9)'; ctx.font = `800 ${T * 0.1}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('VENT', x, y + 13); ctx.textAlign = 'left'; }
   }
   // snack machine
   {

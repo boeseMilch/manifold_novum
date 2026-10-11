@@ -18,7 +18,7 @@ function netSerialize() {
       gun: c.gun?.id || null,
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
       repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen },
-      health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, slow: c.slow,
+      health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, slow: c.slow, kit: c.kit, armor: c.armor,
       ui: { panel: c.ui.panel, mini: c.ui.mini, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
     })),
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
@@ -93,6 +93,7 @@ function netApply(s, myId) {
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
   Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc); Object.assign(org, s.org); Object.assign(dk, s.dk);
+  if (JSON.stringify(s.mission.upgrades || {}) !== JSON.stringify(mission.upgrades || {})) applyShipUpgrades(s.mission.upgrades || {});   // (HUD numbers like shots per energy)
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
     events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined })),
@@ -136,11 +137,12 @@ function netPlaySfx(events) {
 // Server side (runs inside the server's simulation sandbox)
 // ---------------------------------------------------------------------------
 const netServer = {
-  init(missionId) { crew.length = 0; startMission(missionId); },
-  addCrew(id, name) {
+  init(missionId, ship) { crew.length = 0; startMission(missionId, { ship }); },
+  addCrew(id, name, kit) {
     const spots = [[22.2, 4.5], [20.2, 8], [24.2, 8], [18.5, 4], [26, 4], [22.2, 9.5], [16.5, 8.5], [28, 8.5]];
     const [x, y] = spots[crew.length % spots.length];
     const c = makeCrew(name, x, y); c.id = id; c.color = CREW_COLORS[(id - 1) % CREW_COLORS.length];
+    applyKit(c, kit);
     crew.push(c);
   },
   removeCrew(id) {
@@ -176,25 +178,21 @@ function netClientMain() {
   if (!nameBox.value) nameBox.value = ['Ripley', 'Spock', 'Zoe', 'Bender', 'Kaylee', 'Chewie', 'Marvin', 'Data'][Math.floor(Math.random() * 8)];
   const saveName = () => { try { localStorage.setItem('mn-name', nameBox.value); } catch (e) { /* no storage */ } };
 
-  // mission cards
-  const list = $('lobby-missions');
-  for (const [id, m] of Object.entries(MISSIONS)) {
-    const b = document.createElement('button');
-    b.className = 'mission'; b.dataset.id = id;
-    b.innerHTML = `<b>${m.name}</b><span>${m.blurb}</span>`;
-    b.onclick = () => { chosen = id; if (ws) ws.send(JSON.stringify({ t: 'mission', id })); markChosen(); };
-    list.appendChild(b);
-  }
-  const markChosen = () => list.querySelectorAll('.mission').forEach(b => b.classList.toggle('chosen', b.dataset.id === chosen));
+  // mission cards, briefing, profile, locker and shipyard (progress.js)
+  const hello = () => ws && ws.readyState === 1 && ws.send(JSON.stringify({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()], level: levelOf(profile.xp) }));
+  const pick = (id) => { chosen = id; if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'mission', id })); };
+  lobbyUI.init(pick, hello);
+  const markChosen = () => { lobbyUI.tab = CAMPAIGN.includes(chosen) ? 'campaign' : chosen === 'practice' ? 'practice' : 'skirmish'; lobbyUI.render(chosen); };
+  chosen = CAMPAIGN.find(id => unlockedMissions().has(id) && !profile.done[id]) || 'c1';
   markChosen();
 
-  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; startMission(chosen); };
+  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship }); };
   $('lobby-start').onclick = () => {
     saveName();
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'start' }));
     else startSolo();
   };
-  nameBox.onchange = () => { saveName(); if (ws) ws.send(JSON.stringify({ t: 'hello', name: nameBox.value })); };
+  nameBox.onchange = () => { saveName(); hello(); };
 
   const q = new URLSearchParams(location.search);    // dev: ?mission=rush&autostart
   if (q.get('mission') && MISSIONS[q.get('mission')]) { chosen = q.get('mission'); markChosen(); }
@@ -208,7 +206,7 @@ function netClientMain() {
   $('lobby-status').textContent = 'Connecting…';
   const fail = setTimeout(() => { if (ws.readyState !== 1) { ws.close(); ws = null; $('lobby-status').textContent = 'No server found — playing solo'; } }, 2000);
   ws.onopen = () => {
-    clearTimeout(fail); ws.send(JSON.stringify({ t: 'hello', name: nameBox.value })); $('lobby-status').textContent = 'Connected';
+    clearTimeout(fail); hello(); $('lobby-status').textContent = 'Connected';
     const q = new URLSearchParams(location.search);                // dev: ?mission=rush&autostart
     if (q.get('mission')) ws.send(JSON.stringify({ t: 'mission', id: q.get('mission') }));
     if (q.has('autostart')) ws.send(JSON.stringify({ t: 'start' }));
@@ -219,8 +217,8 @@ function netClientMain() {
     if (m.t === 'welcome') myId = m.id;
     else if (m.t === 'lobby') {
       if (phase === 'game') { if (m.phase === 'lobby') location.reload(); return; }   // mission over: fresh page, rejoin the lobby
-      chosen = m.mission; markChosen();
-      $('lobby-players').innerHTML = m.players.map(p => `<li style="color:${p.color}">${escapeHtml(p.name)}${p.id === myId ? ' (you)' : ''}</li>`).join('');
+      chosen = m.mission; lobbyUI.union = m.unlocked || null; markChosen();
+      $('lobby-players').innerHTML = m.players.map(p => `<li style="color:${p.color}">${escapeHtml(p.name)} <small>lv ${p.level || 1}</small>${p.id === myId ? ' (you)' : ''}</li>`).join('');
       $('lobby-status').textContent = `Connected · ${m.players.length} in the lobby · anyone can start`;
     } else if (m.t === 'start') {
       phase = 'game'; lobby.hidden = true;
