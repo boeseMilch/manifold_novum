@@ -136,10 +136,10 @@ ENEMY_TYPES.stealth = {
     }
   },
 };
-const TRACTOR_EMITTER = [3.05, -1.3, 0.34];
+const TRACTOR_EMITTER = [3.1, 1.75, 0.34];                // on a mast at the rear, clear of the other weak spots
 ENEMY_TYPES.tractor = {
   ...ENEMY_TYPES.interceptor, name: 'Tractor tug', fire: [3.5, 5],
-  solids: [...ENEMY_TYPES.interceptor.solids, box(2.25, -1.45, 2.75, -1.15)],
+  solids: [...ENEMY_TYPES.interceptor.solids, box(2.3, 1.6, 2.8, 1.9)],
   pois: [...ENEMY_TYPES.interceptor.pois, { id: 'emitter', name: 'Tractor emitter', effect: 'Beam off — the jump clock runs again', shape: { circle: TRACTOR_EMITTER } }],
   update(e, dt) {
     if (poiHit(e, 'emitter') || !mission.active || mission.jump || mission.over) return;
@@ -148,7 +148,7 @@ ENEMY_TYPES.tractor = {
   draw(e, t) {
     drawInterceptor(e, t);
     const hit = poiHit(e, 'emitter'), [ex, ey, er] = TRACTOR_EMITTER;
-    rr(L(2.25), L(-1.45), L(0.55), L(0.3), 3); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(2);   // mast
+    rr(L(2.3), L(1.6), L(0.55), L(0.3), 3); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(2);   // mast
     if (!hit) blueGlow(ex, ey, er * 2.2, t);
     ctx.beginPath(); ctx.arc(L(ex), L(ey), L(er), 0, TAU); ctx.fillStyle = bluePaint(ex - er, ey - er, ex + er, ey + er, t, hit); ctx.fill(); stroke(2);
     ctx.beginPath(); ctx.arc(L(ex), L(ey), L(er * 0.45), 0, TAU); ctx.fillStyle = hit ? '#2b303a' : '#e8f8ff'; ctx.fill();
