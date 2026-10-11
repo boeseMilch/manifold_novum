@@ -72,7 +72,7 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Hull breaches, plasma fires, failing gravity, things on the hull — and the jump coils need aligning outside.',
-    rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true },
+    rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
       return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister'], target, 25, 26);
     },
@@ -134,8 +134,9 @@ function updateMission(dt) {
   if (mission.t >= mission.jumpAt && !mission.jump) { mission.jump = { t: 0 }; combatBanner('Jump drive spooling up — it needs energy in the middle capacitor!'); sfx.say?.('Jump drive spooling up.'); }
   if (mission.jump) {
     mission.jump.t += dt;
-    if (!broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) { CAPACITORS[1].charge--; endMission(true, 'Jumped out safely.'); return; }
-    if (mission.jump.t >= JUMP_WINDOW) { endMission(false, 'The jump drive never got energy — stranded in the hot zone.'); return; }
+    const pulled = !mission.rules?.handle || (mission.jump.pull || 0) >= JUMP_PULL;      // harder missions: someone has to pull the handle
+    if (pulled && !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) { CAPACITORS[1].charge--; endMission(true, 'Jumped out safely.'); return; }
+    if (mission.jump.t >= JUMP_WINDOW * (mission.rules?.handle ? 2 : 1)) { endMission(false, 'The jump drive never got energy — stranded in the hot zone.'); return; }
   }
   const dmg = SYSTEMS.filter(s => s.broken).length;
   if (dmg > MAX_DAMAGE) endMission(false, `The ship fell apart (${dmg} systems broken at once).`);
@@ -295,8 +296,8 @@ const HELM = STATIONS.find(s => s.name === 'Helm');
 function stationSpots() {
   return [
     { x: CAT.x, y: CAT.y, r: 0.55, name: 'The cat', text: 'Click: pet the cat', run: petCat },
-    { x: 22.2, y: 6.4, r: 1.2, name: 'Radar', text: 'Click: radar scan (shows the next 45 s for everyone)', run: radarScan },
-    { x: HELM.x, y: HELM.y + 0.5, r: 0.9, name: 'Helm', text: 'Click: run systems diagnosis', run: () => { ui.panel = 'diagnosis'; mission.diagRun = true; } },
+    { x: 22.2, y: 6.4, r: 1.2, name: 'Radar', text: 'Click: use the radar dish (point it, ping, see what comes in the next 45 s)', run: openRadar },
+    { x: HELM.x, y: HELM.y + 0.5, r: 0.9, name: 'Helm', text: 'Click: run systems diagnosis (calibrate the scope first)', run: openScope },
     { x: SECURITY.x, y: SECURITY.y + 0.5, r: 0.9, name: 'Security console', text: 'Click: open the security console (lock doors)', run: () => { ui.panel = 'security'; } },
   ];
 }
@@ -389,6 +390,7 @@ function drawPanels(t) {
   if (ui.panel === 'security') drawSecurityPanel();
   else if (ui.panel === 'diagnosis') drawDiagnosisPanel();
   else if (ui.panel === 'override') drawOverridePanel(t);
+  else if (ui.panel === 'mini') drawMiniPanel(t);
   if (mission.over) drawEndScreen();
 }
 function panelFrame(w, h, title) {
@@ -445,10 +447,12 @@ function drawRebootPanel() {
   ctx.textAlign = 'left';
 }
 function drawDiagnosisPanel() {
-  const w = 520, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — systems diagnosis');
+  const scope = ui.mini?.kind === 'scope', w = 560, rows = SYSTEMS.length, h = scope && !ui.mini.ok ? 230 : Math.min(VH - 40, 80 + rows * 19 + (scope ? 160 : 0)), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — systems diagnosis');
+  let top = 50;
+  if (ui.mini?.kind === 'scope') { top += drawScope(ui.mini, x, y + 40, w); if (!ui.mini.ok) return; }
   ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'top';
   SYSTEMS.forEach((s, i) => {
-    const st = diagState(s), yy = y + 50 + i * 19;
+    const st = diagState(s), yy = y + top + i * 19;
     if (yy > y + h - 24) return;
     ctx.fillStyle = st ? st.col : '#5fd6a0'; ctx.beginPath(); ctx.arc(x + 26, yy + 7, 5, 0, TAU); ctx.fill();
     ctx.fillStyle = '#e8ecf4'; ctx.fillText(s.name, x + 40, yy);

@@ -12,7 +12,7 @@ function encounterPlates() {
   const out = [];
   const add = (key, d) => out.push({ key, ...d });
   if (mission.active && mission.jump)
-    add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: `needs 1 energy in MID capacitor · ${fmt(JUMP_WINDOW - mission.jump.t)}`, stripe: '#7af0ff', red: true });
+    add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: `${mission.rules?.handle ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s) + ` : 'needs '}1 energy in MID · ${fmt(JUMP_WINDOW * (mission.rules?.handle ? 2 : 1) - mission.jump.t)}`, stripe: '#7af0ff', red: true });
   for (const e of combat.enemies) if (e.phase === 'fighting') {
     const hit = e.pois.filter(p => p.hit).length;
     add('enemy' + uid(e), { icon: e.kind, title: e.D.name.toUpperCase(), sub: `${e.side === 'port' ? 'left' : 'right'} side · ${hit}/${e.pois.length} weak spots hit${e.charge >= 0 ? ' · HEAVY SHOT!' : ''}`, stripe: '#e2574c', red: true });

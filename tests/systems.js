@@ -1,7 +1,7 @@
 // Energy, shields, reactor + lever, fuel, inventory, repairs, lights, enemy turrets and
 // the invader. Run: node tests/systems.js
 const { loadGame } = require('./harness');
-const G = loadGame(['tick', 'player', 'combat', 'combatClear', 'combatSpawn', 'teleportToGun', 'fireCannon', 'pressShield', 'reloadCannon',
+const G = loadGame(['tick', 'time', 'ui', 'miniCommand', 'player', 'combat', 'combatClear', 'combatSpawn', 'teleportToGun', 'fireCannon', 'pressShield', 'reloadCannon',
   'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'updateRepair', 'grab', 'lightLevel',
   'drawLights', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
   'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires']);
@@ -21,8 +21,8 @@ const fireAll = (g) => { let n = 0; for (let i = 0; i < 10; i++) { g.cd = 0; con
 let shots = fireAll(pg);
 check(shots === 3 && G.CAPACITORS[0].charge === 1, `a loaded cannon fires 3 shots without touching energy, then only clicks (fired ${shots}, capacitor still ${G.CAPACITORS[0].charge})`);
 check(G.reloadCannon(pg) && G.CAPACITORS[0].charge === 0, 'reloading takes 1 energy from the port capacitor');
-run(1.5);
-check(pg.shots === 3 && fireAll(pg) === 3, 'after the reload it has 3 shots again');
+run(3.2);
+check(pg.shots === 3 && fireAll(pg) === 3, 'after the reload (3 s on its own) it has 3 shots again');
 check(!G.reloadCannon(pg) && pg.shots === 0, 'with the capacitor empty, reloading does nothing');
 caps(0, 2, 0); const fg = G.GUNS.find(g => g.id === 'front'); fg.shots = 0; fg.reload = 0; G.reloadCannon(fg);
 check(G.CAPACITORS[1].charge === 1, 'the front cannon reloads from the middle capacitor');
@@ -65,7 +65,10 @@ G.clickTarget(G.FUEL_CRATE.x, G.FUEL_CRATE.y).run();
 check(G.inv.item === 'fuel' && G.power.reserve === 2, 'clicking the crate takes a fuel cell (3 → 2 spare)');
 G.player.x = G.REACTOR.x - 2.5; G.player.y = G.REACTOR.y;
 G.clickTarget(G.REACTOR.x, G.REACTOR.y).run();
-check(G.power.reactor.fuel === 5 && G.inv.item === null, 'clicking the reactor with a fuel cell loads it (5 energy)');
+check(G.ui.mini?.kind === 'seat', 'clicking the reactor with a fuel cell opens the seating mini-game');
+G.ui.mini.t0 = G.time;                       // needle at the start of the green zone
+G.miniCommand('seat');
+check(G.power.reactor.fuel === 5 && G.inv.item === null, 'pushing it in while the needle is green loads it (5 energy)');
 
 // --- inventory: grabbing into a full slot drops the old item where you stand
 reset(); G.inv.weapon = 'laser'; const before = G.ITEMS.length;

@@ -19,11 +19,11 @@ function netSerialize() {
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
       repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen },
       health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, slow: c.slow,
-      ui: { panel: c.ui.panel, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
+      ui: { panel: c.ui.panel, mini: c.ui.mini, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
     })),
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
     caps: CAPACITORS.map(c => [c.charge, c.pulse || 0]),
-    power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses },
+    power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses, patch: power.patch },
     doors: DOORWAYS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.blastHold || 0]),
     locks: DECK_LOCKS.map(L => ({ open: L.open, doors: L.doors, phase: L.phase, t: L.t, target: L.target, entry: L.entry, locked: L.locked })),
     hatches: HATCHES.map(h => [h.open, h.locked]),
@@ -69,6 +69,8 @@ function netApply(s, myId) {
     c.repair = repair ? { sys: SYSTEMS[repair.sys], t: repair.t } : null;
     Object.assign(c.inv, dInv);
     c.ui.panel = dUi.panel; c.ui.override = dUi.override;
+    if (!(mineNow && dUi.mini && c.ui.mini && dUi.mini.kind === c.ui.mini.kind && dUi.mini.kind === 'radar')) c.ui.mini = dUi.mini;   // your own dish angle stays local while you drag
+    else Object.assign(c.ui.mini, { ...dUi.mini, angle: localInput.mouse.down ? c.ui.mini.angle : dUi.mini.angle });
     return c;
   });
   crew.length = 0; crew.push(...next);
@@ -79,7 +81,7 @@ function netApply(s, myId) {
   }
   s.systems.forEach((b, i) => { SYSTEMS[i].broken = !!b; });
   s.caps.forEach(([ch, pu], i) => { CAPACITORS[i].charge = ch; CAPACITORS[i].pulse = pu; });
-  Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts; power.pulses = s.power.pulses || [];
+  Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts; power.pulses = s.power.pulses || []; power.patch = s.power.patch || [0, 1, 2];
   s.doors.forEach(([o, l, b, bh], i) => { DOORWAYS[i].open = o; DOORWAYS[i].locked = l; DOORWAYS[i].blast = !!b; DOORWAYS[i].blastHold = bh; });
   s.locks.forEach((d, i) => Object.assign(DECK_LOCKS[i], d));
   s.hatches.forEach(([o, l], i) => { HATCHES[i].open = o; HATCHES[i].locked = l; });

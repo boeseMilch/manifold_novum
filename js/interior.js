@@ -229,7 +229,7 @@ function interactSpots() {
     ...GUNS.map(g => ({ x: g.hatch[0], y: g.hatch[1], r: 0.55 })),
     ...HATCHES.map(h => ({ x: h.x - h.dir * 0.45, y: h.y, r: 0.7, probe: h.inside })),
     ...DECK_LOCKS.map(L => ({ x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, w: L.w + 0.2, h: SPINE - 0.2, both: true })),
-    ...hazardSpots(),
+    ...hazardSpots(), ...minigameSpots(),
     ...DOORWAYS.filter(d => d.locked || d.blast).map(d => ({ x: d.x + d.w / 2, y: d.y + d.h / 2, w: d.w + 0.3, h: d.h, both: true })),
   ];
   return out;

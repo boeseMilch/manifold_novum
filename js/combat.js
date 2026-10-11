@@ -57,7 +57,7 @@ function combatClear() {
 // ---------------------------------------------------------------------------
 // A cannon holds SHOTS_PER_ENERGY shots. When it's empty it just clicks; reloading (R or the
 // RELOAD button) takes one energy from the cannon's capacitor and refills it after a moment.
-const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 1.2;
+const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 3;   // on its own; cranking (or holding R) is much faster
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
   if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`No energy for the ${g.name.toLowerCase()} (its capacitor is empty)`); return false; }
@@ -138,7 +138,7 @@ function pressShield(side) {
   if (broken(SHIELD_BUTTONS.find(b => b.side === side))) return 'broken';
   if (s.up > 0 || s.cd > 0) return false;
   if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
-  s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; sfx.shieldUp();
+  s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; s.extended = false; s.age = 0; sfx.shieldUp();
   if (player && player.mode === 'inside') zap(player, 'shield_' + side);
   return true;
 }
@@ -151,7 +151,7 @@ function updateCombat(dt) {
     g.cd = Math.max(0, (g.cd || 0) - dt); g.flash = Math.max(0, g.flash - dt * 6);
     if (g.reload > 0 && (g.reload -= dt) <= 0) { g.reload = 0; g.shots = SHOTS_PER_ENERGY; sfx.clank(); }
   }
-  for (const s of Object.values(combat.shields)) { s.up = Math.max(0, s.up - dt); s.cd = Math.max(0, s.cd - dt); }
+  for (const s of Object.values(combat.shields)) { s.up = Math.max(0, s.up - dt); s.cd = Math.max(0, s.cd - dt); s.age = s.up > 0 ? (s.age || 0) + dt : 0; }
   for (const h of combat.shieldHits) h.t += dt;
   combat.shieldHits = combat.shieldHits.filter(h => h.t < 0.8);
   for (const k in combat.flashes) combat.flashes[k] = Math.max(0, combat.flashes[k] - dt * 1.3);
@@ -289,7 +289,7 @@ function drawShields(t) {
     if (s.up <= 0 && !hits.length) continue;
     // reveal: a growing (then shrinking) circle around the shield generator (its button)
     const gen = SHIELD_BUTTONS.find(b => b.side === side);
-    const grow = s.up > 0 ? Math.min(1, (SHIELD_UP_TIME - s.up) / SHIELD_GROW, s.up / SHIELD_GROW) : 0;
+    const grow = s.up > 0 ? Math.min(1, (s.age || 0) / SHIELD_GROW, s.up / SHIELD_GROW) : 0;
     const R = 24 * grow;
     const near = (x, y) => clamp((R - Math.hypot(x - gen.x, y - gen.y)) / 2.5, 0, 1);
     if (side === 'front') {

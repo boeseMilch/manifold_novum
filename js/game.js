@@ -217,7 +217,7 @@ function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zo
 
 function updatePlayer(dt) {
   const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
-  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; pressed.delete('KeyE'); }
+  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); }
   const ix = block ? 0 : (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
   const iy = block ? 0 : (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
@@ -246,6 +246,7 @@ function updatePlayer(dt) {
     player.cover = clamp(player.cover + (covering ? dt : -dt) * COVER_SPEED, 0, 1);
     // reload: R (the on-screen RELOAD button is handled by the browser and sent as a command)
     if (!block && pressed.has('KeyR')) reloadCannon(g);
+    if (!block && held('KeyR') && g.reload > 0) g.reload = Math.max(0.01, g.reload - dt * RELOAD_HOLD_RATE * (player.health === 'hurt' ? 0.6 : 1));
     if (!block && player.cover < 0.3 && ((mouse.down && !mouse.suppress) || held('Space'))) fireCannon(g);
     // the gunner always sits opposite the barrel
     player.x = g.x - Math.cos(g.aim) * GUNNER_OFFSET; player.y = g.y - Math.sin(g.aim) * GUNNER_OFFSET; player.face = g.aim;
@@ -282,7 +283,11 @@ function updatePlayer(dt) {
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
-    else if (s.up > 0) act({ text: 'Shield is up!', at, ok: true });
+    else if (s.up > 0) {                              // hold the button to keep it up 2 s longer (1 more energy)
+      const onIt = Math.hypot(mouse.wx - at.x, mouse.wy - at.y) <= at.r;
+      if (mouse.down && onIt && !s.extended && s.up < 0.5 && cap.charge > 0 && useEnergy(SIDE_CAP[button.side], 'shield_' + button.side)) { s.up += 2; s.cd += 2; s.extended = true; sfx.shieldUp(); }
+      act({ text: s.extended ? 'Shield is up! (extended)' : 'Shield is up! Keep holding click on the button for +2 s (1 more energy)', at, ok: true });
+    }
     else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
     else if (cap.charge <= 0 || broken(cap)) act({ text: 'No energy for the shield (capacitor empty)', at });
     else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
@@ -366,7 +371,8 @@ function runCommand(cmd) {
   const [kind, arg] = cmd;
   if (kind === 'lock') { const l = lockables()[arg]; if (l) { l.ref.locked = !l.ref.locked; sfx.clank(); } }
   else if (kind === 'bonk') { if (ui.override) overrideHit(); }
-  else if (kind === 'closePanel') { ui.panel = null; ui.override = null; }
+  else if (kind === 'closePanel') { ui.panel = null; ui.override = null; ui.mini = null; }
+  else if (kind === 'mini') miniCommand(arg, cmd[2], cmd[3]);
   else if (kind === 'reload') { if (player.mode === 'gun') reloadCannon(player.gun); }
   else if (kind === 'climbDown') climbDown();
   else if (kind === 'reboot') rebootSwitch(arg);
@@ -415,10 +421,10 @@ const DEBUG_ITEMS = [
   { key: 'l', label: 'Ship-wide: flare, storm, coolant leak, AI glitch', run: () => { startFlare(); startStorm(); startCoolantLeak(); startGlitch(); } },
   { key: 'z', label: 'Stealth fighter left, tractor tug right', run: () => { combatSpawn('stealth', 'port', true); combatSpawn('tractor', 'star', true); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
-  { key: 'y', label: '', hidden: true, run: () => radarScan() },
+  { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
   { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; DECK_LOCKS[1].locked = true; } },
-  { key: 'g', label: '', hidden: true, run: () => { ui.panel = 'diagnosis'; mission.diagRun = true; } },
+  { key: 'g', label: '', hidden: true, run: () => openScope() },
   { key: 'v', label: '', hidden: true, run: () => { startOverride(DOORWAYS[0], 'Door'); ui.override.hits = 2; } },
   { key: 'q', label: '', hidden: true, run: () => pressShield('star') },          // debug only
   { key: 'x', label: '', hidden: true, run: () => {            // debug only: shoot the windshield crack
@@ -589,6 +595,7 @@ function render(t) {
   drawInterior(t);
   drawHazardProps(t);
   drawEncounterProps(t);
+  drawMinigameProps(t);
   drawInteractMarkers(t);
   drawItems(t);
   drawFires(t);
@@ -603,7 +610,11 @@ function render(t) {
     const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: progress ring
     if (tr) {
       const info = withCrew(tr, () => treatInfo(c));
-      if (info) { ctx.beginPath(); ctx.arc(c.x * T, c.y * T, T * 0.55, -Math.PI / 2, -Math.PI / 2 + Math.min(1, tr.treat.t / info.time) * TAU); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 5; ctx.stroke(); }
+      if (info) {
+        ctx.beginPath(); ctx.arc(c.x * T, c.y * T, T * 0.55, -Math.PI / 2, -Math.PI / 2 + Math.min(1, tr.treat.t / info.time) * TAU); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 5; ctx.stroke();
+        const beat = 1 - (((tr.treat.t + BEAT / 2) % BEAT) - BEAT / 2) ** 2 * 40;   // the heartbeat: click when the ring pulses
+        if (beat > 0) { ctx.beginPath(); ctx.arc(c.x * T, c.y * T, T * (0.7 + 0.15 * beat), 0, TAU); ctx.strokeStyle = `rgba(255,120,140,${beat})`; ctx.lineWidth = 3; ctx.stroke(); }
+      }
     }
     if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
     if (c !== me && crew.length > 1) {                // name tags for the others
@@ -691,6 +702,7 @@ function drawCannonHUD(g) {
   if (g.reload) { rr(b.x + 3, b.y + 3, (b.w - 6) * (1 - g.reload / RELOAD_TIME), b.h - 6, 6); ctx.fillStyle = '#5fd6a0'; ctx.fill(); }
   ctx.fillStyle = '#fff'; ctx.font = '800 14px system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(g.reload ? 'RELOADING…' : 'RELOAD · 1 energy', b.x + b.w / 2, b.y + b.h / 2); ctx.textAlign = 'left';
+  drawCrank(g);
   const c = climbBtn(), ch = inClimbBtn(mouse.x, mouse.y);                       // climb back down
   rr(c.x, c.y, c.w, c.h, 8); ctx.fillStyle = ch ? '#4a515e' : '#2b303a'; ctx.fill(); stroke(2, '#6b7486');
   ctx.fillStyle = '#e8ecf4'; ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -740,6 +752,7 @@ function simTick(dt) {
   updateHazards(dt);
   updateEva(dt);
   updateEncounters(dt);
+  updateMinigames(dt);
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.
@@ -759,6 +772,7 @@ function clientUpdate(dt) {
   updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
   music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm);
+  miniClient(dt);
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
   if (me.mode === 'gun' && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }

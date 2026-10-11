@@ -18,6 +18,7 @@ const power = {
   lever: { pos: 1, jammed: false, angle: 0 },     // starts on MID; jammed = a wrench wedged in front of the handle
   bolts: [],                                      // energy travelling from the reactor to a capacitor
   pulses: [],                                     // energy travelling from a capacitor to what used it
+  patch: [0, 1, 2],                               // patch board: lever output → capacitor it feeds
 };
 let inv = { weapon: null, item: null, cd: 0 };     // the acting crew member's inventory (see withCrew)
 const ITEMS = [
@@ -55,6 +56,8 @@ function breakSystem(s) {
 function damageColumn(side, large) {
   const col = side === 'port' ? 0 : side === 'star' ? 2 : 1;
   const intact = SYSTEMS.filter(s => s.col === col && !s.broken);
+  const taped = intact.filter(s => s.taped);              // quick tape jobs give first
+  if (large && taped.length) { breakSystem(taped[0]); taped[0].taped = false; return; }
   const n = large ? (Math.random() < (lucky() ? 0.1 : 0.3) ? 2 : 1) : 0;
   for (let i = 0; i < n && intact.length; i++) breakSystem(intact.splice(Math.floor(Math.random() * intact.length), 1)[0]);
 }
@@ -119,7 +122,7 @@ function drawPowerLines(t) {
   }
 }
 function deliverEnergy() {
-  const i = power.lever.pos;
+  const i = power.patch[power.lever.pos];
   if (typeof surging === 'function' && surging('feed' + i)) {          // an arcing feed line: the energy is lost on the way
     combatBanner(`Energy lost — the ${lineName(LINE['feed' + i])} is arcing`); sfx.spark();
   } else power.bolts.push({ to: i, t: 0 });
@@ -186,13 +189,13 @@ function clickTarget(mx, my) {
   if (player.mode === 'eva') return evaClickTarget(mx, my);
   if (player.mode !== 'inside') return null;
   // broken systems first
-  const m = hazardClickTarget(mx, my) || encounterClickTarget(mx, my) || missionClickTarget(mx, my);
+  const m = hazardClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my);
   if (m) return m;
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
-    return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
+    return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s) · quick click: tape job`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
   }
   for (const it of ITEMS) {
     if (Math.hypot(mx - it.x, my - it.y) > 0.45) continue;
@@ -229,7 +232,7 @@ function clickTarget(mx, my) {
     if (inv.item !== 'fuel') return { ...t, text: `Reactor: ${status}`, ok: false };
     if (!near(R.x, R.y, REACH + 1.4)) return { ...t, text: 'Reactor — get closer', ok: false };
     if (power.reactor.fuel) return { ...t, text: `Reactor still has fuel (${power.reactor.fuel} energy left)`, ok: false };
-    return { ...t, ok: true, text: 'Click: load the fuel cell', run: () => { inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); } };
+    return { ...t, ok: true, text: 'Click: load the fuel cell (push it in when the lock is green)', run: openSeat };
   }
   return null;
 }
@@ -266,9 +269,18 @@ function treatInfo(who) {
   return standing(player) ? { time: TREAT_TIME, label: `treat ${who.name}` } : null;
 }
 function updateTreat(dt, target, holding) {
-  if (!holding || !target?.treat) { player.treat = null; return; }
+  if (!target?.treat) { player.treat = null; return; }
   const who = target.treat;
+  if (!holding) {                                    // letting go briefly (to click on a heartbeat) doesn't lose progress
+    if (player.treat?.id === who.id && (player.treat.up = (player.treat.up || 0) + dt) > 0.4) player.treat = null;
+    return;
+  }
   if (player.treat?.id !== who.id) player.treat = { id: who.id, t: 0 };
+  if (mouse.click && player.treat.t > 0.1) {         // a click right on the heartbeat speeds it up
+    const off = Math.abs(((player.treat.t + BEAT / 2) % BEAT) - BEAT / 2);
+    if (off < 0.15) { player.treat.t += 0.5; player.treat.beat = 1; sfx.poi(); }
+  }
+  player.treat.up = 0; player.treat.beat = Math.max(0, (player.treat.beat || 0) - dt * 3);
   player.treat.t += dt;
   if (player.treat.t >= target.time) {
     who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME;
@@ -294,6 +306,7 @@ function evaClickTarget(mx, my) {
 
 // Repairing: hold the mouse on a broken system with the repair kit.
 function updateRepair(dt, target, holding) {
+  if (!holding && player.repair && player.repair.t < 0.3 && target?.repair === player.repair.sys && !target.service) { const s = player.repair.sys; player.repair = null; openTape(s); return; }   // a quick click: the tape job
   if (!holding || !target?.repair) { player.repair = null; return; }
   if (player.repair?.sys !== target.repair) player.repair = { sys: target.repair, t: 0 };
   player.repair.t += dt;

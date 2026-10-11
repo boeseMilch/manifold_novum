@@ -452,6 +452,27 @@ get the rest.
   `ENEMY_TYPES`), and event kinds their own runner and label (`EVENT_RUNNERS`, `EVENT_LABELS`).
 - `node tests/encounters.js`.
 
+### 8e. Station mini-games (`js/minigames.js`)
+Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (same solo and online).
+- **Radar dish:** drag to turn the dish, PING (2 s cooldown). Only the sector it points at (front,
+  left, right, ±60°) echoes; blips land closer the sooner the contact arrives. Flares and storms
+  echo everywhere. Pinging also lights up stealth fighters on that side. Crooked antenna: junk
+  echoes; ion storm: static.
+- **Oscilloscope** (helm): match two dials (frequency, amplitude) to the reference wave before
+  the diagnosis readings show.
+- **Seating a fuel cell:** push when the spinning needle is in the green; a miss spits it out.
+- **Patch board** (next to the lever): reroute which capacitor each lever output feeds (e.g.
+  around an arcing feed line).
+- **Tape job:** a quick click with the repair kit on a broken part (instead of holding): drag along
+  three cracks. Faster, but taped parts are the first to break at the next big hit.
+- **Crank:** reloading now takes 3 s on its own; cranking the wheel next to RELOAD (or holding R)
+  brings it down to ~1 s. Hurt: slower.
+- **Held shields:** keep holding the shield button for +2 s (1 more energy). Shields grow by age now.
+- **Jump handle** (rule `handle`): when the drive spools up, someone holds the handle at the helm
+  for 6 s (two people: faster); letting go resets it. The jump window doubles.
+- **Heartbeat:** while treating, a click right on the pulse ring adds 0.5 s.
+- `node tests/minigames.js`.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
