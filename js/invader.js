@@ -242,7 +242,7 @@ function updateInvader(a, dt) {
     // Doors locked by security contain it: it never bashes those, it tries elsewhere, and if every way
     // out is locked it keeps wrecking the room it's shut in. Broken / jammed doors it bashes open.
     const lock = lockAround(a), door = lock ? { lock, side: n.y < (SPINE_Y0 + SPINE_Y1) / 2 ? 'top' : 'bottom' } : blockingDoor(a);
-    const locked = door && (door.doorway?.locked || door.lock?.locked);
+    const locked = door && (door.doorway?.locked || door.doorway?.blast || door.lock?.locked);
     if (locked && a.stuck > 2) {
       a.path = []; a.stuck = 0; a.linger = 1.5;
       if (++a.lockedOut >= 2) { a.doneRoom = null; a.lockedOut = 0; }   // can't get out: break something else in here

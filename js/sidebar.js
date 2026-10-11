@@ -25,7 +25,12 @@ function encounterPlates() {
       : `in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'airlock'}`;
     add('inv' + uid(a), { icon: 'alien', title: 'INTRUDER', sub: `${where} · ${a.hp}/${ALIEN_HP} hp`, stripe: '#9cff5a', red: true });
   }
-  for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: 'FIRE', sub: `${f.sys.name} · ${Math.ceil(FIRE_TIME - f.t)} s`, stripe: '#ff8a2e', red: true });
+  for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · ${Math.ceil((f.plasma ? PLASMA_TIME : FIRE_TIME) - f.t)} s${f.plasma ? ' · vent the room!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
+  for (const b of hz.breaches) add('breach' + b.room, { icon: 'breach', title: b.tarp ? 'TARPED BREACH' : 'HULL BREACH', sub: `${roomById(b.room).name}${b.tarp ? ' · holds until the next hit' : ' · weld a plate on outside'}`, stripe: b.tarp ? '#e8c34f' : '#7ab8ff', red: !b.tarp });
+  if (hz.vent) add('vent', { icon: 'breach', title: 'VENTING', sub: `${roomById(hz.vent.room).name} · ${Math.ceil(hz.vent.t)} s`, stripe: '#7ab8ff', red: true });
+  for (const id of hz.surges) add('surge' + id, { icon: 'surge', title: 'POWER SURGE', sub: `${lineName(LINE[id])} · splice it (repair kit)`, stripe: '#bfe8ff', red: true });
+  for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the breaker`, stripe: '#7af0ff', red: true });
+  for (const p of hz.pings) add('ping' + p.room, { icon: 'ping', title: 'HELP!', sub: `${p.name} · ${roomById(p.room).name}`, stripe: '#ffe08a', red: true });
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
   for (const s of SYSTEMS) if (s.broken) add('broken' + s.name, { icon: 'wrench', title: 'BROKEN', sub: s.name, stripe: '#e2574c', red: true });
@@ -171,6 +176,15 @@ function plateIcon(kind, cx, cy, t) {
       ctx.restore();
     }
     ctx.strokeStyle = '#2e7a44'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(3, 7, 2, 11); ctx.stroke();
+  } else if (kind === 'breach') {
+    poly(Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU, r = i % 2 ? 6 : 11; return [Math.cos(a) * r, Math.sin(a) * r]; }));
+    ctx.fillStyle = '#05070c'; ctx.fill(); stroke(2, '#7ab8ff');
+    ctx.fillStyle = '#fff'; ctx.fillRect(-2, -1, 1.5, 1.5); ctx.fillRect(3, 2, 1.5, 1.5);
+  } else if (kind === 'surge') {
+    poly([[2, -12], [-6, 1], [0, 1], [-3, 12], [7, -2], [1, -2]]); ctx.fillStyle = '#bfe8ff'; ctx.fill(); stroke(1.5);
+  } else if (kind === 'ping') {
+    rr(-8, -6, 16, 12, 3); ctx.fillStyle = '#4b5263'; ctx.fill(); stroke(1.5);
+    ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 2; for (const r of [10, 14]) { ctx.beginPath(); ctx.arc(0, 0, r, -0.5, 0.5); ctx.stroke(); }
   } else if (kind === 'jump') {
     ctx.strokeStyle = '#7af0ff'; ctx.lineWidth = 3;
     for (const dy of [4, -2, -8]) { ctx.beginPath(); ctx.moveTo(-7, dy + 5); ctx.lineTo(0, dy); ctx.lineTo(7, dy + 5); ctx.stroke(); }

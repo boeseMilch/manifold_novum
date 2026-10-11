@@ -18,19 +18,19 @@ function netSerialize() {
       gun: c.gun?.id || null,
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
       repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen },
-      health: c.health, hurtT: c.hurtT, treat: c.treat,
+      health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, slow: c.slow,
       ui: { panel: c.ui.panel, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
     })),
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
     caps: CAPACITORS.map(c => [c.charge, c.pulse || 0]),
     power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses },
-    doors: DOORWAYS.map(d => [d.open, d.locked]),
+    doors: DOORWAYS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.blastHold || 0]),
     locks: DECK_LOCKS.map(L => ({ open: L.open, doors: L.doors, phase: L.phase, t: L.t, target: L.target, entry: L.entry, locked: L.locked })),
     hatches: HATCHES.map(h => [h.open, h.locked]),
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
     fires: fires.map(f => ({ ...f, sys: sysIdx(f.sys) })),
-    luck,
+    luck, hz,
     mission: {
       ...mission, revealed: [...mission.revealed],
       events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined })),
@@ -80,7 +80,7 @@ function netApply(s, myId) {
   s.systems.forEach((b, i) => { SYSTEMS[i].broken = !!b; });
   s.caps.forEach(([ch, pu], i) => { CAPACITORS[i].charge = ch; CAPACITORS[i].pulse = pu; });
   Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts; power.pulses = s.power.pulses || [];
-  s.doors.forEach(([o, l], i) => { DOORWAYS[i].open = o; DOORWAYS[i].locked = l; });
+  s.doors.forEach(([o, l, b, bh], i) => { DOORWAYS[i].open = o; DOORWAYS[i].locked = l; DOORWAYS[i].blast = !!b; DOORWAYS[i].blastHold = bh; });
   s.locks.forEach((d, i) => Object.assign(DECK_LOCKS[i], d));
   s.hatches.forEach(([o, l], i) => { HATCHES[i].open = o; HATCHES[i].locked = l; });
   s.guns.forEach((d, i) => {
@@ -90,7 +90,7 @@ function netApply(s, myId) {
   });
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
-  Object.assign(luck, s.luck);
+  Object.assign(luck, s.luck); Object.assign(hz, s.hz);
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
     events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined })),

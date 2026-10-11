@@ -81,7 +81,7 @@ const DEBUG_OVERVIEW = location.hash === '#overview';
 let prompt = null, time = 0, debugOpen = false, hover = null;
 // Debug: index.html#do=3,6 runs debug-menu entries 3 and 6 on start (see DEBUG_ITEMS);
 // adding &w=4 fast-forwards the simulation by 4 seconds first (handy for screenshots).
-const DEBUG_DO = (location.hash.match(/^#do=([\dxpqiobemnfugvwy,]+)/) || [])[1]?.split(',') || [];
+const DEBUG_DO = (location.hash.match(/^#do=([\da-z,]+)/) || [])[1]?.split(',') || [];
 const DEBUG_WARP = +(location.hash.match(/&w=([\d.]+)/) || [])[1] || 0;
 const playerOutside = () => isOutside(player);
 
@@ -109,10 +109,10 @@ function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.
 
 function updateCrew(c, dt, ix, iy) {
   if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
-  const eva = c.mode === 'eva';
-  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1);
+  const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y));
+  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1) * crewSpeedMul(c) * (c.slow || 1);
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
-  const k = Math.min(1, (eva ? EVA_ACCEL : WALK_ACCEL) * dt / speed);
+  const k = Math.min(1, (floaty ? EVA_ACCEL * (eva ? 1 : 0.5) : WALK_ACCEL) * dt / speed);
   c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);
   const ok = eva ? (x, y) => evaOk(x, y) : (() => { const rects = walkRects(); return (x, y) => canStand(x, y, rects); })();
   unstick(c, ok);
@@ -291,6 +291,9 @@ function updatePlayer(dt) {
     if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')) });
     else if (hatch.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(hatch, 'Outer airlock') });
     else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
+  } else if (doorway && doorway.blast) {
+    act({ text: 'Click: blast door (vacuum behind it) — force it up for 5 s (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 },
+          run: () => startOverride(doorway, 'Blast door', () => { doorway.blastHold = 5; doorway.blast = false; }) });
   } else if (doorway && doorway.locked) {
     act({ text: 'Click: door is locked by security — manual override', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 }, run: () => startOverride(doorway, 'Door') });
   } else {
@@ -331,12 +334,13 @@ function act(p) {
 // Mouse in the world: left click grabs / uses / repairs (hold), right click attacks.
 function updateInteraction(dt) {
   hover = null;
-  if (mission.over || ui.panel) { player.repair = null; player.treat = null; return; }
-  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; return; }
+  if (mission.over || ui.panel) { player.repair = null; player.treat = null; player.hold = null; return; }
+  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; return; }
   const [mx, my] = mouseWorld();
   hover = promptHover(player, mx, my) || clickTarget(mx, my);
   if (hover?.run && mouse.click) { hover.run(); mouse.click = false; }
   updateRepair(dt, hover, mouse.down);
+  updateHold(dt, hover, mouse.down);
   updateTreat(dt, hover, mouse.down);
   if (!standing(player)) return;                     // down: no weapons
   if (mouse.rightClick) attack(mx, my);
@@ -369,7 +373,7 @@ function updateDoorways(dt) {
   for (const d of DOORWAYS) {
     // only an open door waits for someone standing in it; a shut door never reopens for someone pushing on it
     const blocked = d.open > 0.5 && actors().some(c => inRect(c.x, c.y, d, CREW_R));
-    const target = d.locked && !blocked ? 0 : 1;
+    const target = (d.locked || d.blast) && !blocked ? 0 : 1;
     d.open = clamp(d.open + Math.sign(target - d.open) * dt / 0.35, 0, 1);
   }
 }
@@ -399,6 +403,8 @@ const DEBUG_ITEMS = [
   { key: 'f', label: 'Start a fire next to you', run: () => spawnFire(player.x + 1, player.y) },
   { key: 'b', label: 'Break a random system', run: () => { const s = SYSTEMS.filter(s => !s.broken); if (s.length) breakSystem(s[Math.floor(Math.random() * s.length)]); } },
   { key: 'e', label: 'Fill all capacitors', run: () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; }) },
+  { key: 'h', label: 'Hull breach in this room (or the nearest)', run: () => { const r = roomAt(player.x, player.y); breachRoom(r && BREACH_SPOTS[r.id] ? r.id : 'portLock'); } },
+  { key: 'j', label: 'Surge, no gravity, plasma fire (here)', run: () => { const r = roomAt(player.x, player.y) || ROOMS[0]; surgeColumn(r.col); failGravity(r.id); const s = SYSTEMS.filter(s => !burning(s)).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; igniteSystem(s, true); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => radarScan() },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
@@ -543,6 +549,7 @@ function render(t) {
   drawShipHull(t, HULL, GUNS, ENGINE);
   drawHullDecor(t);
   drawShipDecals();
+  drawBreachesOutside(t);
   for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
   drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   drawSpineDecor(t);
@@ -553,6 +560,7 @@ function render(t) {
   drawFloorDecor(t);
   drawJunk();
   drawGoo();
+  drawBreaches(t);
   drawPowerLines(t);
   drawEngineHousing(t, ENGINE);
   for (const L of DECK_LOCKS) drawDeckLock(L, t);
@@ -569,6 +577,7 @@ function render(t) {
   }
   drawPropDecor(t);
   drawInterior(t);
+  drawHazardProps(t);
   drawInteractMarkers(t);
   drawItems(t);
   drawFires(t);
@@ -578,7 +587,7 @@ function render(t) {
   for (const c of crew) {
     if (!standing(c)) drawCrewDown(c, t);
     else if (c.mode === 'inside' || c.mode === 'hatch')
-      drawCrew(c.x * T, c.y * T, c.face, c.walk, c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' && c.hatchT < HATCH_TIME * 0.7, c.color);
+      drawCrew(c.x * T, c.y * T, c.face, c.walk, c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y), c.color);
     else drawCrewOutside(c, t);
     const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: progress ring
     if (tr) {
@@ -594,6 +603,7 @@ function render(t) {
   }
   drawBoarding(t);
   drawLights(1 / 60);
+  drawVacuumTint();
   drawCombatFront(t);
 
   const prompt = me.prompt, hover = me.hover;
@@ -715,6 +725,7 @@ function simTick(dt) {
   updateFires(dt);
   updateMission(dt);
   updateLuck(dt);
+  updateHazards(dt);
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.

@@ -16,6 +16,7 @@ const luck = { t: 0, pet: 0 };
 const lucky = () => luck.t > 0;
 function petCat() {
   luck.t = LUCK_TIME; luck.pet = 2.5; sfx.purr();          // what this does is a secret: no hints in the UI
+  if (typeof hz !== 'undefined') hz.stats.pets++;
 }
 function updateLuck(dt) { luck.t = Math.max(0, luck.t - dt); luck.pet = Math.max(0, luck.pet - dt); }
 let ui = { panel: null, hits: [], override: null };   // the acting crew member's panels (see withCrew)   // modal panels: 'security' | 'diagnosis' | 'override'
@@ -49,6 +50,7 @@ const MISSIONS = {
   },
   rush: {
     name: 'Rush hour', blurb: '7 incidents in random order, about 40 s apart. Same time, more trouble.',
+    rules: { breach: true, surge: true },
     build(target) {
       const kinds = ['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance'];
       const extras = ['interceptor', 'swarm', 'intruder'];
@@ -64,7 +66,9 @@ function startMission(id = 'intro') {
   const candidates = SYSTEMS.filter(s => !s.broken);
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
+  resetHazards();
   Object.assign(mission, {
+    rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) },
     id, active: true, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
     events: (MISSIONS[id] || MISSIONS.intro).build(target).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false })),
     maint: { target, decoy, serviced: false },
@@ -143,10 +147,14 @@ function adjacentRooms(room) {
   return ROOMS.filter(r => r !== room && (r.col === room.col || (r.deck === room.deck && Math.abs(r.col - room.col) === 1)));
 }
 const burning = (s) => fires.some(f => f.sys === s && f.hp > 0);
-function igniteSystem(s) {
+function igniteSystem(s, plasma = false) {
   if (!s || burning(s)) return false;
-  fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100 });
-  combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
+  if (sysRooms(s).some(r => vacuumRoom(r.id))) return false;            // no air, no fire
+  plasma = plasma || (!!mission.rules?.plasma && plasmaPart(s));
+  fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100, plasma });
+  hz.stats.fires++;
+  if (plasma) { combatBanner(`PLASMA FIRE at the ${s.name.toLowerCase()}! Extinguishers won't do — vent the room.`); sfx.say?.('Plasma fire. Vent the room.'); }
+  else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
   return true;
 }
 function smallHit(side, x, y) {
@@ -169,17 +177,17 @@ function spawnFire(x, y) {
 function updateFires(dt) {
   for (const f of [...fires]) {
     f.t += dt;
-    if (f.t < FIRE_TIME) continue;
+    if (f.t < (f.plasma ? PLASMA_TIME : FIRE_TIME)) continue;
     f.t = 0;
-    if (Math.random() < (lucky() ? 0.5 : 0.2)) continue;                         // sometimes it just keeps burning
+    if (!f.plasma && Math.random() < (lucky() ? 0.5 : 0.2)) continue;            // sometimes it just keeps burning
     if (!f.sys.broken && Math.random() < 0.5) { breakSystem(f.sys); continue; }   // burns out its part
     const rooms = sysRooms(f.sys), near = new Set([...rooms, ...rooms.flatMap(adjacentRooms)]);
     const pool = SYSTEMS.filter(s => s !== f.sys && !burning(s) && sysRooms(s).some(r => near.has(r)));
     const intact = pool.filter(s => !s.broken);
     const to = (intact.length ? intact : pool)[Math.floor(Math.random() * (intact.length || pool.length))];
-    if (to) igniteSystem(to); else if (!f.sys.broken) breakSystem(f.sys);
+    if (to) igniteSystem(to, f.plasma); else if (!f.sys.broken) breakSystem(f.sys);
   }
-  for (let i = fires.length - 1; i >= 0; i--) if (fires[i].hp <= 0) fires.splice(i, 1);
+  for (let i = fires.length - 1; i >= 0; i--) if (fires[i].hp <= 0) { scorch(fires[i].x, fires[i].y); hz.stats.firesOut++; fires.splice(i, 1); }
 }
 // Spraying the extinguisher (right mouse held): a cone of foam towards the mouse.
 function spray(mx, my, dt) {
@@ -191,7 +199,9 @@ function spray(mx, my, dt) {
   }
   for (const f of fires) {
     const d = Math.hypot(f.x - player.x, f.y - player.y), off = Math.abs(wrapAngle(Math.atan2(f.y - player.y, f.x - player.x) - a));
-    if (d < SPRAY_RANGE && off < 0.45) { f.hp -= SPRAY_RATE * dt; if (f.hp <= 0) combatBanner('Fire out'); }
+    if (d >= SPRAY_RANGE || off >= 0.45) continue;
+    if (f.plasma) { f.hp = Math.max(0.6, f.hp - SPRAY_RATE * dt); f.t = Math.max(0, f.t - dt * 2); continue; }   // only pushes it back
+    f.hp -= SPRAY_RATE * dt; if (f.hp <= 0) combatBanner('Fire out');
   }
   if (Math.random() < dt * 6) sfx.spray();
 }
@@ -272,7 +282,7 @@ function drawFires(t) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, L(1.6) * s, 0, TAU); ctx.fill();
     // a cluster of teardrop flames, each in three layers (red → orange → yellow-white core)
     const tongues = [[-0.3, 0.75, 0], [0.25, 0.9, 1.7], [0, 1.15, 3.1], [-0.12, 0.6, 4.4], [0.38, 0.55, 5.6]];
-    for (const [layer, col, k] of [[1, '#d8401c', 1], [0.72, '#ff9a2e', 0.78], [0.42, '#fff0a8', 0.55]]) {
+    for (const [layer, col, k] of f.plasma ? [[1, '#7a3ad8', 1.15], [0.72, '#c08aff', 0.85], [0.42, '#ffffff', 0.6]] : [[1, '#d8401c', 1], [0.72, '#ff9a2e', 0.78], [0.42, '#fff0a8', 0.55]]) {
       for (const [ox, hgt, ph] of tongues) {
         const flick = 0.85 + 0.15 * Math.sin(t * 11 + ph + f.seed) + 0.08 * Math.sin(t * 23 + ph * 2);
         const h = L(hgt) * s * k * flick, w = L(0.22) * s * layer, bx = x + L(ox) * s * 0.9, by = y + L(0.15) * s;
@@ -296,7 +306,7 @@ function drawFires(t) {
       ctx.fillStyle = `rgba(60,60,64,${0.4 * (1 - q)})`; ctx.fill();
     }
     // time until it spreads / breaks something
-    ctx.beginPath(); ctx.arc(x, y + L(0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / FIRE_TIME) * TAU);
+    ctx.beginPath(); ctx.arc(x, y + L(0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / (f.plasma ? PLASMA_TIME : FIRE_TIME)) * TAU);
     ctx.strokeStyle = 'rgba(255,90,60,0.9)'; ctx.lineWidth = 3; ctx.stroke();
   }
 }
@@ -307,6 +317,7 @@ function drawDoorways() {
     const x = L(d.x), y = L(d.y), w = L(d.w), h = L(d.h), ph = (h / 2) * (1 - d.open);
     if (ph > 0.5) for (const s of [0, 1]) {
       const py = s ? y + h - ph : y;
+      if (d.blast) { hazardStripe(x, py, w, ph); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.strokeRect(x, py, w, ph); continue; }   // heavy blast shutter
       ctx.fillStyle = '#7a8396'; ctx.fillRect(x + 2, py, w - 4, ph);
       ctx.fillStyle = d.locked ? '#e2574c' : C.hazard; ctx.fillRect(x + 2, s ? py : py + ph - 5, w - 4, 5);
       ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(x + 2, py, w - 4, ph);
@@ -477,6 +488,15 @@ function drawEndScreen() {
   ctx.fillStyle = '#e8ecf4'; ctx.font = '18px system-ui, sans-serif'; ctx.fillText(o.reason, VW / 2, VH / 2 + 10);
   ctx.fillStyle = '#9aa3b5'; ctx.font = '14px system-ui, sans-serif';
   ctx.fillText(`Time ${fmt(o.t)} · hits taken: ${combat.hits.small} small, ${combat.hits.large} large, ${combat.hits.crew} crew · press R to play again`, VW / 2, VH / 2 + 46);
+  // the mission report
+  const S = hz.stats, medics = Object.entries(S.treated).sort((a, b) => b[1] - a[1]);
+  const lines = [
+    `Fires: ${S.fires} started, ${S.firesOut} put out · hull breaches: ${S.breaches} · repairs: ${S.repairs}`,
+    medics.length ? `Medic of the day: ${medics[0][0]} (treated ${medics[0][1]}×)` : 'Nobody had to be treated. Suspicious.',
+    `The cat was petted ${S.pets} time${S.pets === 1 ? '' : 's'}.`,
+  ];
+  ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
+  lines.forEach((l, i) => ctx.fillText(l, VW / 2, VH / 2 + 80 + i * 20));
   ctx.textAlign = 'left';
 }
 // Click handling for panels (screen coords). Returns true if the click was used.

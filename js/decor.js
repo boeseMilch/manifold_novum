@@ -196,6 +196,14 @@ function duck(x, y, a) {
 
 // Ship cat, asleep on the warm floor. Breathes.
 function cat(x, y, t) {
+  // hull breach somewhere: it hides (only a pair of eyes under a blanket of fur)
+  if (typeof hz !== 'undefined' && hz.breaches.some(b => !b.tarp)) {
+    ctx.save(); ctx.translate(x, y + 6);
+    ctx.beginPath(); ctx.ellipse(0, 0, T * 0.26, T * 0.14, 0, 0, TAU); ctx.fillStyle = '#c98a3c'; ctx.fill(); stroke(2);
+    for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(s * 5, -2, 3, 0, TAU); ctx.fillStyle = '#ffe08a'; ctx.fill(); ctx.beginPath(); ctx.arc(s * 5, -2, 1.2, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }
+    ctx.restore(); return;
+  }
+  const staring = typeof fires !== 'undefined' && fires.some(f => Math.hypot(f.x - CAT.x, f.y - CAT.y) < 7);   // a fire nearby: wide awake, staring
   const b = 1 + 0.04 * Math.sin(t * 1.6);
   shadowEllipse(x + 3, y + 5, T * 0.36, T * 0.28, 0.35);
   ctx.save(); ctx.translate(x, y);
@@ -211,9 +219,13 @@ function cat(x, y, t) {
     poly([[T * 0.22 + s * 5, -T * 0.2], [T * 0.22 + s * 9, -T * 0.32], [T * 0.22 + s * 1, -T * 0.25]]);
     ctx.fillStyle = '#e8a456'; ctx.fill(); stroke(1.5);
   }
-  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;        // closed eyes
-  for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(T * 0.2 + s * 4, -T * 0.08, 2.5, 0.2, Math.PI - 0.2); ctx.stroke(); }
+  ctx.strokeStyle = OUT; ctx.lineWidth = 1.5;        // closed eyes (or wide open, staring at a fire)
+  for (const s of [-1, 1]) {
+    if (staring) { ctx.beginPath(); ctx.arc(T * 0.2 + s * 4, -T * 0.08, 2.6, 0, TAU); ctx.fillStyle = '#ffe08a'; ctx.fill(); stroke(1); ctx.fillStyle = OUT; ctx.fillRect(T * 0.2 + s * 4 - 0.6, -T * 0.08 - 2, 1.2, 4); }
+    else { ctx.beginPath(); ctx.arc(T * 0.2 + s * 4, -T * 0.08, 2.5, 0.2, Math.PI - 0.2); ctx.stroke(); }
+  }
   ctx.restore();
+  if (staring) return;
   const k = (t * 0.5) % 1;
   if (typeof luck !== 'undefined' && luck.pet > 0) {  // just petted: hearts
     for (let i = 0; i < 3; i++) {
@@ -448,7 +460,7 @@ function drawPropDecor(t) {
   crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
   // Left airlock room: suits, extinguisher, flickering junk
   suit(U(1.3), U(16.2), Math.PI / 2, '#e8e4dc'); suit(U(1.3), U(17.4), Math.PI / 2, '#d9a54a');
-  crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'SPARE');
+  crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
   crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#8a5a4a');
   // Reactor
   duck(U(18.4), U(23.1), 0.5);
@@ -458,7 +470,7 @@ function drawPropDecor(t) {
   // Right airlock room
   suit(U(43.1), U(16.3), -Math.PI / 2, '#e8e4dc');
   crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
-  crate(U(33.1), U(22.8), U(0.8), U(0.7), -0.1, '#8a7a4a');
+  crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
   crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');
   tapeRoll(U(34.4), U(21.8));
   sparks(U(43.4), U(21.6), t, 95);

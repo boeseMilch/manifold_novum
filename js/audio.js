@@ -71,6 +71,11 @@ const sfx = (() => {
     alarm() { tone('square', 880, 880, 0.07, 0.08); tone('square', 660, 660, 0.07, 0.08, 0.09); },
     purr() { for (let i = 0; i < 6; i++) tone('sawtooth', 48, 44, 0.22, 0.1, i * 0.25); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, f, 0.25, 0.3, i * 0.11)); },
+    // The ship's voice: an old, polite computer (speech synthesis; respects mute; never more than one at a time).
+    say(text) {
+      if (muted || typeof speechSynthesis === 'undefined' || speechSynthesis.speaking) return;
+      try { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; u.pitch = 0.6; u.volume = 0.8; speechSynthesis.speak(u); } catch (e) { /* no voice */ }
+    },
     crack() { noise(0.25, 300, 0.6); tone('triangle', 120, 60, 0.3, 0.4); },
     // Heavy shot charging: a rising whine everyone on board can hear. Returns a stop function.
     charge(dur) {

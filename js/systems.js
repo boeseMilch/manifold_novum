@@ -26,8 +26,10 @@ const ITEMS = [
   { kind: 'extinguisher', x: 15.3, y: 2.2 },     // bridge
   { kind: 'extinguisher', x: 31.7, y: 3.8 },     // starboard cannon room
 ];
-const ITEM_NAMES = { repair: 'repair kit', laser: 'laser gun', fuel: 'fuel cell', extinguisher: 'fire extinguisher' };
-const slotOf = (kind) => kind === 'fuel' ? 'item' : 'weapon';
+const ITEM_NAMES = { repair: 'repair kit', laser: 'laser gun', fuel: 'fuel cell', extinguisher: 'fire extinguisher', plate: 'hull plate',
+                     coolant: 'coolant canister', blackbox: 'black box', drill: 'mining drill', ore: 'ore sample' };
+const WEAPONS = new Set(['repair', 'laser', 'extinguisher', 'drill']);
+const slotOf = (kind) => WEAPONS.has(kind) ? 'weapon' : 'item';
 
 // ---------------------------------------------------------------------------
 // Breakable systems. col: which zone column a hit on that side damages.
@@ -118,7 +120,9 @@ function drawPowerLines(t) {
 }
 function deliverEnergy() {
   const i = power.lever.pos;
-  power.bolts.push({ to: i, t: 0 });
+  if (typeof surging === 'function' && surging('feed' + i)) {          // an arcing feed line: the energy is lost on the way
+    combatBanner(`Energy lost — the ${lineName(LINE['feed' + i])} is arcing`); sfx.spark();
+  } else power.bolts.push({ to: i, t: 0 });
   if (!power.lever.jammed && !broken(LEVER)) power.lever.pos = (power.lever.pos + 1) % 3;
 }
 function updatePower(dt) {
@@ -179,9 +183,10 @@ function clickTarget(mx, my) {
     return { text: `Hold click: ${info.label} (${info.time} s)`, ok: true, treat: c, time: info.time, x: c.x, y: c.y, r: 0.55 };
   }
   if (!standing(player)) return null;                                      // down: you can only patch yourself up
+  if (player.mode === 'eva') return evaClickTarget(mx, my);
   if (player.mode !== 'inside') return null;
   // broken systems first
-  const m = missionClickTarget(mx, my);
+  const m = hazardClickTarget(mx, my) || missionClickTarget(mx, my);
   if (m) return m;
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
@@ -268,8 +273,23 @@ function updateTreat(dt, target, holding) {
   if (player.treat.t >= target.time) {
     who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME;
     sfx.poi(); combatBanner(who === player ? 'Patched up — still hurt for a while' : `${who.name} is back on their feet`);
+    if (who !== player) hz.stats.treated[player.name] = (hz.stats.treated[player.name] || 0) + 1;
     player.treat = null;
   }
+}
+
+// Generic "hold click" jobs (tarps, welds, splices, …): target.hold = { id, time, done }.
+function updateHold(dt, target, holding) {
+  if (!holding || !target?.hold) { player.hold = null; return; }
+  const h = target.hold;
+  if (player.hold?.id !== h.id) player.hold = { id: h.id, t: 0, time: h.time };
+  player.hold.t += dt * (player.health === 'hurt' ? 0.8 : 1);
+  if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
+  if (player.hold.t >= h.time) { player.hold = null; h.done(); }
+}
+// What a click does on a spacewalk (hazards, EVA jobs).
+function evaClickTarget(mx, my) {
+  return hazardEvaTarget(mx, my) || (typeof evaJobTarget === 'function' ? evaJobTarget(mx, my) : null);
 }
 
 // Repairing: hold the mouse on a broken system with the repair kit.
@@ -280,7 +300,7 @@ function updateRepair(dt, target, holding) {
   if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.repair.t >= REPAIR_TIME) {
     if (target.service) { mission.maint.serviced = true; combatBanner(`${player.repair.sys.name} serviced — it won't break now`); }
-    else { player.repair.sys.broken = false; combatBanner(`${player.repair.sys.name} repaired`); }
+    else { player.repair.sys.broken = false; hz.stats.repairs++; combatBanner(`${player.repair.sys.name} repaired`); }
     sfx.win();
     player.repair = null;
   }
@@ -313,7 +333,7 @@ function drawLights(dt) {
     lightLevel[col] = lerp(lightLevel[col], dark ? 0 : 1, 1 - Math.exp(-3 * dt));
     const a = (1 - lightLevel[col]) * 0.42;
     if (a < 0.01) continue;
-    ctx.fillStyle = `rgba(4,6,14,${a})`;
+    ctx.fillStyle = `rgba(40,4,6,${a})`;                // emergency lighting: dim and red
     for (const r of ROOMS.filter(r => r.col === col)) for (const q of r.rects) ctx.fillRect(L(q.x), L(q.y), L(q.w), L(q.h));
   }
 }
@@ -400,6 +420,26 @@ function drawItemIcon(kind, x, y, s = 1, t = 0) {
     ctx.beginPath(); ctx.arc(15, 0, 2, 0, TAU); ctx.fillStyle = '#ffb0a0'; ctx.fill();
   } else if (kind === 'extinguisher') {
     extinguisher(-4, 0, 0);
+  } else if (kind === 'plate') {
+    ctx.rotate(0.2); rr(-13, -10, 26, 20, 3); ctx.fillStyle = '#8a93a5'; ctx.fill(); stroke(2);
+    ctx.fillStyle = '#2b303a'; for (const [rx, ry] of [[-9, -6], [9, -6], [-9, 6], [9, 6]]) ctx.fillRect(rx - 1.5, ry - 1.5, 3, 3);
+    ctx.fillStyle = 'rgba(255,255,255,0.3)'; ctx.fillRect(-11, -8, 22, 3);
+  } else if (kind === 'coolant') {
+    rr(-7, -12, 14, 24, 4); ctx.fillStyle = '#4ac0e0'; ctx.fill(); stroke(2);
+    ctx.fillStyle = '#e8f8ff'; ctx.fillRect(-5, -4, 10, 6); ctx.fillStyle = '#2b303a'; ctx.fillRect(-4, -15, 8, 4);
+    ctx.fillStyle = '#1a5a70'; ctx.font = '800 6px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('COOL', 0, -1);
+  } else if (kind === 'blackbox') {
+    rr(-13, -9, 26, 18, 3); ctx.fillStyle = '#e8762e'; ctx.fill(); stroke(2);         // (black boxes are orange)
+    ctx.fillStyle = '#2b303a'; ctx.fillRect(-10, -3, 20, 2); ctx.fillRect(-10, 2, 20, 2);
+    hazardStripe(-13, -9, 26, 4);
+  } else if (kind === 'drill') {
+    rr(-14, -5, 16, 10, 3); ctx.fillStyle = '#d9a54a'; ctx.fill(); stroke(2);
+    poly([[2, -4], [15, 0], [2, 4]]); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(1.5);
+    ctx.strokeStyle = '#6b7486'; ctx.lineWidth = 1.2; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(4 + i * 3.5, -3); ctx.lineTo(6 + i * 3.5, 3); ctx.stroke(); }
+    rr(-10, 4, 6, 8, 2); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.2);
+  } else if (kind === 'ore') {
+    poly([[-9, -4], [-3, -10], [6, -8], [10, 0], [5, 9], [-6, 8]]); ctx.fillStyle = '#6e6359'; ctx.fill(); stroke(2);
+    ctx.fillStyle = '#7af0ff'; for (const [ox, oy] of [[-2, -3], [3, 2], [-4, 4]]) { ctx.beginPath(); ctx.arc(ox, oy, 2.2, 0, TAU); ctx.fill(); }
   } else if (kind === 'fuel') {
     rr(-6, -12, 12, 24, 5);
     const g = ctx.createLinearGradient(-6, 0, 6, 0); g.addColorStop(0, '#3a9a5a'); g.addColorStop(0.5, '#b8ffd0'); g.addColorStop(1, '#2a7a4a');
@@ -444,8 +484,9 @@ function drawClickTarget(target) {
   if (!target) return;
   ctx.beginPath(); ctx.arc(L(target.x), L(target.y), L(target.r), 0, TAU);
   ctx.setLineDash([6, 5]); ctx.strokeStyle = target.ok ? 'rgba(95,214,160,0.9)' : 'rgba(180,186,198,0.6)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
-  if (player.repair && target.repair === player.repair.sys) {
-    const k = player.repair.t / REPAIR_TIME;
+  const hk = player.hold && target.hold?.id === player.hold.id ? player.hold.t / player.hold.time : null;
+  if (hk !== null || (player.repair && target.repair === player.repair.sys)) {
+    const k = hk ?? player.repair.t / REPAIR_TIME;
     ctx.beginPath(); ctx.arc(L(target.x), L(target.y), L(target.r) + 6, -Math.PI / 2, -Math.PI / 2 + k * TAU);
     ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 5; ctx.stroke();
   }
@@ -476,7 +517,7 @@ function drawSystemsHUD(top) {
   const px = x0 + 156, R = power.reactor;
   const lines = [
     [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil(ENERGY_TIME - R.t)} s` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : '#c8ffe6'],
-    [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve}`, '#c9ced8'],
+    [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve} · duct tape: ${hz.tape} · hull plates: ${hz.plates}`, '#c9ced8'],
     [`Capacitors  left ${CAPACITORS[0].charge}/${CAP_MAX}${capBroken(0) ? '✖' : ''}   mid ${CAPACITORS[1].charge}/${CAP_MAX}${capBroken(1) ? '✖' : ''}   right ${CAPACITORS[2].charge}/${CAP_MAX}${capBroken(2) ? '✖' : ''}`, '#9cd8ff'],
   ];
   const broke = SYSTEMS.filter(s => s.broken).map(s => s.name);

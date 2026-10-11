@@ -372,6 +372,46 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
     room, "DAYS SINCE LAST INCIDENT: 0" and "HANG IN THERE" signs.
 - **Warm ceiling light** pools on the floors.
 
+## Step 8 — Building IDEAS.md, easiest first
+
+Every new encounter and damage type is switched on per mission (`mission.rules`, and each
+mission's own encounter list), so the easy missions stay as they were and the harder ones
+get the rest.
+
+### 8a. Small things (`js/hazards.js`, all missions)
+- **Snack machine** (left cannon room, next to the kitchen): 1 energy from the left capacitor;
+  eating it while hurt ends being hurt 10 s sooner.
+- **Coffee** at the helm: 15 s of slightly faster walking. Big hits may tip the mug over; it
+  refills itself after a minute.
+- **Intercoms** in every room: call for help (a "HELP!" plate on everyone's sidebar, 15 s).
+- **Ship voice** (speech synthesis, respects mute) for breaches, plasma fires and venting.
+- **Rattling panels:** every big hit on a side loosens wall panels there (a warning: the next
+  big hit on that side breaches, on missions with breaches).
+- **Duct tape** (3 rolls) and **hull plates** (4, crates in both airlock rooms) are counted.
+- The **cat** hides during breaches and stares at nearby fires. **Emergency lighting** is
+  dim red. **Scorch marks** stay where fires burned. The end screen has a **mission report**
+  (fires, breaches, repairs, medic of the day, cat pets).
+
+### 8b. Damage types (`mission.rules`)
+- **Hull breach** (`breach`): a big hit on a side that's already damaged holes the nearest
+  outer room. Blast doors drop on its doorways (deck airlock still works; a manual override
+  forces a blast door up for 5 s). Vacuum: visor down, 70% speed, no healing, fires go out
+  and can't start, loose items drift to the hole and get sucked out within 8 s (they float
+  outside, grab them on a spacewalk), the room's capacitor leaks 1 charge per 20 s.
+  Fix: weld a hull plate on from outside (6 s), or tape a tarp over it from inside (15 s,
+  1 duct tape; tears at the next hit on that side).
+- **Plasma fire** (`plasma`): fires on the reactor or a capacitor with 3+ charge. Violet,
+  spreads every 6 s, the extinguisher only pushes it back. Every room has an **emergency
+  vent** valve (manual override): 10 s of vacuum blows every fire out, and hurts anyone still
+  inside.
+- **Power surges** (`surge`, 35% on big hits): a power line arcs. Using its shield button or
+  reloading its cannon zaps you (a hit); energy over an arcing feed line is lost. Splice it
+  with the repair kit (hold 5 s on the sparks).
+- **Gravity failure** (`gravity`, 25% on big hits): a room's floor goes floaty (slow to start,
+  slow to stop). Reset the breaker under its floor plate with the repair kit (4 s).
+- Generic "hold click" jobs (`target.hold`, `updateHold`) power tarps, welds, splices etc.
+- `node tests/hazards.js` covers all of the above.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

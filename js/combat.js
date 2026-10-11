@@ -61,7 +61,9 @@ const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 1.2;
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
   if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`No energy for the ${g.name.toLowerCase()} (its capacitor is empty)`); return false; }
-  g.reload = RELOAD_TIME; sfx.hatch(); return true;
+  g.reload = RELOAD_TIME; sfx.hatch();
+  const gunner = crew.find(c => c.mode === 'gun' && c.gun === g); if (gunner) zap(gunner, 'gun_' + g.id);
+  return true;
 }
 function fireCannon(g) {
   if (g.cd > 0) return;
@@ -118,7 +120,7 @@ function shieldAbsorb(s, side, x, y) {
 
 function shipHit(side, x, y, large) {
   combat.hits[large ? 'large' : 'small']++;
-  if (large) damageColumn(side, true);                 // small hits: see smallHit (fire / damage)
+  if (large) { damageColumn(side, true); onBigHit(side, x, y); }   // small hits: see smallHit (fire / damage)
   combat.decals.push({ x, y, r: large ? 1.1 : 0.5, seed: Math.random() * 1000 });
   if (large) { combat.bigFlashes[side] = 1; combat.shake = 1; sfx.explosion(); }
   else { combat.flashes[side] = 1; sfx.hit(false); smallHit(side, x, y); }
@@ -136,6 +138,7 @@ function pressShield(side) {
   if (s.up > 0 || s.cd > 0) return false;
   if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
   s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; sfx.shieldUp();
+  if (player && player.mode === 'inside') zap(player, 'shield_' + side);
   return true;
 }
 
@@ -259,7 +262,7 @@ function drawCombatBack(t) {
 
 function drawShipDecals() {
   for (const d of combat.decals) {
-    if (d.goo) continue;
+    if (d.goo || d.scorch) continue;
     const g = ctx.createRadialGradient(L(d.x), L(d.y), 0, L(d.x), L(d.y), L(d.r));
     g.addColorStop(0, 'rgba(15,12,10,0.85)'); g.addColorStop(0.6, 'rgba(40,28,20,0.5)'); g.addColorStop(1, 'rgba(40,28,20,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(d.x), L(d.y), L(d.r), 0, TAU); ctx.fill();
@@ -269,6 +272,7 @@ function drawShipDecals() {
 // Alien goo where an intruder died (drawn on the floor).
 function drawGoo() {
   for (const d of combat.decals) {
+    if (d.scorch) { stain(L(d.x), L(d.y), L(d.r), 'rgba(18,14,10,0.5)', d.seed); continue; }   // where a fire burned
     if (!d.goo) continue;
     stain(L(d.x), L(d.y), L(d.r), 'rgba(120,220,70,0.45)', Math.floor(d.x * 13));
   }
