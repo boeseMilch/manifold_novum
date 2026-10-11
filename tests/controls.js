@@ -96,7 +96,7 @@ process.exitCode = failed ? 1 : 0;
   check(me.y < B.y + B.h, 'you can step onto the treadmill from the back');
   for (let i = 0; i < 120; i++) G.simTick(1 / 60);
   check(me.y > B.y, 'walking forward on it you stay on the belt (it pushes you back)');
-  { me.y = B.y + B.h * 0.85; for (let i = 0; i < 4; i++) G.simTick(1 / 60); const y1 = me.y; G.simTick(1 / 60); const v = (y1 - me.y) * 60; check(v > 0 && Math.abs(v - 4.2 * 0.5) < 0.3, `walking on it you go forward at half your walking speed (${v.toFixed(2)} units/s)`); }
+  { const yKeep = me.y; me.y = B.y + B.h * 0.7; me.vy = -4.2; const y1 = me.y; G.simTick(1 / 60); const v = (y1 - me.y) * 60; me.y = yKeep; check(v > 0 && Math.abs(v - 4.2 * 0.5) < 0.3, `walking on it you go forward at half your walking speed (${v.toFixed(2)} units/s)`); }
   me.input.keys.delete('KeyW'); const y0 = me.y; for (let i = 0; i < 30; i++) G.simTick(1 / 60);
   check(me.y > y0 + 0.3, 'standing still, the belt carries you off the back');
   me.x = B.x - 0.6; me.y = B.y + B.h / 2; me.input.keys.add('KeyD'); for (let i = 0; i < 60; i++) G.simTick(1 / 60); me.input.keys.delete('KeyD');

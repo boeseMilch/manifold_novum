@@ -555,8 +555,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 
 ### 8j. A working treadmill
 - The treadmill in the right airlock room works: step on from the back (handlebar and side rails
-  block the other ways), and the belt carries you back at 1.6 units/s — walk to stay on, stand
-  still and it drops you off the back. `canStand` now also checks the middle of the crew box
+  block the other ways), and the belt carries you back — walk to stay on, stand
+  still and it drops you off the back. The belt runs at half the walker's own speed. `canStand` now also checks the middle of the crew box
   against solids, so thin things (the rails) block.
 
 ### 8k. Music player and the final hit
