@@ -15,7 +15,7 @@ function encounterPlates() {
     add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: `${mission.rules?.handle ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s) + ` : 'needs '}1 energy in MID · ${fmt(JUMP_WINDOW * (mission.rules?.handle ? 2 : 1) - mission.jump.t)}`, stripe: '#7af0ff', red: true });
   for (const e of combat.enemies) if (e.phase === 'fighting') {
     const hit = e.pois.filter(p => p.hit).length;
-    add('enemy' + uid(e), { icon: e.kind, title: e.D.name.toUpperCase(), sub: `${e.side === 'port' ? 'left' : 'right'} side · ${hit}/${e.pois.length} weak spots hit${e.charge >= 0 ? ' · HEAVY SHOT!' : ''}`, stripe: '#e2574c', red: true });
+    add('enemy' + uid(e), { icon: { stealth: 'interceptor', tractor: 'interceptor', grappler: 'spore', mother: 'spore', pirate: 'frigate', derelict: 'frigate' }[e.kind] || e.kind, title: e.D.name.toUpperCase(), sub: `${e.side === 'port' ? 'left' : 'right'} side · ${hit}/${e.pois.length} weak spots hit${e.charge >= 0 ? ' · HEAVY SHOT!' : ''}`, stripe: '#e2574c', red: true });
   }
   if (combat.swarm || combat.asteroids.length)
     add('swarm', { icon: 'asteroid', title: 'ASTEROID SWARM', sub: `front · ${combat.asteroids.length} incoming${combat.swarm?.left ? `, ${combat.swarm.left} more` : ''}`, stripe: '#e2574c', red: true });
@@ -32,6 +32,7 @@ function encounterPlates() {
   for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the breaker`, stripe: '#7af0ff', red: true });
   evaPlates(add);
   shipEventPlates(add);
+  organicPlates(add);
   for (const p of hz.pings) add('ping' + p.room, { icon: 'ping', title: 'HELP!', sub: `${p.name} · ${roomById(p.room).name}`, stripe: '#ffe08a', red: true });
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });

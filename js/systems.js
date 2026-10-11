@@ -301,7 +301,7 @@ function updateHold(dt, target, holding) {
 }
 // What a click does on a spacewalk (hazards, EVA jobs).
 function evaClickTarget(mx, my) {
-  return hazardEvaTarget(mx, my) || (typeof evaJobTarget === 'function' ? evaJobTarget(mx, my) : null);
+  return hazardEvaTarget(mx, my) || evaJobTarget(mx, my) || organicEvaTarget(mx, my);
 }
 
 // Repairing: hold the mouse on a broken system with the repair kit.

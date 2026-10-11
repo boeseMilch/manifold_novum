@@ -136,6 +136,7 @@ function crewHit(side, c) {
 function pressShield(side) {
   const s = combat.shields[side];
   if (broken(SHIELD_BUTTONS.find(b => b.side === side))) return 'broken';
+  if (grabbed(side)) { sfx.empty(); combatBanner('A tentacle is wrapped around that side — the shield can\'t go up'); return 'grabbed'; }
   if (s.up > 0 || s.cd > 0) return false;
   if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
   s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; s.extended = false; s.age = 0; sfx.shieldUp();

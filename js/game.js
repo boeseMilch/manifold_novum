@@ -420,6 +420,7 @@ const DEBUG_ITEMS = [
   { key: 'k', label: 'Spacewalk jobs: mines, spores, debris, antenna, canister', run: () => { spawnMineDrone('port'); spawnSpores('star'); jamCannon('port'); knockAntenna(); spawnCanister('port'); } },
   { key: 'l', label: 'Ship-wide: flare, storm, coolant leak, AI glitch', run: () => { startFlare(); startStorm(); startCoolantLeak(); startGlitch(); } },
   { key: 'z', label: 'Stealth fighter left, tractor tug right', run: () => { combatSpawn('stealth', 'port', true); combatSpawn('tractor', 'star', true); } },
+  { key: 'c', label: 'Organic: grappler left, leeches + spore mother right, leviathan', run: () => { combatSpawn('grappler', 'port', true); combatSpawn('mother', 'star', true); spawnLeeches('star'); startLeviathan(); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
@@ -566,6 +567,7 @@ function render(t) {
   drawShipDecals();
   drawBreachesOutside(t);
   drawEvaJobs(t);
+  drawOrganicWorld(t);
   for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
   drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   drawSpineDecor(t);
@@ -573,6 +575,7 @@ function render(t) {
   drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
   for (const r of ROOMS) drawRoomLabel(r);
   drawLightPools();
+  drawLeviathanWarning(t);
   drawFloorDecor(t);
   drawJunk();
   drawGoo();
@@ -753,6 +756,7 @@ function simTick(dt) {
   updateEva(dt);
   updateEncounters(dt);
   updateMinigames(dt);
+  updateOrganic(dt);
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.

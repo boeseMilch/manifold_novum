@@ -70,7 +70,7 @@ const report = (label, times) => {
   console.log(`${misses ? 'FAIL' : 'ok  '}  ${label.padEnd(44)} worst ${worst === Infinity ? 'never' : worst.toFixed(1) + ' s'}${misses ? `  (${misses}/${times.length} trials missed)` : ''}`);
   if (misses) failed++;
 };
-for (const kind of Object.keys(G.ENEMY_TYPES)) {
+for (const kind of Object.keys(G.ENEMY_TYPES).filter(k => !G.ENEMY_TYPES[k].special)) {   // (grappler, spore mother: own rules, see tests/organic.js)
   for (const side of ['port', 'star']) {
     for (const p of G.ENEMY_TYPES[kind].pois) {
       report(`${kind} ${side} — ${p.name}`, Array.from({ length: TRIALS }, () => tryPart(kind, side, p.id)));

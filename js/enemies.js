@@ -202,7 +202,7 @@ function shellHitsEnemy(e, x0, y0, x1, y1) {
       return true;
     }
     for (const p of e.pois) {
-      if (!p.hit && shapeDist(p.shape, lx, ly) <= POI_TOLERANCE) { hitPoi(e, p, ...enemyToWorld(e, ...p.c)); return true; }
+      if (!p.hit && !e.D.closed?.(e, p) && shapeDist(p.shape, lx, ly) <= POI_TOLERANCE) { hitPoi(e, p, ...enemyToWorld(e, ...p.c)); return true; }
     }
     if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => shapeDist(p.shape, lx, ly) === 0)) {
       for (let k = 0; k < 5; k++) combatFx(wx, wy, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.3, '#ffd28a', 0.08);
@@ -228,6 +228,7 @@ function hitPoi(e, p, px, py) {
   if (p.id === 'aux' || p.id === 'main') { e.ampGoal *= 0.45; e.omegaGoal *= 0.8; }
   if (p.id === 'heavy' && e.charge >= 0) { e.stopCharge?.(); e.charge = -1; }
   if (p.id === 'dish') e.shieldUp = false;
+  e.D.onHit?.(e, p);
   if (e.pois.every(q => q.hit)) {
     e.phase = 'burning'; e.stopCharge?.(); e.charge = -1;
     sfx.win(); combatBanner(`${e.D.name} destroyed!`);

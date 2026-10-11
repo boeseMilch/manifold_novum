@@ -30,14 +30,14 @@ function netSerialize() {
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
     fires: fires.map(f => ({ ...f, sys: sysIdx(f.sys) })),
-    luck, hz, evs, enc,
+    luck, hz, evs, enc, org,
     mission: {
       ...mission, revealed: [...mission.revealed],
       events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined })),
       maint: mission.maint && { target: sysIdx(mission.maint.target), decoy: sysIdx(mission.maint.decoy), serviced: mission.maint.serviced },
     },
     combat: {
-      enemies: combat.enemies.map(({ D, stopCharge, pois, ...e }) => ({ ...e, pois: pois.map(p => [p.hit ? 1 : 0, p.smoke]) })),
+      enemies: combat.enemies.map(({ D, stopCharge, pois, ...e }) => ({ ...e, pois: pois.map(p => [p.hit ? 1 : 0, p.smoke, p.healT || 0]) })),
       asteroids: combat.asteroids.map(({ shape, ...a }) => a),
       shells: combat.shells, shots: combat.shots, fx: combat.fx, decals: combat.decals, hits: combat.hits,
       flashes: combat.flashes, bigFlashes: combat.bigFlashes, shake: combat.shake, shields: combat.shields,
@@ -92,7 +92,7 @@ function netApply(s, myId) {
   });
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
-  Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc);
+  Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc); Object.assign(org, s.org);
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
     events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined })),
@@ -101,7 +101,7 @@ function netApply(s, myId) {
   const C2 = s.combat;
   combat.enemies = C2.enemies.map(d => {
     const D = ENEMY_TYPES[d.kind];
-    return { ...d, D, pois: D.pois.map((p, i) => ({ ...p, c: shapeCenter(p.shape), hit: !!d.pois[i][0], smoke: d.pois[i][1] })) };
+    return { ...d, D, pois: D.pois.map((p, i) => ({ ...p, c: shapeCenter(p.shape), hit: !!d.pois[i][0], smoke: d.pois[i][1], healT: d.pois[i][2] })) };
   });
   combat.asteroids = C2.asteroids.map(a => {
     if (!shapeCache.has(a.uid)) shapeCache.set(a.uid, lumpShape(a.shapeSeed, a.big ? 11 : 8, 0.3));

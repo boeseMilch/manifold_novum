@@ -96,7 +96,7 @@ function startMission(id = 'intro') {
   const candidates = SYSTEMS.filter(s => !s.broken);
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
-  resetHazards(); resetEncounters(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
+  resetHazards(); resetEncounters(); resetOrganic(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) },
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,

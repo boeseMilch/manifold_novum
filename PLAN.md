@@ -473,6 +473,22 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - **Heartbeat:** while treating, a click right on the pulse ring adds 0.5 s.
 - `node tests/minigames.js`.
 
+### 8f. Organic enemies (`js/organic.js`)
+- **Grappler** (event `grappler`): a squid that throws a tentacle around the hull every ~16 s (2 s
+  coil telegraph). While attached: that side's shield can't go up, manned cannons drift (the ship
+  turns). 5 cannon hits on the tentacle, or hack it off on a spacewalk (3 s, faster with the
+  repair kit). Weak spots (eye, ink sac, beak) heal 15 s after being hit unless all three are hit
+  in time.
+- **Leech swarm** (`leeches`): 6 leeches fly in and latch on; each latched one breaks a part on
+  its side every 20 s. Shells pop them on the way in; a raised shield on that side burns them
+  off; spacewalkers can pry them off (1.5 s).
+- **Spore mother** (`mother`): puffs spore clouds (barnacles) every 12 s; after each puff one of
+  its three sacs opens for 3.5 s — the only time it can be hit.
+- **Leviathan** (`leviathan`): 30 s; every 4 s it bumps the next room in a sweep (red warning on
+  that room's floor, the sidebar lists the next ones): crew inside get hurt, plus a small hit there.
+- Enemy weak spots can be `closed` and react `onHit`; enemy kinds marked `special` are left out of
+  the reachability test. `node tests/organic.js`.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
