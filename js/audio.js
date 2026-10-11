@@ -76,6 +76,8 @@ const sfx = (() => {
       if (muted || typeof speechSynthesis === 'undefined' || speechSynthesis.speaking) return;
       try { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; u.pitch = 0.6; u.volume = 0.8; speechSynthesis.speak(u); } catch (e) { /* no voice */ }
     },
+    // A wet, deflating squelch (organic things dying).
+    squelch() { noise(0.35, 400, 0.45, 1.5); tone('sine', 220, 60, 0.45, 0.35); tone('triangle', 140, 50, 0.3, 0.2, 0.1); },
     crack() { noise(0.25, 300, 0.6); tone('triangle', 120, 60, 0.3, 0.4); },
     // Heavy shot charging: a rising whine everyone on board can hear. Returns a stop function.
     charge(dur) {

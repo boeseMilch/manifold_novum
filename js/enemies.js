@@ -119,6 +119,21 @@ function updateEnemy(e, dt) {
   const w = D.omega, [p1, p2, p3] = e.ph, A = D.amp[0] * e.ampMul, B = D.amp[1] * e.ampMul;
   const tx = e.ax + A * (0.8 * Math.sin(w * e.t) + 0.3 * Math.sin(2.3 * w * e.t + p1));
   const ty = e.ay + B * (0.75 * Math.sin(2 * w * e.t + p3) + 0.3 * Math.sin(1.37 * w * e.t + p2));
+  if (e.phase === 'burning' && D.organic) {        // living things don't burn: they deflate, spewing slime
+    e.burnT += dt;
+    e.ax -= e.dir * dt * 0.6; e.ay += dt * 1.2;
+    e.rot += dt * 0.35 * e.dir * Math.sin(e.burnT * 3);
+    const k = Math.max(0, 1 - e.burnT / 3.5);
+    if (Math.random() < 0.3 + 1.2 * k) {                  // thin jets of slime out of its torn organs
+      const p = e.pois[Math.floor(Math.random() * e.pois.length)], [lx, ly] = p.c;
+      const [fx, fy] = enemyToWorld(e, lx, ly), [ox, oy] = enemyToWorld(e, lx + 1, ly + (Math.random() - 0.5) * 0.8);
+      const sp = 2 + Math.random() * 4 * k, dx = ox - fx, dy = oy - fy, d = Math.hypot(dx, dy) || 1;
+      combatFx(fx, fy, dx / d * sp, dy / d * sp, 0.9 + Math.random() * 0.8, ['#9cff5a', '#6ad13a', '#c8ff6e'][Math.floor(Math.random() * 3)], 0.05 + Math.random() * 0.09);
+    }
+    if (e.burnT > 5) e.phase = 'gone';
+    e.x = tx; e.y = ty;
+    return;
+  }
   if (e.phase === 'burning') {                     // fall behind on fire
     e.burnT += dt;
     const ease = Math.min(1, e.burnT / 1.5);       // speed up gradually
@@ -221,7 +236,7 @@ function shellHitsEnemy(e, x0, y0, x1, y1) {
 
 function hitPoi(e, p, px, py) {
   p.hit = true; e.flash = 1; sfx.poi();
-  for (let i = 0; i < 16; i++) combatFx(px, py, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, 0.6, i % 2 ? '#ffb347' : POI_COLOR, 0.12);
+  for (let i = 0; i < 16; i++) combatFx(px, py, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, 0.6, e.D.organic ? (i % 2 ? '#9cff5a' : '#6ad13a') : i % 2 ? '#ffb347' : POI_COLOR, e.D.organic ? 0.08 : 0.12);
   if (p.id === 'crack') { e.blind = BLIND_TIME; e.target = null; }
   if (p.id === 'cable') e.shotCount = -1;           // the very next shot fizzles, then every second one
   if (p.id === 'cooling') { e.ampGoal = 0.25; e.omegaGoal = 0.6; }
@@ -231,7 +246,8 @@ function hitPoi(e, p, px, py) {
   e.D.onHit?.(e, p);
   if (e.pois.every(q => q.hit)) {
     e.phase = 'burning'; e.stopCharge?.(); e.charge = -1;
-    sfx.win(); combatBanner(`${e.D.name} destroyed!`);
+    if (e.D.organic) { sfx.squelch?.(); sfx.win(); combatBanner(`${e.D.name} is done for — it deflates, spewing slime`); }
+    else { sfx.win(); combatBanner(`${e.D.name} destroyed!`); }
   }
 }
 
@@ -610,6 +626,10 @@ function drawEnemy(e, t) {
   if (e.phase === 'burning') ctx.globalAlpha = clamp(1 - (e.burnT - 3) / 2, 0, 1);
   if (e.D.stealth) ctx.globalAlpha *= stealthAlpha(e);                // cloaked: only shows after a radar ping or when it fires
   ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.rot); ctx.scale(e.dir, 1);
+  if (e.phase === 'burning' && e.D.organic) {           // deflating: it shrinks and sags, wobbling
+    const k = Math.min(1, e.burnT / 3.5), w = Math.sin(e.burnT * 9) * 0.06 * (1 - k);
+    ctx.scale(1 - 0.45 * k + w, 1 - 0.3 * k - w);
+  }
   shadowEllipse(L(0.5), L(0.7), L(e.D.size[0]), L(e.D.size[1]), 0.22);
   if (e.D.draw) e.D.draw(e, t); else if (e.kind === 'interceptor') drawInterceptor(e, t); else drawFrigate(e, t);
   if (e.flash > 0) {                              // hit flash
@@ -618,7 +638,7 @@ function drawEnemy(e, t) {
     ctx.beginPath(); ctx.ellipse(0, 0, L(e.D.size[0]), L(e.D.size[1]), 0, 0, TAU); ctx.fill();
     ctx.globalCompositeOperation = 'source-over';
   }
-  for (const p of e.pois) if (p.hit && p.id !== 'crack') drawSmoke(L(p.c[0]), L(p.c[1]), p.smoke, t + p.c[0]);
+  for (const p of e.pois) if (p.hit && p.id !== 'crack' && !e.D.organic) drawSmoke(L(p.c[0]), L(p.c[1]), p.smoke, t + p.c[0]);
   drawEnemyShield(e);
   ctx.restore();
   if (e.phase === 'fighting' && (!e.D.stealth || stealthAlpha(e) > 0.3)) drawEnemyTag(e);

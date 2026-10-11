@@ -136,7 +136,7 @@ function updateEva(dt) {
     const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4);
     if (m) { bo.dead = true; explodeMine(m, 'laser'); continue; }
     const b = evs.barnacles.find(b => Math.hypot(bo.x - b.x, bo.y - b.y) < 0.45);
-    if (b) { bo.dead = true; if (--b.hp <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
+    if (b) { bo.dead = true; if (--b.hp <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);
   // the canister drifts past, then it's gone
@@ -166,7 +166,7 @@ function evaJobTarget(mx, my) {
     if (!at(b.x, b.y, 0.6)) continue;
     if (!near(b.x, b.y)) return far('Barnacle', b.x, b.y, 0.6);
     return holdTarget('scrape' + b.uid, SCRAPE_TIME, `Hold click: scrape the barnacle off (${SCRAPE_TIME} s)`, b.x, b.y, 0.6,
-                      () => { evs.barnacles = evs.barnacles.filter(q => q !== b); sfx.spit(); combatBanner('Barnacle scraped off'); });
+                      () => { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12); combatBanner('Barnacle scraped off'); });
   }
   for (const [id, on] of Object.entries(evs.jams)) {
     if (!on) continue;

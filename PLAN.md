@@ -594,6 +594,15 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - New art: smooth tapering arms with suckers, fins, a slit-pupil eye that shuts when hit, a sloshing
   poison sac, hooked jaws that open before spitting, an acid stain and bubbles at the grip.
 
+### 8o. Organic deaths, a readable poison sac
+- Organic enemies (`D.organic`: grappler, spore mother) don't burn when they die: they deflate,
+  wobbling and sagging, while slime jets out of their torn organs, with a wet squelch
+  (`sfx.squelch`). Their weak-spot hits splash green instead of sparking, and hit organs don't smoke.
+  Leeches and barnacles pop in green slime (`slimeBurst`).
+- The grappler's poison sac is now a big round bulb on a fleshy stalk: toxic green sloshing with
+  bubbles, veins, a skull mark and a drop forming underneath (shrivelled and leaking when hit). Its
+  beak is a pale, hooked chitin beak.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

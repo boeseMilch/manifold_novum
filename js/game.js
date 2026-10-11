@@ -436,6 +436,7 @@ const DEBUG_ITEMS = [
   { key: 'd', label: 'Pirates dock left · derelict (box + engineer) right', run: () => { dockShip('pirate', 'port'); } },
   { key: 'r', label: 'Derelict with black box + engineer on the right', run: () => { dockShip('derelict', 'star', { blackbox: true, npc: true }); } },
   { key: 'a', label: '', hidden: true, run: () => combatSpawn('grappler', 'port', true) },   // debug only
+  { key: 't', label: '', hidden: true, run: () => { for (const e of combat.enemies) if (e.D.organic) for (const p of e.pois) hitPoi(e, p, e.x, e.y); } },   // debug only: finish off organic enemies
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
