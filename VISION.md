@@ -30,9 +30,8 @@ Six rooms in two decks of three zones (red / white / blue):
 | Lower deck | Port airlock    | Reactor               | Starboard airlock |
 
 - Every lower-deck room has a capacitor, and every capacitor starts with 1 charge.
-- Each zone has two ways between the decks: a **lift** that is fast but only usable when
-  its car is on your deck, and a **deck airlock** that always works but is slow (in, door
-  closes, chamber cycles, far door opens).
+- Each zone has one way between the decks: a **deck airlock**, which is slow (in, door
+  closes, chamber cycles, far door opens). The lifts were taken out.
 
 ## Presentation
 
@@ -41,7 +40,7 @@ Six rooms in two decks of three zones (red / white / blue):
 
 ## Open questions
 
-- What threats are there, and how do they map onto the zones and rooms?
+- What threats are there, and how do they map onto the zones and rooms? (See `IDEAS.md`.)
 - What exactly is the mini-game for each station?
 - How many players, and how do they split roles? Is there a single-player mode with bots?
 - How long is a mission, and how does progression work between missions?

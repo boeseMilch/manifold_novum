@@ -15,3 +15,4 @@ Whenever you finish a request from the user, commit the result before reporting 
 - `README.md`: how to run the game (solo, or `node server.js` for LAN multiplayer).
 - `PLAN.md`: what has been built so far and why. Keep it updated with every change.
 - `VISION.md`: where the game is heading.
+- `IDEAS.md`: brainstormed encounters, damage types and mini-games (not built yet).
