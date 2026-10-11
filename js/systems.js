@@ -1,0 +1,385 @@
+// Ship systems: energy (reactor, distribution lever, capacitors), breakable parts and
+// repairs, the inventory (weapon slot + item slot) with items lying around, and the
+// hand weapons (laser gun, wrench toss). Units: layout units.
+
+const CELL_ENERGY = 5, ENERGY_TIME = 20, SHOTS_PER_ENERGY = 3, REPAIR_TIME = 5;
+// Power lever: its position is the capacitor index it feeds, laid out left → right on the
+// dial (port, middle, starboard). Auto mode steps right and wraps: mid → stbd → port → mid.
+const LEVER_NAMES = ['LEFT', 'MID', 'RIGHT'];
+const LEVER = { x: 22.2, y: 22.75 }, LEVER_HUB = 0.22;
+const leverAngle = (i) => -Math.PI / 2 + (i - 1) * 0.9;
+const FUEL_CRATE = { x: 17.4, y: 19.6 };
+const REACH = 1.9;                                // how far you can reach to click things
+const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED = 13;
+
+const power = {
+  reactor: { fuel: CELL_ENERGY, t: 0 },          // energy left in the loaded cell, progress to the next one
+  reserve: 3,                                     // spare fuel cells in the crate
+  lever: { pos: 1, jammed: false, angle: 0 },     // starts on MID; jammed = a wrench wedged in front of the handle
+  bolts: [],                                      // energy travelling from the reactor to a capacitor
+};
+let inv = { weapon: null, item: null, cd: 0 };     // the acting crew member's inventory (see withCrew)
+const ITEMS = [
+  { kind: 'repair', x: 1.6, y: 22.35 },          // the one repair kit, bottom left
+  { kind: 'laser', x: 42.4, y: 22.4 },
+  { kind: 'extinguisher', x: 15.3, y: 2.2 },     // bridge
+  { kind: 'extinguisher', x: 31.7, y: 3.8 },     // starboard cannon room
+];
+const ITEM_NAMES = { repair: 'repair kit', laser: 'laser gun', fuel: 'fuel cell', extinguisher: 'fire extinguisher' };
+const slotOf = (kind) => kind === 'fuel' ? 'item' : 'weapon';
+
+// ---------------------------------------------------------------------------
+// Breakable systems. col: which zone column a hit on that side damages.
+// ---------------------------------------------------------------------------
+const SYSTEMS = [
+  ...GUNS.map(g => ({ kind: 'cannon', ref: g, col: { front: 1, port: 0, star: 2 }[g.id], x: g.hatch[0], y: g.hatch[1], name: g.name })),
+  ...SHIELD_BUTTONS.map(b => ({ kind: 'shield', ref: b, col: SIDE_CAP[b.side], x: b.x, y: b.y, name: `${SIDE_LABEL[b.side]} shield button` })),
+  ...CAPACITORS.map((c, i) => ({ kind: 'capacitor', ref: c, col: i, x: c.x, y: c.y, name: `${['Left', 'Middle', 'Right'][i]} capacitor` })),
+  { kind: 'reactor', ref: REACTOR, col: 1, x: REACTOR.x, y: REACTOR.y, name: 'Reactor', r: 1.9 },
+  { kind: 'lever', ref: LEVER, col: 1, x: LEVER.x, y: LEVER.y, name: 'Power lever' },
+  ...LIFTS.map(L => ({ kind: 'lift', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} lift`, r: 2.4 })),
+  ...DECK_LOCKS.map(L => ({ kind: 'lock', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} deck airlock`, r: 2.4 })),
+  ...HATCHES.map(h => ({ kind: 'hatch', ref: h, col: h.side === 'port' ? 0 : 2, x: h.inside[0] - h.dir * 0.4, y: h.inside[1], name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock` })),
+].map(s => ({ ...s, broken: false, r: s.r || 1.0 }));
+const broken = (ref) => !!SYSTEMS.find(s => s.ref === ref)?.broken;
+
+function breakSystem(s) {
+  s.broken = true;
+  sfx.spark(); sfx.clank();
+  combatBanner(`${s.name} broken!`);
+  for (let i = 0; i < 14; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.7, i % 2 ? '#ffb347' : '#6a6f7a', 0.12);
+}
+// Hits on the hull damage systems in the zone column that was hit.
+function damageColumn(side, large) {
+  const col = side === 'port' ? 0 : side === 'star' ? 2 : 1;
+  const intact = SYSTEMS.filter(s => s.col === col && !s.broken);
+  const n = large ? (Math.random() < (lucky() ? 0.1 : 0.3) ? 2 : 1) : 0;
+  for (let i = 0; i < n && intact.length; i++) breakSystem(intact.splice(Math.floor(Math.random() * intact.length), 1)[0]);
+}
+
+// ---------------------------------------------------------------------------
+// Energy
+// ---------------------------------------------------------------------------
+const capBroken = (i) => broken(CAPACITORS[i]);
+function useEnergy(i) {
+  const c = CAPACITORS[i];
+  if (capBroken(i) || c.charge <= 0) return false;
+  c.charge--; return true;
+}
+function deliverEnergy() {
+  const i = power.lever.pos;
+  power.bolts.push({ to: i, t: 0 });
+  if (!power.lever.jammed && !broken(LEVER)) power.lever.pos = (power.lever.pos + 1) % 3;
+}
+function updatePower(dt) {
+  const R = power.reactor;
+  if (R.fuel > 0 && !broken(REACTOR)) {
+    R.t += dt;
+    if (R.t >= ENERGY_TIME) { R.t = 0; R.fuel--; deliverEnergy(); }
+  }
+  for (const b of power.bolts) {
+    b.t += dt / 0.9;
+    if (b.t >= 1 && !b.done) {
+      b.done = true;
+      const c = CAPACITORS[b.to];
+      if (capBroken(b.to) || c.charge >= CAP_MAX) {                  // full or broken: wasted
+        for (let k = 0; k < 10; k++) combatFx(c.x, c.y - 0.3, (Math.random() - 0.5) * 3, -Math.random() * 3, 0.8, '#9cd8ff', 0.1);
+        combatBanner(`Energy wasted — ${['left', 'middle', 'right'][b.to]} capacitor ${capBroken(b.to) ? 'broken' : 'full'}`);
+      } else { c.charge++; c.pulse = 1; sfx.poi(); }
+    }
+  }
+  power.bolts = power.bolts.filter(b => b.t < 1.2);
+  for (const c of CAPACITORS) c.pulse = Math.max(0, (c.pulse || 0) - dt * 2);
+  const target = leverAngle(power.lever.pos);                            // handle points at the active output
+  power.lever.angle = lerp(power.lever.angle || target, target, 1 - Math.exp(-10 * dt));
+}
+
+// ---------------------------------------------------------------------------
+// Inventory and clicking things
+// ---------------------------------------------------------------------------
+function grab(kind) {
+  const slot = slotOf(kind);
+  if (inv[slot]) ITEMS.push({ kind: inv[slot], ...dropSpot(player.x + (Math.random() - 0.5) * 0.4, player.y + 0.35) });   // drop what you had
+  inv[slot] = kind; sfx.clank();
+}
+// Somewhere on a fixed floor (a room or an airlock chamber), so a dropped item never ends
+// up somewhere unreachable like a lift shaft.
+function dropSpot(x, y) {
+  const floors = [...ROOM_RECTS, ...DECK_LOCKS.map(Lk => Lk.chamber)];
+  if (floors.some(q => inRect(x, y, q, -0.3))) return { x, y };
+  let best = null, bd = Infinity;
+  for (const q of floors) {
+    const px = clamp(x, q.x + 0.5, q.x + q.w - 0.5), py = clamp(y, q.y + 0.5, q.y + q.h - 0.5), d = Math.hypot(px - x, py - y);
+    if (d < bd) { bd = d; best = { x: px, y: py }; }
+  }
+  return best;
+}
+const near = (x, y, r = REACH) => Math.hypot(player.x - x, player.y - y) <= r;
+
+// What a left click on (mx, my) would do. Returns { text, ok, run?, repair?, x, y, r }.
+function clickTarget(mx, my) {
+  if (player.mode !== 'inside' || player.ride) return null;
+  // broken systems first
+  const m = missionClickTarget(mx, my);
+  if (m) return m;
+  for (const s of SYSTEMS) {
+    if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
+    if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
+    if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
+    return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
+  }
+  for (const it of ITEMS) {
+    if (Math.hypot(mx - it.x, my - it.y) > 0.45) continue;
+    const swap = inv[slotOf(it.kind)] ? ` (drops your ${ITEM_NAMES[inv[slotOf(it.kind)]]})` : '';
+    if (!near(it.x, it.y)) return { text: `${ITEM_NAMES[it.kind]} — get closer`, ok: false, x: it.x, y: it.y, r: 0.45 };
+    return { text: `Click: take the ${ITEM_NAMES[it.kind]}${swap}`, ok: true, x: it.x, y: it.y, r: 0.45,
+             run: () => { ITEMS.splice(ITEMS.indexOf(it), 1); grab(it.kind); } };
+  }
+  if (Math.hypot(mx - FUEL_CRATE.x, my - FUEL_CRATE.y) < 0.75) {
+    const t = { x: FUEL_CRATE.x, y: FUEL_CRATE.y, r: 0.75 };
+    if (!power.reserve) return { ...t, text: 'Fuel crate is empty', ok: false };
+    if (!near(t.x, t.y)) return { ...t, text: 'Fuel crate — get closer', ok: false };
+    return { ...t, text: `Click: take a fuel cell (${power.reserve} left)${inv.item ? ` (drops your ${ITEM_NAMES[inv.item]})` : ''}`, ok: true,
+             run: () => { power.reserve--; grab('fuel'); } };
+  }
+  if (Math.hypot(mx - LEVER.x, my - LEVER.y) < LEVER_HUB) {          // the hub: wedge / pull the wrench
+    const t = { x: LEVER.x, y: LEVER.y, r: LEVER_HUB + 0.05 };
+    if (!near(t.x, t.y)) return { ...t, text: 'Power lever — get closer', ok: false };
+    return { ...t, ok: true, text: power.lever.jammed ? 'Click: pull the wrench out (lever steps on its own again)' : 'Click: manual override — wedge a wrench in so the lever can\'t move on',
+             run: () => { power.lever.jammed = !power.lever.jammed; sfx.clank(); } };
+  }
+  if (Math.hypot(mx - LEVER.x, my - LEVER.y) < 0.6) {
+    const t = { x: LEVER.x, y: LEVER.y, r: 0.6 };
+    if (!near(t.x, t.y)) return { ...t, text: 'Power lever — get closer', ok: false };
+    if (power.lever.jammed) return { ...t, text: 'The wrench blocks the lever (click the hub to pull it out)', ok: false };
+    const nextPos = (power.lever.pos + 1) % 3;
+    return { ...t, ok: true, text: `Click: turn lever to ${LEVER_NAMES[nextPos]} (now ${LEVER_NAMES[power.lever.pos]})`,
+             run: () => { power.lever.pos = nextPos; sfx.clank(); } };
+  }
+  const R = REACTOR;
+  if (Math.abs(mx - R.x) < R.w / 2 && Math.abs(my - R.y) < R.h / 2) {
+    const t = { x: R.x, y: R.y, r: 1.9 };
+    const status = power.reactor.fuel ? `${power.reactor.fuel} energy left in the cell, next in ${Math.ceil(ENERGY_TIME - power.reactor.t)} s` : 'out of fuel';
+    if (inv.item !== 'fuel') return { ...t, text: `Reactor: ${status}`, ok: false };
+    if (!near(R.x, R.y, REACH + 1.4)) return { ...t, text: 'Reactor — get closer', ok: false };
+    if (power.reactor.fuel) return { ...t, text: `Reactor still has fuel (${power.reactor.fuel} energy left)`, ok: false };
+    return { ...t, ok: true, text: 'Click: load the fuel cell', run: () => { inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); } };
+  }
+  return null;
+}
+
+// Repairing: hold the mouse on a broken system with the repair kit.
+function updateRepair(dt, target, holding) {
+  if (!holding || !target?.repair) { player.repair = null; return; }
+  if (player.repair?.sys !== target.repair) player.repair = { sys: target.repair, t: 0 };
+  player.repair.t += dt;
+  if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
+  if (player.repair.t >= REPAIR_TIME) {
+    if (target.service) { mission.maint.serviced = true; combatBanner(`${player.repair.sys.name} serviced — it won't break now`); }
+    else { player.repair.sys.broken = false; combatBanner(`${player.repair.sys.name} repaired`); }
+    sfx.win();
+    player.repair = null;
+  }
+}
+
+// Right click: use the weapon in hand. Laser: fast bolt. Repair kit: throw a wrench (long cooldown).
+function attack(mx, my) {
+  if (!inv.weapon || inv.weapon === 'extinguisher' || inv.cd > 0 || !(player.mode === 'inside' || player.mode === 'eva')) return;
+  const a = Math.atan2(my - player.y, mx - player.x), dx = Math.cos(a), dy = Math.sin(a);
+  player.face = a;
+  if (inv.weapon === 'laser') {
+    inv.cd = LASER_COOLDOWN;
+    boarding.bolts.push({ x: player.x + dx * 0.4, y: player.y + dy * 0.4, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
+    sfx.enemyShot();
+  } else if (inv.weapon === 'repair') {
+    inv.cd = WRENCH_COOLDOWN;
+    boarding.bolts.push({ x: player.x + dx * 0.4, y: player.y + dy * 0.4, vx: dx * WRENCH_SPEED, vy: dy * WRENCH_SPEED, life: 0.8, owner: 'crew', wrench: true, spin: 0 });
+    sfx.clank();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+// Rooms of a zone column go dim when its capacitor is empty or broken.
+const lightLevel = [1, 1, 1];
+function drawLights(dt) {
+  for (let col = 0; col < 3; col++) {
+    const dark = CAPACITORS[col].charge <= 0 || capBroken(col);
+    lightLevel[col] = lerp(lightLevel[col], dark ? 0 : 1, 1 - Math.exp(-3 * dt));
+    const a = (1 - lightLevel[col]) * 0.42;
+    if (a < 0.01) continue;
+    ctx.fillStyle = `rgba(4,6,14,${a})`;
+    for (const r of ROOMS.filter(r => r.col === col)) for (const q of r.rects) ctx.fillRect(L(q.x), L(q.y), L(q.w), L(q.h));
+  }
+}
+
+function drawLever(t) {
+  const x = L(LEVER.x), y = L(LEVER.y), lv = power.lever;
+  shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);
+  ctx.beginPath(); ctx.arc(x, y, T * 0.5, 0, TAU); ctx.fillStyle = '#3f4757'; ctx.fill(); stroke(2.5);
+  ctx.beginPath(); ctx.arc(x, y, T * 0.38, leverAngle(0) - 0.25, leverAngle(2) + 0.25);   // the track
+  ctx.strokeStyle = '#262a33'; ctx.lineWidth = 7; ctx.stroke();
+  for (let i = 0; i < 3; i++) {                    // the three outputs, left → right
+    const a = leverAngle(i), on = i === lv.pos;
+    ctx.beginPath(); ctx.arc(x + Math.cos(a) * T * 0.38, y + Math.sin(a) * T * 0.38, 4.5, 0, TAU);
+    ctx.fillStyle = on ? '#5fd6a0' : '#4a515e'; ctx.fill(); stroke(1);
+    ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(LEVER_NAMES[i], x + Math.cos(a) * T * 0.72, y + Math.sin(a) * T * 0.72);
+  }
+  ctx.save(); ctx.translate(x, y); ctx.rotate(lv.angle + Math.PI / 2);   // handle
+  rr(-4, -T * 0.42, 8, T * 0.42, 3); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(1.5);
+  ctx.beginPath(); ctx.arc(0, -T * 0.42, 6, 0, TAU); ctx.fillStyle = '#e2574c'; ctx.fill(); stroke(1.5);
+  ctx.restore();
+  if (lv.jammed) {                                 // wrench wedged right where the handle would go next
+    const next = (lv.pos + 1) % 3, a = leverAngle(lv.pos) + Math.sign(leverAngle(next) - leverAngle(lv.pos)) * 0.42;
+    wrench(x + Math.cos(a) * T * 0.3, y + Math.sin(a) * T * 0.3, a);
+  }
+  ctx.beginPath(); ctx.arc(x, y, T * LEVER_HUB * 0.55, 0, TAU); ctx.fillStyle = lv.jammed ? '#e8c34f' : '#9aa3b5'; ctx.fill(); stroke(1.5);   // hub
+  ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.11}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', x, y + T * 0.55);
+  ctx.textAlign = 'left';
+}
+
+// Glowing energy packets flying from the reactor to a capacitor.
+function drawEnergyBolts() {
+  for (const b of power.bolts) {
+    if (b.t >= 1) continue;
+    const c = CAPACITORS[b.to], k = b.t * b.t * (3 - 2 * b.t);
+    const x = lerp(REACTOR.x, c.x, k), y = lerp(REACTOR.y + 0.6, c.y, k) - Math.sin(k * Math.PI) * 2.0;
+    const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), 16);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#7af0ff'); g.addColorStop(1, 'rgba(95,214,228,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), 16, 0, TAU); ctx.fill();
+  }
+}
+
+// Broken look: scorch, a loose panel, smoke and the odd spark.
+function drawBroken(s, t) {
+  const x = L(s.x), y = L(s.y), r = L(Math.min(s.r, 1.1));
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, 'rgba(15,12,10,0.55)'); g.addColorStop(1, 'rgba(15,12,10,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  ctx.save(); ctx.translate(x + r * 0.3, y - r * 0.2); ctx.rotate(0.5);
+  rr(-8, -5, 16, 10, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.5); ctx.restore();
+  for (let i = 0; i < 3; i++) {
+    const q = (t * 0.5 + i / 3) % 1;
+    ctx.beginPath(); ctx.arc(x + Math.sin(t + i * 2) * 5, y - q * L(1.1), L(0.12 + q * 0.25), 0, TAU);
+    ctx.fillStyle = `rgba(70,70,76,${0.5 * (1 - q)})`; ctx.fill();
+  }
+  const rr2 = rng(Math.floor(t * 5) + s.x * 7);
+  if (rr2() < 0.15) {
+    ctx.strokeStyle = 'rgba(255,220,120,0.85)'; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 3; i++) { const a = rr2() * TAU; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9); ctx.stroke(); }
+  }
+  ctx.fillStyle = 'rgba(255,120,100,0.9)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText('BROKEN', x, y - r * 0.6); ctx.textAlign = 'left';
+}
+
+// Item icons (pixel coords). Used on the floor and in the inventory.
+function drawItemIcon(kind, x, y, s = 1, t = 0) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  if (kind === 'repair') {
+    rr(-6, -13, 12, 5, 2); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.stroke();             // handle
+    rr(-15, -9, 30, 19, 3); ctx.fillStyle = C.hazard; ctx.fill(); stroke(2);                     // yellow tool case
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(-15, -3, 30, 2);
+    ctx.save(); ctx.rotate(-0.6);                                                               // wrench emblem
+    ctx.fillStyle = '#2b303a';
+    ctx.fillRect(-7, -1.8, 12, 3.6);
+    ctx.beginPath(); ctx.arc(6.5, 0, 4.2, 0.75, TAU - 0.75); ctx.lineTo(6.5, 0); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(-7.5, 0, 3, 0, TAU); ctx.fill();
+    ctx.restore();
+  } else if (kind === 'laser') {
+    rr(-14, -4, 22, 8, 3); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(2);
+    rr(6, -3, 9, 6, 2); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(1.5);
+    rr(-10, 2, 6, 9, 2); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);
+    ctx.fillStyle = '#ff6a4a'; ctx.fillRect(-8, -2, 10, 2.5);
+    ctx.beginPath(); ctx.arc(15, 0, 2, 0, TAU); ctx.fillStyle = '#ffb0a0'; ctx.fill();
+  } else if (kind === 'extinguisher') {
+    extinguisher(-4, 0, 0);
+  } else if (kind === 'fuel') {
+    rr(-6, -12, 12, 24, 5);
+    const g = ctx.createLinearGradient(-6, 0, 6, 0); g.addColorStop(0, '#3a9a5a'); g.addColorStop(0.5, '#b8ffd0'); g.addColorStop(1, '#2a7a4a');
+    ctx.fillStyle = g; ctx.fill(); stroke(2);
+    ctx.fillStyle = '#c9ced8'; ctx.fillRect(-4, -14, 8, 3);
+  }
+  ctx.restore();
+}
+// Things you can pick up glow, pulse and bob, so they stand out from the clutter. In reach
+// (for the local player) they get a bright ring and a small "click to take" tag.
+function pickupHalo(x, y, r, t, inReach, seed = 0) {
+  const k = 0.5 + 0.5 * Math.sin(t * 3.2 + seed);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 1.6);
+  g.addColorStop(0, `rgba(255,224,138,${0.35 + 0.2 * k})`); g.addColorStop(0.6, `rgba(255,200,90,${0.12 + 0.08 * k})`); g.addColorStop(1, 'rgba(255,200,90,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 1.6, 0, TAU); ctx.fill();
+  ctx.save(); ctx.translate(x, y); ctx.rotate(t * 0.9 + seed);
+  ctx.setLineDash([7, 6]);
+  ctx.beginPath(); ctx.arc(0, 0, r + 3 * k, 0, TAU);
+  ctx.lineWidth = 4.5; ctx.strokeStyle = 'rgba(20,22,27,0.55)'; ctx.stroke();
+  ctx.lineWidth = 2.2; ctx.strokeStyle = `rgba(255,224,138,${0.75 + 0.25 * k})`; ctx.stroke();
+  ctx.restore();
+  if (inReach) {
+    ctx.beginPath(); ctx.arc(x, y, r - 4, 0, TAU); ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * k})`; ctx.stroke();
+    ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('CLICK TO TAKE', x, y - r - 6);
+    ctx.fillStyle = '#ffe08a'; ctx.fillText('CLICK TO TAKE', x, y - r - 6); ctx.textAlign = 'left';
+  }
+}
+function drawItems(t) {
+  const reachable = (x, y) => me.mode === 'inside' && Math.hypot(me.x - x, me.y - y) <= REACH;
+  if (power.reserve > 0) pickupHalo(L(FUEL_CRATE.x), L(FUEL_CRATE.y), T * 0.85, t, reachable(FUEL_CRATE.x, FUEL_CRATE.y), 1.3);
+  ITEMS.forEach((it, i) => {
+    const x = L(it.x), y = L(it.y), bob = Math.sin(t * 2.6 + i * 1.7) * 3;
+    pickupHalo(x, y, T * 0.5, t, reachable(it.x, it.y), i * 0.9);
+    shadowEllipse(x + 3, y + 5, 13 - bob * 0.6, 8, 0.3);
+    drawItemIcon(it.kind, x, y - 3 + bob, 1.15, t);
+  });
+}
+
+// Hover highlight + repair progress ring (world space).
+function drawClickTarget(target) {
+  if (!target) return;
+  ctx.beginPath(); ctx.arc(L(target.x), L(target.y), L(target.r), 0, TAU);
+  ctx.setLineDash([6, 5]); ctx.strokeStyle = target.ok ? 'rgba(95,214,160,0.9)' : 'rgba(180,186,198,0.6)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+  if (player.repair && target.repair === player.repair.sys) {
+    const k = player.repair.t / REPAIR_TIME;
+    ctx.beginPath(); ctx.arc(L(target.x), L(target.y), L(target.r) + 6, -Math.PI / 2, -Math.PI / 2 + k * TAU);
+    ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 5; ctx.stroke();
+  }
+}
+
+// Screen space: inventory slots and the power panel (bottom left).
+function drawSystemsHUD(top) {
+  const x0 = 14, y0 = VH - 84;
+  for (const [i, slot] of ['weapon', 'item'].entries()) {
+    const x = x0 + i * 74;
+    rr(x, y0, 66, 66, 8); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
+    ctx.fillStyle = '#6b7486'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(slot.toUpperCase(), x + 33, y0 + 4);
+    if (inv[slot]) {
+      drawItemIcon(inv[slot], x + 33, y0 + 36, 1.2);
+      if (slot === 'weapon' && inv.cd > 0) {
+        const k = inv.cd / (inv.weapon === 'laser' ? LASER_COOLDOWN : WRENCH_COOLDOWN);
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x + 2, y0 + 66 - 64 * k, 62, 64 * k);
+      }
+      ctx.fillStyle = '#c9ced8'; ctx.font = '10px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
+      ctx.fillText(ITEM_NAMES[inv[slot]], x + 33, y0 + 64);
+    }
+  }
+  ctx.textAlign = 'left';
+  ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textBaseline = 'bottom';
+  ctx.fillText('L-click grab/use · R-click attack/spray', x0, y0 - 4);
+  // power panel
+  const px = x0 + 156, R = power.reactor;
+  const lines = [
+    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil(ENERGY_TIME - R.t)} s` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : '#c8ffe6'],
+    [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve}`, '#c9ced8'],
+    [`Capacitors  left ${CAPACITORS[0].charge}/${CAP_MAX}${capBroken(0) ? '✖' : ''}   mid ${CAPACITORS[1].charge}/${CAP_MAX}${capBroken(1) ? '✖' : ''}   right ${CAPACITORS[2].charge}/${CAP_MAX}${capBroken(2) ? '✖' : ''}`, '#9cd8ff'],
+  ];
+  const broke = SYSTEMS.filter(s => s.broken).map(s => s.name);
+  if (broke.length) lines.push([`Broken: ${broke.join(', ')}`, '#ff9a8a']);
+  ctx.font = '12px system-ui, sans-serif';
+  const w = Math.max(...lines.map(l => ctx.measureText(l[0]).width)) + 20, h = lines.length * 17 + 10;
+  rr(px, VH - 18 - h, w, h, 6); ctx.fillStyle = 'rgba(10,12,18,0.75)'; ctx.fill();
+  ctx.textBaseline = 'top';
+  lines.forEach(([text, col], i) => { ctx.fillStyle = col; ctx.fillText(text, px + 10, VH - 13 - h + i * 17); });
+}

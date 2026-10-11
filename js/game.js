@@ -1,602 +1,772 @@
-// World simulation, input, camera and rendering.
+// Main loop, input, crew movement, deck airlocks, lifts, spacewalks, cannons,
+// shield buttons, debug menu, camera and HUD.
+// Simulation runs in layout units (see ship.js); rendering scales by T.
 
 const canvas = document.getElementById('c');
 ctx = canvas.getContext('2d');
 let VW = 0, VH = 0, DPR = 1;
 function resize() {
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  DPR = window.devicePixelRatio || 1;
   VW = window.innerWidth; VH = window.innerHeight;
   canvas.width = VW * DPR; canvas.height = VH * DPR;
   canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
 }
 window.addEventListener('resize', resize); resize();
 
-// ---------------------------------------------------------------------------
-// Input
-// ---------------------------------------------------------------------------
-const keys = new Set(), pressed = new Set();
-const mouse = { x: 0, y: 0, down: false, wx: 0, wy: 0 };
+// Input. Every crew member has an input object { keys, pressed, mouse }; this browser's
+// keyboard and mouse fill `localInput`, which belongs to the local crew member (`me`).
+// mouse.x/y are screen pixels (local only); mouse.wx/wy is the world point under it.
+const makeInput = () => ({ keys: new Set(), pressed: new Set(), mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0 } });
+const localInput = makeInput();
 window.addEventListener('keydown', e => {
-  if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-  if (!keys.has(e.code)) pressed.add(e.code);
-  keys.add(e.code);
+  if (e.target?.tagName === 'INPUT') return;                 // typing in the lobby
+  if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+  if (!localInput.keys.has(e.code)) localInput.pressed.add(e.code); localInput.keys.add(e.code);
 });
-window.addEventListener('keyup', e => keys.delete(e.code));
-window.addEventListener('blur', () => { keys.clear(); mouse.down = false; });
-canvas.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-canvas.addEventListener('mousedown', () => { mouse.down = true; });
-window.addEventListener('mouseup', () => { mouse.down = false; });
+window.addEventListener('keyup', e => localInput.keys.delete(e.code));
+window.addEventListener('blur', () => { localInput.keys.clear(); localInput.mouse.down = false; });
+canvas.addEventListener('mousemove', e => { localInput.mouse.x = e.clientX; localInput.mouse.y = e.clientY; localInput.mouse.moved = 1; });
+const MUTE_BTN = { x: 8, y: 6, w: 26, h: 24 };
+const inMuteBtn = (x, y) => x >= MUTE_BTN.x && x <= MUTE_BTN.x + MUTE_BTN.w && y >= MUTE_BTN.y && y <= MUTE_BTN.y + MUTE_BTN.h;
+canvas.addEventListener('mousedown', e => {
+  const m = localInput.mouse;
+  if (e.button === 0 && inMuteBtn(e.clientX, e.clientY)) { sfx.toggleMute(); return; }
+  if (e.button === 0) { m.down = true; m.click = true; } if (e.button === 2) { m.right = true; m.rightClick = true; }
+});
+window.addEventListener('mouseup', e => { if (e.button === 0) localInput.mouse.down = false; if (e.button === 2) localInput.mouse.right = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
-const held = (...codes) => codes.some(c => keys.has(c));
 
 // ---------------------------------------------------------------------------
 // Tuning
 // ---------------------------------------------------------------------------
-// dr = damage reduction per hit. Death: small drops rock, medium drops small
-// asteroids + rock, large splits into medium asteroids.
-const SIZES = [
-  { r: 22, hp: 8,  dr: 0, rocks: [1, 3], smalls: [0, 0], mediums: 0 },
-  { r: 40, hp: 15, dr: 1, rocks: [1, 3], smalls: [1, 3], mediums: 0 },
-  { r: 66, hp: 30, dr: 3, rocks: [0, 0], smalls: [0, 0], mediums: 2 },
-];
-const SHELL_POWER = 12;                       // pierces: leftover damage carries on
-const LASER_TIERS = [[5 * T, 3], [10 * T, 2], [Infinity, 1]];   // [range, damage]
-const GUN_RATE_FORWARD = 0.65, GUN_RATE_MANNED = 0.2;
-const SHIP_THRUST = 300, SHIP_REVERSE = 180, SHIP_TURN = 3.2, SHIP_MAX = 600, CRUISE = 40;
-// Unrealistic space friction as a deceleration of max(MIN, K * sqrt(speed)): roughly constant,
-// so the ship stops crisply when slow but can still get fast (top speed = (THRUST / K)^2 = 450).
-// Sideways friction is stronger so the ship doesn't slide sideways after a turn.
-const SHIP_FRICTION_MIN = 120, SHIP_FRICTION_K = 300 / Math.sqrt(450), SHIP_SIDE_FRICTION = 2.5;
-const SHELL_SPEED = 950, SHELL_LIFE = 2.2;   // ~2100px range
-const EVA_ACCEL = 450, EVA_DRAG = 1.3, TETHER_GRAB = 1.2 * T, TETHER_LEN = 1.1 * T;
-const ROCK_MASS = 0.35;                       // per tethered rock, relative to the astronaut
-const VACUUM_R = 7 * T;                       // intake pulls in loose rock within this radius
-const ASTEROID_COUNT = 34, SPAWN_MIN = 2000, SPAWN_MAX = 2600, DESPAWN = 3300;
-const HULL_BOX = [0, 0, 14.6 * T, 9 * T];     // collision box, ship-local px
+const WALK_SPEED = 4.2, WALK_ACCEL = 30;     // units/s, units/s²
+const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
+const CREW_R = 0.2;                          // half-size of the crew collision box
+const LOCK_DOOR_TIME = 0.55, LOCK_CYCLE = 1.3;   // deck airlock: per door, and pressure cycle
+const LIFT_GATE_TIME = 0.15, LIFT_TRAVEL = 0.55;
+const LIFT_CALLABLE = false;                 // false: the lift only works if it is on your deck
+const HATCH_TIME = 1.6;                      // going through an outer airlock
+const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
+const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
+const CRUISE_SPEED = 260;                    // px/s of starfield drift
+const HUD_H = 36;
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-const R = rng(12345);
-const randInt = ([a, b]) => a + Math.floor(R() * (b - a + 1));
-const ship = { x: 0, y: 0, vx: CRUISE, vy: 0, a: 0, va: 0, throttle: 0.3 };
-const player = { mode: 'walk', lx: 6.5 * T, ly: 5.5 * T, face: 0, walk: 0, x: 0, y: 0, vx: 0, vy: 0, cd: 0, tethered: [] };
-const cam = { x: 0, y: 0, zoom: 1, rot: 0, shake: 0 };
-let asteroids = [], pickups = [], shots = [], parts = [], floaters = [];
-let prompt = null;
-
-function localToWorld(lx, ly) {
-  const [x, y] = rot(lx - SHIP_C[0], ly - SHIP_C[1], ship.a);
-  return [ship.x + x, ship.y + y];
+// mode: 'inside' | 'hatch' (going through an outer airlock) | 'eva' | 'gun'
+// The simulation updates crew members one at a time; while it does, the globals below point at
+// that crew member ("acting crew"): player, keys, pressed, mouse, inv, ui, prompt, hover.
+const CREW_COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#c43a3a'];
+let crewIdCounter = 1;
+function makeCrew(name = 'Crew', x = 22.2, y = 4.5) {
+  const id = crewIdCounter++;
+  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, ride: null, mode: 'inside', cover: 0,
+           input: makeInput(), inv: { weapon: null, item: null, cd: 0 }, ui: { panel: null, override: null, hits: [] }, prompt: null, hover: null };
 }
-function worldToLocal(x, y) {
-  const [lx, ly] = rot(x - ship.x, y - ship.y, -ship.a);
-  return [lx + SHIP_C[0], ly + SHIP_C[1]];
+const crew = [makeCrew('You')];
+let me = crew[0];                                  // the crew member this browser plays (solo: the only one)
+me.input = localInput; me.inv = inv; me.ui = ui;
+let player = me, keys = me.input.keys, pressed = me.input.pressed, mouse = me.input.mouse;
+const held = (...codes) => codes.some(c => keys.has(c));
+// Run fn with crew member c as the acting crew (restores the previous one afterwards).
+function withCrew(c, fn) {
+  const saved = [player, keys, pressed, mouse, inv, ui, prompt, hover];
+  player = c; keys = c.input.keys; pressed = c.input.pressed; mouse = c.input.mouse; inv = c.inv; ui = c.ui; prompt = c.prompt; hover = c.hover;
+  try { return fn(); } finally { c.prompt = prompt; c.hover = hover; [player, keys, pressed, mouse, inv, ui, prompt, hover] = saved; }
 }
-function screenToWorld(sx, sy) {
-  const [x, y] = rot((sx - VW / 2) / cam.zoom, (sy - VH / 2) / cam.zoom, -cam.rot);
-  return [cam.x + x, cam.y + y];
-}
-function worldToScreen(x, y) {
-  const [sx, sy] = rot((x - cam.x) * cam.zoom, (y - cam.y) * cam.zoom, cam.rot);
-  return [VW / 2 + sx, VH / 2 + sy];
-}
-
-function makeAsteroid(x, y, size, vx, vy) {
-  return { x, y, vx, vy, size, r: SIZES[size].r, hp: SIZES[size].hp, a: R() * TAU, va: (R() - 0.5) * 0.8,
-           shape: lumpShape(Math.floor(R() * 1e9), size === 0 ? 9 : 12, 0.3), hit: 0 };
-}
-function spawnAsteroid(minD, maxD) {
-  const ang = R() * TAU, d = minD + R() * (maxD - minD), roll = R();
-  const size = roll < 0.4 ? 0 : roll < 0.75 ? 1 : 2;
-  const va = R() * TAU, sp = 10 + R() * 40;
-  asteroids.push(makeAsteroid(ship.x + Math.cos(ang) * d, ship.y + Math.sin(ang) * d, size, Math.cos(va) * sp, Math.sin(va) * sp));
-}
-for (let i = 0; i < ASTEROID_COUNT; i++) spawnAsteroid(550, SPAWN_MAX);
+const isOutside = (c) => c.mode === 'eva' || c.mode === 'gun';
+// Debug: index.html#overview shows the whole ship, index.html#x,y starts the player there.
+const DEBUG_OVERVIEW = location.hash === '#overview';
+{ const m = location.hash.match(/^#([\d.]+),([\d.]+)$/); if (m) { player.x = +m[1]; player.y = +m[2]; } }
+let prompt = null, time = 0, debugOpen = false, hover = null;
+// Debug: index.html#do=3,6 runs debug-menu entries 3 and 6 on start (see DEBUG_ITEMS);
+// adding &w=4 fast-forwards the simulation by 4 seconds first (handy for screenshots).
+const DEBUG_DO = (location.hash.match(/^#do=([\dxpqiobemnfugvwy,]+)/) || [])[1]?.split(',') || [];
+const DEBUG_WARP = +(location.hash.match(/&w=([\d.]+)/) || [])[1] || 0;
+const playerOutside = () => isOutside(player);
 
 // ---------------------------------------------------------------------------
-// Combat
+// Movement
 // ---------------------------------------------------------------------------
-function burst(x, y, n, col, speed, vx = 0, vy = 0) {
-  for (let i = 0; i < n; i++) {
-    const a = R() * TAU, s = speed * (0.3 + R());
-    parts.push({ x, y, vx: vx + Math.cos(a) * s, vy: vy + Math.sin(a) * s, life: 0.4 + R() * 0.6, max: 1, s: 2 + R() * 3, col });
+function canStand(x, y, rects) {
+  const r = CREW_R;
+  return [[x - r, y - r], [x + r, y - r], [x - r, y + r], [x + r, y + r]]
+    .every(([cx, cy]) => rects.some(R => inRect(cx, cy, R)) && !SOLIDS.some(S => inRect(cx, cy, S, 0)));
+}
+
+// Safety net: if someone ends up where they can't stand (a door or car moved out from under
+// them), move them to the nearest spot where they can, instead of freezing them in place.
+function nearestFree(x, y, ok) {
+  if (ok(x, y)) return null;
+  for (let r = 0.05; r <= 3; r += 0.05)
+    for (let k = 0; k < 24; k++) {
+      const px = x + Math.cos(k / 24 * TAU) * r, py = y + Math.sin(k / 24 * TAU) * r;
+      if (ok(px, py)) return [px, py];
+    }
+  return null;
+}
+function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.y] = p; c.vx = c.vy = 0; } }
+
+function updateCrew(c, dt, ix, iy) {
+  if (c.ride) {                              // locked to the lift car
+    const car = carRect(c.ride);
+    c.x = clamp(c.x, car.x + CREW_R, car.x + car.w - CREW_R);
+    c.y = car.y + c.rideDy;
+    c.vx = c.vy = 0;
+    return;
   }
-}
-
-function floatText(x, y, text, col) {
-  floaters.push({ x, y, text, col, life: 0.9 });
-}
-
-// Applies `power` to an asteroid. Returns how much of the projectile's power was used up
-// (damage dealt + the asteroid's damage reduction) and any asteroids spawned by its death.
-function hitAsteroid(a, power, s) {
-  const S = SIZES[a.size];
-  const dealt = Math.min(a.hp, Math.max(0, power - S.dr));
-  if (dealt <= 0) {
-    floatText(s.x, s.y - 10, '0', '#8a93a5');
-    burst(s.x, s.y, 3, '#c9d0dc', 60, a.vx, a.vy);
-    return { used: power, spawned: [] };
-  }
-  a.hp -= dealt; a.hit = 1;
-  floatText(s.x, s.y - 10, String(dealt), s.kind === 'laser' ? '#9ff3ff' : '#ffd38a');
-  const sp = Math.hypot(s.vx, s.vy) || 1;
-  a.vx += s.vx / sp * dealt * 2; a.vy += s.vy / sp * dealt * 2;
-  burst(s.x, s.y, 5, s.kind === 'laser' ? '#9ff3ff' : '#ffd38a', 120, a.vx, a.vy);
-  return { used: dealt + S.dr, spawned: a.hp <= 0 ? destroyAsteroid(a) : [] };
-}
-
-function destroyAsteroid(a) {
-  const S = SIZES[a.size];
-  asteroids.splice(asteroids.indexOf(a), 1);
-  burst(a.x, a.y, 10 + a.size * 8, C.asterLight, 90 + a.size * 30, a.vx, a.vy);
-  const spawned = [];
-  const children = [...Array(S.mediums).fill(1), ...Array(randInt(S.smalls)).fill(0)];
-  children.forEach((size, i) => {
-    const ang = i / children.length * TAU + R() * 0.8, off = a.r * 0.45, sp = 30 + R() * 25;
-    const c = makeAsteroid(a.x + Math.cos(ang) * off, a.y + Math.sin(ang) * off, size, a.vx + Math.cos(ang) * sp, a.vy + Math.sin(ang) * sp);
-    asteroids.push(c); spawned.push(c);
-  });
-  const n = randInt(S.rocks);
-  for (let i = 0; i < n; i++) {
-    const ang = i / n * TAU + R() * 0.6, sp = 30 + R() * 55;
-    pickups.push({ x: a.x + Math.cos(ang) * 8, y: a.y + Math.sin(ang) * 8, vx: a.vx + Math.cos(ang) * sp, vy: a.vy + Math.sin(ang) * sp,
-                   a: R() * TAU, va: (R() - 0.5) * 2, k: Math.floor(R() * 5), state: 'free' });
-  }
-  return spawned;
-}
-
-function laserDamage(s) {
-  const d = Math.hypot(s.x - s.ox, s.y - s.oy);
-  return LASER_TIERS.find(([range]) => d <= range)[1];
-}
-
-function fireGun() {
-  const rate = player.mode === 'gunner' ? GUN_RATE_MANNED : GUN_RATE_FORWARD;
-  if (gun.cd > 0) return;
-  if (gun.ammo <= 0) { gun.dry = 1; gun.cd = 0.3; return; }
-  gun.ammo--; gun.cd = rate; gun.flash = 1; cam.shake = Math.max(cam.shake, 0.25);
-  const ang = ship.a + gun.rel, [gx, gy] = localToWorld(...GUN_POS);
-  const dx = Math.cos(ang), dy = Math.sin(ang);
-  shots.push({ kind: 'shell', x: gx + dx * T, y: gy + dy * T, vx: ship.vx + dx * SHELL_SPEED, vy: ship.vy + dy * SHELL_SPEED, life: SHELL_LIFE,
-               power: SHELL_POWER, hits: new Set(), k: Math.floor(R() * 5) });
-}
-
-function fireLaser() {
-  if (player.cd > 0) return;
-  player.cd = 0.18;
-  const dx = Math.cos(player.face), dy = Math.sin(player.face);
-  const x = player.x + dx * 14, y = player.y + dy * 14;
-  shots.push({ kind: 'laser', x, y, ox: x, oy: y, vx: player.vx + dx * 1300, vy: player.vy + dy * 1300, life: 0.55, hits: new Set() });
+  const eva = c.mode === 'eva';
+  const len = Math.hypot(ix, iy), speed = eva ? EVA_SPEED : WALK_SPEED;
+  const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
+  const k = Math.min(1, (eva ? EVA_ACCEL : WALK_ACCEL) * dt / speed);
+  c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);
+  const ok = eva ? (x, y) => evaOk(x, y) : (() => { const rects = walkRects(); return (x, y) => canStand(x, y, rects); })();
+  unstick(c, ok);
+  const nx = c.x + c.vx * dt;
+  if (ok(nx, c.y)) c.x = nx; else c.vx = 0;
+  const ny = c.y + c.vy * dt;
+  if (ok(c.x, ny)) c.y = ny; else c.vy = 0;
+  const sp = Math.hypot(c.vx, c.vy);
+  if (len && sp > 0.3) c.face = Math.atan2(c.vy, c.vx);
+  c.walk += sp * dt * (eva ? 1.2 : 3.2);
 }
 
 // ---------------------------------------------------------------------------
-// Player
+// Deck airlocks: walk in, the door behind you closes, the chamber cycles, the
+// far door opens. Walking up to a closed door cycles an empty chamber to you.
 // ---------------------------------------------------------------------------
-const STATIONS = [
-  { tile: PILOT_SEAT, mode: 'pilot', label: 'Pilot ship' },
-  { tile: GUNNER_SEAT, mode: 'gunner', label: 'Man cannon' },
-  { tile: { x: AIRLOCK_TILE.x, y: AIRLOCK_TILE.y - 1 }, mode: 'eva', label: 'Exit airlock' },
-];
-const AIRLOCK_OUTSIDE = [AIRLOCK_TILE.x * T + T / 2, (AIRLOCK_TILE.y + 1) * T + T * 0.5];
+const other = (s) => s === 'top' ? 'bottom' : 'top';
 
-function walkCollide() {
-  const r = T * 0.28;
-  const tx0 = Math.floor((player.lx - r) / T), tx1 = Math.floor((player.lx + r) / T);
-  const ty0 = Math.floor((player.ly - r) / T), ty1 = Math.floor((player.ly + r) / T);
-  for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
-    if (!isBlocked(tx, ty)) continue;
-    const cx = clamp(player.lx, tx * T, tx * T + T), cy = clamp(player.ly, ty * T, ty * T + T);
-    const dx = player.lx - cx, dy = player.ly - cy, d = Math.hypot(dx, dy);
-    if (d < r && d > 0) { player.lx += dx / d * (r - d); player.ly += dy / d * (r - d); }
+function startCycle(L, target) {
+  L.phase = 'closing'; L.target = target;
+}
+
+// Everyone the door sensors react to: crew inside the ship and intruders.
+const actors = () => [...crew.filter(c => c.mode === 'inside'), ...boarding.invaders.filter(a => a.mode === 'inside')];
+
+function updateDeckLock(L, dt) {
+  if (broken(L)) return;                           // broken: doors stay as they are
+  if (L.locked && L.phase === 'idle') {            // locked by security: both doors shut (never on someone)
+    for (const s of ['top', 'bottom']) {
+      if (actors().some(c => inRect(c.x, c.y, L.doorRect[s], CREW_R))) continue;
+      L.doors[s] = Math.max(0, L.doors[s] - dt / LOCK_DOOR_TIME);
+    }
+    return;
+  }
+  if (!L.locked && L.phase === 'idle' && L.open && L.doors[L.open] < 1) L.doors[L.open] = Math.min(1, L.doors[L.open] + dt / LOCK_DOOR_TIME);
+  const ch = L.chamber, crew = actors();
+  const occupants = crew.filter(c => c.x > L.x && c.x < L.x + L.w && c.y > SPINE_Y0 && c.y < SPINE_Y1);
+  const insideFully = crew.filter(c => c.x - CREW_R >= ch.x && c.x + CREW_R <= ch.x + ch.w &&
+                                       c.y - CREW_R >= ch.y && c.y + CREW_R <= ch.y + ch.h);
+  // remember which side a crew member stepped in from
+  for (const c of crew) {
+    const inX = c.mode === 'inside' && c.x > L.x && c.x < L.x + L.w;
+    const side = c.y < ch.y ? 'top' : c.y > ch.y + ch.h ? 'bottom' : 'in';
+    const prev = (c.lockSide ||= {})[L.col];
+    if (inX && side === 'in' && prev && prev !== 'in') L.entry = prev;
+    c.lockSide[L.col] = inX ? side : null;
+  }
+
+  if (L.phase === 'idle') {
+    if (insideFully.length && L.entry === L.open) {
+      L.entry = null; startCycle(L, other(L.open));
+    } else if (!occupants.length) {
+      const closed = other(L.open);
+      const waiting = crew.some(c => c.mode === 'inside' && c.x > L.x - 0.2 && c.x < L.x + L.w + 0.2 &&
+        (closed === 'top' ? c.y > SPINE_Y0 - 1.2 && c.y < SPINE_Y0 : c.y > SPINE_Y1 && c.y < SPINE_Y1 + 1.2));
+      if (waiting) startCycle(L, closed);
+    }
+  } else if (L.phase === 'closing') {
+    const s = L.open;
+    // never close on someone standing in the doorway: reopen and wait until it's clear
+    if (actors().some(c => inRect(c.x, c.y, L.doorRect[s], CREW_R))) { L.doors[s] = Math.min(1, L.doors[s] + dt / LOCK_DOOR_TIME); return; }
+    L.doors[s] = Math.max(0, L.doors[s] - dt / LOCK_DOOR_TIME);
+    if (L.doors[s] === 0) { L.phase = 'cycling'; L.t = 0; L.open = null; }
+  } else if (L.phase === 'cycling') {
+    L.t += dt;
+    if (L.t >= LOCK_CYCLE) L.phase = 'opening';
+  } else if (L.phase === 'opening') {
+    const s = L.target;
+    L.doors[s] = Math.min(1, L.doors[s] + dt / LOCK_DOOR_TIME);
+    if (L.doors[s] === 1) { L.phase = 'idle'; L.open = s; L.target = null; }
   }
 }
 
-function board() {
-  player.mode = 'walk'; airlock.open = 1;
-  player.lx = AIRLOCK_TILE.x * T + T / 2; player.ly = (AIRLOCK_TILE.y - 1) * T + T / 2;
-  player.face = -Math.PI / 2;
-  const n = player.tethered.length;
-  if (n) {
-    for (const p of player.tethered) p.state = 'stored';
-    player.tethered = [];
-    storeRock(n);
-    floatText(...localToWorld(...tileCenter(CHEST_TILE)), `+${n} rock`, '#ffe08a');
+// ---------------------------------------------------------------------------
+// Lifts: step onto the car and press E. Fast, but only if the car is on your deck.
+// ---------------------------------------------------------------------------
+function sendLift(L) {
+  if (broken(L) || L.locked) return;
+  // everyone standing on the car (even half on it) rides along, nobody is left on thin air
+  const car = carRect(L);
+  for (const c of crew) {
+    if (c.mode !== 'inside' || c.ride || !inRect(c.x, c.y, car, CREW_R)) continue;
+    c.ride = L; c.vx = c.vy = 0;
+    c.x = clamp(c.x, car.x + CREW_R, car.x + car.w - CREW_R); c.y = clamp(c.y, car.y + CREW_R, car.y + car.h - CREW_R);
+    c.rideDy = c.y - car.y;
+  }
+  L.target = 1 - Math.round(L.pos); L.phase = 'closing'; L.t = 0;
+}
+
+function updateLift(L, dt) {
+  const deck = L.pos < 0.5 ? 'top' : 'bottom';
+  const someoneOn = L.phase === 'docked' && L.gates[deck] > 0.5 && actors().some(c => inRect(c.x, c.y, carRect(L)));
+  if (L.phase === 'docked' && L.locked && !someoneOn) {                         // locked: gate shuts
+    L.gates[deck] = Math.max(0, L.gates[deck] - dt / LIFT_GATE_TIME);
+  } else if (L.phase === 'docked') {
+    L.gates[deck] = Math.min(1, L.gates[deck] + dt / LIFT_GATE_TIME);
+  } else if (L.phase === 'closing') {
+    L.gates[deck] = Math.max(0, L.gates[deck] - dt / LIFT_GATE_TIME);
+    if (L.gates[deck] === 0) L.phase = 'moving';
+  } else if (L.phase === 'moving') {
+    const dir = Math.sign(L.target - L.pos);
+    L.pos += dir * dt / LIFT_TRAVEL;
+    if ((dir > 0 && L.pos >= L.target) || (dir < 0 && L.pos <= L.target)) {
+      L.pos = L.target; L.phase = 'docked'; L.target = null;
+      for (const c of crew) if (c.ride === L) c.ride = null;
+    }
   }
 }
+
+function liftUnder(c) {
+  return LIFTS.find(L => L.phase === 'docked' && inRect(c.x, c.y, carRect(L))) || null;
+}
+
+// Lift whose shaft mouth the crew member stands in front of, with the car away.
+function liftMouth(c) {
+  const deck = c.y < SPINE_Y0 ? 'top' : c.y > SPINE_Y1 ? 'bottom' : null;
+  if (!deck) return null;
+  return LIFTS.find(L => c.x > L.x - 0.2 && c.x < L.x + L.w + 0.2 &&
+    (deck === 'top' ? c.y > SPINE_Y0 - 1 : c.y < SPINE_Y1 + 1) && liftDeck(L) !== deck) || null;
+}
+
+// ---------------------------------------------------------------------------
+// Outer airlocks (hatches): inside ⇄ spacewalk. Visor goes down outside.
+// ---------------------------------------------------------------------------
+function startHatch(h, dir) {
+  player.mode = 'hatch'; player.hatch = h; player.hatchDir = dir; player.hatchT = 0;
+  player.vx = player.vy = 0; sfx.hatch();
+}
+// Hatches nobody is using swing shut (run once per tick, after the crew).
+function updateHatches(dt) {
+  for (const h of HATCHES) if (!crew.some(c => c.mode === 'hatch' && c.hatch === h)) h.open = Math.max(0, h.open - dt * 2);
+}
+function updateHatch(dt) {
+  if (player.mode !== 'hatch') return;
+  const h = player.hatch, k = (player.hatchT += dt) / HATCH_TIME;
+  h.open = Math.sin(Math.PI * clamp(k, 0, 1));
+  const [a, b] = player.hatchDir === 'out' ? [h.inside, h.outside] : [h.outside, h.inside];
+  const q = clamp((k - 0.25) / 0.5, 0, 1);
+  player.x = lerp(a[0], b[0], q); player.y = lerp(a[1], b[1], q);
+  player.face = player.hatchDir === 'out' ? (h.dir < 0 ? Math.PI : 0) : (h.dir < 0 ? 0 : Math.PI);
+  if (k >= 1) { player.mode = player.hatchDir === 'out' ? 'eva' : 'inside'; h.open = 0; }
+}
+
+// ---------------------------------------------------------------------------
+// Player input and interaction
+// ---------------------------------------------------------------------------
+// World point under the acting crew member's mouse (each browser computes it from its camera).
+function mouseWorld() { return [mouse.wx, mouse.wy]; }
+function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zoom * T), (sy - v.oy) / (v.zoom * T)]; }
 
 function updatePlayer(dt) {
+  const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
+  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; pressed.delete('KeyE'); }
+  const ix = block ? 0 : (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
+  const iy = block ? 0 : (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
+  const use = !block && pressed.has('KeyE');
   prompt = null;
-  const mx = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
-  const my = (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
-  const use = pressed.has('KeyE');
-  player.cd -= dt;
 
-  if (player.mode === 'walk') {
-    const len = Math.hypot(mx, my);
-    if (len) {
-      player.lx += mx / len * 3.4 * T * dt; player.ly += my / len * 3.4 * T * dt;
-      player.face = Math.atan2(my, mx); player.walk += dt * 11;
+  if (player.mode === 'hatch') { updateHatch(dt); prompt = { text: 'Cycling outer airlock…' }; return; }
+
+  if (player.mode === 'gun') {
+    const g = player.gun;
+    if (mouse.moved) {
+      const [wx, wy] = mouseWorld();
+      g.aim = Math.atan2(wy - g.y, wx - g.x);
     }
-    walkCollide();
-    let best = null, bd = T * 0.8;
-    for (const s of STATIONS) {
-      const [cx, cy] = tileCenter(s.tile), d = Math.hypot(player.lx - cx, player.ly - cy);
-      if (d < bd) { bd = d; best = s; }
+    g.aim += ix * GUN_TURN * dt;
+    const d = wrapAngle(g.aim - g.a);
+    const arc = g.arc ?? GUN_ARC;
+    g.aim = g.a + clamp(d, -arc, arc);
+    // cover: a metal plate that rises in front of you and the cannon; no firing while it's up
+    const covering = !block && (held('ShiftLeft', 'ShiftRight') || mouse.right);
+    player.cover = clamp(player.cover + (covering ? dt : -dt) * COVER_SPEED, 0, 1);
+    // reload: R (the on-screen RELOAD button is handled by the browser and sent as a command)
+    if (!block && pressed.has('KeyR')) reloadCannon(g);
+    if (!block && player.cover < 0.3 && ((mouse.down && !mouse.suppress) || held('Space'))) fireCannon(g);
+    // the gunner always sits opposite the barrel
+    player.x = g.x - Math.cos(g.aim) * GUNNER_OFFSET; player.y = g.y - Math.sin(g.aim) * GUNNER_OFFSET; player.face = g.aim;
+    const back = 'E to climb back down';
+    prompt = { text: player.cover > 0.5 ? 'Cover raised — let go of Shift / right mouse to fire again'
+                                        : broken(g) ? `${g.name} is BROKEN — repair it at its ladder · ${back}`
+                                        : g.shots ? `${g.name}: aim with mouse, click / Space to fire, Shift / right mouse = cover, ${back}`
+                                        : `${g.name} is empty — press R or click RELOAD (uses 1 energy) · ${back}`, screen: true };
+    if (use) {
+      player.cover = 0; player.vx = player.vy = 0;
+      player.mode = 'inside'; [player.x, player.y] = g.hatch;
+      player.gun = null;
     }
-    if (best) {
-      prompt = { label: best.label, at: localToWorld(...tileCenter(best.tile)) };
-      if (use) {
-        if (best.mode === 'eva') {
-          [player.x, player.y] = localToWorld(...AIRLOCK_OUTSIDE);
-          const [ox, oy] = rot(0, 90, ship.a);
-          player.vx = ship.vx + ox; player.vy = ship.vy + oy;
-          airlock.open = 1;
-        } else {
-          [player.lx, player.ly] = tileCenter(best.tile);
-          player.face = best.tile.face;
-        }
-        player.mode = best.mode;
-      }
-    }
-  } else if (player.mode === 'pilot' || player.mode === 'gunner') {
-    if (use || pressed.has('Escape')) { player.mode = 'walk'; }
-    if (player.mode === 'pilot' && held('Space')) fireGun();
-    if (player.mode === 'gunner' && (held('Space') || mouse.down)) fireGun();
-  } else if (player.mode === 'eva') {
-    const len = Math.hypot(mx, my);
-    const accel = EVA_ACCEL / (1 + player.tethered.length * ROCK_MASS);   // towed rock adds mass
-    if (len) { player.vx += mx / len * accel * dt; player.vy += my / len * accel * dt; }
-    const drag = Math.exp(-EVA_DRAG * dt);
-    player.vx *= drag; player.vy *= drag;
-    player.x += player.vx * dt; player.y += player.vy * dt;
-    player.face = Math.atan2(mouse.wy - player.y, mouse.wx - player.x);
-    player.walk += len ? dt * 6 : 0;
-    if (len && R() < 0.6) {
-      const [bx, by] = rot(-T * 0.45, 0, player.face);
-      parts.push({ x: player.x + bx, y: player.y + by, vx: -mx / len * 80 + player.vx, vy: -my / len * 80 + player.vy, life: 0.3, max: 0.3, s: 3, col: '#ffd9a0' });
-    }
-    if (mouse.down || held('Space')) fireLaser();
-    for (const a of asteroids) {
-      const dx = player.x - a.x, dy = player.y - a.y, d = Math.hypot(dx, dy), min = a.r + T * 0.25;
-      if (d < min && d > 0) {
-        player.x += dx / d * (min - d); player.y += dy / d * (min - d);
-        const vn = (player.vx - a.vx) * dx / d + (player.vy - a.vy) * dy / d;
-        if (vn < 0) { player.vx -= 1.4 * vn * dx / d; player.vy -= 1.4 * vn * dy / d; }
-      }
-    }
-    // loose rock close by gets clipped onto the tether chain
-    for (const p of pickups) {
-      if (p.state === 'free' && Math.hypot(p.x - player.x, p.y - player.y) < TETHER_GRAB) {
-        p.state = 'tether'; player.tethered.push(p);
-      }
-    }
-    const [ax, ay] = localToWorld(...AIRLOCK_OUTSIDE);
-    if (Math.hypot(player.x - ax, player.y - ay) < 75) {
-      prompt = { label: player.tethered.length ? `Board ship (+${player.tethered.length} rock)` : 'Board ship', at: [ax, ay] };
-      if (use) board();
-    }
+    return;
   }
-  airlock.open = Math.max(0, airlock.open - dt * 0.8);
-}
 
-// ---------------------------------------------------------------------------
-// Ship, gun, world
-// ---------------------------------------------------------------------------
-function friction(v, scale, dt) {
-  const d = Math.max(SHIP_FRICTION_MIN, SHIP_FRICTION_K * Math.sqrt(Math.abs(v))) * scale * dt;
-  return Math.abs(v) <= d ? 0 : v - Math.sign(v) * d;
-}
+  updateCrew(player, dt, ix, iy);
 
-function updateShip(dt) {
-  const fx = Math.cos(ship.a), fy = Math.sin(ship.a);
-  // friction first, so thrust and the autopilot work against it
-  const f = friction(ship.vx * fx + ship.vy * fy, 1, dt), sd = friction(-ship.vx * fy + ship.vy * fx, SHIP_SIDE_FRICTION, dt);
-  ship.vx = f * fx - sd * fy; ship.vy = f * fy + sd * fx;
-  if (player.mode === 'pilot') {
-    const thrust = (held('KeyW', 'ArrowUp') ? 1 : 0) - (held('KeyS', 'ArrowDown') ? SHIP_REVERSE / SHIP_THRUST : 0);
-    const turn = (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
-    ship.vx += fx * thrust * SHIP_THRUST * dt; ship.vy += fy * thrust * SHIP_THRUST * dt;
-    ship.va += turn * SHIP_TURN * dt;
-    ship.throttle = lerp(ship.throttle, Math.max(0.15, thrust), 1 - Math.exp(-dt * 8));
+  if (player.mode === 'eva') {
+    // (cannons are only manned from inside, via their ladders; spacewalks are for other jobs)
+    const h = HATCHES.find(h => Math.hypot(player.x - h.outside[0], player.y - h.outside[1]) < 1.5);
+    if (h) {
+      if (broken(h)) { prompt = { text: 'Outer airlock is broken — E: manual override (force it)', ok: true }; if (use) startOverride(h, 'Broken outer airlock', () => startHatch(h, 'in')); }
+      else if (h.locked) { prompt = { text: 'Outer airlock locked — E: manual override', ok: true }; if (use) startOverride(h, 'Outer airlock'); }
+      else { prompt = { text: 'E — go back inside', ok: true }; if (use) startHatch(h, 'in'); }
+    }
+    return;
+  }
+
+  // inside
+  const lift = liftUnder(player), mouth = !lift && liftMouth(player);
+  const hatch = HATCHES.find(h => Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) < 1.3);
+  const button = SHIELD_BUTTONS.find(b => Math.hypot(player.x - b.x, player.y - (b.y + 0.7)) < 1.1);
+  const ladder = GUNS.find(g => Math.hypot(player.x - g.hatch[0], player.y - g.hatch[1]) < 0.9);
+  const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
+  if (player.ride) {
+    prompt = { text: 'Riding the lift…' };
+  } else if (ladder) {
+    prompt = { text: `E — climb up into the ${ladder.name.toLowerCase()}`, ok: true };
+    if (use) { player.mode = 'gun'; player.gun = ladder; player.gunFrom = 'inside'; player.vx = player.vy = 0; mouse.moved = 0; }
+  } else if (button) {
+    const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]];
+    if (broken(button)) prompt = { text: 'Shield button is broken' };
+    else if (s.up > 0) prompt = { text: 'Shield is up!', ok: true };
+    else if (s.cd > 0) prompt = { text: `Shield recharging (${s.cd.toFixed(1)} s)` };
+    else if (cap.charge <= 0 || broken(cap)) prompt = { text: 'No energy for the shield (capacitor empty)' };
+    else {
+      prompt = { text: `E — raise ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, ok: true };
+      if (use) pressShield(button.side);
+    }
+  } else if (hatch && hatch.locked && !broken(hatch)) {
+    prompt = { text: 'Outer airlock locked — E: manual override', ok: true }; if (use) startOverride(hatch, 'Outer airlock');
+  } else if (hatch) {
+    if (broken(hatch)) { prompt = { text: 'Outer airlock is broken — E: manual override (force it)', ok: true }; if (use) startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')); }
+    else { prompt = { text: 'E — go outside (spacewalk)', ok: true }; if (use) startHatch(hatch, 'out'); }
+  } else if (lift && broken(lift)) {
+    prompt = { text: 'Lift is broken' };
+  } else if (lift && lift.locked) {
+    prompt = { text: 'Lift locked by security — E: manual override', ok: true }; if (use) startOverride(lift, 'Lift');
+  } else if (lift) {
+    prompt = { text: `E — ride lift ${Math.round(lift.pos) ? 'up' : 'down'}`, ok: true };
+    if (use) {
+      sendLift(lift);
+      const car = carRect(lift);
+      player.ride = lift;
+      player.y = clamp(player.y, car.y + CREW_R, car.y + car.h - CREW_R);
+      player.rideDy = player.y - car.y;
+    }
+  } else if (mouth && mouth.locked) {
+    prompt = { text: 'Lift locked by security — E: manual override', ok: true }; if (use) startOverride(mouth, 'Lift');
+  } else if (doorway && doorway.locked) {
+    prompt = { text: 'Door locked by security — E: manual override', ok: true }; if (use) startOverride(doorway, 'Door');
+  } else if (mouth) {
+    const where = mouth.phase !== 'docked' ? 'in transit' : `on the ${liftDeck(mouth) === 'top' ? 'upper' : 'lower'} deck`;
+    if (LIFT_CALLABLE && mouth.phase === 'docked') {
+      prompt = { text: `Lift is ${where} — E to call`, ok: true };
+      if (use) sendLift(mouth);
+    } else prompt = { text: `Lift is ${where}` };
   } else {
-    // autopilot: ease towards a slow forward cruise
-    const tx = fx * CRUISE - ship.vx, ty = fy * CRUISE - ship.vy, d = Math.hypot(tx, ty);
-    const step = Math.min(d, 200 * dt);
-    if (d > 0) { ship.vx += tx / d * step; ship.vy += ty / d * step; }
-    ship.throttle = lerp(ship.throttle, 0.3, 1 - Math.exp(-dt * 4));
-  }
-  ship.va *= Math.exp(-2.5 * dt);
-  ship.va = clamp(ship.va, -1.4, 1.4);
-  const sp = Math.hypot(ship.vx, ship.vy);
-  if (sp > SHIP_MAX) { ship.vx *= SHIP_MAX / sp; ship.vy *= SHIP_MAX / sp; }
-  ship.x += ship.vx * dt; ship.y += ship.vy * dt; ship.a += ship.va * dt;
-
-  // gun: turns toward the mouse when manned, otherwise returns to forward
-  gun.cd -= dt; gun.flash = Math.max(0, gun.flash - dt * 6); gun.dry = Math.max(0, gun.dry - dt * 2);
-  let want = 0;
-  if (player.mode === 'gunner') {
-    const [gx, gy] = localToWorld(...GUN_POS);
-    want = Math.atan2(mouse.wy - gy, mouse.wx - gx) - ship.a;
-  }
-  const diff = wrapAngle(want - gun.rel);
-  gun.rel = wrapAngle(gun.rel + clamp(diff, -5 * dt, 5 * dt));
-
-  // asteroids bounce off the hull
-  for (const a of asteroids) {
-    const [lx, ly] = worldToLocal(a.x, a.y);
-    const cx = clamp(lx, HULL_BOX[0], HULL_BOX[2]), cy = clamp(ly, HULL_BOX[1], HULL_BOX[3]);
-    let nx = lx - cx, ny = ly - cy, d = Math.hypot(nx, ny);
-    if (d >= a.r) continue;
-    if (d === 0) { nx = 0; ny = ly < SHIP_C[1] ? -1 : 1; d = 0; } else { nx /= d; ny /= d; }
-    const [wx, wy] = rot(nx, ny, ship.a);
-    a.x += wx * (a.r - d); a.y += wy * (a.r - d);
-    const vn = (a.vx - ship.vx) * wx + (a.vy - ship.vy) * wy;
-    if (vn < 0) {
-      a.vx -= 1.5 * vn * wx; a.vy -= 1.5 * vn * wy;
-      const k = [0.04, 0.1, 0.22][a.size];
-      ship.vx += vn * wx * k; ship.vy += vn * wy * k;
-      cam.shake = Math.max(cam.shake, Math.min(1, -vn / 150));
-    }
-  }
-}
-
-function updatePickups(dt) {
-  const [ix, iy] = localToWorld(...INTAKE_POS);
-  for (const p of pickups) {
-    p.a += p.va * dt;
-    if (p.state === 'free' || p.state === 'pulled') {
-      const dx = ix - p.x, dy = iy - p.y, d = Math.hypot(dx, dy);
-      if (d < VACUUM_R) {
-        // pulled toward the intake, faster the closer it gets; matches ship velocity so it never orbits
-        p.state = 'pulled';
-        const speed = lerp(90, 520, 1 - d / VACUUM_R);
-        const k = 1 - Math.exp(-dt * 5);
-        p.vx = lerp(p.vx, ship.vx + dx / d * speed, k); p.vy = lerp(p.vy, ship.vy + dy / d * speed, k);
-        if (d < T * 0.6) { p.state = 'stored'; storeRock(1); continue; }
-      } else {
-        p.state = 'free';
-        const drag = Math.exp(-0.6 * dt);
-        p.vx *= drag; p.vy *= drag;
+    const L = DECK_LOCKS.find(L => player.x > L.x - 0.2 && player.x < L.x + L.w + 0.2 &&
+                                   player.y > SPINE_Y0 - 1.2 && player.y < SPINE_Y1 + 1.2);
+    if (L) {
+      const inside = player.y > SPINE_Y0 && player.y < SPINE_Y1;
+      if (broken(L)) {
+        const stuck = !(L.doors.top > 0.95 && L.doors.bottom > 0.95);
+        if (stuck) { prompt = { text: 'Deck airlock is broken — E: manual override (force a door open)', ok: true }; if (use) startOverride(L, 'Broken deck airlock', () => forceDeckLock(L)); }
+        else prompt = { text: 'Deck airlock is broken (doors forced open)' };
       }
-      p.x += p.vx * dt; p.y += p.vy * dt;
-    }
-  }
-  // tethered rock: each on its own rope to the astronaut. Ropes are inextensible
-  // constraints (no springs, so no wobble); slack ropes let the rock drift.
-  const tethered = player.tethered;
-  for (const p of tethered) {
-    const k = 1 - Math.exp(-dt * 0.8);              // slowly settle to the astronaut's velocity
-    p.vx = lerp(p.vx, player.vx, k); p.vy = lerp(p.vy, player.vy, k);
-    p.x += p.vx * dt; p.y += p.vy * dt;
-  }
-  for (let i = 0; i < tethered.length; i++) {       // rocks push apart so they fan out
-    for (let j = i + 1; j < tethered.length; j++) {
-      const a = tethered[i], b = tethered[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1;
-      if (d < T * 0.7) {
-        const push = (T * 0.7 - d) * 0.5 * Math.min(1, dt * 10);
-        a.x -= dx / d * push; a.y -= dy / d * push; b.x += dx / d * push; b.y += dy / d * push;
+      else if (L.locked) { prompt = { text: 'Deck airlock locked by security — E: manual override', ok: true }; if (use) startOverride(L, 'Deck airlock'); }
+      else if (L.phase === 'cycling') prompt = { text: 'Airlock cycling…' };
+      else if (L.phase !== 'idle') prompt = { text: 'Airlock doors moving…' };
+      else if (inside) {
+        prompt = { text: 'E — cycle airlock', ok: true };
+        if (use) startCycle(L, other(L.open));
       }
     }
   }
-  for (const p of tethered) {
-    const dx = player.x - p.x, dy = player.y - p.y, d = Math.hypot(dx, dy) || 1;
-    if (d <= TETHER_LEN) continue;
-    const nx = dx / d, ny = dy / d;
-    p.x += nx * (d - TETHER_LEN); p.y += ny * (d - TETHER_LEN);
-    const vrel = (player.vx - p.vx) * nx + (player.vy - p.vy) * ny;   // > 0: rope pulling taut
-    if (vrel > 0) { p.vx += nx * vrel; p.vy += ny * vrel; }
-  }
-  pickups = pickups.filter(p => p.state !== 'stored' && (p.state === 'tether' || Math.hypot(p.x - ship.x, p.y - ship.y) < DESPAWN));
 }
 
-function updateWorld(dt) {
-  for (const a of asteroids) {
-    a.x += a.vx * dt; a.y += a.vy * dt; a.a += a.va * dt; a.hit = Math.max(0, a.hit - dt * 4);
-  }
-  asteroids = asteroids.filter(a => Math.hypot(a.x - ship.x, a.y - ship.y) < DESPAWN);
-  while (asteroids.length < ASTEROID_COUNT) spawnAsteroid(SPAWN_MIN, SPAWN_MAX);
-
-  for (const s of shots) {
-    s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
-    for (const a of asteroids) {
-      if (s.hits.has(a) || Math.hypot(s.x - a.x, s.y - a.y) >= a.r + 4) continue;
-      const power = s.kind === 'laser' ? laserDamage(s) : s.power;
-      const { used, spawned } = hitAsteroid(a, power, s);
-      s.hits.add(a); spawned.forEach(c => s.hits.add(c));    // fragments don't eat the same shell
-      if (s.kind === 'laser') { s.life = 0; break; }
-      s.power -= used;
-      if (s.power <= 0) { s.life = 0; break; }
-    }
-  }
-  shots = shots.filter(s => s.life > 0);
-
-  updatePickups(dt);
-
-  for (const q of parts) { q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; }
-  parts = parts.filter(q => q.life > 0);
-  for (const f of floaters) { f.y -= 30 * dt / cam.zoom; f.life -= dt; }
-  floaters = floaters.filter(f => f.life > 0);
+// Mouse in the world: left click grabs / uses / repairs (hold), right click attacks.
+function updateInteraction(dt) {
+  hover = null;
+  if (mission.over || ui.panel) { player.repair = null; return; }
+  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; return; }
+  const [mx, my] = mouseWorld();
+  hover = clickTarget(mx, my);
+  if (hover?.run && mouse.click) { hover.run(); mouse.click = false; }
+  updateRepair(dt, hover, mouse.down);
+  if (mouse.rightClick) attack(mx, my);
+  if (mouse.right && inv.weapon === 'extinguisher' && player.mode === 'inside') spray(mx, my, dt);
 }
 
+// Commands: actions that come from a browser's own UI (panels, buttons, debug menu) instead of
+// raw input. Run in the acting crew member's context: directly when solo, on the server in multiplayer.
+function runCommand(cmd) {
+  const [kind, arg] = cmd;
+  if (kind === 'lock') { const l = lockables()[arg]; if (l) { l.ref.locked = !l.ref.locked; sfx.clank(); } }
+  else if (kind === 'bonk') { if (ui.override) overrideHit(); }
+  else if (kind === 'closePanel') { ui.panel = null; ui.override = null; }
+  else if (kind === 'reload') { if (player.mode === 'gun') reloadCannon(player.gun); }
+  else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
+}
+let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
+
+// Doors between rooms: open unless locked; never close on someone standing in them.
+function updateDoorways(dt) {
+  for (const d of DOORWAYS) {
+    // only an open door waits for someone standing in it; a shut door never reopens for someone pushing on it
+    const blocked = d.open > 0.5 && actors().some(c => inRect(c.x, c.y, d, CREW_R));
+    const target = d.locked && !blocked ? 0 : 1;
+    d.open = clamp(d.open + Math.sign(target - d.open) * dt / 0.35, 0, 1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Debug menu (` key)
+// ---------------------------------------------------------------------------
+function teleportToGun(id) {
+  const g = GUNS.find(g => g.id === id);
+  player.ride = null; player.mode = 'gun'; player.gun = g; player.gunFrom = 'inside'; mouse.moved = 0;
+}
+const DEBUG_ITEMS = [
+  { key: '1', label: 'Enemy left: Interceptor', run: () => combatSpawn('interceptor', 'port', true) },
+  { key: '2', label: 'Enemy right: Interceptor', run: () => combatSpawn('interceptor', 'star', true) },
+  { key: '3', label: 'Enemy left: Frigate', run: () => combatSpawn('frigate', 'port', true) },
+  { key: '4', label: 'Enemy right: Frigate', run: () => combatSpawn('frigate', 'star', true) },
+  { key: '5', label: 'Asteroid swarm (front)', run: () => combatSpawn('swarm') },
+  { key: '6', label: 'Teleport: left cannon', run: () => teleportToGun('port') },
+  { key: '7', label: 'Teleport: front cannon', run: () => teleportToGun('front') },
+  { key: '8', label: 'Teleport: right cannon', run: () => teleportToGun('star') },
+  { key: '9', label: 'Teleport: bridge', run: () => { player.mode = 'inside'; player.gun = null; player.ride = null; player.x = 22.2; player.y = 4.5; } },
+  { key: 'i', label: 'Invader through the left airlock', run: () => spawnInvader('port') },
+  { key: 'o', label: 'Invader through the right airlock', run: () => spawnInvader('star') },
+  { key: '0', label: 'Clear threats and reset hit counts', run: () => { combatClear(); boarding.invaders = []; boarding.bolts = []; } },
+  { key: 'm', label: 'Restart the mission', run: () => { combatClear(); boarding.invaders = []; fires.length = 0; startMission(); } },
+  { key: 'n', label: 'Stop the mission (free play)', run: () => { mission.active = false; } },
+  { key: 'f', label: 'Start a fire next to you', run: () => spawnFire(player.x + 1, player.y) },
+  { key: 'b', label: 'Break a random system', run: () => { const s = SYSTEMS.filter(s => !s.broken); if (s.length) breakSystem(s[Math.floor(Math.random() * s.length)]); } },
+  { key: 'e', label: 'Fill all capacitors', run: () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; }) },
+  { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
+  { key: 'y', label: '', hidden: true, run: () => radarScan() },
+  { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
+  { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; LIFTS[1].locked = true; } },
+  { key: 'g', label: '', hidden: true, run: () => { ui.panel = 'diagnosis'; mission.diagRun = true; } },
+  { key: 'v', label: '', hidden: true, run: () => { startOverride(DOORWAYS[0], 'Door'); ui.override.hits = 2; } },
+  { key: 'q', label: '', hidden: true, run: () => pressShield('star') },          // debug only
+  { key: 'x', label: '', hidden: true, run: () => {            // debug only: shoot the windshield crack
+    const e = combat.enemies.find(e => e.kind === 'interceptor'); const p = e?.pois.find(p => p.id === 'crack');
+    if (p) hitPoi(e, p, ...enemyToWorld(e, p.x, p.y));
+  } },
+];
+function menuLayout() {
+  const w = 380, rowH = 30, h = DEBUG_ITEMS.filter(it => !it.hidden).length * rowH + 64;
+  return { x: VW / 2 - w / 2, y: (VH - h) / 2, w, h, rowH };
+}
+function updateDebug() {
+  if (pressed.has('Backquote')) debugOpen = !debugOpen;
+  if (!debugOpen) return;
+  if (pressed.has('Escape')) { debugOpen = false; return; }
+  const m = menuLayout();
+  for (const [i, it] of DEBUG_ITEMS.filter(it => !it.hidden).entries()) {
+    const hitRow = mouse.click && mouse.x > m.x && mouse.x < m.x + m.w && mouse.y > m.y + 44 + i * m.rowH && mouse.y < m.y + 44 + (i + 1) * m.rowH;
+    if (pressed.has(/\d/.test(it.key) ? 'Digit' + it.key : 'Key' + it.key.toUpperCase()) || hitRow) { sendCommand(['debug', it.key]); debugOpen = false; mouse.click = false; mouse.down = false; return; }
+  }
+}
+function drawDebugMenu() {
+  if (!debugOpen) return;
+  const m = menuLayout();
+  ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, VW, VH);
+  rr(m.x, m.y, m.w, m.h, 10); ctx.fillStyle = 'rgba(14,17,24,0.95)'; ctx.fill(); stroke(2, '#5fd6a0');
+  ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#e8ecf4';
+  ctx.fillText('DEBUG MENU', m.x + 16, m.y + 22);
+  ctx.font = '12px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textAlign = 'right';
+  ctx.fillText('number key or click · ` / Esc to close', m.x + m.w - 16, m.y + 22); ctx.textAlign = 'left';
+  DEBUG_ITEMS.filter(it => !it.hidden).forEach((it, i) => {
+    const y = m.y + 44 + i * m.rowH;
+    const hover = mouse.x > m.x && mouse.x < m.x + m.w && mouse.y > y && mouse.y < y + m.rowH;
+    if (hover) { ctx.fillStyle = 'rgba(95,214,160,0.12)'; ctx.fillRect(m.x + 6, y, m.w - 12, m.rowH); }
+    rr(m.x + 16, y + 5, 22, 20, 4); ctx.fillStyle = '#262a33'; ctx.fill(); stroke(1.2, '#4b5263');
+    ctx.fillStyle = '#5fd6a0'; ctx.font = '700 13px monospace'; ctx.textAlign = 'center'; ctx.fillText(it.key, m.x + 27, y + 15);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#e8ecf4'; ctx.font = '14px system-ui, sans-serif'; ctx.fillText(it.label, m.x + 50, y + 15);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Camera. Inside: about one room fills the screen, aimed at a blend of nearby room
+// centers (weighted by how close you are), so moving between rooms glides. Outside it
+// follows you; on a cannon it frames the cannon's field of fire. Tab: whole ship.
+// ---------------------------------------------------------------------------
+const VIEW_ROOM = { w: 19, h: 13 };                 // layout units visible when zoomed in
+const VIEW_SHIP = { x0: -3, y0: -5, x1: SHIP_W + 3, y1: SHIP_H + 6 };
+const cam = { x: player.x, y: player.y, zoom: 0, overview: DEBUG_OVERVIEW ? 1 : 0, sx: 0, sy: 0 };
+function roomDist(room, x, y) {
+  return Math.min(...room.rects.map(q => Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h))));
+}
+function cameraTarget() {
+  const vh = VH - HUD_H, zRoom = Math.min(VW / (VIEW_ROOM.w * T), vh / (VIEW_ROOM.h * T));
+  if (player.mode === 'gun') {
+    const [cx, cy, w] = player.gun.view;
+    return [cx, cy, Math.min(VW / (w * T), vh / (w * 0.62 * T))];
+  }
+  if (player.mode === 'eva' || (player.mode === 'hatch' && player.hatchDir === 'out' && player.hatchT > HATCH_TIME / 2))
+    return [player.x, player.y, zRoom * 0.75];
+  let sw = 0, sx = 0, sy = 0;
+  for (const room of ROOMS) {
+    const w = Math.exp(-((roomDist(room, player.x, player.y) / 1.6) ** 2));
+    const [cx, cy] = roomCenter(room);
+    sw += w; sx += w * cx; sy += w * cy;
+  }
+  if (sw < 0.05) return [player.x, player.y, zRoom];
+  return [lerp(sx / sw, player.x, 0.3), lerp(sy / sw, player.y, 0.3), zRoom];
+}
 function updateCamera(dt) {
-  const base = Math.min(1.3, VW / (17.5 * T), VH / (11.5 * T));
-  let tx = ship.x, ty = ship.y, tz = base, tr = -ship.a;
-  if (player.mode === 'pilot' || player.mode === 'gunner') {
-    tx += ship.vx * 0.5; ty += ship.vy * 0.5; tz = base * 0.42; tr = 0;
-  } else if (player.mode === 'eva') {
-    tx = player.x; ty = player.y; tz = base * 0.6; tr = 0;
-  }
-  const k = 1 - Math.exp(-dt * 7);
+  const [tx, ty, tz] = cameraTarget();
+  cam.overview = clamp(cam.overview + (held('Tab') || DEBUG_OVERVIEW ? dt : -dt) * 4, 0, 1);
+  const o = cam.overview * cam.overview * (3 - 2 * cam.overview);
+  const vh = VH - HUD_H;
+  const zShip = Math.min(VW / ((VIEW_SHIP.x1 - VIEW_SHIP.x0) * T), vh / ((VIEW_SHIP.y1 - VIEW_SHIP.y0) * T));
+  const k = cam.zoom ? 1 - Math.exp(-2.6 * dt) : 1;
   cam.x = lerp(cam.x, tx, k); cam.y = lerp(cam.y, ty, k);
-  cam.zoom = Math.exp(lerp(Math.log(cam.zoom), Math.log(tz), 1 - Math.exp(-dt * 3)));
-  cam.rot += wrapAngle(tr - cam.rot) * (1 - Math.exp(-dt * 4));
-  cam.shake = Math.max(0, cam.shake - dt * 2.5);
-  [mouse.wx, mouse.wy] = screenToWorld(mouse.x, mouse.y);
+  cam.baseZoom = lerp(cam.baseZoom || tz, tz, k);
+  cam.zoom = cam.baseZoom * Math.pow(zShip / cam.baseZoom, o);
+  cam.ox = lerp(0, (VIEW_SHIP.x0 + VIEW_SHIP.x1) / 2 - cam.x, o);
+  cam.oy = lerp(0, (VIEW_SHIP.y0 + VIEW_SHIP.y1) / 2 - cam.y, o);
+  const s = combat.shake * combat.shake * 0.35;        // big hits rattle the whole ship
+  cam.sx = s * (Math.sin(time * 61) + 0.5 * Math.sin(time * 97)); cam.sy = s * (Math.cos(time * 53) + 0.5 * Math.sin(time * 89));
+}
+function camera() {
+  const x = cam.x + cam.ox + cam.sx, y = cam.y + cam.oy + cam.sy;
+  return { zoom: cam.zoom, ox: VW / 2 - x * T * cam.zoom, oy: HUD_H + (VH - HUD_H) / 2 - y * T * cam.zoom };
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Render
 // ---------------------------------------------------------------------------
-function shipTransform(ox = 0, oy = 0) {
-  ctx.translate(ship.x + ox, ship.y + oy); ctx.rotate(ship.a); ctx.translate(-SHIP_C[0], -SHIP_C[1]);
+function drawCrewOutside(c, t) {
+  if (c.mode === 'eva') {                     // safety line back to the nearest hatch
+    const h = HATCHES.reduce((a, b) => Math.hypot(c.x - a.outside[0], c.y - a.outside[1]) < Math.hypot(c.x - b.outside[0], c.y - b.outside[1]) ? a : b);
+    const [hx, hy] = [h.x * T, h.y * T], [px, py] = [c.x * T, c.y * T];
+    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo((hx + px) / 2 + 20, (hy + py) / 2 + 30, px, py);
+    ctx.strokeStyle = 'rgba(20,22,27,0.7)'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.strokeStyle = 'rgba(210,166,46,0.85)'; ctx.lineWidth = 2; ctx.stroke();
+  }
+  drawCrew(c.x * T, c.y * T, c.face, c.walk, true, c.color);
 }
 
 function render(t) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const sx = (R() - 0.5) * cam.shake * 10, sy = (R() - 0.5) * cam.shake * 10;
-  drawSpace(t, cam, VW, VH);
+  const view = camera();
+  drawSpace(t, { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 - t * CRUISE_SPEED, rot: 0 }, VW, VH);
+  ctx.save(); ctx.translate(view.ox, view.oy); ctx.scale(view.zoom, view.zoom);
 
-  ctx.translate(VW / 2 + sx, VH / 2 + sy); ctx.rotate(cam.rot); ctx.scale(cam.zoom, cam.zoom); ctx.translate(-cam.x, -cam.y);
-  for (const a of asteroids) drawAsteroid(a, t);
-  for (const p of pickups) if (p.state === 'free') drawPickup(p, t);
+  drawCombatBack(t);
+  drawShipHull(t, HULL, GUNS, ENGINE);
+  drawHullDecor(t);
+  drawShipDecals();
+  for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
+  drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, [...DECK_LOCKS, ...LIFTS]);
+  drawSpineDecor(t);
+  for (const L of LIFTS) drawLift(L, carRect(L), t);
+  drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
+  for (const r of ROOMS) drawRoomLabel(r);
+  drawFloorDecor(t);
+  drawJunk();
+  drawGoo();
+  drawEngineHousing(t, ENGINE);
+  for (const L of DECK_LOCKS) drawDeckLock(L, t);
+  drawDoorways();
+  for (const h of HATCHES) drawHatch(h);
+  for (const g of GUNS) drawGunLadder(g);
+  drawReactor(REACTOR, t);
+  drawLever(t);
+  for (const s of STATIONS) drawStation(s, t);
+  for (const c of CAPACITORS) drawCapacitor(c, CAP_MAX, t);
+  for (const b of SHIELD_BUTTONS) {
+    const s = combat.shields[b.side];
+    drawShieldButton(b, s.up > 0 ? 'up' : s.cd > 0 ? 'cooldown' : 'ready', 1 - s.cd / SHIELD_COOLDOWN, t);
+  }
+  drawPropDecor(t);
+  drawItems(t);
+  drawFires(t);
+  for (const s of SYSTEMS) if (s.broken) drawBroken(s, t);
+  drawEnergyBolts();
+  drawClickTarget(me.hover);
+  for (const c of crew) {
+    if (c.mode === 'inside' || c.mode === 'hatch')
+      drawCrew(c.x * T, c.y * T, c.face, c.walk, c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' && c.hatchT < HATCH_TIME * 0.7, c.color);
+    else drawCrewOutside(c, t);
+    if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
+    if (c !== me && crew.length > 1) {                // name tags for the others
+      ctx.font = `700 ${T * 0.26}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, c.x * T, (c.y - 0.45) * T);
+      ctx.fillStyle = c.color; ctx.fillText(c.name, c.x * T, (c.y - 0.45) * T); ctx.textAlign = 'left';
+    }
+  }
+  drawBoarding(t);
+  drawLights(1 / 60);
+  drawCombatFront(t);
 
-  ctx.save(); shipTransform(); drawVacuum(...INTAKE_POS, VACUUM_R, t, pickups.some(p => p.state === 'pulled')); ctx.restore();
-  // ship (drop shadow keeps a world-fixed offset)
-  ctx.save(); shipTransform(8, 10); poly(HULL_PTS); ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill(); ctx.restore();
-  ctx.save(); shipTransform();
-  drawEngines(t, ship.throttle);
-  drawHull(t);
-  drawShipInterior(t, player.mode);
-  if (player.mode !== 'eva') drawCrew(player.lx, player.ly, player.face, player.walk, false);
-  drawGun(...GUN_POS, gun.rel, gun.flash);
+  const prompt = me.prompt, hover = me.hover;
+  if (prompt && !prompt.screen) {
+    ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const x = me.x * T, y = (me.y - 0.55) * T, w = ctx.measureText(prompt.text).width + 18;
+    rr(x - w / 2, y - T * 0.42, w, T * 0.46, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? '#5fd6a0' : '#6b7486');
+    ctx.fillStyle = prompt.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(prompt.text, x, y - T * 0.06);
+    ctx.textAlign = 'left';
+  }
   ctx.restore();
-  for (const p of pickups) if (p.state === 'pulled') drawRockItem(p.x, p.y, p.k, 1.05, p.a);
-
-  for (const s of shots) {
-    if (s.kind === 'laser') {
-      const dmg = laserDamage(s);
-      ctx.save(); ctx.globalCompositeOperation = 'lighter';
-      const sp = Math.hypot(s.vx, s.vy), dx = s.vx / sp, dy = s.vy / sp;
-      ctx.strokeStyle = `rgba(95,214,228,${0.15 * dmg})`; ctx.lineWidth = 3 + 2 * dmg;
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - dx * 34, s.y - dy * 34); ctx.stroke();
-      ctx.strokeStyle = `rgba(230,253,255,${0.3 + 0.23 * dmg})`; ctx.lineWidth = 1 + 0.6 * dmg; ctx.stroke();
-      ctx.restore();
-    } else {
-      const g = ctx.createLinearGradient(s.x, s.y, s.x - s.vx * 0.05, s.y - s.vy * 0.05);
-      g.addColorStop(0, 'rgba(255,200,120,0.8)'); g.addColorStop(1, 'rgba(255,140,60,0)');
-      ctx.strokeStyle = g; ctx.lineWidth = 6;
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x - s.vx * 0.05, s.y - s.vy * 0.05); ctx.stroke();
-      drawRockItem(s.x, s.y, s.k, 0.55, t * 8);
-    }
+  if (prompt && prompt.screen) {
+    ctx.font = '600 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(prompt.text).width + 30;
+    rr(VW / 2 - w / 2, VH - 54, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, '#5fd6a0');
+    ctx.fillStyle = '#c8ffe6'; ctx.fillText(prompt.text, VW / 2, VH - 37); ctx.textAlign = 'left';
   }
-  for (const q of parts) {
-    ctx.globalAlpha = clamp(q.life / q.max * 1.5, 0, 1);
-    ctx.fillStyle = q.col; ctx.fillRect(q.x - q.s / 2, q.y - q.s / 2, q.s, q.s);
+  drawCombatHUD(view, HUD_H);
+  drawSystemsHUD(HUD_H);
+  if (me.mode === 'gun') drawCannonHUD(me.gun);
+  drawSidebar(HUD_H);
+  if (hover && !debugOpen) {                        // tooltip next to the mouse
+    ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(hover.text).width + 16;
+    const tx = Math.min(mouse.x + 16, VW - w - 6), ty = mouse.y + 22;
+    rr(tx, ty - 12, w, 24, 6); ctx.fillStyle = 'rgba(12,14,20,0.88)'; ctx.fill(); stroke(1.5, hover.ok ? '#5fd6a0' : '#6b7486');
+    ctx.fillStyle = hover.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(hover.text, tx + 8, ty);
   }
-  ctx.globalAlpha = 1;
-  if (player.mode === 'eva') {
-    for (const p of player.tethered) drawTether(player.x, player.y, p.x, p.y, TETHER_LEN);
-    for (const p of player.tethered) drawRockItem(p.x, p.y, p.k, 1.05, p.a);
-    drawCrew(player.x, player.y, player.face, player.walk, true);
-  }
-
-  drawHUD(t);
+  drawHUD();
+  drawDebugMenu();
+  drawPanels(t);
 }
 
-function hudPanel(x, y, w, h) {
-  ctx.fillStyle = 'rgba(12,15,22,0.78)'; rr(x, y, w, h, 8); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1; ctx.stroke();
-}
-
-const MODE_INFO = {
-  walk: ['On foot', 'WASD walk · E use station'],
-  pilot: ['Piloting', 'W/S thrust · A/D turn · Space fire cannon (forward) · E leave'],
-  gunner: ['Manning cannon', 'Mouse aim · Click/Space fire (fast) · E leave'],
-  eva: ['EVA', 'WASD jetpack · Mouse aim · Click/Space laser · fly into rock to tether it · E at airlock to board'],
-};
-
-function drawHUD(t) {
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-  ctx.font = '700 14px system-ui, sans-serif';
-  for (const f of floaters) {
-    const [x, y] = worldToScreen(f.x, f.y);
-    ctx.globalAlpha = clamp(f.life * 2, 0, 1);
-    ctx.lineWidth = 3; ctx.strokeStyle = OUT; ctx.strokeText(f.text, x, y);
-    ctx.fillStyle = f.col; ctx.fillText(f.text, x, y);
-  }
-  ctx.globalAlpha = 1;
-
+function drawHUD() {
+  ctx.fillStyle = 'rgba(10,12,18,0.75)'; ctx.fillRect(0, 0, VW, HUD_H);
+  drawMuteButton();
+  ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
+  ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
+  ctx.fillText('WASD move · E use · Tab: overview · `: debug menu · M: mute · in a cannon: Shift / right mouse = cover', 200, 18);
+  const room = roomAt(player.x, player.y);
+  const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
+    : player.ride ? 'Lift' : room ? room.name : 'Deck airlock';
+  ctx.textAlign = 'right'; ctx.fillStyle = '#e8ecf4'; ctx.fillText(where, VW - 14, 18);
+  const ww = ctx.measureText(where).width;
+  ctx.fillStyle = '#6b7486'; ctx.fillText(sfx.muted ? '♪ muted' : `♪ ${music.title}`, VW - 30 - ww, 18);
   ctx.textAlign = 'left';
-  const panelH = player.mode === 'eva' ? 154 : 132;
-  hudPanel(16, 16, 230, panelH);
-  ctx.fillStyle = '#e8ecf3'; ctx.font = '700 14px system-ui, sans-serif';
-  ctx.fillText('MANIFOLD NOVUM', 30, 36);
-  ctx.fillStyle = '#ffd38a'; ctx.font = '600 13px system-ui, sans-serif';
-  ctx.fillText(MODE_INFO[player.mode][0], 30, 58);
-  ctx.fillStyle = '#9aa3b5'; ctx.font = '13px system-ui, sans-serif';
-  ctx.fillText(`Speed ${Math.hypot(ship.vx, ship.vy).toFixed(0)}`, 30, 80);
-  drawRockItem(38, 104, 0, 0.6, 0.3);
-  ctx.fillStyle = '#9aa3b5'; ctx.fillText(`Chest  ${chest.count}`, 54, 104);
-  ctx.fillText('Ammo', 30, 128);
-  drawAmmoPips(76, 123, gun.ammo, AMMO_MAX, gun.dry);
-  if (player.mode === 'eva') { ctx.fillStyle = '#9aa3b5'; ctx.fillText(`Tethered  ${player.tethered.length}`, 30, 150); }
+}
 
-  const help = MODE_INFO[player.mode][1];
-  ctx.font = '13px system-ui, sans-serif';
-  const hw = ctx.measureText(help).width + 28;
-  hudPanel(VW / 2 - hw / 2, VH - 46, hw, 30);
-  ctx.textAlign = 'center'; ctx.fillStyle = '#c9d0dc'; ctx.fillText(help, VW / 2, VH - 31);
+// Cannon ammo panel (bottom right while manning a cannon): shells, energy left, RELOAD button.
+const reloadBtn = () => ({ x: VW - 176, y: VH - 62, w: 160, h: 40 });
+function inReloadBtn(x, y) { const b = reloadBtn(); return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h; }
+function drawCannonHUD(g) {
+  const b = reloadBtn(), cap = CAPACITORS[GUN_CAP[g.id]], empty = !g.shots && !g.reload;
+  rr(b.x - 10, b.y - 70, b.w + 20, b.h + 80, 10); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
+  ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textBaseline = 'middle';
+  ctx.fillText('SHOTS', b.x, b.y - 56);
+  for (let i = 0; i < SHOTS_PER_ENERGY; i++) {        // shells
+    const sx = b.x + 4 + i * 26, sy = b.y - 44, on = i < g.shots;
+    rr(sx, sy, 14, 30, 6); ctx.fillStyle = on ? '#e8c34f' : '#2b303a'; ctx.fill(); stroke(1.5);
+    if (on) { ctx.fillStyle = '#b8862a'; ctx.fillRect(sx + 2, sy + 20, 10, 5); }
+  }
+  ctx.fillStyle = cap.charge ? '#9cd8ff' : '#ff8a7a'; ctx.font = '11px system-ui, sans-serif';
+  ctx.fillText(`energy: ${cap.charge}/${CAP_MAX}`, b.x + 86, b.y - 38);
+  ctx.fillText(`(${['left', 'mid', 'right'][GUN_CAP[g.id]]} capacitor)`, b.x + 86, b.y - 22);
+  const hover = inReloadBtn(mouse.x, mouse.y), pulse = empty ? 0.5 + 0.5 * Math.sin(time * 6) : 0;
+  rr(b.x, b.y, b.w, b.h, 8);
+  ctx.fillStyle = g.reload ? '#2b303a' : empty ? `rgb(${150 + 60 * pulse | 0},${60 + 20 * pulse | 0},40)` : hover ? '#4a515e' : '#3a3f4a'; ctx.fill();
+  stroke(2, empty ? '#ffb07a' : '#6b7486');
+  if (g.reload) { rr(b.x + 3, b.y + 3, (b.w - 6) * (1 - g.reload / RELOAD_TIME), b.h - 6, 6); ctx.fillStyle = '#5fd6a0'; ctx.fill(); }
+  ctx.fillStyle = '#fff'; ctx.font = '800 14px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(g.reload ? 'RELOADING…' : 'RELOAD (R) · 1 energy', b.x + b.w / 2, b.y + b.h / 2); ctx.textAlign = 'left';
+}
 
-  if (prompt) {
-    const [px, py] = worldToScreen(...prompt.at);
-    const label = `[E] ${prompt.label}`;
-    ctx.font = '600 13px system-ui, sans-serif';
-    const w = ctx.measureText(label).width + 18;
-    hudPanel(px - w / 2, py - 46, w, 24);
-    ctx.fillStyle = '#ffe08a'; ctx.fillText(label, px, py - 34);
-  }
-  if (gun.dry > 0 && player.mode !== 'walk') {
-    ctx.font = '700 15px system-ui, sans-serif'; ctx.fillStyle = `rgba(255,110,90,${gun.dry})`;
-    ctx.fillText('NO AMMO', VW / 2, VH - 70);
-  }
-  // in EVA, point back to the ship when it is off screen
-  if (player.mode === 'eva') {
-    const [sx, sy] = worldToScreen(ship.x, ship.y);
-    const m = 40;
-    if (sx < m || sy < m || sx > VW - m || sy > VH - m) {
-      const ang = Math.atan2(sy - VH / 2, sx - VW / 2);
-      const k = Math.min((VW / 2 - m) / Math.abs(Math.cos(ang) || 1e-6), (VH / 2 - m) / Math.abs(Math.sin(ang) || 1e-6));
-      const ax = VW / 2 + Math.cos(ang) * k, ay = VH / 2 + Math.sin(ang) * k;
-      ctx.save(); ctx.translate(ax, ay); ctx.rotate(ang);
-      poly([[14, 0], [-8, -9], [-4, 0], [-8, 9]]); ctx.fillStyle = '#5fd6e4'; ctx.fill(); stroke(2);
-      ctx.restore();
-      ctx.font = '600 12px system-ui, sans-serif'; ctx.fillStyle = '#5fd6e4';
-      ctx.fillText(`SHIP ${Math.round(Math.hypot(ship.x - player.x, ship.y - player.y) / T)}m`, ax - Math.cos(ang) * 34, ay - Math.sin(ang) * 22);
-    }
+// Speaker icon; crossed out when muted.
+function drawMuteButton() {
+  const { x, y, w, h } = MUTE_BTN, hover = inMuteBtn(mouse.x, mouse.y);
+  rr(x, y, w, h, 5); ctx.fillStyle = hover ? '#2f3542' : '#1c2028'; ctx.fill(); stroke(1.2, '#4b5263');
+  const cx = x + 9, cy = y + h / 2;
+  poly([[cx - 5, cy - 3], [cx - 2, cy - 3], [cx + 3, cy - 7], [cx + 3, cy + 7], [cx - 2, cy + 3], [cx - 5, cy + 3]]);
+  ctx.fillStyle = sfx.muted ? '#6b7486' : '#e8ecf4'; ctx.fill();
+  ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+  if (sfx.muted) {
+    ctx.strokeStyle = '#e2574c';
+    ctx.beginPath(); ctx.moveTo(cx + 6, cy - 4); ctx.lineTo(cx + 13, cy + 4); ctx.moveTo(cx + 13, cy - 4); ctx.lineTo(cx + 6, cy + 4); ctx.stroke();
+  } else {
+    ctx.strokeStyle = '#e8ecf4';
+    for (const r of [5, 9]) { ctx.beginPath(); ctx.arc(cx + 3, cy, r, -0.7, 0.7); ctx.stroke(); }
   }
 }
 
 // ---------------------------------------------------------------------------
 // Loop
 // ---------------------------------------------------------------------------
-cam.x = ship.x; cam.y = ship.y;
-cam.zoom = Math.min(1.3, VW / (17.5 * T), VH / (11.5 * T));
+// The shared simulation: every crew member (with their own input), then the world.
+function simTick(dt) {
+  time += dt;
+  for (const L of LIFTS) updateLift(L, dt);
+  for (const c of crew) withCrew(c, () => {
+    updatePlayer(dt);
+    updateInteraction(dt);
+    updateOverride(dt);
+    inv.cd = Math.max(0, inv.cd - dt);
+    pressed.clear(); mouse.click = false; mouse.rightClick = false;
+  });
+  updateHatches(dt);
+  for (const L of DECK_LOCKS) updateDeckLock(L, dt);
+  updateCombat(dt);
+  updatePower(dt);
+  updateBoarding(dt);
+  updateDoorways(dt);
+  updateFires(dt);
+  updateMission(dt);
+  updateLuck(dt);
+}
+
+// This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.
+function clientUpdate(dt) {
+  if (DEBUG_DO.length) {
+    const at = location.hash.match(/&at=([\d.]+),([\d.]+)/);
+    if (at) { me.x = +at[1]; me.y = +at[2]; }
+    const todo = DEBUG_DO.splice(0), late = todo.filter(k => 'pqugvy'.includes(k));
+    for (const k of todo) if (!late.includes(k)) sendCommand(['debug', k]);
+    for (let i = 0; i < DEBUG_WARP * 60; i++) tick(1 / 60);
+    for (const k of late) sendCommand(['debug', k]);          // shields: after the warp
+    for (let i = 0; i < 12; i++) tick(1 / 60);
+    cam.zoom = 0;
+  }
+  const m = localInput.mouse;
+  [m.wx, m.wy] = screenToWorld(m.x, m.y);
+  updateDebug();
+  if (localInput.pressed.has('KeyM')) sfx.toggleMute();
+  music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm);
+  if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
+  if (me.mode === 'gun' && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
+  if (!m.down) m.suppress = false;
+  if (mission.over && localInput.pressed.has('KeyR')) backToLobby();
+  if (NET.on) me.hover = withCrew(me, () => clickTarget(m.wx, m.wy));   // the server doesn't send hover; work it out here
+  updateSidebar(HUD_H, dt);
+  updateCamera(dt);
+}
+// Solo: one step of everything (also used by tests and the debug warp).
+function tick(dt) { clientUpdate(dt); simTick(dt); }
+
+// Multiplayer hooks (js/net.js fills these in when the page is served by server.js).
+const NET = { on: false, frame: null };
+function backToLobby() { location.reload(); }
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
-  const t = now / 1000;
-  updatePlayer(dt);
-  updateShip(dt);
-  updateBelts(dt);
-  updateWorld(dt);
-  updateCamera(dt);
-  pressed.clear();
-  render(t);
+  if (NET.on) NET.frame(dt); else if (!lobbyOpen()) tick(dt); else clientUpdate(dt);
+  render(now / 1000);
   requestAnimationFrame(frame);
 }
+mission.active = false;                              // the lobby starts a mission
+const lobbyOpen = () => !!document.getElementById('lobby') && !document.getElementById('lobby').hidden;
+if (DEBUG_DO.length || location.hash) { const l = document.getElementById('lobby'); if (l) l.hidden = true; }   // debug setups skip the lobby
 requestAnimationFrame(frame);
-
-// Debug: index.html#pilot, #gunner or #eva starts in that mode.
-if (location.hash.length > 1) {
-  const m = location.hash.slice(1);
-  if (m === 'eva') {
-    player.mode = 'eva';
-    [player.x, player.y] = localToWorld(...AIRLOCK_OUTSIDE);
-    player.y += 220;
-  } else if (STATIONS.some(s => s.mode === m)) {
-    const s = STATIONS.find(s => s.mode === m);
-    player.mode = m; [player.lx, player.ly] = tileCenter(s.tile); player.face = s.tile.face;
-  }
-}

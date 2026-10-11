@@ -1,104 +1,184 @@
-// Ship layout (tile coordinates) and in-ship logistics:
-// rear intake -> chest -> belt -> front turret.
+// Ship layout: six rooms in two decks of three zones, Space Alert style.
+// All coordinates here are in layout units (multiply by T for pixels).
+// Movement is continuous: the walkable area is a union of rectangles, and doors
+// and lift cars add or remove rectangles as they open, close and move.
+// The rooms are deliberately not uniform: this ship was built out of whatever was lying around.
 
-const GW = 13, GH = 9;                        // tile grid incl. walls; the nose sticks out past x = 13
-const SHIP_C = [7.2 * T, 4.5 * T];            // pivot/center of mass, ship-local px
-const FLOOR = { x0: 1, y0: 1, x1: 12, y1: 8 };
-const REACTOR = { x: 2, y: 2 };               // 2x2
-const CONSOLE = { x: 11, y: 1, h: 3 };
-const PILOT_SEAT = { x: 10, y: 2, face: 0 };
-const GUN_TILE = { x: 12, y: 4 };             // the belt feeds into this front-wall tile
-const GUN_POS = [12.95 * T, 4.5 * T];         // turret pivot, sitting in the nose
-const GUNNER_SEAT = { x: 11, y: 5, face: -0.6 };   // faces the turret
-const CHEST_TILE = { x: 1, y: 4 };
-const INTAKE_TILE = { x: 0, y: 4 };           // rear wall, right behind the chest
-const INTAKE_POS = [-0.3 * T, 4.5 * T];       // center of the vacuum field
-const AIRLOCK_TILE = { x: 10, y: 8 };
-const AMMO_MAX = 5;
-const BELT_SPEED = 2.5;                       // tiles per second
+const SPINE_Y0 = 11.5, SPINE_Y1 = 15;            // hull between the decks
+const SPINE = SPINE_Y1 - SPINE_Y0;
+const COLS = [{ x: 0.6, w: 13 }, { x: 14.2, w: 16 }, { x: 30.8, w: 13 }];   // zone columns
+const SHIP_W = 44.4, SHIP_H = 26.1;              // bounding box of the hull body (excluding guns/engine)
 
-const DIR = { E: [1, 0], S: [0, 1], W: [-1, 0], N: [0, -1] };
-const key = (x, y) => x + ',' + y;
-const tileCenter = (p) => [p.x * T + T / 2, p.y * T + T / 2];
+// Space Alert zone colors: red (port), white (center), blue (starboard).
+const ZONES = [
+  { name: 'red', tint: '#7a5f62', label: '#ff9a8a' },
+  { name: 'white', tint: '#6c7282', label: '#e8ecf4' },
+  { name: 'blue', tint: '#5f6a80', label: '#9cc4ff' },
+];
+const zoneAtX = (x) => ZONES[x < COLS[1].x ? 0 : x < COLS[2].x ? 1 : 2];
 
-const BELTS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(x => ({ x, y: 4, d: 'E' }));
-const beltAt = new Map(BELTS.map(b => [key(b.x, b.y), b]));
-for (const b of BELTS) {
-  b.item = null;
-  // incoming direction: the direction of a belt that feeds into this tile
-  const feeder = BELTS.find(o => o.x + DIR[o.d][0] === b.x && o.y + DIR[o.d][1] === b.y);
-  b.din = feeder ? feeder.d : b.d;
-}
-const FIRST_BELT = beltAt.get(key(CHEST_TILE.x + 1, CHEST_TILE.y));
+const R = (x0, y0, x1, y1) => ({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+const ROOMS = [
+  { id: 'portGun', name: 'Left Cannon', col: 0, deck: 'top', rects: [R(0.6, 3.4, 13.6, SPINE_Y0)] },
+  { id: 'bridge', name: 'Bridge', col: 1, deck: 'top', rects: [R(14.2, 0.6, 30.2, SPINE_Y0), R(18.2, -2.4, 26.2, 0.6)] },
+  { id: 'starGun', name: 'Right Cannon', col: 2, deck: 'top', rects: [R(30.8, 2.6, 43.8, SPINE_Y0)] },
+  { id: 'portLock', name: 'Left Airlock', col: 0, deck: 'bottom', rects: [R(0.6, SPINE_Y1, 13.6, 23.2)] },
+  // the engine housing pokes into the bottom of the reactor room
+  { id: 'reactor', name: 'Reactor', col: 1, deck: 'bottom',
+    rects: [R(14.2, SPINE_Y1, 30.2, 23.9), R(14.2, 23.9, 19.4, 25.5), R(25.0, 23.9, 30.2, 25.5)] },
+  { id: 'starLock', name: 'Right Airlock', col: 2, deck: 'bottom', rects: [R(30.8, SPINE_Y1, 43.8, 23.6)] },
+].map(r => ({ ...r, zone: ZONES[r.col] }));
+const ROOM_RECTS = ROOMS.flatMap(r => r.rects);
 
-const blocked = new Set();
-for (let x = 0; x < GW; x++) for (let y = 0; y < GH; y++) {
-  if (x === 0 || y === 0 || x === GW - 1 || y === GH - 1) blocked.add(key(x, y));
-}
-for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) blocked.add(key(REACTOR.x + dx, REACTOR.y + dy));
-for (let i = 0; i < CONSOLE.h; i++) blocked.add(key(CONSOLE.x, CONSOLE.y + i));
-blocked.add(key(CHEST_TILE.x, CHEST_TILE.y));
-const isBlocked = (x, y) => x < 0 || y < 0 || x >= GW || y >= GH || blocked.has(key(x, y));
+// Open doorways between neighboring rooms on the same deck.
+const DOORWAYS = [
+  R(13.6, 6.2, 14.2, 8.4), R(30.2, 5.8, 30.8, 8.0),
+  R(13.6, 18.0, 14.2, 20.2), R(30.2, 18.4, 30.8, 20.6),
+].map(d => ({ ...d, open: 1, locked: false }));        // sliding doors, normally open; security can lock them
 
-const gun = { ammo: AMMO_MAX, rel: 0, cd: 0, flash: 0, dry: 0 };
-const chest = { count: 2, pop: 0, outCd: 0 };
-const intake = { flash: 0 };
-const airlock = { open: 0 };
+// Every zone has two ways between the decks: a slow deck airlock and a fast lift.
+// Deck airlock: chamber with a door at each end; only one door is ever open.
+const LOCK_DOOR = 0.5;
+const DECK_LOCKS = COLS.map((C0, col) => {
+  const x = C0.x + 2.5, w = 2.2;
+  const start = col === 1 ? 'bottom' : 'top';
+  return {
+    col, x, w,
+    chamber: R(x, SPINE_Y0 + LOCK_DOOR, x + w, SPINE_Y1 - LOCK_DOOR),
+    doorRect: { top: R(x, SPINE_Y0, x + w, SPINE_Y0 + LOCK_DOOR), bottom: R(x, SPINE_Y1 - LOCK_DOOR, x + w, SPINE_Y1) },
+    open: start, doors: { top: +(start === 'top'), bottom: +(start === 'bottom') },   // openness 0..1
+    phase: 'idle', target: null, t: 0, entry: null,
+  };
+});
 
-function beltNext(b) {
-  const nx = b.x + DIR[b.d][0], ny = b.y + DIR[b.d][1];
-  if (nx === GUN_TILE.x && ny === GUN_TILE.y) return 'gun';
-  return beltAt.get(key(nx, ny)) || null;
-}
+// Lift: a car that shuttles along a short shaft. pos 0 = docked at the top deck, 1 = bottom.
+const CAR_H = 1.5;
+const LIFTS = COLS.map((C0, col) => {
+  const x = C0.x + C0.w - 5, w = 2.4, pos = col === 1 ? 1 : 0;
+  return {
+    col, x, w, shaft: R(x, SPINE_Y0, x + w, SPINE_Y1),
+    pos, target: null, phase: 'docked', t: 0,
+    gates: { top: 1 - pos, bottom: pos },          // shaft-mouth gates, openness
+  };
+});
+const carRect = (L) => ({ x: L.x, y: SPINE_Y0 + L.pos * (SPINE - CAR_H), w: L.w, h: CAR_H });
+const liftDeck = (L) => L.phase === 'docked' ? (L.pos < 0.5 ? 'top' : 'bottom') : null;
 
-// One item per tile. An item may only pass the tile center if the next
-// tile (or the gun) can take it, so a blocked line backs up tile by tile.
-function updateBelts(dt) {
-  for (let i = BELTS.length - 1; i >= 0; i--) {   // downstream first
-    const b = BELTS[i], it = b.item;
-    if (!it) continue;
-    const next = beltNext(b);
-    const canLeave = next === 'gun' ? gun.ammo < AMMO_MAX : next && !next.item;
-    it.p = Math.min(canLeave ? 1 : 0.5, it.p + BELT_SPEED * dt);
-    if (it.p >= 1 && canLeave) {
-      if (next === 'gun') gun.ammo++;
-      else next.item = { p: it.p - 1, k: it.k };
-      b.item = null;
-    }
+// Capacitors: one in every bottom room, each starting at 1 charge.
+const CAP_MAX = 4;
+const CAPACITORS = [
+  { room: 'portLock', x: 6.6, y: 22.6, charge: 1 },
+  { room: 'reactor', x: 27.0, y: 24.9, charge: 1 },
+  { room: 'starLock', x: 37.6, y: 23.0, charge: 1 },
+];
+
+// Stations (no function yet beyond being there). (x, y) is on the wall; face: operator's view.
+// The cannons themselves are manned from outside the ship (see GUNS).
+const STATIONS = [
+  { kind: 'console', name: 'Helm', x: 22.2, y: -2.4, face: -Math.PI / 2 },
+  { kind: 'console', name: 'Security', x: 8.0, y: 3.4, face: -Math.PI / 2 },
+];
+// Reactor: a pizza-oven / vending-machine hybrid with a fuel-cell slot. Center + footprint.
+const REACTOR = { x: 22.2, y: 19.3, w: 3.8, h: 2.6 };
+const CAT = { x: 29.45, y: 15.75 };                // the ship cat's favourite corner (reactor room)
+// Engine: the housing sits in the reactor room, the bell sticks out of the stern.
+const ENGINE = { x: 22.2, y: 23.9, w: 5.6 };
+
+// Outer airlocks (hatches) in the side walls of the bottom side rooms. Going through
+// one takes you outside onto the hull (EVA).
+const HATCHES = [
+  { side: 'port', x: 0, y: 19.2, dir: -1, inside: [1.2, 19.2], outside: [-1.1, 19.2], open: 0 },
+  { side: 'star', x: SHIP_W, y: 19.4, dir: 1, inside: [SHIP_W - 1.2, 19.4], outside: [SHIP_W + 1.1, 19.4], open: 0 },
+];
+
+// Shield buttons: one on each side of the lower deck. Raises that side's shield.
+const SHIELD_BUTTONS = [
+  { side: 'port', x: 7.0, y: SPINE_Y1 + 0.35 },
+  { side: 'star', x: 37.2, y: SPINE_Y1 + 0.35 },
+  { side: 'front', x: 22.2, y: SPINE_Y1 + 0.35 },   // reactor room wall, right below the bridge
+];
+const SIDE_CAP = { port: 0, front: 1, star: 2 };    // which capacitor powers that side's shield / cannon
+const SIDE_LABEL = { port: 'Left', front: 'Front', star: 'Right' };
+
+// Hull outline: a nose for the bridge, blisters for the side guns, a skirt for the engine.
+const HULL = [
+  [17.4, -3.2], [27, -3.2], [30.8, 0], [43.4, 1.6], [44.4, 2.6],
+  [44.4, 4.6], [46, 5.5], [46, 8.5], [44.4, 9.4],
+  [44.4, 23.4], [43.4, 24.6], [31.2, 24.6], [30.8, 26.1], [13.6, 26.1], [13.2, 24.1],
+  [1.2, 24.1], [0, 22.9], [0, 9.6], [-1.6, 8.6], [-1.6, 5.6], [0, 4.6], [0, 3.4],
+  [1.4, 2.4], [13.8, 2.4], [13.8, 0],
+];
+// Cannons on the outside of the hull, manned from inside: hatch is the ladder that leads up
+// into the cannon; view: what the camera frames while manning it (center, visible width).
+const GUNS = [
+  { id: 'front', name: 'Front cannon', x: 22.2, y: -3.6, a: -Math.PI / 2, hatch: [25.1, -1.85], view: [22.2, -18.5, 60], arc: 95 * Math.PI / 180 },
+  { id: 'port', name: 'Left cannon', x: -0.9, y: 7.1, a: Math.PI, hatch: [1.25, 8.6], view: [-11.5, 8.5, 38] },
+  { id: 'star', name: 'Right cannon', x: 45.3, y: 6.9, a: 0, hatch: [43.15, 8.4], view: [55.9, 8.5, 38] },
+].map(g => ({ ...g, aim: g.a, flash: 0, shots: 3, reload: 0 }));   // every cannon starts loaded with 3 shots
+const GUN_ARC = 1.3;                              // default max aim deviation from the base direction (g.arc overrides)
+const GUNNER_OFFSET = 0.75;                       // the gunner sits this far behind the barrel's pivot
+
+// Static floor pieces (rooms, doorways, lock chambers incl. door slots). They must not
+// overlap; the inner wall shadow relies on that.
+const FLOOR_RECTS = [
+  ...ROOM_RECTS, ...DOORWAYS,
+  ...DECK_LOCKS.flatMap(L => [L.doorRect.top, L.chamber, L.doorRect.bottom]),
+];
+
+// Things you can't walk through.
+const SOLIDS = [
+  R(REACTOR.x - REACTOR.w / 2, REACTOR.y - REACTOR.h / 2, REACTOR.x + REACTOR.w / 2, REACTOR.y + REACTOR.h / 2),
+  R(21.3, 5.5, 23.1, 7.3),                        // map table
+  R(21.4, -2.4, 23.0, -1.8),                      // helm desk
+  R(7.2, 3.4, 8.8, 4.0),                          // security desk
+  ...CAPACITORS.map(c => R(c.x - 0.8, c.y - 0.45, c.x + 0.8, c.y + 0.45)),
+  ...SHIELD_BUTTONS.map(b => R(b.x - 0.4, b.y - 0.35, b.x + 0.4, b.y + 0.35)),
+];
+
+// Hull polygon geometry (used for spacewalks and for hits).
+function pointInPoly(x, y, pts = HULL) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [xi, yi] = pts[i], [xj, yj] = pts[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
   }
-  chest.outCd -= dt;
-  if (chest.count > 0 && !FIRST_BELT.item && chest.outCd <= 0) {
-    chest.count--; chest.outCd = 0.25;
-    FIRST_BELT.item = { p: 0, k: Math.floor(Math.random() * 5) };
+  return inside;
+}
+function distToPoly(x, y, pts = HULL) {
+  let best = Infinity;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [ax, ay] = pts[j], [bx, by] = pts[i];
+    const dx = bx - ax, dy = by - ay, k = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+    best = Math.min(best, Math.hypot(x - ax - dx * k, y - ay - dy * k));
   }
-  chest.pop = Math.max(0, chest.pop - dt * 2.5);
-  intake.flash = Math.max(0, intake.flash - dt * 3);
+  return best;
+}
+const EVA_RANGE = 2.8;                            // how far from the hull you may float
+const evaOk = (x, y) => !pointInPoly(x, y) && distToPoly(x, y) <= EVA_RANGE;
+// x where a horizontal line at height y first meets the hull from the given side.
+function hullEdgeX(y, side) {
+  if (side === 'port') { for (let x = -3; x < 10; x += 0.1) if (pointInPoly(x, y)) return x; }
+  else { for (let x = SHIP_W + 3; x > SHIP_W - 10; x -= 0.1) if (pointInPoly(x, y)) return x; }
+  return side === 'port' ? 0 : SHIP_W;
 }
 
-function storeRock(n) {
-  chest.count += n; chest.pop = 1; intake.flash = 1;
+const inRect = (x, y, r, e = 1e-6) => x >= r.x - e && x <= r.x + r.w + e && y >= r.y - e && y <= r.y + r.h + e;
+function roomAt(x, y) {
+  return ROOMS.find(r => r.rects.some(q => inRect(x, y, q))) || null;
 }
+const roomCenter = (room) => {                   // center of the room's bounding box
+  const x0 = Math.min(...room.rects.map(q => q.x)), x1 = Math.max(...room.rects.map(q => q.x + q.w));
+  const y0 = Math.min(...room.rects.map(q => q.y)), y1 = Math.max(...room.rects.map(q => q.y + q.h));
+  return [(x0 + x1) / 2, (y0 + y1) / 2];
+};
 
-function beltItemPos(b) {
-  const p = b.item.p, [cx, cy] = tileCenter(b);
-  const din = DIR[b.din], dout = DIR[b.d];
-  if (b.din === b.d) return [cx + dout[0] * (p - 0.5) * T, cy + dout[1] * (p - 0.5) * T];
-  // quarter circle around the corner pivot
-  const px = cx - din[0] * T / 2 + dout[0] * T / 2, py = cy - din[1] * T / 2 + dout[1] * T / 2;
-  const a = p * Math.PI / 2, c = Math.cos(a), s = Math.sin(a);
-  return [px + (-dout[0] * c + din[0] * s) * T / 2, py + (-dout[1] * c + din[1] * s) * T / 2];
-}
-
-function drawShipInterior(t, mode) {
-  drawFloor(FLOOR);
-  drawReactor(REACTOR.x, REACTOR.y, t);
-  drawSeat(...tileCenter(PILOT_SEAT), PILOT_SEAT.face);
-  drawConsole(CONSOLE.x, CONSOLE.y, CONSOLE.h, t, mode === 'pilot');
-  drawSeat(...tileCenter(GUNNER_SEAT), GUNNER_SEAT.face);
-  drawAirlock(AIRLOCK_TILE.x, AIRLOCK_TILE.y, airlock.open, t);
-  drawIntake(INTAKE_TILE.x, INTAKE_TILE.y, intake.flash, t, Math.PI / 2);
-  for (const b of BELTS) drawBelt(b, t, BELT_SPEED);
-  drawChest(CHEST_TILE.x, CHEST_TILE.y, chest.count, chest.pop);
-  for (const b of BELTS) if (b.item) { const [x, y] = beltItemPos(b); drawRockItem(x, y, b.item.k); }
-  drawAmmoPips(13.2 * T, 2.72 * T, gun.ammo, AMMO_MAX, gun.dry);
+// Rectangles a crew member may stand in right now.
+function walkRects() {
+  const out = [...ROOM_RECTS, ...DOORWAYS.filter(d => d.open > 0.95)];
+  for (const L of DECK_LOCKS) {
+    out.push(L.chamber);
+    for (const s of ['top', 'bottom']) if (L.doors[s] > 0.95) out.push(L.doorRect[s]);
+  }
+  for (const L of LIFTS) if (L.phase === 'docked' && !(L.locked && L.gates.top + L.gates.bottom < 0.95)) out.push(carRect(L));
+  return out;
 }

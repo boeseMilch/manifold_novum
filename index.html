@@ -5,14 +5,60 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Manifold Novum</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; font-family: system-ui, sans-serif; }
   canvas { display: block; cursor: crosshair; }
+  #lobby { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+           background: radial-gradient(ellipse at center, rgba(20,26,40,0.75), rgba(4,6,12,0.95)); color: #e8ecf4; }
+  #lobby[hidden] { display: none; }
+  .plate { width: min(640px, calc(100vw - 32px)); padding: 26px 28px; border-radius: 12px; position: relative;
+           background: linear-gradient(#6b7486, #3f4757); border: 3px solid #14161b; box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.12); }
+  .plate::before, .plate::after { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #2b303a; top: 10px; left: 10px;
+           box-shadow: calc(min(640px, 100vw - 32px) - 26px) 0 #2b303a; }
+  .plate::after { top: auto; bottom: 10px; }
+  h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: 4px; text-shadow: 0 2px 0 #14161b; }
+  .sub { margin: 0 0 18px; color: #dfe4ec; font-size: 14px; }
+  label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #dfe4ec; margin: 14px 0 6px; }
+  input { width: 100%; box-sizing: border-box; padding: 9px 11px; font-size: 16px; border-radius: 6px; border: 2px solid #14161b; background: #1c2028; color: #fff; }
+  #lobby-missions { display: grid; gap: 10px; }
+  .mission { text-align: left; padding: 12px 14px; border-radius: 8px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; font: inherit; }
+  .mission b { display: block; font-size: 16px; margin-bottom: 3px; }
+  .mission span { font-size: 13px; color: #c9ced8; }
+  .mission.chosen { background: #1d4a36; border-color: #5fd6a0; box-shadow: 0 0 0 2px rgba(95,214,160,0.35); }
+  #lobby-players { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-weight: 700; min-height: 20px; }
+  #lobby-start { margin-top: 20px; width: 100%; padding: 13px; font-size: 18px; font-weight: 800; letter-spacing: 2px; border-radius: 8px; cursor: pointer;
+                 border: 2px solid #ff8a7a; background: #8e2f22; color: #fff; }
+  #lobby-start:hover { background: #b8402e; }
+  #lobby-status { margin-top: 10px; font-size: 12px; color: #c9ced8; text-align: center; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="lobby">
+  <div class="plate">
+    <h1>MANIFOLD NOVUM</h1>
+    <p class="sub">Jump in, keep the duct tape coming, jump out.</p>
+    <label for="lobby-name">YOUR NAME</label>
+    <input id="lobby-name" maxlength="20" autocomplete="off">
+    <label>MISSION</label>
+    <div id="lobby-missions"></div>
+    <label>CREW</label>
+    <ul id="lobby-players"><li>just you</li></ul>
+    <button id="lobby-start">START MISSION</button>
+    <div id="lobby-status">Solo</div>
+  </div>
+</div>
+<script src="js/audio.js"></script>
+<script src="js/music.js"></script>
 <script src="js/art.js"></script>
 <script src="js/ship.js"></script>
+<script src="js/decor.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/combat.js"></script>
+<script src="js/systems.js"></script>
+<script src="js/invader.js"></script>
+<script src="js/mission.js"></script>
+<script src="js/sidebar.js"></script>
 <script src="js/game.js"></script>
+<script src="js/net.js"></script>
 </body>
 </html>

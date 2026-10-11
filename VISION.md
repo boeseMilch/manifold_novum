@@ -2,28 +2,46 @@
 
 ## Pitch
 
-A multiplayer game that combines Factorio and Space Alert. The crew runs a spaceship
-together and works to automate it.
+A cooperative, **live-action Space Alert**. The crew jumps their ship into a dangerous
+region of space for a mission, survives a pile of overlapping encounters for a fixed
+amount of time, and jumps out again. It is not turn-based: everything happens in real
+time, and combat is live action.
 
 ## Pillars
 
-- **Automate your spaceship.** The core loop is a Factorio-style one: build production
-  and logistics systems that run the ship for you.
-- **Multiplayer under pressure.** For multiplayer to be interesting, players need to be
-  pushed by time pressure, and the work has to be parallel, so one player can't do
-  everything. The crew has to split up and work at the same time.
-- **Combat-focused.** Combat is the main source of that pressure. Threats force the crew
-  to split their attention across tasks.
+- **Overwhelming, parallel pressure.** Several threats arrive at once, so one player
+  can't handle everything. The crew has to split up across the ship and coordinate.
+- **Running the ship is the game.** Each job on board (firing a cannon, moving power
+  around, flying the ship, repairs, …) is its own small hands-on mini-game, played in
+  real time while running between rooms.
+- **Fixed mission clock.** A mission lasts a set amount of time. You don't win by
+  clearing every threat, you win by still being alive when the jump drive spins up.
+- **Ship systems as signal networks (later).** Most automation is meant to work like
+  Factorio's circuit network: wiring systems together, not placing things on a build
+  grid. A grid can be added later as an extra layer if it's needed.
+
+## The ship (modeled on Space Alert)
+
+Six rooms in two decks of three zones (red / white / blue):
+
+|            | Port (red)      | Center (white)        | Starboard (blue)  |
+|------------|-----------------|-----------------------|-------------------|
+| Upper deck | Port cannon     | Bridge + main cannon  | Starboard cannon  |
+| Lower deck | Port airlock    | Reactor               | Starboard airlock |
+
+- Every lower-deck room has a capacitor, and every capacitor starts with 1 charge.
+- Each zone has two ways between the decks: a **lift** that is fast but only usable when
+  its car is on your deck, and a **deck airlock** that always works but is slow (in, door
+  closes, chamber cycles, far door opens).
 
 ## Presentation
 
 - Top-down view.
-- Graphics in the style of RimWorld.
+- Graphics in the style of RimWorld, drawn procedurally in code.
 
-## Open Questions
+## Open questions
 
-- What threats does the ship face, and how often?
-- What does the crew automate (power, ammo, repairs, life support, …), and what stays
-  manual on purpose?
-- How many players, and how are their roles split?
-- How does progression work across a run and between runs?
+- What threats are there, and how do they map onto the zones and rooms?
+- What exactly is the mini-game for each station?
+- How many players, and how do they split roles? Is there a single-player mode with bots?
+- How long is a mission, and how does progression work between missions?
