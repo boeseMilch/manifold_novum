@@ -123,9 +123,9 @@ function updateCrew(c, dt, ix, iy) {
   const ny = c.y + c.vy * dt;
   if (ok(c.x, ny)) c.y = ny; else c.vy = 0;
   if (c.mode === 'inside' && inRect(c.x, c.y, TREADMILL)) {          // on the treadmill: the belt carries you back
-    const by = c.y + BELT_SPEED * dt;
+    const belt = speed * BELT_K, by = c.y + belt * dt;                // (half of this crew member's own walking speed)
     if (ok(c.x, by)) c.y = by;
-    if (len) c.walk += BELT_SPEED * dt * 3.2;                       // (and your legs keep going)
+    if (len) c.walk += belt * dt * 3.2;                       // (and your legs keep going)
   }
   const sp = Math.hypot(c.vx, c.vy);
   if (len && sp > 0.3) c.face = Math.atan2(c.vy, c.vx);

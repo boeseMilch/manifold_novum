@@ -186,7 +186,7 @@ function exerciseBike(t) {                             // the treadmill (it work
   rr(U(B.x), U(B.y), U(B.w), U(B.h) + 2, 2); ctx.fillStyle = '#1c2028'; ctx.fill(); stroke(1.2);           // the belt
   ctx.save(); ctx.beginPath(); ctx.rect(U(B.x), U(B.y), U(B.w), U(B.h)); ctx.clip();
   ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 2;
-  const gap = 9, off = (t * U(BELT_SPEED)) % gap;                                                     // slats running towards the back
+  const gap = 9, off = (t * U(WALK_SPEED * BELT_K)) % gap;                                                     // slats running towards the back
   for (let yy = U(B.y) - gap + off; yy < U(B.y + B.h); yy += gap) { ctx.beginPath(); ctx.moveTo(U(B.x), yy); ctx.lineTo(U(B.x + B.w), yy); ctx.stroke(); }
   ctx.restore();
   ctx.fillStyle = '#c0392b'; ctx.fillRect(x - 3, y + 1, w + 6, 7); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y + 1, w + 6, 7);   // handlebar

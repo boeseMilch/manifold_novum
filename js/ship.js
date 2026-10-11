@@ -129,7 +129,7 @@ const FURNITURE = {
   treadRailR: R(40.09, 21.15, 40.3, 22.0),
 };
 // The treadmill's belt: walkable, and it carries you towards the back (+y).
-const TREADMILL = R(39.51, 21.15, 40.09, 22.0), BELT_SPEED = 1.6;
+const TREADMILL = R(39.51, 21.15, 40.09, 22.0), BELT_K = 0.5;   // the belt runs at half your walking speed
 
 // Things you can't walk through.
 const SOLIDS = [
