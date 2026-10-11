@@ -118,7 +118,7 @@ function updateEva(dt) {
   }
   // our cannon shells pop spore clouds and drones
   for (const sh of combat.shells) {
-    for (const s of evs.spores) if (!s.dead && Math.hypot(sh.x - s.x, sh.y - s.y) < 1.2) {
+    for (const s of evs.spores) if (!s.dead && Math.hypot(sh.x - s.x, sh.y - s.y) < 1.5) {
       s.dead = true; sh.dead = true; sfx.crack();
       for (let i = 0; i < 16; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.8, i % 2 ? '#d8f0a0' : '#ffe0f0', 0.12);
     }
@@ -250,11 +250,13 @@ function drawEvaJobs(t) {
   // limpet mines: blink faster as they run down
   for (const m of evs.mines) {
     const x = L(m.x), y = L(m.y), rate = 2 + (1 - m.t / MINE_TIME) * 14, on = Math.sin(t * rate) > 0;
-    ctx.beginPath(); ctx.arc(x, y, 11, 0, TAU); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);
-    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; ctx.fillStyle = '#2b303a'; ctx.fillRect(x + Math.cos(a) * 11 - 2, y + Math.sin(a) * 11 - 2, 4, 4); }
-    ctx.beginPath(); ctx.arc(x, y, 4.5, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#5a1a14'; ctx.fill();
+    for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; poly([[x + Math.cos(a - 0.18) * 13, y + Math.sin(a - 0.18) * 13], [x + Math.cos(a) * 20, y + Math.sin(a) * 20], [x + Math.cos(a + 0.18) * 13, y + Math.sin(a + 0.18) * 13]]); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.3); }   // spikes
+    ctx.beginPath(); ctx.arc(x, y, 14, 0, TAU); const mg = ctx.createRadialGradient(x - 4, y - 4, 2, x, y, 14); mg.addColorStop(0, '#6a707c'); mg.addColorStop(1, '#2b303a'); ctx.fillStyle = mg; ctx.fill(); stroke(2.2);
+    hazardStripe(x - 9, y + 5, 18, 4);
+    if (on) { const lg = ctx.createRadialGradient(x, y, 0, x, y, 26); lg.addColorStop(0, 'rgba(255,70,50,0.55)'); lg.addColorStop(1, 'rgba(255,70,50,0)'); ctx.fillStyle = lg; ctx.beginPath(); ctx.arc(x, y, 26, 0, TAU); ctx.fill(); }
+    ctx.beginPath(); ctx.arc(x, y - 1, 5.5, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#5a1a14'; ctx.fill(); stroke(1.2);
     ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.18}px monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.fillText(Math.ceil(m.t), x, y - 13); ctx.textAlign = 'left';
+    ctx.fillText(Math.ceil(m.t), x, y - 21); ctx.textAlign = 'left';
     jobMarker(m.x, m.y, t, reach(m.x, m.y), '#ff6a5a');
   }
   // the drone: a little quadcopter thing with a mine slung underneath
@@ -270,13 +272,18 @@ function drawEvaJobs(t) {
     ctx.restore();
   }
   // spore clouds
-  for (const s of evs.spores) {
+  for (const s of evs.spores) {                          // a clump of spore pods in a glowing haze, trailing hair-thin feelers
+    ctx.save(); ctx.translate(L(s.x), L(s.y)); ctx.scale(1.6, 1.6); ctx.translate(-L(s.x), -L(s.y));   // big enough to see from a cannon
+    const x = L(s.x), y = L(s.y), hz0 = ctx.createRadialGradient(x, y, 0, x, y, L(1.1));
+    hz0.addColorStop(0, 'rgba(200,240,150,0.35)'); hz0.addColorStop(1, 'rgba(190,150,230,0)'); ctx.fillStyle = hz0; ctx.beginPath(); ctx.arc(x, y, L(1.1), 0, TAU); ctx.fill();
+    ctx.strokeStyle = 'rgba(210,230,170,0.5)'; ctx.lineWidth = 1.2;
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + s.t * 0.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + Math.cos(a + 0.5) * 14, y + Math.sin(a + 0.5) * 14, x + Math.cos(a) * (22 + 4 * Math.sin(s.t * 3 + i)), y + Math.sin(a) * (22 + 4 * Math.sin(s.t * 3 + i))); ctx.stroke(); }
     for (let i = 0; i < 7; i++) {
-      const a = i * 0.9 + s.t * 0.8, r = L(0.35 + 0.15 * Math.sin(s.t * 2 + i));
-      const g = ctx.createRadialGradient(L(s.x) + Math.cos(a) * 12, L(s.y) + Math.sin(a) * 12, 0, L(s.x) + Math.cos(a) * 12, L(s.y) + Math.sin(a) * 12, r);
-      g.addColorStop(0, 'rgba(220,240,170,0.7)'); g.addColorStop(1, 'rgba(220,180,240,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(s.x) + Math.cos(a) * 12, L(s.y) + Math.sin(a) * 12, r, 0, TAU); ctx.fill();
+      const a = i * 0.9 + s.t * 0.8, d = i ? 9 : 0, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d, r = 5 + (i % 3) * 1.5 + Math.sin(s.t * 2 + i);
+      const g = ctx.createRadialGradient(px - 1.5, py - 1.5, 0.5, px, py, r); g.addColorStop(0, '#f0ffd0'); g.addColorStop(1, i % 2 ? '#9a7ac0' : '#7ab070');
+      ctx.beginPath(); ctx.arc(px, py, r, 0, TAU); ctx.fillStyle = g; ctx.fill(); stroke(1);
     }
+    ctx.restore();
   }
   // the fuel canister, tumbling past
   if (evs.canister) {

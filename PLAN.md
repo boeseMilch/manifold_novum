@@ -650,6 +650,20 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Security console: red blips for enemies (intruders, pirates), blue for friends (crew, the engineer).
   `tests/dock.js` covers aim → shot timing, dodging by diving out of the line, the cooldown, leaving.
 
+### 8u. The other newer threats: defeatability checked, art polished
+- `tests/threats.js`: a simulated gunner that only aims at what a player could see kills the stealth
+  fighter (aiming at where it was last seen) within ~15 s, shoots the whole leech swarm on its way in,
+  downs the mine drone before it plants its mines, and pops the spore clouds before they stick — on
+  both sides. The leviathan (unkillable on purpose) warns at least 3 s before every bump.
+- Art: the interceptor drawing takes a paint job (`D.paint`). Pirate raider: black and gold, welded
+  scrap patches, a fluttering skull flag and a docking claw. Tractor tug: work-yard yellow with hazard
+  stripes. Stealth fighter: matte black-blue with a heat shimmer that's just about visible even when
+  it's cloaked. Leeches: fat ringed worms with round toothy mouths and slime trails (bigger, hit area
+  to match). Limpet mines: spiked, with a hazard band and a red glow when they blink. Spore clouds: a
+  clump of glowing pods with hair-thin feelers (bigger). Leviathan: a whale of the deep with flippers,
+  a fluke, throat grooves, barnacle crusts, rows of glowing spots and a huge eye, gliding just outside
+  the hull.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

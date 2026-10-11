@@ -128,17 +128,20 @@ function encounterClickTarget(mx, my) {
 function stealthAlpha(e) { return clamp(Math.max(e.reveal || 0, e.phase === 'burning' ? 1 : 0), 0.04, 1); }
 ENEMY_TYPES.stealth = {
   ...ENEMY_TYPES.interceptor, name: 'Stealth fighter', stealth: true, fire: [3.2, 4.6],
+  paint: { hull: ['#3a4458', '#141a26'], stripe: '#2a3448', pod: ['#3a4250', '#1a1e28'] },   // matte black-blue
   update(e, dt) { e.reveal = Math.max(0, (e.reveal || 0) - dt * 0.6); },
   draw(e, t) {
     drawInterceptor(e, t);
-    if (stealthAlpha(e) < 1) {                         // shimmering cloak edge
-      ctx.globalAlpha = 1; poly(LP(INTERCEPTOR_HULL)); ctx.strokeStyle = `rgba(160,220,255,${0.12 + 0.08 * Math.sin(t * 7)})`; ctx.lineWidth = 2; ctx.stroke();
-    }
+    ctx.save(); ctx.globalAlpha = 1;                    // a heat shimmer where the cloak bends the light: just about visible even when hidden
+    for (let i = 0; i < 3; i++) { poly(LP(INTERCEPTOR_HULL.map(([x, y]) => [x * (1.05 + i * 0.06) + Math.sin(t * 3 + y * 2 + i) * 0.04, y * (1.03 + i * 0.04)])));
+      ctx.strokeStyle = `rgba(170,220,255,${(0.1 - i * 0.025) * (1 + 0.6 * Math.sin(t * 5 + i))})`; ctx.lineWidth = 1.5; ctx.stroke(); }
+    ctx.restore();
   },
 };
 const TRACTOR_EMITTER = [3.1, 1.75, 0.34];                // on a mast at the rear, clear of the other weak spots
 ENEMY_TYPES.tractor = {
   ...ENEMY_TYPES.interceptor, name: 'Tractor tug', fire: [3.5, 5],
+  paint: { hull: ['#c09a3a', '#6a5018'], stripe: '#2b2b2b', pod: ['#7a7a70', '#3a3a34'] },   // work-yard yellow
   solids: [...ENEMY_TYPES.interceptor.solids, box(2.3, 1.6, 2.8, 1.9)],
   pois: [...ENEMY_TYPES.interceptor.pois, { id: 'emitter', name: 'Tractor emitter', effect: 'Beam off — the jump clock runs again', shape: { circle: TRACTOR_EMITTER } }],
   update(e, dt) {
@@ -147,6 +150,7 @@ ENEMY_TYPES.tractor = {
   },
   draw(e, t) {
     drawInterceptor(e, t);
+    for (const [x0, y0] of [[-1.45, 0.25], [1.0, 0.25]]) hazardStripe(L(x0), L(y0), L(0.45), L(0.22));   // hazard stripes on the wings
     const hit = poiHit(e, 'emitter'), [ex, ey, er] = TRACTOR_EMITTER;
     rr(L(2.3), L(1.6), L(0.55), L(0.3), 3); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(2);   // mast
     if (!hit) blueGlow(ex, ey, er * 2.2, t);

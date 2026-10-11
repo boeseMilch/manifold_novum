@@ -164,7 +164,7 @@ function updateOrganic(dt) {
       const dx = l.tx - l.x, dy = l.ty - l.y, d = Math.hypot(dx, dy);
       if (d < 0.15) { l.state = 'latched'; sfx.spit(); continue; }
       l.x += dx / d * Math.min(d, LEECH_SPEED * dt); l.y += dy / d * Math.min(d, LEECH_SPEED * dt) + Math.sin(l.t * 5) * dt * 0.6;
-      for (const s of combat.shells) if (!s.dead && Math.hypot(s.x - l.x, s.y - l.y) < 0.55) { s.dead = true; l.dead = true; sfx.crack(); }
+      for (const s of combat.shells) if (!s.dead && Math.hypot(s.x - l.x, s.y - l.y) < 0.85) { s.dead = true; l.dead = true; sfx.crack(); }
     } else if ((l.chew += dt) >= LEECH_CHEW) {
       l.chew = 0;
       const pool = SYSTEMS.filter(s => s.col === sideCol(l.side) && !s.broken);
@@ -206,7 +206,7 @@ function organicEvaTarget(mx, my) {
     return holdTarget('cut' + e.uid, time, `Hold click: hack the tentacle off (${time.toFixed(1)} s)`, x, y, 0.8, () => cutTentacle(e, 'eva'));
   }
   for (const l of org.leeches) {
-    if (l.state !== 'latched' || Math.hypot(mx - l.x, my - l.y) > 0.5) continue;
+    if (l.state !== 'latched' || Math.hypot(mx - l.x, my - l.y) > 0.75) continue;
     if (!near(l.x, l.y)) return { text: 'Leech — get closer', ok: false, x: l.x, y: l.y, r: 0.5 };
     return holdTarget('leech' + l.uid, 1.5, 'Hold click: pry the leech off (1.5 s)', l.x, l.y, 0.5, () => { l.dead = true; slimeBurst(l.x, l.y, 10); org.leeches = org.leeches.filter(q => !q.dead); });
   }
@@ -486,11 +486,21 @@ function drawTongue(e, t, D, H, outside = false) {
 }
 function drawOrganicWorld(t) {
   for (const l of org.leeches) {                       // leeches: segmented, wriggling
-    ctx.save(); ctx.translate(L(l.x), L(l.y)); ctx.rotate(l.state === 'fly' ? Math.atan2(l.ty - l.y, l.tx - l.x) : (l.side === 'port' ? 0 : Math.PI));
-    for (let i = 3; i >= 0; i--) {
-      ctx.beginPath(); ctx.ellipse(-i * 7 + Math.sin(l.t * 8 + i) * (l.state === 'latched' ? 1 : 2), Math.sin(l.t * 6 + i) * 2, 6 - i, 5 - i * 0.6, 0, 0, TAU);
-      ctx.fillStyle = i === 0 ? '#a83a4a' : '#7a2a3a'; ctx.fill(); stroke(1.5);
+    const ang = l.state === 'fly' ? Math.atan2(l.ty - l.y, l.tx - l.x) : (l.side === 'port' ? 0 : Math.PI);
+    if (l.state === 'fly') for (let k = 1; k < 5; k++) {   // a glistening slime trail
+      ctx.beginPath(); ctx.arc(L(l.x) - Math.cos(ang) * (k + 3) * 13, L(l.y) - Math.sin(ang) * (k + 3) * 13 + Math.sin(l.t * 6 + k) * 3, 6 - k, 0, TAU); ctx.fillStyle = `rgba(200,255,150,${0.35 - k * 0.07})`; ctx.fill();
     }
+    ctx.save(); ctx.translate(L(l.x), L(l.y)); ctx.rotate(ang); ctx.scale(1.7, 1.7);   // big enough to see from a cannon
+    const squirm = l.state === 'latched' ? 1.5 : 3, pulse = l.state === 'latched' ? 1 + 0.12 * Math.sin(l.t * 9) : 1;
+    for (let i = 4; i >= 0; i--) {                         // a fat, ringed worm-body, wriggling
+      const cx = -i * 9 + Math.sin(l.t * 8 + i) * squirm, cy = Math.sin(l.t * 6 + i * 1.2) * 3, rx = (11 - i * 1.6) * pulse, ry = (9 - i * 1.3) * pulse;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, TAU);
+      const g = ctx.createRadialGradient(cx - 2, cy - 3, 1, cx, cy, rx); g.addColorStop(0, '#d0606e'); g.addColorStop(1, '#6a1e2e');
+      ctx.fillStyle = g; ctx.fill(); stroke(1.8);
+      ctx.strokeStyle = 'rgba(40,5,15,0.35)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.35, ry * 0.85, 0, 0, TAU); ctx.stroke();   // ring
+    }
+    ctx.beginPath(); ctx.arc(6, 0, 6, 0, TAU); ctx.fillStyle = '#2a0810'; ctx.fill(); stroke(1.5);   // the round mouth, full of little teeth
+    for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + l.t * 2; ctx.beginPath(); ctx.moveTo(6 + Math.cos(a) * 6, Math.sin(a) * 6); ctx.lineTo(6 + Math.cos(a + 0.2) * 2.5, Math.sin(a + 0.2) * 2.5); ctx.lineTo(6 + Math.cos(a + 0.4) * 6, Math.sin(a + 0.4) * 6); ctx.fillStyle = '#f0e8d0'; ctx.fill(); }
     ctx.restore();
     if (l.state === 'latched') {
       ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 13, -Math.PI / 2, -Math.PI / 2 + l.chew / LEECH_CHEW * TAU); ctx.strokeStyle = '#ff6a7a'; ctx.lineWidth = 2.5; ctx.stroke();
@@ -499,14 +509,43 @@ function drawOrganicWorld(t) {
   }
   const V = org.lev;
   if (V) {                                             // the leviathan: a vast dark flank sliding past, an eye the size of a room
-    const side = V.order[V.i]?.startsWith('port') ? -1 : 1, x = side < 0 ? -9 : SHIP_W + 9, y = -20 + (LEV_TIME - V.t) * 2.2;
-    ctx.save(); ctx.translate(L(x), L(y));
-    ctx.beginPath(); ctx.ellipse(0, 0, L(6), L(26), 0, 0, TAU);
-    const g = ctx.createLinearGradient(-L(6), 0, L(6), 0); g.addColorStop(0, '#0e1a24'); g.addColorStop(0.5, '#1e3446'); g.addColorStop(1, '#0e1a24');
+    // a whale of the deep: a vast, tapering body gliding past along one side, flippers, a tail fluke,
+    // glowing stripes and an eye bigger than a room; it rolls slightly as it swims
+    const side = V.order[V.i]?.startsWith('port') ? -1 : 1, x = side < 0 ? -14.5 : SHIP_W + 14.5, y = -36 + (LEV_TIME - V.t) * 2.6;
+    ctx.save(); ctx.translate(L(x), L(y)); ctx.scale(-side, 1); ctx.rotate(Math.sin(t * 0.4) * 0.03);
+    const body = (k = 1) => {                              // head (front, +y) to tail
+      ctx.beginPath(); ctx.moveTo(0, L(30) * k);
+      ctx.bezierCurveTo(L(9) * k, L(26) * k, L(9.5) * k, L(5) * k, L(6) * k, -L(14) * k);
+      ctx.bezierCurveTo(L(4) * k, -L(24) * k, L(1.5) * k, -L(30) * k, 0, -L(34) * k);
+      ctx.bezierCurveTo(-L(1.5) * k, -L(30) * k, -L(4) * k, -L(24) * k, -L(6) * k, -L(14) * k);
+      ctx.bezierCurveTo(-L(9.5) * k, L(5) * k, -L(9) * k, L(26) * k, 0, L(30) * k); ctx.closePath();
+    };
+    const sw = Math.sin(t * 1.2);
+    for (const sd of [-1, 1]) {                            // the tail fluke
+      ctx.beginPath(); ctx.moveTo(0, -L(33)); ctx.quadraticCurveTo(sd * L(5), -L(36) + sw * L(1.2), sd * L(8), -L(40) + sw * L(2)); ctx.quadraticCurveTo(sd * L(3), -L(36), 0, -L(34));
+      ctx.fillStyle = '#16283a'; ctx.fill(); stroke(3);
+    }
+    for (const sd of [-1, 1]) {                            // flippers
+      ctx.save(); ctx.translate(sd * L(8), L(10)); ctx.rotate(sd * (0.6 + 0.15 * Math.sin(t * 0.8 + sd)));
+      ctx.beginPath(); ctx.ellipse(sd * L(3), 0, L(5), L(1.5), 0, 0, TAU); ctx.fillStyle = '#1a2e42'; ctx.fill(); stroke(3); ctx.restore();
+    }
+    body();
+    const g = ctx.createLinearGradient(-L(9), 0, L(9), 0); g.addColorStop(0, '#0a1420'); g.addColorStop(0.45, '#1f3a52'); g.addColorStop(0.7, '#2a4a62'); g.addColorStop(1, '#0e1a26');
     ctx.fillStyle = g; ctx.fill(); stroke(4);
-    for (let i = 0; i < 12; i++) { ctx.beginPath(); ctx.arc(L(-3 + (i % 3) * 3), L(-20 + i * 3.6), L(0.25), 0, TAU); ctx.fillStyle = `rgba(122,240,255,${0.3 + 0.3 * Math.sin(t * 2 + i)})`; ctx.fill(); }
-    ctx.beginPath(); ctx.ellipse(-side * L(2.5), L(-16), L(1.6), L(1.1), 0, 0, TAU); ctx.fillStyle = '#e8c34f'; ctx.fill(); stroke(3);
-    ctx.beginPath(); ctx.ellipse(-side * L(2.5), L(-16), L(0.3), L(0.9), 0, 0, TAU); ctx.fillStyle = OUT; ctx.fill();
+    ctx.save(); body(); ctx.clip();
+    ctx.fillStyle = 'rgba(200,215,225,0.18)'; ctx.beginPath(); ctx.ellipse(L(5), L(8), L(3), L(18), 0, 0, TAU); ctx.fill();   // pale belly
+    ctx.strokeStyle = 'rgba(10,20,30,0.45)'; ctx.lineWidth = 3;                             // throat grooves
+    for (let k = 0; k < 6; k++) { ctx.beginPath(); ctx.moveTo(L(2 + k * 0.9), L(28)); ctx.quadraticCurveTo(L(4 + k), L(18), L(3 + k * 0.8), L(8)); ctx.stroke(); }
+    const r2 = rng(5);                                     // barnacle crusts and scars
+    for (let k = 0; k < 18; k++) { ctx.beginPath(); ctx.arc(L(-6 + r2() * 12), L(-20 + r2() * 44), L(0.2 + r2() * 0.35), 0, TAU); ctx.fillStyle = 'rgba(160,170,150,0.35)'; ctx.fill(); }
+    for (let k = 0; k < 16; k++) {                          // two rows of glowing spots, pulsing down the body
+      const yy = -26 + k * 3.3, a = 0.35 + 0.45 * Math.max(0, Math.sin(t * 2.5 - k * 0.5));
+      for (const xx of [-3.5, -1.5]) { ctx.beginPath(); ctx.arc(L(xx + Math.sin(k) * 0.4), L(yy), L(0.32), 0, TAU); ctx.fillStyle = `rgba(122,240,255,${a})`; ctx.fill(); }
+    }
+    ctx.restore();
+    const blink = Math.sin(t * 0.5) > 0.985 ? 0.1 : 1;     // the eye, near the head, looking at the ship
+    ctx.beginPath(); ctx.ellipse(L(6.2), L(18), L(1.8), L(1.3) * blink, 0.2, 0, TAU); ctx.fillStyle = '#e8c34f'; ctx.fill(); stroke(3);
+    if (blink > 0.5) { ctx.beginPath(); ctx.ellipse(L(6.8), L(18), L(0.35), L(1.0), 0.2, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); ctx.beginPath(); ctx.arc(L(5.9), L(17.5), L(0.25), 0, TAU); ctx.fillStyle = '#fff8d0'; ctx.fill(); }
     ctx.restore();
   }
 }

@@ -82,7 +82,7 @@ const DEBUG_OVERVIEW = location.hash === '#overview' || /[&#]ov(&|$)/.test(locat
 let prompt = null, time = 0, debugOpen = false, hover = null;
 // Debug: index.html#do=3,6 runs debug-menu entries 3 and 6 on start (see DEBUG_ITEMS);
 // adding &w=4 fast-forwards the simulation by 4 seconds first (handy for screenshots).
-const DEBUG_DO = (location.hash.match(/^#do=([\da-z,]+)/) || [])[1]?.split(',') || [];
+const DEBUG_DO = (location.hash.match(/^#do=([\da-zA-Z,]+)/) || [])[1]?.split(',') || [];
 const DEBUG_WARP = +(location.hash.match(/&w=([\d.]+)/) || [])[1] || 0;
 const playerOutside = () => isOutside(player);
 
@@ -438,6 +438,13 @@ const DEBUG_ITEMS = [
   { key: 'a', label: '', hidden: true, run: () => combatSpawn('grappler', 'port', true) },   // debug only
   { key: 't', label: '', hidden: true, run: () => { for (const e of combat.enemies) if (e.D.organic) for (const p of e.pois) hitPoi(e, p, e.x, e.y); } },   // debug only: finish off organic enemies
   { key: 's', label: '', hidden: true, run: () => combatSpawn('mother', 'star', true) },   // debug only
+  { key: 'R', label: '', hidden: true, run: () => combatSpawn('pirate', 'port', true) },     // debug only (screenshots): one threat each
+  { key: 'L', label: '', hidden: true, run: () => spawnLeeches('port') },
+  { key: 'V', label: '', hidden: true, run: () => startLeviathan() },
+  { key: 'M', label: '', hidden: true, run: () => spawnMineDrone('port') },
+  { key: 'S', label: '', hidden: true, run: () => spawnSpores('port') },
+  { key: 'T', label: '', hidden: true, run: () => combatSpawn('tractor', 'port', true) },
+  { key: 'Z', label: '', hidden: true, run: () => { combatSpawn('stealth', 'port', true); combat.enemies.forEach(e => { e.reveal = 3; }); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },

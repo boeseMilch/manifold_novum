@@ -406,10 +406,11 @@ function drawInterceptor(e, t) {
   for (const s of [-1, 1]) flameDown(s * 1.72, 1.95, moving ? 1.5 : 0.7, 0.2, t);
   flameDown(0, 2.15, moving ? 1.1 : 0.5, 0.25, t);
   // wings + fuselage
-  hullFill(INTERCEPTOR_HULL, '#8a4a44', '#4a2626');
+  const P0 = e.D.paint || { hull: ['#8a4a44', '#4a2626'], stripe: '#c0392b', pod: ['#6a6f7a', '#3a3f4a'] };   // (variants repaint it)
+  hullFill(INTERCEPTOR_HULL, ...P0.hull);
   panelLines([[0, -2.4, 0, 2.0], [-0.58, -0.6, 0.58, -0.6], [-0.6, 0.6, 0.6, 0.6], [0.58, -0.3, 1.45, 0.4], [-0.58, -0.3, -1.45, 0.4], [-0.6, 1.4, 0.6, 1.4]]);
   for (const s of [-1, 1]) {                       // red wing stripes
-    poly(LP([[s * 0.75, -0.25], [s * 1.45, 0.3], [s * 1.45, 0.5], [s * 0.75, -0.05]])); ctx.fillStyle = '#c0392b'; ctx.fill();
+    poly(LP([[s * 0.75, -0.25], [s * 1.45, 0.3], [s * 1.45, 0.5], [s * 0.75, -0.05]])); ctx.fillStyle = P0.stripe; ctx.fill();
   }
   for (const x of [-0.3, -0.15, 0.15, 0.3]) { rr(L(x) - 1.5, L(0.8), 3, L(0.5), 1); ctx.fillStyle = '#1c1f25'; ctx.fill(); }   // vents
   rivetsAt([[0.3, -0.3], [-0.3, -0.3], [0.4, 1.2], [-0.4, 1.2], [1.1, 0.7], [-1.1, 0.7]]);
@@ -418,7 +419,7 @@ function drawInterceptor(e, t) {
     const x0 = s > 0 ? 1.42 : -2.02;
     rr(L(x0), L(-0.35), L(0.6), L(2.25), 10);
     const g = ctx.createLinearGradient(L(x0), 0, L(x0 + 0.6), 0);
-    g.addColorStop(0, '#6a6f7a'); g.addColorStop(1, '#3a3f4a');
+    g.addColorStop(0, P0.pod[0]); g.addColorStop(1, P0.pod[1]);
     ctx.fillStyle = g; ctx.fill(); stroke(2.5);
     ctx.beginPath(); ctx.arc(L(x0 + 0.3), L(-0.15), L(0.2), 0, TAU); ctx.fillStyle = '#14161b'; ctx.fill(); stroke(1.5);   // intake
     panelLines([[x0, 0.5, x0 + 0.6, 0.5], [x0, 1.2, x0 + 0.6, 1.2]]);

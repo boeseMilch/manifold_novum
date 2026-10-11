@@ -104,10 +104,23 @@ ENEMY_TYPES.pirate = {
     e.dockT = (e.dockT ?? DOCK_TIME) - dt;
     if (e.dockT <= 0 && !dk.dock && e.phase === 'fighting') { e.phase = 'gone'; dockShip('pirate', e.side); }
   },
+  paint: { hull: ['#3a3a42', '#16161c'], stripe: '#e8b42e', pod: ['#4a4038', '#221c18'] },   // black and gold
   draw(e, t) {
     drawInterceptor(e, t);
-    ctx.fillStyle = '#14161b'; ctx.beginPath(); ctx.arc(0, L(0.35), L(0.28), 0, TAU); ctx.fill();         // jolly roger
-    ctx.fillStyle = '#e8e4dc'; ctx.beginPath(); ctx.arc(0, L(0.3), L(0.13), 0, TAU); ctx.fill(); ctx.fillRect(L(-0.15), L(0.45), L(0.3), L(0.05));
+    for (const [px, py, w, h, a] of [[-0.95, 0.75, 0.42, 0.3, 0.3], [0.2, 1.55, 0.36, 0.26, -0.2]]) {   // welded-on scrap patches
+      ctx.save(); ctx.translate(L(px), L(py)); ctx.rotate(a); rr(-L(w) / 2, -L(h) / 2, L(w), L(h), 2); ctx.fillStyle = '#6a5a48'; ctx.fill(); stroke(1.2);
+      ctx.fillStyle = '#2b303a'; ctx.fillRect(-L(w) / 2 + 2, -L(h) / 2 + 2, 2, 2); ctx.fillRect(L(w) / 2 - 4, L(h) / 2 - 4, 2, 2); ctx.restore();
+    }
+    // the skull-and-crossbones flag on a little mast at the stern, fluttering
+    ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, L(1.6)); ctx.lineTo(0, L(2.5)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, L(2.5)); for (let i = 0; i <= 6; i++) ctx.lineTo(L(-0.12 * i), L(2.5 - 0.06 * i) + Math.sin(t * 8 + i) * 2.5);
+    for (let i = 6; i >= 0; i--) ctx.lineTo(L(-0.12 * i), L(2.0 - 0.06 * i) + Math.sin(t * 8 + i) * 2.5); ctx.closePath();
+    ctx.fillStyle = '#14161b'; ctx.fill(); stroke(1);
+    ctx.fillStyle = '#e8e4dc'; ctx.beginPath(); ctx.arc(L(-0.36), L(2.08), L(0.09), 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#e8e4dc'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(L(-0.5), L(2.0)); ctx.lineTo(L(-0.22), L(2.32)); ctx.moveTo(L(-0.22), L(2.0)); ctx.lineTo(L(-0.5), L(2.32)); ctx.stroke();
+    // the docking claw on the side facing us, ready to bite onto an airlock
+    const open = 0.3 + 0.2 * Math.sin(t * 3);
+    for (const sd of [-1, 1]) { ctx.save(); ctx.translate(L(-1.95), L(0.85)); ctx.rotate(sd * open + Math.PI); poly([[0, 0], [L(0.45), sd * 3], [L(0.55), sd * L(0.18)], [L(0.1), sd * 5]]); ctx.fillStyle = '#8a8f99'; ctx.fill(); stroke(1.2); ctx.restore(); }
   },
 };
 EVENT_SIDES.pirates = randSide; EVENT_SIDES.derelict = randSide;
