@@ -634,6 +634,12 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   it always get hit first: a shell only stops on the backdrop if no other enemy is just ahead of it.
 - Fixed while at it: placing a backdrop in a side's queue gave it no position (NaN).
 
+### 8s. Visible pirates, free snacks
+- Pirates (and the rescued engineer) were drawn together with the docked ship, before our floors, so
+  on our ship the floor covered them: they turned invisible as soon as they came aboard. They're
+  drawn with the crew now (`drawDockActors`), in a brighter red suit with a red halo and a PIRATE tag.
+- The snack machine is free: one snack per minute each, only when you're hurt (ends it 10 s sooner).
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

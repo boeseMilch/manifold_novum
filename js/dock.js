@@ -343,6 +343,10 @@ function drawDock(t) {
       for (let i = 0; i < 4; i++) { const h = L(0.6 + 0.3 * Math.sin(t * 9 + i)) * f.hp; ctx.beginPath(); ctx.ellipse(L(f.x) + (i - 1.5) * 8, L(f.y) - h / 2, 6, h / 2, 0, 0, TAU); ctx.fillStyle = i % 2 ? '#ff9a2e' : '#d8401c'; ctx.fill(); }
     }
   }
+  if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
+}
+// Pirates and the engineer: drawn with the crew (after the floors), so they're visible on our ship too.
+function drawDockActors(t) {
   for (const p of dk.pirates) drawPirate(p, t);
   const N = dk.npc;
   if (N) {
@@ -350,7 +354,6 @@ function drawDock(t) {
     else drawCrew(L(N.x), L(N.y), N.face, N.walk, inVacuum(N.x, N.y) || inDock(N.x, N.y), '#e8e4dc');
     ctx.fillStyle = '#ffe08a'; ctx.font = `700 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; const nm = npcName().replace(/^the /, '').toUpperCase(); ctx.fillText(N.state === 'down' ? `${nm} (hurt)` : N.state === 'safe' ? `${nm} — safe` : nm, L(N.x), L(N.y) - L(0.5)); ctx.textAlign = 'left';
   }
-  if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
 }
 // The derelict is dark: everything but a small circle around you is dim.
 function drawDockDarkness() {
@@ -363,11 +366,16 @@ function drawPirate(p, t) {
     ctx.beginPath(); ctx.moveTo(L(p.x), L(p.y)); ctx.lineTo(L(p.x + Math.cos(p.face) * 8), L(p.y + Math.sin(p.face) * 8));
     ctx.strokeStyle = `rgba(255,40,40,${0.3 + 0.7 * p.aim / PIRATE_AIM})`; ctx.lineWidth = 1.5; ctx.stroke();
   }
-  drawCrew(L(p.x), L(p.y), p.face, p.walk, false, '#5a2a2a');
+  const glow = ctx.createRadialGradient(L(p.x), L(p.y), 0, L(p.x), L(p.y), L(0.75));                   // a red halo so they read on any floor
+  glow.addColorStop(0, 'rgba(255,60,40,0.35)'); glow.addColorStop(1, 'rgba(255,60,40,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.75), 0, TAU); ctx.fill();
+  drawCrew(L(p.x), L(p.y), p.face, p.walk, false, '#b0302a');
   ctx.save(); ctx.translate(L(p.x), L(p.y)); ctx.rotate(p.face);              // blaster + bandana
   ctx.fillStyle = '#2b303a'; ctx.fillRect(L(0.15), 4, L(0.35), 5); ctx.restore();
   ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(L(p.x), L(p.y) - 2, 6, Math.PI, TAU); ctx.fill();
-  if (p.carry) drawItemIcon(p.carry, L(p.x), L(p.y) - L(0.55), 0.7);
+  ctx.font = `800 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('PIRATE', L(p.x), L(p.y) - L(0.62)); ctx.fillStyle = '#ff7a6a'; ctx.fillText('PIRATE', L(p.x), L(p.y) - L(0.62)); ctx.textAlign = 'left';
+  if (p.carry) drawItemIcon(p.carry, L(p.x) + L(0.45), L(p.y) - L(0.3), 0.7);
   if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${p.flash * 0.4})`; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.35), 0, TAU); ctx.fill(); }
   for (let i = 0; i < PIRATE_HP; i++) { ctx.fillStyle = i < p.hp ? '#e2574c' : '#2b303a'; ctx.fillRect(L(p.x) - 8 + i * 6, L(p.y) - L(0.6), 5, 3); }
 }

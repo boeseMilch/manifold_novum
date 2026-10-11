@@ -646,6 +646,7 @@ function render(t) {
     }
   }
   drawBoarding(t);
+  drawDockActors(t);
   drawLights(1 / 60);
   drawVacuumTint();
   drawDockDarkness();
