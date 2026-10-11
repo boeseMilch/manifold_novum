@@ -41,6 +41,7 @@ function combatSpawn(kind, side, replace = false) {
     combat.enemies.forEach(e => { if (e.side === side) e.stopCharge?.(); });
     combat.enemies = combat.enemies.filter(e => e.side !== side || e.phase === 'gone');
   }
+  if (ENEMY_TYPES[kind]?.backdrop && combat.enemies.some(o => o.side === side && o.D.backdrop && o.phase === 'fighting')) side = side === 'port' ? 'star' : 'port';   // one giant per side
   const e = makeEnemy(kind, side);
   placeInLane(e);
   combat.enemies.push(e);
@@ -51,7 +52,7 @@ function combatSpawn(kind, side, replace = false) {
 // behind may be blocked by the one in front — then you go through it.
 const swayW = (o) => o.D.size[0] + 1.15 * o.D.amp[0];
 function queueTargets(side) {
-  const q = combat.enemies.filter(o => o.side === side && o.phase === 'fighting').sort((a, b) => a.uid - b.uid);
+  const q = combat.enemies.filter(o => o.side === side && o.phase === 'fighting' && !o.D.backdrop).sort((a, b) => a.uid - b.uid);   // (a backdrop like the spore mother stays behind everyone)
   const dir = side === 'port' ? -1 : 1, edge = side === 'port' ? 0 : SHIP_W;
   let prev = null;
   for (const o of q) {
@@ -60,7 +61,10 @@ function queueTargets(side) {
     o.qx = ax; prev = o;
   }
 }
-function placeInLane(e) { combat.enemies.push(e); queueTargets(e.side); combat.enemies.pop(); e.ax = e.x = e.qx; }
+function placeInLane(e) {
+  if (e.D.backdrop) return;                               // (backdrops keep their own spot, behind the queue)
+  combat.enemies.push(e); queueTargets(e.side); combat.enemies.pop(); e.ax = e.x = e.qx;
+}
 function updateQueues(dt) {
   for (const side of ['port', 'star']) {
     queueTargets(side);
@@ -209,7 +213,12 @@ function updateCombat(dt) {
   for (const s of combat.shells) {
     const x0 = s.x, y0 = s.y;
     s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
-    for (const e of combat.enemies) if (!s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y)) s.dead = true;
+    for (const e of combat.enemies) if (!e.D.backdrop && !s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y)) s.dead = true;
+    if (!s.dead) {                                       // a backdrop is behind everything: a ship just ahead gets the shot first
+      const ax = s.x + s.vx / SHELL_SPEED * 3, ay = s.y + s.vy / SHELL_SPEED * 3;
+      const ahead = combat.enemies.some(e => !e.D.backdrop && shellTouches(e, s.x, s.y, ax, ay));
+      if (!ahead) for (const e of combat.enemies) if (e.D.backdrop && !s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y)) s.dead = true;
+    }
     for (const a of combat.asteroids) {
       if (s.dead || a.dead) continue;
       if (a.big) {
@@ -280,7 +289,8 @@ function splitAsteroid(a) {
 // Drawing (world space, pixels = layout units * T)
 // ---------------------------------------------------------------------------
 function drawCombatBack(t) {
-  for (const e of combat.enemies) drawEnemy(e, t);
+  for (const e of combat.enemies) if (e.D.backdrop) drawEnemy(e, t);   // huge things behind everything else
+  for (const e of combat.enemies) if (!e.D.backdrop) drawEnemy(e, t);
   for (const a of combat.asteroids) drawAsteroidBody(a, t);
 }
 
@@ -442,7 +452,7 @@ function drawCombatHUD(view, top) {
   lines.forEach((l, i) => { ctx.fillStyle = l.col; ctx.fillText(l.text, VW - w - 4, top + 17 + i * 17); });
 
   // edge arrows towards threats that are off screen
-  const threats = [...combat.enemies.filter(e => e.phase === 'fighting' && (!e.D.stealth || stealthAlpha(e) > 0.3)), ...combat.asteroids];
+  const threats = [...combat.enemies.filter(e => e.phase === 'fighting' && !e.D.backdrop && (!e.D.stealth || stealthAlpha(e) > 0.3)), ...combat.asteroids];
   for (const th of threats) {
     const sx = view.ox + L(th.x) * view.zoom, sy = view.oy + L(th.y) * view.zoom;
     if (sx > 0 && sx < VW && sy > top && sy < VH) continue;

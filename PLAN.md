@@ -619,6 +619,19 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   15 s (plasma: of 6 s), re-rolled each time. So a spreading fire and the one it started no longer
   tick in step. The ring under each fire and its sidebar countdown show its own time.
 
+### 8r. The spore mother, huge
+- It's a backdrop now (`D.backdrop`): a vast creature filling its side (12 × 17 units, far out), so
+  you only ever see its near flank; it barely sways. Other enemies on that side stay in their queue
+  in front of it, and it gets no off-screen arrow.
+- Three lipped mouths on that flank. After each puff one gapes open and a blue tongue lashes out,
+  flinging the spore clouds from that mouth (`spawnSpores(side, from)`) — the tongue is the weak spot
+  while it hangs out (3.5 s). A torn-out tongue leaves a slime-bleeding stump.
+- Decoration only: cilia waving in travelling waves all along its edge, mottling and pores, veins
+  running to the mouths, and eyes that blink and look towards the ship.
+- Only one giant per side (a second spore mother goes to the other side). Ships flying in front of
+  it always get hit first: a shell only stops on the backdrop if no other enemy is just ahead of it.
+- Fixed while at it: placing a backdrop in a side's queue gave it no position (NaN).
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

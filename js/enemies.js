@@ -202,6 +202,17 @@ function updateEnemy(e, dt) {
   }
 }
 
+// Would a shell on this segment touch this enemy (no side effects)? Used so ships flying in front of a
+// backdrop (the spore mother) always get hit before it.
+function shellTouches(e, x0, y0, x1, y1) {
+  if (e.phase !== 'fighting') return false;
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / SHELL_STEP));
+  for (let i = 1; i <= n; i++) {
+    const [lx, ly] = enemyToLocal(e, lerp(x0, x1, i / n), lerp(y0, y1, i / n));
+    if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => shapeDist(p.shape, lx, ly) <= POI_TOLERANCE)) return true;
+  }
+  return false;
+}
 // A shell moved from (x0,y0) to (x1,y1). Returns true if this enemy stopped it.
 const SHELL_STEP = 0.1, POI_TOLERANCE = 0.04;
 function shellHitsEnemy(e, x0, y0, x1, y1) {

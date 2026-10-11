@@ -94,22 +94,24 @@ function tentacleBase(e) { return enemyToWorld(e, 0.6, 1.6); }   // the grabbing
 // ---------------------------------------------------------------------------
 // Spore mother
 // ---------------------------------------------------------------------------
-const MOTHER_BODY = Array.from({ length: 14 }, (_, i) => { const a = i / 14 * TAU, r = 2.6 + 0.4 * Math.sin(i * 2.3); return [Math.cos(a) * r * 0.9, Math.sin(a) * r * 1.2]; });
+// Huge: it fills the whole side and you only ever see its near flank. Local +x faces our ship.
+const MOTHER_RX = 12, MOTHER_RY = 17;
+const MOTHER_BODY = Array.from({ length: 40 }, (_, i) => { const a = i / 40 * TAU, w = 1 + 0.03 * Math.sin(i * 2.7) + 0.02 * Math.sin(i * 5.3); return [Math.cos(a) * MOTHER_RX * w, Math.sin(a) * MOTHER_RY * w]; });
+const MOTHER_MOUTHS = [-6.5, 0, 6.5].map(y => [MOTHER_RX * Math.sqrt(1 - (y / MOTHER_RY) ** 2), y]);   // on the near flank
 ENEMY_TYPES.mother = {
-  name: 'Spore mother', organic: true, dist: 22, size: [2.6, 3.2], amp: [0.8, 1.0], omega: 0.15, wear: 99, noGun: true,
+  name: 'Spore mother', organic: true, backdrop: true, dist: 31, size: [MOTHER_RX, MOTHER_RY], amp: [0.25, 0.35], omega: 0.1, wear: 99, noGun: true,
   solids: [{ poly: MOTHER_BODY }],
-  pois: [
-    { id: 'sac0', name: 'Upper sac', effect: 'burst', shape: { circle: [1.9, -1.6, 0.45] } },
-    { id: 'sac1', name: 'Middle sac', effect: 'burst', shape: { circle: [2.25, 0.2, 0.45] } },
-    { id: 'sac2', name: 'Lower sac', effect: 'burst', shape: { circle: [1.9, 1.9, 0.45] } },
-  ],
+  // the weak spots: a blue tongue in each mouth, only out (and hittable) right after it flings spores
+  pois: MOTHER_MOUTHS.map(([x, y], i) => ({ id: 'tongue' + i, name: ['Upper', 'Middle', 'Lower'][i] + ' tongue', effect: 'torn out', shape: { circle: [x + 0.8, y, 0.7] } })),
   update(e, dt) {
-    e.puffT = (e.puffT ?? 6) - dt; e.open = Math.max(0, (e.open || 0) - dt);
+    e.puffT = (e.puffT ?? 6) - dt; e.open = Math.max(0, (e.open || 0) - dt); e.lash = Math.max(0, (e.lash || 0) - dt);
     if (e.puffT <= 0) {
-      e.puffT = PUFF_EVERY; spawnSpores(e.side);
+      e.puffT = PUFF_EVERY;
       const shut = e.pois.map((p, i) => i).filter(i => !e.pois[i].hit);
-      e.openSac = shut[(e.puffs = (e.puffs || 0) + 1) % shut.length]; e.open = SAC_OPEN;
-      combatBanner('The spore mother puffed — one of its sacs is open, hit it now!');
+      e.openSac = shut[(e.puffs = (e.puffs || 0) + 1) % shut.length]; e.open = SAC_OPEN; e.lash = 0.6;
+      const [mx, my] = MOTHER_MOUTHS[e.openSac];
+      spawnSpores(e.side, enemyToWorld(e, mx + 1.2, my));                 // the tongue flings the spores out of its mouth
+      combatBanner('The spore mother flung spores — its tongue is out, hit it now!');
     }
   },
   closed: (e, p) => !(e.open > 0 && e.pois.indexOf(p) === e.openSac),
@@ -361,20 +363,66 @@ function drawTentacle(e, t) {
   ctx.beginPath(); ctx.arc(L(x), L(y), L(0.85), -Math.PI / 2, -Math.PI / 2 + k * TAU); ctx.strokeStyle = paused ? '#6b7486' : (k > 0.75 && Math.sin(t * 12) > 0 ? '#ff6a4a' : '#c8ff6e'); ctx.lineWidth = 4; ctx.stroke();
   if (me.mode === 'eva') jobMarker(x, y, t, Math.hypot(me.x - x, me.y - y) <= REACH + 1, '#c08aff');
 }
+// The spore mother: a vast, mottled mass. Three lipped mouths on its flank (a blue tongue lashes out of
+// the open one), cilia waving along its edge, and a scatter of eyes that blink and follow the ship.
 function drawMother(e, t) {
-  const pulse = 1 + 0.05 * Math.sin(t * 1.5) + (e.puffT > PUFF_EVERY - 0.6 ? 0.12 : 0);
-  ctx.save(); ctx.scale(pulse, pulse);
+  const R = L(MOTHER_RX), RY = L(MOTHER_RY), breathe = 1 + 0.012 * Math.sin(t * 0.9);
+  ctx.save(); ctx.scale(breathe, breathe);
+  // cilia all along the edge, waving in slow travelling waves
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 160; i++) {
+    const a = i / 160 * TAU, cx = Math.cos(a) * R, cy = Math.sin(a) * RY, nx = Math.cos(a) / MOTHER_RX, ny = Math.sin(a) / MOTHER_RY, nl = Math.hypot(nx, ny);
+    const len = 20 + 8 * Math.sin(i * 1.7), w = Math.sin(t * 2.2 - i * 0.35) * 0.6;
+    const ux = nx / nl, uy = ny / nl, tx = cx + (ux * Math.cos(w) - uy * Math.sin(w)) * len, ty = cy + (uy * Math.cos(w) + ux * Math.sin(w)) * len;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + ux * len * 0.6, cy + uy * len * 0.6, tx, ty);
+    ctx.strokeStyle = OUT; ctx.lineWidth = 4.5; ctx.stroke(); ctx.strokeStyle = '#d8c48e'; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+  // the body: mottled, with a darker rim
   poly(LP(MOTHER_BODY));
-  const g = ctx.createRadialGradient(L(-0.5), L(-0.8), L(0.3), 0, 0, L(3.2));
-  g.addColorStop(0, '#d8c890'); g.addColorStop(0.6, '#8a7a4a'); g.addColorStop(1, '#3a3020');
-  ctx.fillStyle = g; ctx.fill(); stroke(3);
-  for (let i = 0; i < 12; i++) { const a = i * 2.1, r = 1.2 + (i % 4) * 0.35; ctx.beginPath(); ctx.arc(L(Math.cos(a) * r * 0.9), L(Math.sin(a) * r * 1.1), L(0.14), 0, TAU); ctx.fillStyle = '#5a4a30'; ctx.fill(); }
+  const g = ctx.createRadialGradient(R * 0.55, -RY * 0.1, R * 0.1, 0, 0, R * 1.05);
+  g.addColorStop(0, '#d6c48c'); g.addColorStop(0.55, '#9c8752'); g.addColorStop(0.9, '#5e4c2c'); g.addColorStop(1, '#3a2e1a');
+  ctx.fillStyle = g; ctx.fill(); stroke(4);
+  ctx.save(); poly(LP(MOTHER_BODY)); ctx.clip();
+  const r0 = rng(31);
+  for (let i = 0; i < 70; i++) {                         // blotches and pores
+    const x = (r0() * 2 - 1) * R, y = (r0() * 2 - 1) * RY, rad = 4 + r0() * 14;
+    ctx.beginPath(); ctx.ellipse(x, y, rad, rad * (0.6 + r0() * 0.5), r0() * 3, 0, TAU); ctx.fillStyle = r0() < 0.5 ? 'rgba(90,70,35,0.35)' : 'rgba(230,214,160,0.25)'; ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(120,40,60,0.35)'; ctx.lineWidth = 2;   // veins running to the mouths
+  for (const [mx, my] of MOTHER_MOUTHS) for (let k = 0; k < 3; k++) {
+    ctx.beginPath(); ctx.moveTo(L(mx), L(my)); ctx.bezierCurveTo(L(mx - 2), L(my + (k - 1) * 2), L(mx - 4), L(my + (k - 1) * 3.5), L(mx - 6 - k), L(my + (k - 1) * 5)); ctx.stroke();
+  }
+  ctx.restore();
+  // eyes, just for looks: they blink now and then and look towards our ship
+  const r1 = rng(77);
+  for (let i = 0; i < 9; i++) {
+    const y = (r1() * 1.7 - 0.85) * MOTHER_RY, edge = MOTHER_RX * Math.sqrt(Math.max(0, 1 - (y / MOTHER_RY) ** 2)), x = edge - 1.2 - r1() * 3, rad = L(0.25 + r1() * 0.35);
+    if (MOTHER_MOUTHS.some(([mx, my]) => Math.hypot(mx - x, my - y) < 2.2)) continue;
+    const blink = Math.sin(t * 0.7 + i * 2.3) > 0.97 ? 0.15 : 1;
+    ctx.beginPath(); ctx.ellipse(L(x), L(y), rad * 1.3, rad * blink, 0, 0, TAU); ctx.fillStyle = '#f0ead2'; ctx.fill(); stroke(2);
+    if (blink > 0.5) { ctx.beginPath(); ctx.arc(L(x) + rad * 0.45, L(y), rad * 0.55, 0, TAU); ctx.fillStyle = '#7a3a2a'; ctx.fill(); ctx.beginPath(); ctx.arc(L(x) + rad * 0.55, L(y), rad * 0.25, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }
+  }
+  // the three mouths: lipped slits; the open one gapes, and a blue tongue lashes out
   e.pois.forEach((p, i) => {
-    const [cx, cy, r] = p.shape.circle, open = e.open > 0 && e.openSac === i && !p.hit;
-    ctx.beginPath(); ctx.arc(L(cx), L(cy), L(r), 0, TAU);
-    if (p.hit) { ctx.fillStyle = '#2a2018'; ctx.fill(); stroke(2); return; }
-    if (open) { blueGlow(cx, cy, r * 2.4, t); ctx.fillStyle = bluePaint(cx - r, cy - r, cx + r, cy + r, t, false); ctx.fill(); stroke(2.5); }
-    else { ctx.fillStyle = '#6a5a3a'; ctx.fill(); stroke(2); ctx.beginPath(); ctx.moveTo(L(cx - r * 0.7), L(cy)); ctx.lineTo(L(cx + r * 0.7), L(cy)); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.stroke(); }   // shut: a closed slit
+    const [mx, my] = MOTHER_MOUTHS[i], open = e.open > 0 && e.openSac === i && !p.hit;
+    const gape = p.hit ? 0.35 : open ? Math.min(1, (SAC_OPEN - e.open) * 6, e.open * 3) : 0.08;
+    ctx.save(); ctx.translate(L(mx), L(my));
+    ctx.beginPath(); ctx.ellipse(0, 0, L(0.75), L(1.5) * Math.max(0.12, gape), 0, 0, TAU); ctx.fillStyle = '#2a0e14'; ctx.fill();   // throat
+    for (const sd of [-1, 1]) {                          // fleshy lips
+      ctx.beginPath(); ctx.ellipse(0, sd * L(1.5) * Math.max(0.12, gape), L(0.95), L(0.32), 0, 0, TAU);
+      ctx.fillStyle = '#b05a62'; ctx.fill(); stroke(2);
+    }
+    if (open) {                                          // the tongue: lashes out when it flings, then hangs out, blue and glowing
+      const lash = e.lash > 0 ? Math.sin((0.6 - e.lash) / 0.6 * Math.PI) : 0, out = L(1.6 + 1.6 * lash), wag = Math.sin(t * 5) * 7;
+      blueGlow(0.9, 0, 1.3, t);
+      ctx.beginPath(); ctx.moveTo(-L(0.3), -L(0.55)); ctx.bezierCurveTo(out * 0.4, -L(0.8), out * 0.8, -L(0.55) + wag, out, wag);
+      ctx.bezierCurveTo(out * 0.8, L(0.55) + wag, out * 0.4, L(0.8), -L(0.3), L(0.55)); ctx.closePath();
+      ctx.fillStyle = bluePaint(0, -0.5, 1.5, 0.5, t, false); ctx.fill(); stroke(2);
+      ctx.strokeStyle = 'rgba(10,40,90,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(out * 0.85, Math.sin(t * 5) * 4); ctx.stroke();   // the groove
+    } else if (p.hit) {                                  // torn out: a bleeding stump of slime
+      for (let k = 0; k < 2; k++) { const q = (t * 0.7 + k / 2) % 1; ctx.beginPath(); ctx.arc(L(0.5) + q * 10, (k - 0.5) * 6 + q * 8, 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill(); }
+    }
+    ctx.restore();
   });
   ctx.restore();
 }
