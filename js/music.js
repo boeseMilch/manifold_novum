@@ -4,7 +4,10 @@
 // with drifting pads and adds arpeggio, bass, drums and the lead as the mission goes on, and in the
 // last stretch it swells to a crescendo (a second lead an octave up, double-time hats, crashes, the
 // filters opening). Threats on screen push it up; while the jump drive spools there's a riser.
-//   music.setMission(id)   music.setIntensity(0..1)   music.setThreat(bool)   music.setJump(bool)
+//   music.setMission(id)   music.setIntensity(0..1)   music.setThreat(bool)   music.setJump(bool)   music.jumped()
+// Because the arrangement follows the time left until the jump, every piece fits any mission length:
+// the crescendo always lands on the jump, and on the jump itself it ends with a big final hit.
+// music.html is a little player for listening to the pieces on their own.
 
 const music = (() => {
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -59,7 +62,7 @@ const music = (() => {
   }
 
   let song = build('nebula');
-  let ac, bus, reverb, delay, noiseBuf, step = 0, next = 0, threat = 0, intensity = 0.15, jumping = false, level = 0.15;
+  let ac, bus, reverb, delay, noiseBuf, step = 0, next = 0, threat = 0, intensity = 0.15, jumping = false, level = 0.15, paused = false, finale = null;
 
   function impulse(seconds) {
     const len = ac.sampleRate * seconds, buf = ac.createBuffer(2, len, ac.sampleRate);
@@ -151,7 +154,18 @@ const music = (() => {
     pad: true, arp: k > 0.18, bass: k > 0.35, hats: k > 0.35, kick: k > 0.5, snare: k > 0.62, lead: k > 0.62,
     lead2: k > 0.82, hats16: k > 0.82, crash: k > 0.82, hot: k > 0.5,
   });
+  // The jump: on the next downbeat, a crash, a low boom and the home chord held out, then quiet.
+  function playFinale(t) {
+    const chord = song.progA[0];
+    noiseHit(t, 'highpass', 3500, 0.2, 2.6, 0.9); kick(t); kick(t + 0.02);
+    bass(chord.root, t, 2.4); pad([...chord.pad, chord.pad[0] + 12], t, 4, 1);
+    for (const n of chord.pad.slice(0, 3)) lead(n + 12, t, 3, 0.04);
+  }
   function scheduleStep(st, t) {
+    if (finale) {                                         // after the jump: the final hit, then silence
+      if (finale === 'wait' && st % 16 === 0) { playFinale(t); finale = 'done'; }
+      return;
+    }
     const bar = Math.floor(st / 16), s16 = st % 16, k = level, L0 = layersAt(k);
     const prog = L0.hot ? song.progB : song.progA, leadSet = L0.hot ? song.leadB : song.leadA;
     const chordIdx = Math.floor(bar / 2) % 4, chord = prog[chordIdx], inChord = (bar % 2) * 16 + s16;
@@ -169,7 +183,8 @@ const music = (() => {
   }
   function schedule() {
     if (!ac) return;
-    if (next < ac.currentTime - 0.2) next = ac.currentTime + 0.05;   // tab was in the background: skip ahead
+    if (next < ac.currentTime - 0.2 || paused) next = ac.currentTime + 0.05;   // tab was in the background (or paused): skip ahead
+    if (paused) return;
     level = lerp(level, clamp(intensity + threat * 0.15 + (jumping ? 0.2 : 0), 0, 1), 0.02);   // ease towards the target
     while (next < ac.currentTime + 0.15) { scheduleStep(step, next); step++; next += song.STEP; }
   }
@@ -182,5 +197,12 @@ const music = (() => {
     setThreat(on) { threat = on ? 1 : 0; },
     setJump(on) { jumping = !!on; },
     songOf: (id) => (SONGS[MISSION_SONG[id] || 'nebula'] || SONGS.nebula).title,
+    // for the player (music.html) and the end of a mission
+    list: () => Object.entries(SONGS).map(([name, s]) => ({ name, title: s.title, bpm: s.bpm, missions: Object.keys(MISSION_SONG).filter(m => MISSION_SONG[m] === name) })),
+    setSong(name) { if (!SONGS[name]) return; song = { ...build(name), name }; finale = null; if (delay) delay.delayTime.value = song.STEP * 3; },
+    setPaused(on) { paused = !!on; },
+    jumped() { if (!finale) finale = 'wait'; },
+    reset() { finale = null; jumping = false; level = intensity = 0.15; },
+    get level() { return level; },
   };
 })();

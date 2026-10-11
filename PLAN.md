@@ -559,6 +559,14 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   still and it drops you off the back. `canStand` now also checks the middle of the crew box
   against solids, so thin things (the rails) block.
 
+### 8k. Music player and the final hit
+- `music.html` (♪ MUSIC in the lobby): pick any of the 11 pieces and play it along a simulated
+  mission (3/5/7 min, ×1/×4/×10 speed), with an enemies-on-screen toggle, a JUMP NOW button and a
+  manual intensity slider.
+- The jump now ends the music: on the next downbeat a crash, a low boom and the home chord, then
+  quiet (`music.jumped()`). Because the arrangement follows the time left until the jump, each
+  piece fits any mission length, including delays (tractor beams, misaligned coils).
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

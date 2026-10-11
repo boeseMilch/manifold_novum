@@ -796,6 +796,7 @@ function clientUpdate(dt) {
   music.setMission(mission.id || 'intro');                // each mission has its own piece, building up towards the jump
   music.setIntensity(!mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
   music.setJump(!!mission.jump && !mission.over);
+  if (mission.over?.survived) music.jumped();              // the big final hit as we jump out
   miniClient(dt);
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }

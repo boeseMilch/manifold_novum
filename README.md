@@ -98,6 +98,9 @@ shortcut for the prompt.)
   ship gets every upgrade anyone in the crew has bought.
 - Progress is saved in your browser (a cookie), separately for each player.
 - **Skirmish:** standalone missions, from the easy intro to Nightmare.
+- **Music:** every mission has its own synthesized piece that builds up to a crescendo at the jump
+  and ends on a final hit when you jump out. Listen to them on their own with the ♪ MUSIC button in
+  the lobby (or open `music.html`): it plays each piece along a simulated mission, sped up if you like.
 - **Practice:** a free-play ship. The PRACTICE panel (button top right, or P) starts any encounter,
   damage type or mini-game, toggles the harder rules, fills energy, repairs, gives items and
   teleports you. The quickest way to try everything.

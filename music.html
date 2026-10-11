@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manifold Novum — Music</title>
+<style>
+  :root { --bg: #07090f; --plate: #2f3542; --ink: #e8ecf4; --dim: #9aa3b5; --accent: #5fd6a0; }
+  html, body { margin: 0; min-height: 100vh; background: radial-gradient(ellipse at center, #141a28, var(--bg)); color: var(--ink); font-family: system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }
+  h1 { letter-spacing: 4px; margin: 0 0 4px; } .sub { color: var(--dim); margin: 0 0 18px; font-size: 14px; }
+  #songs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+  .song { text-align: left; padding: 10px 12px; border-radius: 8px; border: 2px solid #14161b; background: var(--plate); color: var(--ink); cursor: pointer; font: inherit; }
+  .song b { display: block; font-size: 14px; } .song span { font-size: 12px; color: #c9ced8; }
+  .song.on { background: #1d4a36; border-color: var(--accent); }
+  .panel { margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: #1c2028; border: 2px solid #14161b; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; font-size: 13px; color: #dfe4ec; }
+  button.act { padding: 8px 14px; border-radius: 6px; border: 2px solid var(--accent); background: #1d4a36; color: #fff; font: 700 13px system-ui, sans-serif; cursor: pointer; }
+  select, input[type=range] { accent-color: var(--accent); }
+  .bar { position: relative; height: 14px; border-radius: 7px; background: #0e1118; border: 1px solid #14161b; overflow: hidden; flex: 1; min-width: 200px; }
+  .bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #2f8a5f, #ffe08a 75%, #ff6a4a); }
+  .lvl i { background: linear-gradient(90deg, #3a8fc4, #ff6a4a); }
+  #status { color: var(--dim); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>MANIFOLD NOVUM — MUSIC</h1>
+  <p class="sub">Every mission has its own piece. It plays along with a simulated mission: calm at the start, building up, a crescendo towards the jump, and the final hit when the ship jumps out.</p>
+  <div id="songs"></div>
+  <div class="panel">
+    <div class="row"><button class="act" id="play">▶ PLAY</button><button class="act" id="jump">JUMP NOW</button>
+      <label><input type="checkbox" id="threat"> enemies on screen</label>
+      <label>mission length <select id="len"><option value="180">3 min</option><option value="300" selected>5 min</option><option value="420">7 min</option></select></label>
+      <label>speed <select id="speed"><option value="1">×1</option><option value="4">×4</option><option value="10">×10</option></select></label></div>
+    <div class="row">mission <div class="bar" id="prog"><i></i></div><span id="clock">0:00</span></div>
+    <div class="row">intensity <div class="bar lvl" id="lvl"><i></i></div>
+      <label><input type="checkbox" id="manual"> set by hand</label> <input type="range" id="k" min="0" max="100" value="15"></div>
+    <div id="status">Pick a piece, then press play.</div>
+  </div>
+</main>
+<script>const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k;</script>
+<script src="js/audio.js"></script>
+<script src="js/music.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const NAMES = { intro: 'Intro run', rush: 'Rush hour', c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', salvage: 'Black box', c4: 'Ch. 4', pirates: 'Pirate cove', c5: 'Ch. 5', rescue: 'Stranded engineer',
+                  c6: 'Ch. 6', ore: 'Ore run', c7: 'Ch. 7', deep: 'Deep drift', c8: 'Ch. 8', nightmare: 'Nightmare', practice: 'Practice' };
+  let chosen = 'nebula', playing = false, t = 0, jumped = false, last = performance.now();
+  music.setPaused(true);
+  const list = $('songs');
+  for (const s of music.list()) {
+    const b = document.createElement('button'); b.className = 'song'; b.dataset.name = s.name;
+    b.innerHTML = `<b>${s.title}</b><span>${s.bpm} bpm${s.missions.length ? ' · ' + s.missions.map(m => NAMES[m] || m).join(', ') : ''}</span>`;
+    b.onclick = () => { chosen = s.name; music.setSong(s.name); t = 0; jumped = false; music.reset(); mark(); };
+    list.appendChild(b);
+  }
+  const mark = () => list.querySelectorAll('.song').forEach(b => b.classList.toggle('on', b.dataset.name === chosen));
+  mark(); music.setSong(chosen);
+  $('play').onclick = () => { playing = !playing; music.setPaused(!playing); $('play').textContent = playing ? '❚❚ PAUSE' : '▶ PLAY'; if (playing && jumped) { t = 0; jumped = false; music.reset(); music.setSong(chosen); } };
+  $('jump').onclick = () => { t = +$('len').value; };
+  $('threat').onchange = () => music.setThreat($('threat').checked);
+  function frame(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    const len = +$('len').value;
+    if (playing && !jumped) t += dt * +$('speed').value;
+    const k = t / len, spool = k >= 1 - 15 / len && k < 1;
+    if ($('manual').checked) music.setIntensity($('k').value / 100);
+    else music.setIntensity(Math.pow(clamp(k, 0, 1), 1.3));
+    music.setJump(playing && spool);
+    if (playing && k >= 1 && !jumped) { jumped = true; music.jumped(); }
+    $('prog').firstElementChild.style.width = `${clamp(k, 0, 1) * 100}%`;
+    $('lvl').firstElementChild.style.width = `${music.level * 100}%`;
+    const s = Math.floor(Math.min(t, len)); $('clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} / ${len / 60}:00`;
+    $('status').textContent = !playing ? (jumped ? 'Jumped out. Press play to start over.' : 'Paused.') : jumped ? 'JUMP! (the final hit)' : spool ? 'The jump drive is spooling up…' : k > 0.82 ? 'Crescendo.' : k > 0.5 ? 'The fight is on.' : k > 0.18 ? 'Building up.' : 'Drifting in.';
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+</script>
+</body>
+</html>

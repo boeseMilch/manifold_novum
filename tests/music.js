@@ -36,4 +36,8 @@ for (let i = 0; i < 800; i++) { now += 0.025; intervals[0](); }
 const calm = nodes - n0, n1 = nodes; music.setIntensity(1); music.setThreat(true);
 for (let i = 0; i < 800; i++) { now += 0.025; intervals[0](); }
 check(nodes - n1 > calm * 2, `the crescendo is much busier than the calm start (${calm} → ${nodes - n1} sound nodes in 20 s)`);
+music.jumped(); const n2 = nodes; for (let i = 0; i < 100; i++) { now += 0.025; intervals[0](); }
+const hit = nodes - n2, n3 = nodes; for (let i = 0; i < 400; i++) { now += 0.025; intervals[0](); }
+check(hit > 0 && nodes === n3, `jumping out plays the final hit on the next downbeat, then it's quiet (${hit} nodes, then ${nodes - n3})`);
+check(music.list().length === 11 && music.list().every(s => s.title && s.bpm), 'the player lists every piece');
 process.exitCode = failed ? 1 : 0;
