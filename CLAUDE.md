@@ -20,6 +20,13 @@ Whenever you finish a request from the user, commit the result and push it befor
   with `Permission denied (publickey)`, stop and tell the user: the deploy key needs to be
   (re-)added on GitHub.
 
+## Look at what you build
+
+In the sandbox you have a headless browser (the `playwright` MCP tools). After a visible change,
+start a server on a spare port (`node server.js 8081 &`; 8080 may be taken by the user's own
+server), open http://localhost:8081, drive it with clicks and key presses, take screenshots to
+check it looks right, and check the browser console for errors. Stop the server when done.
+
 ## Big requests: one sub-agent per sub-task
 
 When a request asks for many things at once (several new encounters, a batch of assets, ...),
