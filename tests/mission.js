@@ -118,12 +118,13 @@ function fireAndJumpTests() {
     }
     check(dmg > 70 && dmg < 130 && newFires === 0, `on a side that is already burning: half the small hits damage a part instead of a new fire (${dmg}/200)`);
     void f0;
-    // left alone: after 15 s it burns out exactly its own part, or spreads to a different part nearby
+    // left alone: after its time (~15 s) it burns out exactly its own part, or spreads to a different part nearby
     let burnedOwn = 0, spread = 0, kept = 0, other = 0;
     for (let k = 0; k < 40; k++) {
       G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; });
       G.spawnFire(5, 8); const f = G.fires[0], part = f.sys;
-      for (let i = 0; i < 60 * 15.2; i++) { G.combat.shots.length = 0; G.tick(DT); }
+      const until = f.period + 0.2;                       // (each fire has its own, slightly random time)
+      for (let i = 0; i < 60 * until; i++) { G.combat.shots.length = 0; G.tick(DT); }
       const brokenNow = G.SYSTEMS.filter(s => s.broken);
       if (brokenNow.length === 1 && brokenNow[0] === part) burnedOwn++;
       else if (brokenNow.length === 0 && G.fires.length === 2 && G.fires[1].sys !== part) spread++;
