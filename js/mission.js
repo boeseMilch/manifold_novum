@@ -3,7 +3,8 @@
 
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
-const JUMP_DELAY = 60, JUMP_WINDOW = 15, MAX_DAMAGE = 3;
+const JUMP_DELAY = 22, JUMP_WINDOW = 15, MAX_DAMAGE = 3;   // the jump comes mid-battle: 22 s after the final fight starts
+const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
 let FIRE_TIME = 15;
 const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
 
@@ -138,7 +139,13 @@ function startMission(id = 'intro', opts = {}) {
   shipStartExtras(opts.ship || {});
   mission.upgrades = { ...(opts.ship || {}) }; mission.runId = `${Date.now().toString(36)}-${newUid()}`; mission.kills = 0;
   for (const c of crew) applyKit(c, c.kit);
-  mission.jumpAt = MISSIONS[id]?.practice ? Infinity : Math.max(...mission.events.map(e => e.t)) + JUMP_DELAY;
+  // The finale: the last event is a fight, and the jump comes while it's still going.
+  const evs2 = mission.events, last = evs2.reduce((a, e) => (e.t > a.t ? e : a), evs2[0] || { t: 0 });
+  if (last && !COMBAT_KINDS.has(last.kind)) {
+    const fight = evs2.filter(e => COMBAT_KINDS.has(e.kind)).sort((a, b) => b.t - a.t)[0];
+    if (fight) [fight.t, last.t] = [last.t, fight.t];
+  }
+  mission.jumpAt = MISSIONS[id]?.practice ? Infinity : Math.max(0, ...evs2.map(e => e.t)) + JUMP_DELAY;
   combatBanner('Jumped into the hot zone. Survive until the jump drive is ready!');
 }
 
@@ -600,8 +607,25 @@ function drawOverridePanel(t) {
   ctx.fillText(o.hits >= 3 ? 'OPEN!' : `MANUAL OVERRIDE (${o.hits}/3)`, bx + bw / 2, by + bh / 2); ctx.textAlign = 'left';
   ui.hits.push({ x: bx + bw / 2, y: by + bh / 2, w: bw, h: bh, cmd: ['bonk'] });
 }
+// Jumping out: the stars stretch into streaks and the screen flashes before the results show.
+let warpFx = null;
+function drawWarp(k) {
+  ctx.fillStyle = `rgba(4,6,14,${0.4 + 0.5 * k})`; ctx.fillRect(0, 0, VW, VH);
+  const r = rng(7), cx = VW / 2, cy = VH / 2;
+  for (let i = 0; i < 160; i++) {
+    const a = r() * TAU, d0 = r() * Math.hypot(VW, VH) * 0.5, len = 40 + 900 * k * k * r();
+    ctx.strokeStyle = `rgba(${200 + r() * 55 | 0},${220 + r() * 35 | 0},255,${0.5 + 0.5 * r()})`; ctx.lineWidth = 1 + 2 * r();
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * d0, cy + Math.sin(a) * d0); ctx.lineTo(cx + Math.cos(a) * (d0 + len), cy + Math.sin(a) * (d0 + len)); ctx.stroke();
+  }
+  if (k > 0.8) { ctx.fillStyle = `rgba(255,255,255,${(k - 0.8) * 5})`; ctx.fillRect(0, 0, VW, VH); }
+}
 function drawEndScreen() {
   const o = mission.over;
+  if (o.survived) {                                     // the jump itself first (1.8 s)
+    if (!warpFx || warpFx.run !== mission.runId) warpFx = { run: mission.runId, t0: performance.now() };
+    const k = (performance.now() - warpFx.t0) / 1800;
+    if (k < 1) { drawWarp(k); return; }
+  }
   ctx.fillStyle = o.won ? 'rgba(10,30,20,0.75)' : 'rgba(40,8,8,0.78)'; ctx.fillRect(0, 0, VW, VH);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = o.won ? '#7af0b0' : '#ff7a6a'; ctx.font = '800 48px system-ui, sans-serif';

@@ -539,6 +539,20 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Fixed: the first frame could tick with a negative dt; the diagnosis crashed in missions without a
   maintenance failure.
 
+### 8i. Music per mission, jump mid-battle, visual pass
+- **Music** (`js/music.js`): one synthesized piece per mission (11: the intro, rush hour, each
+  campaign chapter, practice; skirmishes reuse their chapter's), each with its own tempo, key,
+  progressions, sounds and a seeded melody. The arrangement follows the mission instead of a fixed
+  form: pads → arpeggio → bass + hats → drums + lead → in the last stretch a second lead an octave
+  up, double-time hats, crashes, opening filters. Threats push it up; a riser and snare roll while
+  the jump drive spools. `node tests/music.js` runs every piece against a fake WebAudio.
+- **Jump mid-battle:** the last event of every mission is a fight, and the jump comes 22 s after it
+  starts (was 60 s after the last event). Jumping out plays a warp-streak effect before the results.
+- **Visual pass:** removed decor that wasn't clearly anything (tape and patches on the outer hull,
+  soda cans, wrappers, tape scraps, stains, loose wrenches, tape rolls, stray cables, the bucket);
+  the toilet is clearly a toilet, spare suits stand in labelled wall racks, the bike is a
+  treadmill, the coolant crate is labelled.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

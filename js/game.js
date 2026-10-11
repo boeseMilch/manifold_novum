@@ -786,7 +786,10 @@ function clientUpdate(dt) {
   [m.wx, m.wy] = screenToWorld(m.x, m.y);
   updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
-  music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm);
+  music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0);
+  music.setMission(mission.id || 'intro');                // each mission has its own piece, building up towards the jump
+  music.setIntensity(!mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
+  music.setJump(!!mission.jump && !mission.over);
   miniClient(dt);
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }

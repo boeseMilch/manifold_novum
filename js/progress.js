@@ -310,6 +310,7 @@ const lobbyUI = {
       const R = m.rewards, obj = m.objective;
       const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'intruder' ? 'Kill the intruder.' : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
+        <p class="note">♪ ${music.songOf(this.chosen)}</p>
         ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep} · ${R.xp} XP (if you make it back aboard on your feet)` : ''}</p>`}`;
     }
   },
