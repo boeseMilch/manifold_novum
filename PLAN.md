@@ -379,8 +379,8 @@ mission's own encounter list), so the easy missions stay as they were and the ha
 get the rest.
 
 ### 8a. Small things (`js/hazards.js`, all missions)
-- **Snack machine** (left cannon room, next to the kitchen): 1 energy from the left capacitor;
-  eating it while hurt ends being hurt 10 s sooner.
+- **Snack machine** (left cannon room, next to the kitchen): free, one snack per minute each, and only
+  when you're hurt: being hurt ends 10 s sooner.
 - **Coffee** at the helm: 15 s of slightly faster walking. Big hits may tip the mug over; it
   refills itself after a minute.
 - **Intercoms** in every room: call for help (a "HELP!" plate on everyone's sidebar, 15 s).

@@ -20,6 +20,7 @@ const hz = {
 const BREACH_TIME = 8, TARP_TIME = 15, WELD_TIME = 6, LEAK_TIME = 20, REPRESS_TIME = 2, VENT_TIME = 10;
 const SPLICE_TIME = 5, GRAV_TIME = 4, VACUUM_SPEED = 0.7, COFFEE_TIME = 15, COFFEE_SPEED = 1.15;
 let COFFEE_REFILL = 60;
+const SNACK_COOLDOWN = 60;
 const PLASMA_TIME = 6;
 
 // Where each room can be holed: a spot on its outer wall (inside), and where to weld it from outside.
@@ -205,7 +206,7 @@ function updateHazards(dt) {
   updateBreaches(dt);
   updateVent(dt);
   if (hz.coffee < 1) hz.coffee = Math.min(1, hz.coffee + dt / COFFEE_REFILL);
-  for (const c of crew) c.coffeeT = Math.max(0, (c.coffeeT || 0) - dt);
+  for (const c of crew) { c.coffeeT = Math.max(0, (c.coffeeT || 0) - dt); c.snackT = Math.max(0, (c.snackT || 0) - dt); }
 }
 function resetHazards() {
   Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], patches: [], floating: [], vent: null, surges: [], noGrav: [], tape: 3, plates: 4, coffee: 1, repress: null,
@@ -254,13 +255,14 @@ function hazardClickTarget(mx, my) {
     return { text: 'Click: open BOTH airlock doors to vent the plasma fire (manual override) — anyone still inside gets hurt', ok: true, x, y, r: 0.5,
              run: () => startOverride({ vent: id }, 'Airlock vent', () => startVent(id)) };
   }
-  // snack machine: costs 1 energy from the left capacitor, shortens being hurt
+  // snack machine: free, one snack per minute each, and only worth it when you're hurt (ends it 10 s sooner)
   if (at(SNACK.x, SNACK.y, 0.6)) {
     const t = { x: SNACK.x, y: SNACK.y, r: 0.6 };
     if (!near(t.x, t.y)) return { ...t, text: 'Snack machine — get closer', ok: false };
-    if (CAPACITORS[0].charge <= 0 || capBroken(0)) return { ...t, text: 'Snack machine: no power (left capacitor empty)', ok: false };
-    return { ...t, ok: true, text: player.health === 'hurt' ? 'Click: buy and eat a snack (1 energy, left capacitor) — feel better 10 s sooner' : 'Click: buy a snack (1 energy, left capacitor)',
-             run: () => { useEnergy(0); sfx.clank(); if (player.health === 'hurt') player.hurtT = Math.max(0.1, player.hurtT - 10); combatBanner(player.health === 'hurt' ? 'Crunch. Feeling a bit better.' : 'Crunch.'); } };
+    if (player.health !== 'hurt') return { ...t, text: 'Snack machine (a snack helps when you\'re hurt)', ok: false };
+    if (player.snackT > 0) return { ...t, text: `You just had a snack (next one in ${Math.ceil(player.snackT)} s)`, ok: false };
+    return { ...t, ok: true, text: 'Click: grab a snack — being hurt ends 10 s sooner',
+             run: () => { player.snackT = SNACK_COOLDOWN; player.hurtT = Math.max(0.1, player.hurtT - 10); sfx.clank(); combatBanner('Crunch. Feeling a bit better.'); } };
   }
   // coffee at the helm
   if (at(COFFEE_MUG.x, COFFEE_MUG.y, 0.35)) {

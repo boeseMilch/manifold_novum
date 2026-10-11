@@ -134,7 +134,11 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const G = fresh({}); const me = G.me; G.CAPACITORS[0].charge = 2;
   G.hurtCrew(me); const h0 = me.hurtT;
   me.x = G.SNACK.x; me.y = G.SNACK.y + 1.0; const m = me.input.mouse; m.wx = G.SNACK.x; m.wy = G.SNACK.y; m.click = true; G.simTick(DT);
-  check(me.hurtT < h0 - 9 && G.CAPACITORS[0].charge === 1, 'a snack (1 energy) makes being hurt end 10 s sooner');
+  check(me.hurtT < h0 - 9 && G.CAPACITORS[0].charge === 2, 'a snack (free) makes being hurt end 10 s sooner');
+  const h1 = me.hurtT; m.click = true; G.simTick(DT);
+  check(me.hurtT > h1 - 1 && me.snackT > 50, 'one snack per minute');
+  me.health = 'ok'; me.snackT = 0;
+  check(!G.withCrew(me, () => G.clickTarget(G.SNACK.x, G.SNACK.y)).ok, 'when you\'re not hurt, the machine doesn\'t hand one out');
   me.x = G.COFFEE_MUG.x; me.y = G.COFFEE_MUG.y + 1.2; m.wx = G.COFFEE_MUG.x; m.wy = G.COFFEE_MUG.y; m.click = true; G.simTick(DT);
   check(me.coffeeT > 14 && G.hz.coffee < 0.01, 'coffee: a speed boost for 15 s, and the mug is empty');
   const pc = G.PLATE_CRATES[0]; me.x = pc.x; me.y = pc.y - 1; m.wx = pc.x; m.wy = pc.y; m.click = true; G.simTick(DT);
