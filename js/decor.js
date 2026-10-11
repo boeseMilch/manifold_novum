@@ -281,27 +281,6 @@ function bucket(x, y, t) {
   }
 }
 
-// Hanging spacesuit on a wall rack.
-function suit(x, y, a, col) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-  shadowEllipse(3, 4, T * 0.3, T * 0.35, 0.3);
-  for (const s of [-1, 1]) { rr(s * T * 0.22 - T * 0.07, -T * 0.05, T * 0.14, T * 0.42, 5); ctx.fillStyle = col; ctx.fill(); stroke(1.5); }
-  rr(-T * 0.2, -T * 0.15, T * 0.4, T * 0.5, 9); ctx.fillStyle = col; ctx.fill(); stroke(2);
-  ctx.beginPath(); ctx.arc(0, -T * 0.2, T * 0.15, 0, TAU); ctx.fillStyle = 'rgba(160,210,240,0.7)'; ctx.fill(); stroke(1.8, '#cfe6f5');
-  ctx.fillStyle = '#5a6272'; ctx.fillRect(-T * 0.25, -T * 0.4, T * 0.5, 4);
-  ctx.restore();
-}
-
-// A spacesuit standing in a wall rack (rot: which way the rack faces; 0 = into the room to the right).
-function suitRack(x, y, rot, col) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
-  rr(-T * 0.18, -T * 0.42, T * 0.36, T * 0.84, 4); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(2);      // the alcove
-  ctx.fillStyle = '#6b7486'; ctx.fillRect(-T * 0.18, -T * 0.44, T * 0.36, 4); ctx.fillRect(-T * 0.18, T * 0.4, T * 0.36, 4);
-  ctx.restore();
-  drawCrew(x + Math.cos(rot) * T * 0.08, y + Math.sin(rot) * T * 0.08, rot, 0, true, col);                // the suit itself, visor down
-  ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.1}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillText('SUIT', x + Math.cos(rot) * T * 0.34, y + T * 0.06); ctx.textAlign = 'left';
-}
 function sleepingBag(x, y, a) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
   shadowEllipse(4, 6, T * 0.9, T * 0.4, 0.3);
@@ -441,8 +420,7 @@ function drawPropDecor(t) {
   // Right cannon room
   crate(U(42.4), U(3.6), U(1.0), U(0.9), -0.05, '#8a7a4a', 'AMMO');
   crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
-  // Left airlock room: suits, extinguisher, flickering junk
-  suitRack(U(9.1), U(15.25), Math.PI / 2, '#e8e4dc'); suitRack(U(10.1), U(15.25), Math.PI / 2, '#d9a54a');
+  // Left airlock room: supply crates
   crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
   crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#4a8aa0', 'COOLANT');
   // Reactor
@@ -451,7 +429,6 @@ function drawPropDecor(t) {
   socks(U(15.0), U(19.0), U(24.6), t);
   fuelCrate(U(17.4), U(19.6), 0.08);
   // Right airlock room
-  suitRack(U(43.2), U(16.3), Math.PI, '#e8e4dc');
   crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
   crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
   crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');

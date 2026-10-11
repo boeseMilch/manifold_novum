@@ -664,6 +664,10 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   a fluke, throat grooves, barnacle crusts, rows of glowing spots and a huge eye, gliding just outside
   the hull.
 
+### 8v. No more spare suits on the map
+- Removed the spare-suit wall racks from both airlock rooms: the "SUIT" labels were odd and the
+  suits looked too much like crew members.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
