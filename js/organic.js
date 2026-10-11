@@ -15,7 +15,7 @@
 
 const org = { leeches: [], lev: null };
 const HEAL_TIME = 20, TENTACLE_EVERY = 10, TENTACLE_COIL = 2, CUT_TIME = 3, ACID_TIME = 30, BEAK_EVERY = 3.5, BEAK_WIND = 0.7;
-const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 3.5, LEV_TIME = 30, LEV_STEP = 4;
+const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 4.5, MOTHER_TOSSES = 2, TOSS_REACH = 0.55, TOSS_FLICK = 0.3, TOSS_REST = 0.25, LEV_TIME = 30, LEV_STEP = 4;
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
 
 // Organic things die in a burst of green slime.
@@ -108,11 +108,20 @@ ENEMY_TYPES.mother = {
     if (e.puffT <= 0) {
       e.puffT = PUFF_EVERY;
       const shut = e.pois.map((p, i) => i).filter(i => !e.pois[i].hit);
-      e.openSac = shut[(e.puffs = (e.puffs || 0) + 1) % shut.length]; e.open = SAC_OPEN; e.lash = 0.6;
-      const [mx, my] = MOTHER_MOUTHS[e.openSac];
-      spawnSpores(e.side, enemyToWorld(e, mx + 1.2, my));                 // the tongue flings the spores out of its mouth
-      combatBanner('The spore mother flung spores — its tongue is out, hit it now!');
+      e.openSac = shut[(e.puffs = (e.puffs || 0) + 1) % shut.length]; e.open = SAC_OPEN;
+      e.toss = { n: MOTHER_TOSSES, t: 0, out: false };
+      combatBanner('The spore mother opens a mouth — its tongue is tossing spores, hit it!');
     }
+    // the tongue reaches back into the throat, comes out with a spore and flicks it at us; then the next one
+    const T1 = e.toss;
+    if (T1 && e.open > 0) {
+      T1.t += dt;
+      if (!T1.out && T1.t >= TOSS_REACH + TOSS_FLICK * 0.6) {
+        T1.out = true; const [mx, my] = MOTHER_MOUTHS[e.openSac];
+        spawnSpores(e.side, enemyToWorld(e, mx + 2.6, my), 1, true); sfx.spit();
+      }
+      if (T1.t >= TOSS_REACH + TOSS_FLICK + TOSS_REST) { T1.t = 0; T1.out = false; if (--T1.n <= 0) e.toss = null; }
+    } else if (T1) e.toss = null;
   },
   closed: (e, p) => !(e.open > 0 && e.pois.indexOf(p) === e.openSac),
   draw(e, t) { drawMother(e, t); },
@@ -402,29 +411,78 @@ function drawMother(e, t) {
     ctx.beginPath(); ctx.ellipse(L(x), L(y), rad * 1.3, rad * blink, 0, 0, TAU); ctx.fillStyle = '#f0ead2'; ctx.fill(); stroke(2);
     if (blink > 0.5) { ctx.beginPath(); ctx.arc(L(x) + rad * 0.45, L(y), rad * 0.55, 0, TAU); ctx.fillStyle = '#7a3a2a'; ctx.fill(); ctx.beginPath(); ctx.arc(L(x) + rad * 0.55, L(y), rad * 0.25, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }
   }
-  // the three mouths: lipped slits; the open one gapes, and a blue tongue lashes out
+  // the three mouths: recesses in the body itself. Shut: a puckered, creased seam. Open: the flesh parts
+  // into a deep red gullet framed by puffy lips of its own hide, and the blue tongue works inside it.
   e.pois.forEach((p, i) => {
-    const [mx, my] = MOTHER_MOUTHS[i], open = e.open > 0 && e.openSac === i && !p.hit;
-    const gape = p.hit ? 0.35 : open ? Math.min(1, (SAC_OPEN - e.open) * 6, e.open * 3) : 0.08;
+    const [mx, my] = MOTHER_MOUTHS[i], openNow = e.open > 0 && e.openSac === i && !p.hit;
+    const gape = p.hit ? 0.45 : openNow ? Math.min(1, (SAC_OPEN - e.open) * 5, e.open * 2.5) : 0;
     ctx.save(); ctx.translate(L(mx), L(my));
-    ctx.beginPath(); ctx.ellipse(0, 0, L(0.75), L(1.5) * Math.max(0.12, gape), 0, 0, TAU); ctx.fillStyle = '#2a0e14'; ctx.fill();   // throat
-    for (const sd of [-1, 1]) {                          // fleshy lips
-      ctx.beginPath(); ctx.ellipse(0, sd * L(1.5) * Math.max(0.12, gape), L(0.95), L(0.32), 0, 0, TAU);
-      ctx.fillStyle = '#b05a62'; ctx.fill(); stroke(2);
+    const H = L(1.6), D = L(1.7);                        // half height of the mouth, depth of the recess into the body
+    const cavity = (k) => {                              // the opening: a lens shape, cut in from the body's edge
+      ctx.beginPath(); ctx.moveTo(L(0.05), -H * k);                                   // (its outer side follows the body's edge)
+      ctx.bezierCurveTo(-D * 0.35, -H * k * 1.05, -D, -H * k * 0.55, -D, 0);
+      ctx.bezierCurveTo(-D, H * k * 0.55, -D * 0.35, H * k * 1.05, L(0.05), H * k);
+      ctx.quadraticCurveTo(L(0.15), 0, L(0.05), -H * k); ctx.closePath();
+    };
+    // puffy lips: swellings of the hide all around the opening (always there; they part when it opens)
+    if (gape > 0.05) for (const sd of [-1, 1]) {           // (shut: no lips, just the crease)
+      ctx.beginPath(); ctx.ellipse(-D * 0.5, sd * H * (0.22 + 0.78 * gape), D * 0.52, L(0.36) * (0.6 + 0.4 * gape), sd * 0.15, 0, TAU);   // (inside the flank, not sticking out)
+      const lg = ctx.createLinearGradient(0, sd * H * gape - L(0.4), 0, sd * H * gape + L(0.4));
+      lg.addColorStop(0, '#b39c62'); lg.addColorStop(1, '#7a6438'); ctx.fillStyle = lg; ctx.fill();
+      ctx.strokeStyle = 'rgba(40,30,15,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
     }
-    if (open) {                                          // the tongue: lashes out when it flings, then hangs out, blue and glowing
-      const lash = e.lash > 0 ? Math.sin((0.6 - e.lash) / 0.6 * Math.PI) : 0, out = L(1.6 + 1.6 * lash), wag = Math.sin(t * 5) * 7;
-      blueGlow(0.9, 0, 1.3, t);
-      ctx.beginPath(); ctx.moveTo(-L(0.3), -L(0.55)); ctx.bezierCurveTo(out * 0.4, -L(0.8), out * 0.8, -L(0.55) + wag, out, wag);
-      ctx.bezierCurveTo(out * 0.8, L(0.55) + wag, out * 0.4, L(0.8), -L(0.3), L(0.55)); ctx.closePath();
-      ctx.fillStyle = bluePaint(0, -0.5, 1.5, 0.5, t, false); ctx.fill(); stroke(2);
-      ctx.strokeStyle = 'rgba(10,40,90,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(out * 0.85, Math.sin(t * 5) * 4); ctx.stroke();   // the groove
-    } else if (p.hit) {                                  // torn out: a bleeding stump of slime
-      for (let k = 0; k < 2; k++) { const q = (t * 0.7 + k / 2) % 1; ctx.beginPath(); ctx.arc(L(0.5) + q * 10, (k - 0.5) * 6 + q * 8, 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill(); }
+    if (gape > 0.02) {
+      cavity(gape);
+      const cg = ctx.createRadialGradient(-D * 0.6, 0, 2, -D * 0.3, 0, D);
+      cg.addColorStop(0, '#1a0408'); cg.addColorStop(0.6, '#5a141e'); cg.addColorStop(1, '#a03a44');
+      ctx.fillStyle = cg; ctx.fill(); stroke(2.5);
+      ctx.save(); cavity(gape); ctx.clip();               // ridges of the gullet
+      ctx.strokeStyle = 'rgba(200,90,100,0.35)'; ctx.lineWidth = 2;
+      for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.ellipse(-D * 0.15 * k, 0, L(0.2), H * gape * (1 - k * 0.18), 0, 0, TAU); ctx.stroke(); }
+      ctx.restore();
+    } else {                                             // shut: a creased seam with puckered wrinkles around it
+      ctx.strokeStyle = 'rgba(40,25,10,0.8)'; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(L(0.2), -L(0.35)); ctx.quadraticCurveTo(-D * 0.5, 0, L(0.2), L(0.35)); ctx.stroke();   // an inward crease
+      ctx.strokeStyle = 'rgba(40,25,10,0.3)'; ctx.lineWidth = 1.3;
+      for (let k = -2; k <= 2; k++) { if (!k) continue; ctx.beginPath(); ctx.moveTo(-D * 0.3, k * L(0.12)); ctx.quadraticCurveTo(-D * 0.55, k * L(0.25), -D * 0.8, k * L(0.32)); ctx.stroke(); }
+    }
+    if (openNow) {                                       // the tongue lives in the gullet: its root vanishes into the dark throat
+      ctx.save(); cavity(gape); ctx.clip(); drawTongue(e, t, D, H * gape);           // inside the gullet…
+      const tg = ctx.createRadialGradient(-D, 0, 0, -D, 0, D * 0.7); tg.addColorStop(0, 'rgba(20,4,8,0.95)'); tg.addColorStop(1, 'rgba(20,4,8,0)');
+      ctx.fillStyle = tg; ctx.fillRect(-D * 1.2, -H, D, H * 2);
+      ctx.restore();
+      ctx.save(); ctx.beginPath(); ctx.rect(-L(0.15), -L(6), L(8), L(12)); ctx.clip(); drawTongue(e, t, D, H * gape, true); ctx.restore();   // …and out in space
+    }
+    else if (p.hit) for (let k = 0; k < 2; k++) {        // a torn-out tongue: the gullet bleeds slime
+      const q = (t * 0.7 + k / 2) % 1; ctx.beginPath(); ctx.arc(L(0.3) + q * 12, (k - 0.5) * 8 + q * 6, 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill();
     }
     ctx.restore();
   });
   ctx.restore();
+}
+// The tongue, in mouth-local pixels (x out of the body). While tossing: it curls back deep into the
+// gullet, comes out with a spore stuck to its tip and flicks it out; then it hangs out, wagging.
+function drawTongue(e, t, D, H, outside = false) {
+  const T1 = e.toss;
+  let reach, carry = false;                              // reach: where the tip is (px, + = out of the mouth)
+  if (T1) {
+    const u = T1.t;
+    if (u < TOSS_REACH) { reach = lerp(L(0.6), -D * 0.85, Math.sin(u / TOSS_REACH * Math.PI / 2)); carry = u > TOSS_REACH * 0.6; }
+    else if (u < TOSS_REACH + TOSS_FLICK) { const k = (u - TOSS_REACH) / TOSS_FLICK; reach = lerp(-D * 0.85, L(3.4), k * k); carry = !T1.out; }
+    else reach = lerp(L(3.4), L(1.6), (u - TOSS_REACH - TOSS_FLICK) / TOSS_REST);
+  } else reach = L(1.6) + Math.sin(t * 2) * 4;            // hanging out
+  const wag = Math.sin(t * 5) * 6, base = -D * 0.95, w0 = Math.min(L(0.55), H * 0.8 + 3);
+  const tipX = reach, tipY = wag * (reach > 0 ? 1 : 0.3);
+  if (outside) blueGlow(0.9, 0, 1.3, t);
+  ctx.beginPath(); ctx.moveTo(base, -w0);
+  ctx.bezierCurveTo(lerp(base, tipX, 0.4), -w0 * 1.1, lerp(base, tipX, 0.85), -w0 * 0.7 + tipY, tipX, tipY);
+  ctx.bezierCurveTo(lerp(base, tipX, 0.85), w0 * 0.7 + tipY, lerp(base, tipX, 0.4), w0 * 1.1, base, w0); ctx.closePath();
+  ctx.fillStyle = bluePaint(0, -0.5, 1.5, 0.5, t, false); ctx.fill(); stroke(2);
+  ctx.strokeStyle = 'rgba(10,40,90,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(base * 0.7, 0); ctx.lineTo(tipX * 0.9, tipY * 0.9); ctx.stroke();   // the groove
+  if (carry) {                                           // the spore, stuck to the tip
+    for (let k = 0; k < 5; k++) { const a = k * 1.3 + t * 2; ctx.beginPath(); ctx.arc(tipX + Math.cos(a) * 5, tipY + Math.sin(a) * 5, 6, 0, TAU); ctx.fillStyle = 'rgba(220,240,170,0.8)'; ctx.fill(); }
+    ctx.beginPath(); ctx.arc(tipX, tipY, 5, 0, TAU); ctx.fillStyle = '#c8b0e0'; ctx.fill(); stroke(1);
+  }
 }
 function drawOrganicWorld(t) {
   for (const l of org.leeches) {                       // leeches: segmented, wriggling

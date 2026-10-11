@@ -623,9 +623,11 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - It's a backdrop now (`D.backdrop`): a vast creature filling its side (12 × 17 units, far out), so
   you only ever see its near flank; it barely sways. Other enemies on that side stay in their queue
   in front of it, and it gets no off-screen arrow.
-- Three lipped mouths on that flank. After each puff one gapes open and a blue tongue lashes out,
-  flinging the spore clouds from that mouth (`spawnSpores(side, from)`) — the tongue is the weak spot
-  while it hangs out (3.5 s). A torn-out tongue leaves a slime-bleeding stump.
+- Three mouths that are recesses in the body: shut, a creased seam; open, the flesh parts into a deep
+  red gullet framed by puffy lips of its own hide. After each puff one opens and its blue tongue tosses
+  the spores one at a time: it reaches back into the gullet, comes out with a spore on its tip and
+  flicks it at us — twice — then hangs out. The tongue is the weak spot while the mouth is open
+  (4.5 s). A torn-out tongue leaves the gullet bleeding slime.
 - Decoration only: cilia waving in travelling waves all along its edge, mottling and pores, veins
   running to the mouths, and eyes that blink and look towards the ship.
 - Only one giant per side (a second spore mother goes to the other side). Ships flying in front of

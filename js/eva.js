@@ -40,14 +40,14 @@ function spawnMineDrone(side) {
   combatBanner(`Mine drone on the ${SIDE_LABEL[side].toLowerCase()} side — it sticks limpet mines on the hull!`);
   sfx.alarm();
 }
-function spawnSpores(side, from = null) {             // from: [x, y] where they start (a spore mother's mouth)
+function spawnSpores(side, from = null, n = 3, quiet = false) {   // from: [x, y] where they start (a spore mother's mouth)
   const sx = from ? from[0] : side === 'port' ? -16 : SHIP_W + 16, sy0 = from ? from[1] : null;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < n; i++) {
     const [tx, ty] = HULL_SPOTS[side][Math.floor(Math.random() * HULL_SPOTS[side].length)];
     const y = sy0 !== null ? sy0 + (Math.random() - 0.5) * 1.5 : ty + (Math.random() - 0.5) * 6, d = Math.hypot(tx - sx, ty - y), sp = 1.3 + Math.random() * 0.4;
     evs.spores.push({ uid: newUid(), side, x: sx - (from ? 0 : i * 3 * Math.sign(tx - sx)), y, vx: (tx - sx) / d * sp, vy: (ty - y) / d * sp, t: Math.random() * 10 });
   }
-  combatBanner(`Spore cloud drifting in on the ${SIDE_LABEL[side].toLowerCase()} side — shoot the clouds!`);
+  if (!quiet) combatBanner(`Spore cloud drifting in on the ${SIDE_LABEL[side].toLowerCase()} side — shoot the clouds!`);
 }
 function jamCannon(id) {
   if (evs.jams[id]) return;
