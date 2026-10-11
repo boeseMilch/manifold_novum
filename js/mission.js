@@ -481,8 +481,15 @@ function drawSecurityPanel() {
   }
   ctx.font = '10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const r of ROOMS) { const [cx, cy] = P(...roomCenter(r)); ctx.fillStyle = 'rgba(200,220,210,0.45)'; ctx.fillText(r.name.toUpperCase(), cx, cy - 18); }
-  for (const a of boarding.invaders) { const [ax, ay] = P(a.x, a.y); ctx.beginPath(); ctx.arc(ax, ay, 5, 0, TAU); ctx.fillStyle = '#9cff5a'; ctx.fill(); }   // intruders show up on the security map
-  for (const c of crew) { const [px, py] = P(c.x, c.y); ctx.beginPath(); ctx.arc(px, py, c === player ? 5 : 4, 0, TAU); ctx.fillStyle = c.color; ctx.fill(); stroke(c === player ? 2 : 1); }
+  const blip = (x, y, col, big) => {                    // red blips for enemies, blue for friends
+    const [bx, by] = P(x, y), k = 0.5 + 0.5 * Math.sin(time * 6);
+    ctx.beginPath(); ctx.arc(bx, by, (big ? 9 : 7) + k * 5, 0, TAU); ctx.fillStyle = col.replace('1)', `${0.25 * (1 - k)})`); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx, by, big ? 6 : 5, 0, TAU); ctx.fillStyle = col; ctx.fill(); stroke(1.5);
+  };
+  for (const c of crew) if (c.mode === 'inside' || c.mode === 'hatch') blip(c.x, c.y, 'rgba(90,170,255,1)', c === player);
+  if (dk.npc) blip(dk.npc.x, dk.npc.y, 'rgba(90,170,255,1)', false);
+  for (const a of boarding.invaders) if (a.state !== 'dormant') blip(a.x, a.y, 'rgba(255,70,60,1)', true);
+  for (const p of dk.pirates) blip(p.x, p.y, 'rgba(255,70,60,1)', true);
   for (const [li, l] of lockables().entries()) {
     const [cx, cy] = P(l.x, l.y), hover = Math.hypot(mouse.x - cx, mouse.y - cy) < 15;
     ctx.beginPath(); ctx.arc(cx, cy, 13, 0, TAU); ctx.fillStyle = l.ref.locked ? '#7a2420' : '#1d4a36'; ctx.fill(); stroke(hover ? 3 : 1.5, l.ref.locked ? '#ff6a5a' : '#5fd6a0');
@@ -493,7 +500,7 @@ function drawSecurityPanel() {
   }
   ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText('D door · A deck airlock · H outer airlock — locked doors can still be forced with a manual override. Green dot: intruder.', x + 18, y + h - 18);
+  ctx.fillText('D door · A deck airlock · H outer airlock — locked doors can still be forced with a manual override. Red: enemies · blue: crew.', x + 18, y + h - 18);
 }
 // During an AI glitch the console only shows the reboot switches (the order is on the helm).
 function drawRebootPanel() {

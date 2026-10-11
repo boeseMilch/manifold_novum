@@ -35,6 +35,35 @@ function walkTo(G, tx, ty, max = 20) {                 // straight-line walking 
   for (let i = 0; i < 3; i++) G.boarding.bolts.push({ x: p.x + 0.3, y: p.y, vx: -1, vy: 0, life: 1, owner: 'crew' }), G.simTick(DT);
   check(G.dk.defeated === n0 + 1, 'three laser hits take a pirate down (counted for objectives)');
 }
+// --- pirates: aim with a laser for 2 s, then a very fast shot, then a long cooldown
+{
+  const G = fresh(); G.dockShip('pirate', 'port'); G.dk.pirates.splice(1);
+  const p = G.dk.pirates[0], me = G.me; p.x = 6; p.y = 19.5; p.cd = 0; me.x = 10.5; me.y = 19.5;
+  let shotAt = null, shotSpeed = 0, sawLaser = false;
+  for (let t = 0; t < 3 && shotAt === null; t += DT) {
+    G.simTick(DT); if (p.aim > 0) sawLaser = true;
+    const b = G.boarding.bolts.find(b => b.owner === 'pirate'); if (b) { shotAt = t; shotSpeed = Math.hypot(b.vx, b.vy); }
+  }
+  check(sawLaser && shotAt > 1.9 && shotAt < 2.2 && shotSpeed >= 25, `a pirate stops and aims (laser sight) for 2 s, then fires a very fast shot (after ${shotAt?.toFixed(2)} s, ${shotSpeed.toFixed(0)} units/s)`);
+  for (let i = 0; i < 20; i++) G.simTick(DT);
+  check(me.health === 'hurt', 'standing in the laser line gets you hit');
+  let again = false; for (let i = 0; i < 60 * 4.5; i++) { G.simTick(DT); if (p.aim > 0) again = true; me.health = 'ok'; }
+  check(!again, 'then a long cooldown before it aims again (your window to hit back)');
+}
+{
+  const G = fresh(); G.dockShip('pirate', 'port'); G.dk.pirates.splice(1);
+  const p = G.dk.pirates[0], me = G.me; p.x = 6; p.y = 19.5; p.cd = 0; me.x = 10.5; me.y = 19.5;
+  for (let i = 0; i < 60 * 1.6; i++) G.simTick(DT);                       // the laser has locked onto where you stood…
+  me.y = 17.0;                                                             // …dive out of the line
+  for (let i = 0; i < 60; i++) G.simTick(DT);
+  check(me.health === 'ok', 'diving out of the locked laser line dodges the shot');
+}
+{
+  const G = fresh(); G.ITEMS.length = 0; G.power.reserve = 0; G.dockShip('pirate', 'port');
+  G.me.x = 37; G.me.y = 6;
+  let left = null; for (let t = 0; t < 40 && left === null; t += DT) { G.simTick(DT); if (!G.dk.dock) left = t; }
+  check(left !== null, `with nothing (left) to loot, the pirates head home and cast off (after ${left?.toFixed(0)} s)`);
+}
 {
   const G = fresh(); G.dockShip('pirate', 'port'); G.dk.pirates.length = 0;
   const g = G.dockGeom('port'), me = G.me; me.x = 3; me.y = g.y;

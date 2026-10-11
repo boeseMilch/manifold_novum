@@ -640,6 +640,16 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   drawn with the crew now (`drawDockActors`), in a brighter red suit with a red halo and a PIRATE tag.
 - The snack machine is free: one snack per minute each, only when you're hurt (ends it 10 s sooner).
 
+### 8t. Pirates aim, loot and leave; enemies on the security map
+- Pirates fight like gunslingers now: they stop and aim, a faint laser sight tracking you, which then
+  locks (bright, flickering) for the last 0.6 s; after 2 s a very fast shot (30 units/s) goes down the
+  locked line. Dive behind a wall (or just out of the line) when you see it. If they lose sight of you
+  while tracking, they give up the shot. Then a 5 s cooldown — your window to hit them.
+- They loot two things each (or fewer if nothing's left), carry them to their crate, then head home.
+  Once every pirate is back aboard, their ship casts off with the loot 4 s later.
+- Security console: red blips for enemies (intruders, pirates), blue for friends (crew, the engineer).
+  `tests/dock.js` covers aim → shot timing, dodging by diving out of the line, the cooldown, leaving.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

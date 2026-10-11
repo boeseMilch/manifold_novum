@@ -10,7 +10,10 @@
 // Everything in `dk` is plain data.
 
 const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0 };
-const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9, PIRATE_FIRE = 1.5, PIRATE_AIM = 0.45;
+const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9;
+// Pirates stop and aim: a faint laser sight tracks you, then locks (bright) — after PIRATE_AIM s a very fast shot
+// goes down that line, so dive behind a wall when you see it. Then a long cooldown: your window to hit back.
+const PIRATE_AIM = 2, PIRATE_LOCK = 0.6, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, LEAVE_DELAY = 4;
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0 }); }
@@ -155,42 +158,45 @@ function hurtPirate(p, dmg, stun = 0) {
 }
 function updatePirate(p, dt) {
   p.flash = Math.max(0, p.flash - dt * 4); p.cd -= dt;
-  if (p.stun > 0) { p.stun -= dt; return; }
+  if (p.stun > 0) { p.stun -= dt; p.aim = 0; return; }
   const g = DG();
-  // a crew member in sight: stop, aim (a red laser sight), shoot
-  const foe = crew.filter(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - p.x, c.y - p.y) < PIRATE_RANGE && lineOfSight(p.x, p.y, c.x, c.y))
-                  .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
-  if (foe && !(dk.dock?.detachT !== null && dk.dock?.detachT !== undefined)) {
-    p.face = Math.atan2(foe.y - p.y, foe.x - p.x); p.target = foe.id;
-    if (p.cd <= 0) {
-      p.aim += dt;
-      if (p.aim >= PIRATE_AIM) {
-        p.aim = 0; p.cd = PIRATE_FIRE;
-        const ux = Math.cos(p.face), uy = Math.sin(p.face);
-        boarding.bolts.push({ x: p.x + ux * 0.4, y: p.y + uy * 0.4, vx: ux * 11, vy: uy * 11, life: 1.2, owner: 'pirate' }); sfx.enemyShot();
-      }
+  const sees = (c) => c.mode === 'inside' && standing(c) && Math.hypot(c.x - p.x, c.y - p.y) < PIRATE_RANGE && lineOfSight(p.x, p.y, c.x, c.y);
+  // aiming: stand still, the laser sight tracks the target, then locks; the shot follows the locked line
+  if (p.aim > 0) {
+    const c = crew.find(c => c.id === p.target);
+    p.aim += dt;
+    if (p.aim < PIRATE_AIM - PIRATE_LOCK) {
+      if (c && sees(c)) { p.face = Math.atan2(c.y - p.y, c.x - p.x); p.lost = 0; }
+      else if ((p.lost = (p.lost || 0) + dt) > 0.5) { p.aim = 0; return; }     // lost sight of them: give up the shot
+    }
+    if (p.aim >= PIRATE_AIM) {
+      p.aim = 0; p.cd = PIRATE_COOLDOWN;
+      const ux = Math.cos(p.face), uy = Math.sin(p.face);
+      boarding.bolts.push({ x: p.x + ux * 0.4, y: p.y + uy * 0.4, vx: ux * PIRATE_SHOT, vy: uy * PIRATE_SHOT, life: 0.5, owner: 'pirate', fast: true }); sfx.heavyLaunch();
     }
     return;
   }
-  p.aim = 0; p.target = null;
-  // what to do: steal something, carry it home, or (panicking) run home
-  let goal = null;
-  const panic = dk.dock && dk.dock.detachT !== null;
-  if (panic || p.carry) { if (g) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }
-  else {
-    const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox');
-    if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.8, y: FUEL_CRATE.y, crate: true });
-    goal = loot.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0] || null;
+  const leaving = dk.dock && dk.dock.detachT !== null && dk.dock.detachT !== undefined;
+  if (p.cd <= 0 && !leaving) {
+    const foe = crew.filter(sees).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
+    if (foe) { p.target = foe.id; p.aim = dt; p.lost = 0; p.face = Math.atan2(foe.y - p.y, foe.x - p.x); return; }
   }
+  // looting: grab something, carry it to their crate, PIRATE_LOOT times; then head home and stay there
+  let goal = null;
+  const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox');
+  if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.8, y: FUEL_CRATE.y, crate: true });
+  if (!p.carry && !p.done && (p.loots >= PIRATE_LOOT || !loot.length)) { p.done = true; combatBanner('A pirate is done looting and heads back to their ship'); }
+  if (leaving || p.carry || p.done) { if (g) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }
+  else goal = loot.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0] || null;
   if (!goal) return;
   if (!p.route.length || p.goalKey !== `${goal.x.toFixed(1)},${goal.y.toFixed(1)}`) { p.route = dockRoute(p.x, p.y, goal.x, goal.y); p.goalKey = `${goal.x.toFixed(1)},${goal.y.toFixed(1)}`; }
   const n = p.route[0];
-  const moved = pirateStep(p, n.x, n.y, dt);
-  if (Math.hypot(n.x - p.x, n.y - p.y) < 0.2) p.route.shift();
-  p.stuck = moved < 0.002 ? p.stuck + dt : 0;
+  const moved = n ? pirateStep(p, n.x, n.y, dt) : 0;
+  if (n && Math.hypot(n.x - p.x, n.y - p.y) < 0.2) p.route.shift();
+  p.stuck = moved < 0.002 && Math.hypot(goal.x - p.x, goal.y - p.y) > 0.5 ? p.stuck + dt : 0;
   if (p.stuck > 3) { p.route = []; p.stuck = 0; }    // a locked door: try again (they never bash doors)
   if (Math.hypot(goal.x - p.x, goal.y - p.y) < 0.5) {
-    if (goal.home) { if (p.carry) { dk.dock.crate.push(p.carry); p.carry = null; sfx.clank(); } }
+    if (goal.home) { if (p.carry) { dk.dock.crate.push(p.carry); p.carry = null; p.loots = (p.loots || 0) + 1; sfx.clank(); } else if (p.done) p.home = true; }
     else if (goal.crate) { power.reserve--; p.carry = 'fuel'; sfx.clank(); combatBanner('A pirate grabbed a fuel cell!'); p.route = []; }
     else { const i = ITEMS.indexOf(goal); if (i >= 0) { ITEMS.splice(i, 1); p.carry = goal.kind; sfx.clank(); combatBanner(`A pirate grabbed the ${ITEM_NAMES[goal.kind]}!`); p.route = []; } }
   }
@@ -211,6 +217,9 @@ function updateDock(dt) {
     if (d.fires) d.fires = d.fires.filter(f => f.hp > 0);
   }
   for (const p of dk.pirates) updatePirate(p, dt);
+  if (dk.dock?.kind === 'pirate' && dk.dock.detachT === null && dk.pirates.length && dk.pirates.every(p => p.home)) {
+    dk.dock.detachT = LEAVE_DELAY; combatBanner(`The pirates are leaving with their loot — ${LEAVE_DELAY} s until they cast off!`); sfx.alarm();
+  }
   for (const b of boarding.bolts) {                   // our bolts vs pirates
     if (b.owner !== 'crew') continue;
     const p = dk.pirates.find(p => !p.dead && Math.hypot(b.x - p.x, b.y - p.y) < 0.42);
@@ -362,9 +371,12 @@ function drawDockDarkness() {
   for (const q of [...g.rooms, ...g.doors]) { ctx.fillStyle = 'rgba(4,6,12,0.55)'; ctx.fillRect(L(q.x), L(q.y), L(q.w), L(q.h)); }
 }
 function drawPirate(p, t) {
-  if (p.aim > 0) {                                    // laser sight: it's about to fire
-    ctx.beginPath(); ctx.moveTo(L(p.x), L(p.y)); ctx.lineTo(L(p.x + Math.cos(p.face) * 8), L(p.y + Math.sin(p.face) * 8));
-    ctx.strokeStyle = `rgba(255,40,40,${0.3 + 0.7 * p.aim / PIRATE_AIM})`; ctx.lineWidth = 1.5; ctx.stroke();
+  if (p.aim > 0) {                                    // laser sight: faint while tracking, bright and flickering once locked
+    const locked = p.aim >= PIRATE_AIM - PIRATE_LOCK;
+    let len = 0; while (len < PIRATE_RANGE && freeAt(p.x + Math.cos(p.face) * len, p.y + Math.sin(p.face) * len)) len += 0.1;   // up to the first wall
+    ctx.beginPath(); ctx.moveTo(L(p.x), L(p.y)); ctx.lineTo(L(p.x + Math.cos(p.face) * len), L(p.y + Math.sin(p.face) * len));
+    ctx.strokeStyle = locked ? `rgba(255,${Math.sin(t * 40) > 0 ? 60 : 160},60,0.95)` : 'rgba(255,90,90,0.35)'; ctx.lineWidth = locked ? 3 : 1.2; ctx.stroke();
+    if (locked) { ctx.beginPath(); ctx.arc(L(p.x + Math.cos(p.face) * len), L(p.y + Math.sin(p.face) * len), 5, 0, TAU); ctx.fillStyle = 'rgba(255,80,60,0.9)'; ctx.fill(); }
   }
   const glow = ctx.createRadialGradient(L(p.x), L(p.y), 0, L(p.x), L(p.y), L(0.75));                   // a red halo so they read on any floor
   glow.addColorStop(0, 'rgba(255,60,40,0.35)'); glow.addColorStop(1, 'rgba(255,60,40,0)');

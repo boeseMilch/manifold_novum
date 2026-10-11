@@ -316,6 +316,7 @@ function updateBoarding(dt) {
   for (const b of boarding.bolts) {
     const x0 = b.x, y0 = b.y;
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; if (b.wrench) b.spin += dt * 18;
+    if (b.fast && !freeAt((x0 + b.x) / 2, (y0 + b.y) / 2)) { b.x = (x0 + b.x) / 2; b.y = (y0 + b.y) / 2; }   // (fast shots: don't skip through a wall)
     if (!freeAt(b.x, b.y)) {                       // hit a wall
       b.dead = true;
       for (let i = 0; i < 5; i++) combatFx(x0, y0, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, b.owner === 'alien' ? '#9cff5a' : '#ffb0a0', 0.07);
@@ -491,8 +492,9 @@ function drawBoarding(t) {
   for (const b of boarding.bolts) {
     if (b.wrench) { wrench(L(b.x), L(b.y), b.spin); continue; }
     const crew = b.owner === 'crew' || b.owner === 'pirate', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
-    if (crew) {                                      // laser bolt: bright red streak
-      ctx.beginPath(); ctx.moveTo(L(b.x), L(b.y)); ctx.lineTo(L(b.x - dx * 0.7), L(b.y - dy * 0.7));
+    if (crew) {                                      // laser bolt: bright red streak (a pirate's fast shot: a long one)
+      const len = b.fast ? 2.2 : 0.7;
+      ctx.beginPath(); ctx.moveTo(L(b.x), L(b.y)); ctx.lineTo(L(b.x - dx * len), L(b.y - dy * len));
       ctx.strokeStyle = 'rgba(255,80,60,0.5)'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.stroke();
       ctx.strokeStyle = '#ffe0d8'; ctx.lineWidth = 2.5; ctx.stroke();
     } else {                                         // acid spit: green glob with a trail
