@@ -579,6 +579,21 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   in the way, the spore mother at whichever sac is open): each weak spot is hit by aimed cannon fire
   within 10 s over random sway patterns (all 49 within 2.3 s). The `special` exclusion is gone.
 
+### 8n. Enemies queue up on a side; the grappler reworked
+- **Queues:** several enemies on one side line up one behind the other (spaced by how far each
+  sways, so they never overlap). Defeat the one in front and the next slowly moves up into its
+  place. Shots at the one behind may be blocked by the one in front. `tests/queue.js` checks every
+  pair of kinds on both sides: no overlap, the front one fully hittable, and after it's down the next
+  one moves up and is fully hittable.
+- **Grappler:** the tentacle takes one hit (was 5 — a minute of reactor time). While attached it
+  blocks that side's shield and its acid eats the hull plate (30 s; shown as a ring at the grip).
+  Too late: it rips the plate off (a breach, or a big hit without the breach rule) and swims away
+  munching on it — the end of that encounter. Weak spots now each switch something off while they
+  heal (20 s): the poison sac pauses the acid, the eye stops new throws, the beak stops it spitting
+  acid at spacewalkers on its side. All three at once still kills it. No more cannon drift.
+- New art: smooth tapering arms with suckers, fins, a slit-pupil eye that shuts when hit, a sloshing
+  poison sac, hooked jaws that open before spitting, an acid stain and bubbles at the grip.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

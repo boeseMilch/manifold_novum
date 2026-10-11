@@ -435,6 +435,7 @@ const DEBUG_ITEMS = [
   { key: 'c', label: 'Organic: grappler left, leeches + spore mother right, leviathan', run: () => { combatSpawn('grappler', 'port', true); combatSpawn('mother', 'star', true); spawnLeeches('star'); startLeviathan(); } },
   { key: 'd', label: 'Pirates dock left · derelict (box + engineer) right', run: () => { dockShip('pirate', 'port'); } },
   { key: 'r', label: 'Derelict with black box + engineer on the right', run: () => { dockShip('derelict', 'star', { blackbox: true, npc: true }); } },
+  { key: 'a', label: '', hidden: true, run: () => combatSpawn('grappler', 'port', true) },   // debug only
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },

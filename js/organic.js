@@ -1,7 +1,10 @@
 // Living enemies. They don't just shoot: weak spots heal, they grab, they chew, they seed.
-//   Grappler      a squid that throws a tentacle around the hull: that side's shield can't go up and
-//                 the ship slowly turns (cannons drift). Shoot the tentacle or hack it off outside.
-//                 Its weak spots heal after 15 s unless all three are hit in time.
+//   Grappler      a squid that wraps a tentacle around the hull: that side's shield can't go up, and its
+//                 acid weakens the hull plate. One cannon hit on the tentacle, or a spacewalker hacking it
+//                 off, makes it let go; left alone it rips the plate off (a breach) and swims away with
+//                 it, munching. Weak spots: the poison sac (acid pauses while it heals), the eye (no new
+//                 tentacle while it heals), the beak (spits at spacewalkers; quiet while it heals). All
+//                 three hit at once: it's done for. Cannon and spacewalk work together.
 //   Leech swarm   small biters fly in and latch onto the hull, chewing parts in their column.
 //                 Shoot them on the way in; a raised shield on that side burns latched ones off.
 //   Spore mother  far out, puffs spore clouds (barnacles!); after each puff one of its sacs opens
@@ -11,7 +14,7 @@
 // Grappler and spore mother are enemy kinds (ENEMY_TYPES); leeches and the leviathan live in `org`.
 
 const org = { leeches: [], lev: null };
-const HEAL_TIME = 15, TENTACLE_HP = 5, TENTACLE_EVERY = 14, TENTACLE_COIL = 2, CUT_TIME = 3;
+const HEAL_TIME = 20, TENTACLE_EVERY = 10, TENTACLE_COIL = 2, CUT_TIME = 3, ACID_TIME = 30, BEAK_EVERY = 3.5, BEAK_WIND = 0.7;
 const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 3.5, LEV_TIME = 30, LEV_STEP = 4;
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
 
@@ -22,25 +25,44 @@ function resetOrganic() { org.leeches = []; org.lev = null; }
 // ---------------------------------------------------------------------------
 const GRAPPLER_BODY = [[0, -2.8], [1.1, -2.2], [1.5, -0.8], [1.3, 0.8], [0.7, 1.6], [-0.7, 1.6], [-1.3, 0.8], [-1.5, -0.8], [-1.1, -2.2]];
 ENEMY_TYPES.grappler = {
-  name: 'Grappler', dist: 13, size: [2.2, 3.4], amp: [2.0, 2.6], omega: 0.4, wear: 99, noGun: true,
+  name: 'Grappler', dist: 13, size: [2.2, 3.4], amp: [2.0, 2.6], omega: 0.4, wear: 99, noGun: true, shotSpeed: 11,
   solids: [{ poly: GRAPPLER_BODY }],
-  pois: [
-    // on the edge of the body facing us (a shell stops at the first solid thing it touches)
-    { id: 'eye', name: 'Eye', effect: 'heals in 15 s', shape: { circle: [1.35, -1.4, 0.32] } },
-    { id: 'sac', name: 'Ink sac', effect: 'heals in 15 s', shape: { circle: [1.45, 0.15, 0.36] } },
-    { id: 'beak', name: 'Beak', effect: 'heals in 15 s', shape: { circle: [0.8, -2.45, 0.3] } },
+  pois: [   // on the edge of the body facing us (a shell stops at the first solid thing it touches)
+    { id: 'eye', name: 'Eye', effect: 'no new tentacle until it heals', shape: { circle: [1.35, -1.4, 0.32] } },
+    { id: 'sac', name: 'Poison sac', effect: 'the acid stops until it heals', shape: { circle: [1.45, 0.15, 0.36] } },
+    { id: 'beak', name: 'Beak', effect: 'no spitting until it heals', shape: { circle: [0.8, -2.45, 0.3] } },
   ],
   update(e, dt) {
-    // weak spots heal unless all of them are hit within HEAL_TIME
+    const T0 = e.tent || (e.tent = { state: 'idle', t: 6, x: 0, y: 0, acid: 0 });
+    if (e.phase === 'leaving') {                         // swimming off with the hull plate, munching
+      e.ax += (e.side === 'port' ? -1 : 1) * 4 * dt; e.ay -= 1.5 * dt; e.munch = (e.munch || 0) + dt;
+      if (Math.abs(e.ax - SHIP_W / 2) > 60) e.phase = 'gone';
+      return;
+    }
+    // weak spots heal on their own unless all three are hit in time
     for (const p of e.pois) if (p.hit) { p.healT = (p.healT || 0) + dt; if (p.healT >= HEAL_TIME && !e.pois.every(q => q.hit)) { p.hit = false; p.healT = 0; p.smoke = 0; } }
-    const T0 = e.tent || (e.tent = { state: 'idle', t: TENTACLE_EVERY * 0.5, hp: TENTACLE_HP, x: 0, y: 0 });
     T0.t -= dt;
-    if (T0.state === 'idle' && T0.t <= 0) { T0.state = 'coil'; T0.t = TENTACLE_COIL; }
+    if (T0.state === 'idle' && T0.t <= 0 && !poiHit(e, 'eye')) { T0.state = 'coil'; T0.t = TENTACLE_COIL; }   // (blinded: it can't aim a throw)
     else if (T0.state === 'coil' && T0.t <= 0) {
       const spot = HULL_SPOTS[e.side][Math.floor(Math.random() * 4)];
-      Object.assign(T0, { state: 'attached', t: 0, hp: TENTACLE_HP, x: spot[0], y: spot[1] });
+      Object.assign(T0, { state: 'attached', t: 0, x: spot[0], y: spot[1], acid: T0.acid || 0 });
       combat.shake = Math.max(combat.shake, 0.6); sfx.hit(true);
-      combatBanner(`The grappler wrapped a tentacle around the ${SIDE_LABEL[e.side].toLowerCase()} side — no shield there, and we're turning!`);
+      combatBanner(`The grappler wrapped a tentacle around the ${SIDE_LABEL[e.side].toLowerCase()} side — no shield there, and its acid is eating the hull!`);
+    } else if (T0.state === 'attached') {
+      if (!poiHit(e, 'sac')) T0.acid += dt;              // a shot-up poison sac: no acid while it heals
+      if (T0.acid >= ACID_TIME) ripHull(e);
+    }
+    // the beak spits acid at spacewalkers on its side (a short windup: the beak opens)
+    const eva = crew.filter(c => c.mode === 'eva' && standing(c) && (e.side === 'port' ? c.x < 2 : c.x > SHIP_W - 2));
+    e.spitT = (e.spitT ?? BEAK_EVERY) - dt;
+    if (!eva.length || poiHit(e, 'beak')) { e.spitT = Math.max(e.spitT, BEAK_WIND + 0.1); e.wind = 0; return; }
+    e.wind = e.spitT < BEAK_WIND ? 1 - e.spitT / BEAK_WIND : 0;
+    if (e.spitT <= 0) {
+      e.spitT = BEAK_EVERY;
+      const c = eva.sort((a, b) => Math.hypot(a.x - e.x, a.y - e.y) - Math.hypot(b.x - e.x, b.y - e.y))[0];
+      const [bx, by] = enemyToWorld(e, 0.95, -2.5);
+      enemyFire(e, bx, by, false, { atCrew: true, crewId: c.id, tx: c.x, ty: c.y });
+      combat.shots[combat.shots.length - 1].acid = true; sfx.spit();
     }
   },
   onHit(e, p) { p.healT = 0; },
@@ -52,6 +74,15 @@ function cutTentacle(e, how) {
   e.tent.state = 'idle'; e.tent.t = TENTACLE_EVERY; sfx.alienHurt();
   combatBanner(how === 'eva' ? 'Tentacle hacked off!' : 'Tentacle shot through — it lets go!');
   for (let i = 0; i < 16; i++) combatFx(e.tent.x, e.tent.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.7, '#7a3a8a', 0.14);
+}
+// Too late: it rips the weakened plate off (a breach, or a big hit on easier missions) and leaves with it.
+function ripHull(e) {
+  const { x, y } = e.tent;
+  if (mission.rules?.breach) { breachRoom(roomNearHull(e.side, y, x)); combat.shake = 1; sfx.explosion(); }
+  else shipHit(e.side, x, y, true);
+  for (let i = 0; i < 24; i++) combatFx(x, y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.9, i % 2 ? '#8a93a5' : '#9cff5a', 0.16);
+  combatBanner('The grappler ripped a hull plate off — and swims away munching on it!');
+  e.tent.state = 'ripped'; e.phase = 'leaving';
 }
 function tentacleBase(e) { return enemyToWorld(e, 1.2, 0.9); }
 
@@ -98,17 +129,16 @@ function startLeviathan() {
   combatBanner('LEVIATHAN — something enormous is brushing past. Stay out of the rooms it\'s about to bump!'); sfx.say?.('Unidentified. Very large. Object.');
 }
 function updateOrganic(dt) {
-  // grappler tentacles: cannon shells cut them, while attached the cannons drift
+  // grappler tentacles: one cannon hit cuts them
   for (const e of combat.enemies) {
     if (e.kind !== 'grappler' || e.tent?.state !== 'attached') continue;
     if (e.phase !== 'fighting') { e.tent.state = 'idle'; continue; }
     const [bx, by] = tentacleBase(e);
     for (const s of combat.shells) if (!s.dead && segDist(s.x, s.y, bx, by, e.tent.x, e.tent.y) < 0.35) {
-      s.dead = true; sfx.alienHurt();
+      s.dead = true;
       for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#7a3a8a', 0.1);
-      if (--e.tent.hp <= 0) { cutTentacle(e); break; }
+      cutTentacle(e); break;
     }
-    for (const c of crew) if (c.mode === 'gun') c.gun.aim += 0.22 * dt * (e.side === 'port' ? -1 : 1);   // the ship turns under you
   }
   combat.shells = combat.shells.filter(s => !s.dead);
   // leeches fly in, latch on, chew
@@ -180,50 +210,118 @@ Object.assign(EVENT_LABELS, {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
+// The grappler: a violet head-first squid. Beak and eye up front, a poison sac on its flank, a soft
+// mantle with fins and glowing spots, six trailing arms. Its weak organs have the usual blue glow.
+function tapered(pts, w0, w1, col, rim = true) {        // a smooth tapering limb along points (pixel coords)
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (let pass = rim ? 0 : 1; pass < 2; pass++) for (let i = 1; i < pts.length; i++) {
+    const k = (i - 0.5) / (pts.length - 1), w = lerp(w0, w1, k) * 2 + (pass ? 0 : 5);
+    ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.strokeStyle = pass ? col : OUT; ctx.lineWidth = w; ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
 function drawGrappler(e, t) {
-  const coil = e.tent?.state === 'coil' ? 1 - e.tent.t / TENTACLE_COIL : 0;
-  // trailing tentacles
+  const coil = e.tent?.state === 'coil' ? 1 - e.tent.t / TENTACLE_COIL : 0, leaving = e.phase === 'leaving';
+  // six trailing arms, rippling, with a row of pale suckers
   for (let i = 0; i < 6; i++) {
-    const x0 = -0.9 + i * 0.36, sw = Math.sin(t * 2.2 + i) * 0.4;
-    ctx.beginPath(); ctx.moveTo(L(x0), L(1.4));
-    ctx.bezierCurveTo(L(x0 + sw), L(2.4), L(x0 - sw), L(3.2), L(x0 + sw * 1.4), L(4.0 + (i % 2) * 0.4));
-    ctx.strokeStyle = OUT; ctx.lineWidth = 11; ctx.lineCap = 'round'; ctx.stroke(); ctx.strokeStyle = '#8a4a9a'; ctx.lineWidth = 7; ctx.stroke();
+    const x0 = -0.95 + i * 0.38, pts = [];
+    for (let k = 0; k <= 14; k++) { const u = k / 14; pts.push([L(x0 + Math.sin(t * 2.4 + i + u * 4) * 0.35 * u + (i - 2.5) * 0.12 * u), L(1.3 + u * (2.6 + (i % 2) * 0.5))]); }
+    tapered(pts, 6.5, 1.8, i % 2 ? '#8a4a9a' : '#9a5aaa');
+    for (let k = 2; k < 13; k += 2) { ctx.beginPath(); ctx.arc(pts[k][0] + 2, pts[k][1], 1.6, 0, TAU); ctx.fillStyle = 'rgba(255,220,250,0.6)'; ctx.fill(); }
   }
-  // the grabbing arm, coiled up before a throw
+  // the grabbing arm: thick, coiling up before a throw (and holding the hull plate when leaving)
   if (e.tent?.state !== 'attached') {
-    const k = 0.5 + coil * 0.5;
-    ctx.beginPath(); ctx.moveTo(L(1.2), L(0.9)); ctx.bezierCurveTo(L(2.4 * k + 1), L(0.4), L(2.2 * k + 1), L(-1.2 * k), L(1.4 + coil * 0.4), L(-0.6 - coil));
-    ctx.strokeStyle = OUT; ctx.lineWidth = 15; ctx.stroke(); ctx.strokeStyle = coil ? '#c06ad0' : '#9a5aaa'; ctx.lineWidth = 10; ctx.stroke();
+    const k = 0.5 + coil * 0.5, pts = [];
+    for (let j = 0; j <= 16; j++) { const u = j / 16, a = -0.6 + u * (2.2 + coil * 2.6); pts.push([L(1.1 + Math.cos(a) * (0.5 + u * 0.9) * k + u * 0.3), L(0.8 - Math.sin(a) * (0.5 + u * 0.9) * k)]); }
+    tapered(pts, 9, 3, coil ? '#c06ad0' : '#a55ab5');
   }
-  // mantle
-  poly(LP(GRAPPLER_BODY));
-  const g = ctx.createRadialGradient(L(-0.3), L(-1), L(0.3), 0, 0, L(2.8));
-  g.addColorStop(0, '#c07ad0'); g.addColorStop(0.6, '#7a3a8a'); g.addColorStop(1, '#3a1448');
+  // fins at the back of the mantle
+  for (const sd of [-1, 1]) { poly(LP([[sd * 1.2, 0.2], [sd * 2.0, 0.9], [sd * 1.0, 1.4]])); ctx.fillStyle = '#7a3a8a'; ctx.fill(); stroke(2); }
+  // the mantle: a soft, rounded shape through the body outline
+  const B = LP(GRAPPLER_BODY);
+  ctx.beginPath();
+  for (let i = 0; i < B.length; i++) {
+    const a = B[i], b = B[(i + 1) % B.length], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    if (i === 0) ctx.moveTo((B[B.length - 1][0] + a[0]) / 2, (B[B.length - 1][1] + a[1]) / 2);
+    ctx.quadraticCurveTo(a[0], a[1], m[0], m[1]);
+  }
+  ctx.closePath();
+  const g = ctx.createRadialGradient(L(0.4), L(-1.2), L(0.2), 0, L(-0.3), L(3));
+  g.addColorStop(0, '#d79ae6'); g.addColorStop(0.55, '#8a44a0'); g.addColorStop(1, '#3e1650');
   ctx.fillStyle = g; ctx.fill(); stroke(3);
-  for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.arc(L(-0.8 + (i % 3) * 0.5), L(-1.8 + i * 0.45), L(0.08 + (i % 2) * 0.05), 0, TAU); ctx.fillStyle = 'rgba(255,200,240,0.35)'; ctx.fill(); }
-  // weak spots: blue-glowing organs (heal back when left alone)
-  for (const p of e.pois) {
-    const [cx, cy, r] = p.shape.circle;
-    if (!p.hit) blueGlow(cx, cy, r * 2, t);
-    ctx.beginPath(); ctx.arc(L(cx), L(cy), L(r), 0, TAU); ctx.fillStyle = p.hit ? '#3a1a2a' : bluePaint(cx - r, cy - r, cx + r, cy + r, t, false); ctx.fill(); stroke(2);
-    if (p.hit) {                                      // healing: a closing ring
-      ctx.beginPath(); ctx.arc(L(cx), L(cy), L(r) + 4, -Math.PI / 2, -Math.PI / 2 + (p.healT || 0) / HEAL_TIME * TAU); ctx.strokeStyle = '#9cff5a'; ctx.lineWidth = 3; ctx.stroke();
-    }
+  ctx.save(); ctx.clip();
+  ctx.fillStyle = 'rgba(40,10,55,0.35)'; ctx.fillRect(L(-0.25), L(-3), L(0.5), L(5));           // dorsal stripe
+  for (let i = 0; i < 9; i++) {                                                           // glowing spots, twinkling
+    const sx = -1.0 + (i * 0.73) % 2, sy = -2.0 + i * 0.4, a = 0.3 + 0.35 * Math.sin(t * 3 + i * 1.7);
+    ctx.beginPath(); ctx.arc(L(sx), L(sy), L(0.07 + (i % 3) * 0.03), 0, TAU); ctx.fillStyle = `rgba(190,255,240,${a})`; ctx.fill();
   }
-  const [ex, ey] = e.pois[0].shape.circle;
-  if (!e.pois[0].hit) { ctx.beginPath(); ctx.ellipse(L(ex), L(ey), 3, 8, 0, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }   // slit pupil
+  ctx.restore();
+  // weak organs (blue glow when intact), with a green ring while a hit one heals
+  const [ex, ey, er] = e.pois[0].shape.circle, [sx, sy, sr] = e.pois[1].shape.circle, [bx, by, br] = e.pois[2].shape.circle;
+  const eyeHit = poiHit(e, 'eye'), sacHit = poiHit(e, 'sac'), beakHit = poiHit(e, 'beak');
+  for (const p of e.pois) if (!p.hit) { const [cx, cy, r] = p.shape.circle; blueGlow(cx, cy, r * 2.1, t); }
+  // poison sac: a translucent bulb with sloshing green poison (deflated and leaking when hit)
+  ctx.beginPath(); ctx.ellipse(L(sx), L(sy), L(sr) * (sacHit ? 0.75 : 1 + 0.06 * Math.sin(t * 4)), L(sr) * (sacHit ? 0.6 : 1.05), 0, 0, TAU);
+  ctx.fillStyle = sacHit ? '#4a3a2a' : 'rgba(160,255,90,0.75)'; ctx.fill(); stroke(2.2, sacHit ? OUT : '#3d8fe0');
+  if (!sacHit) { ctx.beginPath(); ctx.ellipse(L(sx) - 3, L(sy) - 4, 3, 2, -0.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill(); }
+  else for (let i = 0; i < 2; i++) { const q = (t * 0.8 + i / 2) % 1; ctx.beginPath(); ctx.arc(L(sx) + 3, L(sy) + L(sr) + q * 14, 2.2, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill(); }
+  // eye: yellow iris with a slit pupil looking at the ship; shut and bleeding when hit
+  ctx.beginPath(); ctx.ellipse(L(ex), L(ey), L(er), L(er) * 0.85, 0, 0, TAU); ctx.fillStyle = eyeHit ? '#5a2a4a' : '#f2eedf'; ctx.fill(); stroke(2.2, eyeHit ? OUT : '#3d8fe0');
+  if (!eyeHit) {
+    ctx.beginPath(); ctx.arc(L(ex) + 2, L(ey), L(er) * 0.62, 0, TAU); ctx.fillStyle = '#e8b02e'; ctx.fill();
+    ctx.beginPath(); ctx.ellipse(L(ex) + 4, L(ey), 2.2, L(er) * 0.5, 0, 0, TAU); ctx.fillStyle = OUT; ctx.fill();
+    ctx.beginPath(); ctx.arc(L(ex) - 2, L(ey) - 4, 2, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill();
+  } else {
+    ctx.strokeStyle = OUT; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(L(ex - er * 0.8), L(ey)); ctx.quadraticCurveTo(L(ex), L(ey + er * 0.5), L(ex + er * 0.8), L(ey)); ctx.stroke();
+    ctx.beginPath(); ctx.arc(L(ex) + 2, L(ey) + L(er) * 0.7 + ((t * 10) % 8), 1.8, 0, TAU); ctx.fillStyle = '#9cff5a'; ctx.fill();
+  }
+  // beak: two dark hooked jaws that open before it spits (and munch the hull plate when leaving)
+  const open = beakHit ? 0 : leaving ? 0.5 + 0.5 * Math.sin((e.munch || 0) * 12) : (e.wind || 0);
+  ctx.save(); ctx.translate(L(bx), L(by));
+  if (!beakHit) { ctx.beginPath(); ctx.arc(0, 0, L(br), 0, TAU); ctx.strokeStyle = '#3d8fe0'; ctx.lineWidth = 2; ctx.stroke(); }
+  for (const sd of [-1, 1]) {
+    ctx.save(); ctx.rotate(sd * (0.2 + open * 0.6));
+    poly([[0, 0], [L(br) * 1.1, -sd * 3], [L(br) * 1.25, sd * 3], [L(br) * 0.2, sd * L(br) * 0.8]]);
+    ctx.fillStyle = beakHit ? '#3a3036' : '#2b2530'; ctx.fill(); stroke(1.5);
+    ctx.restore();
+  }
+  if (beakHit) { ctx.strokeStyle = '#c9b38a'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(-4, -5); ctx.lineTo(2, 0); ctx.lineTo(-1, 5); ctx.stroke(); }   // cracked
+  if (open > 0.3 && !leaving) { ctx.beginPath(); ctx.arc(L(br), 0, 3 + open * 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${open})`; ctx.fill(); }      // acid welling up
+  ctx.restore();
+  if (leaving) {                                           // the hull plate in its jaws, with bites taken out
+    ctx.save(); ctx.translate(L(bx + 0.5), L(by - 0.3)); ctx.rotate(0.4 + Math.sin((e.munch || 0) * 12) * 0.08);
+    rr(-12, -9, 24, 18, 2); ctx.fillStyle = '#8a93a5'; ctx.fill(); stroke(2);
+    ctx.fillStyle = 'rgba(0,0,0,0)'; ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath(); ctx.arc(12, -3, 6, 0, TAU); ctx.arc(8, 8, 5, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#2b303a'; ctx.fillRect(-8, -6, 3, 3); ctx.fillRect(-8, 3, 3, 3);
+    ctx.restore();
+  }
+  for (const p of e.pois) if (p.hit && !leaving) {         // healing rings
+    const [cx, cy, r] = p.shape.circle;
+    ctx.beginPath(); ctx.arc(L(cx), L(cy), L(r) + 5, -Math.PI / 2, -Math.PI / 2 + (p.healT || 0) / HEAL_TIME * TAU); ctx.strokeStyle = '#9cff5a'; ctx.lineWidth = 3; ctx.stroke();
+  }
 }
 function drawTentacle(e, t) {
   if (e.tent?.state !== 'attached' || e.phase !== 'fighting') return;
-  const [bx, by] = tentacleBase(e), { x, y } = e.tent, mx = (bx + x) / 2, my = (by + y) / 2 + Math.sin(t * 2) * 0.8;
-  ctx.beginPath(); ctx.moveTo(L(bx), L(by)); ctx.quadraticCurveTo(L(mx), L(my), L(x), L(y));
-  ctx.strokeStyle = OUT; ctx.lineWidth = 16; ctx.lineCap = 'round'; ctx.stroke(); ctx.strokeStyle = '#9a5aaa'; ctx.lineWidth = 11; ctx.stroke();
-  ctx.setLineDash([3, 9]); ctx.strokeStyle = '#e0b0f0'; ctx.lineWidth = 4; ctx.stroke(); ctx.setLineDash([]);   // suckers
-  for (let i = 0; i < 3; i++) {                        // the end wraps around the hull
-    ctx.beginPath(); ctx.arc(L(x), L(y + (i - 1) * 0.5), L(0.35), 0, TAU); ctx.strokeStyle = '#9a5aaa'; ctx.lineWidth = 6; ctx.stroke();
+  const [bx, by] = tentacleBase(e), { x, y } = e.tent, pts = [];
+  const mx = (bx + x) / 2, my = (by + y) / 2 + Math.sin(t * 2) * 0.8;
+  for (let i = 0; i <= 24; i++) {
+    const u = i / 24, qx = (1 - u) * (1 - u) * bx + 2 * (1 - u) * u * mx + u * u * x, qy = (1 - u) * (1 - u) * by + 2 * (1 - u) * u * my + u * u * y;
+    pts.push([L(qx), L(qy) + Math.sin(t * 6 + u * 12) * 2 * u]);
   }
-  ctx.fillStyle = '#ffd0f0'; ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`; ctx.textAlign = 'center';
-  ctx.fillText('♥'.repeat(Math.max(0, e.tent.hp)), L(mx), L(my) - 14); ctx.textAlign = 'left';
+  tapered(pts, 10, 4.5, '#9a5aaa');
+  for (let i = 2; i < 23; i += 2) { ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1] + 3, 2, 0, TAU); ctx.fillStyle = 'rgba(255,220,250,0.7)'; ctx.fill(); }   // suckers
+  for (let i = 0; i < 3; i++) {                            // the tip coils around the hull
+    ctx.beginPath(); ctx.arc(L(x), L(y + (i - 1) * 0.45), L(0.32), 0, TAU); ctx.strokeStyle = OUT; ctx.lineWidth = 8; ctx.stroke(); ctx.strokeStyle = '#9a5aaa'; ctx.lineWidth = 5; ctx.stroke();
+  }
+  // the acid at work: a spreading green stain, bubbles, and a ring showing how far it's eaten through
+  const k = e.tent.acid / ACID_TIME, paused = poiHit(e, 'sac');
+  const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), L(0.5 + k * 1.2));
+  g.addColorStop(0, `rgba(156,255,90,${0.5 + 0.3 * k})`); g.addColorStop(1, 'rgba(156,255,90,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), L(0.5 + k * 1.2), 0, TAU); ctx.fill();
+  if (!paused) for (let i = 0; i < 4; i++) { const q = (t * 1.3 + i / 4) % 1; ctx.beginPath(); ctx.arc(L(x) + Math.sin(i * 2.3) * 10, L(y) + Math.cos(i * 1.7) * 10 - q * 10, 2 + q * 2, 0, TAU); ctx.strokeStyle = `rgba(200,255,150,${1 - q})`; ctx.lineWidth = 1.5; ctx.stroke(); }
+  ctx.beginPath(); ctx.arc(L(x), L(y), L(0.85), -Math.PI / 2, -Math.PI / 2 + k * TAU); ctx.strokeStyle = paused ? '#6b7486' : (k > 0.75 && Math.sin(t * 12) > 0 ? '#ff6a4a' : '#c8ff6e'); ctx.lineWidth = 4; ctx.stroke();
   if (me.mode === 'eva') jobMarker(x, y, t, Math.hypot(me.x - x, me.y - y) <= REACH + 1, '#c08aff');
 }
 function drawMother(e, t) {
@@ -281,7 +379,7 @@ function organicPlates(add) {
   const latched = org.leeches.filter(l => l.state === 'latched').length;
   if (org.leeches.length) add('leeches', { icon: 'spore', title: 'LEECH SWARM', sub: `${org.leeches.length - latched} incoming, ${latched} chewing · shield burns them off`, stripe: '#ff6a7a', red: true });
   for (const e of combat.enemies) if (e.kind === 'grappler' && e.tent?.state === 'attached' && e.phase === 'fighting')
-    add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} side · no shield · shoot it or hack it off`, stripe: '#c08aff', red: true });
+    add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} · acid ${Math.round(e.tent.acid / ACID_TIME * 100)}%${poiHit(e, 'sac') ? ' (paused)' : ''} · shoot it or hack it off`, stripe: '#c08aff', red: true });
   const V = org.lev;
   if (V) add('lev', { icon: 'unknown', title: 'LEVIATHAN', sub: `next: ${V.order.slice(V.i, V.i + 3).map(id => roomById(id).name.toLowerCase()).join(' → ')}`, stripe: '#7af0ff', red: true });
 }

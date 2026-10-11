@@ -42,10 +42,30 @@ function combatSpawn(kind, side, replace = false) {
     combat.enemies = combat.enemies.filter(e => e.side !== side || e.phase === 'gone');
   }
   const e = makeEnemy(kind, side);
-  const busy = combat.enemies.filter(o => o.side === side && o.phase === 'fighting').length;
-  if (busy) { e.ax += (side === 'port' ? -1 : 1) * 9 * busy; e.ay += busy % 2 ? -6 : 6; }   // a second ship on the same side flies further out
+  placeInLane(e);
   combat.enemies.push(e);
   combatBanner(`${e.D.name} on the ${side === 'port' ? 'left' : 'right'} side!`);
+}
+// Several enemies on one side queue up: the first at its usual distance, the next behind it (never
+// overlapping). Defeat the one in front and the next slowly moves up into its place. Shots at the one
+// behind may be blocked by the one in front — then you go through it.
+const swayW = (o) => o.D.size[0] + 1.15 * o.D.amp[0];
+function queueTargets(side) {
+  const q = combat.enemies.filter(o => o.side === side && o.phase === 'fighting').sort((a, b) => a.uid - b.uid);
+  const dir = side === 'port' ? -1 : 1, edge = side === 'port' ? 0 : SHIP_W;
+  let prev = null;
+  for (const o of q) {
+    let ax = edge + dir * o.D.dist;
+    if (prev) ax = dir < 0 ? Math.min(ax, prev.qx + dir * (swayW(prev) + swayW(o) + 1.5)) : Math.max(ax, prev.qx + dir * (swayW(prev) + swayW(o) + 1.5));
+    o.qx = ax; prev = o;
+  }
+}
+function placeInLane(e) { combat.enemies.push(e); queueTargets(e.side); combat.enemies.pop(); e.ax = e.x = e.qx; }
+function updateQueues(dt) {
+  for (const side of ['port', 'star']) {
+    queueTargets(side);
+    for (const o of combat.enemies) if (o.side === side && o.phase === 'fighting' && o.qx !== undefined) o.ax += clamp(o.qx - o.ax, -1.5 * dt, 1.5 * dt);   // move up the queue, slowly
+  }
 }
 function combatClear() {
   for (const e of combat.enemies) e.stopCharge?.();
@@ -161,6 +181,7 @@ function updateCombat(dt) {
   combat.shake = Math.max(0, combat.shake - dt * 1.1);
   if (combat.banner && (combat.banner.t -= dt) <= 0) combat.banner = null;
 
+  updateQueues(dt);
   for (const e of combat.enemies) updateEnemy(e, dt);
   combat.enemies = combat.enemies.filter(e => e.phase !== 'gone');
 
@@ -345,7 +366,7 @@ function drawCombatFront(t) {
   for (const s of combat.shots) {
     const r = s.heavy ? 0.45 : 0.18;
     const g = ctx.createRadialGradient(L(s.x), L(s.y), 0, L(s.x), L(s.y), L(r) * 2.2);
-    g.addColorStop(0, '#fff'); g.addColorStop(0.3, s.heavy ? '#ff8ac0' : '#ff6a4a'); g.addColorStop(1, 'rgba(255,60,60,0)');
+    g.addColorStop(0, '#fff'); g.addColorStop(0.3, s.acid ? '#9cff5a' : s.heavy ? '#ff8ac0' : '#ff6a4a'); g.addColorStop(1, s.acid ? 'rgba(120,255,60,0)' : 'rgba(255,60,60,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(s.x), L(s.y), L(r) * 2.2, 0, TAU); ctx.fill();
   }
   for (const p of combat.fx) {

@@ -1,7 +1,7 @@
 // Organic enemies: grappler (tentacle, healing weak spots), leech swarm, spore mother, leviathan.
 // Run: node tests/organic.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'crew', 'org', 'evs', 'mission', 'startMission', 'combat', 'combatSpawn', 'pressShield', 'CAPACITORS', 'hitPoi', 'enemyToWorld',
+const NAMES = ['hz', 'simTick', 'me', 'crew', 'org', 'evs', 'mission', 'startMission', 'combat', 'combatSpawn', 'pressShield', 'CAPACITORS', 'hitPoi', 'enemyToWorld',
   'tentacleBase', 'spawnLeeches', 'startLeviathan', 'SYSTEMS', 'withCrew', 'inv', 'roomById', 'HEAL_TIME', 'GUNS', 'power'];
 const DT = 1 / 60;
 let failed = 0;
@@ -10,30 +10,44 @@ const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTic
 const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; G.power.reactor.fuel = 0; return G; };
 const hit = (G, e, id) => { const p = e.pois.find(p => p.id === id); G.hitPoi(e, p, ...G.enemyToWorld(e, ...p.c)); };
 
-// --- grappler
+// --- grappler: tentacle (1 hit), acid, weak spots that switch its tricks off, cannon + spacewalk
 {
-  const G = fresh(); G.combatSpawn('grappler', 'port'); const e = G.combat.enemies[0];
-  tickN(G, 60 * 10);
-  check(e.tent.state === 'attached', 'the grappler throws a tentacle around the hull');
+  const G = fresh({ breach: true }); G.mission.rules.breach = true; G.combatSpawn('grappler', 'port'); const e = G.combat.enemies[0];
+  tickN(G, 60 * 9);
+  check(e.tent.state === 'attached', 'the grappler wraps a tentacle around the hull');
   G.CAPACITORS[0].charge = 2;
   check(G.withCrew(G.me, () => G.pressShield('port')) === 'grabbed' && G.CAPACITORS[0].charge === 2, 'while it holds on, that side\'s shield can\'t go up (no energy used)');
-  const g = G.GUNS.find(g => g.id === 'front'), me = G.me; me.mode = 'gun'; me.gun = g; const a0 = g.aim; me.input.mouse.moved = 0;
-  tickN(G, 60);
-  check(Math.abs(g.aim - a0) > 0.1, 'the ship turns: a manned cannon drifts');
-  me.mode = 'inside'; me.gun = null;
   const [bx, by] = G.tentacleBase(e), mx = (bx + e.tent.x) / 2, my = (by + e.tent.y) / 2;
-  for (let i = 0; i < 5; i++) { G.combat.shells.push({ x: mx, y: my, vx: 0, vy: 0, life: 1 }); G.simTick(DT); }
-  check(e.tent.state === 'idle', 'five cannon hits on the tentacle make it let go');
-  tickN(G, 60 * 17);
-  const t = e.tent; me.mode = 'eva'; me.x = t.x + (t.x < 0 ? -0.8 : 0.8); me.y = t.y; me.vx = me.vy = 0;
-  const m = me.input.mouse; m.wx = t.x; m.wy = t.y; m.down = true; let s = 0;
-  while (t.state === 'attached' && s < 5) { G.simTick(DT); s += DT; }
+  G.combat.shells.push({ x: mx, y: my, vx: 0, vy: 0, life: 1 }); G.simTick(DT);
+  check(e.tent.state === 'idle', 'a single cannon hit on the tentacle makes it let go');
+  hit(G, e, 'eye'); tickN(G, 60 * 15);
+  check(e.tent.state === 'idle', 'with its eye shot, it doesn\'t throw a new tentacle');
+  tickN(G, 60 * 9);
+  check(e.tent.state === 'attached', 'once the eye has healed (20 s), it grabs again');
+  const a0 = e.tent.acid; hit(G, e, 'sac'); tickN(G, 60 * 5);
+  check(Math.abs(e.tent.acid - a0) < 0.01, 'with its poison sac shot, the acid stops eating the hull');
+  for (const p of e.pois) { p.hit = false; p.healT = 0; }
+  const me = G.me; me.mode = 'eva'; me.x = e.tent.x - 0.8; me.y = e.tent.y; me.vx = me.vy = 0; me.health = 'ok';
+  let spat = false; const h0 = G.combat.shots.length;
+  for (let i = 0; i < 60 * 4; i++) { G.simTick(DT); if (G.combat.shots.some(s => s.acid)) spat = true; me.health = 'ok'; }
+  check(spat, 'the beak spits acid at a spacewalker on its side');
+  hit(G, e, 'beak'); G.combat.shots.length = 0; let spat2 = false;
+  for (let i = 0; i < 60 * 6; i++) { G.simTick(DT); if (G.combat.shots.some(s => s.acid)) spat2 = true; me.health = 'ok'; }
+  check(!spat2, 'with its beak shot, it stops spitting');
+  const m = me.input.mouse; m.wx = e.tent.x; m.wy = e.tent.y; m.down = true; let s = 0;
+  while (e.tent.state === 'attached' && s < 5) { G.simTick(DT); s += DT; }
   m.down = false;
-  check(t.state === 'idle' && s < 3.3, `on a spacewalk you can hack it off (${s.toFixed(1)} s)`);
-  hit(G, e, 'eye'); tickN(G, 60 * (G.HEAL_TIME + 1));
-  check(!e.pois.find(p => p.id === 'eye').hit, 'a weak spot heals after 15 s if the others weren\'t hit in time');
+  check(e.tent.state === 'idle' && s < 3.3, `a spacewalker can hack the tentacle off (${s.toFixed(1)} s)`);
   hit(G, e, 'eye'); hit(G, e, 'sac'); hit(G, e, 'beak');
-  check(e.phase === 'burning', 'all three hit in time: the grappler is done for');
+  check(e.phase === 'burning', 'all three weak spots down at once: the grappler is done for');
+}
+{
+  const G = fresh(); G.mission.rules.breach = true; G.combatSpawn('grappler', 'star'); const e = G.combat.enemies[0];
+  tickN(G, 60 * 9); const room = e.tent.y < 11.5 ? 'starGun' : 'starLock';
+  tickN(G, 60 * 31);
+  check(G.hz.breaches.some(b => b.room === room) && e.phase !== 'fighting', `left alone, it rips the weakened hull plate off (a breach in the ${room}) and swims away with it`);
+  tickN(G, 60 * 25);
+  check(!G.combat.enemies.includes(e), '…and that\'s the end of the encounter');
 }
 // --- leeches
 {
