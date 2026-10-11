@@ -273,7 +273,7 @@ function updatePlayer(dt) {
   }
 
   // inside: whatever you're standing next to
-  const hatch = HATCHES.find(h => Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) < 1.3);
+  const hatch = HATCHES.find(h => Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) < 1.3 && dk.dock?.side !== h.side);   // (docked: walk through)
   const button = SHIELD_BUTTONS.find(b => Math.hypot(player.x - b.x, player.y - (b.y + 0.7)) < 1.1);
   const ladder = GUNS.find(g => Math.hypot(player.x - g.hatch[0], player.y - g.hatch[1]) < 0.9);
   const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
@@ -296,6 +296,7 @@ function updatePlayer(dt) {
     if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')) });
     else if (hatch.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(hatch, 'Outer airlock') });
     else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
+  } else if (dockAct()) {
   } else if (doorway && doorway.blast) {
     act({ text: 'Click: blast door (vacuum behind it) — force it up for 5 s (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 },
           run: () => startOverride(doorway, 'Blast door', () => { doorway.blastHold = 5; doorway.blast = false; }) });
@@ -421,6 +422,8 @@ const DEBUG_ITEMS = [
   { key: 'l', label: 'Ship-wide: flare, storm, coolant leak, AI glitch', run: () => { startFlare(); startStorm(); startCoolantLeak(); startGlitch(); } },
   { key: 'z', label: 'Stealth fighter left, tractor tug right', run: () => { combatSpawn('stealth', 'port', true); combatSpawn('tractor', 'star', true); } },
   { key: 'c', label: 'Organic: grappler left, leeches + spore mother right, leviathan', run: () => { combatSpawn('grappler', 'port', true); combatSpawn('mother', 'star', true); spawnLeeches('star'); startLeviathan(); } },
+  { key: 'd', label: 'Pirates dock left · derelict (box + engineer) right', run: () => { dockShip('pirate', 'port'); } },
+  { key: 'r', label: 'Derelict with black box + engineer on the right', run: () => { dockShip('derelict', 'star', { blackbox: true, npc: true }); } },
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
@@ -486,7 +489,7 @@ function cameraTarget() {
   if (player.mode === 'eva' || (player.mode === 'hatch' && player.hatchDir === 'out' && player.hatchT > HATCH_TIME / 2))
     return [player.x, player.y, zRoom * 0.75];
   let sw = 0, sx = 0, sy = 0;
-  for (const room of ROOMS) {
+  for (const room of [...ROOMS, ...dockRoomsForCamera()]) {
     const w = Math.exp(-((roomDist(room, player.x, player.y) / 1.6) ** 2));
     const [cx, cy] = roomCenter(room);
     sw += w; sx += w * cx; sy += w * cy;
@@ -568,6 +571,7 @@ function render(t) {
   drawBreachesOutside(t);
   drawEvaJobs(t);
   drawOrganicWorld(t);
+  drawDock(t);
   for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
   drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   drawSpineDecor(t);
@@ -629,6 +633,7 @@ function render(t) {
   drawBoarding(t);
   drawLights(1 / 60);
   drawVacuumTint();
+  drawDockDarkness();
   drawCombatFront(t);
 
   const prompt = me.prompt, hover = me.hover;
@@ -673,7 +678,7 @@ function drawHUD() {
   ctx.fillText('WASD move · Left click: interact · Right click: use weapon · Tab: overview · M: mute · `: debug', 200, 18);
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
-    : room ? room.name : 'Deck airlock';
+    : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
   ctx.textAlign = 'right'; ctx.fillStyle = '#e8ecf4'; ctx.fillText(where, VW - 14, 18);
   const ww = ctx.measureText(where).width;
   ctx.fillStyle = '#6b7486'; ctx.fillText(sfx.muted ? '♪ muted' : `♪ ${music.title}`, VW - 30 - ww, 18);
@@ -757,12 +762,13 @@ function simTick(dt) {
   updateEncounters(dt);
   updateMinigames(dt);
   updateOrganic(dt);
+  updateDock(dt);
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.
 function clientUpdate(dt) {
   if (DEBUG_DO.length) {
-    const at = location.hash.match(/&at=([\d.]+),([\d.]+)/);
+    const at = location.hash.match(/&at=(-?[\d.]+),(-?[\d.]+)/);
     if (at) { me.x = +at[1]; me.y = +at[2]; }
     const todo = DEBUG_DO.splice(0), late = todo.filter(k => 'pqugvy'.includes(k));
     for (const k of todo) if (!late.includes(k)) sendCommand(['debug', k]);

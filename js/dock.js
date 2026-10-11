@@ -1,0 +1,378 @@
+// Other ships you can walk onto. A docking tube runs from one of our outer airlocks to a small
+// three-room ship (airlock, cargo, core); while docked, its rooms are walkable like ours.
+//   Pirates     a raider pulls alongside and shoots up our engines; if it isn't driven off in time it
+//               docks, and two pirates come over to steal loose items and fuel cells. Board them back:
+//               their cargo crate has the loot, and jamming their reactor's overload makes them panic
+//               and cast off 15 s later (anyone still aboard ends up floating outside our hull).
+//   Derelict    a dark, airless wreck on a tether: a sleeping intruder, a jammed door, a fire, and
+//               (depending on the mission) the black box to bring home or an engineer to rescue.
+//   Mining      not a ship: a big asteroid parked in front; drill it on a spacewalk for an ore sample.
+// Everything in `dk` is plain data.
+
+const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0 };
+const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9, PIRATE_FIRE = 1.5, PIRATE_AIM = 0.45;
+const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
+
+function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0 }); }
+
+// ---------------------------------------------------------------------------
+// Geometry (world coords; the port layout is mirrored for the starboard side)
+// ---------------------------------------------------------------------------
+function dockGeom(side) {
+  const h = HATCHES.find(h => h.side === side), y = h.y;
+  const P = [
+    R(-5.6, y - 0.6, 0.7, y + 0.6),               // tube (overlaps our room so you can walk straight in)
+    R(-10.2, y - 2.4, -5.6, y + 2.4),             // their airlock
+    R(-18.4, y - 4.0, -10.8, y + 4.0),            // cargo
+    R(-25.0, y - 2.8, -19.0, y + 2.8),            // core (reactor)
+    R(-10.8, y - 0.8, -10.2, y + 0.8),            // door airlock–cargo
+    R(-19.0, y - 0.8, -18.4, y + 0.8),            // door cargo–core
+  ];
+  const M = side === 'port' ? P : P.map(q => R(SHIP_W - q.x - q.w, q.y, SHIP_W - q.x, q.y + q.h));
+  const mx = (x) => side === 'port' ? x : SHIP_W - x;
+  return {
+    tube: M[0], rooms: [M[1], M[2], M[3]], doors: [M[4], M[5]], hatch: h, y,
+    crate: { x: mx(-14.6), y: y - 2.6 }, core: { x: mx(-23.6), y }, boxSpot: { x: mx(-22.4), y: y + 1.8 },
+    npcSpot: { x: mx(-16.0), y: y + 2.4 }, alienSpot: { x: mx(-21.5), y: y - 1.6 }, fire: { x: mx(-14.6), y: y + 1.4 },
+    entry: { x: mx(-7.9), y }, tubeMid: { x: mx(-2.5), y },
+  };
+}
+const dockOn = () => !!dk.dock;
+const DG = () => dk.dock && dockGeom(dk.dock.side);
+function dockRects() {
+  const g = DG();
+  if (!g) return [];
+  return [g.tube, ...g.rooms, ...g.doors.filter((d, i) => !dk.dock.doors[i])];
+}
+const inDock = (x, y) => { const g = DG(); return !!g && [g.tube, ...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
+const dockRoomsForCamera = () => { const g = DG(); return g ? g.rooms.map(q => ({ rects: [q] })) : []; };
+function dockVacuum(x, y) {
+  const g = DG();
+  if (!g) return false;
+  return inRect(x, y, g.tube) || (dk.dock.kind === 'derelict' && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)));
+}
+const dockName = () => dk.dock ? (dk.dock.kind === 'pirate' ? 'Pirate ship' : 'Derelict') : null;
+
+// ---------------------------------------------------------------------------
+// Docking
+// ---------------------------------------------------------------------------
+function dockShip(kind, side, contents = {}) {
+  if (dk.dock) return false;
+  dk.dock = { kind, side, doors: kind === 'derelict' ? [true, false] : [false, false], crate: kind === 'pirate' ? ['fuel', 'fuel'] : [], detachT: null, overloaded: false, fires: [] };
+  const g = dockGeom(side);
+  if (kind === 'pirate') {
+    for (let i = 0; i < 2; i++) dk.pirates.push({ uid: newUid(), x: g.entry.x + (side === 'port' ? -1 : 1) * i, y: g.y + (i ? 0.6 : -0.6), face: 0, walk: 0, hp: PIRATE_HP, carry: null, state: 'steal', cd: 1 + i, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 });
+    combatBanner('The pirates docked at the ' + (side === 'port' ? 'left' : 'right') + ' airlock — they\'re coming aboard!'); sfx.explosion();
+  } else {
+    dk.dock.fires.push({ x: g.fire.x, y: g.fire.y, hp: 1, t: 0 });
+    if (contents.blackbox) ITEMS.push({ kind: 'blackbox', x: g.boxSpot.x, y: g.boxSpot.y });
+    if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, crumbs: [], face: 0, walk: 0 };
+    if (contents.alien !== false) {
+      boarding.invaders.push({ uid: newUid(), x: g.alienSpot.x, y: g.alienSpot.y, vx: 0, vy: 0, face: 0, walk: 0, mode: 'inside', state: 'dormant', dormantHome: true,
+                               hatch: g.hatch, t: 0, hp: ALIEN_HP, path: [], linger: 0, stuck: 0, spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: 1, stun: 0, seen: 0, flash: 0 });
+    }
+    combatBanner('Tether locked onto the derelict — the tube is open at the ' + (side === 'port' ? 'left' : 'right') + ' airlock.'); sfx.hatch();
+  }
+  return true;
+}
+function undock() {
+  const d = dk.dock, g = DG();
+  if (!d) return;
+  const lost = [];
+  for (const c of crew) if (c.mode === 'inside' && inDock(c.x, c.y) && !inRect(c.x, c.y, g.tube, -0.75)) {   // still aboard: cast adrift
+    c.mode = 'eva'; c.x = g.hatch.outside[0] + (d.side === 'port' ? -1.2 : 1.2); c.y = g.hatch.outside[1] + (Math.random() - 0.5);
+    combatBanner(`${c.name} was cast adrift — spacewalk back in!`);
+  } else if (c.mode === 'inside' && inDock(c.x, c.y)) [c.x, c.y] = g.hatch.inside;
+  for (let i = ITEMS.length - 1; i >= 0; i--) if (inDock(ITEMS[i].x, ITEMS[i].y)) lost.push(ITEMS.splice(i, 1)[0].kind);
+  dk.pirates = dk.pirates.filter(p => !inDock(p.x, p.y));
+  boarding.invaders = boarding.invaders.filter(a => !inDock(a.x, a.y));
+  if (dk.npc && inDock(dk.npc.x, dk.npc.y)) dk.npc = null;
+  dk.dock = null;
+  combatBanner(d.kind === 'pirate' ? 'The pirate ship cast off in a panic!' : 'The derelict drifts away.'); sfx.hatch();
+}
+
+// The pirate raider: an enemy ship until it docks.
+ENEMY_TYPES.pirate = {
+  ...ENEMY_TYPES.interceptor, name: 'Pirate raider', fire: [2.2, 3.4],
+  update(e, dt) {
+    e.dockT = (e.dockT ?? DOCK_TIME) - dt;
+    if (e.dockT <= 0 && !dk.dock && e.phase === 'fighting') { e.phase = 'gone'; dockShip('pirate', e.side); }
+  },
+  draw(e, t) {
+    drawInterceptor(e, t);
+    ctx.fillStyle = '#14161b'; ctx.beginPath(); ctx.arc(0, L(0.35), L(0.28), 0, TAU); ctx.fill();         // jolly roger
+    ctx.fillStyle = '#e8e4dc'; ctx.beginPath(); ctx.arc(0, L(0.3), L(0.13), 0, TAU); ctx.fill(); ctx.fillRect(L(-0.15), L(0.45), L(0.3), L(0.05));
+  },
+};
+EVENT_SIDES.pirates = randSide; EVENT_SIDES.derelict = randSide;
+EVENT_RUNNERS.pirates = (ev) => combatSpawn('pirate', ev.side);
+EVENT_RUNNERS.derelict = (ev) => dockShip('derelict', ev.side, { blackbox: mission.objective?.kind === 'blackbox', npc: mission.objective?.kind === 'rescue' });
+EVENT_RUNNERS.rock = () => { dk.rock = { x: 22.2, y: -7.6, r: 2.2, seed: 4242 }; combatBanner('A big ore asteroid drifted in front — drill it on a spacewalk (drill in the left airlock room)!'); };
+Object.assign(EVENT_LABELS, { pirates: (ev) => `Pirate raider — ${SIDE_NAME[ev.side]}`, derelict: (ev) => `Derelict — ${SIDE_NAME[ev.side]}`, rock: () => 'Ore asteroid — front' });
+
+// ---------------------------------------------------------------------------
+// Pirates on board
+// ---------------------------------------------------------------------------
+const pirateOk = (x, y) => canStand(x, y, walkRects());
+function pirateStep(p, tx, ty, dt) {
+  const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy);
+  if (d < 0.01) return 0;
+  const sp = Math.min(d, PIRATE_SPEED * dt), vx = dx / d * sp, vy = dy / d * sp;
+  let moved = 0;
+  if (pirateOk(p.x + vx, p.y)) { p.x += vx; moved += Math.abs(vx); }
+  if (pirateOk(p.x, p.y + vy)) { p.y += vy; moved += Math.abs(vy); }
+  p.face = Math.atan2(dy, dx); p.walk += moved * 3;
+  return moved;
+}
+// A route of points from (x, y) to (tx, ty) across both ships.
+function dockRoute(x, y, tx, ty) {
+  const g = DG();
+  const chain = g ? [g.core, ...g.doors.slice().reverse().map(q => ({ x: q.x + q.w / 2, y: q.y + q.h / 2 })), { x: g.rooms[0].x + g.rooms[0].w / 2, y: g.y }, g.tubeMid, { x: g.hatch.inside[0], y: g.hatch.inside[1] }] : [];
+  // chain order: core → door(cargo–core) → door(airlock–cargo) → airlock → tube → our side
+  const nearIdx = (px, py) => chain.reduce((b, q, i) => Math.hypot(q.x - px, q.y - py) < Math.hypot(chain[b].x - px, chain[b].y - py) ? i : b, 0);
+  const navPts = (ax, ay, bx, by) => navPath(nearestNav(ax, ay), nearestNav(bx, by)).map(n => ({ x: NAV.nodes[n].x, y: NAV.nodes[n].y }));
+  const a = g && inDock(x, y), b = g && inDock(tx, ty), end = chain.length - 1;
+  const span = (i, j) => i <= j ? chain.slice(i, j + 1) : chain.slice(j, i + 1).reverse();
+  let pts;
+  if (a && b) pts = span(nearIdx(x, y), nearIdx(tx, ty));
+  else if (a) pts = [...span(nearIdx(x, y), end), ...navPts(chain[end].x, chain[end].y, tx, ty)];
+  else if (b) pts = [...navPts(x, y, chain[end].x, chain[end].y), ...span(end, nearIdx(tx, ty))];
+  else pts = navPts(x, y, tx, ty);
+  return [...pts, { x: tx, y: ty }];
+}
+function hurtPirate(p, dmg, stun = 0) {
+  p.hp -= dmg; p.flash = 1; p.stun = Math.max(p.stun, stun); p.state = 'fight';
+  sfx.alienHurt();
+  for (let i = 0; i < 8; i++) combatFx(p.x, p.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#e2574c', 0.1);
+  if (p.hp <= 0) {
+    p.dead = true; dk.defeated++;
+    if (p.carry) ITEMS.push({ kind: p.carry, ...dropSpot(p.x, p.y) });
+    combatBanner('Pirate down!'); sfx.win();
+  }
+}
+function updatePirate(p, dt) {
+  p.flash = Math.max(0, p.flash - dt * 4); p.cd -= dt;
+  if (p.stun > 0) { p.stun -= dt; return; }
+  const g = DG();
+  // a crew member in sight: stop, aim (a red laser sight), shoot
+  const foe = crew.filter(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - p.x, c.y - p.y) < PIRATE_RANGE && lineOfSight(p.x, p.y, c.x, c.y))
+                  .sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
+  if (foe && !(dk.dock?.detachT !== null && dk.dock?.detachT !== undefined)) {
+    p.face = Math.atan2(foe.y - p.y, foe.x - p.x); p.target = foe.id;
+    if (p.cd <= 0) {
+      p.aim += dt;
+      if (p.aim >= PIRATE_AIM) {
+        p.aim = 0; p.cd = PIRATE_FIRE;
+        const ux = Math.cos(p.face), uy = Math.sin(p.face);
+        boarding.bolts.push({ x: p.x + ux * 0.4, y: p.y + uy * 0.4, vx: ux * 11, vy: uy * 11, life: 1.2, owner: 'pirate' }); sfx.enemyShot();
+      }
+    }
+    return;
+  }
+  p.aim = 0; p.target = null;
+  // what to do: steal something, carry it home, or (panicking) run home
+  let goal = null;
+  const panic = dk.dock && dk.dock.detachT !== null;
+  if (panic || p.carry) { if (g) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }
+  else {
+    const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox');
+    if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.8, y: FUEL_CRATE.y, crate: true });
+    goal = loot.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0] || null;
+  }
+  if (!goal) return;
+  if (!p.route.length || p.goalKey !== `${goal.x.toFixed(1)},${goal.y.toFixed(1)}`) { p.route = dockRoute(p.x, p.y, goal.x, goal.y); p.goalKey = `${goal.x.toFixed(1)},${goal.y.toFixed(1)}`; }
+  const n = p.route[0];
+  const moved = pirateStep(p, n.x, n.y, dt);
+  if (Math.hypot(n.x - p.x, n.y - p.y) < 0.2) p.route.shift();
+  p.stuck = moved < 0.002 ? p.stuck + dt : 0;
+  if (p.stuck > 3) { p.route = []; p.stuck = 0; }    // a locked door: try again (they never bash doors)
+  if (Math.hypot(goal.x - p.x, goal.y - p.y) < 0.5) {
+    if (goal.home) { if (p.carry) { dk.dock.crate.push(p.carry); p.carry = null; sfx.clank(); } }
+    else if (goal.crate) { power.reserve--; p.carry = 'fuel'; sfx.clank(); combatBanner('A pirate grabbed a fuel cell!'); p.route = []; }
+    else { const i = ITEMS.indexOf(goal); if (i >= 0) { ITEMS.splice(i, 1); p.carry = goal.kind; sfx.clank(); combatBanner(`A pirate grabbed the ${ITEM_NAMES[goal.kind]}!`); p.route = []; } }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+function updateDock(dt) {
+  const d = dk.dock;
+  if (d) {
+    const h = DG().hatch; h.open = 1;
+    if (d.detachT !== null && (d.detachT -= dt) <= 0) undock();
+    for (const f of d.fires || []) {                  // derelict fire: hurts anyone standing in it
+      f.t += dt;
+      for (const c of crew) if (c.mode === 'inside' && Math.hypot(c.x - f.x, c.y - f.y) < 0.8 && f.t > 1.5) { f.t = 0; hurtCrew(c); combatBanner(`${c.name} walked into the fire!`); }
+    }
+    if (d.fires) d.fires = d.fires.filter(f => f.hp > 0);
+  }
+  for (const p of dk.pirates) updatePirate(p, dt);
+  for (const b of boarding.bolts) {                   // our bolts vs pirates
+    if (b.owner !== 'crew') continue;
+    const p = dk.pirates.find(p => !p.dead && Math.hypot(b.x - p.x, b.y - p.y) < 0.42);
+    if (p) { b.dead = true; hurtPirate(p, b.wrench ? 3 : 1, b.wrench ? 1.5 : 0); }
+  }
+  boarding.bolts = boarding.bolts.filter(b => !b.dead);
+  dk.pirates = dk.pirates.filter(p => !p.dead);
+  // the engineer follows whoever treated them, along their footsteps
+  const N = dk.npc;
+  if (N && N.state === 'follow') {
+    const lead = crew.find(c => c.id === N.leader);
+    if (lead && lead.mode === 'inside') {
+      const last = N.crumbs[N.crumbs.length - 1];
+      if (!last || Math.hypot(last.x - lead.x, last.y - lead.y) > 0.35) N.crumbs.push({ x: lead.x, y: lead.y });
+    }
+    const c0 = N.crumbs[0];
+    if (c0 && (!lead || Math.hypot(lead.x - N.x, lead.y - N.y) > 1.1)) {
+      const dx = c0.x - N.x, dy = c0.y - N.y, dd = Math.hypot(dx, dy), sp = Math.min(dd, NPC_SPEED * dt);
+      if (dd > 0.01) { N.x += dx / dd * sp; N.y += dy / dd * sp; N.face = Math.atan2(dy, dx); N.walk += sp * 3; }
+      if (dd < 0.15) N.crumbs.shift();
+    }
+    if (roomAt(N.x, N.y)) { N.state = 'safe'; N.crumbs = []; combatBanner('The engineer is safe aboard!'); sfx.win(); }
+  }
+  if (N && N.state !== 'down') for (const b of boarding.bolts) if (b.owner !== 'crew' && Math.hypot(b.x - N.x, b.y - N.y) < 0.35) { b.dead = true; N.state = 'down'; N.crumbs = []; combatBanner('The engineer got hit — treat them again!'); }
+  for (const c of crew) c.slow = c.inv.item === 'blackbox' ? 0.6 : 1;   // the black box is heavy
+}
+function sprayDock(a, dt) {                           // the extinguisher works on the derelict's fire
+  for (const f of dk.dock?.fires || []) {
+    const d = Math.hypot(f.x - player.x, f.y - player.y), off = Math.abs(wrapAngle(Math.atan2(f.y - player.y, f.x - player.x) - a));
+    if (d < SPRAY_RANGE && off < 0.45) { f.hp -= SPRAY_RATE * dt; if (f.hp <= 0) combatBanner('Fire out'); }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clicking: the loot crate, the overload, the engineer, the jammed door (prompt), drilling
+// ---------------------------------------------------------------------------
+function dockClickTarget(mx, my) {
+  const d = dk.dock, g = DG(), at = (p, r) => Math.hypot(mx - p.x, my - p.y) <= r;
+  const N = dk.npc;
+  if (N && N.state === 'down' && at(N, 0.55)) {
+    if (!near(N.x, N.y)) return { text: 'The engineer — get closer', ok: false, x: N.x, y: N.y, r: 0.55 };
+    return holdTarget('npc', TREAT_TIME, `Hold click: treat the engineer (${TREAT_TIME} s) — then they follow you`, N.x, N.y, 0.55,
+                      () => { N.state = 'follow'; N.leader = player.id; N.crumbs = []; combatBanner('"Thanks! Lead the way — I\'m right behind you."'); sfx.poi(); });
+  }
+  if (!d) return null;
+  if (at(g.crate, 0.7)) {
+    const t = { x: g.crate.x, y: g.crate.y, r: 0.7 };
+    if (!near(t.x, t.y)) return { ...t, text: 'Cargo crate — get closer', ok: false };
+    if (!d.crate.length) return { ...t, text: 'The cargo crate is empty', ok: false };
+    const k = d.crate[d.crate.length - 1];
+    return { ...t, ok: true, text: `Click: take the ${ITEM_NAMES[k]} from their crate (${d.crate.length} inside)`, run: () => { d.crate.pop(); grab(k); } };
+  }
+  if (d.kind === 'pirate' && at(g.core, 1.0)) {
+    const t = { x: g.core.x, y: g.core.y, r: 1.0 };
+    if (d.overloaded) return { ...t, text: `Overloading — they cast off in ${Math.ceil(d.detachT)} s. Get out!`, ok: false };
+    if (!near(t.x, t.y, REACH + 0.5)) return { ...t, text: 'Pirate reactor — get closer', ok: false };
+    if (inv.weapon !== 'repair') return { ...t, text: 'Pirate reactor — jam its overload with the repair kit\'s wrench', ok: false };
+    return holdTarget('overload', OVERLOAD_TIME, `Hold click: shove their lever into the red and jam it (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
+                      () => { d.overloaded = true; d.detachT = DETACH_TIME; sfx.alarm(); combatBanner(`Their reactor is overloading — they'll cast off in ${DETACH_TIME} s! Get back aboard!`); });
+  }
+  return null;
+}
+// Jammed derelict door: a prompt like ours (manual override).
+function dockAct() {
+  const d = dk.dock, g = DG();
+  if (!d) return false;
+  for (let i = 0; i < 2; i++) {
+    if (!d.doors[i]) continue;
+    const q = g.doors[i], cx = q.x + q.w / 2, cy = q.y + q.h / 2;
+    if (Math.hypot(player.x - cx, player.y - cy) > 1.4) continue;
+    act({ text: 'Click: this door is jammed — manual override', at: { x: cx, y: cy, r: 1.2 }, run: () => startOverride({ dockDoor: i }, 'Jammed door', () => { d.doors[i] = false; }) });
+    return true;
+  }
+  return false;
+}
+function dockEvaTarget(mx, my) {
+  const r = dk.rock;
+  if (!r) return null;
+  const d = Math.hypot(mx - r.x, my - r.y);
+  if (d > r.r + 0.3) return null;
+  const ex = r.x + (player.x - r.x) / (Math.hypot(player.x - r.x, player.y - r.y) || 1) * r.r, ey = r.y + (player.y - r.y) / (Math.hypot(player.x - r.x, player.y - r.y) || 1) * r.r;
+  if (!near(ex, ey)) return { text: 'Ore asteroid — get closer', ok: false, x: r.x, y: r.y, r: r.r };
+  if (inv.weapon !== 'drill') return { text: 'Ore asteroid — bring the mining drill (left airlock room)', ok: false, x: r.x, y: r.y, r: r.r };
+  return holdTarget('drill', DRILL_TIME, `Hold click: drill out an ore sample (${DRILL_TIME} s)`, r.x, r.y, r.r,
+                    () => { hz.floating.push({ uid: newUid(), kind: 'ore', x: player.x, y: player.y - 0.3, t: 0 }); combatBanner('Ore sample drilled out — grab it and bring it inside!'); sfx.crack(); });
+}
+function dockSpots() {
+  const g = DG(), out = [];
+  if (g) {
+    if (dk.dock.crate.length) out.push({ ...g.crate, r: 0.6 });
+    if (dk.dock.kind === 'pirate' && !dk.dock.overloaded) out.push({ ...g.core, r: 0.9 });
+    dk.dock.doors.forEach((locked, i) => { if (locked) { const q = g.doors[i]; out.push({ x: q.x + q.w / 2, y: q.y + q.h / 2, w: q.w + 0.3, h: q.h }); } });
+  }
+  if (dk.npc?.state === 'down') out.push({ x: dk.npc.x, y: dk.npc.y, r: 0.5 });
+  return out;
+}
+const objectiveAboard = (kind) => crew.some(c => c.inv.item === kind && (roomAt(c.x, c.y) || (c.mode === 'inside' && !inDock(c.x, c.y)))) || ITEMS.some(i => i.kind === kind && roomAt(i.x, i.y));
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+function drawDock(t) {
+  const d = dk.dock, g = DG();
+  if (d) {
+    const pir = d.kind === 'pirate', all = [...g.rooms, ...g.doors];
+    const x0 = Math.min(...all.map(q => q.x)) - 0.7, x1 = Math.max(...all.map(q => q.x + q.w)) + 0.7, y0 = Math.min(...all.map(q => q.y)) - 0.7, y1 = Math.max(...all.map(q => q.y + q.h)) + 0.7;
+    // hull (rough and patched for the derelict, red trimmed for the pirates)
+    rr(L(x0), L(y0), L(x1 - x0), L(y1 - y0), 18); ctx.fillStyle = pir ? '#4a3a40' : '#3a3f46'; ctx.fill(); stroke(4);
+    rr(L(x0) + 6, L(y0) + 6, L(x1 - x0) - 12, L(y1 - y0) - 12, 14); ctx.strokeStyle = pir ? '#a83a3a' : '#5a5040'; ctx.lineWidth = 3; ctx.stroke();
+    if (!pir) for (let i = 0; i < 6; i++) { const q = rng(77 + i); ctx.fillStyle = 'rgba(20,16,12,0.5)'; ctx.beginPath(); ctx.arc(L(x0 + q() * (x1 - x0)), L(y0 + q() * (y1 - y0)), L(0.4 + q() * 0.6), 0, TAU); ctx.fill(); }
+    // the tube: ribbed and flexible
+    const tq = g.tube;
+    rr(L(tq.x), L(tq.y) - 6, L(tq.w), L(tq.h) + 12, 10); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(3);
+    for (let x = tq.x + 0.3; x < tq.x + tq.w; x += 0.45) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(L(x), L(tq.y) - 6, 4, L(tq.h) + 12); }
+    drawFloors(all, () => pir ? '#6a5a5e' : '#5a5e66');
+    ctx.fillStyle = 'rgba(30,34,42,0.5)'; ctx.fillRect(L(tq.x), L(tq.y), L(tq.w), L(tq.h));
+    // jammed doors
+    d.doors.forEach((locked, i) => { if (!locked) return; const q = g.doors[i]; hazardStripe(L(q.x), L(q.y), L(q.w), L(q.h)); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.strokeRect(L(q.x), L(q.y), L(q.w), L(q.h)); });
+    // cargo crate
+    crate(L(g.crate.x), L(g.crate.y), L(1.3), L(1.0), 0.05, pir ? '#8a5a3a' : '#6a6f7a', pir ? 'LOOT' : 'CARGO');
+    if (d.crate.length) pickupHalo(L(g.crate.x), L(g.crate.y), T * 0.8, t, me.mode === 'inside' && Math.hypot(me.x - g.crate.x, me.y - g.crate.y) <= REACH, 2.2);
+    // core: a pirate reactor (red, overloading?) or a dead one
+    const cx = L(g.core.x), cy = L(g.core.y);
+    rr(cx - L(0.9), cy - L(1.1), L(1.8), L(2.2), 8); ctx.fillStyle = pir ? '#6a2a24' : '#2b2e34'; ctx.fill(); stroke(3);
+    const glow = pir ? (d.overloaded ? 0.6 + 0.4 * Math.sin(t * 20) : 0.5 + 0.2 * Math.sin(t * 2)) : 0.05;
+    const gg = ctx.createRadialGradient(cx, cy, 0, cx, cy, L(1.4)); gg.addColorStop(0, `rgba(255,90,60,${glow})`); gg.addColorStop(1, 'rgba(255,90,60,0)');
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(cx, cy, L(1.4), 0, TAU); ctx.fill();
+    if (pir) { ctx.fillStyle = d.overloaded ? '#ffe08a' : '#c9ced8'; ctx.fillRect(cx - 4, cy - L(0.6), 8, L(0.5)); ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(d.overloaded ? `OVERLOAD ${Math.ceil(d.detachT)}` : 'REACTOR', cx, cy + L(0.75)); ctx.textAlign = 'left'; }
+    for (const f of d.fires || []) {                   // derelict fire (simple flames)
+      for (let i = 0; i < 4; i++) { const h = L(0.6 + 0.3 * Math.sin(t * 9 + i)) * f.hp; ctx.beginPath(); ctx.ellipse(L(f.x) + (i - 1.5) * 8, L(f.y) - h / 2, 6, h / 2, 0, 0, TAU); ctx.fillStyle = i % 2 ? '#ff9a2e' : '#d8401c'; ctx.fill(); }
+    }
+  }
+  for (const p of dk.pirates) drawPirate(p, t);
+  const N = dk.npc;
+  if (N) {
+    if (N.state === 'down') { ctx.save(); ctx.translate(L(N.x), L(N.y)); ctx.rotate(Math.PI / 2); drawCrew(0, 0, 0, 0, true, '#e8e4dc'); ctx.restore(); }
+    else drawCrew(L(N.x), L(N.y), N.face, N.walk, inVacuum(N.x, N.y) || inDock(N.x, N.y), '#e8e4dc');
+    ctx.fillStyle = '#ffe08a'; ctx.font = `700 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText(N.state === 'down' ? 'ENGINEER (hurt)' : N.state === 'safe' ? 'ENGINEER — safe' : 'ENGINEER', L(N.x), L(N.y) - L(0.5)); ctx.textAlign = 'left';
+  }
+  if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
+}
+// The derelict is dark: everything but a small circle around you is dim.
+function drawDockDarkness() {
+  const d = dk.dock, g = DG();
+  if (!d || d.kind !== 'derelict') return;
+  for (const q of [...g.rooms, ...g.doors]) { ctx.fillStyle = 'rgba(4,6,12,0.55)'; ctx.fillRect(L(q.x), L(q.y), L(q.w), L(q.h)); }
+}
+function drawPirate(p, t) {
+  if (p.aim > 0) {                                    // laser sight: it's about to fire
+    ctx.beginPath(); ctx.moveTo(L(p.x), L(p.y)); ctx.lineTo(L(p.x + Math.cos(p.face) * 8), L(p.y + Math.sin(p.face) * 8));
+    ctx.strokeStyle = `rgba(255,40,40,${0.3 + 0.7 * p.aim / PIRATE_AIM})`; ctx.lineWidth = 1.5; ctx.stroke();
+  }
+  drawCrew(L(p.x), L(p.y), p.face, p.walk, false, '#5a2a2a');
+  ctx.save(); ctx.translate(L(p.x), L(p.y)); ctx.rotate(p.face);              // blaster + bandana
+  ctx.fillStyle = '#2b303a'; ctx.fillRect(L(0.15), 4, L(0.35), 5); ctx.restore();
+  ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(L(p.x), L(p.y) - 2, 6, Math.PI, TAU); ctx.fill();
+  if (p.carry) drawItemIcon(p.carry, L(p.x), L(p.y) - L(0.55), 0.7);
+  if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${p.flash * 0.4})`; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.35), 0, TAU); ctx.fill(); }
+  for (let i = 0; i < PIRATE_HP; i++) { ctx.fillStyle = i < p.hp ? '#e2574c' : '#2b303a'; ctx.fillRect(L(p.x) - 8 + i * 6, L(p.y) - L(0.6), 5, 3); }
+}
+function dockPlates(add) {
+  if (dk.pirates.length) add('pirates', { icon: 'frigate', title: 'PIRATES ABOARD', sub: `${dk.pirates.length} · stealing: ${dk.pirates.filter(p => p.carry).map(p => ITEM_NAMES[p.carry]).join(', ') || 'looking for loot'}`, stripe: '#e2574c', red: true });
+  for (const e of combat.enemies) if (e.kind === 'pirate' && e.phase === 'fighting') add('dockT' + uid(e), { icon: 'frigate', title: 'PIRATES DOCKING', sub: `in ${Math.ceil(e.dockT ?? DOCK_TIME)} s unless driven off`, stripe: '#e2574c', red: true });
+  if (dk.dock?.kind === 'pirate') add('pship', { icon: 'frigate', title: dk.dock.overloaded ? 'PIRATES CASTING OFF' : 'PIRATE SHIP DOCKED', sub: dk.dock.overloaded ? `in ${Math.ceil(dk.dock.detachT)} s — get off their ship!` : `${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · loot crate · jam their reactor`, stripe: '#e8c34f', red: !!dk.dock.overloaded });
+  if (dk.dock?.kind === 'derelict') add('derelict', { icon: 'frigate', title: 'DERELICT', sub: `tethered at the ${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · no air inside`, stripe: '#7a8396' });
+  if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: 'ENGINEER', sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : 'following — lead them aboard', stripe: '#ffe08a', red: dk.npc.state === 'down' });
+  if (dk.rock) add('rock', { icon: 'asteroid', title: 'ORE ASTEROID', sub: 'front · drill it on a spacewalk', stripe: '#7af0ff' });
+}

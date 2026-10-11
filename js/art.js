@@ -370,7 +370,9 @@ function drawFloors(rects, tintOf) {
   // inner shadow: fill everything except the floor with a blurred shadow, clipped to the floor
   ctx.save();
   ctx.beginPath(); for (const r of rects) rectPath(r); ctx.clip();
-  ctx.beginPath(); ctx.rect(-10 * T, -10 * T, 70 * T, 50 * T); for (const r of rects) rectPath(r, true);
+  const bx0 = Math.min(...rects.map(r => r.x)) - 10, by0 = Math.min(...rects.map(r => r.y)) - 10;   // a frame around all of them
+  const bx1 = Math.max(...rects.map(r => r.x + r.w)) + 10, by1 = Math.max(...rects.map(r => r.y + r.h)) + 10;
+  ctx.beginPath(); ctx.rect(bx0 * T, by0 * T, (bx1 - bx0) * T, (by1 - by0) * T); for (const r of rects) rectPath(r, true);
   ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 22; ctx.fillStyle = '#000'; ctx.fill('nonzero');
   ctx.restore();
 }

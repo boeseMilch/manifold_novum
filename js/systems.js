@@ -164,7 +164,7 @@ function grab(kind) {
 // Somewhere on a fixed floor (a room or an airlock chamber), so a dropped item never ends
 // up somewhere unreachable like a doorway.
 function dropSpot(x, y) {
-  const floors = [...ROOM_RECTS, ...DECK_LOCKS.map(Lk => Lk.chamber)];
+  const floors = [...ROOM_RECTS, ...DECK_LOCKS.map(Lk => Lk.chamber), ...(typeof dockRects === 'function' ? dockRects() : [])];
   if (floors.some(q => inRect(x, y, q, -0.3))) return { x, y };
   let best = null, bd = Infinity;
   for (const q of floors) {
@@ -189,7 +189,7 @@ function clickTarget(mx, my) {
   if (player.mode === 'eva') return evaClickTarget(mx, my);
   if (player.mode !== 'inside') return null;
   // broken systems first
-  const m = hazardClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my);
+  const m = hazardClickTarget(mx, my) || dockClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my);
   if (m) return m;
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
@@ -301,7 +301,7 @@ function updateHold(dt, target, holding) {
 }
 // What a click does on a spacewalk (hazards, EVA jobs).
 function evaClickTarget(mx, my) {
-  return hazardEvaTarget(mx, my) || evaJobTarget(mx, my) || organicEvaTarget(mx, my);
+  return hazardEvaTarget(mx, my) || evaJobTarget(mx, my) || organicEvaTarget(mx, my) || dockEvaTarget(mx, my);
 }
 
 // Repairing: hold the mouse on a broken system with the repair kit.
@@ -321,7 +321,7 @@ function updateRepair(dt, target, holding) {
 
 // Right click: use the weapon in hand. Laser: fast bolt. Repair kit: throw a wrench (long cooldown).
 function attack(mx, my) {
-  if (!inv.weapon || inv.weapon === 'extinguisher' || inv.cd > 0 || !(player.mode === 'inside' || player.mode === 'eva')) return;
+  if (!inv.weapon || inv.weapon === 'extinguisher' || inv.weapon === 'drill' || inv.item === 'blackbox' || inv.cd > 0 || !(player.mode === 'inside' || player.mode === 'eva')) return;
   const a = Math.atan2(my - player.y, mx - player.x), dx = Math.cos(a), dy = Math.sin(a);
   player.face = a;
   if (inv.weapon === 'laser') {

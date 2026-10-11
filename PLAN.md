@@ -489,6 +489,28 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Enemy weak spots can be `closed` and react `onHit`; enemy kinds marked `special` are left out of
   the reachability test. `node tests/organic.js`.
 
+### 8g. Other ships (`js/dock.js`)
+- **Docking:** a ribbed tube from one of our outer airlocks to a three-room ship (airlock, cargo,
+  core). While docked its rooms are part of `walkRects()`, the camera and HUD know them, and the
+  outer airlock on that side stays open (no spacewalk prompt there). The tube is airless.
+- **Pirates** (event `pirates`): a pirate raider (interceptor with a jolly roger) docks if it
+  isn't destroyed within 40 s. Two pirates come aboard: they take loose items and fuel cells to
+  their loot crate, and stop to shoot anyone in sight (a red laser sight first). 3 HP; they never
+  bash doors, so security locks keep them out. Board them back: their crate has 2 fuel cells plus
+  whatever they stole; jamming their reactor's overload with the repair kit (3 s) makes them cast
+  off 15 s later — anyone still aboard is cast adrift outside our hull.
+- **Derelict** (event `derelict`): airless and dark. A jammed door (manual override), a fire that
+  hurts (the extinguisher works), an intruder asleep in the core that wakes when you come close
+  (and goes back to sleep there), plus the mission's objective.
+- **Objectives** (`mission.objective`, `objectiveStatus()`): `blackbox` (heavy: 60% speed, no
+  weapon while carrying it), `rescue` (treat the engineer, they follow your footsteps, safe once
+  aboard; a hit downs them again), `ore` (a big asteroid parks in front; drill it on a spacewalk
+  with the mining drill, 6 s, bring the sample in), `pirates` (defeat N). Jumping without the
+  objective done: survived, but the mission failed.
+- New missions: Pirate cove, Black box, Stranded engineer, Ore run, Nightmare (everything);
+  Deep drift gets the organic and ship-wide encounters. (Reworked into a campaign next.)
+- `node tests/dock.js`.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

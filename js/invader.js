@@ -119,6 +119,11 @@ function updateInvader(a, dt) {
     return;
   }
   if (a.stun > 0) { a.stun -= dt; return; }
+  if (a.state === 'dormant') {                     // asleep (on a derelict) until someone comes close
+    const c = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < ENGAGE_RANGE && lineOfSight(a.x, a.y, c.x, c.y));
+    if (c) { a.state = 'fight'; a.target = c; a.seen = 0; sfx.alienHurt(); }
+    return;
+  }
   // the nearest crew member inside that it can see
   const visible = crew.filter(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < 14 && lineOfSight(a.x, a.y, c.x, c.y))
                       .sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
@@ -128,6 +133,7 @@ function updateInvader(a, dt) {
 
   if (a.state === 'fight') {
     a.seen = seesPlayer ? 0 : a.seen + dt;
+    if ((a.seen > 6 || player.mode !== 'inside') && a.dormantHome) { a.state = 'dormant'; a.act = null; return; }
     if (a.seen > 6 || player.mode !== 'inside') { a.state = 'wander'; a.path = []; a.task = null; a.doneRoom = null; a.act = null; return; }
     const dx = player.x - a.x, dy = player.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
     a.dodgeCd -= dt; a.spitT -= dt;
@@ -484,7 +490,7 @@ function drawBoarding(t) {
   }
   for (const b of boarding.bolts) {
     if (b.wrench) { wrench(L(b.x), L(b.y), b.spin); continue; }
-    const crew = b.owner === 'crew', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
+    const crew = b.owner === 'crew' || b.owner === 'pirate', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
     if (crew) {                                      // laser bolt: bright red streak
       ctx.beginPath(); ctx.moveTo(L(b.x), L(b.y)); ctx.lineTo(L(b.x - dx * 0.7), L(b.y - dy * 0.7));
       ctx.strokeStyle = 'rgba(255,80,60,0.5)'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.stroke();

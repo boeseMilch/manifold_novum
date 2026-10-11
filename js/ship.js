@@ -176,7 +176,7 @@ const roomCenter = (room) => {                   // center of the room's boundin
 
 // Rectangles a crew member may stand in right now.
 function walkRects() {
-  const out = [...ROOM_RECTS, ...DOORWAYS.filter(d => d.open > 0.95)];
+  const out = [...ROOM_RECTS, ...DOORWAYS.filter(d => d.open > 0.95), ...(typeof dockRects === 'function' ? dockRects() : [])];
   for (const L of DECK_LOCKS) {
     out.push(L.chamber);
     for (const s of ['top', 'bottom']) if (L.doors[s] > 0.95) out.push(L.doorRect[s]);

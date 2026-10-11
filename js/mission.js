@@ -74,7 +74,35 @@ const MISSIONS = {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Hull breaches, plasma fires, failing gravity, things on the hull — and the jump coils need aligning outside.',
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
-      return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister'], target, 25, 26);
+      return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister', 'flare', 'storm', 'coolant', 'stealth', 'grappler', 'leeches'], target, 20, 18);
+    },
+  },
+  pirates: {
+    name: 'Pirate cove', tier: 2, blurb: 'Defeat the pirates. If their raider docks, they come aboard to steal — board them back.',
+    rules: { breach: true, surge: true }, objective: { kind: 'pirates', count: 2 },
+    build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['interceptor', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
+  },
+  salvage: {
+    name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something is asleep over there.',
+    rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
+    build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
+  },
+  rescue: {
+    name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
+    rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
+    build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder'], target, 60, 38)]; },
+  },
+  ore: {
+    name: 'Ore run', tier: 2, blurb: 'Drill an ore sample out of a big asteroid on a spacewalk while the front cannon keeps the small ones off.',
+    rules: { breach: true }, objective: { kind: 'ore' },
+    build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
+  },
+  nightmare: {
+    name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
+    rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
+    build(target) {
+      return [...shuffledTimeline(['interceptor', 'frigate', 'frigate', 'swarm', 'intruder', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'flare', 'storm', 'coolant', 'glitch',
+                                   'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 15, 13), makeEvent('leviathan', 150, target)];
     },
   },
 };
@@ -96,13 +124,14 @@ function startMission(id = 'intro') {
   const candidates = SYSTEMS.filter(s => !s.broken);
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
-  resetHazards(); resetEncounters(); resetOrganic(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
+  resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
-    rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) },
+    rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
     events: (MISSIONS[id] || MISSIONS.intro).build(target).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false })),
     maint: { target, decoy, serviced: false },
   });
+  if (mission.objective?.kind === 'ore' && !ITEMS.some(i => i.kind === 'drill')) ITEMS.push({ kind: 'drill', x: 4.2, y: 21.8 });   // the mining drill, left airlock room
   mission.jumpAt = Math.max(...mission.events.map(e => e.t)) + JUMP_DELAY;
   combatBanner('Jumped into the hot zone. Survive until the jump drive is ready!');
 }
@@ -135,14 +164,29 @@ function updateMission(dt) {
   if (mission.jump) {
     mission.jump.t += dt;
     const pulled = !mission.rules?.handle || (mission.jump.pull || 0) >= JUMP_PULL;      // harder missions: someone has to pull the handle
-    if (pulled && !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) { CAPACITORS[1].charge--; endMission(true, 'Jumped out safely.'); return; }
+    if (pulled && !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) {
+      CAPACITORS[1].charge--;
+      const obj = objectiveStatus();
+      if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out safely — but ${obj.fail}. Mission failed.`, true);
+      return;
+    }
     if (mission.jump.t >= JUMP_WINDOW * (mission.rules?.handle ? 2 : 1)) { endMission(false, 'The jump drive never got energy — stranded in the hot zone.'); return; }
   }
   const dmg = SYSTEMS.filter(s => s.broken).length;
   if (dmg > MAX_DAMAGE) endMission(false, `The ship fell apart (${dmg} systems broken at once).`);
 }
-function endMission(won, reason) {
-  mission.over = { won, reason, t: mission.t };
+// The mission's objective (beyond surviving): { done, fail (what's missing), text }.
+function objectiveStatus() {
+  const o = mission.objective;
+  if (!o) return { done: true };
+  if (o.kind === 'blackbox') return { done: objectiveAboard('blackbox'), fail: 'without the black box', text: 'Bring the black box from the derelict aboard' };
+  if (o.kind === 'rescue') return { done: dk.npc?.state === 'safe', fail: 'without the engineer', text: 'Rescue the engineer from the derelict' };
+  if (o.kind === 'ore') return { done: objectiveAboard('ore'), fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
+  if (o.kind === 'pirates') return { done: dk.defeated >= o.count, fail: `with only ${dk.defeated}/${o.count} pirates defeated`, text: `Defeat ${o.count} pirates (${dk.defeated} so far)` };
+  return { done: true };
+}
+function endMission(won, reason, survived = won) {
+  mission.over = { won, reason, t: mission.t, survived };
   for (const e of combat.enemies) e.stopCharge?.();
   if (won) sfx.win(); else sfx.explosion();
 }
@@ -238,6 +282,7 @@ function updateFires(dt) {
 function spray(mx, my, dt) {
   const a = Math.atan2(my - player.y, mx - player.x);
   player.face = a;
+  sprayDock(a, dt);
   for (let i = 0; i < 3; i++) {
     const q = a + (Math.random() - 0.5) * 0.7, sp = 5 + Math.random() * 3;
     combatFx(player.x + Math.cos(a) * 0.4, player.y + Math.sin(a) * 0.4, Math.cos(q) * sp, Math.sin(q) * sp, 0.45, Math.random() < 0.5 ? '#ffffff' : '#dfe8f0', 0.09 + Math.random() * 0.06);

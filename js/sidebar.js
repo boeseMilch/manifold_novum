@@ -20,7 +20,7 @@ function encounterPlates() {
   if (combat.swarm || combat.asteroids.length)
     add('swarm', { icon: 'asteroid', title: 'ASTEROID SWARM', sub: `front · ${combat.asteroids.length} incoming${combat.swarm?.left ? `, ${combat.swarm.left} more` : ''}`, stripe: '#e2574c', red: true });
   for (const a of boarding.invaders) {
-    const where = a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'
+    const where = a.state === 'dormant' ? 'asleep on the derelict' : a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'
       : a.task?.kind === 'sabotage' ? `sabotaging ${a.task.sys.name.toLowerCase()} · ${Math.ceil(SABOTAGE_TIME - a.task.t)} s`
       : `in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'airlock'}`;
     add('inv' + uid(a), { icon: 'alien', title: 'INTRUDER', sub: `${where} · ${a.hp}/${ALIEN_HP} hp`, stripe: '#9cff5a', red: true });
@@ -33,6 +33,7 @@ function encounterPlates() {
   evaPlates(add);
   shipEventPlates(add);
   organicPlates(add);
+  dockPlates(add);
   for (const p of hz.pings) add('ping' + p.room, { icon: 'ping', title: 'HELP!', sub: `${p.name} · ${roomById(p.room).name}`, stripe: '#ffe08a', red: true });
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });

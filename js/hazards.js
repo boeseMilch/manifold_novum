@@ -44,7 +44,7 @@ function vacuumRoom(roomId) {
   const b = breachAt(roomId);
   return (b && !b.tarp && !(b.repress > 0)) || hz.vent?.room === roomId;
 }
-function inVacuum(x, y) { const r = roomAt(x, y); return !!r && vacuumRoom(r.id); }
+function inVacuum(x, y) { const r = roomAt(x, y); return (!!r && vacuumRoom(r.id)) || dockVacuum(x, y); }
 const doorRooms = (d) => ROOMS.filter(r => r.rects.some(q => inRect(d.x - 0.3, d.y + 1, q) || inRect(d.x + d.w + 0.3, d.y + 1, q)));
 // Blast doors drop on every doorway of a room in vacuum (unless someone forced it up for a moment).
 function updateBlastDoors(dt) {

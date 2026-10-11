@@ -30,7 +30,7 @@ function netSerialize() {
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
     fires: fires.map(f => ({ ...f, sys: sysIdx(f.sys) })),
-    luck, hz, evs, enc, org,
+    luck, hz, evs, enc, org, dk,
     mission: {
       ...mission, revealed: [...mission.revealed],
       events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined })),
@@ -92,7 +92,7 @@ function netApply(s, myId) {
   });
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
-  Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc); Object.assign(org, s.org);
+  Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc); Object.assign(org, s.org); Object.assign(dk, s.dk);
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
     events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined })),
