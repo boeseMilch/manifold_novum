@@ -553,6 +553,12 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   the toilet is clearly a toilet, spare suits stand in labelled wall racks, the bike is a
   treadmill, the coolant crate is labelled.
 
+### 8j. A working treadmill
+- The treadmill in the right airlock room works: step on from the back (handlebar and side rails
+  block the other ways), and the belt carries you back at 1.6 units/s — walk to stay on, stand
+  still and it drops you off the back. `canStand` now also checks the middle of the crew box
+  against solids, so thin things (the rails) block.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

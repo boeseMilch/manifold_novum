@@ -124,8 +124,13 @@ const FURNITURE = {
   stallWall: R(11.3, 15.0, 11.45, 17.0),           // toilet (left airlock room)
   stallFront: R(11.3, 16.85, 11.95, 17.0),
   toilet: R(12.5, 15.0, 13.3, 16.0),
-  bike: R(39.4, 20.9, 40.2, 22.0),                 // exercise bike (right airlock room)
+  treadBar: R(39.3, 20.9, 40.3, 21.15),           // treadmill (right airlock room): handlebar and side rails;
+  treadRailL: R(39.3, 21.15, 39.51, 22.0),         // you step onto the belt from the back (see TREADMILL)
+  treadRailR: R(40.09, 21.15, 40.3, 22.0),
 };
+// The treadmill's belt: walkable, and it carries you towards the back (+y).
+const TREADMILL = R(39.51, 21.15, 40.09, 22.0), BELT_SPEED = 1.6;
+
 // Things you can't walk through.
 const SOLIDS = [
   R(REACTOR.x - REACTOR.w / 2, REACTOR.y - REACTOR.h / 2, REACTOR.x + REACTOR.w / 2, REACTOR.y + REACTOR.h / 2),

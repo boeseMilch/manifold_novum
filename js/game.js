@@ -92,7 +92,8 @@ const playerOutside = () => isOutside(player);
 function canStand(x, y, rects) {
   const r = CREW_R;
   return [[x - r, y - r], [x + r, y - r], [x - r, y + r], [x + r, y + r]]
-    .every(([cx, cy]) => rects.some(R => inRect(cx, cy, R)) && !SOLIDS.some(S => inRect(cx, cy, S, 0)));
+    .every(([cx, cy]) => rects.some(R => inRect(cx, cy, R)) && !SOLIDS.some(S => inRect(cx, cy, S, 0)))
+    && !SOLIDS.some(S => inRect(x, y, S, 0));                        // (the middle too, so thin things like the treadmill rails block)
 }
 
 // Safety net: if someone ends up where they can't stand (a door or car moved out from under
@@ -121,6 +122,11 @@ function updateCrew(c, dt, ix, iy) {
   if (ok(nx, c.y)) c.x = nx; else c.vx = 0;
   const ny = c.y + c.vy * dt;
   if (ok(c.x, ny)) c.y = ny; else c.vy = 0;
+  if (c.mode === 'inside' && inRect(c.x, c.y, TREADMILL)) {          // on the treadmill: the belt carries you back
+    const by = c.y + BELT_SPEED * dt;
+    if (ok(c.x, by)) c.y = by;
+    if (len) c.walk += BELT_SPEED * dt * 3.2;                       // (and your legs keep going)
+  }
   const sp = Math.hypot(c.vx, c.vy);
   if (len && sp > 0.3) c.face = Math.atan2(c.vy, c.vx);
   c.walk += sp * dt * (eva ? 1.2 : 3.2);

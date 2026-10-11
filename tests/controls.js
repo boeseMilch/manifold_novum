@@ -81,3 +81,18 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(!G.power.pulses.length, 'the pulse arrives and is gone');
 }
 process.exitCode = failed ? 1 : 0;
+// --- the treadmill
+{
+  const G = loadGame(['simTick', 'me', 'mission', 'TREADMILL']);
+  const me = G.me, B = G.TREADMILL, cx = B.x + B.w / 2;
+  me.x = cx; me.y = B.y + B.h + 0.6;                      // behind it
+  me.input.keys.add('KeyW'); for (let i = 0; i < 40; i++) G.simTick(1 / 60);
+  check(me.y < B.y + B.h, 'you can step onto the treadmill from the back');
+  for (let i = 0; i < 120; i++) G.simTick(1 / 60);
+  check(me.y > B.y, 'walking forward on it you stay on the belt (it pushes you back)');
+  me.input.keys.delete('KeyW'); const y0 = me.y; for (let i = 0; i < 30; i++) G.simTick(1 / 60);
+  check(me.y > y0 + 0.3, 'standing still, the belt carries you off the back');
+  me.x = B.x - 0.6; me.y = B.y + B.h / 2; me.input.keys.add('KeyD'); for (let i = 0; i < 60; i++) G.simTick(1 / 60); me.input.keys.delete('KeyD');
+  check(me.x < B.x, 'the side rails keep you from stepping on sideways');
+}
+process.exitCode = failed ? 1 : 0;

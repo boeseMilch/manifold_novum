@@ -1,4 +1,4 @@
-// The lived-in part of the ship: kitchen, bunk beds, a toilet, a couch, an exercise bike,
+// The lived-in part of the ship: kitchen, bunk beds, a toilet, a couch, a treadmill,
 // warm ceiling lights and signs. Pure art (FURNITURE in ship.js makes it solid).
 // Also the green corner brackets that mark everything you can click.
 
@@ -166,7 +166,7 @@ function toiletSign() {
     [['PLEASE CLOSE THE LID', 0.14], ['OR THE AIR RUNS OUT', 0.12], ['— the management', 0.085, 600]]);
 }
 
-// --- bridge couch, exercise bike, the incident board ---------------------------
+// --- bridge couch, treadmill, the incident board ---------------------------
 function couch() {
   const c = FURNITURE.couch, x = U(c.x), y = U(c.y), w = U(c.w), h = U(c.h);
   shadowEllipse(x + w / 2 + 4, y + h / 2 + 6, w * 0.6, h * 0.52, 0.35);
@@ -179,16 +179,19 @@ function couch() {
   ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1.5; for (let i = -1; i <= 1; i++) { ctx.beginPath(); ctx.moveTo(-U(0.3), i * 7); ctx.lineTo(U(0.3), i * 7 + 3); ctx.stroke(); }
   ctx.restore();
 }
-function exerciseBike(t) {                             // (a treadmill, actually: it reads better from above)
-  const b = FURNITURE.bike, x = U(b.x), y = U(b.y), w = U(b.w), h = U(b.h);
+function exerciseBike(t) {                             // the treadmill (it works: see TREADMILL in ship.js)
+  const b = FURNITURE.treadBar, B = TREADMILL, x = U(b.x), y = U(b.y), w = U(b.w), h = U(B.y + B.h - b.y);
   shadowEllipse(x + w / 2 + 4, y + h / 2 + 5, w * 0.6, h * 0.55, 0.3);
-  rr(x, y, w, h, 4); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);
-  rr(x + 4, y + 10, w - 8, h - 14, 3); ctx.fillStyle = '#1c2028'; ctx.fill();                          // the belt
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1.5;
-  for (let k = 0; k < 6; k++) { const yy = y + 12 + ((k * 8 + t * 20) % (h - 18)); ctx.beginPath(); ctx.moveTo(x + 5, yy); ctx.lineTo(x + w - 5, yy); ctx.stroke(); }
-  ctx.fillStyle = '#c0392b'; ctx.fillRect(x - 3, y + 2, w + 6, 6); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y + 2, w + 6, 6);   // handlebar
-  ctx.fillStyle = '#47e07a'; ctx.fillRect(x + w / 2 - 5, y + 3, 10, 4);                                // display
-  stencil(U(40.6), U(22.5), 'JOG FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)');
+  rr(x, y, w, h, 5); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);                                   // frame and rails
+  rr(U(B.x), U(B.y), U(B.w), U(B.h) + 2, 2); ctx.fillStyle = '#1c2028'; ctx.fill(); stroke(1.2);           // the belt
+  ctx.save(); ctx.beginPath(); ctx.rect(U(B.x), U(B.y), U(B.w), U(B.h)); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.lineWidth = 2;
+  const gap = 9, off = (t * U(BELT_SPEED)) % gap;                                                     // slats running towards the back
+  for (let yy = U(B.y) - gap + off; yy < U(B.y + B.h); yy += gap) { ctx.beginPath(); ctx.moveTo(U(B.x), yy); ctx.lineTo(U(B.x + B.w), yy); ctx.stroke(); }
+  ctx.restore();
+  ctx.fillStyle = '#c0392b'; ctx.fillRect(x - 3, y + 1, w + 6, 7); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y + 1, w + 6, 7);   // handlebar
+  ctx.fillStyle = '#47e07a'; ctx.fillRect(x + w / 2 - 6, y + 2, 12, 5);                                // display
+  stencil(U(40.6), U(22.6), 'JOG FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)');
 }
 function incidentBoard() {
   plaque(U(16.1), U(0.32), U(2.6), U(0.5), [['DAYS SINCE LAST INCIDENT:  0', 0.13]], '#2b303a', '#ffcf6b');
