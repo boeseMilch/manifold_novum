@@ -546,8 +546,10 @@ function render(t) {
   for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
   drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   drawSpineDecor(t);
+  drawInteriorWalls();
   drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
   for (const r of ROOMS) drawRoomLabel(r);
+  drawLightPools();
   drawFloorDecor(t);
   drawJunk();
   drawGoo();
@@ -566,6 +568,8 @@ function render(t) {
     drawShieldButton(b, s.up > 0 ? 'up' : s.cd > 0 ? 'cooldown' : 'ready', 1 - s.cd / SHIELD_COOLDOWN, t);
   }
   drawPropDecor(t);
+  drawInterior(t);
+  drawInteractMarkers(t);
   drawItems(t);
   drawFires(t);
   for (const s of SYSTEMS) if (s.broken) drawBroken(s, t);

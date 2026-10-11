@@ -355,6 +355,23 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   decorative cables that looked like wiring are gone.
 - `node tests/controls.js` covers clicking, injuries, treating and the power pulses.
 
+## Step 7 — A lived-in ship (built, waiting for feedback)
+
+- **Green corner brackets** mark everything you can click (consoles, radar, cat, ladders,
+  shield buttons, airlocks, the reactor, lever and fuel crate, locked doors). They're faint
+  when you're in the room and bright and pulsing within reach. Decoration never gets them,
+  so brackets always mean "usable". Pickups keep their glowing halo.
+- **Furniture** (`js/interior.js`, art only; `FURNITURE` in `js/ship.js` makes it solid):
+  - Kitchen in the left cannon room: a counter with a sink of dirty dishes, a stove with a
+    pot of stew, a microwave stuck at 12:00, a fridge ("WHO ATE MY PUDDING??"), and a
+    round table with the pizza and two stools.
+  - Bunk beds and lockers in the right cannon room (and a sleeping bag for bunk five).
+  - A toilet stall in the left airlock room, lid up, air spiralling into it, under a sign:
+    "PLEASE CLOSE THE LID — OR THE AIR RUNS OUT".
+  - A couch on the bridge, an exercise bike ("PEDAL FOR BONE DENSITY") in the right airlock
+    room, "DAYS SINCE LAST INCIDENT: 0" and "HANG IN THERE" signs.
+- **Warm ceiling light** pools on the floors.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

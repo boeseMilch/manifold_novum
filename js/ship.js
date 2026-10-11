@@ -113,6 +113,19 @@ const FLOOR_RECTS = [
   ...DECK_LOCKS.flatMap(L => [L.doorRect.top, L.chamber, L.doorRect.bottom]),
 ];
 
+// Furniture: just for living in (see interior.js), but you can't walk through it.
+const FURNITURE = {
+  counter: R(6.2, 10.7, 11.0, 11.5),               // kitchen (left cannon room)
+  fridge: R(11.2, 10.3, 12.4, 11.5),
+  table: R(9.05, 7.75, 10.15, 8.85),
+  bunks: R(36.9, 2.6, 39.7, 4.9),                  // bunk beds (right cannon room)
+  lockers: R(40.1, 2.6, 41.5, 3.4),
+  couch: R(29.1, 3.3, 30.2, 5.5),                  // bridge
+  stallWall: R(11.3, 15.0, 11.45, 17.0),           // toilet (left airlock room)
+  stallFront: R(11.3, 16.85, 11.95, 17.0),
+  toilet: R(12.5, 15.0, 13.3, 16.0),
+  bike: R(39.4, 20.9, 40.2, 22.0),                 // exercise bike (right airlock room)
+};
 // Things you can't walk through.
 const SOLIDS = [
   R(REACTOR.x - REACTOR.w / 2, REACTOR.y - REACTOR.h / 2, REACTOR.x + REACTOR.w / 2, REACTOR.y + REACTOR.h / 2),
@@ -121,6 +134,7 @@ const SOLIDS = [
   R(7.2, 3.4, 8.8, 4.0),                          // security desk
   ...CAPACITORS.map(c => R(c.x - 0.8, c.y - 0.45, c.x + 0.8, c.y + 0.45)),
   ...SHIELD_BUTTONS.map(b => R(b.x - 0.4, b.y - 0.35, b.x + 0.4, b.y + 0.35)),
+  ...Object.values(FURNITURE),
 ];
 
 // Hull polygon geometry (used for spacewalks and for hits).

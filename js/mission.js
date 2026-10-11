@@ -237,6 +237,15 @@ function updateOverride(dt) {
 // ---------------------------------------------------------------------------
 const SECURITY = STATIONS.find(s => s.name === 'Security');
 const HELM = STATIONS.find(s => s.name === 'Helm');
+// Consoles and the like you click (also marked with brackets, see interior.js).
+function stationSpots() {
+  return [
+    { x: CAT.x, y: CAT.y, r: 0.55, name: 'The cat', text: 'Click: pet the cat', run: petCat },
+    { x: 22.2, y: 6.4, r: 1.2, name: 'Radar', text: 'Click: radar scan (shows the next 45 s for everyone)', run: radarScan },
+    { x: HELM.x, y: HELM.y + 0.5, r: 0.9, name: 'Helm', text: 'Click: run systems diagnosis', run: () => { ui.panel = 'diagnosis'; mission.diagRun = true; } },
+    { x: SECURITY.x, y: SECURITY.y + 0.5, r: 0.9, name: 'Security console', text: 'Click: open the security console (lock doors)', run: () => { ui.panel = 'security'; } },
+  ];
+}
 function missionClickTarget(mx, my) {
   const svc = serviceTarget();
   if (svc && Math.hypot(mx - svc.x, my - svc.y) <= svc.r) {
@@ -244,13 +253,7 @@ function missionClickTarget(mx, my) {
     if (!near(svc.x, svc.y, REACH + svc.r * 0.6)) return { text: `${svc.name} — get closer`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     return { text: `Hold click: service the ${svc.name.toLowerCase()} before it breaks`, ok: true, repair: svc, service: true, x: svc.x, y: svc.y, r: svc.r };
   }
-  const st = [
-    { x: CAT.x, y: CAT.y, r: 0.55, name: 'The cat', text: 'Click: pet the cat', run: petCat },
-    { x: 22.2, y: 6.4, r: 1.2, name: 'Radar', text: 'Click: radar scan (shows the next 45 s for everyone)', run: radarScan },
-    { x: HELM.x, y: HELM.y + 0.5, r: 0.9, name: 'Helm', text: 'Click: run systems diagnosis', run: () => { ui.panel = 'diagnosis'; mission.diagRun = true; } },
-    { x: SECURITY.x, y: SECURITY.y + 0.5, r: 0.9, name: 'Security console', text: 'Click: open the security console (lock doors)', run: () => { ui.panel = 'security'; } },
-  ];
-  for (const s of st) {
+  for (const s of stationSpots()) {
     if (Math.hypot(mx - s.x, my - s.y) > s.r) continue;
     if (!near(s.x, s.y, REACH + 0.6)) return { text: `${s.name} — get closer`, ok: false, x: s.x, y: s.y, r: s.r };
     return { text: s.text, ok: true, x: s.x, y: s.y, r: s.r, run: s.run };

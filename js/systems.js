@@ -458,7 +458,7 @@ function drawSystemsHUD(top) {
     const x = x0 + i * 74;
     rr(x, y0, 66, 66, 8); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
     ctx.fillStyle = '#6b7486'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(slot === 'weapon' ? 'WEAPON · R-CLICK' : 'ITEM', x + 33, y0 + 4);
+    ctx.fillText(slot === 'weapon' ? 'R-CLICK' : 'ITEM', x + 33, y0 + 4);
     if (inv[slot]) {
       drawItemIcon(inv[slot], x + 33, y0 + 36, 1.2);
       if (slot === 'weapon' && inv.cd > 0) {

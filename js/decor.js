@@ -392,8 +392,7 @@ function drawSpineDecor(t) {
 function drawFloorDecor(t) {
   // --- Left cannon room
   stain(U(6.4), U(5.6), U(0.6), 'rgba(20,18,16,0.35)', 40);
-  crack(U(9.2), U(8.9), U(1.6), 0.3, 41); tapeX(U(9.2), U(8.9), U(0.6), 42);
-  pizza(U(11.4), U(9.7), 0.2);
+  crack(U(4.6), U(6.6), U(1.6), 0.3, 41); tapeX(U(4.6), U(6.6), U(0.6), 42);
   wrench(U(9.6), U(10.4), 2.2);
   tapeRoll(U(9.8), U(6.0));
   stencil(U(5.2), U(8.6), '← LADDER UP TO THE CANNON', 0, 0.24);
@@ -406,13 +405,13 @@ function drawFloorDecor(t) {
   crack(U(25.0), U(8.0), U(2.0), -0.5, 54); tapeStrip(U(25.0), U(8.0), U(0.6), 1.0, 55); tapeStrip(U(25.6), U(7.7), U(0.6), 1.2, 56);
   stencil(U(22.2), U(10.4), 'NO RUNNING ON THE BRIDGE', 0, 0.26, 'rgba(232,236,244,0.25)');
   // --- Right cannon room
-  sleepingBag(U(36.5), U(4.0), 0.05);
+  sleepingBag(U(35.0), U(4.5), 0.12);                 // bunk five
   toolbox(U(37.0), U(6.4), -0.3); wrench(U(38.0), U(7.0), 0.9);
   stain(U(39.6), U(9.6), U(0.5), 'rgba(80,45,20,0.35)', 60);
   crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62);
   // --- Left airlock room
   stencil(U(2.2), U(19.2), 'EVA', -Math.PI / 2, 0.45);
-  stain(U(10.0), U(16.6), U(0.5), 'rgba(20,18,16,0.3)', 71);
+  stain(U(9.6), U(17.4), U(0.5), 'rgba(20,18,16,0.3)', 71);
   wrench(U(4.0), U(17.0), -0.6);
   // --- Reactor
   ctx.save(); ctx.setLineDash([12, 8]);
@@ -498,6 +497,7 @@ const JUNK = (() => {
     for (let i = 0; i < 14; i++) {
       const x = q.x + 0.4 + r() * (q.w - 0.8), y = q.y + 0.4 + r() * (q.h - 0.8), k = r();
       if (Math.hypot(x - 22.8, y - 22.75) < 1.6) continue;          // keep the power lever clear
+      if (SOLIDS.some(S => inRect(x, y, S, 0.25))) continue;          // nothing under the furniture
       out.push({ kind: k < 0.4 ? 'nut' : k < 0.6 ? 'can' : k < 0.85 ? 'wrapper' : 'tape', x, y, a: r() * TAU,
                  col: k < 0.6 ? cans[i % 4] : wraps[i % 4], seed: 7000 + out.length });
     }
