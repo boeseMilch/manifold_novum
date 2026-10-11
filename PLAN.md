@@ -567,6 +567,11 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   quiet (`music.jumped()`). Because the arrangement follows the time left until the jump, each
   piece fits any mission length, including delays (tractor beams, misaligned coils).
 
+### 8l. No accidental shot when climbing into a cannon
+- The click on the ladder used to fire the cannon right away (the button was still held). Now the
+  cannon only fires after the button has been released once since climbing in (`player.gunReady`,
+  tracked in the simulation, so it works online too).
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

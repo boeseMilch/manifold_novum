@@ -254,7 +254,8 @@ function updatePlayer(dt) {
     // reload: R (the on-screen RELOAD button is handled by the browser and sent as a command)
     if (!block && pressed.has('KeyR')) reloadCannon(g);
     if (!block && held('KeyR') && g.reload > 0) g.reload = Math.max(0.01, g.reload - dt * RELOAD_HOLD_RATE * (player.health === 'hurt' ? 0.6 : 1));
-    if (!block && player.cover < 0.3 && ((mouse.down && !mouse.suppress) || held('Space'))) fireCannon(g);
+    if (!mouse.down) player.gunReady = true;            // the click that got you in doesn't fire: let go first
+    if (!block && player.cover < 0.3 && ((mouse.down && !mouse.suppress && player.gunReady) || held('Space'))) fireCannon(g);
     // the gunner always sits opposite the barrel
     player.x = g.x - Math.cos(g.aim) * GUNNER_OFFSET; player.y = g.y - Math.sin(g.aim) * GUNNER_OFFSET; player.face = g.aim;
     prompt = { text: player.cover > 0.5 ? 'Cover raised — let go of the right mouse button to fire again'
@@ -286,7 +287,7 @@ function updatePlayer(dt) {
   const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
   if (ladder) {
     act({ text: `Click: climb up into the ${ladder.name.toLowerCase()}`, at: { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 },
-          run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; } });
+          run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; player.gunReady = false; } });
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
@@ -406,7 +407,7 @@ function updateDoorways(dt) {
 // ---------------------------------------------------------------------------
 function teleportToGun(id) {
   const g = GUNS.find(g => g.id === id);
-  player.mode = 'gun'; player.gun = g; mouse.moved = 0;
+  player.mode = 'gun'; player.gun = g; mouse.moved = 0; player.gunReady = false;
 }
 const DEBUG_ITEMS = [
   { key: '1', label: 'Enemy left: Interceptor', run: () => combatSpawn('interceptor', 'port', true) },

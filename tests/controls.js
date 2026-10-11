@@ -20,6 +20,12 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const g = G.GUNS.find(g => g.id === 'port'); me.mode = 'inside'; me.x = g.hatch[0]; me.y = g.hatch[1] - 0.3; G.simTick(DT);
   clickAt(G, g.hatch[0], g.hatch[1]);
   check(me.mode === 'gun' && me.gun === g, 'clicking a ladder climbs into the cannon');
+  { const m = me.input.mouse; m.down = true; const shots = g.shots; for (let i = 0; i < 40; i++) G.simTick(DT);
+    check(g.shots === shots, 'holding the button from the click that got you in doesn\'t fire');
+    m.down = false; G.simTick(DT);
+    check(g.shots === shots, '…and neither does letting go');
+    m.down = true; G.simTick(DT); m.down = false;
+    check(g.shots === shots - 1, 'a fresh click fires'); }
   me.mode = 'inside'; me.gun = null;
   const b = G.SHIELD_BUTTONS[0]; G.CAPACITORS[0].charge = 2; me.x = b.x; me.y = b.y + 0.8; G.simTick(DT);
   clickAt(G, b.x, b.y);
