@@ -1,7 +1,7 @@
 """The spore mother (js/organic.js ENEMY_TYPES.mother, drawMother, drawTongue): a vast mottled mass far
 out on one side, three lipped mouths on its near flank, a tongue (the weak spot) that tosses spores.
 
-Sprites (assets/sprites/organic/), side = port | star (mirrored builds; port = it's left of our ship),
+Sprites (build/renders/organic/), side = port | star (mirrored builds; port = it's left of our ship),
 all sharing the enemy's ground origin (e.x, e.y) through the manifest's ox/oy:
   mother_<side>                    the whole body (24 x 34 units footprint = MOTHER_RX/RY, the game's
                                    hit polygon at z = 0; a 3-unit-high dome), all three mouths shut (a

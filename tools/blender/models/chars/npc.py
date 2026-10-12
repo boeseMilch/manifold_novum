@@ -5,7 +5,7 @@ civilian research suit: warm off-white ('#e8e4dc') with teal Institute trim, a r
 with a glowing specimen canister, a data tablet on the thigh, duct tape over a torn sleeve, a silver
 visor instead of the crew's gold. Grey hair, round glasses, a plaster on her cheek.
 
-Sprites (assets/sprites/chars/varga/), 8 directions each (dir i faces game angle i*45deg = N.face),
+Sprites (build/renders/chars/varga/), 8 directions each (dir i faces game angle i*45deg = N.face),
 the game's (N.x, N.y) at the ground origin:
   varga/idle, varga/idle_visor     standing (state 'safe' / waiting), visor up / down
   varga/walk, varga/walk_visor     8-frame walk (state 'follow'); crew.py's cycle. The game draws

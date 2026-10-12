@@ -1,6 +1,6 @@
 """Things on the outside of the hull: the outer airlock hatches, the radar antenna, the jump coils.
 
-Sprites (assets/sprites/hull/):
+Sprites (build/renders/hull/):
   hatch_<side>_f<0..5>   outer airlock hatch (js/art.js drawHatch; HATCHES), side = port | star, frame i = h.open
                          i/5 (0 closed .. 5 fully open): two leaves sliding apart under a hazard-striped
                          coaming, the airlock shaft below. Origin = (h.x, h.y) on the deck plane (the hull's

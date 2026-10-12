@@ -7,7 +7,7 @@ ring 0.9 across) so it stays inside the pet target (r 0.55 around CAT).
 Origin: CAT.x, CAT.y on the floor (the body's centre). Head to the right and a bit back, face towards
 the camera, tail wrapped around the front.
 
-Sprites (assets/sprites/props/):
+Sprites (build/renders/props/):
   cat_sleep_f0..f7   breathing loop (decor.js: b = 1 + 0.04 sin(1.6 t), period 3.93 s -> 8 frames)
   cat_flick_f0..f5   the tail tip lifts and flicks (one-shot, play now and then over cat_sleep)
   cat_pet_f0..f5     luck.pet > 0: head up, happy ^^ eyes, rubbing its cheek, tail tip curling

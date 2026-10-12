@@ -2,12 +2,13 @@
 // Manifold Novum — sprite prototype 2: pre-rendered Blender sprites with runtime lighting.
 //
 // ===================================================================================================
-// ASSET MAPPING — the one place to adjust when sprite names in assets/sprites/manifest.json change.
+// ASSET MAPPING — the one place to adjust when sprite names in assets/sprites/sprites.json change.
+// (Sprites come packed into atlas pages by tools/sprites/pack.py; format in tools/sprites/README.md.)
 // Each role lists candidate manifest names (strings: exact; RegExp: first manifest key that matches).
 // The first candidate found wins; if none is there, `standIn` is used (scaled by `standInScale`).
 //   tile:   world size of one tile in layout units, [along x, along y]; 'auto' infers it from the sprite.
 //          Tiles whose origin is pixel (0, 0) are taken as top-left anchored without margin, others as centred.
-//   mask:   load the .m.png tint mask.    anchor: find the glowing part (light position) in the sprite.
+//   mask:   use the tint mask.    anchor: find the glowing part (light position) in the sprite.
 // ===================================================================================================
 const ASSETS = {
   crewIdle:      { names: ['crew/idle', 'crew/crew_idle', 'crew/crew', /^crew\/.*idle(?!.*visor)/], mask: true, standIn: 'test/crate', standInScale: 0.55 },
@@ -60,7 +61,7 @@ window.addEventListener('unhandledrejection', (e) => fail(e.reason && e.reason.s
 // ---------------------------------------------------------------------------------------------------
 // Loading
 // ---------------------------------------------------------------------------------------------------
-let R, META, SIN, COS, PPU, HR, SIDE = 1;
+let R, META, SIN, COS, PPU, RAW_PPU, HR, SIDE = 1;
 const SPR = {};          // role -> sprite (or array for weakSpots)
 const STATUS = {};       // role -> text for the panel
 const scratch = document.createElement('canvas'), sctx = scratch.getContext('2d', { willReadFrequently: true });
@@ -73,72 +74,68 @@ function pixels(img) {
   sctx.clearRect(0, 0, img.width, img.height); sctx.drawImage(img, 0, 0);
   return sctx.getImageData(0, 0, img.width, img.height);
 }
-// Data passes have no outline (it's only in the beauty pass) and soft edges: grow their content
-// outwards a few pixels so every beauty pixel has a sensible normal and height, then make them opaque.
-function dilate(id, def) {
-  const { width: w, height: h, data: d } = id;
-  for (let pass = 0; pass < 4; pass++) {
-    const src = new Uint8ClampedArray(d), fill = [];
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4;
-      if (src[i + 3] >= 128) continue;
-      let r = 0, g = 0, b = 0, n = 0, hi = 0;
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const xx = x + dx, yy = y + dy;
-        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
-        const j = (yy * w + xx) * 4;
-        if (src[j + 3] < 128) continue;
-        r += src[j]; g += src[j + 1]; b += src[j + 2]; n++; hi = Math.max(hi, src[j]);
-      }
-      if (n) fill.push(i, def === 'height' ? hi : r / n, def === 'height' ? hi : g / n, def === 'height' ? hi : b / n);
-    }
-    for (let k = 0; k < fill.length; k += 4) { const i = fill[k]; d[i] = fill[k + 1]; d[i + 1] = fill[k + 2]; d[i + 2] = fill[k + 3]; d[i + 3] = 255; }
-  }
-  for (let i = 0; i < d.length; i += 4) if (d[i + 3] < 128) {
-    if (def === 'height') { d[i] = d[i + 1] = d[i + 2] = 0; } else { d[i] = 128; d[i + 1] = 128; d[i + 2] = 255; }
-    d[i + 3] = 255;
-  } else d[i + 3] = 255;
-  return id;
-}
 
 function resolve(role) {
-  const a = ASSETS[role], keys = Object.keys(MANIFEST).filter(k => k !== '_meta');
+  const a = ASSETS[role], keys = Object.keys(MANIFEST).filter(k => MANIFEST[k].f && MANIFEST[k].f.length);
   if (a.all) return keys.filter(k => a.all.test(k)).sort();
   for (const c of a.names || []) {
-    if (typeof c === 'string') { if (MANIFEST[c]) return c; }
+    if (typeof c === 'string') { if (keys.includes(c)) return c; }
     else { const k = keys.find(k => c.test(k)); if (k) return k; }
   }
   return null;
 }
 
-let MANIFEST = {};
-const queue = []; let active = 0, total = 0, done = 0;
-function limited(fn) {
-  return new Promise((ok, bad) => {
-    const run = () => { active++; fn().then(ok, bad).finally(() => { active--; done++; progress(); if (queue.length) queue.shift()(); }); };
-    total++; if (active < 12) run(); else queue.push(run);
-  });
+let MANIFEST = {};       // sprites.json "sprites"
+const PAGES = {};        // 'group/index' -> promise of { w, h, img: {b, n, h, m}, tex: {b, n, h, m} }
+function loadPage(group, i) {
+  const key = group + '/' + i;
+  if (!PAGES[key]) PAGES[key] = (async () => {
+    const p = META.pages[group][i], base = '../assets/sprites/' + p.file;
+    const kinds = ['b', ...p.maps.split('')];
+    const imgs = await Promise.all(kinds.map(k => loadImage(base + (k === 'b' ? '' : '.' + k) + '.webp').catch(() => null)));
+    const P = { w: p.w, h: p.h, img: {}, tex: {} };
+    kinds.forEach((k, j) => { if (!imgs[j]) return; P.img[k] = imgs[j]; P.tex[k] = R.texture(imgs[j], { mips: k === 'b' }); });
+    return P;
+  })();
+  return PAGES[key];
 }
-function progress() { const p = $('loadbar'); if (p) p.style.width = (100 * done / Math.max(1, total)).toFixed(0) + '%'; }
+
+// A frame as canvas rects (sprite px at the sprite's ppu): the base (or whole frame) and an optional patch.
+function frameRects(spr, idx) {
+  const f = spr.f[idx] !== undefined ? spr.f[idx] : spr.f[0];
+  if (!f) return null;
+  const rect = (r) => ({ page: r[0], px: r[1], py: r[2], w: r[3], h: r[4], cx: spr.ox - r[5], cy: spr.oy - r[6] });
+  if (f.length > 7) {
+    const patch = f[3] > 0 ? rect(f) : null;
+    return { base: rect(spr.bases[f[7]]), patch };
+  }
+  return { base: rect(f), patch: null };
+}
 
 async function loadSprite(name, { mask = false, anchor = false } = {}) {
   const e = MANIFEST[name];
-  const S = { name, w: e.w, h: e.h, ox: e.ox, oy: e.oy, dirs: e.dirs || 1, frames: e.frames || 1, tex: [], anchors: [], maxH: 0, tintRef: 0.45, scale: 1 };
-  const base = '../assets/sprites/';
-  await Promise.all(e.files.map((stem, idx) => limited(async () => {
-    const [b, n, h] = await Promise.all([loadImage(base + stem + '.png'), loadImage(base + stem + '.n.png').catch(() => null), loadImage(base + stem + '.h.png').catch(() => null)]);
-    const m = mask ? await loadImage(base + stem + '.m.png').catch(() => null) : null;
-    const t = { b: R.texture(b, { mips: true }) };
-    let hp = null;
-    if (n) t.n = R.texture(dilate(pixels(n), 'normal'));
-    if (h) { hp = dilate(pixels(h), 'height'); t.h = R.texture(hp); }
-    if (m) t.m = R.texture(m, { mips: true });
-    S.tex[idx] = t;
-    if (hp && idx === 0) { let mx = 0; for (let i = 0; i < hp.data.length; i += 4) mx = Math.max(mx, hp.data[i]); S.maxH = mx / 255 * HR; }
-    if (anchor) S.anchors[idx] = findAnchor(pixels(b), hp, S);
-    if (m && idx === 0) S.tintRef = tintRef(pixels(b), pixels(m));
-  })));
+  const S = { name, w: e.w, h: e.h, ox: e.ox, oy: e.oy, ppu: e.ppu, dirs: e.dirs || 1, frames: e.frames || 1, f: e.f, bases: e.bases || [],
+    maps: e.maps, group: e.group, pageTex: [], anchors: [], maxH: 0, tintRef: 0.45, scale: 1, useMask: mask && e.maps.includes('m') };
+  const used = [...new Set([...e.f.filter(Boolean).map(f => f[0]), ...S.bases.map(b => b[0])])];
+  await Promise.all(used.map(i => loadPage(e.group, i).then(P => { S.pageTex[i] = P; })));
+  const hp = framePixels(S, 0, 'h');
+  if (hp) { let mx = 0; for (let i = 0; i < hp.data.length; i += 4) if (hp.data[i + 3]) mx = Math.max(mx, hp.data[i]); S.maxH = mx / 255 * HR; }
+  if (anchor) for (let idx = 0; idx < S.f.length; idx++) {
+    const bp = framePixels(S, idx, 'b');
+    S.anchors[idx] = bp ? findAnchor(bp, framePixels(S, idx, 'h'), S) : null;
+  }
+  if (S.useMask) { const bp = framePixels(S, 0, 'b'), mp = framePixels(S, 0, 'm'); if (bp && mp) S.tintRef = tintRef(bp, mp); }
   return S;
+}
+// A frame rebuilt on its canvas (beauty-size pixels) from the pages, for measuring (anchors, height, tint).
+function framePixels(S, idx, kind) {
+  const fr = frameRects(S, idx); if (!fr) return null;
+  const P = S.pageTex[fr.base.page]; if (!P || !P.img[kind]) return null;
+  const k = P.img[kind].width / P.w;           // map pages are smaller
+  scratch.width = S.w; scratch.height = S.h; sctx.clearRect(0, 0, S.w, S.h);
+  const put = (r) => { sctx.clearRect(r.cx, r.cy, r.w, r.h); sctx.drawImage(P.img[kind], r.px * k, r.py * k, r.w * k, r.h * k, r.cx, r.cy, r.w, r.h); };
+  put(fr.base); if (fr.patch) put(fr.patch);
+  return sctx.getImageData(0, 0, S.w, S.h);
 }
 // Where the glowing bits are, as an offset from the ground origin (for placing lights on reactors, weak spots).
 function findAnchor(bp, hp, S) {
@@ -147,7 +144,7 @@ function findAnchor(bp, hp, S) {
     if (d[i + 3] < 200) continue;
     const px = (i / 4) % w, py = Math.floor(i / 4 / w);
     const z = hp ? hp.data[i] / 255 * HR : 0;
-    const x = (px - S.ox) / PPU, y = ((py - S.oy) / PPU + z * COS) / SIN;
+    const x = (px - S.ox) / S.ppu, y = ((py - S.oy) / S.ppu + z * COS) / SIN;
     const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
     const glow = Math.max(0, mx - 170) * (mx - mn > 40 || mx > 235 ? 1 : 0.2);
     if (glow > 0) { sx += x * glow; sy += y * glow; sz += z * glow; sw += glow; }
@@ -186,23 +183,24 @@ function proceduralFloor() {
   n.fillStyle = 'rgb(128,66,230)'; n.fillRect(0, th - bev, tw, bev);
   n.fillStyle = 'rgb(190,128,230)'; n.fillRect(tw - bev, 0, bev, th);
   h.fillStyle = '#000'; h.fillRect(0, 0, tw, th);
-  return { name: '(procedural floor)', w: tw, h: th, ox: tw / 2, oy: th / 2, dirs: 1, frames: 1, maxH: 0, scale: 1, tileW: 1, tileD: 1,
-    tex: [{ b: R.texture(cb, { mips: true }), n: R.texture(cn), h: R.texture(ch) }], anchors: [] };
+  return { name: '(procedural floor)', w: tw, h: th, ox: tw / 2, oy: th / 2, ppu: PPU, dirs: 1, frames: 1, maxH: 0, scale: 1, tileW: 1, tileD: 1,
+    f: [[0, 0, 0, tw, th, tw / 2, th / 2]], bases: [], anchors: [],
+    pageTex: [{ w: tw, h: th, tex: { b: R.texture(cb, { mips: true }), n: R.texture(cn), h: R.texture(ch) } }] };
 }
 function tileSize(S, role) {
   const a = ASSETS[role];
   if (Array.isArray(a.tile)) return a.tile;
   const mt = MANIFEST[S.name] && MANIFEST[S.name].tile;
   if (Array.isArray(mt)) return mt;
-  const q = (v) => Math.max(0.25, Math.round(v * 4) / 4), m = S.ox === 0 && S.oy === 0 ? 0 : 6;
-  return [q((S.w - 2 * m) / PPU), q(((S.h - 2 * m) / PPU - S.maxH * COS) / SIN)];
+  const q = (v) => Math.max(0.25, Math.round(v * 4) / 4), m = S.ox === 0 && S.oy === 0 ? 0 : 6 * S.ppu / RAW_PPU;
+  return [q((S.w - 2 * m) / S.ppu), q(((S.h - 2 * m) / S.ppu - S.maxH * COS) / SIN)];
 }
 
 async function load() {
-  MANIFEST = await (await fetch('../assets/sprites/manifest.json', { cache: 'no-store' })).json();
-  META = MANIFEST._meta || {};
+  const data = await (await fetch('../assets/sprites/sprites.json', { cache: 'no-store' })).json();
+  MANIFEST = data.sprites; META = data.meta;
   const elev = (META.elevation || 50) * Math.PI / 180;
-  SIN = Math.sin(elev); COS = Math.cos(elev); PPU = META.ppu || 96; HR = META.heightRange || 4;
+  SIN = Math.sin(elev); COS = Math.cos(elev); RAW_PPU = META.rawPpu || 96; PPU = RAW_PPU; HR = META.heightRange || 4;
   const jobs = [];
   for (const role of Object.keys(ASSETS)) {
     const a = ASSETS[role], r = resolve(role);
@@ -296,8 +294,8 @@ function dirVec(i, n = 8) { const a = i * 2 * Math.PI / n; return [Math.cos(a), 
 // Half width and half depth of a sprite's ground footprint, read off the sprite: its width, and how far
 // below the origin its bottom edge is (the front of the object at z = 0). Assumes a roughly symmetric base.
 function footprint(spr, scale = 1) {
-  const m = spr.ox === 0 && spr.oy === 0 ? 0 : 6, sc = (spr.scale || 1) * scale;
-  return [(spr.w - 2 * m) / 2 / PPU * sc, Math.max(0.15, (spr.h - m - spr.oy) / PPU / SIN * sc)];
+  const m = spr.ox === 0 && spr.oy === 0 ? 0 : 6 * spr.ppu / RAW_PPU, sc = (spr.scale || 1) * scale;
+  return [(spr.w - 2 * m) / 2 / spr.ppu * sc, Math.max(0.15, (spr.h - m - spr.oy) / spr.ppu / SIN * sc)];
 }
 function solids() {
   const out = [];
@@ -377,10 +375,19 @@ function frameIndex(spr, dir, f) {
   return d * spr.frames + (((f % spr.frames) + spr.frames) % spr.frames);
 }
 function drawSprite(spr, idx, gx, gy, gz, o = {}) {
-  const t = spr.tex[idx] || spr.tex[0]; if (!t) return;
-  const sc = (spr.scale || 1) * (o.scale || 1), k = S / PPU * sc;
+  const fr = frameRects(spr, idx); if (!fr) return;
+  const P = spr.pageTex[fr.base.page]; if (!P) return;
+  const sc = (spr.scale || 1) * (o.scale || 1), k = S / spr.ppu * sc;
   const [sx, sy] = toScreen(gx, gy, gz);
-  R.sprite({ x: sx - spr.ox * k, y: sy - spr.oy * k, w: spr.w * k, h: spr.h * k, tex: t, size: [spr.w, spr.h, spr.ox, spr.oy], ground: [gx, gy, gz],
+  const b = fr.base, p = fr.patch;
+  // the quad: the base rect (a patch always lies inside the canvas; grow the quad to cover it too)
+  const qx0 = Math.min(b.cx, p ? p.cx : b.cx), qy0 = Math.min(b.cy, p ? p.cy : b.cy);
+  const qx1 = Math.max(b.cx + b.w, p ? p.cx + p.w : 0), qy1 = Math.max(b.cy + b.h, p ? p.cy + p.h : 0);
+  const tex = { b: P.tex.b, n: P.tex.n, h: P.tex.h, m: spr.useMask ? P.tex.m : null };
+  R.sprite({ x: sx + (qx0 - spr.ox) * k, y: sy + (qy0 - spr.oy) * k, w: (qx1 - qx0) * k, h: (qy1 - qy0) * k, tex,
+    size: [spr.w, spr.h, spr.ox, spr.oy], quad: [qx0, qy0, qx1 - qx0, qy1 - qy0], base: [b.cx, b.cy, b.w, b.h],
+    patch: p ? [p.cx, p.cy, p.w, p.h] : null, off: [b.px - b.cx, b.py - b.cy, p ? p.px - p.cx : 0, p ? p.py - p.cy : 0],
+    page: [P.w, P.h], ppu: spr.ppu, ground: [gx, gy, gz],
     tint: o.tint, tintRef: spr.tintRef, emissive: o.emissive, alpha: o.alpha, cutout: o.cutout, depthBias: o.depthBias, scale: sc });
 }
 function anchorOf(spr, idx, gx, gy, gz) {

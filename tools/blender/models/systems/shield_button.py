@@ -4,7 +4,7 @@ A sloped console pedestal against the lower deck's back wall (footprint 0.8 x 0.
 box) with a big mushroom button under a hazard collar, a ring of 8 LED segments around it that fills
 up during the cooldown, an emitter grille and a SHIELD plate. Origin = the button's (x, y).
 
-Renders (assets/sprites/systems/), one canvas:
+Renders (build/renders/systems/), one canvas:
   shield_ready          red button, ring dark: press me
   shield_up             button pushed in and glowing blue, ring all blue (the game adds its blue halo
                         as a runtime light / its radial gradient)

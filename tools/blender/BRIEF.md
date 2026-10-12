@@ -10,7 +10,7 @@ named sprites plus a manifest entry and notes on how each one maps onto the game
 The user loved two prototypes. Match them:
 - `models/ship/reactor.py` (+ `models/ship/shiplib.py`): the REAKTOMAT reactor.
 - `models/enemy/interceptor.py`: the interceptor (hull, turret, weak spots).
-Look at their renders in `assets/sprites/ship/` and `assets/sprites/enemy/` (Read tool on PNGs) and
+Look at their renders in `build/renders/ship/` and `build/renders/enemy/` (Read tool on PNGs) and
 read their scripts before you start. Chunky, toy-like, used-spaceship industrial; bevels; worn paint
 with grime and scratches (not camo-like edge wear); decals and stencils; duct tape as the running
 joke; glowing parts kept at emission strength 0.5–1.5; dark inverted-hull outlines (0.012–0.014 for
@@ -24,7 +24,7 @@ The astronaut (`models/crew/crew.py`) is being reworked right now by another age
 - Read `tools/blender/README.md` (conventions: camera 50°, 96 px/unit, passes, manifest, origins,
   directions) and `tools/blender/mn.py`.
 - Your scripts go in `tools/blender/models/<your group>/`, your renders in
-  `assets/sprites/<your group>/`. Only touch those (and `assets/sprites/manifest.json`, which
+  `build/renders/<your group>/` (not in git). Only touch those (and `build/renders/manifest.json`, which
   `mn.render` updates under a lock). Never edit `mn.py`, `README.md`, `BRIEF.md`, other groups'
   files, `js/`, `tests/`, `prototype2/`. You may *import* helpers from `models/ship/shiplib.py` or
   copy helpers from other scripts into your own files.

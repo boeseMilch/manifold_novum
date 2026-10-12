@@ -20,13 +20,15 @@ Conventions (keep them, the game relies on them):
     optionally (passes=(..., 'mask')):
       <name>.m.png  tint mask: white where objects marked with tint(o) are (the parts the game recolours,
                     like a crew member's suit color), black elsewhere
-    and an entry in assets/sprites/manifest.json: size and the pixel where the ground origin lands.
+    and an entry in build/renders/manifest.json: size and the pixel where the ground origin lands.
+  * Renders go to build/renders/ (not in git). The game loads the packed atlases that
+    `python3 tools/sprites/pack.py [group ...]` makes from them in assets/sprites/ (see tools/sprites/README.md).
 """
 import bpy, bmesh, json, math, os
 from mathutils import Vector
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-OUT_DIR = os.path.join(ROOT, 'assets', 'sprites')
+OUT_DIR = os.path.join(ROOT, 'build', 'renders')   # raw renders (gitignored); tools/sprites/pack.py packs them into assets/sprites/
 MANIFEST = os.path.join(OUT_DIR, 'manifest.json')
 ELEVATION = 50.0          # degrees above the horizon
 PPU = 96                  # pixels per layout unit
@@ -301,7 +303,7 @@ def _manifest_put(name, entry):
 def render(name, objs=None, root=None, dirs=1, frames=None, passes=('beauty', 'normal', 'height')):
     """Render a sprite (or a set of them) for every view direction and animation frame.
 
-    name    asset name, may contain a group: 'crew/crew' -> assets/sprites/crew/crew.png
+    name    asset name, may contain a group: 'crew/crew' -> build/renders/crew/crew.png
     objs    objects to frame (default: every mesh in the scene)
     root    object rotated for the view directions (around Z, at its origin); needed when dirs > 1
     dirs    number of facing directions, evenly spaced; dir i faces game angle i * 360 / dirs

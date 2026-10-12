@@ -718,7 +718,14 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   screen-aligned). Decided against true 45° isometric.
 - Pipeline: `tools/blender/mn.py` + `README.md`. Each model is a Python script (no .blend files)
   that renders beauty, world normals, height and (for recolourable parts) a tint mask into
-  `assets/sprites/`, with `manifest.json` giving sizes and ground origins. 96 px per unit.
+  `build/renders/` (not in git), with `manifest.json` giving sizes and ground origins. 96 px per unit.
+- Packing (`tools/sprites/pack.py`, format in `tools/sprites/README.md`): the raw renders (~485 MB of
+  PNG) become WebP atlas pages per group in `assets/sprites/<group>/` plus `assets/sprites/sprites.json`
+  (~25 MB): scaled per group (96 px/unit inside the ship, 72 for the hull exterior, enemies and organic;
+  normal/height maps at half that), trimmed, frames that share pixels stored as small patches on a
+  base frame, beauty lossy q88, normals lossless 6-bit (lossy smeared them), height/mask lossless.
+  `pack.py <group>` repacks one group; `verify.py` rebuilds every frame from the pages and diffs it
+  against the renders. `prototype2/` now loads the packed atlases.
 - Three prototypes, each built by its own sub-agent: the crew member, the reactor room (reactor,
   floor, walls; near walls cut down to 0.35 so they don't hide the room), and the interceptor
   (weak spots line up with the game's hit shapes). A fourth built `prototype2/`: a WebGL viewer
@@ -732,8 +739,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   systems, dock, props, interior. Rendered but NOT committed yet (size, ~200 MB as PNG): enemy, hull,
   chars. Organic (grappler, spore mother, leviathan, leeches, spores, barnacles, goo) was stopped
   mid-way: its scripts are committed as work in progress, the renders are partial.
-- Next: decide storage (proposal: ship WebP — quality 88 shrank a frigate render ~20× — and keep
-  PNG renders out of git; or Git LFS), finish organic, add the crew's down pose and worn gear, then
+- Next: finish organic (then `pack.py organic`), add the crew's down pose and worn gear, then
   integrate the sprites into the game (camera at 50°, y-sorted drawing, runtime lights from the
   normal/height maps, click areas for raised objects). Each agent's report notes are summarised in its
   model scripts' headers and the manifest `note` fields.

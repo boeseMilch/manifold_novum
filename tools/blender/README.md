@@ -1,8 +1,12 @@
 # Sprite pipeline (Blender → tilted top-down sprites)
 
 Every game object gets a Blender model, written as a Python script in `models/<group>/<name>.py`
-that builds the scene with the helpers in `mn.py` and renders sprites into `assets/sprites/`.
+that builds the scene with the helpers in `mn.py` and renders sprites into `build/renders/` (not in git).
 No `.blend` files: the scripts are the source and can be re-run any time.
+
+The game doesn't load the raw renders: `python3 tools/sprites/pack.py [group ...]` trims, scales,
+delta-crops and packs them into WebP atlas pages in `assets/sprites/<group>/` plus
+`assets/sprites/sprites.json` (format: `tools/sprites/README.md`). Re-pack a group after re-rendering it.
 
     blender -b --factory-startup --python tools/blender/models/<group>/<name>.py
 
@@ -19,7 +23,7 @@ things and their fronts (the side facing game "down"). 1 Blender unit = 1 game l
 ## Passes
 
 Each sprite is rendered as `name.png` (beauty), `name.n.png` (world normals), `name.h.png`
-(height) and optionally `name.m.png` (tint mask), plus an entry in `assets/sprites/manifest.json`
+(height) and optionally `name.m.png` (tint mask), plus an entry in `build/renders/manifest.json`
 with the canvas size and the pixel where the model's ground origin lands (`ox`, `oy`). The normal
 and height passes let the game light sprites at runtime (alarm red, reactor glow, muzzle flashes).
 

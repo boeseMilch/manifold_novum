@@ -11,7 +11,7 @@ import sys, json, math, os
 from PIL import Image, ImageDraw
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-SPR = os.path.join(ROOT, 'assets', 'sprites')
+SPR = os.path.join(ROOT, 'build', 'renders')   # the raw renders (tools/blender/mn.py OUT_DIR)
 MAN = json.load(open(os.path.join(SPR, 'manifest.json')))
 PPU = MAN['_meta']['ppu']; E = math.radians(MAN['_meta']['elevation'])
 

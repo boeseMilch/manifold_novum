@@ -3,7 +3,7 @@ red-brown suit. Crew proportions (same skeleton as models/crew/crew.py, via char
 as a person, but a mean silhouette: open-face gunmetal helmet with a red bristle crest, a spiked
 pauldron, a tattered skull pennant on the pack, a bandolier and a chunky blaster carbine.
 
-Sprites (assets/sprites/chars/pirate/), 8 directions each (dir i faces game angle i*45deg = p.face),
+Sprites (build/renders/chars/pirate/), 8 directions each (dir i faces game angle i*45deg = p.face),
 same canvas and ground origin (the game's (p.x, p.y)) for every upright set:
   pirate/idle      1 frame   standing, gun low
   pirate/walk      8 frames  crew.py's walk cycle (loops)

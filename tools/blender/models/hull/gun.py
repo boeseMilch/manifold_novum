@@ -5,7 +5,7 @@ moves. Everything here rotates with the aim and is drawn on top of it, origin = 
 on the deck plane; modelled facing +x (game angle 0), dir i faces game angle i * 360 / DIRS (0 = right,
 90 = down), the same convention as g.aim in the game.
 
-Sprites (assets/sprites/hull/):
+Sprites (build/renders/hull/):
   gun_d<i>            the turret: armoured head, barrel, muzzle brake, the gunner's grips at the back
   gun_fire_d<i>       firing: barrel recoiled, muzzle brake glowing, the muzzle flash (beauty pass only: the
                       normal/height passes leave the flash out); blend towards it by g.flash

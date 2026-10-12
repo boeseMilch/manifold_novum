@@ -1,6 +1,6 @@
 """The grappler (js/organic.js ENEMY_TYPES.grappler, drawGrappler): a violet squid, swimming mantle first.
 
-Sprites (assets/sprites/organic/), all sharing the enemy's ground origin (e.x, e.y) through the
+Sprites (build/renders/organic/), all sharing the enemy's ground origin (e.x, e.y) through the
 manifest's ox/oy, side = port | star (mirrored builds; port = the squid is left of our ship):
   grappler_<side>_f<i>            i = 0..7: the body: mantle (dorsal stripe, mottling, mint photophores),
                                   rear fins and the six trailing arms rippling (the game's

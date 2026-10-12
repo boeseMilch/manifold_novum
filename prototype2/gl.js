@@ -2,7 +2,8 @@
 // WebGL sprite renderer for the pre-rendered Blender sprites.
 //
 // Every sprite is drawn as one screen-space quad with four textures: beauty, world normals, height and
-// (optional) tint mask. From a pixel's place in the sprite and its height the fragment shader rebuilds
+// (optional) tint mask, all atlas pages with the same layout (assets/sprites/sprites.json, see
+// tools/sprites/README.md). A frame is a rect on the page, or a patch rect that replaces part of a base rect. From a pixel's place in the sprite and its height the fragment shader rebuilds
 // the pixel's 3D world position, which gives
 //   * runtime lighting: beauty x (ambient + sum of point lights with normal-map N.L and 3D falloff),
 //   * a real depth value (distance along the camera axis) written to the depth buffer, so sprites that
@@ -32,7 +33,7 @@ function createRenderer(canvas) {
   function translate(s, frag) {
     const head = [];
     if (isGL2) {
-      head.push('#version 300 es');
+      head.push('#version 300 es', '#define TEXG(s, p) textureGrad(s, p, gdx, gdy)', '#define HAS_GRAD 1');
       if (hasFragDepth) head.push('#define HAS_DEPTH 1');
       head.push('precision highp float;', 'precision highp int;');
       if (frag) head.push('out vec4 outColor;');
@@ -41,7 +42,7 @@ function createRenderer(canvas) {
         .replace(/\bFRAGCOLOR\b/g, 'outColor').replace(/\bFRAGDEPTH\b/g, 'gl_FragDepth');
     } else {
       if (frag && hasFragDepth) head.push('#extension GL_EXT_frag_depth : enable', '#define HAS_DEPTH 1');
-      head.push('precision highp float;', '#define MAX_LIGHTS ' + MAX_LIGHTS);
+      head.push('precision highp float;', '#define MAX_LIGHTS ' + MAX_LIGHTS, '#define TEXG(s, p) texture2D(s, p)');
       s = s.replace(/\bVARYING\b/g, 'varying').replace(/\bATTR\b/g, 'attribute').replace(/\bTEX\(/g, 'texture2D(')
         .replace(/\bFRAGCOLOR\b/g, 'gl_FragColor').replace(/\bFRAGDEPTH\b/g, 'gl_FragDepthEXT');
     }
@@ -83,6 +84,12 @@ VARYING vec2 vUV;
 VARYING vec2 vScreen;
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec4 uSize;        // sprite canvas w, h and ground origin ox, oy (sprite px)
+uniform vec4 uQuad;        // the quad's rect on the canvas (sprite px): x, y, w, h
+uniform vec4 uBase;        // base (or whole-frame) rect on the canvas; uBaseOff: + this = page px
+uniform vec4 uPatch;       // patch rect on the canvas (w = 0: none); replaces the base inside it
+uniform vec4 uOff;         // xy: base canvas->page offset, zw: patch canvas->page offset
+uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies, so uv is shared
+uniform float uPpu;        // this sprite's pixels per unit
 uniform vec3 uGround;      // world position of the ground origin: x, y (game, down), z offset
 uniform vec4 uProj;        // sin(elev), cos(elev), ppu, heightRange
 uniform int uMode;         // 0 beauty, 1 lit, 2 normals, 3 height
@@ -98,19 +105,29 @@ uniform vec4 uCutout;      // see-through circle: screen x, y, radius (0 = off),
 uniform float uDepthScale, uDepthBias;
 uniform float uObjScale;   // stand-ins (a crate as the crew) can be drawn smaller
 void main() {
-  vec4 b = TEX(uBeauty, vUV);
+  vec2 lp = uQuad.xy + vUV * uQuad.zw;                  // canvas px
+#ifdef HAS_GRAD
+  // explicit gradients from the (continuous) canvas position: uv jumps between base and patch, and
+  // derivatives taken inside the branches below are undefined, which picked wrong mip levels (seams)
+  vec2 gdx = dFdx(lp) / uPage, gdy = dFdy(lp) / uPage;
+#endif
+  vec2 tp;
+  if (uPatch.z > 0.0 && all(greaterThanEqual(lp, uPatch.xy)) && all(lessThan(lp, uPatch.xy + uPatch.zw))) tp = lp + uOff.zw;
+  else if (all(greaterThanEqual(lp, uBase.xy)) && all(lessThan(lp, uBase.xy + uBase.zw))) tp = lp + uOff.xy;
+  else discard;
+  vec2 uv = tp / uPage;
+  vec4 b = TEXG(uBeauty, uv);
   if (b.a < 0.02) discard;
-  vec3 n = TEX(uNormal, vUV).rgb * 2.0 - 1.0;
-  float hz = TEX(uHeight, vUV).r * uProj.w * uObjScale;
+  vec3 n = TEXG(uNormal, uv).rgb * 2.0 - 1.0;
+  float hz = TEXG(uHeight, uv).r * uProj.w * uObjScale;
   // world position of this pixel: screen offset + height -> (x, y, z)
-  vec2 lp = vUV * uSize.xy;
-  float dy = (lp.y - uSize.w) / uProj.z * uObjScale;
-  vec3 P = vec3(uGround.x + (lp.x - uSize.z) / uProj.z * uObjScale, uGround.y + (dy + hz * uProj.y) / uProj.x, uGround.z + hz);
+  float dy = (lp.y - uSize.w) / uPpu * uObjScale;
+  vec3 P = vec3(uGround.x + (lp.x - uSize.z) / uPpu * uObjScale, uGround.y + (dy + hz * uProj.y) / uProj.x, uGround.z + hz);
   float depth = P.y * uProj.y + P.z * uProj.x + uDepthBias;      // larger = closer to the camera
 
   vec3 base = b.rgb;
   if (uTint.a > 0.0) {
-    float m = TEX(uMask, vUV).r * uTint.a;
+    float m = TEXG(uMask, uv).r * uTint.a;
     float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
     vec3 t = uTint.rgb * (lum / max(uTintRef, 0.05));
     t = mix(t, vec3(1.0), clamp(lum / max(uTintRef, 0.05) - 1.3, 0.0, 0.6));   // keep specular glints white
@@ -372,7 +389,8 @@ void main() {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   }
 
-  // s: { x, y, w, h (device rect), tex:{b,n,h,m}, size:[w,h,ox,oy], ground:[x,y,z], tint, tintRef, emissive, alpha, cutout, depthBias, depthWrite }
+  // s: { x, y, w, h (device rect), tex:{b,n,h,m}, size:[w,h,ox,oy], quad, base, patch (canvas rects [x,y,w,h]),
+  //      off:[base dx, dy, patch dx, dy] (canvas -> page px), page:[w,h], ppu, ground:[x,y,z], tint, tintRef, emissive, alpha, cutout, depthBias, depthWrite }
   let lastProg = null;
   function sprite(s) {
     const u = P.sprite.u;
@@ -382,6 +400,8 @@ void main() {
     gl.depthMask(s.depthWrite !== false);
     gl.uniform4f(u.uRect, s.x, s.y, s.w, s.h);
     gl.uniform4f(u.uSize, s.size[0], s.size[1], s.size[2], s.size[3]);
+    gl.uniform4fv(u.uQuad, s.quad); gl.uniform4fv(u.uBase, s.base); gl.uniform4fv(u.uPatch, s.patch || [0, 0, 0, 0]);
+    gl.uniform4fv(u.uOff, s.off); gl.uniform2f(u.uPage, s.page[0], s.page[1]); gl.uniform1f(u.uPpu, s.ppu);
     gl.uniform3f(u.uGround, s.ground[0], s.ground[1], s.ground[2]);
     const t = s.tint;
     gl.uniform4f(u.uTint, t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, t && s.tex.m ? 1 : 0);

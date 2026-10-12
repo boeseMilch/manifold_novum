@@ -1,6 +1,6 @@
 """Hull damage seen from outside: breach holes, the plates nailed over them, small-hit marks.
 
-Sprites (assets/sprites/hull/), all flat on the deck plane, origin = the game point they are drawn at:
+Sprites (build/renders/hull/), all flat on the deck plane, origin = the game point they are drawn at:
   breach_v<0..1>         a hull breach (js/hazards.js drawBreachesOutside, at holeAt(room)): a torn hole with
                          the plating curled outwards, glowing edges, the hull's inside wall and space below
                          (a few stars). The game keeps its own puffs of escaping air (procedural).

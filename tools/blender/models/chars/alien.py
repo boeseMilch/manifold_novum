@@ -4,7 +4,7 @@ Violet plated carapace with a spiked bone ridge and glowing green pustules, a se
 stinger, six long spider-knee legs with hooked claws, a wedge head with a cluster of eyes, mandibles,
 long antennae and an acid sac under the throat.
 
-Sprites (assets/sprites/chars/), 8 directions each (dir i faces game angle i*45deg, a.face), all with
+Sprites (build/renders/chars/), 8 directions each (dir i faces game angle i*45deg, a.face), all with
 the same canvas and ground origin (the game's (a.x, a.y)):
   alien/idle        1 frame   standing (wander, entering, lingering)
   alien/walk        8 frames  tripod scuttle; loops. One cycle = WALK_DIST units travelled

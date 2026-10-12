@@ -1,6 +1,6 @@
 """Frigate (js/enemies.js ENEMY_TYPES.frigate, drawFrigate): the long armored gunship.
 
-Sprites (assets/sprites/enemy/), all on the frigate's ground origin (manifest ox/oy) unless noted:
+Sprites (build/renders/enemy/), all on the frigate's ground origin (manifest ox/oy) unless noted:
   frigate_<side>                       hull without light turret, weak spots and radar dish; side = port | star
   frigate_<side>_<poi>_<state>         one weak spot, hull as holdout (lines up with the game's POI shapes):
       cable_ok|hit     turret power cable           line (1.3,-5.7)(1.85,-5.15)(2.1,-4.2), w 0.2

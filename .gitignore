@@ -1,5 +1,4 @@
 __pycache__/
 *.pyc
-assets/sprites/manifest.json.lock
-assets/sprites/manifest.json.tmp
-assets/sprites/**/*.lock
+# raw Blender renders (tools/blender/mn.py); packed into assets/sprites/ by tools/sprites/pack.py
+build/

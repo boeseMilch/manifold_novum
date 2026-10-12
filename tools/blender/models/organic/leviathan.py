@@ -7,7 +7,7 @@ Local frame as the game draws it: origin = (x, y) of org.lev (x = -14.5 or SHIP_
 (the leviathan is left of us, S = +1) | star (mirrored build). It lies rolled on its side: pale grooved
 belly towards our ship, the glowing spots along its back, the eye on the flank facing up.
 
-Sprites (assets/sprites/organic/), all sharing the leviathan's origin through the manifest's ox/oy:
+Sprites (build/renders/organic/), all sharing the leviathan's origin through the manifest's ox/oy:
   leviathan_<side>_body<k>       k = 0..3: the static body in four horizontal bands (head first, k = 0 is
                                  the top of the screen = the tail end), exact windows that abut
                                  pixel-perfectly: draw all four at the same origin. Eye open. Body k = 3

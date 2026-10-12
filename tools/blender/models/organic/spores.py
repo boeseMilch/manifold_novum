@@ -1,6 +1,6 @@
 """Spore clouds and hull barnacles (js/eva.js: spawnSpores, the barnacle growth, drawEva).
 
-Sprites (assets/sprites/organic/):
+Sprites (build/renders/organic/):
   spore_cloud_f<i>        i = 0..7: a clump of glowing spore pods (purple and green, pale glowing
                           tips) on a fleshy knot, with hair-thin feelers; a loop of the pods breathing
                           (staggered) and the feelers waving. Origin = the cloud centre (s.x, s.y).

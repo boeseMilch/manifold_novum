@@ -1,6 +1,6 @@
 """The ship's engine (js/art.js drawEngineBell / drawEngines / drawEngineHousing; ENGINE in js/ship.js).
 
-Sprites (assets/sprites/hull/):
+Sprites (build/renders/hull/):
   engine_bell_cruise_f<0..3>   the big flattened nozzle sticking out of the stern, exhaust plate glowing orange
                                (flicker loop; the game's throttle sits at ~0.45 all the time)
   engine_bell_spool_f<0..3>    jump drive spooling up (mission.jump set, until the jump): blue-white, pulsing

@@ -12,7 +12,7 @@ import json, math, os
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
-SPR = os.path.join(ROOT, 'assets', 'sprites')
+SPR = os.path.join(ROOT, 'build', 'renders')   # the raw renders (tools/blender/mn.py OUT_DIR)
 MAN = json.load(open(os.path.join(SPR, 'manifest.json')))
 PPU, SIN, COS = 96, math.sin(math.radians(50)), math.cos(math.radians(50))
 X0, X1, YG0, YG1 = 12.8, 31.8, -3.4, 16.2                  # game area shown

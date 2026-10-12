@@ -1,6 +1,6 @@
 """Alien goo decals (js/combat.js drawGoo, js/organic.js slimeBurst).
 
-Sprites (assets/sprites/organic/):
+Sprites (build/renders/organic/):
   goo_<i>        i = 0..3: a puddle of glowing green slime where an intruder died, with a few drops
                  around it. Origin = the puddle centre = the decal's (d.x, d.y). Sized for d.r = 0.6
                  (the only size the game uses): scale by d.r / 0.6 for others. Pick i from the decal's

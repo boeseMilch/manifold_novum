@@ -1,7 +1,7 @@
 """World sprites of the carryable items, lying on the floor (js/systems.js ITEMS / drawItems, dropped
 items in js/dock.js, js/eva.js, js/hazards.js, js/mission.js), and the thrown wrench.
 
-Sprites (assets/sprites/items/), ground origin = the item's (x, y) in the game:
+Sprites (build/renders/items/), ground origin = the item's (x, y) in the game:
   items/<kind>          kind = repair | laser | heavy | extinguisher | drill | fuel | plate | coolant |
                         blackbox | ore  (the ITEM_NAMES keys)
   items/wrench_d<i>     the thrown wrench (boarding.bolts with b.wrench), 16 spin angles: dir i is the

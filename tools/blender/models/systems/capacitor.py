@@ -5,7 +5,7 @@ charge slot), copper bus bars, a front panel with one LED per cell, a stencil an
 The cabinet width follows the game: max * 0.42 + (max - 1) * 5/48 + 14/48 units (1.76 for 3 cells,
 2.28 for 4), 0.9 deep; the cells sit where the game's cells are. Origin = the capacitor's (x, y).
 
-Renders (assets/sprites/systems/), every state of one size on one canvas:
+Renders (build/renders/systems/), every state of one size on one canvas:
   cap3_c0 .. cap3_c3          CAP_MAX = 3, charge 0..3 (lit cells from the left, like the game)
   cap3_c1_pulse .. c3_pulse   just received energy (c.pulse > 0): the newest cell flashes white
   cap3_broken                 cracked cells, dark, soot, a bent front panel

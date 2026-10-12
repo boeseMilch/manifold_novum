@@ -1,7 +1,7 @@
 """Small non-organic things out in space (js/eva.js): the mine drone, limpet mines, the debris that jams a cannon
 track, and the fuel canister drifting past. All origins = the object's (x, y) in the game, z = 0 its base/middle.
 
-Sprites (assets/sprites/enemy/):
+Sprites (build/renders/enemy/):
   limpet_mine_<on|off>         limpet mine stuck beside the hull (evs.mines; game: 14 px body, 8 spikes to 20 px,
                                hazard band, red lamp). on = the blink's lit half (Math.sin(t * rate) > 0), with its
                                red glow in the beauty pass. Countdown text, job marker: procedural.

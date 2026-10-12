@@ -1,6 +1,6 @@
 """Asteroids (js/enemies.js makeAsteroid / drawAsteroidBody, js/combat.js) and the ore asteroid (js/dock.js dk.rock).
 
-Sprites (assets/sprites/enemy/), origin = the asteroid's centre (a.x, a.y), z = 0 its middle plane:
+Sprites (build/renders/enemy/), origin = the asteroid's centre (a.x, a.y), z = 0 its middle plane:
   asteroid_big<k>_d<i>        big rock k = 0..2 (game r = 2.2), 48 turn steps; i picks the angle i * 7.5 deg
   asteroid_big<k>_crack_d<i>  its molten fissure (the weak spot), same steps, rock as holdout. The fissure sits at
                               rock-local angle 0, so the game should pick BOTH sprites with i = round((a.rot + a.crackA)

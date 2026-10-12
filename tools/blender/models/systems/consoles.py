@@ -3,7 +3,7 @@ the operator's swivel seat (drawSeat), the radar map table (js/decor.js mapTable
 js/mission.js stationSpots), the helm's coffee mug (js/hazards.js COFFEE_MUG) and the jump handle
 (js/minigames.js JUMP_HANDLE, drawMinigameProps).
 
-Renders (assets/sprites/systems/):
+Renders (build/renders/systems/):
   helm_f0..f3, helm_off, helm_broken
   security_f0..f3, security_off, security_broken
         the desk, 1.6 wide, 0.6 deep (the SOLIDS box), against the wall the station sits on. Origin =

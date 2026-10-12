@@ -3,7 +3,7 @@
     blender -b --factory-startup --python tools/blender/models/dock/ships.py -- <kind> <side> [quick]
         kind = pirate | derelict | brig   (or 'all'), side = port | star (or 'all')
 
-Sprites (assets/sprites/dock/), origin = our airlock hatch on the ground (HATCHES[side].x, .y), see docklib.py:
+Sprites (build/renders/dock/), origin = our airlock hatch on the ground (HATCHES[side].x, .y), see docklib.py:
   dock/pirate_<side>     the Red Comet raider docked (dk.dock.kind === 'pirate', no npc)
   dock/brig_<side>       the prison barge (EVENT_RUNNERS.brig: kind 'pirate' with contents.npc = Dr. Varga)
   dock/derelict_<side>   Dr. Varga's lab module (kind 'derelict'): airless and dark (the darkness is runtime

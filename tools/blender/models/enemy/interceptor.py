@@ -1,6 +1,6 @@
 """Interceptor (js/enemies.js ENEMY_TYPES.interceptor): the small twin-nacelle dart, the most common enemy.
 
-Sprites (assets/sprites/enemy/), all sharing the enemy's ground origin through the manifest's ox/oy:
+Sprites (build/renders/enemy/), all sharing the enemy's ground origin through the manifest's ox/oy:
   interceptor_<side>                 hull without turret and without weak spots, side = port | star
   stealth_<side>, pirate_<side>,     the same hull in the paint jobs of ENEMY_TYPES.stealth / pirate / tractor
   tractor_<side>

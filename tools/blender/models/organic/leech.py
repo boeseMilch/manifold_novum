@@ -4,7 +4,7 @@ A fat ringed worm, sized like the game draws it (1.7x scale: ~1.9 long, ~0.65 th
 dark wet red with pale belly rings, a row of lime glow-spots along its back, and a round sucker mouth
 full of hooked teeth around a glowing throat.
 
-Sprites (assets/sprites/organic/), origin = (l.x, l.y) = the head (the game's segment 0 centre):
+Sprites (build/renders/organic/), origin = (l.x, l.y) = the head (the game's segment 0 centre):
   leech_fly_d<i>_f<j>       i = 0..15 heading (game angle i * 22.5 deg, 0 = right, 4 = down), j = 0..5
                             wriggle loop (period ~0.8 s: the game's sin(l.t * 8)). Pick i from the game's
                             `ang` = atan2(ty - y, tx - x) while flying.
