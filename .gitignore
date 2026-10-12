@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 assets/sprites/manifest.json.lock
 assets/sprites/manifest.json.tmp
+assets/sprites/**/*.lock

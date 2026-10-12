@@ -726,6 +726,17 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   flashes, blue weak spots), with depth from the height map.
 - Open: whether to go this way for the whole game, the key light direction, how the ~18 MB of
   renders (and many more for the full game) should be stored.
+- **Status 2026-10-12 (paused overnight):** the user loved the reactor and interceptor and asked for
+  everything in that style. Ten sub-agents (one per group, shared rules in `tools/blender/BRIEF.md`)
+  modelled the whole game. All their scripts are committed. Sprites committed: crew, ship, items, fx,
+  systems, dock, props, interior. Rendered but NOT committed yet (size, ~200 MB as PNG): enemy, hull,
+  chars. Organic (grappler, spore mother, leviathan, leeches, spores, barnacles, goo) was stopped
+  mid-way: its scripts are committed as work in progress, the renders are partial.
+- Next: decide storage (proposal: ship WebP — quality 88 shrank a frigate render ~20× — and keep
+  PNG renders out of git; or Git LFS), finish organic, add the crew's down pose and worn gear, then
+  integrate the sprites into the game (camera at 50°, y-sorted drawing, runtime lights from the
+  normal/height maps, click areas for raised objects). Each agent's report notes are summarised in its
+  model scripts' headers and the manifest `note` fields.
 
 ## Balance
 
