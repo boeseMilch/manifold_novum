@@ -35,7 +35,7 @@ PANEL = mn.mat('panel', 'panel', 0.4, 0.2)
 HELM = mn.mat('helmet', '#f1f3f6', 0.28, clearcoat=0.6)
 SEAL = mn.mat('seal', '#3a3f4a', 0.6)
 VISOR = mn.mat('visor', '#e8b838', 0.22, 0.85, clearcoat=1.0)
-SKIN = mn.mat('skin', 'skin', 0.6, emit='skin', emit_strength=0.25)   # faint glow: the face sits in the helmet's shadow
+SKIN = mn.mat('skin', 'skin', 0.6, emit='skin', emit_strength=0.4)    # faint glow: the face sits in the helmet's shadow
 HAIR = mn.mat('hair', 'hair', 0.75)
 EYE = mn.mat('eye', '#1a1410', 0.3)
 L_GREEN = mn.mat('ledG', 'green', 0.3, emit='green', emit_strength=4)
@@ -119,25 +119,63 @@ def window(o, ry, rz, dz, keep_inside):
     bm.to_mesh(o.data); bm.free(); return mn.smooth(o)
 
 helmet = mn.sphere('helmet', HR, loc=HEAD, m=HELM, segs=96)
-window(helmet, 0.18, 0.14, 0.035, False)
+window(helmet, 0.19, 0.15, 0.035, False)
 sol = helmet.modifiers.new('shell', 'SOLIDIFY'); sol.thickness = 0.022; sol.offset = -1
 helmet.data.materials.append(SEAL); sol.material_offset_rim = 1; sol.material_offset = 1
 keep(attach(helmet, head))
 # gold visor: a slightly bigger spherical cap over the window, pivoting on the helmet centre
 visor = mn.sphere('visor', HR + 0.012, loc=HEAD, m=VISOR, segs=96)
-window(visor, 0.20, 0.16, 0.035, True)
+window(visor, 0.205, 0.17, 0.035, True)
 sol = visor.modifiers.new('shell', 'SOLIDIFY'); sol.thickness = 0.012; sol.offset = -1
 keep(attach(visor, head))
 # helmet details: side lamps, top ridge
 for s in (-1, 1):
     keep(attach(mn.cyl(f'lampHousing{s}', 0.04, 0.05, loc=HEAD + Vector((0.03, s * (HR - 0.01), 0.07)), m=PACK, bevel=0.012, rot=(-s * math.pi / 2, 0, 0)), head))
     keep(attach(mn.sphere(f'lamp{s}', 0.026, loc=HEAD + Vector((0.07, s * (HR + 0.025), 0.07)), m=LAMP, segs=12), head))
-# face inside the helmet
-keep(attach(mn.sphere('face', 0.165, loc=HEAD + Vector((0.015, 0, 0.0)), m=SKIN), head))
-keep(attach(mn.sphere('hair', 0.155, loc=HEAD + Vector((-0.035, 0, 0.04)), m=HAIR, scale=(1, 1.05, 0.98)), head))
+# Face inside the helmet. Cartoon proportions, and the face is tilted up towards the camera
+# (which looks down at 50 deg) so the eyes, brows and smile face the viewer instead of the floor.
+FACE_C = HEAD + Vector((0.022, 0, 0.0)); FACE_R = 0.17; FACE_TILT = math.radians(28)
+SKIN_DK = mn.mat('skinShade', '#d9a27e', 0.6, emit='#d9a27e', emit_strength=0.2)
+CHEEK = mn.mat('cheek', '#f08a7a', 0.6, emit='#f08a7a', emit_strength=0.3)
+GLINT = mn.mat('glint', '#ffffff', 0.2, emit='#ffffff', emit_strength=3)
+face_parts = []
+def on_face(az, el, out=0.0):
+    """Point on the face sphere (degrees: az to the character's left, el up, in the tilted face frame)
+    and the outward direction there."""
+    az, el = math.radians(az), math.radians(el) + FACE_TILT
+    d = Vector((math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)))
+    return FACE_C + d * (FACE_R + out), d
+def feature(o, d, roll=0.0):
+    """Orient o so its local X points out of the face along d (flat features: thin in X)."""
+    q = d.to_track_quat('X', 'Z'); o.rotation_mode = 'QUATERNION'
+    o.rotation_quaternion = q @ Matrix.Rotation(roll, 4, 'X').to_quaternion()
+    face_parts.append(keep(attach(o, head))); return o
+def blob(name, m, size, az, el, out=0.0, roll=0.0, segs=16):
+    p, d = on_face(az, el, out)
+    return feature(mn.sphere(name, 1.0, loc=p, m=m, scale=size, segs=segs), d, roll)
+
+face_parts.append(keep(attach(mn.sphere('face', FACE_R, loc=FACE_C, m=SKIN), head)))
+face_parts.append(keep(attach(mn.sphere('hair', 0.158, loc=HEAD + Vector((-0.04, 0, 0.045)), m=HAIR, scale=(1, 1.06, 0.98)), head)))
+for i, az in enumerate((-46, -24, 0, 24, 46)):                         # fringe framing the face under the rim
+    blob(f'fringe{i}', HAIR, (0.03, 0.05, 0.04), az, 46 - abs(az) * 0.25, out=-0.012, roll=math.radians(az * 0.6))
 for s in (-1, 1):
-    keep(attach(mn.sphere(f'eye{s}', 0.02, loc=HEAD + Vector((0.17, s * 0.055, 0.02)), m=EYE, segs=12, scale=(0.6, 1, 1.3)), head))
-keep(attach(mn.sphere('nose', 0.025, loc=HEAD + Vector((0.18, 0, -0.015)), m=SKIN, segs=12), head))
+    blob(f'eye{s}', EYE, (0.012, 0.027, 0.037), s * 23, 6, out=-0.004)                  # big dark cartoon eyes
+    blob(f'eyeGlint{s}', GLINT, (0.006, 0.01, 0.01), s * 23 - 5, 12, out=0.004)       # white catch-light (same side for both)
+    blob(f'brow{s}', HAIR, (0.008, 0.032, 0.011), s * 25, 25, out=-0.001, roll=s * math.radians(-12))
+    blob(f'cheek{s}', CHEEK, (0.004, 0.026, 0.019), s * 38, -9, out=-0.001)
+blob('nose', SKIN_DK, (0.024, 0.022, 0.02), 0, -4, out=-0.008)
+# smile: a small dark arc (a bevelled curve baked into a mesh)
+cu = bpy.data.curves.new('mouth', 'CURVE'); cu.dimensions = '3D'; cu.bevel_depth = 0.0065; cu.bevel_resolution = 2
+sp = cu.splines.new('POLY'); pts = []
+for k in range(9):
+    az = -15 + 30 * k / 8
+    pts.append(on_face(az, -17 - 6 * (1 - (az / 15) ** 2), out=0.001)[0])
+sp.points.add(len(pts) - 1)
+for pt, co in zip(sp.points, pts): pt.co = (*co, 1)
+_tmp = mn.link(bpy.data.objects.new('mouthCurve', cu)); bpy.context.view_layer.update()
+mouth = mn.link(bpy.data.objects.new('mouth', bpy.data.meshes.new_from_object(_tmp.evaluated_get(bpy.context.evaluated_depsgraph_get()))))
+bpy.data.objects.remove(_tmp); mn.assign(mouth, mn.mat('mouth', '#5a2a24', 0.5)); mn.smooth(mouth)
+face_parts.append(keep(attach(mouth, head)))
 
 # Arms: shoulder pivot, upper arm, elbow pivot, forearm + glove; tinted shoulder caps
 arms, elbows = {}, {}
@@ -218,8 +256,8 @@ def set_visor(down):
     sun shade), only its lower edge peeking over the top of the open window."""
     visor.rotation_euler = (0, 0 if down else math.radians(-88), 0)
     visor.scale = (1, 1, 1) if down else (0.84, 0.84, 0.84)
-    for n in ('face', 'hair', 'eye-1', 'eye1', 'nose'):
-        bpy.data.objects[n].hide_render = down                          # hidden behind the visor anyway
+    for o in face_parts:
+        o.hide_render = down                          # hidden behind the visor anyway
 
 import time
 passes = ('beauty', 'mask') if PREVIEW else ('beauty', 'normal', 'height', 'mask')
