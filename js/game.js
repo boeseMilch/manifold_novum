@@ -221,7 +221,8 @@ function updateHatch(dt) {
 // ---------------------------------------------------------------------------
 // World point under the acting crew member's mouse (each browser computes it from its camera).
 function mouseWorld() { return [mouse.wx, mouse.wy]; }
-function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zoom * T), (sy - v.oy) / (v.zoom * T)]; }
+// (the ground plane, z = 0: in the tilted sprite view the screen's y is the ground's y × sin 50°)
+function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zoom * T), (sy - v.oy) / (v.zoom * T * v.sy)]; }
 
 function updatePlayer(dt) {
   const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
@@ -476,6 +477,7 @@ const DEBUG_ITEMS = [
   { key: 'S', label: '', hidden: true, run: () => spawnSpores('port') },
   { key: 'T', label: '', hidden: true, run: () => combatSpawn('tractor', 'port', true) },
   { key: 'Z', label: '', hidden: true, run: () => { combatSpawn('stealth', 'port', true); combat.enemies.forEach(e => { e.reveal = 3; }); } },
+  { key: 'O', label: '', hidden: true, run: () => { const h = HATCHES[0]; player.mode = 'eva'; player.gun = null; [player.x, player.y] = h.outside; } },   // debug only: step outside (screenshots)
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
@@ -525,18 +527,21 @@ function drawDebugMenu() {
 // Camera. Inside: about one room fills the screen, aimed at a blend of nearby room
 // centers (weighted by how close you are), so moving between rooms glides. Outside it
 // follows you; on a cannon it frames the cannon's field of fire. Tab: whole ship.
+// Projection: with the sprite renderer (GFX.on) the view is tilted, 50° above the horizon:
+// screen y = (y·sin50° − z·cos50°) × zoom·T (VIEW_SY = sin50°); the classic view is straight down.
 // ---------------------------------------------------------------------------
 const VIEW_ROOM = { w: 19, h: 13 };                 // layout units visible when zoomed in
 const VIEW_SHIP = { x0: -3, y0: -5, x1: SHIP_W + 3, y1: SHIP_H + 6 };
+const viewSy = () => (GFX.on ? GFX.SIN : 1);
 const cam = { x: player.x, y: player.y, zoom: 0, overview: DEBUG_OVERVIEW ? 1 : 0, sx: 0, sy: 0 };
 function roomDist(room, x, y) {
   return Math.min(...room.rects.map(q => Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h))));
 }
 function cameraTarget() {
-  const vh = VH - HUD_H, zRoom = Math.min(VW / (VIEW_ROOM.w * T), vh / (VIEW_ROOM.h * T));
+  const vh = VH - HUD_H, vsy = viewSy(), zRoom = Math.min(VW / (VIEW_ROOM.w * T), vh / (VIEW_ROOM.h * T * vsy));
   if (player.mode === 'gun') {
     const [cx, cy, w] = player.gun.view;
-    return [cx, cy, Math.min(VW / (w * T), vh / (w * 0.62 * T))];
+    return [cx, cy, Math.min(VW / (w * T), vh / (w * 0.62 * T * vsy))];
   }
   if (player.mode === 'eva' || (player.mode === 'hatch' && player.hatchDir === 'out' && player.hatchT > HATCH_TIME / 2))
     return [player.x, player.y, zRoom * 0.75];
@@ -554,7 +559,7 @@ function updateCamera(dt) {
   cam.overview = clamp(cam.overview + (held('Tab') || DEBUG_OVERVIEW ? dt : -dt) * 4, 0, 1);
   const o = cam.overview * cam.overview * (3 - 2 * cam.overview);
   const vh = VH - HUD_H;
-  const zShip = Math.min(VW / ((VIEW_SHIP.x1 - VIEW_SHIP.x0) * T), vh / ((VIEW_SHIP.y1 - VIEW_SHIP.y0) * T));
+  const zShip = Math.min(VW / ((VIEW_SHIP.x1 - VIEW_SHIP.x0) * T), vh / ((VIEW_SHIP.y1 - VIEW_SHIP.y0) * T * viewSy()));
   const k = cam.zoom ? 1 - Math.exp(-2.6 * dt) : 1;
   cam.x = lerp(cam.x, tx, k); cam.y = lerp(cam.y, ty, k);
   cam.baseZoom = lerp(cam.baseZoom || tz, tz, k);
@@ -564,9 +569,10 @@ function updateCamera(dt) {
   const s = combat.shake * combat.shake * 0.35;        // big hits rattle the whole ship
   cam.sx = s * (Math.sin(time * 61) + 0.5 * Math.sin(time * 97)); cam.sy = s * (Math.cos(time * 53) + 0.5 * Math.sin(time * 89));
 }
+// Screen (CSS px) = (ox + x·T·zoom, oy + y·T·zoom·sy) for a point on the ground.
 function camera() {
-  const x = cam.x + cam.ox + cam.sx, y = cam.y + cam.oy + cam.sy;
-  return { zoom: cam.zoom, ox: VW / 2 - x * T * cam.zoom, oy: HUD_H + (VH - HUD_H) / 2 - y * T * cam.zoom };
+  const x = cam.x + cam.ox + cam.sx, y = cam.y + cam.oy + cam.sy, sy = viewSy();
+  return { zoom: cam.zoom, sy, ox: VW / 2 - x * T * cam.zoom, oy: HUD_H + (VH - HUD_H) / 2 - y * T * cam.zoom * sy };
 }
 
 // ---------------------------------------------------------------------------
@@ -579,7 +585,10 @@ function drawCrewDown(c, t) {
   ctx.rotate(c.face + Math.PI / 2); ctx.scale(1, 0.85);
   drawCrew(0, 0, 0, 0, c.mode === 'eva', c.health === 'out' ? '#7a7f8a' : c.color);
   ctx.restore();
-  const k = 0.6 + 0.4 * Math.sin(t * 5), x = c.x * T, y = (c.y - 0.6) * T;
+  drawDownCross(c, t);
+}
+function drawDownCross(c, t) {
+  const k = 0.6 + 0.4 * Math.sin(t * 5), x = c.x * T, y = (c.y - 0.6 - GFX.lift(0.4)) * T;
   ctx.fillStyle = `rgba(226,60,50,${k})`; ctx.fillRect(x - 3, y - 9, 6, 18); ctx.fillRect(x - 9, y - 3, 18, 6);
   ctx.strokeStyle = 'rgba(20,22,27,0.8)'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 9, 6, 18); ctx.strokeRect(x - 9, y - 3, 18, 6);
 }
@@ -607,38 +616,68 @@ function drawBlasterCharge(c, t) {
   g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, full ? '#9cd8ff' : '#ffb07a'); g.addColorStop(1, 'rgba(120,200,255,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2, 0, TAU); ctx.fill();
 }
+function drawSafetyLine(c) {                  // spacewalk: safety line back to the nearest hatch
+  const h = HATCHES.reduce((a, b) => Math.hypot(c.x - a.outside[0], c.y - a.outside[1]) < Math.hypot(c.x - b.outside[0], c.y - b.outside[1]) ? a : b);
+  const [hx, hy] = [h.x * T, h.y * T], [px, py] = [c.x * T, c.y * T];
+  ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo((hx + px) / 2 + 20, (hy + py) / 2 + 30, px, py);
+  ctx.strokeStyle = 'rgba(20,22,27,0.7)'; ctx.lineWidth = 4; ctx.stroke();
+  ctx.strokeStyle = 'rgba(210,166,46,0.85)'; ctx.lineWidth = 2; ctx.stroke();
+}
 function drawCrewOutside(c, t) {
-  if (c.mode === 'eva') {                     // safety line back to the nearest hatch
-    const h = HATCHES.reduce((a, b) => Math.hypot(c.x - a.outside[0], c.y - a.outside[1]) < Math.hypot(c.x - b.outside[0], c.y - b.outside[1]) ? a : b);
-    const [hx, hy] = [h.x * T, h.y * T], [px, py] = [c.x * T, c.y * T];
-    ctx.beginPath(); ctx.moveTo(hx, hy); ctx.quadraticCurveTo((hx + px) / 2 + 20, (hy + py) / 2 + 30, px, py);
-    ctx.strokeStyle = 'rgba(20,22,27,0.7)'; ctx.lineWidth = 4; ctx.stroke();
-    ctx.strokeStyle = 'rgba(210,166,46,0.85)'; ctx.lineWidth = 2; ctx.stroke();
-  }
+  if (c.mode === 'eva') drawSafetyLine(c);
   drawCrew(c.x * T, c.y * T, c.face, c.walk, true, c.color);
 }
 
+// Two ways to draw the world:
+// - classic (GFX.on false: ?classic, no WebGL2, tests, the server): everything in 2D on `c`, top-down.
+// - sprites (GFX.on): the WebGL canvas under `c` draws the pre-rendered sprites (js/sprites.js) in the
+//   tilted view; the old 2D drawing of everything not converted yet still runs, into three 2D layers:
+//   'back' (space and what's behind the ship, under the hull sprites), 'mid' (everything the old code
+//   drew before the crew: composited into the GL picture above the floors, under the walls and the
+//   crew, lit like the floor) and `c` itself (everything drawn after the crew, and the HUD, on top).
+//   Each layer gets the same world transform (y squashed by sin 50°), so old drawings stay at
+//   ground level where they belong.
+const SCREEN_CTX = ctx;
 function render(t) {
+  const view = camera(), G = GFX.on;
+  const space = { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 * view.sy - t * CRUISE_SPEED, rot: 0 };
+  const world = (k) => ctx.setTransform(k * view.zoom, 0, 0, k * view.zoom * view.sy, k * view.ox, k * view.oy);
+  let parts = {};
+  ctx = SCREEN_CTX;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const view = camera();
-  drawSpace(t, { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 - t * CRUISE_SPEED, rot: 0 }, VW, VH);
-  ctx.save(); ctx.translate(view.ox, view.oy); ctx.scale(view.zoom, view.zoom);
-
-  drawCombatBack(t);
-  drawShipHull(t, HULL, GUNS, ENGINE);
-  drawHullDecor(t);
+  if (G) {
+    GFX.begin(view, t);
+    GFX.lighting(gameLighting(t));
+    updateLightLevels(1 / 60);
+    parts = drawShipSprites(t);
+    const k = GFX.layer2dScale;
+    ctx = GFX.layer2d('back'); ctx.setTransform(k, 0, 0, k, 0, 0);
+    drawSpace(t, space, VW, VH);
+    world(k);
+    drawCombatBack(t);
+    if (parts.hull) drawEngineBell(t, ENGINE);
+    else drawShipHull(t, HULL, GUNS, ENGINE);
+    ctx = GFX.layer2d('mid'); world(k);
+    if (!parts.hull) drawHullDecor(t);
+  } else {
+    drawSpace(t, space, VW, VH);
+    ctx.save(); ctx.translate(view.ox, view.oy); ctx.scale(view.zoom, view.zoom * view.sy);
+    drawCombatBack(t);
+    drawShipHull(t, HULL, GUNS, ENGINE);
+    drawHullDecor(t);
+  }
   drawShipDecals();
   drawBreachesOutside(t);
   drawEvaJobs(t);
   drawOrganicWorld(t);
   drawDock(t);
-  for (const g of GUNS) drawGun(g.x * T, g.y * T, g.aim, g.flash);
-  drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
-  drawSpineDecor(t);
-  drawInteriorWalls();
-  drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
+  const gunsSprited = GUNS.filter(g => G && drawGunSprite(g));
+  for (const g of GUNS) if (!gunsSprited.includes(g)) drawGun(g.x * T, g.y * T, g.aim, g.flash);
+  if (!parts.walls) drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
+  if (!G) { drawSpineDecor(t); drawInteriorWalls(); }
+  if (!parts.floors) drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
   for (const r of ROOMS) drawRoomLabel(r);
-  drawLightPools();
+  if (!G) drawLightPools();
   drawLeviathanWarning(t);
   drawFloorDecor(t);
   drawJunk();
@@ -646,9 +685,9 @@ function render(t) {
   drawBreaches(t);
   drawPowerLines(t);
   drawEngineHousing(t, ENGINE);
-  for (const L of DECK_LOCKS) drawDeckLock(L, t);
-  drawDoorways();
-  for (const h of HATCHES) drawHatch(h);
+  if (!parts.locks) for (const L of DECK_LOCKS) drawDeckLock(L, t);
+  if (!parts.doors) drawDoorways();
+  if (!parts.hatches) for (const h of HATCHES) drawHatch(h);
   for (const g of GUNS) drawGunLadder(g);
   drawReactor(REACTOR, t);
   drawLever(t);
@@ -671,11 +710,23 @@ function render(t) {
   drawEnergyBolts();
   drawClickTarget(me.hover);
   if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true });   // what E would do
+  // the crew (as sprites when they're loaded, else in 2D)
+  const visorOf = (c) => isOutside(c) || (c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y));
+  const sprited = new Set();
   for (const c of crew) {
+    if (G && drawCrewSprite(c, visorOf(c), t)) { sprited.add(c); if (c.mode === 'eva') drawSafetyLine(c); continue; }
     if (!standing(c)) drawCrewDown(c, t);
-    else if (c.mode === 'inside' || c.mode === 'hatch')
-      drawCrew(c.x * T, c.y * T, c.face, c.walk, c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y), c.color);
+    else if (c.mode === 'inside' || c.mode === 'hatch') drawCrew(c.x * T, c.y * T, c.face, c.walk, visorOf(c), c.color);
     else drawCrewOutside(c, t);
+  }
+  if (G) {                                           // the rest goes on top, on `c`
+    ctx = SCREEN_CTX; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, VW, VH);
+    ctx.save(); world(DPR);
+    drawSpineDecor(t); drawInteriorWalls();
+    for (const g of gunsSprited) drawMuzzleFlash(g);
+  }
+  for (const c of crew) {
+    if (sprited.has(c) && !standing(c)) drawDownCross(c, t);
     const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: progress ring
     if (tr) {
       const info = withCrew(tr, () => treatInfo(c));
@@ -687,27 +738,27 @@ function render(t) {
     }
     if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
     if (c.charge != null) drawBlasterCharge(c, t);
-    if (c !== me && crew.length > 1) {                // name tags for the others
+    if (c !== me && crew.length > 1) upright(view, c.x, c.y, sprited.has(c) ? 1.35 : 0.45, () => {   // name tags for the others
       ctx.font = `700 ${T * 0.26}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, c.x * T, (c.y - 0.45) * T);
-      ctx.fillStyle = c.color; ctx.fillText(c.name, c.x * T, (c.y - 0.45) * T); ctx.textAlign = 'left';
-    }
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, 0, 0);
+      ctx.fillStyle = c.color; ctx.fillText(c.name, 0, 0); ctx.textAlign = 'left';
+    });
   }
   drawBoarding(t);
   drawDockActors(t);
-  drawLights(1 / 60);
+  if (!G) drawLights(1 / 60);
   drawVacuumTint();
   drawDockDarkness();
   drawCombatFront(t);
 
   const prompt = me.prompt, hover = me.hover;
-  if (prompt && !prompt.screen) {
+  if (prompt && !prompt.screen) upright(view, me.x, me.y, G && sprited.has(me) ? 1.45 : 0.55, () => {
     ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const x = me.x * T, y = (me.y - 0.55) * T, w = ctx.measureText(prompt.text).width + 18;
-    rr(x - w / 2, y - T * 0.42, w, T * 0.46, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? '#5fd6a0' : '#6b7486');
-    ctx.fillStyle = prompt.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(prompt.text, x, y - T * 0.06);
+    const w = ctx.measureText(prompt.text).width + 18;
+    rr(-w / 2, -T * 0.42, w, T * 0.46, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? '#5fd6a0' : '#6b7486');
+    ctx.fillStyle = prompt.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(prompt.text, 0, -T * 0.06);
     ctx.textAlign = 'left';
-  }
+  });
   ctx.restore();
   if (prompt && prompt.screen) {
     ctx.font = '600 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -731,6 +782,13 @@ function render(t) {
   drawHUD();
   drawDebugMenu();
   drawPanels(t);
+  if (G) GFX.end();
+}
+// Text and labels above a world point, upright (not squashed by the tilted view): fn draws around
+// (0, -lift·T) in world px, with the world transform's zoom. `above`: screen units above the ground.
+function upright(view, x, y, above, fn) {
+  ctx.save(); ctx.translate(x * T, y * T); ctx.scale(1, 1 / view.sy); ctx.translate(0, -above * T);
+  fn(); ctx.restore();
 }
 
 function drawHUD() {
@@ -843,6 +901,7 @@ function clientUpdate(dt) {
   }
   const m = localInput.mouse;
   [m.wx, m.wy] = screenToWorld(m.x, m.y);
+  if (GFX.on) { const p = GFX.pickAt(m.x, m.y); if (p) [m.wx, m.wy] = p; }   // pointing at a raised sprite (crew): its ground point
   updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
   music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0);

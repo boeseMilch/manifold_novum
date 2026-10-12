@@ -211,7 +211,7 @@ function drawEncounterOverlay(view, t) {
     ctx.fillStyle = `rgba(255,236,190,${0.22 + 0.06 * Math.sin(t * 20)})`; ctx.fillRect(0, 0, VW, VH);
   }
   if (enc.storm && me.mode === 'inside') {
-    const sx = view.ox + L(me.x) * view.zoom, sy = view.oy + L(me.y) * view.zoom, r = L(5.5) * view.zoom, a = me.face;
+    const sx = view.ox + L(me.x) * view.zoom, sy = view.oy + L(me.y - GFX.lift(0.9)) * view.zoom * (view.sy || 1), r = L(5.5) * view.zoom, a = me.face;
     ctx.save();
     ctx.beginPath(); ctx.rect(0, 0, VW, VH);
     const r0 = L(0.9) * view.zoom;                     // one keyhole shape: the flashlight cone plus a little light around you

@@ -1,0 +1,253 @@
+// What the game draws with the sprite renderer (js/gfx.js), and where. Each draw function here
+// replaces an old 2D one when GFX.on; if its sprites aren't loaded yet it returns false and the
+// caller draws the old 2D version instead (render() in js/game.js), so nothing ever disappears.
+//
+// Converted so far: the hull body, floors, walls (built from the room layout in js/ship.js), the
+// spine, the deck airlocks, the doors between rooms, the outer airlock hatches (inside view) and
+// the crew. Sprite names and origins: the model scripts' headers in tools/blender/models/<group>/.
+
+// ---------------------------------------------------------------------------------------------
+// Walls, from the room layout. The walls are the 0.6 wide gaps around the floor rectangles:
+//   back walls  (a room's north edge): full height (1.6), ship/wall_h, origin = left end at the
+//               bottom of the front face (the room's edge); the body lies north of it
+//   near walls  (a room's south edge): cut down to 0.35 so they don't hide the room, ship/wall_h_low,
+//               origin at the south face (edge + 0.6)
+//   up-down walls: ship/wall_v tiles (the top strip; origin = north end, wall centre), stepping down
+//               (interior/wall_v_step) to ship/wall_v_low ~1.4 before a near wall (the cutaway rule)
+//   junctions:  interior/wall_j_[low_]<arms> where walls meet (arms = the directions they continue)
+// The spine (between the decks) is its own block (interior/spine_*), with the deck airlock shafts in it.
+// ---------------------------------------------------------------------------------------------
+const WALL_T = 0.6, H_LOW = 0.35, SPINE_HI = 12.549;   // spine: high block from 12.549 (see models/interior/structure.py)
+let WALLS = null;
+function buildWalls() {
+  const floors = FLOOR_RECTS, E = 1e-6;
+  const isFloor = (x, y) => floors.some(r => x > r.x + E && x < r.x + r.w - E && y > r.y + E && y < r.y + r.h - E);
+  const intervals = (a, b, cuts, test) => {                // parts of [a, b] where test(mid) holds
+    const pts = [...new Set([a, b, ...cuts.filter(c => c > a && c < b)])].sort((p, q) => p - q), out = [];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      if (!test((pts[i] + pts[i + 1]) / 2)) continue;
+      if (out.length && Math.abs(out[out.length - 1][1] - pts[i]) < E) out[out.length - 1][1] = pts[i + 1];
+      else out.push([pts[i], pts[i + 1]]);
+    }
+    return out;
+  };
+  const xs = floors.flatMap(r => [r.x, r.x + r.w]), ys = floors.flatMap(r => [r.y, r.y + r.h]);
+  const H = [], V = [];
+  for (const r of ROOM_RECTS) {
+    const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h;
+    if (Math.abs(y0 - SPINE_Y1) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05)))
+      H.push({ kind: 'back', y: y0, x0: isFloor(a - 0.05, y0 + 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y0 + 0.05) ? b : b + WALL_T });
+    if (Math.abs(y1 - SPINE_Y0) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y1 + 0.05)))
+      H.push({ kind: 'near', y: y1, x0: isFloor(a - 0.05, y1 - 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y1 - 0.05) ? b : b + WALL_T });
+    for (const [ex, out, inside] of [[x0, x0 - 0.05, x0 + 0.05], [x1, x1 + 0.05, x1 - 0.05]]) {
+      for (const [a, b] of intervals(y0, y1, ys, y => !isFloor(out, y))) {
+        const top = Math.abs(a - SPINE_Y1) < E ? a : isFloor(inside, a - 0.05) ? a : a - WALL_T;
+        const bot = Math.abs(b - SPINE_Y0) < E ? SPINE_HI : isFloor(inside, b + 0.05) ? b : b + WALL_T;
+        V.push({ x: ex === x0 ? x0 - WALL_T / 2 : x1 + WALL_T / 2, y0: top, y1: bot, toSpine: Math.abs(b - SPINE_Y0) < E });
+      }
+    }
+  }
+  // merge runs on the same line
+  const merge = (runs, key, a, b) => {
+    const out = [];
+    for (const r of runs.sort((p, q) => p[key] - q[key] || p[a] - q[a])) {
+      const last = out[out.length - 1];
+      if (last && Math.abs(last[key] - r[key]) < E && (key !== 'y' || last.kind === r.kind) && r[a] <= last[b] + E) {
+        last[b] = Math.max(last[b], r[b]); last.toSpine = last.toSpine || r.toSpine;
+      } else out.push({ ...r });
+    }
+    return out;
+  };
+  const hRuns = merge(H, 'y', 'x0', 'x1');
+  let vRuns = merge(V, 'x', 'y0', 'y1');
+  // openings: doors (the frame sprite brings the jamb ends) and the outer airlock hatches
+  const cuts = [
+    ...DOORWAYS.map(d => ({ x: d.x + d.w / 2, a: d.y - 0.6, b: d.y + d.h + 0.2 })),
+    ...HATCHES.map(h => ({ x: h.x - h.dir * 0.3, a: h.y - 0.9 - 0.6, b: h.y + 0.9 + 0.26 })),
+  ];
+  for (const c of cuts) vRuns = vRuns.flatMap(r => {
+    if (Math.abs(r.x - c.x) > E || c.b <= r.y0 || c.a >= r.y1) return [r];
+    return [{ ...r, y1: c.a, cutEnd: true }, { ...r, y0: c.b }].filter(q => q.y1 - q.y0 > 0.05);
+  });
+  // junctions: where a horizontal run's body crosses an up-down run
+  const J = [];
+  for (const h of hRuns) for (const v of vRuns) {
+    const sx0 = v.x - WALL_T / 2, sx1 = v.x + WALL_T / 2, sy0 = h.kind === 'back' ? h.y - WALL_T : h.y, sy1 = sy0 + WALL_T;
+    if (h.x0 > sx0 + E || h.x1 < sx1 - E || v.y0 > sy0 + E || v.y1 < sy1 - E) continue;
+    const arms = (v.y0 < sy0 - E ? 'n' : '') + (h.x1 > sx1 + E ? 'e' : '') + (v.y1 > sy1 + E ? 's' : '') + (h.x0 < sx0 - E ? 'w' : '');
+    J.push({ x: v.x, y: sy1, low: h.kind === 'near', arms, v });
+  }
+  // where each up-down run steps down to the low height: at its first near-wall junction, and at
+  // the latest 1.4 before a south end that meets a near wall
+  for (const v of vRuns) {
+    const near = J.filter(j => j.v === v && j.low);
+    v.step = Math.min(Infinity, ...near.map(j => j.y - WALL_T), ...near.filter(j => Math.abs(j.y - v.y1) < 1e-6).map(j => j.y - 1.4));
+    if (v.toSpine && Math.abs(v.y1 - SPINE_HI) < E) v.step = Infinity;
+  }
+  return { hRuns, vRuns, J };
+}
+
+// Tiles a sprite along x from x0 to x1 (period `per`, origin at each tile's left end), clipped at both ends.
+function tileX(name, x0, x1, y, per, o) {
+  for (let x = x0; x < x1 - 1e-4; x += per) GFX.sprite(name, 0, x, y, 0, { layer: 'wall', ...o, clip: [x0, null, x1, null] });
+}
+function drawWallSprites() {
+  if (!WALLS) WALLS = buildWalls();
+  const hInfo = GFX.info('ship/wall_h'), hLowInfo = GFX.info('ship/wall_h_low'), vInfo = GFX.info('ship/wall_v');
+  const PV = (vInfo && vInfo.pitch) || 1.00625;
+  for (const h of WALLS.hRuns) {
+    const back = h.kind === 'back', y = back ? h.y : h.y + WALL_T, name = back ? 'ship/wall_h' : 'ship/wall_h_low';
+    const per = ((back ? hInfo : hLowInfo)?.tile || [1])[0] || 1;
+    tileX(name, h.x0, h.x1, y, per, { layer: 'wall', sortY: back ? h.y - 0.3 : h.y + 0.3 });
+  }
+  for (const v of WALLS.vRuns) {
+    const step = clamp(v.step, v.y0, v.y1);
+    // full height north of the step, low south of it; tiles are the top strip, clipped at the ends
+    for (const [name, a, b, hz] of [['ship/wall_v', v.y0, step, 1.6], ['ship/wall_v_low', step, v.y1, H_LOW]]) {
+      for (let y = a; y < b - 1e-4; y += PV) GFX.sprite(name, 0, v.x, y, 0, { layer: 'wall', clip: [null, y, null, Math.min(y + PV, b), hz], sortY: y + PV / 2 });
+    }
+    if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) GFX.sprite('interior/wall_v_step', 0, v.x, v.step, 0, { layer: 'wall', sortY: v.step + 0.01 });
+  }
+  for (const j of WALLS.J) {
+    const name = `interior/wall_j_${j.low ? 'low_' : ''}${j.arms}`;
+    if (j.arms && GFX.has(name)) GFX.sprite(name, 0, j.x, j.y, 0, { layer: 'wall', sortY: j.y - 0.3 + 0.002 });
+  }
+}
+
+// The spine between the decks (interior/spine_a/b, 2 units per tile, origin at y = SPINE_Y1), with
+// the deck airlocks cut out (their sprites bring the spine ends next to the shaft).
+function drawSpineSprites() {
+  const gaps = DECK_LOCKS.map(L => [L.x - 0.6, L.x + L.w + 0.6]).sort((a, b) => a[0] - b[0]);
+  let x = 0;
+  const segs = [];
+  for (const [a, b] of gaps) { segs.push([x, a]); x = b; }
+  segs.push([x, SHIP_W]);
+  for (const [a, b] of segs) {
+    for (let t = Math.floor(a / 2) * 2; t < b - 1e-4; t += 2) {
+      const name = hash2(t, 7) < 0.5 ? 'interior/spine_a' : 'interior/spine_b';
+      GFX.sprite(name, 0, t, SPINE_Y1, 0, { layer: 'wall', clip: [Math.max(a, t), null, Math.min(b, t + 2), null], sortY: SPINE_Y1 - 0.3 });
+    }
+  }
+}
+
+// Deck airlocks: the shaft (base: lamps and beacons by state) and its two doors on top.
+function drawDeckLockSprite(L, t) {
+  const b = broken(L), f8 = Math.floor(t * 8) % 8;
+  const base = b ? `interior/decklock_broken_f${Math.floor(t * 6) % 2}` : L.locked ? 'interior/decklock_locked'
+    : L.phase === 'cycling' ? `interior/decklock_cycle_f${f8}` : L.phase !== 'idle' ? `interior/decklock_busy_f${f8}`
+    : L.open === 'bottom' ? 'interior/decklock_bottom' : 'interior/decklock_top';
+  if (!GFX.ready(base)) return false;
+  GFX.sprite(base, 0, L.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y0, emissive: 0.6 });
+  for (const s of ['top', 'bottom']) {
+    const k = L.doors[s], pre = `interior/decklock_${s === 'top' ? 'top' : 'bot'}door`;
+    const name = b && k > 0.95 ? pre + '_forced' : L.locked && k < 0.05 ? pre + '_locked' : `${pre}_f${Math.round(clamp(k, 0, 1) * 5)}`;
+    GFX.sprite(name, 0, L.x, SPINE_Y1, 0, { layer: 'wall', sortY: s === 'top' ? SPINE_Y0 + 0.25 : SPINE_Y1 - 0.25, emissive: 0.4 });
+  }
+  return true;
+}
+
+// Doors between rooms (in up-down walls): frame (lamp by state) + the sliding panels.
+function drawDoorSprites(t) {
+  if (!GFX.ready('interior/door_v_frame')) return false;
+  for (const d of DOORWAYS) {
+    const x = d.x + d.w / 2, k = Math.round(clamp(d.open, 0, 1) * 5);
+    const frame = d.blast ? `interior/door_v_frame_blast_f${Math.floor(t * 4) % 4}` : d.locked ? 'interior/door_v_frame_locked' : 'interior/door_v_frame';
+    const panels = d.blast ? `interior/door_v_blast_f${k}` : d.locked ? `interior/door_v_locked_f${k}` : `interior/door_v_f${k}`;
+    GFX.sprite(frame, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2, emissive: 0.6 });
+    GFX.sprite(panels, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2 + 0.01 });
+  }
+  return true;
+}
+
+// Outer airlock hatches, inside view: frame + panels (h.open), locked / broken states.
+function drawHatchSprites(t) {
+  if (!GFX.ready('interior/hatch_port_frame')) return false;
+  for (const h of HATCHES) {
+    const s = `interior/hatch_${h.side}`, x = h.x - h.dir * 0.3, y = h.y - 0.9, b = broken(h);
+    const frame = b ? `${s}_frame_broken_f${Math.floor(t * 8) % 2}` : h.locked ? `${s}_frame_locked` : `${s}_frame`;
+    const panels = b ? `${s}_broken` : h.locked && h.open < 0.05 ? `${s}_locked` : `${s}_f${Math.round(clamp(h.open, 0, 1) * 5)}`;
+    GFX.sprite(frame, 0, x, y, 0, { layer: 'wall', sortY: h.y, emissive: 0.6 });
+    GFX.sprite(panels, 0, x, y, 0, { layer: 'wall', sortY: h.y + 0.01 });
+  }
+  return true;
+}
+
+// Floors: every floor rect tiled with the 2 x 2 tiles of its zone (variants mixed by a hash of the
+// tile's place on one ship-wide grid, so the seams line up), clipped to the rect. Doorways get tread.
+const hash2 = (a, b) => { let h = Math.imul(Math.round(a * 10) | 0, 374761393) ^ Math.imul(Math.round(b * 10) | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+function drawFloorSprites() {
+  if (!GFX.ready('interior/floor_white_a')) return false;
+  const rects = [...ROOM_RECTS, ...DOORWAYS];
+  for (const r of rects) {
+    const small = Math.min(r.w, r.h) < 3, zone = zoneAtX(r.x + 0.01).name;
+    for (let ty = Math.floor(r.y / 2) * 2; ty < r.y + r.h - 1e-4; ty += 2) for (let tx = Math.floor(r.x / 2) * 2; tx < r.x + r.w - 1e-4; tx += 2) {
+      const h = hash2(tx, ty);
+      const name = small ? 'interior/floor_tread' : h < 0.08 ? (h < 0.04 ? 'ship/floor' : 'ship/floor_b') : h < 0.54 ? `interior/floor_${zone}_a` : `interior/floor_${zone}_b`;
+      GFX.sprite(name, 0, tx, ty, 0, { layer: 'ground', clip: [Math.max(r.x, tx), Math.max(r.y, ty), Math.min(r.x + r.w, tx + 2), Math.min(r.y + r.h, ty + 2)] });
+    }
+  }
+  return true;
+}
+
+// The hull body: screen tiles that all go at ship-local (0, 0) (each brings its own offset).
+function drawHullSprites() {
+  const idx = GFX.info('hull/body');
+  if (!idx || !idx.tiles || !idx.tiles.every(n => !GFX.has(n) || GFX.ready(n))) return false;
+  for (const n of idx.tiles) GFX.sprite(n, 0, 0, 0, 0, { layer: 'ground' });
+  return true;
+}
+
+// The structure of the ship in sprites (called by render() before the 2D layers). Returns which
+// parts it drew, so render() draws the old 2D version of the rest.
+function drawShipSprites(t) {
+  const done = { hull: drawHullSprites(), floors: drawFloorSprites(), walls: false, locks: false, doors: false, hatches: false };
+  if (GFX.ready('ship/wall_h') && GFX.ready('interior/spine_a')) { drawWallSprites(); drawSpineSprites(); done.walls = true; }
+  done.locks = DECK_LOCKS.every(L => GFX.ready('interior/decklock_top')) && DECK_LOCKS.map(L => drawDeckLockSprite(L, t)).every(Boolean);
+  done.doors = drawDoorSprites(t);
+  done.hatches = drawHatchSprites(t);
+  return done;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Crew: crew/idle, crew/walk (8 frames), *_visor; 8 directions from c.face; the suit colour through
+// the tint mask. Walking is detected from c.walk advancing (it's in every snapshot), so it works
+// for everyone in multiplayer. Down / out: crew/down if it exists, else the old 2D drawing.
+// ---------------------------------------------------------------------------------------------
+const crewAnim = new Map();
+function drawCrewSprite(c, visor, t) {
+  const down = c.health === 'down' || c.health === 'out';
+  if (down && !GFX.has('crew/down')) return false;
+  if (!GFX.ready('crew/idle')) return false;
+  let a = crewAnim.get(c.id);
+  if (!a) crewAnim.set(c.id, a = { walk: c.walk, moving: 0 });
+  a.moving = Math.abs(c.walk - a.walk) > 1e-4 ? 0.12 : Math.max(0, a.moving - 1 / 60);   // (bridges frames where walk didn't change)
+  a.walk = c.walk;
+  const tint = down && c.health === 'out' ? '#7a7f8a' : c.color;
+  let name, f = 0;
+  if (down) name = 'crew/down';
+  else if (a.moving > 0) { name = visor ? 'crew/walk_visor' : 'crew/walk'; f = Math.floor((c.walk / TAU) * 8); }
+  else name = visor ? 'crew/idle_visor' : 'crew/idle';
+  if (!GFX.has(name)) name = visor ? 'crew/idle_visor' : 'crew/idle';
+  return GFX.sprite(name, GFX.frameIndex(name, c.face, f), c.x, c.y, 0, { tint, emissive: 0.4, pick: [0.32, 1.25], alpha: c.health === 'out' ? 0.85 : 1, depthBias: c.mode === 'gun' ? GUN_DEPTH_BIAS : 0 });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Cannons: the turret (hull/gun, 48 aim directions, origin = the pivot; the mount is in the hull
+// body), recoiling with g.flash; the muzzle flash stays a 2D glow on top (drawMuzzleFlash).
+// ---------------------------------------------------------------------------------------------
+const GUN_DEPTH_BIAS = 3;                          // (the gunner gets it too: see drawCrewSprite)
+function drawGunSprite(g) {
+  const name = broken(g) ? 'hull/gun_broken' : 'hull/gun';
+  if (!GFX.ready(name)) return false;
+  const rec = g.flash * 6 / T;                      // the barrel kicks back like drawGun's
+  // depthBias: the front cannon sits on a sponson just behind the bridge's 1.6 high nose wall, which would
+  // hide it in the tilted view; drawn in front of the wall it reads as mounted on top of it
+  return GFX.sprite(name, GFX.frameIndex(name, g.aim), g.x - Math.cos(g.aim) * rec, g.y - Math.sin(g.aim) * rec, 0, { layer: 'wall', sortY: g.y, emissive: 0.3, depthBias: GUN_DEPTH_BIAS });
+}
+function drawMuzzleFlash(g) {
+  if (!(g.flash > 0)) return;
+  const x = (g.x + Math.cos(g.aim) * 1.15) * T, y = (g.y + Math.sin(g.aim) * 1.15 - GFX.lift(0.4)) * T, r = T * 0.5;
+  const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, '#fff6d0'); gr.addColorStop(0.4, 'rgba(255,190,80,0.8)'); gr.addColorStop(1, 'rgba(255,120,40,0)');
+  ctx.globalAlpha = g.flash; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;
+}

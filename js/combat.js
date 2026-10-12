@@ -454,7 +454,7 @@ function drawCombatHUD(view, top) {
   // edge arrows towards threats that are off screen
   const threats = [...combat.enemies.filter(e => e.phase === 'fighting' && !e.D.backdrop && (!e.D.stealth || stealthAlpha(e) > 0.3)), ...combat.asteroids];
   for (const th of threats) {
-    const sx = view.ox + L(th.x) * view.zoom, sy = view.oy + L(th.y) * view.zoom;
+    const sx = view.ox + L(th.x) * view.zoom, sy = view.oy + L(th.y) * view.zoom * (view.sy || 1);
     if (sx > 0 && sx < VW && sy > top && sy < VH) continue;
     const cx = VW / 2, cy = (VH + top) / 2, a = Math.atan2(sy - cy, sx - cx);
     const m = 30, kx = (VW / 2 - m) / Math.abs(Math.cos(a) || 1e-6), ky = ((VH - top) / 2 - m) / Math.abs(Math.sin(a) || 1e-6);

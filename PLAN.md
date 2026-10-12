@@ -744,6 +744,23 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   normal/height maps, click areas for raised objects). Each agent's report notes are summarised in its
   model scripts' headers and the manifest `note` fields.
 
+### 9a. The sprites in the game (first part)
+- `js/gfx.js`: WebGL2 renderer under the 2D canvas (instanced quads per atlas page, lazy page loading,
+  per-pixel lighting and depth from the normal/height maps, bloom; API in its header and in
+  `tools/sprites/README.md`). `js/lights.js`: this frame's lights (room ambient per zone column from the
+  capacitors, ceiling lamps, reactor glow, muzzle flashes; to be refined). `js/sprites.js`: what is drawn
+  with sprites: hull body, floors (zone tiles mixed by a hash), walls built from the room layout (back
+  walls full height, near walls cut down, up-down walls stepping down before a near wall, junction
+  pieces), the spine, deck airlocks, doors, outer hatches (inside), cannons and the crew.
+- The camera is tilted (screen y = ground y × sin 50°) whenever the sprites are on; mouse picking maps
+  onto the ground plane, and the crew can be clicked on their body (`GFX.pickAt`). Everything not
+  converted is still drawn by its old 2D function, into a 2D layer at ground level (see render() in
+  `js/game.js`): before the crew → composited under the crew and over the walls; after → on top.
+- `?classic` keeps the old look; it's also the fallback without WebGL2 / from `file://`, and what the
+  tests and the server use. Overview with ~560 sprites: ~6 ms a frame at 2560×1600 (classic 2D: ~20 ms).
+- Known: the front cannon and its gunner sit behind the bridge's nose wall, so they're drawn in front of
+  it (depth bias); 2D props near a room's south edge can be covered by the low wall top.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

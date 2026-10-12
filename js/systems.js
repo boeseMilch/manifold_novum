@@ -403,10 +403,15 @@ function attack(a, blast = false) {
 // ---------------------------------------------------------------------------
 // Rooms of a zone column go dim when its capacitor is empty or broken.
 const lightLevel = [1, 1, 1];
-function drawLights(dt) {
+function updateLightLevels(dt) {                        // (the sprite renderer's lights read these too: js/lights.js)
   for (let col = 0; col < 3; col++) {
     const dark = CAPACITORS[col].charge <= 0 || capBroken(col);
     lightLevel[col] = lerp(lightLevel[col], dark ? 0 : 1, 1 - Math.exp(-3 * dt));
+  }
+}
+function drawLights(dt) {
+  updateLightLevels(dt);
+  for (let col = 0; col < 3; col++) {
     const a = (1 - lightLevel[col]) * 0.42;
     if (a < 0.01) continue;
     ctx.fillStyle = `rgba(40,4,6,${a})`;                // emergency lighting: dim and red

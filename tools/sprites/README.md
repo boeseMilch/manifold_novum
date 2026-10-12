@@ -99,3 +99,28 @@ The rebuilt frame matches the render within the tolerances (max 6/255 per channe
 Settings are the table at the top of `pack.py` (pixels per unit, padding, tolerances, WebP settings).
 The format is read by `prototype2/` (and later the game): change both together and bump
 `meta.version` if a field changes meaning.
+
+## In the game (`js/gfx.js`, `js/sprites.js`, `js/lights.js`)
+
+`js/gfx.js` is the WebGL2 renderer (its header documents the whole API). It draws on its own canvas
+under the 2D canvas `c`, which stays on top for the HUD, panels, prompts and effects. Without WebGL2,
+with `?classic`, opened as a `file://`, or in Node (tests, the server's simulation) `GFX.on` is false
+and the game draws its old top-down look.
+
+    GFX.sprite(name, frame, x, y, z, { layer, sortY, alpha, tint, emissive, unlit, scale, flip, clip, depthBias, depthWrite, pick })
+    GFX.frameIndex(name, angle, f)      // dir * frames + f, dir from an angle (0 = right, y down)
+    GFX.lighting({ ambient, sun, areas, lights })   // built each frame by gameLighting() in js/lights.js
+    GFX.layer2d('back' | 'mid')        // 2D canvases composited into the GL picture (old drawings)
+    GFX.has(name), GFX.ready(name), GFX.info(name), GFX.toScreen(x, y, z), GFX.lift(z), GFX.pickAt(x, y)
+
+- Pages load lazily per group (hull, interior, ship and crew are preloaded); `GFX.sprite` returns false
+  until a sprite's pages are there, so callers draw their old 2D version meanwhile.
+- Layers, in drawing order: 2D `back` (space, things behind the ship, unlit) → `ground` / `decal`
+  (no depth, submission order: hull tiles, floors) → `wall` (sorted by `sortY`, per-pixel depth from the
+  height map: walls, doors, airlocks, cannons) → 2D `mid` (every old drawing the game used to draw
+  before the crew, lit like the floor) → `main` (sorted, depth-tested against the walls: crew and other
+  things that move) → `top` → bloom and tone shoulder. The 2D canvas `c` (after-crew drawings, HUD) is on top.
+- Per pixel: world position from the sprite's place, ppu and height map → light = area ambient + sun ×
+  area factor + up to 32 point lights (N·L from the normal map) → depth `y·cos50 + z·sin50`.
+- Tint: the mask recolours relative to the untinted mask area's mean luminance (measured from frame 0).
+- Internal resolution: min(1, 2048 / physical width); `?gfxscale=0.75` sets (and remembers) another.

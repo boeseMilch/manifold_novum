@@ -138,3 +138,6 @@ The prompt above you always says what a click (or E) will do.
   - `index.html?mission=rush&autostart` skips the lobby.
   - `index.html#do=4,8&w=5` runs debug-menu entries 4 and 8 and fast-forwards 5 seconds
     (solo, no lobby).
+  - `index.html?classic` draws the old top-down 2D look instead of the sprites (also the automatic
+    fallback without WebGL2, or when `index.html` is opened as a file). `?gfxscale=0.75` changes the
+    sprite renderer's internal resolution (remembered; the default renders at most 2048 px wide).
