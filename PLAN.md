@@ -712,6 +712,21 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Profile v3: Gunner → Weapons specialist, Medic → no profession plus the first aid course; trauma
   kit and painkillers dropped.
 
+### 9. Prototype: Blender sprites in a tilted top-down view (not in the game yet)
+- Goal: replace the hand-drawn canvas art with pre-rendered Blender models that look finished.
+  View: orthographic, 50° above the horizon, not rotated (rooms stay rectangles, WASD stays
+  screen-aligned). Decided against true 45° isometric.
+- Pipeline: `tools/blender/mn.py` + `README.md`. Each model is a Python script (no .blend files)
+  that renders beauty, world normals, height and (for recolourable parts) a tint mask into
+  `assets/sprites/`, with `manifest.json` giving sizes and ground origins. 96 px per unit.
+- Three prototypes, each built by its own sub-agent: the crew member, the reactor room (reactor,
+  floor, walls; near walls cut down to 0.35 so they don't hide the room), and the interceptor
+  (weak spots line up with the game's hit shapes). A fourth built `prototype2/`: a WebGL viewer
+  that lights the sprites at runtime from the normal/height maps (reactor glow, red alert, muzzle
+  flashes, blue weak spots), with depth from the height map.
+- Open: whether to go this way for the whole game, the key light direction, how the ~18 MB of
+  renders (and many more for the full game) should be stored.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

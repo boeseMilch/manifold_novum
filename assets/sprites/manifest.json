@@ -1,0 +1,631 @@
+{
+ "_meta": {
+  "elevation": 50.0,
+  "files": "<name>.png beauty, .n.png normals (rgb = n*0.5+0.5), .h.png height (z / heightRange), .m.png tint mask",
+  "heightRange": 4.0,
+  "ppu": 96
+ },
+ "crew/idle": {
+  "dirs": 8,
+  "files": [
+   "crew/idle_d0",
+   "crew/idle_d1",
+   "crew/idle_d2",
+   "crew/idle_d3",
+   "crew/idle_d4",
+   "crew/idle_d5",
+   "crew/idle_d6",
+   "crew/idle_d7"
+  ],
+  "frames": 1,
+  "h": 160,
+  "ox": 51.0,
+  "oy": 119.18,
+  "w": 102
+ },
+ "crew/idle_visor": {
+  "dirs": 8,
+  "files": [
+   "crew/idle_visor_d0",
+   "crew/idle_visor_d1",
+   "crew/idle_visor_d2",
+   "crew/idle_visor_d3",
+   "crew/idle_visor_d4",
+   "crew/idle_visor_d5",
+   "crew/idle_visor_d6",
+   "crew/idle_visor_d7"
+  ],
+  "frames": 1,
+  "h": 160,
+  "ox": 51.0,
+  "oy": 119.18,
+  "w": 102
+ },
+ "crew/walk": {
+  "dirs": 8,
+  "files": [
+   "crew/walk_d0_f0",
+   "crew/walk_d0_f1",
+   "crew/walk_d0_f2",
+   "crew/walk_d0_f3",
+   "crew/walk_d0_f4",
+   "crew/walk_d0_f5",
+   "crew/walk_d0_f6",
+   "crew/walk_d0_f7",
+   "crew/walk_d1_f0",
+   "crew/walk_d1_f1",
+   "crew/walk_d1_f2",
+   "crew/walk_d1_f3",
+   "crew/walk_d1_f4",
+   "crew/walk_d1_f5",
+   "crew/walk_d1_f6",
+   "crew/walk_d1_f7",
+   "crew/walk_d2_f0",
+   "crew/walk_d2_f1",
+   "crew/walk_d2_f2",
+   "crew/walk_d2_f3",
+   "crew/walk_d2_f4",
+   "crew/walk_d2_f5",
+   "crew/walk_d2_f6",
+   "crew/walk_d2_f7",
+   "crew/walk_d3_f0",
+   "crew/walk_d3_f1",
+   "crew/walk_d3_f2",
+   "crew/walk_d3_f3",
+   "crew/walk_d3_f4",
+   "crew/walk_d3_f5",
+   "crew/walk_d3_f6",
+   "crew/walk_d3_f7",
+   "crew/walk_d4_f0",
+   "crew/walk_d4_f1",
+   "crew/walk_d4_f2",
+   "crew/walk_d4_f3",
+   "crew/walk_d4_f4",
+   "crew/walk_d4_f5",
+   "crew/walk_d4_f6",
+   "crew/walk_d4_f7",
+   "crew/walk_d5_f0",
+   "crew/walk_d5_f1",
+   "crew/walk_d5_f2",
+   "crew/walk_d5_f3",
+   "crew/walk_d5_f4",
+   "crew/walk_d5_f5",
+   "crew/walk_d5_f6",
+   "crew/walk_d5_f7",
+   "crew/walk_d6_f0",
+   "crew/walk_d6_f1",
+   "crew/walk_d6_f2",
+   "crew/walk_d6_f3",
+   "crew/walk_d6_f4",
+   "crew/walk_d6_f5",
+   "crew/walk_d6_f6",
+   "crew/walk_d6_f7",
+   "crew/walk_d7_f0",
+   "crew/walk_d7_f1",
+   "crew/walk_d7_f2",
+   "crew/walk_d7_f3",
+   "crew/walk_d7_f4",
+   "crew/walk_d7_f5",
+   "crew/walk_d7_f6",
+   "crew/walk_d7_f7"
+  ],
+  "frames": 8,
+  "h": 160,
+  "ox": 51.0,
+  "oy": 119.18,
+  "w": 102
+ },
+ "crew/walk_visor": {
+  "dirs": 8,
+  "files": [
+   "crew/walk_visor_d0_f0",
+   "crew/walk_visor_d0_f1",
+   "crew/walk_visor_d0_f2",
+   "crew/walk_visor_d0_f3",
+   "crew/walk_visor_d0_f4",
+   "crew/walk_visor_d0_f5",
+   "crew/walk_visor_d0_f6",
+   "crew/walk_visor_d0_f7",
+   "crew/walk_visor_d1_f0",
+   "crew/walk_visor_d1_f1",
+   "crew/walk_visor_d1_f2",
+   "crew/walk_visor_d1_f3",
+   "crew/walk_visor_d1_f4",
+   "crew/walk_visor_d1_f5",
+   "crew/walk_visor_d1_f6",
+   "crew/walk_visor_d1_f7",
+   "crew/walk_visor_d2_f0",
+   "crew/walk_visor_d2_f1",
+   "crew/walk_visor_d2_f2",
+   "crew/walk_visor_d2_f3",
+   "crew/walk_visor_d2_f4",
+   "crew/walk_visor_d2_f5",
+   "crew/walk_visor_d2_f6",
+   "crew/walk_visor_d2_f7",
+   "crew/walk_visor_d3_f0",
+   "crew/walk_visor_d3_f1",
+   "crew/walk_visor_d3_f2",
+   "crew/walk_visor_d3_f3",
+   "crew/walk_visor_d3_f4",
+   "crew/walk_visor_d3_f5",
+   "crew/walk_visor_d3_f6",
+   "crew/walk_visor_d3_f7",
+   "crew/walk_visor_d4_f0",
+   "crew/walk_visor_d4_f1",
+   "crew/walk_visor_d4_f2",
+   "crew/walk_visor_d4_f3",
+   "crew/walk_visor_d4_f4",
+   "crew/walk_visor_d4_f5",
+   "crew/walk_visor_d4_f6",
+   "crew/walk_visor_d4_f7",
+   "crew/walk_visor_d5_f0",
+   "crew/walk_visor_d5_f1",
+   "crew/walk_visor_d5_f2",
+   "crew/walk_visor_d5_f3",
+   "crew/walk_visor_d5_f4",
+   "crew/walk_visor_d5_f5",
+   "crew/walk_visor_d5_f6",
+   "crew/walk_visor_d5_f7",
+   "crew/walk_visor_d6_f0",
+   "crew/walk_visor_d6_f1",
+   "crew/walk_visor_d6_f2",
+   "crew/walk_visor_d6_f3",
+   "crew/walk_visor_d6_f4",
+   "crew/walk_visor_d6_f5",
+   "crew/walk_visor_d6_f6",
+   "crew/walk_visor_d6_f7",
+   "crew/walk_visor_d7_f0",
+   "crew/walk_visor_d7_f1",
+   "crew/walk_visor_d7_f2",
+   "crew/walk_visor_d7_f3",
+   "crew/walk_visor_d7_f4",
+   "crew/walk_visor_d7_f5",
+   "crew/walk_visor_d7_f6",
+   "crew/walk_visor_d7_f7"
+  ],
+  "frames": 8,
+  "h": 160,
+  "ox": 51.0,
+  "oy": 119.18,
+  "w": 102
+ },
+ "enemy/interceptor_port": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 203.05,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/interceptor_port_cable_hit": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port_cable_hit"
+  ],
+  "frames": 1,
+  "h": 74,
+  "ox": -31.73,
+  "oy": 113.14,
+  "w": 92
+ },
+ "enemy/interceptor_port_cable_ok": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port_cable_ok"
+  ],
+  "frames": 1,
+  "h": 78,
+  "ox": -31.69,
+  "oy": 117.31,
+  "w": 94
+ },
+ "enemy/interceptor_port_cooling_hit": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port_cooling_hit"
+  ],
+  "frames": 1,
+  "h": 100,
+  "ox": -172.36,
+  "oy": -6.75,
+  "w": 70
+ },
+ "enemy/interceptor_port_cooling_ok": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port_cooling_ok"
+  ],
+  "frames": 1,
+  "h": 124,
+  "ox": -143.36,
+  "oy": 11.19,
+  "w": 128
+ },
+ "enemy/interceptor_port_crack_hit": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port_crack_hit"
+  ],
+  "frames": 1,
+  "h": 84,
+  "ox": -4.88,
+  "oy": 154.55,
+  "w": 44
+ },
+ "enemy/interceptor_port_crack_ok": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_port_crack_ok"
+  ],
+  "frames": 1,
+  "h": 110,
+  "ox": 25.2,
+  "oy": 179.54,
+  "w": 108
+ },
+ "enemy/interceptor_star": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 228.95,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/interceptor_star_cable_hit": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star_cable_hit"
+  ],
+  "frames": 1,
+  "h": 74,
+  "ox": 123.73,
+  "oy": 113.14,
+  "w": 92
+ },
+ "enemy/interceptor_star_cable_ok": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star_cable_ok"
+  ],
+  "frames": 1,
+  "h": 78,
+  "ox": 125.69,
+  "oy": 117.31,
+  "w": 94
+ },
+ "enemy/interceptor_star_cooling_hit": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star_cooling_hit"
+  ],
+  "frames": 1,
+  "h": 98,
+  "ox": 242.36,
+  "oy": -8.41,
+  "w": 70
+ },
+ "enemy/interceptor_star_cooling_ok": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star_cooling_ok"
+  ],
+  "frames": 1,
+  "h": 124,
+  "ox": 271.36,
+  "oy": 11.19,
+  "w": 128
+ },
+ "enemy/interceptor_star_crack_hit": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star_crack_hit"
+  ],
+  "frames": 1,
+  "h": 84,
+  "ox": 48.88,
+  "oy": 154.55,
+  "w": 44
+ },
+ "enemy/interceptor_star_crack_ok": {
+  "dirs": 1,
+  "files": [
+   "enemy/interceptor_star_crack_ok"
+  ],
+  "frames": 1,
+  "h": 110,
+  "ox": 82.8,
+  "oy": 179.54,
+  "w": 108
+ },
+ "enemy/interceptor_turret": {
+  "dirs": 32,
+  "files": [
+   "enemy/interceptor_turret_d0",
+   "enemy/interceptor_turret_d1",
+   "enemy/interceptor_turret_d2",
+   "enemy/interceptor_turret_d3",
+   "enemy/interceptor_turret_d4",
+   "enemy/interceptor_turret_d5",
+   "enemy/interceptor_turret_d6",
+   "enemy/interceptor_turret_d7",
+   "enemy/interceptor_turret_d8",
+   "enemy/interceptor_turret_d9",
+   "enemy/interceptor_turret_d10",
+   "enemy/interceptor_turret_d11",
+   "enemy/interceptor_turret_d12",
+   "enemy/interceptor_turret_d13",
+   "enemy/interceptor_turret_d14",
+   "enemy/interceptor_turret_d15",
+   "enemy/interceptor_turret_d16",
+   "enemy/interceptor_turret_d17",
+   "enemy/interceptor_turret_d18",
+   "enemy/interceptor_turret_d19",
+   "enemy/interceptor_turret_d20",
+   "enemy/interceptor_turret_d21",
+   "enemy/interceptor_turret_d22",
+   "enemy/interceptor_turret_d23",
+   "enemy/interceptor_turret_d24",
+   "enemy/interceptor_turret_d25",
+   "enemy/interceptor_turret_d26",
+   "enemy/interceptor_turret_d27",
+   "enemy/interceptor_turret_d28",
+   "enemy/interceptor_turret_d29",
+   "enemy/interceptor_turret_d30",
+   "enemy/interceptor_turret_d31"
+  ],
+  "frames": 1,
+  "h": 242,
+  "ox": 147.0,
+  "oy": 131.18,
+  "w": 294
+ },
+ "enemy/pirate_port": {
+  "dirs": 1,
+  "files": [
+   "enemy/pirate_port"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 203.05,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/pirate_star": {
+  "dirs": 1,
+  "files": [
+   "enemy/pirate_star"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 228.95,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/stealth_port": {
+  "dirs": 1,
+  "files": [
+   "enemy/stealth_port"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 203.05,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/stealth_star": {
+  "dirs": 1,
+  "files": [
+   "enemy/stealth_star"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 228.95,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/tractor_port": {
+  "dirs": 1,
+  "files": [
+   "enemy/tractor_port"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 203.05,
+  "oy": 199.32,
+  "w": 432
+ },
+ "enemy/tractor_star": {
+  "dirs": 1,
+  "files": [
+   "enemy/tractor_star"
+  ],
+  "frames": 1,
+  "h": 380,
+  "ox": 228.95,
+  "oy": 199.32,
+  "w": 432
+ },
+ "ship/floor": {
+  "dirs": 1,
+  "files": [
+   "ship/floor"
+  ],
+  "frames": 1,
+  "h": 147,
+  "note": "tileable: repeat every w x h px = 2 x 2 layout units; origin = top-left corner. Variants (floor, floor_b) mix freely.",
+  "ox": 0.0,
+  "oy": 0.0,
+  "tile": [
+   2,
+   2
+  ],
+  "w": 192
+ },
+ "ship/floor_b": {
+  "dirs": 1,
+  "files": [
+   "ship/floor_b"
+  ],
+  "frames": 1,
+  "h": 147,
+  "note": "tileable: repeat every w x h px = 2 x 2 layout units; origin = top-left corner. Variants (floor, floor_b) mix freely.",
+  "ox": 0.0,
+  "oy": 0.0,
+  "tile": [
+   2,
+   2
+  ],
+  "w": 192
+ },
+ "ship/reactor": {
+  "dirs": 1,
+  "files": [
+   "ship/reactor_f0",
+   "ship/reactor_f1",
+   "ship/reactor_f2",
+   "ship/reactor_f3",
+   "ship/reactor_f4",
+   "ship/reactor_f5"
+  ],
+  "frames": 6,
+  "h": 336,
+  "ox": 190.0,
+  "oy": 234.26,
+  "w": 380
+ },
+ "ship/reactor_off": {
+  "dirs": 1,
+  "files": [
+   "ship/reactor_off"
+  ],
+  "frames": 1,
+  "h": 336,
+  "ox": 190.0,
+  "oy": 234.26,
+  "w": 380
+ },
+ "ship/wall_h": {
+  "dirs": 1,
+  "files": [
+   "ship/wall_h"
+  ],
+  "frames": 1,
+  "h": 173,
+  "height": 1.6,
+  "note": "repeat every w px along x (1 unit); origin = left end, bottom of the front face",
+  "ox": 0.0,
+  "oy": 167.24,
+  "tile": [
+   1,
+   0
+  ],
+  "w": 96
+ },
+ "ship/wall_h_low": {
+  "dirs": 1,
+  "files": [
+   "ship/wall_h_low"
+  ],
+  "frames": 1,
+  "h": 96,
+  "height": 0.35,
+  "note": "repeat every w px along x (1 unit); origin = left end, bottom of the front face",
+  "ox": 0.0,
+  "oy": 90.24,
+  "tile": [
+   1,
+   0
+  ],
+  "w": 96
+ },
+ "ship/wall_v": {
+  "dirs": 1,
+  "files": [
+   "ship/wall_v"
+  ],
+  "frames": 1,
+  "h": 74,
+  "height": 1.6,
+  "note": "top strip only; repeat every h px along y (1 unit, 0.6% stretched to 74 px); origin = north end on the floor",
+  "ox": 30.0,
+  "oy": 98.73,
+  "pitch": 1.00625,
+  "tile": [
+   0,
+   1
+  ],
+  "w": 60
+ },
+ "ship/wall_v_end": {
+  "dirs": 1,
+  "files": [
+   "ship/wall_v_end"
+  ],
+  "frames": 1,
+  "h": 152,
+  "height": 1.6,
+  "note": "south end of a vertical wall: front face + last 0.4 units of top; draw before the wall_v tiles",
+  "ox": 30.0,
+  "oy": 146.24,
+  "w": 60
+ },
+ "ship/wall_v_low": {
+  "dirs": 1,
+  "files": [
+   "ship/wall_v_low"
+  ],
+  "frames": 1,
+  "h": 74,
+  "height": 0.35,
+  "note": "top strip only; repeat every h px along y (1 unit, 0.6% stretched to 74 px); origin = north end on the floor",
+  "ox": 30.0,
+  "oy": 21.6,
+  "pitch": 1.00625,
+  "tile": [
+   0,
+   1
+  ],
+  "w": 60
+ },
+ "ship/wall_v_low_end": {
+  "dirs": 1,
+  "files": [
+   "ship/wall_v_low_end"
+  ],
+  "frames": 1,
+  "h": 75,
+  "height": 0.35,
+  "note": "south end of a vertical wall: front face + last 0.4 units of top; draw before the wall_v tiles",
+  "ox": 30.0,
+  "oy": 69.24,
+  "w": 60
+ },
+ "test/crate": {
+  "dirs": 1,
+  "files": [
+   "test/crate"
+  ],
+  "frames": 1,
+  "h": 122,
+  "ox": 57.0,
+  "oy": 82.6,
+  "w": 114
+ },
+ "test/crate_nool": {
+  "dirs": 1,
+  "files": [
+   "test/crate_nool"
+  ],
+  "frames": 1,
+  "h": 120,
+  "ox": 55.0,
+  "oy": 81.6,
+  "w": 110
+ }
+}

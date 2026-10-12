@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manifold Novum · Sprite prototype</title>
+<style>
+  :root { --plate1: #4d5566; --plate2: #2f3542; --ink: #e8ecf4; --dim: #aab2c2; --outline: #14161b; --on: #5fd6a0; --onbg: #1d4a36; --hazard: #e8c34f; --red: #e2574c; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #05070c; color: var(--ink); font: 13px/1.35 system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; display: flex; }
+  #wrap { position: relative; flex: 1; min-width: 0; }
+  #view { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #old { display: none; position: relative; flex: 1; min-width: 0; background: #07090f; overflow: hidden; }
+  #old img { width: 100%; height: 100%; object-fit: cover; object-position: 45% 45%; display: block; }
+  body.compare #old { display: block; border-left: 3px solid var(--outline); }
+  .tag { position: absolute; left: 14px; bottom: 14px; padding: 5px 10px; border-radius: 6px; background: rgba(10,12,18,0.78); border: 2px solid var(--outline);
+         font-weight: 800; letter-spacing: 1.5px; font-size: 11px; pointer-events: none; display: none; }
+  body.compare .tag { display: block; }
+  #panel { position: fixed; top: 14px; right: 14px; width: 236px; max-height: calc(100vh - 28px); overflow: auto; box-sizing: border-box; padding: 14px 14px 12px;
+           border-radius: 12px; background: linear-gradient(rgba(77,85,102,0.92), rgba(47,53,66,0.92)); border: 3px solid var(--outline);
+           box-shadow: 0 12px 40px rgba(0,0,0,0.55), inset 0 0 0 2px rgba(255,255,255,0.10); backdrop-filter: blur(6px); }
+  body.nopanel #panel > :not(.head) { display: none; }
+  body.compare #panel > :not(.head):not(.cmp) { display: none; }
+  body.compare #panel { width: 200px; }
+  body.nopanel #panel { width: auto; }
+  .head { display: flex; align-items: center; gap: 8px; }
+  h1 { margin: 0; font-size: 15px; letter-spacing: 3px; text-shadow: 0 2px 0 var(--outline); flex: 1; }
+  h1 small { display: block; font-size: 10px; letter-spacing: 1.5px; color: var(--dim); text-shadow: none; font-weight: 600; }
+  #hide { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 16px; padding: 2px 4px; }
+  h2 { margin: 13px 0 6px; font-size: 10px; letter-spacing: 1.6px; color: var(--dim); text-transform: uppercase; }
+  .seg { display: flex; gap: 4px; }
+  button { flex: 1; padding: 6px 4px; font: 700 12px system-ui, sans-serif; border-radius: 6px; border: 2px solid var(--outline); background: var(--plate2); color: var(--ink); cursor: pointer; }
+  button:hover { background: #3a4252; }
+  button.on { background: var(--onbg); border-color: var(--on); }
+  #emergency.on { background: #6a1f18; border-color: var(--red); }
+  button kbd { display: block; font: 600 9px system-ui; color: var(--dim); margin-top: 1px; }
+  .row { display: flex; gap: 6px; margin-top: 6px; align-items: center; }
+  label.chk { display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+  label.chk input { accent-color: var(--on); }
+  .sw { flex: none; width: 22px; height: 22px; padding: 0; border-radius: 50%; }
+  input[type=color] { width: 34px; height: 26px; padding: 0; border: 2px solid var(--outline); border-radius: 6px; background: var(--plate2); cursor: pointer; }
+  .keys { margin-top: 10px; color: var(--dim); font-size: 11px; line-height: 1.6; }
+  .keys b { color: var(--ink); background: var(--plate2); border: 1px solid var(--outline); border-radius: 4px; padding: 0 4px; font-weight: 700; }
+  #assets { font-size: 10.5px; line-height: 1.45; color: var(--dim); word-break: break-all; }
+  #assets b { color: var(--ink); font-weight: 600; }
+  #assets .ok::before { content: '● '; color: var(--on); }
+  #assets .stand::before { content: '● '; color: var(--hazard); }
+  #assets .miss::before { content: '○ '; color: #8890a0; }
+  #meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 10.5px; color: var(--dim); }
+  #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #05070c; z-index: 10;
+             letter-spacing: 4px; font-weight: 800; }
+  #loading[hidden] { display: none; }
+  #loading .bar { width: 240px; height: 6px; border-radius: 3px; background: #1c2028; border: 2px solid var(--outline); overflow: hidden; }
+  #loadbar { height: 100%; width: 0; background: var(--on); transition: width 0.15s; }
+  #err { position: fixed; left: 14px; bottom: 14px; max-width: 60vw; white-space: pre-wrap; padding: 10px 12px; border-radius: 8px; background: #3a1210; border: 2px solid var(--red);
+         font: 12px ui-monospace, monospace; z-index: 20; }
+  #err[hidden] { display: none; }
+  #title { position: fixed; left: 18px; top: 14px; pointer-events: none; text-shadow: 0 2px 0 #000; }
+  #title b { display: block; font-size: 17px; letter-spacing: 5px; }
+  #title span { font-size: 11px; letter-spacing: 1.5px; color: var(--dim); }
+  body.compare #title { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="wrap"><canvas id="view"></canvas><div class="tag">PROTOTYPE · BLENDER SPRITES + RUNTIME LIGHT</div></div>
+  <div id="old"><img src="old_look.png" alt="the current game"><div class="tag">TODAY · HAND-DRAWN CANVAS</div></div>
+</div>
+<div id="title"><b>MANIFOLD NOVUM</b><span>pre-rendered sprites · runtime lighting prototype</span></div>
+
+<div id="panel">
+  <div class="head"><h1>SPRITE LAB<small>tilted top-down · 50°</small></h1><button id="hide" title="collapse">☰</button></div>
+
+  <h2>Lighting</h2>
+  <div class="seg">
+    <button data-mode="0">Beauty<kbd>1</kbd></button>
+    <button data-mode="1">Lit<kbd>2</kbd></button>
+    <button data-mode="2">Normals<kbd>3</kbd></button>
+    <button data-mode="3">Height<kbd>4</kbd></button>
+  </div>
+  <div class="row"><button id="emergency">Red alert<kbd>R</kbd></button><button id="reactor">Reactor on</button></div>
+
+  <h2>Lights</h2>
+  <label class="chk"><input type="checkbox" id="l-warm"> Ceiling lamp, warm</label>
+  <label class="chk"><input type="checkbox" id="l-cool"> Ceiling lamp, cool</label>
+  <label class="chk"><input type="checkbox" id="l-reactor"> Reactor glow</label>
+  <label class="chk"><input type="checkbox" id="l-weak"> Interceptor weak spots</label>
+  <label class="chk"><input type="checkbox" id="l-engine"> Interceptor engine</label>
+  <label class="chk"><input type="checkbox" id="l-mouse"> Lamp on the mouse <span style="color:var(--dim)">(M)</span></label>
+
+  <h2>Crew</h2>
+  <div class="row" style="margin-top:0">
+    <input type="color" id="suit" title="suit colour">
+    <button class="sw" data-suit="#c4683a" title="orange"></button>
+    <button class="sw" data-suit="#3f7fd0" title="blue"></button>
+    <button class="sw" data-suit="#5fbf6a" title="green"></button>
+    <button class="sw" data-suit="#c84a8a" title="pink"></button>
+    <button class="sw" data-suit="#e8c34f" title="yellow"></button>
+    <button class="sw" data-suit="#eef0f4" title="white"></button>
+  </div>
+  <div class="row"><button id="visor">Visor up</button></div>
+
+  <h2>View</h2>
+  <div class="seg">
+    <button data-zoom="1">1×</button><button data-zoom="1.5">1.5×</button><button data-zoom="2">2×</button>
+  </div>
+  <div class="row cmp"><button id="compare">Side by side with today's look<kbd>O</kbd></button></div>
+
+  <div class="keys">
+    <b>WASD</b> walk · <b>←↑→↓</b> aim · <b>Space</b> shoot<br>
+    <b>Click</b>/<b>F</b> flash at the mouse · <b>E</b> reactor (near it)<br>
+    <b>V</b> visor · <b>Z</b> zoom · <b>R</b> red alert
+  </div>
+
+  <h2>Sprites</h2>
+  <div id="assets"></div>
+  <div id="meta"><span id="gfx"></span><span id="fps"></span></div>
+</div>
+
+<div id="loading"><div>LOADING SPRITES</div><div class="bar"><div id="loadbar"></div></div></div>
+<pre id="err" hidden></pre>
+
+<script>window.onerror = (m, f, l) => { document.title = "ERR " + m + " @" + (f || "").split("/").pop() + ":" + l; const e = document.getElementById("err"); e.hidden = false; e.textContent += m + " @" + (f || "").split("/").pop() + ":" + l + "\n"; };</script>
+<script src="gl.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
