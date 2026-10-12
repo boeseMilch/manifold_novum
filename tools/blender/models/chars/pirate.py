@@ -140,12 +140,12 @@ sol = helmet.modifiers.new('shell', 'SOLIDIFY'); sol.thickness = 0.024; sol.offs
 helmet.data.materials.append(DARK); sol.material_offset_rim = 1; sol.material_offset = 1
 add(helmet, R.head)
 add(mn.box('brim', (0.05, 0.26, 0.03), loc=HEAD + Vector((0.12, 0, 0.19)), m=ARMOR_DK, bevel=0.012, rot=(0, 0.9, 0)), R.head)
-for k in range(7):                                    # the crest: a row of red bristles, front to back
-    a = math.radians(2 + k * 16)
-    p = HEAD + Vector((math.sin(-a) * -HR * 0.98, 0, math.cos(a) * HR * 0.98))
+for k in range(7):                                    # the crest: a row of red bristles from the crown back
+    a = math.radians(-6 + k * 17)                     # (angle back from the top: kept off the face window)
+    p = HEAD + Vector((-math.sin(a) * HR * 0.98, 0, math.cos(a) * HR * 0.98))
     h = 0.11 - abs(k - 2.5) * 0.012
     sp = C.spike(f'crest{k}', 0.035, h, RED, verts=8); sp.scale = (1.0, 0.45, 1.0)
-    sp.location = p; sp.rotation_euler = (0, a - 0.35, 0); add(sp, R.head)
+    sp.location = p; sp.rotation_euler = (0, -a - 0.3, 0); add(sp, R.head)
 for s in (-1, 1):
     add(mn.box(f'earPlate{s}', (0.11, 0.03, 0.12), loc=HEAD + Vector((-0.01, s * (HR + 0.005), -0.07)), m=ARMOR_DK, bevel=0.012), R.head)
     for k, dx in enumerate((-0.03, 0.03)):

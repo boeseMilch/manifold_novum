@@ -241,6 +241,7 @@ def pose(P):
         target = Vector((f[0], s * f[1], f[2]))
         yaw, a, b = C.leg_ik(hp, target, A, B)
         L.location = hp; L.rotation_euler = (0, -a, yaw); kneeE[i, s].rotation_euler = (0, a - b, 0)
+        L.scale = (1, P.get('thick', {}).get(i, 1.0), 1)   # sideways only (the knee bends in the leg's X-Z plane)
 
 keys = C.Keys(); keys.add(body, head, abd, *tail, *mands.values(), sac, drool, goo_root, *legE.values(), *kneeE.values())
 
@@ -258,11 +259,11 @@ def walk_pose(t, crouch=False):
     P = dict(feet=feet, bz=0.012 * abs(math.cos(2 * p)), roll=0.035 * math.sin(p), swish=0.25 * math.sin(p), wiggle=0.06 * math.sin(p),
              head_yaw=-0.05 * math.sin(p), mand=0.08 + 0.06 * math.sin(4 * p))
     if crouch:
-        P.update(bz=-0.07 + 0.008 * abs(math.cos(2 * p)), rear=0.2, abd_down=-0.2, curl=0.7, head_up=0.1, mand=0.25 + 0.08 * math.sin(4 * p),
-                 roll=0.025 * math.sin(p))
-        for s in (-1, 1):                       # raised front legs, claws up, swaying like a mantis
-            q = p + (0 if s > 0 else math.pi)
-            feet[0, s] = (0.46 + 0.03 * math.sin(q), 0.3 + 0.02 * math.cos(q), 0.36 + 0.03 * math.cos(q))
+        P.update(bz=-0.07 + 0.008 * abs(math.cos(2 * p)), rear=0.34, abd_down=-0.3, curl=0.7, head_up=0.05, mand=0.25 + 0.08 * math.sin(4 * p),
+                 roll=0.025 * math.sin(p), thick={0: 2.0})
+        for s in (-1, 1):                       # raptorial front legs like a mantis: thick, raised high and reaching
+            q = p + (0 if s > 0 else math.pi)   # forward, claws hooked down in front of the face, swaying
+            feet[0, s] = (0.50 + 0.03 * math.sin(q), 0.32 + 0.02 * math.cos(q), 0.50 + 0.04 * math.cos(q))
     return P
 
 def spit_pose(k, fired=False):

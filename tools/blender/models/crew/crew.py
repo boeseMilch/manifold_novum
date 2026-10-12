@@ -1,13 +1,27 @@
 """Crew member (player character): bulky white spacesuit, life-support pack, big round helmet.
 
-Sprites (all share one canvas and ground origin, 8 facing directions each):
+Sprites (8 facing directions each; dir i faces game angle i*45deg = c.face):
   crew/idle, crew/idle_visor     standing, visor up (face visible) / down (gold visor)
   crew/walk, crew/walk_visor     8-frame walk cycle (loops: frame 7 -> frame 0)
+  crew/down, crew/down_visor     health 'down' / 'out': flat on the back, head towards the facing
+                                 direction, limbs sprawled; the body's centre on the ground origin
+                                 (own canvas). 'out' = the same sprite, greyed and faded by the game.
+idle/walk share one canvas and ground origin (c.x, c.y); down has its own.
 Suit-colour parts (shoulder caps, backpack stripe, chest stripe) are neutral grey and marked
 with mn.tint, so the .m.png mask says where the game recolours them per player.
 
+Worn gear (js/progress.js GEAR, c.kit.gear), one overlay set per piece, drawn over the crew sprite
+with the same canvas, origin, direction and frame (rendered with the body as a holdout, so the
+parts the body hides are already cut away; no tint mask):
+  crew/gear_<id>_idle, crew/gear_<id>_walk, crew/gear_<id>_down
+  id = boots | thrusters | armor | toolbelt | firstAid | stim
+  (armor: only while c.armor > 0, and no _down: the vest is always used up before its wearer goes down)
+Several pieces at once: each gear entry has `depth` (one number per frame, k = dir * frames + frame:
+the piece's mean distance from the camera); draw the worn pieces of a frame sorted far to near.
+
     blender -b --factory-startup --python tools/blender/models/crew/crew.py
-    MN_PREVIEW=1 ...      beauty + mask only, into /tmp/crew_preview (for iterating; =idle: one walk frame)
+    MN_PREVIEW=1 ...      16 samples, beauty + mask only, into /tmp/crew_preview (=idle: one walk frame; =1dir)
+    MN_ONLY=down,gear ... only these sprites (names, their first token, or gear_<id>)
 """
 import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -17,7 +31,7 @@ import mn
 
 PREVIEW = os.environ.get('MN_PREVIEW')
 if PREVIEW:
-    mn.OUT_DIR = '/tmp/crew_preview'; mn.MANIFEST = os.path.join(mn.OUT_DIR, 'manifest.json')
+    mn.OUT_DIR = '/tmp/crew_preview'; mn.MANIFEST = os.path.join(mn.OUT_DIR, 'manifest.json'); mn.SAMPLES = 16
 
 mn.reset()
 P = mn.PALETTE
@@ -66,12 +80,13 @@ def capsule(name, r, z0, z1, x=0, y=0, m=SUIT):
     return o
 
 # ---------------------------------------------------------------------------
-# Rig: root (turns for directions) > hips (bob) > torso (twist) > arms/head; hips > legs
+# Rig: root (turns for directions) > lie (lying down) > hips (bob) > torso (twist) > arms/head; hips > legs
 # Model faces +X (game right); +Y is the character's left.
 # ---------------------------------------------------------------------------
 root = empty('crew', (0, 0, 0))
 HIP_Z = 0.40
-hips = empty('hips', (0, 0, HIP_Z), root)
+lie = empty('lie', (0, 0, 0), root)            # whole-body transform for the lying-down pose
+hips = empty('hips', (0, 0, HIP_Z), lie)
 torso = empty('torso', (0, 0, HIP_Z), hips)
 
 # Torso: bulky rounded suit body, belt, chest unit
@@ -208,15 +223,140 @@ for s in (-1, 1):
 mn.outline(parts, thickness=0.012)
 
 # ---------------------------------------------------------------------------
+# Worn gear (js/progress.js GEAR; looks like the item icons in build/renders/items/icon_gear_*.png).
+# Each piece is its own overlay sprite set, drawn over the crew sprite; hidden in the crew's own
+# renders. Everything sits > 0.012 (the body's outline) off the suit, because the overlays are
+# rendered with the body (and its outline) as a holdout.
+# ---------------------------------------------------------------------------
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'chars'))
+import charlib as C
+G_WHITE = mn.mat('gWhite', '#f4f5f7', 0.35, clearcoat=0.4)
+G_ORANGE = mn.mat('gOrange', '#ff8a2a', 0.45)
+G_SOLE = mn.mat('gSole', '#2a3140', 0.6)
+G_BLUE = C.glow('gBlue', '#4ab0ff', 1.5, base='#8cd0ff')
+G_METAL = mn.mat('gMetal', '#8a93a3', 0.35, 0.6)
+G_DARK = mn.mat('gDark', 'hullDark', 0.5, 0.3)
+G_HAZ = mn.mat('gHaz', 'hazard', 0.5)
+OLIVE = C.worn('olive', '#5f6b3a', 0.75, 0.0, grime=0.8, scratches=0.15, scale=2)
+PLATE = C.worn('plate', '#8f96a0', 0.4, 0.4, grime=0.6, scratches=0.6, scale=2)
+LEATHER = C.worn('leather', '#7a4e2c', 0.6, 0.0, grime=0.8, scratches=0.3, scale=2)
+CANVAS = C.worn('canvas', '#a8915e', 0.85, 0.0, grime=0.9, scratches=0.0, scale=2)
+BRASS = mn.mat('brass', 'copper', 0.35, 0.8)
+CROSS = mn.mat('cross', '#e8322a', 0.45)
+RIM = mn.mat('rim', '#3fbf62', 0.45)
+INJ_DARK = mn.mat('injDark', '#1c1f26', 0.5)
+INJ_CAP = mn.mat('injCap', '#f2604a', 0.5)
+DOSE = C.glow('dose', '#5fd6a0', 1.2)
+
+gear = {k: [] for k in ('boots', 'thrusters', 'armor', 'toolbelt', 'firstAid', 'stim')}
+def wear(kind, o, parent):
+    gear[kind].append(attach(o, parent)); return o
+
+def on_normal(o, d, roll=0.0):
+    """Turn o (built along +Z) so its Z points along d."""
+    q = Vector(d).normalized().to_track_quat('Z', 'X'); o.rotation_mode = 'QUATERNION'
+    o.rotation_quaternion = q @ Matrix.Rotation(roll, 4, 'Z').to_quaternion(); return o
+
+# Gravity boots: white shells over the boots, orange cuffs, glowing blue soles
+for s in (-1, 1):
+    y = s * 0.085; kn = knees[s]
+    wear('boots', mn.box(f'gbGlow{s}', (0.262, 0.192, 0.05), loc=(0.03, y, -0.016), m=G_BLUE, bevel=0.012), kn)
+    wear('boots', mn.box(f'gbSole{s}', (0.256, 0.186, 0.03), loc=(0.03, y, 0.03), m=G_SOLE, bevel=0.01), kn)
+    wear('boots', mn.box(f'gbBoot{s}', (0.25, 0.18, 0.105), loc=(0.03, y, 0.05), m=G_WHITE, bevel=0.045), kn)
+    wear('boots', mn.cyl(f'gbCuff{s}', 0.098, 0.05, loc=(0.0, y, 0.13), m=G_ORANGE, bevel=0.016), kn)
+    wear('boots', mn.box(f'gbCoil{s}', (0.09, 0.012, 0.022), loc=(0.02, y + s * 0.093, 0.075), m=G_BLUE, bevel=0.005), kn)
+
+# Suit thrusters: two tanks beside the life-support pack with orange caps, a cross bar, two nozzles
+for s in (-1, 1):
+    x, y = -0.275, s * 0.24
+    wear('thrusters', mn.cyl(f'gtTank{s}', 0.052, 0.32, loc=(x, y, 0.46), m=G_WHITE, bevel=0.03), torso)
+    wear('thrusters', mn.sphere(f'gtCap{s}', 0.055, loc=(x, y, 0.78), m=G_ORANGE, scale=(1, 1, 0.75), segs=24), torso)
+    wear('thrusters', mn.cyl(f'gtBand{s}', 0.057, 0.03, loc=(x, y, 0.64), m=G_DARK, bevel=0.01), torso)
+    bell = C.cone_x(f'gtNozzle{s}', 0.028, 0.05, 0.08, G_METAL, verts=20)
+    bell.location = (x, y, 0.46); bell.rotation_euler = (0, math.radians(104), 0)
+    wear('thrusters', bell, torso)
+    wear('thrusters', mn.box(f'gtHaz{s}', (0.012, 0.05, 0.035), loc=(x - 0.054, y, 0.55), m=G_HAZ, bevel=0.004), torso)
+wear('thrusters', mn.box('gtBar', (0.10, 0.54, 0.06), loc=(-0.29, 0, 0.42), m=G_DARK, bevel=0.02), torso)
+wear('thrusters', mn.box('gtBarTop', (0.11, 0.2, 0.02), loc=(-0.29, 0, 0.475), m=G_ORANGE, bevel=0.008), torso)
+
+# Armor vest: olive carrier over the chest and sides, grey chest and belly plates, a hazard tag
+wear('armor', mn.box('gvFront', (0.075, 0.36, 0.285), loc=(0.19, 0, 0.478), m=OLIVE, bevel=0.03), torso)
+for s in (-1, 1):
+    wear('armor', mn.box(f'gvSide{s}', (0.27, 0.035, 0.24), loc=(0.0, s * 0.2, 0.49), m=OLIVE, bevel=0.012), torso)
+    wear('armor', mn.box(f'gvStrap{s}', (0.17, 0.075, 0.035), loc=(0.1, s * 0.135, 0.755), m=OLIVE, bevel=0.012, rot=(0, 0.3, 0)), torso)
+wear('armor', mn.box('gvChest', (0.028, 0.27, 0.12), loc=(0.232, 0, 0.62), m=PLATE, bevel=0.012), torso)
+wear('armor', mn.box('gvBelly', (0.028, 0.27, 0.085), loc=(0.232, 0, 0.505), m=PLATE, bevel=0.012), torso)
+wear('armor', mn.box('gvTag', (0.012, 0.06, 0.028), loc=(0.25, -0.085, 0.705), m=G_HAZ, bevel=0.004), torso)
+
+# Toolbelt: leather belt over the suit's belt, brass buckle, canvas pouches, a wrench
+wear('toolbelt', mn.box('gtbBelt', (0.37, 0.43, 0.06), loc=(0, 0, 0.405), m=LEATHER, bevel=0.025), torso)
+wear('toolbelt', mn.box('gtbBuckle', (0.03, 0.09, 0.06), loc=(0.19, 0, 0.405), m=BRASS, bevel=0.01), torso)
+for nm, size, loc in (('gtbPouchR', (0.13, 0.07, 0.12), (0.05, -0.245, 0.31)), ('gtbPouchL', (0.11, 0.065, 0.11), (0.06, 0.245, 0.32)),
+                      ('gtbPouchF', (0.055, 0.09, 0.09), (0.205, -0.115, 0.33))):
+    wear('toolbelt', mn.box(nm, size, loc=loc, m=CANVAS, bevel=0.015), torso)
+    wear('toolbelt', mn.box(nm + 'Flap', (size[0] + 0.006, size[1] + 0.006, 0.03), loc=(loc[0], loc[1], loc[2] + size[2] - 0.022), m=LEATHER, bevel=0.01), torso)
+wear('toolbelt', mn.box('gtbWrench', (0.024, 0.014, 0.15), loc=(-0.06, 0.232, 0.26), m=G_METAL, bevel=0.006), torso)
+wear('toolbelt', mn.box('gtbWrenchHead', (0.06, 0.016, 0.035), loc=(-0.06, 0.232, 0.245), m=G_METAL, bevel=0.008), torso)
+
+# First aid course: a round white badge with a red cross and a green rim on both shoulders
+for s in (-1, 1):
+    d = Vector((0, s * 0.55, 0.83)).normalized()
+    c = Vector((0.0, s * 0.235, HIP_Z + 0.345)) + Vector((0, d.y * 0.095 * 0.95, d.z * 0.095 * 0.8)) + d * 0.014
+    for nm, o in ((f'gfRim{s}', mn.cyl(f'gfRim{s}', 0.068, 0.012, m=RIM, bevel=0.004, verts=32)),
+                  (f'gfDisc{s}', mn.cyl(f'gfDisc{s}', 0.053, 0.016, m=G_WHITE, bevel=0.004, verts=32)),
+                  (f'gfCrossA{s}', mn.box(f'gfCrossA{s}', (0.07, 0.024, 0.02), m=CROSS, bevel=0.003)),
+                  (f'gfCrossB{s}', mn.box(f'gfCrossB{s}', (0.024, 0.07, 0.02), m=CROSS, bevel=0.003))):
+        on_normal(o, d); o.location = c + (d * 0.017 if 'Cross' in nm else Vector()); wear('firstAid', o, arms[s])
+
+# Stim pack: a white auto-injector strapped to the front-outside of the right thigh, green dose window
+y0 = -0.085
+wear('stim', mn.cyl('gsStrap', 0.094, 0.028, loc=(0.0, y0, 0.275), m=G_DARK, bevel=0.008), legs[-1])
+side = Vector((0.7, -0.7, 0)).normalized()                  # out of the thigh, between front and outside
+inj_c = Vector((0.0, y0, 0.19)) + side * 0.135
+for nm, r, h, z, m in (('gsBody', 0.04, 0.09, 0.085, G_WHITE), ('gsGrip', 0.042, 0.09, 0.0, INJ_DARK),
+                       ('gsCap', 0.04, 0.036, -0.034, INJ_CAP), ('gsTop', 0.02, 0.03, 0.17, G_METAL)):
+    wear('stim', mn.cyl(nm, r, h, loc=inj_c + Vector((0, 0, z)), m=m, bevel=min(0.01, r * 0.3), verts=20), legs[-1])
+win = mn.box('gsDose', (0.014, 0.03, 0.06), loc=(0, 0, 0), m=DOSE, bevel=0.004)
+win.location = inj_c + side * 0.036 + Vector((0, 0, 0.095)); win.rotation_euler = (0, 0, math.atan2(side.y, side.x))
+wear('stim', win, legs[-1])
+
+for kind, objs in gear.items():
+    mn.outline(objs, thickness=0.008 if kind == 'firstAid' else 0.012)
+    for o in objs: o.hide_render = True
+all_gear = [o for v in gear.values() for o in v]
+
+# ---------------------------------------------------------------------------
 # Poses
 # ---------------------------------------------------------------------------
-def pose(t=None):
-    """t = walk phase in [0, 1) or None for idle. Sets the rig's transforms."""
+LIE_SHIFT = 0.55       # lying down: the body's centre (not the feet) sits on the ground origin
+
+def pose(t=None, down=False):
+    """t = walk phase in [0, 1) or None for idle; down: flat on the back, head towards +X (the
+    facing direction), limbs sprawled (charlib.pose_human 'down'). Sets the rig's transforms."""
     for s in (-1, 1):
         arms[s].rotation_euler = (s * math.radians(-6), 0, 0)     # arms slightly out from the body
         elbows[s].rotation_euler = (0, math.radians(-12), 0)
         legs[s].rotation_euler = (0, 0, 0); knees[s].rotation_euler = (0, 0, 0)
+    lie.location = (0, 0, 0); lie.rotation_euler = (0, 0, 0)
     hips.location.z = HIP_Z; torso.rotation_euler = (0, 0, 0); head.rotation_euler = (0, 0, 0)
+    if down:
+        lie.rotation_euler = (0, math.radians(-90), math.radians(180))
+        lie.location = (-LIE_SHIFT, 0, 0)
+        # (rotation about X by s * angle swings a limb outwards; about Y by -angle forwards = up when lying)
+        arms[-1].rotation_euler = (math.radians(-75), math.radians(-10), 0)               # right arm flung out
+        arms[1].rotation_euler = (math.radians(55), math.radians(-50), 0)                 # left arm up by the head
+        elbows[-1].rotation_euler = (0, math.radians(-25), 0); elbows[1].rotation_euler = (0, math.radians(-60), 0)
+        legs[-1].rotation_euler = (math.radians(-14), math.radians(-30), 0); knees[-1].rotation_euler = (0, math.radians(60), 0)
+        legs[1].rotation_euler = (math.radians(12), 0, 0)                                  # legs apart, one knee up
+        head.rotation_euler = (math.radians(-18), math.radians(10), 0)
+        bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get(); zmin = 1e9
+        for o in parts:                              # lift the lowest point of the body onto the floor
+            if o.type != 'MESH': continue
+            ev = o.evaluated_get(dg); me = ev.to_mesh()
+            for v in me.vertices: zmin = min(zmin, (ev.matrix_world @ v.co).z)
+            ev.to_mesh_clear()
+        lie.location.z = -zmin
+        return
     if t is None: return
     p = 2 * math.pi * t
     for s in (-1, 1):
@@ -231,25 +371,45 @@ def pose(t=None):
     head.rotation_euler = (0, -0.04, 0.06 * math.sin(p))            # head counters the twist a bit
 
 WALK = 8
-movers = [hips, torso, head] + list(arms.values()) + list(elbows.values()) + list(legs.values()) + list(knees.values())
-def key(frame, t):
+movers = [lie, hips, torso, head] + list(arms.values()) + list(elbows.values()) + list(legs.values()) + list(knees.values())
+def key(frame, t, down=False):
     bpy.context.scene.frame_set(frame)        # first: frame_set re-applies existing keys
-    pose(t)
+    pose(t, down)
     for o in movers:
         o.keyframe_insert('location', frame=frame); o.keyframe_insert('rotation_euler', frame=frame)
 
-IDLE_F = 100
+IDLE_F, DOWN_F = 100, 101
 key(IDLE_F, None)
 for i in range(WALK):
     key(1 + i, i / WALK)
+key(DOWN_F, None, down=True)
 
 # ---------------------------------------------------------------------------
-# Shared canvas: an invisible proxy covering everything any variant can reach, so idle/walk and
-# visor up/down all get the same canvas size and origin.
+# Shared canvases: invisible proxies covering everything any variant (and any gear) can reach, so
+# idle/walk, visor up/down and the gear overlays all get the same canvas size and origin; the
+# lying-down sprites get their own (proxyDown, sized from the down pose with all gear).
 # ---------------------------------------------------------------------------
 proxy = mn.cyl('canvasProxy', 0.46, 1.27, verts=32, bevel=0)
 proxy.hide_render = True
 frame_objs = parts + [proxy]
+
+def reach(objs):
+    bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get(); r = z = 0.0
+    for o in objs:
+        if o.type != 'MESH': continue
+        ev = o.evaluated_get(dg); me = ev.to_mesh()
+        for v in me.vertices:
+            w = ev.matrix_world @ v.co; r = max(r, math.hypot(w.x, w.y)); z = max(z, w.z)
+        ev.to_mesh_clear()
+    return r, z
+bpy.context.scene.frame_set(DOWN_F)
+_r, _z = reach(parts + all_gear)
+proxy_down = mn.cyl('canvasProxyDown', round(_r + 0.02, 2), round(_z + 0.02, 2), verts=48, bevel=0)
+proxy_down.hide_render = True
+down_objs = parts + [proxy_down]
+for f in [IDLE_F] + list(range(1, 1 + WALK)):            # the standing proxy must hold the gear too
+    bpy.context.scene.frame_set(f); _r, _z = reach(all_gear)
+    assert _r < 0.455 and _z < 1.27, f'gear sticks out of the canvas proxy at frame {f}: r={_r:.3f} z={_z:.3f} ' + str(sorted((round(reach([o])[0], 3), o.name) for o in all_gear)[-4:])
 
 def set_visor(down):
     """Down: gold visor over the window (vacuum). Up: the visor slides up *inside* the shell (like a
@@ -260,17 +420,64 @@ def set_visor(down):
         o.hide_render = down                          # hidden behind the visor anyway
 
 import time
+ONLY = os.environ.get('MN_ONLY', '').split(',') if os.environ.get('MN_ONLY') else None
+want = lambda n: not ONLY or n in ONLY or n.split('_')[0] in ONLY
 passes = ('beauty', 'mask') if PREVIEW else ('beauty', 'normal', 'height', 'mask')
 walk_frames = list(range(1, 1 + WALK))
-dirs = 8
+dirs = 8 if PREVIEW != '1dir' else 1
 if PREVIEW == 'idle': walk_frames = walk_frames[:1]
 times = {}
+canvas = {}
 for down in (False, True):
     set_visor(down); suf = '_visor' if down else ''
-    t0 = time.time()
-    mn.render('crew/idle' + suf, objs=frame_objs, root=root, dirs=dirs, frames=[IDLE_F], passes=passes)
-    times['idle' + suf] = time.time() - t0; t0 = time.time()
-    mn.render('crew/walk' + suf, objs=frame_objs, root=root, dirs=dirs,
-              frames=walk_frames, passes=passes)
-    times['walk' + suf] = time.time() - t0
-print('[crew] render times (s):', {k: round(v, 1) for k, v in times.items()})
+    for nm, objs, frames in (('idle', frame_objs, [IDLE_F]), ('walk', frame_objs, walk_frames), ('down', down_objs, [DOWN_F])):
+        if not want(nm + suf): continue
+        t0 = time.time()
+        canvas[nm] = mn.render(f'crew/{nm}{suf}', objs=objs, root=root, dirs=dirs, frames=frames, passes=passes)
+        times[nm + suf] = round(time.time() - t0, 1)
+
+# Gear overlays: one gear piece visible, the body a holdout (it cuts away what it hides), the same
+# canvas as the body's sprites. Not tinted (no mask). The visor doesn't matter (the face is inside).
+# The armor vest has no 'down' overlay: it is always used up (c.armor) before its wearer goes down.
+def gear_depth(objs, frames):
+    """Per sprite frame (k = dir * frames + frame, like the files): the gear's mean distance from the
+    camera in units (bigger = further back). Worn gear overlaps (vest and belt, thrusters and boots):
+    the game draws the worn pieces sorted by this, far ones first."""
+    e = math.radians(mn.ELEVATION); view = Vector((0, math.cos(e), -math.sin(e))); out = []
+    for d in range(dirs):
+        root.rotation_euler.z = -math.radians(d * 360 / dirs)
+        for f in frames:
+            bpy.context.scene.frame_set(f); bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get()
+            tot, n = 0.0, 0
+            for o in objs:
+                if o.type != 'MESH': continue
+                ev = o.evaluated_get(dg); me = ev.to_mesh()
+                for v in me.vertices: tot += (ev.matrix_world @ v.co).dot(view); n += 1
+                ev.to_mesh_clear()
+            out.append(round(tot / n, 3))
+    root.rotation_euler.z = 0
+    return out
+
+def add_depth(name, depth):
+    import json
+    with open(mn.MANIFEST) as fh: ent = json.load(fh)[name]
+    ent['depth'] = depth; mn._manifest_put(name, ent)
+
+DEPTH_ONLY = os.environ.get('MN_DEPTH_ONLY')         # only (re)compute the gear entries' depth lists
+set_visor(True)
+gpasses = ('beauty',) if PREVIEW else ('beauty', 'normal', 'height')
+for o in parts: o.is_holdout = True
+for kind, objs in gear.items():
+    for o in all_gear: o.hide_render = o not in objs
+    for nm, fobjs, frames in (('idle', frame_objs, [IDLE_F]), ('walk', frame_objs, walk_frames), ('down', down_objs, [DOWN_F])):
+        name = f'gear_{kind}_{nm}'
+        if (kind == 'armor' and nm == 'down') or not want(name) and not want('gear') and not want('gear_' + kind): continue
+        t0 = time.time()
+        if not DEPTH_ONLY:
+            got = mn.render('crew/' + name, objs=fobjs + objs, root=root, dirs=dirs, frames=frames, passes=gpasses)
+            if nm in canvas: assert got == canvas[nm], f'{name}: canvas {got} != body {canvas[nm]}'
+        add_depth('crew/' + name, gear_depth(objs, frames))
+        times[name] = round(time.time() - t0, 1)
+for o in parts: o.is_holdout = False
+for o in all_gear: o.hide_render = True
+print('[crew] render times (s):', times)
