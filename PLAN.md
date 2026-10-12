@@ -761,6 +761,26 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Known: the front cannon and its gunner sit behind the bridge's nose wall, so they're drawn in front of
   it (depth bias); 2D props near a room's south edge can be covered by the low wall top.
 
+### 9b. Lighting from the game state (`js/lights.js`, shading in `js/gfx.js`)
+- Power per zone column: with charge, warm caged ceiling lamps (LIGHTS, inside the lamp sprites) light
+  from above; without, they die and red emergency strips along every wall base light the rooms low and
+  grazing (lit sides, dark centre), with amber markers at the doors and faint suit lamps on the crew.
+  Lamps flicker back on when power returns (the lamp sprites follow). Ion storm: lamps out, flashlights.
+- Outside: low cold ambient + a distant star from the front right (the baked key's side); a solar flare
+  makes it glare.
+- Alarms (rules in `alarmState()`): yellow for any fire on board; red 1 at MAX_DAMAGE - 1 broken
+  systems, a hull breach or a hull side with 2+ big hits; red 2 at MAX_DAMAGE broken (one from losing
+  the ship). Rotating beacons on each room's back wall (two real spot beams with shadows), an ambient
+  pulse, lamps dimmed under red (rooms stay readable), a slow red strobe at red 2; a pill in the top bar.
+- Dynamic lights: fires (flicker, plasma violet), reactor (pulse, overcharged whiter, broken sparks),
+  screens, capacitors, shields, muzzle flashes, bolts, shells, enemy shots, explosions (fx particles
+  clustered), sparks of broken systems, surges, power-line energy, enemy weak spots and engines, the
+  leviathan's spots and eye, the jump drive spool, nav lights. Docked derelict: dark with dying strips;
+  pirate ship: warm lamps (the old 2D derelict darkening and fire floor glow are classic-only now).
+- Renderer: tiled forward lighting (up to 255 lights on screen, 31 per 64-px tile; point, spot and strip
+  lights) and screen-space shadows marched through last frame's depth buffer (2nd colour attachment,
+  reprojected). Overview at 2560×1600 with ~55 lights, red alert, fires: ~130 fps (shadows off ~140).
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the

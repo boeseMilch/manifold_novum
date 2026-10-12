@@ -382,39 +382,58 @@ function missionClickTarget(mx, my) {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
+// Fire sprites (tools/blender/models/fx/fire.py): fx/fire_s/m/l rendered at s = 0.95 / 1.24 / 1.6,
+// plasma_m/l at 1.31 / 1.6; the nearest one, scaled to the fire's s. 8-frame loop at ~12 fps (each
+// fire starts at its own frame), unlit (flames are light), depth-tested but not writing depth (so
+// crew in front or behind sort right through the soft edges). Smoke: fx/smoke_* puffs rising above.
+const FIRE_SPRITES = [['fx/fire_s', 0.95], ['fx/fire_m', 1.24], ['fx/fire_l', 1.6]], PLASMA_SPRITES = [['fx/plasma_m', 1.31], ['fx/plasma_l', 1.6]];
+function drawFireSprite(f, s, t) {
+  const [name, s0] = (f.plasma ? PLASMA_SPRITES : FIRE_SPRITES).reduce((a, b) => (Math.abs(b[1] - s) < Math.abs(a[1] - s) ? b : a));
+  if (!GFX.sprite(name, Math.floor(t * 12 + f.seed * 7) % 8, f.x, f.y, 0, { scale: s / s0, unlit: true, depthWrite: false })) return false;
+  for (let i = 0; i < 3; i++) {
+    const q = (t * 0.5 + i / 3 + f.seed) % 1;
+    fxSmoke(f.x + Math.sin(t + i) * 0.12, f.y + 0.02, (0.9 + q * 1.4) * s, (0.18 + q * 0.35) * s, 0.55 * (1 - q) * Math.min(1, q * 6), i + Math.floor(f.seed));
+  }
+  return true;
+}
 function drawFires(t) {
   for (const f of fires) {
     const x = L(f.x), y = L(f.y), s = (0.55 + 0.45 * f.hp) * 1.6;
-    const g = ctx.createRadialGradient(x, y, 0, x, y, L(1.6) * s);
-    g.addColorStop(0, `rgba(255,150,50,${0.35 + 0.05 * Math.sin(t * 7 + f.seed)})`); g.addColorStop(1, 'rgba(255,120,40,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, L(1.6) * s, 0, TAU); ctx.fill();
+    if (!GFX.on) {                                   // (sprites: the fire is a real light, js/lights.js)
+      const g = ctx.createRadialGradient(x, y, 0, x, y, L(1.6) * s);
+      g.addColorStop(0, `rgba(255,150,50,${0.35 + 0.05 * Math.sin(t * 7 + f.seed)})`); g.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, L(1.6) * s, 0, TAU); ctx.fill();
+    }
+    const sprited = GFX.on && drawFireSprite(f, s, t);
     // a cluster of teardrop flames, each in three layers (red → orange → yellow-white core)
-    const tongues = [[-0.3, 0.75, 0], [0.25, 0.9, 1.7], [0, 1.15, 3.1], [-0.12, 0.6, 4.4], [0.38, 0.55, 5.6]];
-    for (const [layer, col, k] of f.plasma ? [[1, '#7a3ad8', 1.15], [0.72, '#c08aff', 0.85], [0.42, '#ffffff', 0.6]] : [[1, '#d8401c', 1], [0.72, '#ff9a2e', 0.78], [0.42, '#fff0a8', 0.55]]) {
-      for (const [ox, hgt, ph] of tongues) {
-        const flick = 0.85 + 0.15 * Math.sin(t * 11 + ph + f.seed) + 0.08 * Math.sin(t * 23 + ph * 2);
-        const h = L(hgt) * s * k * flick, w = L(0.22) * s * layer, bx = x + L(ox) * s * 0.9, by = y + L(0.15) * s;
-        const tipX = bx + Math.sin(t * 5 + ph) * w * 0.8;
-        ctx.beginPath(); ctx.moveTo(bx - w, by);
-        ctx.bezierCurveTo(bx - w * 1.1, by - h * 0.45, tipX - w * 0.3, by - h * 0.8, tipX, by - h);
-        ctx.bezierCurveTo(tipX + w * 0.3, by - h * 0.8, bx + w * 1.1, by - h * 0.45, bx + w, by);
-        ctx.quadraticCurveTo(bx, by + w * 0.6, bx - w, by);
-        ctx.fillStyle = col; ctx.fill();
-        if (layer === 1) { ctx.strokeStyle = 'rgba(60,15,5,0.5)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    if (!sprited) {
+      const tongues = [[-0.3, 0.75, 0], [0.25, 0.9, 1.7], [0, 1.15, 3.1], [-0.12, 0.6, 4.4], [0.38, 0.55, 5.6]];
+      for (const [layer, col, k] of f.plasma ? [[1, '#7a3ad8', 1.15], [0.72, '#c08aff', 0.85], [0.42, '#ffffff', 0.6]] : [[1, '#d8401c', 1], [0.72, '#ff9a2e', 0.78], [0.42, '#fff0a8', 0.55]]) {
+        for (const [ox, hgt, ph] of tongues) {
+          const flick = 0.85 + 0.15 * Math.sin(t * 11 + ph + f.seed) + 0.08 * Math.sin(t * 23 + ph * 2);
+          const h = L(hgt) * s * k * flick, w = L(0.22) * s * layer, bx = x + L(ox) * s * 0.9, by = y + L(0.15) * s;
+          const tipX = bx + Math.sin(t * 5 + ph) * w * 0.8;
+          ctx.beginPath(); ctx.moveTo(bx - w, by);
+          ctx.bezierCurveTo(bx - w * 1.1, by - h * 0.45, tipX - w * 0.3, by - h * 0.8, tipX, by - h);
+          ctx.bezierCurveTo(tipX + w * 0.3, by - h * 0.8, bx + w * 1.1, by - h * 0.45, bx + w, by);
+          ctx.quadraticCurveTo(bx, by + w * 0.6, bx - w, by);
+          ctx.fillStyle = col; ctx.fill();
+          if (layer === 1) { ctx.strokeStyle = 'rgba(60,15,5,0.5)'; ctx.lineWidth = 1.5; ctx.stroke(); }
+        }
       }
     }
-    for (let i = 0; i < 4; i++) {                    // embers
+    for (let i = 0; i < 4; i++) {                    // embers (rising: lifted in the tilted view)
       const q = (t * 0.9 + i / 4 + f.seed) % 1;
       ctx.fillStyle = `rgba(255,200,90,${1 - q})`;
-      ctx.fillRect(x + Math.sin(i * 3 + f.seed + t) * L(0.4) * s, y - q * L(1.4) * s, 2.5, 2.5);
+      ctx.fillRect(x + Math.sin(i * 3 + f.seed + t) * L(0.4) * s, y - (sprited ? L(GFX.lift(0.4 + q * 1.6)) : q * L(1.4)) * s, 2.5, 2.5);
     }
-    for (let i = 0; i < 3; i++) {                    // smoke
+    if (!sprited) for (let i = 0; i < 3; i++) {      // smoke
       const q = (t * 0.5 + i / 3 + f.seed) % 1;
       ctx.beginPath(); ctx.arc(x + Math.sin(t + i) * 6, y - L(0.6) - q * L(1.4), L(0.18 + q * 0.35) * s, 0, TAU);
       ctx.fillStyle = `rgba(60,60,64,${0.4 * (1 - q)})`; ctx.fill();
     }
-    // time until it spreads / breaks something
-    ctx.beginPath(); ctx.arc(x, y + L(0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / (f.period || (f.plasma ? PLASMA_TIME : FIRE_TIME))) * TAU);
+    // time until it spreads / breaks something (in the tilted view: in front of the flames' base)
+    ctx.beginPath(); ctx.arc(x, y + L(sprited ? 0.75 : 0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / (f.period || (f.plasma ? PLASMA_TIME : FIRE_TIME))) * TAU);
     ctx.strokeStyle = 'rgba(255,90,60,0.9)'; ctx.lineWidth = 3; ctx.stroke();
   }
 }

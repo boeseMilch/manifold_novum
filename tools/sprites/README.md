@@ -107,20 +107,24 @@ under the 2D canvas `c`, which stays on top for the HUD, panels, prompts and eff
 with `?classic`, opened as a `file://`, or in Node (tests, the server's simulation) `GFX.on` is false
 and the game draws its old top-down look.
 
-    GFX.sprite(name, frame, x, y, z, { layer, sortY, alpha, tint, emissive, unlit, scale, flip, clip, depthBias, depthWrite, pick })
+    GFX.sprite(name, frame, x, y, z, { layer, sortY, alpha, tint, emissive, unlit, scale, flip, rot, sx, clip, depthBias, depthWrite, pick })
     GFX.frameIndex(name, angle, f)      // dir * frames + f, dir from an angle (0 = right, y down)
-    GFX.lighting({ ambient, sun, areas, lights })   // built each frame by gameLighting() in js/lights.js
+    GFX.lighting({ ambient, sun, areas, lights, grade })   // built each frame by gameLighting() in js/lights.js
+    GFX.setShadows(on)                 // screen-space shadows (default on; ?noshadows)
     GFX.layer2d('back' | 'mid')        // 2D canvases composited into the GL picture (old drawings)
     GFX.has(name), GFX.ready(name), GFX.info(name), GFX.toScreen(x, y, z), GFX.lift(z), GFX.pickAt(x, y)
 
 - Pages load lazily per group (hull, interior, ship and crew are preloaded); `GFX.sprite` returns false
   until a sprite's pages are there, so callers draw their old 2D version meanwhile.
-- Layers, in drawing order: 2D `back` (space, things behind the ship, unlit) → `ground` / `decal`
+- Layers, in drawing order: 2D `back` (space, things behind the ship, unlit) → `under` (lit, no depth: enemies,
+  asteroids, the leviathan — below the hull) → `ground` / `decal`
   (no depth, submission order: hull tiles, floors) → `wall` (sorted by `sortY`, per-pixel depth from the
   height map: walls, doors, airlocks, cannons) → 2D `mid` (every old drawing the game used to draw
   before the crew, lit like the floor) → `main` (sorted, depth-tested against the walls: crew and other
   things that move) → `top` → bloom and tone shoulder. The 2D canvas `c` (after-crew drawings, HUD) is on top.
 - Per pixel: world position from the sprite's place, ppu and height map → light = area ambient + sun ×
-  area factor + up to 32 point lights (N·L from the normal map) → depth `y·cos50 + z·sin50`.
+  area factor + the lights binned into its screen tile (points, spots, strips; N·L from the normal map;
+  shadows marched through last frame's depth buffer) → depth `y·cos50 + z·sin50`.
+- `emissive` (0..1) keeps a sprite's brightest pixels lit in the dark: set it on screens, LEDs, lamps.
 - Tint: the mask recolours relative to the untinted mask area's mean luminance (measured from frame 0).
 - Internal resolution: min(1, 2048 / physical width); `?gfxscale=0.75` sets (and remembers) another.

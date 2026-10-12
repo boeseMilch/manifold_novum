@@ -58,6 +58,7 @@ function breakSystem(s) {
   sfx.spark(); sfx.clank();
   combatBanner(`${s.name} broken!`);
   for (let i = 0; i < 14; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.7, i % 2 ? '#ffb347' : '#6a6f7a', 0.12);
+  combatFlip('fx/hit_spark', s.x, s.y, 1.4);
 }
 // Hits on the hull damage systems in the zone column that was hit.
 function damageColumn(side, large) {
@@ -124,6 +125,8 @@ function drawPowerLines(t) {
     }
     for (let d = 2.5; d < l.len - 1; d += 3.5) {      // clamps
       const [x, y] = linePoint(l, d / l.len);
+      const [ax, ay] = linePoint(l, Math.max(0, d - 0.1) / l.len), [bx, by] = linePoint(l, Math.min(l.len, d + 0.1) / l.len);
+      if (spr('systems/power_clamp', GFX.frameIndex('systems/power_clamp', Math.atan2(by - ay, bx - ax)), x, y, 0, { sortY: y - 0.3 })) continue;
       rr(L(x) - 4, L(y) - 4, 8, 8, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.2);
     }
   }
@@ -419,8 +422,26 @@ function drawLights(dt) {
   }
 }
 
+// Sprites: systems/lever_base_p<pos> (or _broken), the handle (13 angles) and the wedged wrench,
+// all with their origin at LEVER; the output names and AUTO / MANUAL stay text on the floor.
+function drawLeverSprite(lv) {
+  const base = broken(LEVER) ? 'systems/lever_base_broken' : `systems/lever_base_p${lv.pos}`;
+  if (!sprReady(base, 'systems/lever_handle')) return false;
+  const o = { sortY: LEVER.y + 0.3 };
+  spr(base, 0, LEVER.x, LEVER.y, 0, { ...o, emissive: 0.5 });
+  spr('systems/lever_handle', clamp(Math.round((lv.angle - leverAngle(0)) / 0.15), 0, 12), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
+  if (lv.jammed) spr('systems/lever_wrench', lv.pos, LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.32 });
+  return true;
+}
 function drawLever(t) {
   const x = L(LEVER.x), y = L(LEVER.y), lv = power.lever;
+  if (drawLeverSprite(lv)) {
+    ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = 'rgba(232,236,244,0.75)';
+    for (let i = 0; i < 3; i++) ctx.fillText(LEVER_NAMES[i], x + Math.cos(leverAngle(i)) * T * 0.72, y + Math.sin(leverAngle(i)) * T * 0.72);
+    ctx.font = `800 ${T * 0.11}px system-ui, sans-serif`; ctx.textBaseline = 'top';
+    ctx.fillText(lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', x, y + T * 0.55); ctx.textAlign = 'left';
+    return;
+  }
   shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);
   ctx.beginPath(); ctx.arc(x, y, T * 0.5, 0, TAU); ctx.fillStyle = '#3f4757'; ctx.fill(); stroke(2.5);
   ctx.beginPath(); ctx.arc(x, y, T * 0.38, leverAngle(0) - 0.25, leverAngle(2) + 0.25);   // the track
@@ -459,26 +480,51 @@ function drawEnergyBolts() {
 }
 
 // Broken look: scorch, a loose panel, smoke and the odd spark.
-function drawBroken(s, t) {
-  const x = L(s.x), y = L(s.y), r = L(Math.min(s.r, 1.1));
-  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, 'rgba(15,12,10,0.55)'); g.addColorStop(1, 'rgba(15,12,10,0)');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
-  ctx.save(); ctx.translate(x + r * 0.3, y - r * 0.2); ctx.rotate(0.5);
-  rr(-8, -5, 16, 10, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.5); ctx.restore();
+// Sprites: systems/broken_scorch (radius 1, scaled to min(s.r, 1.1)) on the floor, the loose cover
+// panel (systems/broken_panel, else fx/loose_panel), fx/smoke_* puffs rising; sparks stay 2D, the
+// BROKEN label stays text (upright in the tilted view).
+function drawBrokenSprites(s, t) {
+  const rad = Math.min(s.r, 1.1), panel = GFX.has('systems/broken_panel') ? 'systems/broken_panel' : 'fx/loose_panel';
+  if (!GFX.ready('systems/broken_scorch') || !GFX.ready(panel) || !GFX.ready('fx/smoke_0')) return false;
+  GFX.sprite('systems/broken_scorch', 0, s.x, s.y, 0, { layer: 'decal', scale: rad, alpha: 0.85 });
+  GFX.sprite(panel, 0, s.x + rad * 0.3, s.y - rad * 0.2, 0, { sortY: s.y - rad * 0.2 });
   for (let i = 0; i < 3; i++) {
     const q = (t * 0.5 + i / 3) % 1;
-    ctx.beginPath(); ctx.arc(x + Math.sin(t + i * 2) * 5, y - q * L(1.1), L(0.12 + q * 0.25), 0, TAU);
-    ctx.fillStyle = `rgba(70,70,76,${0.5 * (1 - q)})`; ctx.fill();
+    fxSmoke(s.x + Math.sin(t + i * 2) * 0.1, s.y + 0.05, 0.3 + q * 1.3, 0.12 + q * 0.25, 0.6 * (1 - q) * Math.min(1, q * 6), i + Math.floor(s.x), 2);   // (biased: out of the machine it rises from)
+  }
+  return true;
+}
+function drawBroken(s, t) {
+  const x = L(s.x), y = L(s.y), r = L(Math.min(s.r, 1.1));
+  if (!(GFX.on && drawBrokenSprites(s, t))) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(15,12,10,0.55)'); g.addColorStop(1, 'rgba(15,12,10,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    ctx.save(); ctx.translate(x + r * 0.3, y - r * 0.2); ctx.rotate(0.5);
+    rr(-8, -5, 16, 10, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.5); ctx.restore();
+    for (let i = 0; i < 3; i++) {
+      const q = (t * 0.5 + i / 3) % 1;
+      ctx.beginPath(); ctx.arc(x + Math.sin(t + i * 2) * 5, y - q * L(1.1), L(0.12 + q * 0.25), 0, TAU);
+      ctx.fillStyle = `rgba(70,70,76,${0.5 * (1 - q)})`; ctx.fill();
+    }
   }
   const rr2 = rng(Math.floor(t * 5) + s.x * 7);
   if (rr2() < 0.15) {
     ctx.strokeStyle = 'rgba(255,220,120,0.85)'; ctx.lineWidth = 1.5;
     for (let i = 0; i < 3; i++) { const a = rr2() * TAU; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9); ctx.stroke(); }
   }
-  ctx.fillStyle = 'rgba(255,120,100,0.9)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillText('BROKEN', x, y - r * 0.6); ctx.textAlign = 'left';
+  if (!GFX.on) drawBrokenLabel(s);
 }
+// The BROKEN label. With sprites it's drawn later, on top (drawBrokenLabels, from render()), upright and
+// lifted above the machine so the machine's sprite doesn't hide it.
+function drawBrokenLabel(s) {
+  const x = L(s.x), r = L(Math.min(s.r, 1.1)), y = L(s.y - GFX.lift(1.1)) - r * 0.6;
+  ctx.save(); ctx.translate(x, y); ctx.scale(1, 1 / viewSy());
+  ctx.fillStyle = 'rgba(255,120,100,0.9)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  if (GFX.on) { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,10,10,0.7)'; ctx.strokeText('BROKEN', 0, 0); }
+  ctx.fillText('BROKEN', 0, 0); ctx.restore(); ctx.textAlign = 'left';
+}
+function drawBrokenLabels() { if (GFX.on) for (const s of SYSTEMS) if (s.broken) drawBrokenLabel(s); }
 
 // Item icons (pixel coords). Used on the floor and in the inventory.
 function drawItemIcon(kind, x, y, s = 1, t = 0) {
@@ -548,7 +594,10 @@ function pickupHalo(x, y, r, t, inReach, seed = 0) {
   ctx.lineWidth = 4.5; ctx.strokeStyle = 'rgba(20,22,27,0.55)'; ctx.stroke();
   ctx.lineWidth = 2.2; ctx.strokeStyle = `rgba(255,224,138,${0.75 + 0.25 * k})`; ctx.stroke();
   ctx.restore();
-  if (inReach) {
+  if (inReach && GFX.on) {
+    ctx.beginPath(); ctx.arc(x, y, r - 4, 0, TAU); ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * k})`; ctx.stroke();
+    labelAt(x / T, (y - r - 6) / T, 0.5, 'CLICK TO TAKE', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffe08a', 'bottom', 'rgba(10,12,18,0.85)');
+  } else if (inReach) {
     ctx.beginPath(); ctx.arc(x, y, r - 4, 0, TAU); ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * k})`; ctx.stroke();
     ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('CLICK TO TAKE', x, y - r - 6);
@@ -562,7 +611,7 @@ function drawItems(t) {
     const x = L(it.x), y = L(it.y), bob = Math.sin(t * 2.6 + i * 1.7) * 3;
     pickupHalo(x, y, T * 0.5, t, reachable(it.x, it.y), i * 0.9);
     shadowEllipse(x + 3, y + 5, 13 - bob * 0.6, 8, 0.3);
-    drawItemIcon(it.kind, x, y - 3 + bob, 1.15, t);
+    if (!spr('items/' + it.kind, 0, it.x, it.y, 0.12 + bob / T, { pick: [0.4, 0.7], emissive: 0.15 })) drawItemIcon(it.kind, x, y - 3 + bob, 1.15, t);
   });
 }
 
@@ -588,7 +637,7 @@ function drawSystemsHUD(top) {
     ctx.fillStyle = '#6b7486'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.fillText(slot === 'weapon' ? 'R-CLICK/SPACE' : 'ITEM', x + 33, y0 + 4);
     if (inv[slot]) {
-      drawItemIcon(inv[slot], x + 33, y0 + 36, 1.2);
+      if (!drawSpriteIcon('items/icon_' + inv[slot], x + 33, y0 + 33, 50)) drawItemIcon(inv[slot], x + 33, y0 + 36, 1.2);
       if (slot === 'weapon' && inv.cd > 0) {
         const k = Math.min(1, inv.cd / weaponCooldown(inv.weapon));
         ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x + 2, y0 + 66 - 64 * k, 62, 64 * k);

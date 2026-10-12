@@ -18,8 +18,25 @@ function plaque(x, y, w, h, lines, bg = '#e8e4d4', fg = '#2a2d35') {   // a scre
   ctx.restore();
 }
 
+// Sprites (js/decor.js spr): each piece of furniture has its origin at the centre of its FURNITURE
+// rect (models/props/interior.py); wall signs hang on the back wall's front face at WALL_SIGN_Z.
+const fc = (r) => [r.x + r.w / 2, r.y + r.h / 2];
+const WALL_SIGN_Z = 1.12;
+function wallSign(name, x, wallY, z = WALL_SIGN_Z) {
+  return spr(name, 0, x, wallY, z, { layer: 'wall', sortY: wallY + 0.02, depthBias: 0.05 });
+}
+function kitchenSprites(t) {
+  if (!sprReady('props/kitchen_counter', 'props/fridge', 'props/table_kitchen', 'props/stool')) return false;
+  spr('props/kitchen_counter', 0, ...fc(FURNITURE.counter));
+  spr('props/fridge', 0, ...fc(FURNITURE.fridge));
+  const [tx, ty] = fc(FURNITURE.table);
+  for (const [ox, oy] of [[-0.85, 0.25], [0.7, -0.55]]) spr('props/stool', 0, tx + ox, ty + oy);
+  spr('props/table_kitchen', 0, tx, ty);
+  return true;
+}
 // --- kitchen -----------------------------------------------------------------
 function kitchen(t) {
+  if (kitchenSprites(t)) return;
   const c = FURNITURE.counter, x = U(c.x), y = U(c.y), w = U(c.w), h = U(c.h);
   shadowEllipse(x + w / 2 + 4, y + h / 2 + 4, w * 0.52, h * 0.6, 0.3);
   rr(x, y, w, h, 3); ctx.fillStyle = '#a3abb8'; ctx.fill(); stroke(2.5);
@@ -101,6 +118,12 @@ function bunk(x, y, w, h, blanket, messy, t) {
   for (let i = 0; i < 4; i++) { const ry = y + h * 0.3 + i * h * 0.15; ctx.beginPath(); ctx.moveTo(x + w - 2, ry); ctx.lineTo(x + w + 5, ry); ctx.stroke(); }
 }
 function bunkRoom(t) {
+  if (sprReady('props/bunks', 'props/lockers', 'props/plaque_hang_in_there')) {
+    spr('props/bunks', 0, ...fc(FURNITURE.bunks));
+    spr('props/lockers', 0, ...fc(FURNITURE.lockers));
+    wallSign('props/plaque_hang_in_there', 34.4, 2.6);
+    return;
+  }
   const b = FURNITURE.bunks, half = (b.w - 0.4) / 2;
   bunk(U(b.x), U(b.y), U(half), U(b.h), '#3a6ea8', false, t);
   bunk(U(b.x + half + 0.4), U(b.y), U(half), U(b.h), '#a8553a', true, t);
@@ -130,6 +153,14 @@ function bunkRoom(t) {
 
 // --- the toilet ----------------------------------------------------------------
 function toiletStall(t) {
+  if (sprReady('props/toilet_stall', 'props/toilet', 'props/plunger', 'props/magazine')) {
+    spr('props/toilet_stall', 0, 11.625, 16.0);
+    spr('props/toilet', 0, ...fc(FURNITURE.toilet));
+    spr('props/plunger', 0, 13.25, 16.6);
+    spr('props/magazine', 0, 12.05, 16.4, 0, { layer: 'decal' });
+    stencil(U(12.75), U(17.4), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');
+    return;
+  }
   const w1 = FURNITURE.stallWall, w2 = FURNITURE.stallFront;
   for (const s of [w1, w2]) { ctx.fillStyle = '#8f98a8'; ctx.fillRect(U(s.x), U(s.y), U(s.w), U(s.h)); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(U(s.x), U(s.y), U(s.w), U(s.h)); }
   ctx.save(); ctx.translate(U(w2.x + w2.w), U(w2.y + w2.h)); ctx.rotate(0.9);              // door, swung open
@@ -162,12 +193,14 @@ function toiletStall(t) {
 }
 // The sign on the wall above it (drawn with the spine, on the wall itself).
 function toiletSign() {
+  if (wallSign('props/plaque_toilet', 12.45, SPINE_Y1, 1.35)) return;   // above the toilet's tank
   plaque(U(12.45), U(14.55), U(2.05), U(0.72),
     [['PLEASE CLOSE THE LID', 0.14], ['OR THE AIR RUNS OUT', 0.12], ['— the management', 0.085, 600]]);
 }
 
 // --- bridge couch, treadmill, the incident board ---------------------------
 function couch() {
+  if (spr('props/couch', 0, ...fc(FURNITURE.couch))) return;
   const c = FURNITURE.couch, x = U(c.x), y = U(c.y), w = U(c.w), h = U(c.h);
   shadowEllipse(x + w / 2 + 4, y + h / 2 + 6, w * 0.6, h * 0.52, 0.35);
   rr(x, y, w, h, 7); ctx.fillStyle = '#6a5a8a'; ctx.fill(); stroke(2.5);
@@ -180,6 +213,8 @@ function couch() {
   ctx.restore();
 }
 function exerciseBike(t) {                             // the treadmill (it works: see TREADMILL in ship.js)
+  const P = 0.1875, f = Math.floor((((t * WALK_SPEED * BELT_K) % P) / P) * 6);   // the belt loop (models/systems/props.py)
+  if (spr('systems/treadmill', f, 39.8, 21.45)) { stencil(U(40.6), U(22.6), 'JOG FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)'); return; }
   const b = FURNITURE.treadBar, B = TREADMILL, x = U(b.x), y = U(b.y), w = U(b.w), h = U(B.y + B.h - b.y);
   shadowEllipse(x + w / 2 + 4, y + h / 2 + 5, w * 0.6, h * 0.55, 0.3);
   rr(x, y, w, h, 5); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);                                   // frame and rails
@@ -194,6 +229,7 @@ function exerciseBike(t) {                             // the treadmill (it work
   stencil(U(40.6), U(22.6), 'JOG FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)');
 }
 function incidentBoard() {
+  if (wallSign('props/plaque_incident', 16.1, 0.6)) return;
   plaque(U(16.1), U(0.32), U(2.6), U(0.5), [['DAYS SINCE LAST INCIDENT:  0', 0.13]], '#2b303a', '#ffcf6b');
 }
 
@@ -211,9 +247,36 @@ function drawLightPools() {
   ctx.restore();
 }
 
-function drawInteriorWalls() { toiletSign(); incidentBoard(); }
+// Ceiling lamps (interior/lamp_ceiling_*, hanging 2.0 above LIGHTS; off when the zone is dark).
+function drawLampSprites() {
+  for (const [lx, ly] of LIGHTS) {
+    const col = lx < COLS[1].x ? 0 : lx < COLS[2].x ? 1 : 2, on = lightFx.lamp[col] > 0.5;   // (flickers with the light: js/lights.js)
+    spr(on ? 'interior/lamp_ceiling_on' : 'interior/lamp_ceiling_off', 0, lx, ly, 0, { sortY: ly + 1.5, emissive: on ? 1 : 0 });
+  }
+}
+// The room-name plaques (interior/plaque_<zone>_l, m..., r) on the back wall, the name as text on top.
+function drawRoomPlaque(r) {
+  const q = r.rects[0], z = r.zone.name, l = `interior/plaque_${z}_l`, m = `interior/plaque_${z}_m`, rr_ = `interior/plaque_${z}_r`;
+  if (!sprReady(l, m, rr_)) return false;
+  const font = `800 ${T * 0.2}px system-ui, sans-serif`;
+  ctx.save(); ctx.font = font; ctx.letterSpacing = '2px'; const tw = ctx.measureText(r.name.toUpperCase()).width / T; ctx.restore();
+  const n = Math.max(1, Math.ceil((tw + 0.05) / 0.25)), x0 = q.x + 0.4, o = { layer: 'wall', sortY: q.y + 0.02, depthBias: 0.05 };
+  spr(l, 0, x0, q.y, 0, o);
+  for (let i = 0; i < n; i++) spr(m, 0, x0 + 0.1875 + i * 0.25, q.y, 0, o);
+  spr(rr_, 0, x0 + 0.1875 + n * 0.25, q.y, 0, o);
+  const cx = x0 + 0.1875 + n * 0.125;
+  later(() => {
+    ctx.save(); ctx.translate(cx * T, (q.y - GFX.lift(0.52)) * T); ctx.scale(1, 1 / GFX.SIN);
+    ctx.font = font; ctx.letterSpacing = '2px'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = r.zone.label; ctx.fillText(r.name.toUpperCase(), 0, 0); ctx.restore();
+  });
+  return true;
+}
+
+function drawInteriorWalls() { toiletSign(); incidentBoard(); flushLater(); }
 function drawInterior(t) {
   kitchen(t); bunkRoom(t); toiletStall(t); couch(); exerciseBike(t);
+  if (GFX.on) drawLampSprites();
 }
 
 // ---------------------------------------------------------------------------

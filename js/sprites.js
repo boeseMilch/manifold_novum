@@ -211,9 +211,12 @@ function drawShipSprites(t) {
 // ---------------------------------------------------------------------------------------------
 // Crew: crew/idle, crew/walk (8 frames), *_visor; 8 directions from c.face; the suit colour through
 // the tint mask. Walking is detected from c.walk advancing (it's in every snapshot), so it works
-// for everyone in multiplayer. Down / out: crew/down if it exists, else the old 2D drawing.
+// for everyone in multiplayer. Down / out: crew/down(_visor) (out = greyed and faded), else the old
+// 2D drawing. Worn gear (crew/gear_<id>_idle|walk|down, from c.kit via perk(); the vest only while
+// c.armor > 0) goes over the body with the same frame, far pieces first (the entries' `depth`).
 // ---------------------------------------------------------------------------------------------
 const crewAnim = new Map();
+const CREW_GEAR = ['boots', 'thrusters', 'armor', 'toolbelt', 'firstAid', 'stim'];
 function drawCrewSprite(c, visor, t) {
   const down = c.health === 'down' || c.health === 'out';
   if (down && !GFX.has('crew/down')) return false;
@@ -223,12 +226,19 @@ function drawCrewSprite(c, visor, t) {
   a.moving = Math.abs(c.walk - a.walk) > 1e-4 ? 0.12 : Math.max(0, a.moving - 1 / 60);   // (bridges frames where walk didn't change)
   a.walk = c.walk;
   const tint = down && c.health === 'out' ? '#7a7f8a' : c.color;
-  let name, f = 0;
-  if (down) name = 'crew/down';
-  else if (a.moving > 0) { name = visor ? 'crew/walk_visor' : 'crew/walk'; f = Math.floor((c.walk / TAU) * 8); }
-  else name = visor ? 'crew/idle_visor' : 'crew/idle';
-  if (!GFX.has(name)) name = visor ? 'crew/idle_visor' : 'crew/idle';
-  return GFX.sprite(name, GFX.frameIndex(name, c.face, f), c.x, c.y, 0, { tint, emissive: 0.4, pick: [0.32, 1.25], alpha: c.health === 'out' ? 0.85 : 1, depthBias: c.mode === 'gun' ? GUN_DEPTH_BIAS : 0 });
+  let name, f = 0, pose;
+  if (down) { name = visor && GFX.has('crew/down_visor') ? 'crew/down_visor' : 'crew/down'; pose = 'down'; }
+  else if (a.moving > 0) { name = visor ? 'crew/walk_visor' : 'crew/walk'; f = Math.floor((c.walk / TAU) * 8); pose = 'walk'; }
+  else { name = visor ? 'crew/idle_visor' : 'crew/idle'; pose = 'idle'; }
+  if (!GFX.has(name)) { name = visor ? 'crew/idle_visor' : 'crew/idle'; pose = 'idle'; }
+  const k = GFX.frameIndex(name, c.face, f), bias = c.mode === 'gun' ? GUN_DEPTH_BIAS : 0, alpha = c.health === 'out' ? 0.85 : 1;
+  if (!GFX.sprite(name, k, c.x, c.y, 0, { tint, emissive: 0.4, pick: down ? [0.6, 0.7] : [0.32, 1.25], alpha, depthBias: bias })) return false;
+  const gear = CREW_GEAR.filter(id => (id === 'armor' ? c.armor > 0 : perk(c, id)) && GFX.has(`crew/gear_${id}_${pose}`)).map(id => {
+    const g = `crew/gear_${id}_${pose}`, gk = GFX.frameIndex(g, c.face, f);
+    return { g, gk, d: GFX.info(g).depth?.[gk] ?? 0 };
+  }).sort((p, q) => q.d - p.d);
+  for (const { g, gk } of gear) GFX.sprite(g, gk, c.x, c.y, 0, { tint: down && c.health === 'out' ? '#7a7f8a' : undefined, emissive: 0.3, alpha, depthBias: bias + 0.02 });
+  return true;
 }
 
 // ---------------------------------------------------------------------------------------------

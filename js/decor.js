@@ -2,6 +2,42 @@
 // Purely visual for now (nothing here blocks movement). Coordinates in layout units.
 
 // ---------------------------------------------------------------------------
+// Sprites (js/gfx.js) for the ship's machinery, furniture and clutter. Every old 2D drawing of a
+// world object first tries its pre-rendered sprite: spr() is true when it was drawn (then the 2D
+// version is skipped), false with GFX off (?classic, tests, the server) or while its atlas page loads.
+// Raised things go in the sorted 'main' layer (y-sorted with the crew); flat things in 'decal'.
+// ---------------------------------------------------------------------------
+function spr(name, frame, x, y, z = 0, o) { return GFX.on && GFX.sprite(name, frame, x, y, z, o); }
+const sprReady = (...names) => GFX.on && names.every(n => GFX.ready(n));
+// Text that must stay readable over raised sprites (counters, labels): with GFX on it is drawn
+// later, on the top canvas (drawInteriorWalls flushes it), upright and lifted by z; classic: now.
+const LATER = [];
+function later(fn) { if (GFX.on) LATER.push(fn); else fn(); }
+function flushLater() { for (const f of LATER.splice(0)) f(); }
+function labelAt(x, y, z, text, font, fill, base = 'middle', outline = null) {   // x, y in layout units
+  later(() => {
+    ctx.save(); ctx.translate(x * T, (y - GFX.lift(z)) * T); if (GFX.on) ctx.scale(1, 1 / GFX.SIN);
+    ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = base;
+    if (outline) { ctx.lineWidth = 3; ctx.strokeStyle = outline; ctx.strokeText(text, 0, 0); }
+    ctx.fillStyle = fill; ctx.fillText(text, 0, 0); ctx.restore();
+  });
+}
+// Item / gear / upgrade icons (items/icon_*, 128 x 128) on the 2D canvas (HUD, panels): straight
+// from the atlas page. size = the icon canvas' size in CSS px. False until the page has loaded.
+const ICON_PAGES = {};
+function drawSpriteIcon(name, cx, cy, size) {
+  const S = GFX.on && GFX.info(name), fr = S && S.f && S.f[0];
+  if (!fr || fr.length > 7) return false;
+  const file = `assets/sprites/${S.group}/page${fr[0]}.webp`;
+  let img = ICON_PAGES[file];
+  if (!img) { img = ICON_PAGES[file] = new Image(); img.src = file; }
+  if (!img.complete || !img.naturalWidth) return false;
+  const k = size / 128;
+  ctx.drawImage(img, fr[1], fr[2], fr[3], fr[4], cx - fr[5] * k, cy - fr[6] * k, fr[3] * k, fr[4] * k);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Small drawing pieces (pixel coordinates unless noted)
 // ---------------------------------------------------------------------------
 function tapeStrip(x, y, len, a, seed = 1) {
@@ -97,8 +133,18 @@ function coffee(x, y, t) {
 }
 
 // Round map table with a flickering holographic star chart, plus breakfast.
+const TABLE_Z = 0.78, DESK_Z = 0.72;                // map table / console desk top heights (models/systems/consoles.py)
 function mapTable(x, y, t) {
   const r = T * 1.1;
+  const off = typeof CAPACITORS !== 'undefined' && (CAPACITORS[1].charge <= 0 || broken(CAPACITORS[1]));
+  if (spr(off ? 'systems/maptable_off' : 'systems/maptable', 0, x / T, y / T, 0, { emissive: off ? 0 : 0.8, pick: [1.1, 1.3] })) {
+    if (!off) later(() => {                          // the sweep over the screen, at the table's top
+      const ty = y - GFX.lift(TABLE_Z) * T, a = t * 0.6;
+      ctx.beginPath(); ctx.moveTo(x, ty); ctx.arc(x, ty, r * 0.72, a, a + 0.5); ctx.closePath();
+      ctx.fillStyle = 'rgba(95,214,228,0.18)'; ctx.fill();
+    });
+    return;
+  }
   shadowEllipse(x + 6, y + 9, r * 1.05, r * 0.9, 0.35);
   ctx.beginPath(); ctx.arc(x, y, r, 0, TAU);
   const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 2, x, y, r);
@@ -195,7 +241,32 @@ function duck(x, y, a) {
 }
 
 // Ship cat, asleep on the warm floor. Breathes.
+function catSprite(x, y, t) {                       // props/cat_*: origin CAT on the floor
+  if (!sprReady('props/cat_sleep', 'props/cat_hide', 'props/cat_stare', 'props/cat_pet', 'props/cat_flick')) return false;
+  const o = { pick: [0.45, 0.6] };
+  if (typeof hz !== 'undefined' && hz.breaches.some(b => !b.tarp)) { spr('props/cat_hide', 0, CAT.x, CAT.y + 0.125, 0, o); return true; }
+  if (typeof fires !== 'undefined' && fires.some(f => Math.hypot(f.x - CAT.x, f.y - CAT.y) < 7)) { spr('props/cat_stare', 0, CAT.x, CAT.y, 0, o); return true; }
+  const petted = typeof luck !== 'undefined' && luck.pet > 0, fl = (t % 9) / 0.9;   // now and then a tail flick (0.9 s every 9 s)
+  if (petted) spr('props/cat_pet', Math.floor(t * 8) % 6, CAT.x, CAT.y, 0, o);
+  else if (fl < 1) spr('props/cat_flick', Math.floor(fl * 6), CAT.x, CAT.y, 0, o);
+  else spr('props/cat_sleep', Math.floor(t / 3.93 * 8) % 8, CAT.x, CAT.y, 0, o);
+  later(() => {                                      // hearts / z z z over the cat, on top
+    const k = (t * 0.5) % 1, ly = y - GFX.lift(0.45) * T;
+    if (petted) {
+      for (let i = 0; i < 3; i++) {
+        const q = (t * 0.8 + i / 3) % 1, hx = x + Math.sin(i * 2 + t * 2) * 10, hy = ly - q * 30;
+        ctx.fillStyle = `rgba(255,110,150,${1 - q})`; ctx.beginPath();
+        ctx.moveTo(hx, hy + 4); ctx.bezierCurveTo(hx - 7, hy - 2, hx - 3, hy - 7, hx, hy - 3); ctx.bezierCurveTo(hx + 3, hy - 7, hx + 7, hy - 2, hx, hy + 4); ctx.fill();
+      }
+    } else {
+      ctx.fillStyle = `rgba(232,236,244,${0.7 * (1 - k)})`; ctx.font = `700 ${10 + k * 8}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('z', x + T * 0.3 + k * 10, ly - k * 22);
+    }
+  });
+  return true;
+}
 function cat(x, y, t) {
+  if (catSprite(x, y, t)) return;
   // hull breach somewhere: it hides (only a pair of eyes under a blanket of fur)
   if (typeof hz !== 'undefined' && hz.breaches.some(b => !b.tarp)) {
     ctx.save(); ctx.translate(x, y + 6);
@@ -377,19 +448,21 @@ function drawSpineDecor(t) {
 }
 
 function drawFloorDecor(t) {
+  const flat = (name, x, y) => spr(name, 0, x, y, 0, { layer: 'decal' });   // sprites, or false (then the 2D drawing)
+  const solid = (name, x, y, o) => spr(name, (o && o.f) || 0, x, y, 0, o);
   // --- Left cannon room
-  crack(U(4.6), U(6.6), U(1.6), 0.3, 41); tapeX(U(4.6), U(6.6), U(0.6), 42);
+  if (!flat('props/crack_portgun', 4.6, 6.6)) { crack(U(4.6), U(6.6), U(1.6), 0.3, 41); tapeX(U(4.6), U(6.6), U(0.6), 42); }
   stencil(U(5.2), U(8.6), '← LADDER UP TO THE CANNON', 0, 0.24);
   // --- Bridge
   stain(U(21.6), U(-0.9), U(0.35), 'rgba(80,45,20,0.45)', 50);          // spilled coffee
-  papers(U(17.0), U(6.0), 53);
-  plant(U(14.95), U(10.75), t);
-  crack(U(25.0), U(8.0), U(2.0), -0.5, 54); tapeStrip(U(25.0), U(8.0), U(0.6), 1.0, 55); tapeStrip(U(25.6), U(7.7), U(0.6), 1.2, 56);
+  if (!flat('props/papers_bridge', 17.0, 6.0)) papers(U(17.0), U(6.0), 53);
+  if (!solid('props/plant', 14.95, 10.75, { f: Math.floor(t * 3) % 6 })) plant(U(14.95), U(10.75), t);
+  if (!flat('props/crack_bridge', 25.0, 8.0)) { crack(U(25.0), U(8.0), U(2.0), -0.5, 54); tapeStrip(U(25.0), U(8.0), U(0.6), 1.0, 55); tapeStrip(U(25.6), U(7.7), U(0.6), 1.2, 56); }
   stencil(U(22.2), U(10.4), 'NO RUNNING ON THE BRIDGE', 0, 0.26, 'rgba(232,236,244,0.25)');
   // --- Right cannon room
-  sleepingBag(U(35.0), U(4.5), 0.12);                 // bunk five
-  toolbox(U(37.0), U(6.4), -0.3);
-  crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62);
+  if (!solid('props/sleeping_bag', 35.0, 4.5)) sleepingBag(U(35.0), U(4.5), 0.12);                 // bunk five
+  if (!solid('props/toolbox', 37.0, 6.4)) toolbox(U(37.0), U(6.4), -0.3);
+  if (!flat('props/crack_stargun', 34.0, 8.4)) { crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62); }
   // --- Left airlock room
   stencil(U(2.2), U(19.2), 'EVA', -Math.PI / 2, 0.45);
   // --- Reactor
@@ -398,40 +471,56 @@ function drawFloorDecor(t) {
   ctx.strokeRect(U(REACTOR.x - REACTOR.w / 2 - 0.6), U(REACTOR.y - REACTOR.h / 2 - 0.5), U(REACTOR.w + 1.2), U(REACTOR.h + 1.3));
   ctx.restore();
   stencil(U(22.2), U(21.2), 'DO NOT LICK THE REACTOR', 0, 0.2);
-  cable([[U(20.8), U(20.6)], [U(19.9), U(22.3)], [U(20.3), U(23.8)]], '#c9662e', 5, 82);      // to the engine
-  cable([[U(23.6), U(20.6)], [U(24.5), U(22.3)], [U(24.2), U(23.8)]], '#d2a62e', 4, 83);
+  if (!solid('props/cable_engine_l', 20.8, 20.6, { sortY: 21 })) cable([[U(20.8), U(20.6)], [U(19.9), U(22.3)], [U(20.3), U(23.8)]], '#c9662e', 5, 82);      // to the engine
+  if (!solid('props/cable_engine_r', 23.6, 20.6, { sortY: 21 })) cable([[U(23.6), U(20.6)], [U(24.5), U(22.3)], [U(24.2), U(23.8)]], '#d2a62e', 4, 83);
   // --- Right airlock room
   stencil(U(42.2), U(19.4), 'EVA', Math.PI / 2, 0.45);
-  crack(U(39.2), U(17.6), U(1.4), 0.2, 91); tapeX(U(39.2), U(17.6), U(0.6), 92);
+  if (!flat('props/crack_starlock', 39.2, 17.6)) { crack(U(39.2), U(17.6), U(1.4), 0.2, 91); tapeX(U(39.2), U(17.6), U(0.6), 92); }
 }
 
 function drawPropDecor(t) {
+  // sprites where they're loaded (props/*, systems/*; origin = the 2D drawing's x, y), else the old 2D
+  const S = (name, x, y, z = 0, o) => spr(name, (o && o.f) || 0, x, y, z, o);
+  const onTop = (z, sortY) => ({ sortY, depthBias: 0.03 });           // things on a desk / table: lifted by its height
+  const plates = typeof hz === 'undefined' || hz.plates > 0 ? 'full' : 'empty';
   mapTable(U(22.2), U(6.4), t);
-  donutBox(U(23.0), U(6.9), 0.3);
-  papers(U(21.6), U(6.0), 57);
-  // Bridge: the helm runs on coffee
-  coffee(U(22.75), U(-2.1), t);
-  stickyNote(U(21.65), U(-2.1), 0.2); stickyNote(U(21.95), U(-1.95), -0.3, '#f29bc4');
-  duck(U(42.6), U(6.4), Math.PI);
+  if (!S('props/donut_box', 23.0, 6.9, TABLE_Z, onTop(TABLE_Z, 6.45))) donutBox(U(23.0), U(6.9), 0.3);
+  if (!S('props/papers_maptable', 21.6, 6.0, TABLE_Z, onTop(TABLE_Z, 6.41))) papers(U(21.6), U(6.0), 57);
+  // Bridge: the helm runs on coffee (the mug: systems/mug_*, origin on the floor, lands on the desk)
+  const full = typeof hz === 'undefined' || hz.coffee >= 1;
+  if (S(full ? 'systems/mug_full' : 'systems/mug_empty', 22.75, -2.1, 0, { sortY: -1.75, depthBias: 0.03, pick: [0.15, 1.0] })) {
+    if (full) later(() => {                          // steam over the mug, at desk height
+      const x = U(22.75), y = U(-2.1) - GFX.lift(DESK_Z + 0.2) * T;
+      for (let i = 0; i < 3; i++) {
+        const k = (t * 0.45 + i / 3) % 1;
+        ctx.beginPath(); ctx.moveTo(x + Math.sin(t * 2 + i * 2) * 3, y - k * 26);
+        ctx.quadraticCurveTo(x + 6 * Math.sin(t * 3 + i), y - 6 - k * 26, x + Math.sin(t * 2.5 + i) * 4, y - 12 - k * 26);
+        ctx.strokeStyle = `rgba(235,240,245,${0.35 * (1 - k)})`; ctx.lineWidth = 2.5; ctx.stroke();
+      }
+    });
+  } else coffee(U(22.75), U(-2.1), t);
+  if (!S('props/sticky_yellow', 21.65, -2.1, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.65), U(-2.1), 0.2);
+  if (!S('props/sticky_pink', 21.95, -1.95, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.95), U(-1.95), -0.3, '#f29bc4');
+  if (!S('props/duck_star', 42.6, 6.4)) duck(U(42.6), U(6.4), Math.PI);
   // Left cannon room: ammo crates
-  crate(U(11.6), U(4.5), U(1.0), U(0.9), 0.05, '#8a7a4a', 'AMMO');
-  crate(U(12.8), U(4.4), U(0.8), U(0.8), -0.1, '#8a7a4a');
-  crate(U(12.3), U(5.6), U(0.9), U(0.8), 0.25, '#7a8a5a', 'SNAX');
+  if (!S('props/crate_ammo_port', 11.6, 4.5)) crate(U(11.6), U(4.5), U(1.0), U(0.9), 0.05, '#8a7a4a', 'AMMO');
+  if (!S('props/crate_blank_port', 12.8, 4.4)) crate(U(12.8), U(4.4), U(0.8), U(0.8), -0.1, '#8a7a4a');
+  if (!S('props/crate_snax', 12.3, 5.6)) crate(U(12.3), U(5.6), U(0.9), U(0.8), 0.25, '#7a8a5a', 'SNAX');
   // Right cannon room
-  crate(U(42.4), U(3.6), U(1.0), U(0.9), -0.05, '#8a7a4a', 'AMMO');
-  crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
-  // Left airlock room: supply crates
-  crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
-  crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#4a8aa0', 'COOLANT');
+  if (!S('props/crate_ammo_star', 42.4, 3.6)) crate(U(42.4), U(3.6), U(1.0), U(0.9), -0.05, '#8a7a4a', 'AMMO');
+  if (!S('props/crate_misc', 41.7, 10.4)) crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
+  // Left airlock room: supply crates (the hull plates: PLATE_CRATES, the coolant: COOLANT_CRATE)
+  if (!S(`systems/plates_a_${plates}`, 12.6, 22.4, 0, { pick: [0.5, 0.8] })) crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
+  if (!S('systems/coolant', 11.4, 22.6, 0, { pick: [0.4, 0.7] })) crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#4a8aa0', 'COOLANT');
   // Reactor
-  duck(U(18.4), U(23.1), 0.5);
+  if (!S('props/duck_reactor', 18.4, 23.1)) duck(U(18.4), U(23.1), 0.5);
   cat(U(CAT.x), U(CAT.y), t);
-  socks(U(15.0), U(19.0), U(24.6), t);
+  if (!S('props/socks', 17.0, 24.6, 0, { f: Math.floor(t * 4) % 6 })) socks(U(15.0), U(19.0), U(24.6), t);
   fuelCrate(U(17.4), U(19.6), 0.08);
   // Right airlock room
-  crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
-  crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
-  crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');
+  if (!S('props/crate_tape', 32.0, 22.6)) crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
+  if (!S(`systems/plates_b_${plates}`, 33.1, 22.8, 0, { pick: [0.45, 0.8] })) crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
+  if (!S('props/crate_blank_star', 32.4, 21.6)) crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');
 }
 
 // Small junk scattered on every floor: nuts, soda cans, wrappers, tape scraps.
@@ -478,7 +567,7 @@ const JUNK = (() => {
 function drawJunk() {
   for (const j of JUNK) {
     const x = j.x * T, y = j.y * T;
-    if (j.kind === 'nut') nut(x, y, j.a);
+    if (j.kind === 'nut') { if (!spr(`props/nut_r${Math.round((((j.a % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3)) / (Math.PI / 12)) % 4}`, 0, j.x, j.y, 0, { layer: 'decal' })) nut(x, y, j.a); }
     else if (j.kind === 'can') sodaCan(x, y, j.a, j.col);
     else if (j.kind === 'wrapper') wrapper(x, y, j.a, j.col, j.seed);
     else tapeStrip(x, y, T * 0.35, j.a, j.seed);
@@ -487,6 +576,8 @@ function drawJunk() {
 
 // Crate of spare fuel cells for the reactor.
 function fuelCrate(x, y, a) {
+  const cells = typeof power !== 'undefined' ? power.reserve : 3;
+  if (spr(`systems/fuel_crate_c${clamp(cells, 0, 4)}`, 0, x / T, y / T, 0, { emissive: 0.5, pick: [0.7, 0.8] })) return;
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
   const w = T * 1.3, h = T * 0.9;
   shadowEllipse(4, 6, w * 0.55, h * 0.55, 0.3);

@@ -19,7 +19,8 @@
 // still loading — the first call starts loading it). `frame` indexes the sprite's frames
 // (k = dir * frames + f; GFX.frameIndex(name, angle, f) computes it). (x, y, z) is the world point
 // where the sprite's ground origin goes. opts (all optional):
-//   layer     'ground' | 'decal' | 'wall' | 'main' (default) | 'top'
+//   layer     'under' | 'ground' | 'decal' | 'wall' | 'main' (default) | 'top'
+//             under: before everything else (things outside, below / behind the hull: enemies, asteroids)
 //             ground, decal: drawn first, in submission order, no depth (hull, floor tiles; decals)
 //             wall: the ship's structure (walls, doors, airlocks, cannons): sorted by sortY, with
 //               per-pixel depth from the height map; drawn BEFORE the 2D 'mid' layer, so old 2D
@@ -32,6 +33,7 @@
 //   emissive  0..1: how much the brightest pixels light themselves (screens, lamps)
 //   unlit     true: beauty as rendered, no lighting
 //   scale     size multiplier       flip   true: mirrored horizontally around the origin
+//   rot       screen rotation around the origin (rad, clockwise)   sx   stretch along the sprite's x
 //   clip      [x0, y0, x1, y1, cz]: only the part of the sprite inside this world rectangle, taken
 //             at height cz (default 0) — for tiles (null / ±Infinity = open side)
 //   depthBias added to the pixel depth (+ = closer to the camera)   depthWrite  false: test only
@@ -39,11 +41,17 @@
 //
 // Lighting (one place for it: js/lights.js gameLighting()):
 //   GFX.lighting({ ambient: [r,g,b], sun: { dir: [x,y,z], color: [r,g,b], k }, areas: [{ x, y, w, h,
-//     color: [r,g,b], sun }], lights: [{ x, y, z, color: [r,g,b], radius, intensity }] })
+//     color: [r,g,b], sun }], lights: [...], grade: [r,g,b] })
 //   A pixel's light = ambient of the area it lies in (the last area that contains it wins, soft
 //   edges) + the sun × the area's sun factor + point lights (N·L from the normal map, smooth
-//   falloff to `radius`). Up to 32 point lights and 16 areas; lights off screen are dropped.
-//
+//   falloff to `radius`). A light: { x, y, z, color, radius, intensity, wrap (0.22: how far light
+//   wraps round the terminator), dir + cone (a spot: direction, half-angle in rad), x2, y2, z2 (a
+//   strip from (x, y, z) to there), shadow (true: screen-space shadows) }. Up to MAX_LIGHTS on
+//   screen, binned per screen tile (TILE_SLOTS - 1 strongest per tile); up to MAX_AREAS areas.
+//   Shadows march through LAST frame's depth buffer (reprojected), so they cost no extra pass;
+//   only solid, lit pixels below 1.75 above their origin cast them. ?noshadows / GFX.setShadows(false).
+//   grade multiplies the final picture (unless GFX.end(post) passes its own).
+
 // 2D layers: GFX.layer2d('back') is drawn first and unlit (space, things behind the ship);
 // GFX.layer2d('mid') is drawn after the 'ground', 'decal' and 'wall' sprites and before 'main', lit
 // like the floor (flat, at z = 0). Both are at the internal resolution and cleared on first use per frame;
@@ -62,7 +70,7 @@ const GFX = (() => {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
     begin: noop, end: noop, sprite: () => false, lighting: noop, layer2d: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
-    setScale: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
+    setScale: noop, setShadows: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
   const off = (why) => { api.reason = why; return api; };
@@ -78,7 +86,11 @@ const GFX = (() => {
   if (!gl) return off('WebGL2 context failed');
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
   const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
-  const MAX_LIGHTS = 32, MAX_AREAS = 16, DEPTH_SCALE = 1 / 200;
+  // Lights are binned per screen tile (tiled forward shading): MAX_LIGHTS on screen in all, up to
+  // TILE_SLOTS - 1 per tile (the strongest win). Light data lives in a float texture (4 texels per
+  // light), the per-tile index lists in an R8UI texture (slot 0 = count).
+  const MAX_LIGHTS = 255, TILE_SLOTS = 32, MAX_AREAS = 24, DEPTH_SCALE = 1 / 200;
+  const SHADOW_STEPS = 10;
 
   // --- shaders ------------------------------------------------------------------------------------
   const LIGHTING = `
@@ -88,9 +100,33 @@ uniform vec3 uSunDir, uSunCol;
 uniform vec4 uAreaRect[${MAX_AREAS}];   // x0, y0, x1, y1
 uniform vec4 uAreaCol[${MAX_AREAS}];    // rgb ambient, sun factor
 uniform int uNumAreas;
-uniform vec4 uLightPos[${MAX_LIGHTS}];  // x, y, z, radius
-uniform vec4 uLightCol[${MAX_LIGHTS}];  // rgb * intensity
-uniform int uNumLights;
+uniform highp sampler2D uLights;        // per light (row): pos+radius, rgb*intensity+wrap, spot dir+cos, segment end+flags
+uniform highp usampler2D uTiles;        // per tile: count, light indices
+uniform ivec4 uTileInfo;                // tile size (device px), screen height (device px), shadows on, -
+uniform highp sampler2D uDepthBuf;      // LAST frame's depth (y·cos + z·sin) of the front-most opaque surface per pixel
+uniform vec4 uPrevCam;                  // last frame's device px of world (0, 0), device px per unit, 1 / its width
+uniform vec2 uPrevInvH;                 // 1 / last frame's height, -
+// Screen-space shadow: march from P towards the light through last frame's depth buffer (reprojected
+// with last frame's camera, so panning doesn't smear). A sample is blocked when the surface seen
+// at its pixel lies in front of it (towards the camera) by a little, but not by more than an
+// object is thick. 1 = lit, 0 = in shadow.
+float shadowRay(vec3 P, vec3 S) {
+  float vis = 1.0;
+  vec3 D = S - P;
+  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));   // per-pixel jitter
+  float s1 = max(0.0, 1.0 - 0.45 / max(length(D), 1e-3));   // stop short of the light (its own lamp housing)
+  for (int i = 0; i < ${SHADOW_STEPS}; i++) {
+    float s = 0.02 + (float(i) + j) / ${SHADOW_STEPS}.0 * (s1 - 0.02);
+    vec3 Q = P + D * s;
+    vec2 uv = vec2((uPrevCam.x + Q.x * uPrevCam.z) * uPrevCam.w,
+                   1.0 - (uPrevCam.y + (Q.y * ${SIN.toFixed(6)} - Q.z * ${COS.toFixed(6)}) * uPrevCam.z) * uPrevInvH.x);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
+    float front = texture(uDepthBuf, uv).r - (Q.y * ${COS.toFixed(6)} + Q.z * ${SIN.toFixed(6)});
+    vis *= 1.0 - smoothstep(0.04, 0.14, front) * (1.0 - smoothstep(1.3, 2.2, front));
+    if (vis < 0.02) break;
+  }
+  return vis;
+}
 vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   vec3 amb = uAmbient; float sk = uSunK;
   for (int i = 0; i < ${MAX_AREAS}; i++) {
@@ -103,16 +139,33 @@ vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   vec3 acc = amb + uSunCol * sk * max(dot(N, uSunDir) * 0.75 + 0.25, 0.0);
   vec3 V = vec3(0.0, ${COS.toFixed(6)}, ${SIN.toFixed(6)});
   spec = vec3(0.0);
-  for (int i = 0; i < ${MAX_LIGHTS}; i++) {
-    if (i >= uNumLights) break;
-    vec3 L = uLightPos[i].xyz - P;
+  ivec2 fc = ivec2(gl_FragCoord.xy);
+  ivec2 tile = ivec2(fc.x / uTileInfo.x, (uTileInfo.y - 1 - fc.y) / uTileInfo.x);
+  int c0 = tile.x * ${TILE_SLOTS};
+  int n = int(texelFetch(uTiles, ivec2(c0, tile.y), 0).r);
+  for (int k = 0; k < ${TILE_SLOTS - 1}; k++) {
+    if (k >= n) break;
+    int li = int(texelFetch(uTiles, ivec2(c0 + 1 + k, tile.y), 0).r);
+    vec4 l0 = texelFetch(uLights, ivec2(0, li), 0), l3 = texelFetch(uLights, ivec2(3, li), 0);
+    vec3 S = l0.xyz;
+    float flags = l3.w;
+    if (mod(flags, 2.0) > 0.5) {                     // a strip: the nearest point on the segment
+      vec3 ab = l3.xyz - l0.xyz;
+      S += ab * clamp(dot(P - l0.xyz, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    }
+    vec3 L = S - P;
     float d = length(L);
-    float a = clamp(1.0 - d / uLightPos[i].w, 0.0, 1.0);
+    float a = clamp(1.0 - d / l0.w, 0.0, 1.0);
+    if (a <= 0.0) continue;
     a = a * a * (1.0 + 0.6 / (1.0 + 3.0 * d * d));
     vec3 l = L / max(d, 1e-3);
-    float ndl = max(dot(N, l) * 0.82 + 0.18, 0.0);
-    acc += uLightCol[i].rgb * a * ndl;
-    spec += uLightCol[i].rgb * a * pow(max(dot(N, normalize(l + V)), 0.0), 28.0);
+    vec4 l1 = texelFetch(uLights, ivec2(1, li), 0), l2 = texelFetch(uLights, ivec2(2, li), 0);
+    if (l2.w > -1.5) a *= smoothstep(l2.w, mix(l2.w, 1.0, 0.45), dot(-l, l2.xyz));   // spot cone
+    float ndl = max((dot(N, l) + l1.w) / (1.0 + l1.w), 0.0);
+    if (a * ndl <= 0.0) continue;
+    if (uTileInfo.z > 0 && flags > 1.5) a *= shadowRay(P + N * 0.03, S);
+    acc += l1.rgb * a * ndl;
+    spec += l1.rgb * a * pow(max(dot(N, normalize(l + V)), 0.0), 28.0);
   }
   return acc;
 }`;
@@ -129,27 +182,31 @@ layout(location = 6) in vec4 iGround;   // world x, y, z of the origin; ppu
 layout(location = 7) in vec4 iOrigin;   // origin on the canvas (ox, oy), object scale, depth bias
 layout(location = 8) in vec4 iTint;     // rgb, strength
 layout(location = 9) in vec4 iMisc;     // tint reference luminance, emissive, alpha, flags (1 unlit)
+layout(location = 10) in vec4 iXf;      // screen rotation (rad, clockwise) around the origin, stretch along the sprite's x
 uniform vec2 uView;
 out vec2 vLp;
 flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc;
-flat out float vFlip;
+flat out float vFlip, vRot;
 void main() {
   vec2 lp = iQuad.xy + aPos * iQuad.zw;
   vLp = lp;
-  vec2 p = iScreen.xy + vec2((lp.x - iOrigin.x) * iScreen.w, lp.y - iOrigin.y) * iScreen.z;
+  vec2 q = vec2((lp.x - iOrigin.x) * iScreen.w * iXf.y, lp.y - iOrigin.y) * iScreen.z;
+  float cr = cos(iXf.x), sr = sin(iXf.x);
+  vec2 p = iScreen.xy + vec2(q.x * cr - q.y * sr, q.x * sr + q.y * cr);
   gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0);
-  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w;
+  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x;
 }`;
 
   const FS_SPRITE = `#version 300 es
 precision highp float;
 in vec2 vLp;
 flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc;
-flat in float vFlip;
+flat in float vFlip, vRot;
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies with the same uv
 uniform float uHasMask, uHR, uDepthScale;
-out vec4 outColor;
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outDepth;   // for next frame's screen-space shadows (see shadowRay)
 ${LIGHTING}
 void main() {
   vec2 lp = vLp;
@@ -165,9 +222,9 @@ void main() {
   vec3 n = textureGrad(uNormal, uv, gdx, gdy).rgb * 2.0 - 1.0;
   float sc = vOrigin.z;
   float hz = textureGrad(uHeight, uv, gdx, gdy).r * uHR * sc;
-  float dy = (lp.y - vOrigin.y) / vGround.w * sc;
-  vec3 P = vec3(vGround.x + vFlip * (lp.x - vOrigin.x) / vGround.w * sc,
-                vGround.y + (dy + hz * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, vGround.z + hz);
+  vec2 o = vec2(vFlip * (lp.x - vOrigin.x), lp.y - vOrigin.y) / vGround.w * sc;   // screen offset from the origin (units)
+  if (vRot != 0.0) o = vec2(o.x * cos(vRot) - o.y * sin(vRot), o.x * sin(vRot) + o.y * cos(vRot));
+  vec3 P = vec3(vGround.x + o.x, vGround.y + (o.y + hz * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, vGround.z + hz);
   float depth = P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)} + vOrigin.w;   // larger = closer to the camera
   vec3 base = b.rgb;
   if (vTint.a > 0.0 && uHasMask > 0.5) {
@@ -180,7 +237,9 @@ void main() {
   }
   vec3 col = base;
   if (mod(vMisc.w, 2.0) < 0.5) {
-    vec3 N = normalize(vec3(n.x * vFlip, -n.y, n.z));
+    vec3 N = vec3(n.x * sign(vFlip), -n.y, n.z);
+    if (vRot != 0.0) N.xy = vec2(N.x * cos(vRot) - N.y * sin(vRot), N.x * sin(vRot) + N.y * cos(vRot));
+    N = normalize(N);
     vec3 spec;
     vec3 acc = lighting(P, N, spec);
     float e = vMisc.y * smoothstep(0.62, 0.97, max(base.r, max(base.g, base.b)));
@@ -189,6 +248,8 @@ void main() {
   }
   gl_FragDepth = clamp(0.5 - depth * uDepthScale, 0.0, 1.0);
   outColor = vec4(col, alpha);
+  // only solid, lit pixels below the ceiling cast shadows (not the hanging lamps and their cables)
+  outDepth = vec4(depth - vOrigin.w, 0.0, 0.0, alpha > 0.6 && mod(vMisc.w, 2.0) < 0.5 && P.z - vGround.z < 1.75 ? 1.0 : 0.0);
 }`;
 
   // A 2D canvas as a full-screen layer: 'back' unlit, 'mid' lit as a flat floor at z = 0.
@@ -267,9 +328,12 @@ void main() {
     P = { sprite: program(VS_SPRITE, FS_SPRITE), layer: program(VS_FULL, FS_LAYER), bright: program(VS_FULL, FS_BRIGHT),
           blur: program(VS_FULL, FS_BLUR), comp: program(VS_FULL, FS_COMPOSITE) };
   } catch (e) { console.warn('[gfx]', e); return off('shader error'); }
+  for (const prog of [P.sprite, P.layer]) {          // the lighting's samplers live on units 4..6 (no clash with unit 0)
+    gl.useProgram(prog.p); gl.uniform1i(prog.u.uLights, 4); gl.uniform1i(prog.u.uTiles, 5); gl.uniform1i(prog.u.uDepthBuf, 6);
+  }
 
-  // geometry: a unit quad (location 0) and the instance buffer (locations 1..9, 9 vec4 per instance)
-  const INST = 9 * 4;
+  // geometry: a unit quad (location 0) and the instance buffer (locations 1..10, 10 vec4 per instance)
+  const INST = 10 * 4;
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   const quadBuf = gl.createBuffer();
@@ -278,7 +342,7 @@ void main() {
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   const instBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-  for (let i = 1; i <= 9; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribDivisor(i, 1); }
+  for (let i = 1; i <= 10; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribDivisor(i, 1); }
   let inst = new Float32Array(INST * 1024), instCap = 0;
   const vaoFull = gl.createVertexArray();            // full-screen passes: just the quad
   gl.bindVertexArray(vaoFull);
@@ -287,7 +351,7 @@ void main() {
   gl.bindVertexArray(null);
   function pointInstances(first) {
     gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-    for (let i = 0; i < 9; i++) gl.vertexAttribPointer(i + 1, 4, gl.FLOAT, false, INST * 4, (first * INST + i * 4) * 4);
+    for (let i = 0; i < 10; i++) gl.vertexAttribPointer(i + 1, 4, gl.FLOAT, false, INST * 4, (first * INST + i * 4) * 4);
   }
 
   // --- textures ---------------------------------------------------------------------------------------
@@ -331,14 +395,49 @@ void main() {
   }
   let RT = null, useHdr = hdr;
   function freeT(x) { if (!x) return; gl.deleteFramebuffer(x.fb); gl.deleteTexture(x.t); if (x.rb) gl.deleteRenderbuffer(x.rb); }
+  // Two R16F screen buffers, ping-ponged: this frame writes the depth of its solid pixels into one
+  // (second colour attachment of the scene) while the lighting reads last frame's from the other.
+  function depthTex(w, h) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, w, h, 0, gl.RED, gl.HALF_FLOAT, null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    return t;
+  }
   function ensureTargets(w, h) {
     if (RT && RT.w === w && RT.h === h) return;
-    if (RT) for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]);
+    if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); for (const t of RT.depth || []) gl.deleteTexture(t); }
     let scene = useHdr && target(w, h, true, true);
     if (!scene) { useHdr = false; scene = target(w, h, true, false); }
     const w1 = Math.max(1, w >> 1), h1 = Math.max(1, h >> 1), w2 = Math.max(1, w >> 3), h2 = Math.max(1, h >> 3);
-    RT = { w, h, scene, a1: target(w1, h1, false, useHdr), b1: target(w1, h1, false, useHdr), a2: target(w2, h2, false, useHdr), b2: target(w2, h2, false, useHdr) };
+    RT = { w, h, scene, a1: target(w1, h1, false, useHdr), b1: target(w1, h1, false, useHdr), a2: target(w2, h2, false, useHdr), b2: target(w2, h2, false, useHdr), depth: null, cur: 0 };
+    prevCam = null;
+    if (useHdr && shadowsWanted) {                     // shadows need a float colour attachment
+      RT.depth = [depthTex(w, h), depthTex(w, h)];
+      gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, RT.depth[0], 0);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
+        for (const t of RT.depth) gl.deleteTexture(t);
+        RT.depth = null;
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
   }
+  // Light data and the per-tile light lists (see LIGHTING)
+  function dataTex() {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+    return t;
+  }
+  const lightTex = dataTex(), tileTex = dataTex();
+  const lightData = new Float32Array(4 * 4 * MAX_LIGHTS);
+  gl.bindTexture(gl.TEXTURE_2D, lightTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 4, MAX_LIGHTS, 0, gl.RGBA, gl.FLOAT, lightData);
+  let tileData = new Uint8Array(0), tileW = 0, tileH = 0, tileSize = 64;
+  let prevCam = null, shadowsWanted = true;
+  try { if (/[?&]noshadows\b/.test(search) || localStorage.getItem('mn-gfx-shadows') === '0') shadowsWanted = false; } catch (e) { /* no storage */ }
 
   // --- the sprite atlas: sprites.json + pages, loaded lazily per page --------------------------------
   let MAN = null, META = null, HR = 4;
@@ -401,7 +500,7 @@ void main() {
   }
 
   // --- frame state ----------------------------------------------------------------------------------
-  const LAYERS = { ground: 0, decal: 1, wall: 2, main: 3, top: 4 };
+  const LAYERS = { under: -1, ground: 0, decal: 1, wall: 2, main: 3, top: 4 };
   let view = null, W = 1, H = 1, K = 1, Sdev = 1, camOX = 0, camOY = 0, frameNo = 0, active = false;
   let queue = [], seq = 0, picks = [], lastPicks = [];
   let light = { ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
@@ -446,6 +545,10 @@ void main() {
     light = { ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
   }
   function lighting(L) { if (api.on) light = Object.assign({ ambient: [1, 1, 1], sun: null, areas: [], lights: [] }, L); }
+  function setShadows(on) {                          // screen-space shadows (default on; ?noshadows or GFX.setShadows(false) turns them off)
+    shadowsWanted = !!on; RT && (RT.w = -1);         // rebuild the targets on the next frame
+    try { localStorage.setItem('mn-gfx-shadows', on ? '1' : '0'); } catch (e) { /* no storage */ }
+  }
   const toDev = (x, y, z) => [camOX + x * Sdev, camOY + (y * SIN - z * COS) * Sdev];
 
   function frameIndex(name, angle, f = 0) {
@@ -483,13 +586,13 @@ void main() {
     const ex0 = flip > 0 ? sx + (qx0 - S.ox) * k : sx - (qx1 - S.ox) * k, ex1 = flip > 0 ? sx + (qx1 - S.ox) * k : sx - (qx0 - S.ox) * k;
     const ey0 = sy + (qy0 - S.oy) * k, ey1 = sy + (qy1 - S.oy) * k;
     if (o.pick) picks.push({ x, y, sortY: o.sortY != null ? o.sortY : y, x0: sx - o.pick[0] * Sdev, x1: sx + o.pick[0] * Sdev, y0: sy - o.pick[1] * Sdev, y1: sy + 0.15 * Sdev });
-    if (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H) return true;
+    if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
     const t = o.tint ? rgb(o.tint) : null, useMask = !!t && (S.maps || '').includes('m');
     queue.push({
       layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: page(S.group, b[0]), mask: useMask,
       d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
-          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, o.unlit ? 1 : 0],
+          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, o.unlit ? 1 : 0, o.rot || 0, o.sx || 1, 0, 0],
       depthWrite: o.depthWrite !== false,
     });
     return true;
@@ -505,23 +608,56 @@ void main() {
     const areas = (L.areas || []).slice(0, MAX_AREAS), ar = new Float32Array(MAX_AREAS * 4), ac = new Float32Array(MAX_AREAS * 4);
     areas.forEach((a, i) => { ar.set([a.x, a.y, a.x + a.w, a.y + a.h], i * 4); ac.set([a.color[0], a.color[1], a.color[2], a.sun || 0], i * 4); });
     gl.uniform4fv(u.uAreaRect, ar); gl.uniform4fv(u.uAreaCol, ac); gl.uniform1i(u.uNumAreas, areas.length);
-    const lp = new Float32Array(MAX_LIGHTS * 4), lc = new Float32Array(MAX_LIGHTS * 4);
-    lp.set(lightsInView, 0); lc.set(lightCols, 0);
-    gl.uniform4fv(u.uLightPos, lp); gl.uniform4fv(u.uLightCol, lc); gl.uniform1i(u.uNumLights, lightsInView.length / 4);
+    const shadows = !!(RT && RT.depth && prevCam);
+    gl.uniform4i(u.uTileInfo, tileSize, H, shadows ? 1 : 0, 0);
+    gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, lightTex); gl.uniform1i(u.uLights, 4);
+    gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, tileTex); gl.uniform1i(u.uTiles, 5);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, shadows ? RT.depth[1 - RT.cur] : zero); gl.uniform1i(u.uDepthBuf, 6);
+    if (shadows) { gl.uniform4f(u.uPrevCam, prevCam[0], prevCam[1], prevCam[2], 1 / prevCam[3]); gl.uniform2f(u.uPrevInvH, 1 / prevCam[4], 0); }
+    gl.activeTexture(gl.TEXTURE0);
   }
-  let lightsInView = [], lightCols = [];
+  // This frame's lights: drop the ones off screen, keep the MAX_LIGHTS strongest, write them into the
+  // light texture and bin them into screen tiles (each tile keeps its TILE_SLOTS - 1 strongest).
+  // A light: { x, y, z, color, radius, intensity, wrap (0.22), dir + cone (spot: direction it points,
+  // half-angle in rad), x2, y2, z2 (a strip from (x, y, z) to there), shadow (true: casts shadows) }.
   function cullLights() {
     const vis = [];
     for (const l of light.lights || []) {
       const r = l.radius || 4, i = l.intensity == null ? 1 : l.intensity, c = l.color || [1, 1, 1];
-      if (i <= 0.001) continue;
-      const [sx, sy] = toDev(l.x, l.y, l.z || 0), R = r * Sdev * 1.2;
-      if (sx + R < 0 || sx - R > W || sy + R < 0 || sy - R > H) continue;
-      vis.push({ l, r, i, c, w: i * Math.max(...c) });
+      if (!(i > 0.001)) continue;
+      const strip = l.x2 != null;
+      const [ax, ay] = toDev(l.x, l.y, l.z || 0), [bx, by] = strip ? toDev(l.x2, l.y2, l.z2 == null ? l.z || 0 : l.z2) : [ax, ay], R = r * Sdev;
+      const x0 = Math.min(ax, bx) - R, x1 = Math.max(ax, bx) + R, y0 = Math.min(ay, by) - R, y1 = Math.max(ay, by) + R;
+      if (x1 < 0 || x0 > W || y1 < 0 || y0 > H) continue;
+      vis.push({ l, r, i, c, strip, x0, x1, y0, y1, w: i * Math.max(c[0], c[1], c[2]) * (1 + r * 0.1) });
     }
     vis.sort((a, b) => b.w - a.w);
-    lightsInView = []; lightCols = [];
-    for (const v of vis.slice(0, MAX_LIGHTS)) { lightsInView.push(v.l.x, v.l.y, v.l.z || 0, v.r); lightCols.push(v.c[0] * v.i, v.c[1] * v.i, v.c[2] * v.i, 1); }
+    if (vis.length > MAX_LIGHTS) vis.length = MAX_LIGHTS;
+    tileSize = Math.max(32, Math.ceil(W / 40), Math.ceil(H / 40));
+    const tx = Math.ceil(W / tileSize), ty = Math.ceil(H / tileSize);
+    if (tx * TILE_SLOTS !== tileW || ty !== tileH) { tileW = tx * TILE_SLOTS; tileH = ty; tileData = new Uint8Array(tileW * tileH); }
+    else tileData.fill(0);
+    vis.forEach((v, k) => {
+      const l = v.l, o = k * 16, d = l.dir;
+      lightData[o] = l.x; lightData[o + 1] = l.y; lightData[o + 2] = l.z || 0; lightData[o + 3] = v.r;
+      lightData[o + 4] = v.c[0] * v.i; lightData[o + 5] = v.c[1] * v.i; lightData[o + 6] = v.c[2] * v.i; lightData[o + 7] = l.wrap == null ? 0.22 : l.wrap;
+      if (d && l.cone) { const n = Math.hypot(d[0], d[1], d[2]) || 1; lightData[o + 8] = d[0] / n; lightData[o + 9] = d[1] / n; lightData[o + 10] = d[2] / n; lightData[o + 11] = Math.cos(l.cone); }
+      else { lightData[o + 8] = 0; lightData[o + 9] = 0; lightData[o + 10] = -1; lightData[o + 11] = -2; }
+      lightData[o + 12] = v.strip ? l.x2 : l.x; lightData[o + 13] = v.strip ? l.y2 : l.y; lightData[o + 14] = v.strip ? (l.z2 == null ? l.z || 0 : l.z2) : l.z || 0;
+      lightData[o + 15] = (v.strip ? 1 : 0) + (l.shadow ? 2 : 0);
+      const i0 = Math.max(0, Math.floor(v.x0 / tileSize)), i1 = Math.min(tx - 1, Math.floor(v.x1 / tileSize));
+      const j0 = Math.max(0, Math.floor(v.y0 / tileSize)), j1 = Math.min(ty - 1, Math.floor(v.y1 / tileSize));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const c0 = j * tileW + i * TILE_SLOTS, n = tileData[c0];
+        if (n < TILE_SLOTS - 1) { tileData[c0 + 1 + n] = k; tileData[c0] = n + 1; }
+      }
+    });
+    gl.bindTexture(gl.TEXTURE_2D, lightTex);
+    if (vis.length) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, vis.length, gl.RGBA, gl.FLOAT, lightData, 0);
+    gl.bindTexture(gl.TEXTURE_2D, tileTex);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, tileW, tileH, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, tileData);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     api.stats.lights = vis.length;
   }
 
@@ -538,7 +674,9 @@ void main() {
     gl.uniform1f(u.uLit, lit ? 1 : 0); gl.uniform1f(u.uEmissive, 0.45);
     gl.uniform4f(u.uCam, camOX, camOY, Sdev, Sdev * SIN); gl.uniform2f(u.uView, W, H);
     if (lit) setLightUniforms(u);
+    if (RT.depth) gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    if (RT.depth) gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
   }
 
   function drawQueue(items) {
@@ -588,8 +726,19 @@ void main() {
     gl.bindVertexArray(vao);
     gl.bindFramebuffer(gl.FRAMEBUFFER, RT.scene.fb);
     gl.viewport(0, 0, W, H);
-    gl.clearColor(0.02, 0.025, 0.04, 1); gl.clearDepth(1); gl.depthMask(true);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clearDepth(1); gl.depthMask(true);
+    if (RT.depth) {
+      RT.cur = 1 - RT.cur;                              // write into one, read last frame's from the other
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, RT.depth[RT.cur], 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+      gl.clearBufferfv(gl.COLOR, 0, [0.02, 0.025, 0.04, 1]);
+      gl.clearBufferfv(gl.COLOR, 1, [-1000, 0, 0, 0]);
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+    } else {
+      gl.clearColor(0.02, 0.025, 0.04, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    }
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     cullLights();
     const u = P.sprite.u;
     gl.useProgram(P.sprite.p);
@@ -597,7 +746,7 @@ void main() {
     gl.uniform1i(u.uBeauty, 0); gl.uniform1i(u.uNormal, 1); gl.uniform1i(u.uHeight, 2); gl.uniform1i(u.uMask, 3);
     setLightUniforms(u);
     const by = (l) => queue.filter(q => q.layer === l);
-    const ground = [...by(0), ...by(1)];
+    const ground = [...by(-1), ...by(0), ...by(1)];
     const sorted = (l) => by(l).sort((a, b) => a.sortY - b.sortY || a.seq - b.seq);
     drawLayer2d('back', false);
     gl.useProgram(P.sprite.p); drawQueue(ground);
@@ -620,8 +769,9 @@ void main() {
     fullPass(P.comp, null, (u) => {
       bindTex(0, RT.scene.t); bindTex(1, RT.a1.t); bindTex(2, RT.a2.t);
       gl.uniform1i(u.uScene, 0); gl.uniform1i(u.uBloom1, 1); gl.uniform1i(u.uBloom2, 2);
-      gl.uniform1f(u.uBloom, post.bloom == null ? 0.55 : post.bloom); gl.uniform3fv(u.uGrade, post.grade || [1, 1, 1]);
+      gl.uniform1f(u.uBloom, post.bloom == null ? 0.55 : post.bloom); gl.uniform3fv(u.uGrade, post.grade || light.grade || [1, 1, 1]);
     });
+    prevCam = RT.depth ? [camOX, camOY, Sdev, W, H] : null;
     api.stats.ms = +(performance.now() - t0).toFixed(2);
   }
 
@@ -640,7 +790,7 @@ void main() {
   }
 
   Object.assign(api, {
-    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable,
+    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows,
     has: (name) => !!(MAN && MAN[name] && MAN[name].f && MAN[name].f.length),
     ready: (name) => !!(MAN && MAN[name] && spriteReady(MAN[name])),
     info: (name) => (MAN && MAN[name]) || null,

@@ -299,6 +299,15 @@ function drawCrank(g) {
 // World: the patch board box and the jump handle.
 function drawMinigameProps(t) {
   const x = L(PATCH_BOARD.x), y = L(PATCH_BOARD.y);
+  if (spr(patchNeeded() ? 'systems/patch_live' : 'systems/patch_idle', 0, PATCH_BOARD.x, PATCH_BOARD.y, 0, { emissive: 0.8 })) {   // sprites (js/decor.js spr)
+    ctx.fillStyle = 'rgba(232,236,244,0.7)'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('PATCH', x, y + 14);
+    if (mission.rules?.handle) {
+      const pull = mission.jump?.pull || 0;
+      spr(mission.jump ? `systems/jump_p${clamp(Math.floor(Math.min(1, pull / JUMP_PULL) * 5), 0, 4)}` : 'systems/jump_off', 0, JUMP_HANDLE.x, JUMP_HANDLE.y, 0, { emissive: 0.8, pick: [0.3, 1.2] });
+    }
+    ctx.textAlign = 'left';
+    return;
+  }
   rr(x - 16, y - 12, 32, 24, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(2);
   const live = patchNeeded();
   for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x - 9 + i * 9, y - 4, 2.5, 0, TAU); ctx.fillStyle = live ? ['#e2574c', '#e8c34f', '#3a8fc4'][i] : '#4a515e'; ctx.fill(); }

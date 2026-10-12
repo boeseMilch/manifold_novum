@@ -452,8 +452,62 @@ function drawAlienBody(a, t, P) {
   ctx.restore();
 }
 
+// The intruder as a sprite (chars/alien/*, models/chars/alien.py): which set and frame for its state,
+// and the eye colour through the tint mask (green wandering, red fighting, flashing white while it
+// coils to pounce). Walk frames follow the distance travelled (a.walk grows 4 per unit; one cycle =
+// 0.68 units, 0.44 in the crouched ready stance). Returns [name, frame, eyes].
+const ALIEN_WALK_CYCLE = 0.68, ALIEN_EYES = { wander: '#c8ff6e', fight: '#ff503c', flash: '#ffffff' };
+const alienAnim = new Map();
+function alienSprite(a, t, P) {
+  let m = alienAnim.get(a.uid);
+  if (!m) alienAnim.set(a.uid, m = { walk: a.walk, moving: 0 });
+  m.moving = Math.abs(a.walk - m.walk) > 1e-4 ? 0.12 : Math.max(0, m.moving - 1 / 60);
+  m.walk = a.walk;
+  const fight = a.state === 'fight', eyes = P.eyeFlash ? ALIEN_EYES.flash : fight ? ALIEN_EYES.fight : ALIEN_EYES.wander;
+  const walkF = (cycle) => Math.floor((a.walk / 4 / cycle) * 8);
+  const act = a.act;
+  if (a.state === 'entering') return a.hatch.locked ? ['chars/alien/sabotage', Math.floor(t * 6), eyes] : ['chars/alien/walk', Math.floor(t * 12), eyes];
+  if (a.stun > 0) return ['chars/alien/stunned', Math.floor(t * 6), eyes];
+  if (a.state === 'dormant') return ['chars/alien/dormant', 0, eyes];
+  if (fight && act) {
+    if (act.kind === 'spit') return ['chars/alien/spit', act.fired ? 4 : Math.min(3, Math.floor(act.t / SPIT_WINDUP * 4)), eyes];
+    if (act.kind === 'pounce') return act.t < POUNCE_WINDUP ? ['chars/alien/coil', Math.floor(t * 14), eyes] : ['chars/alien/leap', 0, eyes];
+    if (act.kind === 'lunge') return ['chars/alien/leap', 0, eyes];
+    if (act.kind === 'recover') return ['chars/alien/sprawl', 0, eyes];
+  }
+  if (fight) return ['chars/alien/ready', m.moving > 0 ? walkF(ALIEN_WALK_CYCLE * 0.65) : 0, eyes];
+  if (a.task?.kind === 'sabotage' || (a.bash > 0 && a.stuck > 0)) return ['chars/alien/sabotage', Math.floor(t * 6), eyes];
+  return m.moving > 0 ? ['chars/alien/walk', walkF(ALIEN_WALK_CYCLE), eyes] : ['chars/alien/idle', 0, eyes];
+}
+function drawAlienSprite(a, t, P) {
+  if (!GFX.on) return false;
+  const [name, f, eyes] = alienSprite(a, t, P), k = GFX.frameIndex(name, a.face, f);
+  if (!GFX.sprite(name, k, a.x, a.y, 0, { tint: eyes, emissive: 0.45, pick: [0.45, 0.8] })) return false;
+  if (a.act?.kind === 'lunge' || (a.act?.kind === 'pounce' && P.stretch)) {      // motion ghosts
+    const dir = a.act.kind === 'lunge' ? a.act.dir : [Math.cos(a.face), Math.sin(a.face)];
+    for (let i = 3; i >= 1; i--) GFX.sprite(name, k, a.x - dir[0] * i * 0.21, a.y - dir[1] * i * 0.21, 0, { tint: eyes, alpha: 0.12 * (4 - i), depthWrite: false, sortY: a.y - 0.01 });
+  }
+  return true;
+}
+
 function drawAlien(a, t) {
   const x = L(a.x), y = L(a.y), P = alienPose(a, t);
+  if (drawAlienSprite(a, t, P)) {                    // procedural on top: hurt flash, stun stars, health pips
+    const lz = GFX.lift(0.35);
+    if (a.flash > 0) {
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = `rgba(255,255,255,${a.flash * 0.35})`;
+      ctx.beginPath(); ctx.ellipse(x, L(a.y - lz), T * 0.45, T * 0.3, 0, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (a.stun > 0) for (let i = 0; i < 3; i++) {
+      const q = t * 4 + i * TAU / 3;
+      ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.arc(x + Math.cos(q) * 12, L(a.y - GFX.lift(0.8)) + Math.sin(q) * 4, 2.5, 0, TAU); ctx.fill();
+    }
+    if (a.hp < ALIEN_HP) upright(camera(), a.x, a.y, 0.95, () => {
+      for (let i = 0; i < ALIEN_HP; i++) { ctx.fillStyle = i < a.hp ? '#9cff5a' : '#2b303a'; ctx.fillRect(-15 + i * 5, 0, 4, 3); }
+    });
+    return;
+  }
   if (a.act?.kind === 'lunge' || (a.act?.kind === 'pounce' && P.stretch)) {      // motion ghosts
     const dir = a.act.kind === 'lunge' ? a.act.dir : [Math.cos(a.face), Math.sin(a.face)];
     for (let i = 3; i >= 1; i--) {
@@ -482,7 +536,18 @@ function drawAlien(a, t) {
   }
 }
 
+// Dead intruders: the corpse sprite on each goo decal hurtInvader leaves (sprites only; the 2D view
+// has just the goo, drawn by drawShipDecals).
+function drawAlienCorpses() {
+  if (!GFX.on) return;
+  for (const d of combat.decals) if (d.goo) {
+    const dir = Math.floor(((d.x * 7.3 + d.y * 3.1) % 8 + 8) % 8);
+    GFX.sprite('chars/alien/dead', GFX.frameIndex('chars/alien/dead', dir * Math.PI / 4), d.x, d.y, 0, { tint: '#3a4a30', sortY: d.y - 0.4 });
+  }
+}
+
 function drawBoarding(t) {
+  drawAlienCorpses();
   for (const a of boarding.invaders) {
     if (a.task?.kind === 'sabotage') {               // green progress ring on the part it's wrecking
       const sys = a.task.sys;

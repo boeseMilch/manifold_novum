@@ -134,7 +134,7 @@ function drawSpace(t, cam, vw, vh) {
 // ---------------------------------------------------------------------------
 // Hull
 // ---------------------------------------------------------------------------
-function drawEngines(t, throttle, ys) {
+function drawEngines(t, throttle, ys, flameOnly = false) {
   for (const ey of ys) {
     const x = 0, y = ey * T;
     if (throttle > 0.02) {                     // no flame at all when idle
@@ -147,6 +147,7 @@ function drawEngines(t, throttle, ys) {
       ctx.beginPath(); ctx.ellipse(x - T * 0.4 - len * 0.45, y, len * 0.6, T * (0.12 + 0.3 * throttle), 0, 0, TAU); ctx.fill();
       ctx.globalAlpha = 1;
     }
+    if (flameOnly) continue;
     // nozzle bell
     poly([[x + 6, y - T * 0.5], [x - T * 0.55, y - T * 0.44], [x - T * 0.55, y + T * 0.44], [x + 6, y + T * 0.5]]);
     const ng = ctx.createLinearGradient(0, y - T * 0.5, 0, y + T * 0.5);
@@ -378,6 +379,7 @@ function drawFloors(rects, tintOf) {
 }
 
 function drawRoomLabel(r) {
+  if (GFX.on && drawRoomPlaque(r)) return;          // a plaque on the back wall (js/interior.js)
   const q = r.rects[0];
   ctx.save();
   ctx.font = `700 ${T * 0.36}px system-ui, sans-serif`; ctx.textBaseline = 'top';
@@ -437,6 +439,11 @@ function drawDeckLock(L, t) {
 
 // Capacitor bank: a cabinet of cells, lit cells hold charge.
 function drawCapacitor(cap, max, t) {
+  const name = broken(cap) ? `systems/cap${max}_broken` : `systems/cap${max}_c${clamp(cap.charge, 0, max)}${cap.pulse > 0 && cap.charge > 0 ? '_pulse' : ''}`;
+  if (spr(name, 0, cap.x, cap.y, 0, { emissive: 0.7, pick: [max * 0.3, 1.0] })) {
+    labelAt(cap.x, cap.y - 0.45, 1.05, `${cap.charge}/${max}`, `700 ${T * 0.22}px system-ui, sans-serif`, C.glow, 'bottom', 'rgba(10,12,18,0.7)');
+    return;
+  }
   const cw = T * 0.42, gap = 5, w = max * cw + (max - 1) * gap + 14, h = T * 0.9;
   const x = cap.x * T - w / 2, y = cap.y * T - h / 2;
   shadowEllipse(cap.x * T + 4, cap.y * T + 6, w * 0.55, h * 0.5, 0.3);
@@ -462,6 +469,22 @@ function drawCapacitor(cap, max, t) {
 
 // Console desk against a wall at (x, y) with a seat in front; face = operator's view direction.
 function drawStation(st, t) {
+  {                                                   // sprites: the desk (helm / security), the seat
+    const kind = st.name === 'Helm' ? 'helm' : 'security', col = zoneAtX(st.x) === ZONES[0] ? 0 : zoneAtX(st.x) === ZONES[1] ? 1 : 2;
+    const off = typeof CAPACITORS !== 'undefined' && (CAPACITORS[col].charge <= 0 || broken(CAPACITORS[col]));
+    const [sx, sy] = rot(0, 1.05, st.face + Math.PI / 2);
+    if (sprReady(`systems/${kind}`, 'systems/seat')) {
+      if (off) spr(`systems/${kind}_off`, 0, st.x, st.y, 0, { pick: [0.8, 1.2] });
+      else spr(`systems/${kind}`, Math.floor(t * 2 + st.x) % 4, st.x, st.y, 0, { emissive: 0.8, pick: [0.8, 1.2] });
+      spr('systems/seat', GFX.frameIndex('systems/seat', st.face), st.x + sx, st.y + sy, 0);
+      ctx.save();
+      ctx.font = `600 ${T * 0.2}px system-ui, sans-serif`; ctx.fillStyle = 'rgba(232,236,244,0.55)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const [lx, ly] = rot(0, T * 1.75, st.face + Math.PI / 2);
+      ctx.fillText(st.name, st.x * T + lx, st.y * T + ly);
+      ctx.restore();
+      return;
+    }
+  }
   ctx.save(); ctx.translate(st.x * T, st.y * T); ctx.rotate(st.face + Math.PI / 2);
   // local frame: wall along y = 0, room towards +y
   const w = T * 1.6, d = T * 0.6;
@@ -494,6 +517,16 @@ function drawStation(st, t) {
 // Reactor: half pizza oven, half vending machine, wrapped in cables. Front faces +y.
 // Has a fuel-cell slot (front middle) for later.
 function drawReactor(R, t) {
+  {                                                   // sprite: ship/reactor (6-frame core loop) / reactor_off
+    const fuel = typeof power !== 'undefined' ? power.reactor.fuel : 1, over = typeof power !== 'undefined' && power.overcharge;
+    const dead = !fuel || broken(R);
+    if (sprReady('ship/reactor', 'ship/reactor_off')) {
+      if (dead) spr('ship/reactor_off', 0, R.x, R.y, 0, { emissive: 0.4, pick: [R.w / 2, 2.2] });
+      else spr('ship/reactor', Math.floor(t * (over ? 14 : 6)) % 6, R.x, R.y, 0, { emissive: over ? 1 : 0.7, pick: [R.w / 2, 2.2] });
+      if (over && !dead) labelAt(R.x, R.y - R.h / 2, 2.1, 'OVERCHARGED', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffd28a', 'bottom', 'rgba(10,12,18,0.8)');
+      return;
+    }
+  }
   const w = R.w * T, h = R.h * T, x = R.x * T - w / 2, y = R.y * T - h / 2;
   const top = h * 0.58;                                     // top surface depth; rest is the front face
   shadowEllipse(R.x * T + 6, R.y * T + 10, w * 0.6, h * 0.55, 0.35);
@@ -581,12 +614,18 @@ function drawReactor(R, t) {
 }
 
 // One big engine: housing in the reactor room, bell sticking out of the stern (+y).
+// Sprites: hull/engine_bell_cruise_f0..3 / _spool_f0..3 (the jump drive spooling up) at the stern's middle,
+// over the hull; the flame plume stays 2D, under it (the back layer).
 function drawEngineBell(t, E) {
+  const spool = typeof mission !== 'undefined' && !!mission.jump && !mission.over;
+  const bell = GFX.on && GFX.sprite(`hull/engine_bell_${spool ? 'spool' : 'cruise'}_f${Math.floor(t * 8) % 4}`, 0, E.x, SHIP_H, 0, { layer: 'decal', emissive: 0.8 });
   ctx.save(); ctx.translate(E.x * T, (SHIP_H - 0.5) * T); ctx.rotate(-Math.PI / 2); ctx.scale(3.4, 3.4);
-  drawEngines(t, 0.45 + 0.04 * Math.sin(t * 1.3), [0]);
+  drawEngines(t, 0.45 + 0.04 * Math.sin(t * 1.3), [0], bell);
   ctx.restore();
 }
 function drawEngineHousing(t, E) {
+  const spool = typeof mission !== 'undefined' && !!mission.jump && !mission.over;
+  if (spr(spool ? 'hull/engine_housing_spool' : 'hull/engine_housing', Math.floor(t * 8) % 6, E.x, E.y, 0, { emissive: 0.6, sortY: E.y + 0.8 })) return;
   const w = E.w * T, x = E.x * T - w / 2, y = E.y * T, h = (25.5 - E.y) * T + 4;
   rr(x, y, w, h, 6);
   const g = ctx.createLinearGradient(0, y, 0, y + h);
@@ -629,6 +668,17 @@ function drawHatch(h) {
 // state: 'ready' | 'up' | 'cooldown'; k: cooldown progress 0..1 (1 = ready again).
 function drawShieldButton(b, state, k, t) {
   const x = b.x * T, y = b.y * T;
+  const name = broken(b) ? 'systems/shield_broken' : state === 'up' ? 'systems/shield_up' : state === 'ready' ? 'systems/shield_ready' : `systems/shield_cd${clamp(Math.floor(k * 8), 0, 7)}`;
+  if (spr(name, 0, b.x, b.y, 0, { emissive: 0.8, pick: [0.42, 1.0] })) {
+    if (state === 'up') {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, T * 0.9);
+      g.addColorStop(0, 'rgba(120,200,255,0.5)'); g.addColorStop(1, 'rgba(120,200,255,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, T * 0.9, 0, TAU); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('SHIELD', x, y + T * 0.42); ctx.textAlign = 'left';
+    return;
+  }
   shadowEllipse(x + 3, y + 6, T * 0.42, T * 0.36, 0.3);
   rr(x - T * 0.4, y - T * 0.35, T * 0.8, T * 0.7, 6);
   ctx.fillStyle = '#3f4757'; ctx.fill(); stroke(2.5);
@@ -652,6 +702,12 @@ function drawShieldButton(b, state, k, t) {
 // Ladder hatch inside the ship that leads up into a cannon.
 function drawGunLadder(g) {
   const [hx, hy] = g.hatch, x = hx * T, y = hy * T, s = T * 0.36;
+  const manned = typeof crew !== 'undefined' && crew.some(c => c.mode === 'gun' && c.gun === g);
+  if (spr(manned ? 'interior/gun_ladder_lit' : 'interior/gun_ladder', 0, hx, hy, 0, { emissive: 0.6, pick: [0.4, 1.6] })) {
+    ctx.fillStyle = 'rgba(232,236,244,0.6)'; ctx.font = `800 ${T * 0.14}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('CANNON ↑', x, y + s + 3); ctx.textAlign = 'left';
+    return;
+  }
   rr(x - s, y - s, 2 * s, 2 * s, 5); ctx.fillStyle = '#23272f'; ctx.fill(); stroke(2);
   hazardStripe(x - s + 3, y - s + 3, 2 * s - 6, 5);
   ctx.strokeStyle = '#9aa3b5'; ctx.lineWidth = 3;
@@ -664,6 +720,10 @@ function drawGunLadder(g) {
 
 // Cover plate that rises in front of the cannon and its gunner (k: 0 down .. 1 up).
 function drawCover(g, k) {
+  if (GFX.on) {                                     // hull/cover_k1..3 by progress, fading in below 1/3 (in front of the gun: same depth bias)
+    const n = `hull/cover_k${k <= 1 / 3 ? 1 : k <= 2 / 3 ? 2 : 3}`;
+    if (GFX.ready(n) && GFX.sprite(n, GFX.frameIndex(n, g.aim), g.x, g.y, 0, { layer: 'wall', sortY: g.y + 0.02, alpha: Math.min(1, k * 3), depthBias: typeof GUN_DEPTH_BIAS !== 'undefined' ? GUN_DEPTH_BIAS : 0 })) return;
+  }
   const r = T * 1.35, a = g.aim, half = 0.95 * k;
   ctx.save(); ctx.translate(g.x * T, g.y * T);
   ctx.globalAlpha = Math.min(1, k * 1.5);

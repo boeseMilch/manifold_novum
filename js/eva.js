@@ -210,16 +210,31 @@ function drawEvaJobs(t) {
   // the antenna: a dish on a mast at the top of the hull
   {
     const x = L(ANTENNA.x), y = L(ANTENNA.y + 0.35), a = evs.antenna ? -Math.PI / 2 + Math.sin(t * 0.4) * 0.5 : 0.7;
-    ctx.fillStyle = '#5a6272'; ctx.fillRect(x - 3, y - 4, 6, 14); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 4, 6, 14);
-    ctx.save(); ctx.translate(x, y - 4); ctx.rotate(a);
-    ctx.beginPath(); ctx.ellipse(10, 0, 6, 15, 0, 0, TAU); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(2);
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(20, 0); ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.restore();
+    const ant = evs.antenna ? ['hull/antenna', clamp(Math.round(4 + Math.sin(t * 0.4) * 0.5 / 0.125), 0, 8)] : ['hull/antenna_crooked', 0];   // (hull/fixtures.py)
+    if (!(GFX.on && GFX.sprite(ant[0], ant[1], ANTENNA.x, ANTENNA.y, 0, { layer: 'decal' }))) {
+      ctx.fillStyle = '#5a6272'; ctx.fillRect(x - 3, y - 4, 6, 14); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 4, 6, 14);
+      ctx.save(); ctx.translate(x, y - 4); ctx.rotate(a);
+      ctx.beginPath(); ctx.ellipse(10, 0, 6, 15, 0, 0, TAU); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(2);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(20, 0); ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    }
     if (!evs.antenna) jobMarker(ANTENNA.x, ANTENNA.y, t, reach(ANTENNA.x, ANTENNA.y), '#ffd84a');
+  }
+  // the outer airlock hatches seen from outside (hull/hatch_<side>: coaming and leaves on the hull's edge; the
+  // inside view is interior/hatch_*, js/sprites.js): under the walls, so only the part outside the wall shows
+  if (GFX.on) for (const h of HATCHES) {
+    const s = `hull/hatch_${h.side}`, n = broken(h) ? s + '_broken' : h.locked && h.open < 0.05 ? s + '_locked' : s;
+    GFX.sprite(n, n === s ? Math.round(clamp(h.open, 0, 1) * 5) : 0, h.x, h.y, 0, { layer: 'decal', emissive: 0.5 });
   }
   // jump coils: a ring with a dial, red until aligned
   for (const c of evs.coils) {
-    const x = L(c.x), y = L(c.y);
+    const x = L(c.x), y = L(c.y), dial = c.ok ? -Math.PI / 2 : c.a + Math.sin(t * 2 + c.x) * 0.15;
+    if (GFX.on && GFX.ready(`hull/coil_${c.name}_ok`) && GFX.ready('hull/coil_dial')) {   // the coil on its bracket, the dial on top
+      GFX.sprite(`hull/coil_${c.name}_${c.ok ? 'ok' : 'bad'}`, 0, c.x, c.y, 0, { layer: 'decal', emissive: 0.6 });
+      GFX.sprite('hull/coil_dial', GFX.frameIndex('hull/coil_dial', dial), c.x, c.y, 0, { layer: 'decal' });
+      if (!c.ok) jobMarker(c.x, c.y, t, reach(c.x, c.y), '#7af0ff');
+      continue;
+    }
     ctx.beginPath(); ctx.arc(x, y, 12, 0, TAU); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(2);
     ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU); ctx.strokeStyle = c.ok ? '#5fd6a0' : '#e2574c'; ctx.lineWidth = 3; ctx.stroke();
     ctx.save(); ctx.translate(x, y); ctx.rotate(c.ok ? -Math.PI / 2 : c.a + Math.sin(t * 2 + c.x) * 0.15);
@@ -230,6 +245,7 @@ function drawEvaJobs(t) {
   for (const [id, on] of Object.entries(evs.jams)) {
     if (!on) continue;
     const [jx, jy] = JAM_SPOTS[id], x = L(jx), y = L(jy);
+    if (GFX.on && GFX.sprite(`hull/jam_${id}`, 0, jx, jy, 0, { layer: 'decal' })) { jobMarker(jx, jy, t, reach(jx, jy), '#ffd84a'); continue; }
     poly([[x - 10, y - 4], [x - 2, y - 11], [x + 9, y - 6], [x + 11, y + 5], [x, y + 9], [x - 9, y + 6]]);
     ctx.fillStyle = '#6e6359'; ctx.fill(); stroke(2);
     ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 12, y - 9); ctx.stroke();
@@ -238,6 +254,10 @@ function drawEvaJobs(t) {
   // barnacles: grow in three stages, pulse when they drain
   for (const b of evs.barnacles) {
     const x = L(b.x), y = L(b.y), k = Math.min(1, b.age / BARNACLE_GROW), r = 5 + 9 * k;
+    if (GFX.on) {                                        // organic/barnacle_s<stage>_v<variant>, draining when grown
+      const st = Math.min(3, Math.floor(k * 3)), v = b.uid % 2, n = st === 3 ? `organic/barnacle_s3_v${v}_drain` : `organic/barnacle_s${st}_v${v}`;
+      if (GFX.ready(n) && GFX.sprite(n, st === 3 ? Math.floor(t * 6) : 0, b.x, b.y, 0, { layer: 'main', emissive: 0.5 })) { jobMarker(b.x, b.y, t, reach(b.x, b.y), '#c08aff'); continue; }
+    }
     for (let i = 0; i < 5; i++) {
       const a = i / 5 * TAU + b.uid, rr2 = r * (0.5 + 0.2 * (i % 2));
       ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5, rr2, 0, TAU);
@@ -250,6 +270,13 @@ function drawEvaJobs(t) {
   // limpet mines: blink faster as they run down
   for (const m of evs.mines) {
     const x = L(m.x), y = L(m.y), rate = 2 + (1 - m.t / MINE_TIME) * 14, on = Math.sin(t * rate) > 0;
+    if (GFX.on && GFX.ready('enemy/limpet_mine') && GFX.sprite('enemy/limpet_mine', on ? 0 : 1, m.x, m.y, 0, { layer: 'main', emissive: on ? 0.9 : 0.3 })) {
+      const ty = L(m.y - GFX.lift(0.5)) - 4;              // the countdown above it
+      ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.18}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(Math.ceil(m.t), x, ty); ctx.fillText(Math.ceil(m.t), x, ty); ctx.textAlign = 'left';
+      jobMarker(m.x, m.y, t, reach(m.x, m.y), '#ff6a5a');
+      continue;
+    }
     for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; poly([[x + Math.cos(a - 0.18) * 13, y + Math.sin(a - 0.18) * 13], [x + Math.cos(a) * 20, y + Math.sin(a) * 20], [x + Math.cos(a + 0.18) * 13, y + Math.sin(a + 0.18) * 13]]); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.3); }   // spikes
     ctx.beginPath(); ctx.arc(x, y, 14, 0, TAU); const mg = ctx.createRadialGradient(x - 4, y - 4, 2, x, y, 14); mg.addColorStop(0, '#6a707c'); mg.addColorStop(1, '#2b303a'); ctx.fillStyle = mg; ctx.fill(); stroke(2.2);
     hazardStripe(x - 9, y + 5, 18, 4);
@@ -261,7 +288,8 @@ function drawEvaJobs(t) {
   }
   // the drone: a little quadcopter thing with a mine slung underneath
   for (const d of evs.drones) {
-    const x = L(d.x), y = L(d.y);
+    const x = L(d.x), y = L(d.y), carry = d.left > 0 && !d.leaving, lit = Math.sin(t * 8) > 0;
+    if (GFX.on && GFX.ready('enemy/mine_drone') && GFX.sprite('enemy/mine_drone', ((carry ? 0 : 2) + (lit ? 0 : 1)) * 3 + Math.floor(t * 24) % 3, d.x, d.y, 0, { layer: 'main', emissive: 0.6 })) continue;
     ctx.save(); ctx.translate(x, y);
     for (const [ox, oy] of [[-12, -12], [12, -12], [-12, 12], [12, 12]]) {
       ctx.beginPath(); ctx.ellipse(ox, oy, 8, 2.5, t * 30 + ox, 0, TAU); ctx.fillStyle = 'rgba(200,210,220,0.5)'; ctx.fill();
@@ -273,6 +301,12 @@ function drawEvaJobs(t) {
   }
   // spore clouds
   for (const s of evs.spores) {                          // a clump of spore pods in a glowing haze, trailing hair-thin feelers
+    if (GFX.on && GFX.ready('organic/spore_cloud')) {   // the clump as a sprite (already at the 1.6x scale), the haze stays 2D
+      const x = L(s.x), y = L(s.y), hz0 = ctx.createRadialGradient(x, y, 0, x, y, L(1.1) * 1.6);
+      hz0.addColorStop(0, 'rgba(200,240,150,0.35)'); hz0.addColorStop(1, 'rgba(190,150,230,0)'); ctx.fillStyle = hz0; ctx.beginPath(); ctx.arc(x, y, L(1.1) * 1.6, 0, TAU); ctx.fill();
+      GFX.sprite('organic/spore_cloud', Math.floor(s.t / 0.2), s.x, s.y, 0, { layer: 'main', rot: s.t * 0.8, emissive: 0.6 });
+      continue;
+    }
     ctx.save(); ctx.translate(L(s.x), L(s.y)); ctx.scale(1.6, 1.6); ctx.translate(-L(s.x), -L(s.y));   // big enough to see from a cannon
     const x = L(s.x), y = L(s.y), hz0 = ctx.createRadialGradient(x, y, 0, x, y, L(1.1));
     hz0.addColorStop(0, 'rgba(200,240,150,0.35)'); hz0.addColorStop(1, 'rgba(190,150,230,0)'); ctx.fillStyle = hz0; ctx.beginPath(); ctx.arc(x, y, L(1.1), 0, TAU); ctx.fill();
@@ -289,7 +323,9 @@ function drawEvaJobs(t) {
   if (evs.canister) {
     const c = evs.canister;
     pickupHalo(L(c.x), L(c.y), T * 0.5, t, reach(c.x, c.y), 4.2);
-    ctx.save(); ctx.translate(L(c.x), L(c.y)); ctx.rotate(c.t * 0.9); drawItemIcon('fuel', 0, 0, 1.3); ctx.restore();
+    if (!(GFX.on && GFX.ready('enemy/fuel_canister') && GFX.sprite('enemy/fuel_canister', GFX.frameIndex('enemy/fuel_canister', c.t * 0.9), c.x, c.y, 0, { layer: 'main', emissive: 0.4 }))) {
+      ctx.save(); ctx.translate(L(c.x), L(c.y)); ctx.rotate(c.t * 0.9); drawItemIcon('fuel', 0, 0, 1.3); ctx.restore();
+    }
   }
 }
 // A pulsing ring around a spacewalk job, brighter in reach (the outside version of the brackets).

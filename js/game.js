@@ -723,6 +723,7 @@ function render(t) {
     ctx = SCREEN_CTX; ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, VW, VH);
     ctx.save(); world(DPR);
     drawSpineDecor(t); drawInteriorWalls();
+    drawBrokenLabels();                              // (js/systems.js: on top of the machines' sprites)
     for (const g of gunsSprited) drawMuzzleFlash(g);
   }
   for (const c of crew) {
@@ -803,7 +804,9 @@ function drawHUD() {
     : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
   ctx.textAlign = 'right'; ctx.fillStyle = '#e8ecf4'; ctx.fillText(where, VW - 14, 18);
   const ww = ctx.measureText(where).width;
-  ctx.fillStyle = '#6b7486'; ctx.fillText(sfx.muted ? '♪ muted' : `♪ ${music.title}`, VW - 30 - ww, 18);
+  const song = sfx.muted ? '♪ muted' : `♪ ${music.title}`;
+  ctx.fillStyle = '#6b7486'; ctx.fillText(song, VW - 30 - ww, 18);
+  drawAlarmHUD(VW - 46 - ww - ctx.measureText(song).width, 18, time);   // fire / red alert (js/lights.js)
   ctx.textAlign = 'left';
 }
 

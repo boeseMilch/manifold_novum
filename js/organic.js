@@ -74,6 +74,8 @@ ENEMY_TYPES.grappler = {
   onHit(e, p) { p.healT = 0; },
   draw(e, t) { drawGrappler(e, t); },
   drawExtra(e, t) { drawTentacle(e, t); },
+  sprites: (e, t) => grapplerSprites(e, t), overlay: (e, t) => grapplerOverlay(e, t),   // (GFX.on: see the end of this file)
+  under(e, t) { if (e.tent?.state === 'attached' && e.phase === 'fighting') tapered(tentaclePts(e, t), 10, 4.5, OUT, true, true); },   // the beads' dark outline
 };
 const grabbed = (side) => combat.enemies.some(e => e.kind === 'grappler' && e.phase === 'fighting' && e.tent?.state === 'attached' && e.side === side);
 function cutTentacle(e, how) {
@@ -125,6 +127,7 @@ ENEMY_TYPES.mother = {
   },
   closed: (e, p) => !(e.open > 0 && e.pois.indexOf(p) === e.openSac),
   draw(e, t) { drawMother(e, t); },
+  sprites: (e, t) => motherSprites(e, t), flames: (e, t) => drawCilia(e, t), overlay: (e, t) => motherOverlay(e, t),
 };
 
 // ---------------------------------------------------------------------------
@@ -228,9 +231,9 @@ Object.assign(EVENT_LABELS, {
 // ---------------------------------------------------------------------------
 // The grappler: a violet head-first squid. Beak and eye up front, a poison sac on its flank, a soft
 // mantle with fins and glowing spots, six trailing arms. Its weak organs have the usual blue glow.
-function tapered(pts, w0, w1, col, rim = true) {        // a smooth tapering limb along points (pixel coords)
+function tapered(pts, w0, w1, col, rim = true, rimOnly = false) {   // a smooth tapering limb along points (pixel coords)
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  for (let pass = rim ? 0 : 1; pass < 2; pass++) for (let i = 1; i < pts.length; i++) {
+  for (let pass = rim ? 0 : 1; pass < (rimOnly ? 1 : 2); pass++) for (let i = 1; i < pts.length; i++) {
     const k = (i - 0.5) / (pts.length - 1), w = lerp(w0, w1, k) * 2 + (pass ? 0 : 5);
     ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]);
     ctx.strokeStyle = pass ? col : OUT; ctx.lineWidth = w; ctx.stroke();
@@ -350,18 +353,24 @@ function drawGrappler(e, t) {
     ctx.beginPath(); ctx.arc(L(cx), L(cy), L(r) + 5, -Math.PI / 2, -Math.PI / 2 + (p.healT || 0) / HEAL_TIME * TAU); ctx.strokeStyle = '#9cff5a'; ctx.lineWidth = 3; ctx.stroke();
   }
 }
-function drawTentacle(e, t) {
-  if (e.tent?.state !== 'attached' || e.phase !== 'fighting') return;
+function tentaclePts(e, t) {                             // the arm's curve (world px)
   const [bx, by] = tentacleBase(e), { x, y } = e.tent, pts = [];
   const mx = (bx + x) / 2, my = (by + y) / 2 + Math.sin(t * 2) * 0.8;
   for (let i = 0; i <= 24; i++) {
     const u = i / 24, qx = (1 - u) * (1 - u) * bx + 2 * (1 - u) * u * mx + u * u * x, qy = (1 - u) * (1 - u) * by + 2 * (1 - u) * u * my + u * u * y;
     pts.push([L(qx), L(qy) + Math.sin(t * 6 + u * 12) * 2 * u]);
   }
-  tapered(pts, 10, 4.5, '#9a5aaa');
-  for (let i = 2; i < 23; i += 2) { ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1] + 3, 2, 0, TAU); ctx.fillStyle = 'rgba(255,220,250,0.7)'; ctx.fill(); }   // suckers
-  for (let i = 0; i < 3; i++) {                            // the tip coils around the hull
-    ctx.beginPath(); ctx.arc(L(x), L(y + (i - 1) * 0.45), L(0.32), 0, TAU); ctx.strokeStyle = OUT; ctx.lineWidth = 8; ctx.stroke(); ctx.strokeStyle = '#9a5aaa'; ctx.lineWidth = 5; ctx.stroke();
+  return pts;
+}
+function drawTentacle(e, t) {
+  if (e.tent?.state !== 'attached' || e.phase !== 'fighting') return;
+  const { x, y } = e.tent, pts = tentaclePts(e, t);
+  if (!(GFX.on && drawTentacleSprites(e, pts))) {
+    tapered(pts, 10, 4.5, '#9a5aaa');
+    for (let i = 2; i < 23; i += 2) { ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1] + 3, 2, 0, TAU); ctx.fillStyle = 'rgba(255,220,250,0.7)'; ctx.fill(); }   // suckers
+    for (let i = 0; i < 3; i++) {                            // the tip coils around the hull
+      ctx.beginPath(); ctx.arc(L(x), L(y + (i - 1) * 0.45), L(0.32), 0, TAU); ctx.strokeStyle = OUT; ctx.lineWidth = 8; ctx.stroke(); ctx.strokeStyle = '#9a5aaa'; ctx.lineWidth = 5; ctx.stroke();
+    }
   }
   // the acid at work: a spreading green stain, bubbles, and a ring showing how far it's eaten through
   const k = e.tent.acid / ACID_TIME, paused = poiHit(e, 'sac');
@@ -377,15 +386,7 @@ function drawTentacle(e, t) {
 function drawMother(e, t) {
   const R = L(MOTHER_RX), RY = L(MOTHER_RY), breathe = 1 + 0.012 * Math.sin(t * 0.9);
   ctx.save(); ctx.scale(breathe, breathe);
-  // cilia all along the edge, waving in slow travelling waves
-  ctx.lineCap = 'round';
-  for (let i = 0; i < 160; i++) {
-    const a = i / 160 * TAU, cx = Math.cos(a) * R, cy = Math.sin(a) * RY, nx = Math.cos(a) / MOTHER_RX, ny = Math.sin(a) / MOTHER_RY, nl = Math.hypot(nx, ny);
-    const len = 20 + 8 * Math.sin(i * 1.7), w = Math.sin(t * 2.2 - i * 0.35) * 0.6;
-    const ux = nx / nl, uy = ny / nl, tx = cx + (ux * Math.cos(w) - uy * Math.sin(w)) * len, ty = cy + (uy * Math.cos(w) + ux * Math.sin(w)) * len;
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + ux * len * 0.6, cy + uy * len * 0.6, tx, ty);
-    ctx.strokeStyle = OUT; ctx.lineWidth = 4.5; ctx.stroke(); ctx.strokeStyle = '#d8c48e'; ctx.lineWidth = 2.5; ctx.stroke();
-  }
+  drawCilia(e, t, true);
   // the body: mottled, with a darker rim
   poly(LP(MOTHER_BODY));
   const g = ctx.createRadialGradient(R * 0.55, -RY * 0.1, R * 0.1, 0, 0, R * 1.05);
@@ -460,9 +461,23 @@ function drawMother(e, t) {
   });
   ctx.restore();
 }
+// Cilia all along the edge, waving in slow travelling waves (under the body: the sprite's back layer too).
+function drawCilia(e, t, scaled = false) {
+  const R = L(MOTHER_RX), RY = L(MOTHER_RY), breathe = 1 + 0.012 * Math.sin(t * 0.9);
+  ctx.save(); if (!scaled) ctx.scale(breathe, breathe);
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 160; i++) {
+    const a = i / 160 * TAU, cx = Math.cos(a) * R, cy = Math.sin(a) * RY, nx = Math.cos(a) / MOTHER_RX, ny = Math.sin(a) / MOTHER_RY, nl = Math.hypot(nx, ny);
+    const len = 20 + 8 * Math.sin(i * 1.7), w = Math.sin(t * 2.2 - i * 0.35) * 0.6;
+    const ux = nx / nl, uy = ny / nl, tx = cx + (ux * Math.cos(w) - uy * Math.sin(w)) * len, ty = cy + (uy * Math.cos(w) + ux * Math.sin(w)) * len;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx + ux * len * 0.6, cy + uy * len * 0.6, tx, ty);
+    ctx.strokeStyle = OUT; ctx.lineWidth = 4.5; ctx.stroke(); ctx.strokeStyle = scaled ? '#d8c48e' : '#9c8752'; ctx.lineWidth = 2.5; ctx.stroke();
+  }
+  ctx.restore();
+}
 // The tongue, in mouth-local pixels (x out of the body). While tossing: it curls back deep into the
 // gullet, comes out with a spore stuck to its tip and flicks it out; then it hangs out, wagging.
-function drawTongue(e, t, D, H, outside = false) {
+function tonguePose(e, t, D) {                           // where its tip is (mouth-local px), and whether it carries a spore
   const T1 = e.toss;
   let reach, carry = false;                              // reach: where the tip is (px, + = out of the mouth)
   if (T1) {
@@ -471,8 +486,10 @@ function drawTongue(e, t, D, H, outside = false) {
     else if (u < TOSS_REACH + TOSS_FLICK) { const k = (u - TOSS_REACH) / TOSS_FLICK; reach = lerp(-D * 0.85, L(3.4), k * k); carry = !T1.out; }
     else reach = lerp(L(3.4), L(1.6), (u - TOSS_REACH - TOSS_FLICK) / TOSS_REST);
   } else reach = L(1.6) + Math.sin(t * 2) * 4;            // hanging out
-  const wag = Math.sin(t * 5) * 6, base = -D * 0.95, w0 = Math.min(L(0.55), H * 0.8 + 3);
-  const tipX = reach, tipY = wag * (reach > 0 ? 1 : 0.3);
+  return { tipX: reach, tipY: Math.sin(t * 5) * 6 * (reach > 0 ? 1 : 0.3), carry };
+}
+function drawTongue(e, t, D, H, outside = false) {
+  const { tipX, tipY, carry } = tonguePose(e, t, D), base = -D * 0.95, w0 = Math.min(L(0.55), H * 0.8 + 3);
   if (outside) blueGlow(0.9, 0, 1.3, t);
   ctx.beginPath(); ctx.moveTo(base, -w0);
   ctx.bezierCurveTo(lerp(base, tipX, 0.4), -w0 * 1.1, lerp(base, tipX, 0.85), -w0 * 0.7 + tipY, tipX, tipY);
@@ -490,6 +507,7 @@ function drawOrganicWorld(t) {
     if (l.state === 'fly') for (let k = 1; k < 5; k++) {   // a glistening slime trail
       ctx.beginPath(); ctx.arc(L(l.x) - Math.cos(ang) * (k + 3) * 13, L(l.y) - Math.sin(ang) * (k + 3) * 13 + Math.sin(l.t * 6 + k) * 3, 6 - k, 0, TAU); ctx.fillStyle = `rgba(200,255,150,${0.35 - k * 0.07})`; ctx.fill();
     }
+    if (GFX.on && drawLeechSprite(l, ang)) { drawLeechChew(l, t); continue; }
     ctx.save(); ctx.translate(L(l.x), L(l.y)); ctx.rotate(ang); ctx.scale(1.7, 1.7);   // big enough to see from a cannon
     const squirm = l.state === 'latched' ? 1.5 : 3, pulse = l.state === 'latched' ? 1 + 0.12 * Math.sin(l.t * 9) : 1;
     for (let i = 4; i >= 0; i--) {                         // a fat, ringed worm-body, wriggling
@@ -502,13 +520,10 @@ function drawOrganicWorld(t) {
     ctx.beginPath(); ctx.arc(6, 0, 6, 0, TAU); ctx.fillStyle = '#2a0810'; ctx.fill(); stroke(1.5);   // the round mouth, full of little teeth
     for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + l.t * 2; ctx.beginPath(); ctx.moveTo(6 + Math.cos(a) * 6, Math.sin(a) * 6); ctx.lineTo(6 + Math.cos(a + 0.2) * 2.5, Math.sin(a + 0.2) * 2.5); ctx.lineTo(6 + Math.cos(a + 0.4) * 6, Math.sin(a + 0.4) * 6); ctx.fillStyle = '#f0e8d0'; ctx.fill(); }
     ctx.restore();
-    if (l.state === 'latched') {
-      ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 13, -Math.PI / 2, -Math.PI / 2 + l.chew / LEECH_CHEW * TAU); ctx.strokeStyle = '#ff6a7a'; ctx.lineWidth = 2.5; ctx.stroke();
-      if (me.mode === 'eva') jobMarker(l.x, l.y, t, Math.hypot(me.x - l.x, me.y - l.y) <= REACH + 1, '#ff6a7a');
-    }
+    drawLeechChew(l, t);
   }
   const V = org.lev;
-  if (V) {                                             // the leviathan: a vast dark flank sliding past, an eye the size of a room
+  if (V && !(GFX.on && drawLeviathanSprites(V, t))) {                                             // the leviathan: a vast dark flank sliding past, an eye the size of a room
     // a whale of the deep: a vast, tapering body gliding past along one side, flippers, a tail fluke,
     // glowing stripes and an eye bigger than a room; it rolls slightly as it swims
     const side = V.order[V.i]?.startsWith('port') ? -1 : 1, x = side < 0 ? -14.5 : SHIP_W + 14.5, y = -36 + (LEV_TIME - V.t) * 2.6;
@@ -549,6 +564,11 @@ function drawOrganicWorld(t) {
     ctx.restore();
   }
 }
+function drawLeechChew(l, t) {                         // latched: how far it has chewed, and the spacewalk job
+  if (l.state !== 'latched') return;
+  ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 13, -Math.PI / 2, -Math.PI / 2 + l.chew / LEECH_CHEW * TAU); ctx.strokeStyle = '#ff6a7a'; ctx.lineWidth = 2.5; ctx.stroke();
+  if (me.mode === 'eva') jobMarker(l.x, l.y, t, Math.hypot(me.x - l.x, me.y - l.y) <= REACH + 1, '#ff6a7a');
+}
 // The room the leviathan will bump next: a red warning wash on its floor.
 function drawLeviathanWarning(t) {
   const V = org.lev;
@@ -564,4 +584,121 @@ function organicPlates(add) {
     add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} · acid ${Math.round(e.tent.acid / ACID_TIME * 100)}%${poiHit(e, 'sac') ? ' (paused)' : ''} · shoot it or hack it off`, stripe: '#c08aff', red: true });
   const V = org.lev;
   if (V) add('lev', { icon: 'unknown', title: 'LEVIATHAN', sub: `next: ${V.order.slice(V.i, V.i + 3).map(id => roomById(id).name.toLowerCase()).join(' → ')}`, stripe: '#7af0ff', red: true });
+}
+
+// ---------------------------------------------------------------------------
+// Sprites (GFX.on): tools/blender/models/organic/*.py. The grappler and the spore mother are listed like
+// the other enemies (D.sprites, drawn by drawEnemySprite in js/enemies.js, 'under' the hull); the
+// leviathan goes there too. Leeches, the tentacle, spores and barnacles are on or at the hull: 'main'.
+// Weak organs project onto the game's POI circles at z = 0 (so the flat hit tests match what you see).
+// ---------------------------------------------------------------------------
+function grapplerSprites(e, t) {
+  const sd = sideName(e), leaving = e.phase === 'leaving', hit = (id) => poiHit(e, id);
+  const coil = e.tent?.state === 'coil' ? 1 - e.tent.t / TENTACLE_COIL : 0;
+  const out = [{ n: `organic/grappler_${sd}`, f: Math.floor(t / 2.6 * 8) }];
+  if (e.tent?.state !== 'attached') out.push({ n: `organic/grappler_${sd}_grab_c${clamp(Math.round(coil * 4), 0, 4)}` });
+  out.push({ n: `organic/grappler_${sd}_eye_${hit('eye') ? 'hit' : 'ok'}`, emissive: 0.6 });
+  out.push(hit('sac') ? { n: `organic/grappler_${sd}_sac_hit` } : { n: `organic/grappler_${sd}_sac_ok`, f: Math.floor(t * 4), emissive: 0.6 });
+  const open = leaving ? 0.5 + 0.5 * Math.sin((e.munch || 0) * 12) : (e.wind || 0);
+  out.push(hit('beak') ? { n: `organic/grappler_${sd}_beak_hit` } : { n: `organic/grappler_${sd}_beak_ok`, f: clamp(Math.round(open * 3), 0, 3), emissive: 0.6 });
+  if (leaving) { const [bx, by] = e.pois[2].shape.circle; out.push({ n: 'organic/grappler_plate', at: [bx + 0.5, by - 0.3], rot: e.dir * (0.4 + Math.sin((e.munch || 0) * 12) * 0.08) }); }
+  return out;
+}
+function grapplerOverlay(e, t) {                         // healing rings (enemy-local, mirrored)
+  if (e.phase === 'leaving') return;
+  for (const p of e.pois) if (p.hit) {
+    const [cx, cy, r] = p.shape.circle;
+    ctx.beginPath(); ctx.arc(L(cx), L(cy), L(r) + 5, -Math.PI / 2, -Math.PI / 2 + (p.healT || 0) / HEAL_TIME * TAU); ctx.strokeStyle = '#9cff5a'; ctx.lineWidth = 3; ctx.stroke();
+  }
+}
+// The tentacle holding the hull: beads (organic/tentacle_seg_<side>, 16 directions) chained along the
+// drawn curve every 0.13 units, tapering from the squid to the hull, then the coil round the plate.
+// pts: the curve in world px (drawTentacle's).
+function drawTentacleSprites(e, pts) {
+  const sd = sideName(e), seg = `organic/tentacle_seg_${sd}`, coil = `organic/tentacle_coil_${sd}`;
+  if (!GFX.ready(seg) || !GFX.ready(coil)) return false;
+  const P = pts.map(([x, y]) => [x / T, y / T]), len = [0];
+  for (let i = 1; i < P.length; i++) len.push(len[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+  const total = len[len.length - 1], sortY = e.tent.y + 0.6;
+  for (let d = 0, i = 1; d <= total; d += 0.13) {
+    while (i < P.length - 1 && len[i] < d) i++;
+    const k = (d - len[i - 1]) / (len[i] - len[i - 1] || 1), [ax, ay] = P[i - 1], [bx, by] = P[i];
+    GFX.sprite(seg, GFX.frameIndex(seg, Math.atan2(by - ay, bx - ax)), lerp(ax, bx, k), lerp(ay, by, k), 0, { layer: 'main', sortY, scale: lerp(1, 0.45, d / total), depthBias: 1 });
+  }
+  GFX.sprite(coil, 0, e.tent.x, e.tent.y, 0, { layer: 'main', sortY, depthBias: 1 });   // (in front of the outer wall it wraps round)
+  return true;
+}
+// The spore mother: body + mouth patches (g1..g3 by the gape, hit), the tongue stretched and turned to
+// where the game has its tip (with the spore it carries), the nine eyes blinking. Breathing scales it all.
+function motherSprites(e, t) {
+  const sd = sideName(e), b = 1 + 0.012 * Math.sin(t * 0.9), out = [{ n: `organic/mother_${sd}`, scale: b }];
+  const at = (lx, ly) => [lx * b, ly * b];
+  e.pois.forEach((p, i) => {
+    const openNow = e.open > 0 && e.openSac === i && !p.hit;
+    const gape = p.hit ? 0.45 : openNow ? Math.min(1, (SAC_OPEN - e.open) * 5, e.open * 2.5) : 0;
+    if (p.hit) out.push({ n: `organic/mother_${sd}_m${i}_hit`, scale: b });
+    else if (gape > 0.17) out.push({ n: `organic/mother_${sd}_m${i}_g${gape < 0.525 ? 1 : gape < 0.85 ? 2 : 3}`, scale: b });
+    if (openNow) {
+      const [mx, my] = MOTHER_MOUTHS[i], { tipX, tipY, carry } = tonguePose(e, t, L(1.7)), base = -1.7 * 0.95;
+      const tx = tipX / T, ty = tipY / T, len = tx - base;
+      if (len > 0.4) out.push({ n: `organic/mother_${sd}_tongue`, at: at(mx + base, my), sx: len / 4, rot: e.dir * Math.atan2(ty * GFX.SIN, len), emissive: 0.6 });
+      if (carry) out.push({ n: 'organic/spore_pod', at: at(mx + tx, my + ty), emissive: 0.5 });
+    }
+  });
+  const r1 = rng(77);                                    // the eyes (the same places as drawMother's), on the dome
+  for (let i = 0; i < 9; i++) {
+    const y = (r1() * 1.7 - 0.85) * MOTHER_RY, edge = MOTHER_RX * Math.sqrt(Math.max(0, 1 - (y / MOTHER_RY) ** 2)), x = edge - 1.2 - r1() * 3, rad = 0.25 + r1() * 0.35;
+    if (MOTHER_MOUTHS.some(([mx, my]) => Math.hypot(mx - x, my - y) < 2.2)) continue;
+    const s = Math.sin(t * 0.7 + i * 2.3), q = Math.hypot(x / MOTHER_RX, y / MOTHER_RY), z = 3 * Math.max(0, 1 - q * q) ** 0.62 * (1 - 0.12 * (1 - q) ** 2);
+    out.push({ n: `organic/mother_${sd}_eye_${s > 0.97 ? 'shut' : s > 0.94 ? 'half' : 'open'}`, at: at(x, y), z: z * b, scale: rad / 0.5 * b });
+  }
+  return out;
+}
+function motherOverlay(e, t) {                           // torn-out tongues: the gullet bleeds slime
+  e.pois.forEach((p, i) => {
+    if (!p.hit) return;
+    const [mx, my] = MOTHER_MOUTHS[i];
+    for (let k = 0; k < 2; k++) { const q = (t * 0.7 + k / 2) % 1; ctx.beginPath(); ctx.arc(L(mx + 0.3) + q * 12, L(my) + (k - 0.5) * 8 + q * 6, 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill(); }
+  });
+}
+// Leeches: organic/leech_fly (16 headings x 6 wriggle frames) / leech_latched (d0 facing right, d1 left).
+function drawLeechSprite(l, ang) {
+  if (l.state === 'fly') return GFX.ready('organic/leech_fly') && GFX.sprite('organic/leech_fly', GFX.frameIndex('organic/leech_fly', ang, l.t / 0.8 * 6), l.x, l.y, 0, { layer: 'main', emissive: 0.4 });
+  return GFX.ready('organic/leech_latched') && GFX.sprite('organic/leech_latched', (l.side === 'port' ? 0 : 6) + Math.floor(l.t / 0.7 * 6) % 6, l.x, l.y, 0, { layer: 'main', emissive: 0.4 });
+}
+// The leviathan, in pieces on one origin: fluke (nearest pose), flippers (turned around their roots),
+// four body bands, the blink patch. Its slow roll turns the whole stack; the spots' pulse is drawn on top.
+function drawLeviathanSprites(V, t) {
+  const sd = V.order[V.i]?.startsWith('port') ? 'port' : 'star', mir = sd === 'port' ? 1 : -1, pre = `organic/leviathan_${sd}_`;
+  const parts = ['fluke', 'flipper0', 'flipper1', 'body0', 'body1', 'body2', 'body3', 'eye'];
+  if (!parts.every(n => GFX.ready(pre + n))) return false;
+  const x = sd === 'port' ? -14.5 : SHIP_W + 14.5, y = -36 + (LEV_TIME - V.t) * 2.6, roll = mir * Math.sin(t * 0.4) * 0.03, o = { layer: 'under', rot: roll, emissive: 0.5 };
+  GFX.sprite(pre + 'fluke', clamp(Math.round((Math.sin(t * 1.2) + 1) * 2), 0, 4), x, y, 0, o);
+  for (const j of [0, 1]) {                              // rotate around the root: shift the origin so the pivot stays put
+    const s = j ? 1 : -1, a = roll + mir * s * 0.15 * Math.sin(t * 0.8 + s), [px, py] = GFX.info(pre + 'flipper' + j).pivot.map(v => v / 96);
+    const [rx, ry] = rot(px, py, roll), [ax, ay] = rot(px, py, a);
+    GFX.sprite(pre + 'flipper' + j, 0, x + rx - ax, y + (ry - ay) / GFX.SIN, 0, { ...o, rot: a });
+  }
+  for (let k = 0; k < 4; k++) GFX.sprite(pre + 'body' + k, 0, x, y, 0, o);
+  const b = Math.sin(t * 0.5);
+  if (b > 0.97) GFX.sprite(pre + 'eye', b > 0.985 ? 1 : 0, x, y, 0, o);
+  levSpots = { x, y, roll, spots: GFX.info(pre + 'body3').spots };
+  return true;
+}
+let levSpots = null;
+// On top (from drawCombatFront): the leviathan's glowing spots, pulsing down its body.
+function drawOutsideOverlays(t) {
+  const S = levSpots; levSpots = null;
+  if (!S || !org.lev) return;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  S.spots.forEach((p, j) => {
+    if (!p) return;
+    const a = 0.35 + 0.45 * Math.max(0, Math.sin(t * 2.5 - Math.floor(j / 2) * 0.5)), [sx, sy] = rot(p[0] / 96, p[1] / 96, S.roll);
+    const cx = L(S.x + sx), cy = L(S.y + sy / GFX.SIN), r = L(0.55);
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(1, 1 / GFX.SIN);      // round on screen
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    g.addColorStop(0, `rgba(122,240,255,${a * 0.8})`); g.addColorStop(1, 'rgba(122,240,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill(); ctx.restore();
+  });
+  ctx.restore();
 }

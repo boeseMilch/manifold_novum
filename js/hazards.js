@@ -73,7 +73,7 @@ function noGravAt(x, y) { const r = roomAt(x, y); return !!r && hz.noGrav.includ
 // ---------------------------------------------------------------------------
 // A big hit on a side whose hull is already damaged holes a room on that side.
 function onBigHit(side, x, y) {
-  for (const b of hz.breaches) if (b.tarp && BREACH_SPOTS[b.room].side === side) { b.tarp = false; combatBanner('The tarp tore — vacuum again!'); }
+  for (const b of hz.breaches) if (b.tarp && BREACH_SPOTS[b.room].side === side) { b.tarp = false; b.torn = true; combatBanner('The tarp tore — vacuum again!'); }
   if (!mission.rules?.breach) { hz.hull[side] = Math.min(hz.hull[side] + 1, 3); return; }
   if (hz.hull[side] >= 1) {
     const rooms = Object.entries(BREACH_SPOTS).filter(([id, s]) => s.side === side && !breachAt(id));
@@ -101,6 +101,7 @@ function breachRoom(roomId) {
   for (const f of fires) if (sysRooms(f.sys).some(r => r.id === roomId)) { f.hp = 0; scorch(f.x, f.y); }   // vacuum: no more fire
   const s = BREACH_SPOTS[roomId];
   for (let i = 0; i < 24; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.8, i % 2 ? '#c9ced8' : '#ffb347', 0.14);
+  combatFlip('fx/explosion_s', ...holeAt(roomId));
   return true;
 }
 function sealBreach(roomId, how) {
@@ -111,7 +112,7 @@ function sealBreach(roomId, how) {
     hz.hull[BREACH_SPOTS[roomId].side] = 0;
     hz.patches = (hz.patches || []).filter(p => p.room !== roomId); hz.patches.push({ room: roomId, seed: Math.floor(Math.random() * 999) });
     combatBanner(`${roomById(roomId).name}: hull plate nailed on — repressurizing`);
-  } else { b.tarp = true; b.repress = REPRESS_TIME; combatBanner(`${roomById(roomId).name}: tarp taped over the hole — holds until the next hit`); }
+  } else { b.tarp = true; b.torn = false; b.repress = REPRESS_TIME; combatBanner(`${roomById(roomId).name}: tarp taped over the hole — holds until the next hit`); }
   hz.repress = { room: roomId, t: REPRESS_TIME };
   hz.stats.repairs++; sfx.hatch(); sfx.win();
 }
@@ -185,6 +186,7 @@ function zap(c, l) {
   hurtCrew(c); sfx.spark(); sfx.hit(false);
   combatBanner(`Zapped! The ${lineName(LINE[l])} is arcing.`);
   for (let i = 0; i < 12; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.4, '#bfe8ff', 0.08);
+  combatFlip('fx/hit_spark_blue', c.x, c.y);
   return true;
 }
 
@@ -323,10 +325,35 @@ function hazardSpots() {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
+// Effect sprites (fx group: tools/blender/models/fx/*.py headers). Each returns false while GFX is off
+// or the sprite's page is still loading, so the caller draws its old 2D version instead.
+// - floor decals (scorch, goo, puddles, frost): layer 'decal', lit like the floor, under everything
+// - smoke puffs: lit, in the 'main' layer at their height, depth-tested but not writing depth
+// - breach hole / tarp / patch: on the hull edge where the hole straddles the wall, so they are drawn
+//   over the wall top (depthBias), without writing depth (crew still walk in front of them)
+function fxDecal(name, x, y, scale = 1, alpha = 1) { return GFX.sprite(name, 0, x, y, 0, { layer: 'decal', scale, alpha }); }
+function fxSmoke(x, y, z, r, alpha, k, depthBias = 0) { return GFX.sprite(`fx/smoke_${((k | 0) % 4 + 4) % 4}`, 0, x, y, z, { scale: r / 0.25, alpha, sortY: y + 0.02, depthWrite: false, depthBias }); }
+const HOLE_BIAS = 2.6;                               // > the 1.6 high wall top's depth over the floor point it hides
+function fxHole(name, frame, x, y, sortK = 0) { return GFX.sprite(name, frame, x, y, 0, { layer: 'wall', sortY: y + 2 + sortK, depthBias: HOLE_BIAS, depthWrite: false }); }
+const frostK = {};                                   // per room: frost fading in while in vacuum (drawing only)
+let frostT = 0;
+
 // The hole, frost on the walls and air rushing out (inside); a jagged hole in the hull (outside).
 function drawBreaches(t) {
+  const dt = clamp(t - frostT, 0, 0.1); frostT = t;
+  for (const id of Object.keys(frostK)) if (!breachAt(id)) delete frostK[id];
   for (const b of hz.breaches) {
     const s = BREACH_SPOTS[b.room], [hx, hy] = holeAt(b.room), x = L(hx), y = L(hy), vac = vacuumRoom(b.room);
+    frostK[b.room] = clamp((frostK[b.room] || 0) + (vac ? dt / 6 : -dt / 3), 0, 1);
+    if (GFX.on && GFX.ready('fx/breach_hole') && GFX.ready('fx/frost')) {
+      const sx = s.side === 'port' ? 0.75 : s.side === 'star' ? -0.75 : 0, sy = s.side === 'front' ? 0.75 : 0;   // frost: on the floor next to the hole
+      if (frostK[b.room] > 0) fxDecal('fx/frost', hx + sx, hy + sy, 1.05, frostK[b.room]);
+      fxHole('fx/breach_hole', 0, hx, hy);
+      if (b.tarp) { fxHole('fx/breach_tarp', 0, hx, hy, 0.01); continue; }
+      if (b.torn) fxHole('fx/breach_tarp_torn', Math.floor(t * 10) % 4, hx, hy, 0.01);
+      if (vac) drawAirStreaks(x, y, t);
+      continue;
+    }
     ctx.save(); ctx.translate(x, y);
     poly(Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU, r = (i % 2 ? 0.28 : 0.42) * T; return [Math.cos(a) * r, Math.sin(a) * r]; }));
     ctx.fillStyle = '#05070c'; ctx.fill(); stroke(2.5, '#c96a3a');
@@ -337,23 +364,32 @@ function drawBreaches(t) {
       ctx.restore(); continue;
     }
     ctx.restore();
-    if (vac) {                                       // air rushing out: streaks pulled into the hole
-      for (let i = 0; i < 10; i++) {
-        const k = (t * 1.4 + i / 10) % 1, a = i * 2.39, r = L(4) * (1 - k);
-        const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-        ctx.strokeStyle = `rgba(220,235,250,${0.5 * k})`; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + (x - px) * 0.15, py + (y - py) * 0.15); ctx.stroke();
-      }
+    if (vac) {
+      drawAirStreaks(x, y, t);
       const g = ctx.createRadialGradient(x, y, 0, x, y, L(2.5));      // frost
       g.addColorStop(0, 'rgba(200,230,255,0.25)'); g.addColorStop(1, 'rgba(200,230,255,0)');
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, L(2.5), 0, TAU); ctx.fill();
     }
   }
 }
+// Air rushing out: streaks pulled into the hole (at ground level; in the tilted view that's the floor).
+function drawAirStreaks(x, y, t) {
+  for (let i = 0; i < 10; i++) {
+    const k = (t * 1.4 + i / 10) % 1, a = i * 2.39, r = L(4) * (1 - k);
+    const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+    ctx.strokeStyle = `rgba(220,235,250,${0.5 * k})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + (x - px) * 0.15, py + (y - py) * 0.15); ctx.stroke();
+  }
+}
 function drawBreachesOutside(t) {                      // on the hull: the hole, a loose plate, or the nailed-on patch
   for (const p of hz.patches || []) if (!breachAt(p.room)) drawPatch(...holeAt(p.room), p.seed, true);
   for (const b of hz.breaches) {
     const [ox, oy] = BREACH_SPOTS[b.room].out, [hx, hy] = holeAt(b.room);
+    if (GFX.on && GFX.ready('fx/breach_hole')) {      // the sprite hole (drawBreaches) is seen from both sides
+      if (b.plated) drawPatch(hx, hy, 7, false);
+      else if (!b.tarp && Math.random() < 0.5) combatFxLocal(L(ox), L(oy), t);
+      continue;
+    }
     ctx.save(); ctx.translate(L(hx), L(hy));
     poly(Array.from({ length: 12 }, (_, i) => { const a = i / 12 * TAU, r = (i % 2 ? 0.28 : 0.48 + 0.08 * Math.sin(i * 3.1)) * T; return [Math.cos(a) * r, Math.sin(a) * r * 1.15]; }));
     ctx.fillStyle = '#05070c'; ctx.fill(); stroke(3, '#c96a3a');
@@ -371,7 +407,12 @@ function drawBreachesOutside(t) {                      // on the hull: the hole,
   }
 }
 // An improvised patch: a scuffed plate over the hole, a few nails hammered through (or still loose).
+// Sprites: fx/breach_patch_a/b/c for the seed's tilt (rendered at -0.18, +0.02, +0.2 rad), _loose.
 function drawPatch(hx, hy, seed, nailed) {
+  if (GFX.on) {
+    const tilt = (rng(seed)() - 0.5) * 0.5, v = tilt < -0.08 ? 'a' : tilt < 0.11 ? 'b' : 'c';
+    if (fxHole(nailed ? `fx/breach_patch_${v}` : 'fx/breach_patch_loose', 0, hx, hy, 0.02)) return;
+  }
   const r = rng(seed);
   ctx.save(); ctx.translate(L(hx), L(hy)); ctx.rotate((r() - 0.5) * 0.5 + (nailed ? 0 : 0.25));
   rr(-T * 0.55, -T * 0.6, T * 1.1, T * 1.2, 3); ctx.fillStyle = '#8a93a5'; ctx.fill(); stroke(2.2);
@@ -393,13 +434,18 @@ function drawHazardProps(t) {
   // the vent panels next to the outer airlocks: dark until a plasma fire burns in that room
   for (const [id, [vx, vy]] of Object.entries(VENT_PANELS)) {
     const x = L(vx), y = L(vy), live = plasmaIn(id), on = hz.vent?.room === id;
+    const side = id === 'portLock' ? 'port' : 'star';
+    if (spr(`systems/vent_${side}_${on ? 'venting' : live ? `alarm_f${Math.sin(t * 8) > 0 ? 0 : 1}` : 'idle'}`, 0, vx, vy, 0, { emissive: 0.9, pick: [0.25, 0.8] })) {
+      if (live) labelAt(vx, vy + 0.27, 0, 'VENT', `800 ${T * 0.1}px system-ui, sans-serif`, 'rgba(255,170,150,0.9)', 'top');
+      continue;
+    }
     rr(x - 9, y - 12, 18, 24, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(1.5);
     hazardStripe(x - 7, y - 10, 14, 5);
     ctx.beginPath(); ctx.arc(x, y + 3, 4.5, 0, TAU); ctx.fillStyle = on ? '#7ab8ff' : live ? (Math.sin(t * 8) > 0 ? '#ff4a3a' : '#7a1a14') : '#2b303a'; ctx.fill(); stroke(1);
     if (live) { ctx.fillStyle = 'rgba(255,170,150,0.9)'; ctx.font = `800 ${T * 0.1}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('VENT', x, y + 13); ctx.textAlign = 'left'; }
   }
   // snack machine
-  {
+  if (!spr('systems/snack', 0, SNACK.x, SNACK.y, 0, { emissive: 0.5, pick: [0.55, 1.5] })) {
     const x = L(SNACK.x), y = L(SNACK.y), w = L(1.1), h = L(0.8);
     shadowEllipse(x + 4, y + 6, w * 0.55, h * 0.5, 0.3);
     rr(x - w / 2, y - h / 2, w, h, 4); ctx.fillStyle = '#b8402e'; ctx.fill(); stroke(2.5);
@@ -411,10 +457,12 @@ function drawHazardProps(t) {
     ctx.textAlign = 'left';
   }
   // the helm mug, empty or full
-  if (hz.coffee < 1) { ctx.beginPath(); ctx.arc(L(COFFEE_MUG.x), L(COFFEE_MUG.y), 5, 0, TAU); ctx.fillStyle = '#3a2a1a'; ctx.fill(); }
+  if (hz.coffee < 1 && !sprReady('systems/mug_empty')) { ctx.beginPath(); ctx.arc(L(COFFEE_MUG.x), L(COFFEE_MUG.y), 5, 0, TAU); ctx.fillStyle = '#3a2a1a'; ctx.fill(); }
   // gravity breakers that need resetting: a floor plate with a flashing light
   for (const id of hz.noGrav) {
     const [gx, gy] = GRAV_PANELS[id], x = L(gx), y = L(gy);
+    if (GFX.on) drawFloatingJunk(id, t);
+    if (spr(Math.sin(t * 6) > 0 ? 'systems/grav_on' : 'systems/grav_off', 0, gx, gy, 0, { emissive: 0.9 })) { stencil(x, y + 18, 'NO GRAVITY', 0, 0.16, 'rgba(122,240,255,0.7)'); continue; }
     rr(x - 14, y - 10, 28, 20, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(1.5);
     ctx.beginPath(); ctx.arc(x, y, 4, 0, TAU); ctx.fillStyle = Math.sin(t * 6) > 0 ? '#7af0ff' : '#2a5060'; ctx.fill();
     stencil(x, y + 18, 'NO GRAVITY', 0, 0.16, 'rgba(122,240,255,0.7)');
@@ -444,12 +492,30 @@ function drawHazardProps(t) {
     }
   }
 }
-// Rooms in vacuum get a cold blue tint; repressurizing ones fog over.
+// Loose bits floating around a room without gravity (fx/junk_*: 8 frames = one turn). Drawing only:
+// the same few pieces per room (from its id), drifting and bobbing, tumbling at their own speed.
+const JUNK_KINDS = ['bolt', 'wrench', 'shard', 'can', 'cable'];
+function drawFloatingJunk(id, t) {
+  const room = roomById(id); if (!room) return;
+  const r = rng([...id].reduce((h, ch) => h * 31 + ch.charCodeAt(0), 7) % 9973);
+  const area = room.rects.reduce((a, q) => a + q.w * q.h, 0), n = Math.min(7, 2 + Math.floor(area / 12));
+  for (let i = 0; i < n; i++) {
+    const q = room.rects[Math.floor(r() * room.rects.length)], ph = r() * TAU, spin = (0.4 + r() * 0.8) * (r() < 0.5 ? -1 : 1);
+    const x = q.x + 0.6 + r() * Math.max(0, q.w - 1.2) + Math.sin(t * 0.23 + ph) * 0.5, y = q.y + 0.6 + r() * Math.max(0, q.h - 1.2) + Math.cos(t * 0.17 + ph) * 0.4;
+    const z = 0.6 + 0.35 * Math.sin(t * 0.7 + ph);
+    if (!GFX.sprite(`fx/junk_${JUNK_KINDS[(i + Math.floor(r() * 2)) % JUNK_KINDS.length]}`, Math.floor(t * spin * 2.4 + ph * 4), x, y, z, { scale: 1.4 })) continue;
+    ctx.fillStyle = `rgba(0,0,0,${0.32 - z * 0.18})`;   // its shadow on the floor: it floats
+    ctx.beginPath(); ctx.ellipse(L(x), L(y), L(0.2), L(0.12), 0, 0, TAU); ctx.fill();
+  }
+}
+// Rooms in vacuum get a cold blue tint; repressurizing ones fog over (tilted view: the back wall's
+// face, which rises above the floor rect on screen, too).
 function drawVacuumTint() {
   for (const r of ROOMS) {
     const vac = vacuumRoom(r.id), rep = hz.repress?.room === r.id;
     if (!vac && !rep) continue;
     ctx.fillStyle = vac ? 'rgba(80,140,220,0.13)' : `rgba(230,236,244,${0.25 * hz.repress.t / REPRESS_TIME})`;
-    for (const q of r.rects) ctx.fillRect(L(q.x), L(q.y), L(q.w), L(q.h));
+    const up = GFX.lift(1.6);
+    ctx.beginPath(); for (const q of r.rects) ctx.rect(L(q.x), L(q.y - up), L(q.w), L(q.h + up)); ctx.fill();   // (one path: no double tint where rects overlap)
   }
 }

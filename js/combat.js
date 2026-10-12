@@ -26,6 +26,18 @@ function segCircle(x0, y0, x1, y1, cx, cy, r) {
 function combatFx(x, y, vx, vy, life, col, size) {
   combat.fx.push({ x, y, vx, vy, life, max: life, col, size });
 }
+// A flipbook effect sprite (fx/explosion_l/s, fx/hit_spark[_blue]) played once at (x, y), on top of the
+// particle burst. It rides along in combat.fx (so it reaches every client in the snapshots); only the
+// sprite renderer draws it (drawFlips), the classic view keeps just the particles.
+const FLIP_TIME = { 'fx/explosion_l': 12 / 16, 'fx/explosion_s': 8 / 16, 'fx/hit_spark': 6 / 20, 'fx/hit_spark_blue': 6 / 20 };
+function combatFlip(name, x, y, scale = 1) {
+  const life = FLIP_TIME[name] || 0.5;
+  combat.fx.push({ x, y, vx: 0, vy: 0, life, max: life, flip: name, size: scale });
+}
+function drawFlip(p) {
+  const S = GFX.info(p.flip), n = (S && S.frames) || 1;
+  GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, 0, { layer: 'top', unlit: true, scale: p.size || 1 });
+}
 function combatBanner(text) { combat.banner = { text, t: 3 }; }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +154,7 @@ function shieldAbsorb(s, side, x, y) {
     const k = (Math.random() - 0.5) * 2;
     combatFx(x, y, k * 0.6, (Math.random() - 0.5) * (s.heavy ? 9 : 5), 0.6, i % 2 ? '#9cd8ff' : '#ffffff', s.heavy ? 0.14 : 0.08);
   }
+  combatFlip('fx/hit_spark_blue', x, y, s.heavy ? 1.6 : 1);
 }
 
 function shipHit(side, x, y, large) {
@@ -151,10 +164,12 @@ function shipHit(side, x, y, large) {
   if (large) { combat.bigFlashes[side] = 1; combat.shake = 1; sfx.explosion(); }
   else { combat.flashes[side] = 1; sfx.hit(false); smallHit(side, x, y); }
   for (let i = 0; i < (large ? 30 : 12); i++) combatFx(x, y, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0.7, i % 2 ? '#ffb347' : '#e2574c', large ? 0.25 : 0.14);
+  combatFlip(large ? 'fx/explosion_l' : 'fx/explosion_s', x, y);
 }
 function crewHit(side, c) {
   combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c);
   for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, '#e2574c', 0.12);
+  combatFlip('fx/hit_spark', c.x, c.y);
 }
 
 // Costs one energy from that side's capacitor; with none, nothing happens (no cooldown either).
@@ -227,6 +242,7 @@ function updateCombat(dt) {
         else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9)) {
           s.dead = true; a.flash = 0.7; sfx.clank();
           for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.4, i % 2 ? '#ffd28a' : '#8d8274', 0.1);
+          combatFlip('fx/hit_spark', s.x, s.y);
           // remember where it got hit (asteroid-local angle) so damage cracks show up there
           a.damage.push(Math.atan2(s.y - a.y, s.x - a.x) - a.rot);
           if (a.damage.length >= ASTEROID_WEAR) splitAsteroid(a);
@@ -255,6 +271,7 @@ function updateCombat(dt) {
     if (covered) {
       s.dead = true; sfx.clank();
       for (let i = 0; i < 10; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.4, '#ffd28a', 0.09);
+      combatFlip('fx/hit_spark', s.x, s.y);
       continue;
     }
     const tc = s.atCrew && crew.find(c => c.id === s.crewId);
@@ -294,9 +311,14 @@ function drawCombatBack(t) {
   for (const a of combat.asteroids) drawAsteroidBody(a, t);
 }
 
+// Hits on the hull: hull/decal_small_v0..2 (r 0.5) / decal_large_v0..1 (r 1.1) when GFX.on, variant by seed.
 function drawShipDecals() {
   for (const d of combat.decals) {
     if (d.goo || d.scorch) continue;
+    if (GFX.on) {
+      const big = d.r > 0.8, n = `hull/decal_${big ? 'large' : 'small'}_v${Math.floor(d.seed || 0) % (big ? 2 : 3)}`;
+      if (GFX.sprite(n, 0, d.x, d.y, 0, { layer: 'decal', scale: d.r / (big ? 1.1 : 0.5) })) continue;
+    }
     const g = ctx.createRadialGradient(L(d.x), L(d.y), 0, L(d.x), L(d.y), L(d.r));
     g.addColorStop(0, 'rgba(15,12,10,0.85)'); g.addColorStop(0.6, 'rgba(40,28,20,0.5)'); g.addColorStop(1, 'rgba(40,28,20,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(d.x), L(d.y), L(d.r), 0, TAU); ctx.fill();
@@ -304,10 +326,17 @@ function drawShipDecals() {
 }
 
 // Alien goo where an intruder died (drawn on the floor).
+// Sprites: fx/scorch_0..2 (rendered at r 0.75, variant by seed), organic/goo_0..3 (~0.8 across; variant
+// by place), floor decals under everything else.
 function drawGoo() {
   for (const d of combat.decals) {
-    if (d.scorch) { stain(L(d.x), L(d.y), L(d.r), 'rgba(18,14,10,0.5)', d.seed); continue; }   // where a fire burned
+    if (d.scorch) {                                  // where a fire burned
+      if (!(GFX.on && fxDecal(`fx/scorch_${(d.seed | 0) % 3}`, d.x, d.y, d.r / 0.75, 0.9))) stain(L(d.x), L(d.y), L(d.r), 'rgba(18,14,10,0.5)', d.seed);
+      continue;
+    }
     if (!d.goo) continue;
+    const k = Math.floor(d.x * 13);
+    if (GFX.on && fxDecal(`organic/goo_${((k % 4) + 4) % 4}`, d.x, d.y, d.r / 0.6, 0.95)) continue;
     stain(L(d.x), L(d.y), L(d.r), 'rgba(120,220,70,0.45)', Math.floor(d.x * 13));
   }
 }
@@ -366,6 +395,7 @@ function drawShields(t) {
 }
 
 function drawCombatFront(t) {
+  if (GFX.on) { drawAsteroidOverlays(t); drawEnemyOverlays(t); drawOutsideOverlays(t); }   // over the sprite enemies (js/enemies.js, js/organic.js)
   drawShields(t);
   for (const s of combat.shells) {
     const dx = s.vx / SHELL_SPEED, dy = s.vy / SHELL_SPEED;
@@ -380,6 +410,7 @@ function drawCombatFront(t) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(s.x), L(s.y), L(r) * 2.2, 0, TAU); ctx.fill();
   }
   for (const p of combat.fx) {
+    if (p.flip) { if (GFX.on) drawFlip(p); continue; }
     ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
     ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(p.size), 0, TAU); ctx.fill();
   }

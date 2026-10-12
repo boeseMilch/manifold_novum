@@ -130,14 +130,15 @@ ENEMY_TYPES.stealth = {
   ...ENEMY_TYPES.interceptor, name: 'Stealth fighter', stealth: true, fire: [3.2, 4.6],
   paint: { hull: ['#3a4458', '#141a26'], stripe: '#2a3448', pod: ['#3a4250', '#1a1e28'] },   // matte black-blue
   update(e, dt) { e.reveal = Math.max(0, (e.reveal || 0) - dt * 0.6); },
-  draw(e, t) {
-    drawInterceptor(e, t);
-    ctx.save(); ctx.globalAlpha = 1;                    // a heat shimmer where the cloak bends the light: just about visible even when hidden
-    for (let i = 0; i < 3; i++) { poly(LP(INTERCEPTOR_HULL.map(([x, y]) => [x * (1.05 + i * 0.06) + Math.sin(t * 3 + y * 2 + i) * 0.04, y * (1.03 + i * 0.04)])));
-      ctx.strokeStyle = `rgba(170,220,255,${(0.1 - i * 0.025) * (1 + 0.6 * Math.sin(t * 5 + i))})`; ctx.lineWidth = 1.5; ctx.stroke(); }
-    ctx.restore();
-  },
+  draw(e, t) { drawInterceptor(e, t); stealthShimmer(t); },
+  overlay(e, t) { interceptorOverlay(e, t); stealthShimmer(t); },   // (sprites: the hull fades with stealthAlpha)
 };
+function stealthShimmer(t) {                             // a heat shimmer where the cloak bends the light: just about visible even when hidden
+  ctx.save(); ctx.globalAlpha = 1;
+  for (let i = 0; i < 3; i++) { poly(LP(INTERCEPTOR_HULL.map(([x, y]) => [x * (1.05 + i * 0.06) + Math.sin(t * 3 + y * 2 + i) * 0.04, y * (1.03 + i * 0.04)])));
+    ctx.strokeStyle = `rgba(170,220,255,${(0.1 - i * 0.025) * (1 + 0.6 * Math.sin(t * 5 + i))})`; ctx.lineWidth = 1.5; ctx.stroke(); }
+  ctx.restore();
+}
 const TRACTOR_EMITTER = [3.1, 1.75, 0.34];                // on a mast at the rear, clear of the other weak spots
 ENEMY_TYPES.tractor = {
   ...ENEMY_TYPES.interceptor, name: 'Tractor tug', fire: [3.5, 5],
@@ -193,6 +194,7 @@ function drawEncounterProps(t) {
     rr(x - 3, y + h * (1 - k) + 3, 6, h * k - 6, 3); ctx.fillStyle = k > 0.8 ? (Math.sin(t * 12) > 0 ? '#ff4a3a' : '#ffb347') : '#ff8a2e'; ctx.fill();
     ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.12}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillText(enc.scram ? `SCRAM ${Math.ceil(enc.scram)}` : 'HEAT', x, y - 2); ctx.textAlign = 'left';
+    if (enc.coolant && GFX.on) fxDecal('fx/coolant_puddle', REACTOR.x, REACTOR.y + REACTOR.h / 2 + 0.35, 1, clamp(0.4 + enc.coolant.heat / 60, 0, 1));   // the puddle grows darker as it leaks
     if (enc.coolant) for (let i = 0; i < 2; i++) {     // coolant dripping out under the reactor
       const q = (t * 0.7 + i / 2) % 1;
       ctx.beginPath(); ctx.arc(L(REACTOR.x - 0.6 + i * 1.1), L(REACTOR.y + REACTOR.h / 2) + q * 14, 3, 0, TAU); ctx.fillStyle = `rgba(74,192,224,${1 - q})`; ctx.fill();

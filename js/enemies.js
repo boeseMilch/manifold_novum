@@ -57,6 +57,7 @@ const FRIGATE_HULL = [[0, -7.2], [1.1, -6.2], [1.9, -4], [2.3, -1], [2.6, 2], [2
 const ENEMY_TYPES = {
   interceptor: {
     name: 'Interceptor', dist: 15, size: [2.4, 2.8], amp: [3.4, 4.2], omega: 0.55, wear: 5,
+    sprites: (e, t) => interceptorSprites(e, t), flames: (e, t) => interceptorFlames(e, t),   // (the variants inherit these)
     fire: [2.5, 4], shotSpeed: 13, pivot: [1.0, -0.45], barrel: 1.45,
     solids: [{ poly: INTERCEPTOR_HULL }, box(1.42, -0.35, 2.02, 1.9), box(-2.02, -0.35, -1.42, 1.9), { circle: [1.0, -0.45, 0.28] },
              box(2.0, 0.0, 2.3, 1.6)],
@@ -68,6 +69,7 @@ const ENEMY_TYPES = {
   },
   frigate: {
     name: 'Frigate', dist: 21, size: [3.6, 7.6], amp: [1.2, 1.7], omega: 0.22, wear: 8,
+    sprites: (e, t) => frigateSprites(e, t), flames: (e, t) => frigateFlames(e, t),
     fire: [2.4, 3.4], shotSpeed: 12, pivot: [2.15, -3.65], barrel: 1.25, heavyMuzzle: [5.6, -0.2],
     solids: [{ poly: FRIGATE_HULL }, { circle: [2.15, -3.65, 0.45] }, box(2.5, 1.7, 3.2, 2.1), box(2.5, 3.4, 3.1, 3.8), box(-0.3, 6.3, 0.3, 6.6),
              box(2.2, -1.3, 3.3, 0.9), { circle: [3.55, 1.9, 0.55] }, box(3.0, 3.0, 3.85, 5.2), box(-0.95, 6.4, 0.95, 7.7)],
@@ -248,6 +250,7 @@ function shellHitsEnemy(e, x0, y0, x1, y1) {
 function hitPoi(e, p, px, py) {
   p.hit = true; e.flash = 1; sfx.poi();
   for (let i = 0; i < 16; i++) combatFx(px, py, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, 0.6, e.D.organic ? (i % 2 ? '#9cff5a' : '#6ad13a') : i % 2 ? '#ffb347' : POI_COLOR, e.D.organic ? 0.08 : 0.12);
+  if (!e.D.organic) combatFlip(e.pois.every(q => q.hit) ? 'fx/explosion_l' : 'fx/hit_spark', px, py, e.pois.every(q => q.hit) ? 1 : 1.5);   // (destroyed: a big blast)
   if (p.id === 'crack') { e.blind = BLIND_TIME; e.target = null; }
   if (p.id === 'cable') e.shotCount = -1;           // the very next shot fizzles, then every second one
   if (p.id === 'cooling') { e.ampGoal = 0.25; e.omegaGoal = 0.6; }
@@ -402,9 +405,7 @@ function blueCable(pts, w, t, broken, seed) {
 // cable and the blue coolant radiator on the engine nacelle. Canopy glass is blue-tinted.
 // ---------------------------------------------------------------------------
 function drawInterceptor(e, t) {
-  const moving = e.ampGoal > 0.5;
-  for (const s of [-1, 1]) flameDown(s * 1.72, 1.95, moving ? 1.5 : 0.7, 0.2, t);
-  flameDown(0, 2.15, moving ? 1.1 : 0.5, 0.25, t);
+  interceptorFlames(e, t);
   // wings + fuselage
   const P0 = e.D.paint || { hull: ['#8a4a44', '#4a2626'], stripe: '#c0392b', pod: ['#6a6f7a', '#3a3f4a'] };   // (variants repaint it)
   hullFill(INTERCEPTOR_HULL, ...P0.hull);
@@ -474,17 +475,19 @@ function drawInterceptor(e, t) {
 // Shot-out canopy: a jagged hole venting air while the pilot duct-tapes it shut,
 // strip by strip, over BLIND_TIME seconds (no firing meanwhile).
 const TAPE_STRIPS = [[0.1, 0.4, 1], [0.3, -0.5, 2], [0.5, 1.57, 3], [0.7, 0.9, 4], [0.88, -1.0, 5]];
-function drawWindshieldRepair(e, t) {
+function drawWindshieldRepair(e, t, glass = true) {   // glass = false: only the tape and the air (over the sprite's hole)
   const hx = L(0.15), hy = L(-1.5), k = clamp(1 - e.blind / BLIND_TIME, 0, 1);
-  ctx.beginPath(); ctx.ellipse(0, L(-1.5), L(0.44), L(0.72), 0, 0, TAU);
-  ctx.fillStyle = '#2d5f82'; ctx.fill(); stroke(2.5);
-  ctx.save(); ctx.beginPath(); ctx.ellipse(0, L(-1.5), L(0.44), L(0.72), 0, 0, TAU); ctx.clip();
-  poly(Array.from({ length: 9 }, (_, i) => {                       // jagged hole
-    const a = i / 9 * TAU, r = L(0.3) * (i % 2 ? 0.6 : 1);
-    return [hx + Math.cos(a) * r * 0.8, hy + Math.sin(a) * r];
-  }));
-  ctx.fillStyle = '#080b14'; ctx.fill(); stroke(1.5, 'rgba(255,255,255,0.7)');
-  ctx.restore();
+  if (glass) {
+    ctx.beginPath(); ctx.ellipse(0, L(-1.5), L(0.44), L(0.72), 0, 0, TAU);
+    ctx.fillStyle = '#2d5f82'; ctx.fill(); stroke(2.5);
+    ctx.save(); ctx.beginPath(); ctx.ellipse(0, L(-1.5), L(0.44), L(0.72), 0, 0, TAU); ctx.clip();
+    poly(Array.from({ length: 9 }, (_, i) => {                       // jagged hole
+      const a = i / 9 * TAU, r = L(0.3) * (i % 2 ? 0.6 : 1);
+      return [hx + Math.cos(a) * r * 0.8, hy + Math.sin(a) * r];
+    }));
+    ctx.fillStyle = '#080b14'; ctx.fill(); stroke(1.5, 'rgba(255,255,255,0.7)');
+    ctx.restore();
+  }
   if (k < 1) {                                                       // air whooshing out
     for (let i = 0; i < 4; i++) {
       const q = (t * 1.8 + i / 4) % 1, a = -0.3 + Math.sin(i * 2.3) * 0.5;
@@ -523,10 +526,7 @@ function drawEnemyTag(e) {
 // side engine with blue coolant jacket; the main engine at the stern has one too.
 // ---------------------------------------------------------------------------
 function drawFrigate(e, t) {
-  const moving = e.ampGoal > 0.3;
-  if (!poiHit(e, 'main')) flameDown(0, 7.7, moving ? 2.6 : 1.3, 0.7, t);
-  if (!poiHit(e, 'aux')) flameDown(3.42, 5.2, moving ? 1.8 : 0.9, 0.35, t);
-  for (const x of [-1.5, 1.5]) flameDown(x, 6.45, 0.6, 0.18, t);      // small trim thrusters
+  frigateFlames(e, t);
   hullFill(FRIGATE_HULL, '#7a5c64', '#3a2a30');
   ctx.save(); poly(LP(FRIGATE_HULL)); ctx.clip();
   // armor plates
@@ -634,6 +634,7 @@ function drawEnemyShield(e) {
 }
 
 function drawEnemy(e, t) {
+  if (GFX.on && drawEnemySprite(e, t)) return;      // (its overlays come later, on top: drawEnemyOverlay)
   ctx.save();
   if (e.phase === 'burning') ctx.globalAlpha = clamp(1 - (e.burnT - 3) / 2, 0, 1);
   if (e.D.stealth) ctx.globalAlpha *= stealthAlpha(e);                // cloaked: only shows after a radar ping or when it fires
@@ -658,6 +659,7 @@ function drawEnemy(e, t) {
 }
 
 function drawAsteroidBody(a, t) {
+  if (GFX.on && drawAsteroidSprite(a, t)) return;
   shadowEllipse(L(a.x) + 6, L(a.y) + 8, L(a.r) * 0.95, L(a.r) * 0.8, 0.25);
   drawLump(a.shape, L(a.x), L(a.y), L(a.r), a.rot, a.big ? ['#8d8274', '#6e6359', '#4c433c'] : ['#9a8e80', '#776b5f', '#544a40'], true);
   ctx.save(); ctx.translate(L(a.x), L(a.y)); ctx.rotate(a.rot);
@@ -698,4 +700,151 @@ function drawAsteroidBody(a, t) {
     drawLump(a.shape, L(a.x), L(a.y), L(a.r), a.rot, ['#ffd9a0', '#c08050', '#603020'], false);
     ctx.restore();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Sprites (GFX.on; tools/blender/models/enemy/*.py and organic/*.py document them). An enemy is its hull
+// sprite, one sprite per weak spot (ok / hit / ...) and its turret, all on the enemy's origin: D.sprites(e, t)
+// lists them as { n: name, f: frame, at: [lx, ly] (own origin, enemy-local) | x, y (world), scale, rot, sx,
+// alpha, emissive }. The weak spots were rendered so they project exactly onto the game's shapes at z = 0, so
+// what you see is what the flat hit tests hit. Layer 'under': below the hull, which only ever overlaps the
+// asteroids (they come from ahead: behind the hull in the tilted view). Flames stay 2D in the back layer
+// (under the sprites); everything that was painted over the ship (shield bubble, hit flash, smoke, sparks,
+// tags, D.overlay, D.drawExtra: the tractor beam, the tentacle) comes later on top: drawEnemyOverlays(),
+// from drawCombatFront. The sprites don't turn with the gentle sway (e.rot ≤ 0.04); burning ones do.
+// ---------------------------------------------------------------------------
+const spritedEnemies = new Set(), spritedAsteroids = new Set();   // drawn as sprites this frame (overlays to come)
+const sideName = (e) => e.side === 'port' ? 'port' : 'star';
+const turretAngle = (e) => Math.atan2(Math.sin(e.turret), e.dir * Math.cos(e.turret)) + e.rot;   // local aim → game angle
+function interceptorSprites(e, t) {
+  const sd = sideName(e), paint = { stealth: 'stealth', tractor: 'tractor', pirate: 'pirate' }[e.kind] || 'interceptor', out = [{ n: `enemy/${paint}_${sd}` }];
+  if (e.kind === 'pirate') out.push({ n: `enemy/pirate_${sd}_claw`, f: clamp(Math.round((0.3 + 0.2 * Math.sin(t * 3) - 0.1) / 0.1), 0, 4) });
+  for (const p of e.pois) out.push({ n: p.id === 'emitter' ? `enemy/tractor_${sd}_emitter_${p.hit ? 'hit' : 'ok'}` : `enemy/interceptor_${sd}_${p.id}_${p.hit ? 'hit' : 'ok'}`, emissive: p.hit ? 0.2 : 0.7 });
+  if (e.kind === 'pirate') out.push({ n: `enemy/pirate_${sd}_flag`, f: Math.floor(t * 8 / TAU * 6) });
+  out.push({ n: 'enemy/interceptor_turret', f: GFX.frameIndex('enemy/interceptor_turret', turretAngle(e)), at: e.D.pivot });
+  return out;
+}
+function frigateSprites(e, t) {
+  const sd = sideName(e), out = [{ n: `enemy/frigate_${sd}` }];
+  for (const p of e.pois) {
+    let st = p.hit ? 'hit' : 'ok', f = 0;
+    if (!p.hit && p.id === 'dish' && e.shieldUp) st = 'up';
+    if (!p.hit && p.id === 'heavy' && e.charge >= 0) { st = 'charge'; f = Math.floor(t * 8); }
+    out.push({ n: `enemy/frigate_${sd}_${p.id}_${st}`, f, emissive: p.hit ? 0.2 : 0.7 });
+  }
+  out.push({ n: 'enemy/frigate_radar', f: GFX.frameIndex('enemy/frigate_radar', e.dir > 0 ? t : Math.PI - t) });
+  out.push({ n: 'enemy/frigate_turret', f: GFX.frameIndex('enemy/frigate_turret', turretAngle(e)), at: e.D.pivot });
+  return out;
+}
+function interceptorFlames(e, t) {
+  const moving = e.ampGoal > 0.5;
+  for (const s of [-1, 1]) flameDown(s * 1.72, 1.95, moving ? 1.5 : 0.7, 0.2, t);
+  flameDown(0, 2.15, moving ? 1.1 : 0.5, 0.25, t);
+}
+function frigateFlames(e, t) {
+  const moving = e.ampGoal > 0.3;
+  if (!poiHit(e, 'main')) flameDown(0, 7.7, moving ? 2.6 : 1.3, 0.7, t);
+  if (!poiHit(e, 'aux')) flameDown(3.42, 5.2, moving ? 1.8 : 0.9, 0.35, t);
+  for (const x of [-1.5, 1.5]) flameDown(x, 6.45, 0.6, 0.18, t);      // small trim thrusters
+}
+// What drawInterceptor / drawFrigate painted on top of the parts that are now sprites (enemy-local, mirrored).
+function interceptorOverlay(e, t) {
+  if (poiHit(e, 'cooling')) for (let i = 0; i < 3; i++) {             // venting coolant
+    const q = (t * 1.2 + i / 3) % 1;
+    ctx.beginPath(); ctx.arc(L(2.4 + q * 1.2), L(0.8 + Math.sin(i * 3) * 0.4), L(0.1 + q * 0.25), 0, TAU);
+    ctx.fillStyle = `rgba(200,230,255,${0.5 * (1 - q)})`; ctx.fill();
+  }
+  if (poiHit(e, 'crack') && e.blind > 0) drawWindshieldRepair(e, t, false);   // the pilot taping the hole shut
+}
+function frigateOverlay(e, t) {
+  if (e.charge < 0) return;                                           // the heavy shot's charge at the muzzle
+  const k = e.charge / HEAVY_CHARGE, r = L(0.3 + k * 1.1);
+  const g = ctx.createRadialGradient(L(5.6), L(-0.2), 0, L(5.6), L(-0.2), r);
+  g.addColorStop(0, `rgba(255,255,240,${0.6 + 0.4 * k})`); g.addColorStop(0.4, `rgba(255,120,200,${0.5 + 0.3 * k})`); g.addColorStop(1, 'rgba(255,60,160,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(5.6), L(-0.2), r, 0, TAU); ctx.fill();
+}
+ENEMY_TYPES.interceptor.overlay = interceptorOverlay;    // (before encounters.js / dock.js copy the interceptor for its variants)
+ENEMY_TYPES.frigate.overlay = frigateOverlay;
+const enemyAlpha = (e) => (e.phase === 'burning' ? clamp(1 - (e.burnT - 3) / 2, 0, 1) : 1) * (e.D.stealth ? stealthAlpha(e) : 1);
+function drawEnemySprite(e, t) {
+  const list = e.D.sprites?.(e, t);
+  if (!list || !list.every(s => GFX.ready(s.n))) return false;
+  const alpha = enemyAlpha(e), rot = e.phase === 'burning' ? e.rot : 0;
+  const scale = e.phase === 'burning' && e.D.organic ? 1 - 0.4 * Math.min(1, e.burnT / 3.5) : 1;   // living things deflate
+  if (e.D.flames) { ctx.save(); ctx.globalAlpha = alpha; ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.rot); ctx.scale(e.dir, 1); e.D.flames(e, t); ctx.restore(); }
+  e.D.under?.(e, t);                                // (world space, still in the back layer)
+  for (const s of list) {
+    const [x, y] = s.at ? enemyToWorld(e, ...s.at) : s.x != null ? [s.x, s.y] : [e.x, e.y];
+    GFX.sprite(s.n, s.f || 0, x, y, s.z || 0, { layer: 'under', alpha: alpha * (s.alpha ?? 1), scale: scale * (s.scale || 1), rot: rot + (s.rot || 0), sx: s.sx, emissive: s.emissive ?? 0.3 });
+  }
+  spritedEnemies.add(e);
+  return true;
+}
+// On top of everything (the 2D canvas `c`, after the crew): what goes over a sprite enemy.
+function drawEnemyOverlays(t) {
+  for (const e of spritedEnemies) {
+    if (!combat.enemies.includes(e)) continue;
+    ctx.save();
+    ctx.globalAlpha = enemyAlpha(e);
+    ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.rot); ctx.scale(e.dir, 1);
+    if (e.phase === 'burning' && e.D.organic) { const k = Math.min(1, e.burnT / 3.5); ctx.scale(1 - 0.4 * k, 1 - 0.4 * k); }
+    e.D.overlay?.(e, t);
+    if (e.flash > 0) {                              // hit flash
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = `rgba(255,200,150,${e.flash * 0.2})`;
+      ctx.beginPath(); ctx.ellipse(0, 0, L(e.D.size[0]), L(e.D.size[1]), 0, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (!e.D.organic) e.pois.forEach((p, i) => {
+      if (!p.hit || p.id === 'crack') return;
+      if (p.id !== 'cooling') sparkBurst(p.c[0], p.c[1], t, 41 + i * 10);
+      drawSmoke(L(p.c[0]), L(p.c[1]), p.smoke, t + p.c[0]);
+    });
+    drawEnemyShield(e);
+    ctx.restore();
+    if (e.phase === 'fighting' && (!e.D.stealth || stealthAlpha(e) > 0.3)) drawEnemyTag(e);
+    e.D.drawExtra?.(e, t);
+  }
+  spritedEnemies.clear();
+}
+
+// Asteroids: asteroid_big<k> (+ _crack, the weak spot: both picked by the crack's angle rot + crackA, 48
+// steps) and asteroid_small<k> (32 steps), k from the shape seed. Neighbouring steps are crossfaded so the
+// rock turns smoothly. The damage cracks and the hit flash stay 2D, on top (drawAsteroidOverlays).
+function drawAsteroidSprite(a, t) {
+  const k = a.shapeSeed % 3, n = a.big ? `enemy/asteroid_big${k}` : `enemy/asteroid_small${k}`, c = n + '_crack';
+  if (!GFX.ready(n) || (a.big && !GFX.ready(c))) return false;
+  const steps = a.big ? 48 : 32, u = (a.big ? a.rot + a.crackA : a.rot) / (TAU / steps), i0 = Math.floor(u), w = u - i0;
+  for (const [i, al] of [[i0, 1], [i0 + 1, w]]) {
+    if (al < 0.03) continue;
+    const f = ((i % steps) + steps) % steps;
+    GFX.sprite(n, f, a.x, a.y, 0, { layer: 'under', alpha: al, emissive: 0.5 });
+    if (a.big) GFX.sprite(c, f, a.x, a.y, 0, { layer: 'under', alpha: al, emissive: 0.9 });
+  }
+  spritedAsteroids.add(a);
+  return true;
+}
+function drawAsteroidOverlays(t) {
+  for (const a of spritedAsteroids) {
+    if (!combat.asteroids.includes(a)) continue;
+    // damage cracks from plain hits, on the rock's upper surface (lifted to where the sphere is)
+    const P = (lx, ly) => { const d = Math.hypot(lx, ly), z = Math.sqrt(Math.max(0, a.r * a.r - d * d)) * 0.9, [u, v] = rot(lx, ly, a.rot); return [L(a.x + u), L(a.y + v - GFX.lift(z))]; };
+    a.damage.forEach((ang, i) => {
+      const r = rng(a.seed + i * 13);
+      let x = Math.cos(ang) * a.r * 0.85, y = Math.sin(ang) * a.r * 0.85;
+      ctx.beginPath(); ctx.moveTo(...P(x, y));
+      for (let k = 0; k < 4; k++) {
+        const q = ang + Math.PI + (r() - 0.5) * 1.2, l = a.r * (0.15 + r() * 0.15);
+        x += Math.cos(q) * l; y += Math.sin(q) * l; ctx.lineTo(...P(x, y));
+      }
+      ctx.strokeStyle = '#1a1614'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,150,60,0.55)'; ctx.lineWidth = 1.2; ctx.stroke();
+    });
+    if (a.flash > 0) {                               // the rock's screen disc (a circle of radius r on screen)
+      ctx.save(); ctx.globalAlpha = a.flash * 0.45; ctx.globalCompositeOperation = 'lighter';
+      ctx.beginPath(); ctx.ellipse(L(a.x), L(a.y), L(a.r) * 0.9, L(a.r) * 0.9 / GFX.SIN, 0, 0, TAU); ctx.fillStyle = '#ffd9a0'; ctx.fill();
+      ctx.restore();
+    }
+  }
+  spritedAsteroids.clear();
 }

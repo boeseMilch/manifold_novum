@@ -201,6 +201,13 @@ function computeRewards(id, results, survived, firstClear) {
 function drawInserter(t) {
   const I = power.inserter;
   if (!I) return;
+  if (sprReady('systems/inserter_arm', 'systems/inserter_handle')) {   // sprites (js/decor.js spr), both with their origin at FUEL_CRATE
+    spr('systems/inserter_arm', I.t > 0 ? clamp(Math.floor(I.t / 2 * 6), 0, 5) : 0, FUEL_CRATE.x, FUEL_CRATE.y, 0, { sortY: FUEL_CRATE.y - 0.3 });
+    spr('systems/inserter_handle', I.on ? 0 : 1, FUEL_CRATE.x, FUEL_CRATE.y, 0, { sortY: FUEL_CRATE.y, emissive: 0.6 });
+    ctx.fillStyle = 'rgba(232,236,244,0.8)'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(I.on ? 'AUTO' : 'OFF', L(FUEL_CRATE.x - 0.8), L(FUEL_CRATE.y) + 12); ctx.textAlign = 'left';
+    return;
+  }
   const x0 = L(FUEL_CRATE.x + 0.4), y0 = L(FUEL_CRATE.y - 0.4), x1 = L(REACTOR.x - REACTOR.w / 2 + 0.3), y1 = L(REACTOR.y + 0.2), k = I.t / 2;
   const ex = lerp(x0, x1, 0.5 + 0.5 * Math.sin(k * Math.PI)), ey = lerp(y0, y1, 0.5) - L(0.6);
   ctx.strokeStyle = OUT; ctx.lineWidth = 8; ctx.lineCap = 'round';
