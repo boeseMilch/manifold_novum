@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sprite gallery</title>
+<!-- Every packed sprite (assets/sprites/sprites.json), animated, per group. Open via node server.js:
+     http://localhost:8080/tools/sprites/gallery.html -->
+<style>
+  :root { --bg: #14161b; --panel: #1f232b; --line: #343a46; --text: #e8ecf4; --dim: #9aa3b5; --accent: #5fd6a0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 13px system-ui, sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: rgba(20,22,27,0.96); border-bottom: 1px solid var(--line);
+           padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; }
+  h1 { font-size: 15px; letter-spacing: 2px; margin: 0 8px 0 0; }
+  button, select, input { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; }
+  button { cursor: pointer; } button.on { border-color: var(--accent); background: #1d4a36; }
+  input[type=search] { width: 200px; }
+  #groups { display: flex; flex-wrap: wrap; gap: 4px; }
+  #stats { color: var(--dim); margin-left: auto; }
+  main { padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+  .card canvas { width: 100%; height: 200px; display: block; cursor: zoom-in; }
+  .card .info { padding: 6px 9px; border-top: 1px solid var(--line); }
+  .card .name { font-weight: 700; word-break: break-all; }
+  .card .meta { color: var(--dim); font-size: 11px; margin-top: 2px; }
+  .card .note { color: var(--dim); font-size: 11px; margin-top: 4px; max-height: 4.2em; overflow: hidden; }
+  .card .dirs { display: flex; gap: 2px; margin-top: 5px; flex-wrap: wrap; }
+  .card .dirs button { padding: 1px 6px; font-size: 11px; }
+  #big { position: fixed; inset: 0; z-index: 5; background: rgba(8,9,12,0.94); display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+  #big canvas { max-width: 92vw; max-height: 82vh; }
+  #big .cap { color: var(--dim); }
+  @media (max-width: 600px) { header { padding: 8px; } input[type=search] { width: 100%; } main { padding: 8px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); } }
+</style>
+</head>
+<body>
+<header>
+  <h1>SPRITE GALLERY</h1>
+  <div id="groups"></div>
+  <input type="search" id="q" placeholder="filter names…">
+  <select id="map"><option value="">beauty</option><option value="n">normals</option><option value="h">height</option><option value="m">tint mask</option></select>
+  <select id="bg"><option value="#3a4050">grey</option><option value="#0b0d12">space</option><option value="checker">checker</option><option value="#e8e4dc">light</option></select>
+  <label><input type="checkbox" id="anim" checked> animate</label>
+  <span id="stats"></span>
+</header>
+<main id="grid"></main>
+<div id="big"><canvas id="bigc"></canvas><div class="cap" id="bigcap"></div></div>
+<script>
+const ROOT = '../../assets/sprites/';
+let DATA = null, group = null, filter = '', mapKind = '', bgMode = '#3a4050', animate = true;
+const pages = {};                                     // file+map -> Image
+function img(file) {
+  if (!pages[file]) { const i = new Image(); i.src = ROOT + file + '.webp'; i.onload = () => { i.ready = true; }; pages[file] = i; }
+  return pages[file];
+}
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+// Draw frame k of sprite S onto ctx at canvas position (x, y) = the ground origin, scale s (screen px per sprite px).
+function drawFrame(ctx, S, k, x, y, s) {
+  const fr = S.f[k]; if (!fr) return true;
+  const pg = DATA.meta.pages[S.group][fr[0]], ms = mapKind && mapKind !== 'm' ? DATA.meta.mapScale : 1;
+  const im = img(pg.file + (mapKind ? '.' + mapKind : '')); if (!im.ready) return false;
+  const blit = (r) => { if (r[3] > 0) ctx.drawImage(im, r[1] * ms, r[2] * ms, r[3] * ms, r[4] * ms, x - r[5] * s, y - r[6] * s, r[3] * s, r[4] * s); };
+  if (fr.length > 7) {
+    const b = S.bases[fr[7]];
+    ctx.save();
+    if (!fr[8] && fr[3] > 0) {                     // the patch replaces the base inside its rect
+      ctx.beginPath(); ctx.rect(x - b[5] * s, y - b[6] * s, b[3] * s, b[4] * s); ctx.rect(x - fr[5] * s, y - fr[6] * s, fr[3] * s, fr[4] * s); ctx.clip('evenodd');
+    }
+    blit(b); ctx.restore();
+  }
+  blit(fr); return true;
+}
+function fillBg(ctx, w, h) {
+  if (bgMode === 'checker') { for (let y = 0; y < h; y += 12) for (let x = 0; x < w; x += 12) { ctx.fillStyle = ((x + y) / 12) % 2 ? '#5a6070' : '#444a58'; ctx.fillRect(x, y, 12, 12); } }
+  else { ctx.fillStyle = bgMode; ctx.fillRect(0, 0, w, h); }
+}
+// Fit the whole canvas (w × h at ppu) into the box; returns [scale, originX, originY].
+function fit(S, cw, ch, pad = 10) {
+  const s = Math.min((cw - pad * 2) / S.w, (ch - pad * 2) / S.h, 3);
+  return [s, (cw - S.w * s) / 2 + S.ox * s, (ch - S.h * s) / 2 + S.oy * s];
+}
+const cards = [];
+function build() {
+  const grid = $('grid'); grid.innerHTML = ''; cards.length = 0;
+  const names = Object.keys(DATA.sprites).filter(n => DATA.sprites[n].group === group && DATA.sprites[n].f.length && n.includes(filter)).sort();
+  $('stats').textContent = `${names.length} sprites in ${group} · ${Object.keys(DATA.sprites).length} in total`;
+  for (const name of names) {
+    const S = DATA.sprites[name], dirs = S.dirs || 1, frames = Math.max(1, S.f.length / dirs | 0);
+    const el = document.createElement('div'); el.className = 'card';
+    const note = S.note || S.origin || '';
+    el.innerHTML = `<canvas></canvas><div class="info"><div class="name">${esc(name.slice(group.length + 1))}</div>
+      <div class="meta">${S.w}×${S.h} @ ${S.ppu} ppu · ${dirs > 1 ? dirs + ' dirs · ' : ''}${frames > 1 ? frames + ' frames · ' : ''}maps ${S.maps || '—'}</div>
+      ${dirs > 1 ? `<div class="dirs">${Array.from({ length: dirs }, (_, d) => `<button data-d="${d}">${d}</button>`).join('')}<button data-d="-1" class="on">spin</button></div>` : ''}
+      ${note ? `<div class="note" title="${esc(note)}">${esc(note)}</div>` : ''}</div>`;
+    const c = el.querySelector('canvas'), card = { el, c, S, name, dirs, frames, dir: -1 };
+    el.querySelectorAll('[data-d]').forEach(b => b.onclick = () => { card.dir = +b.dataset.d; el.querySelectorAll('[data-d]').forEach(x => x.classList.toggle('on', x === b)); });
+    c.onclick = () => openBig(card);
+    grid.appendChild(el); cards.push(card);
+  }
+}
+function frameOf(card, t) {
+  const d = card.dir >= 0 ? card.dir : animate && card.frames === 1 ? Math.floor(t * 1.5) % card.dirs : 0;
+  const f = animate ? Math.floor(t * 8) % card.frames : 0;
+  return d * card.frames + f;
+}
+let bigCard = null;
+function openBig(card) { bigCard = card; $('big').style.display = 'flex'; }
+$('big').onclick = () => { bigCard = null; $('big').style.display = 'none'; };
+function tick(now) {
+  const t = now / 1000, dpr = window.devicePixelRatio || 1;
+  for (const card of cards) {
+    const r = card.c.getBoundingClientRect(); if (r.bottom < 0 || r.top > innerHeight) continue;
+    const W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+    if (card.c.width !== W || card.c.height !== H) { card.c.width = W; card.c.height = H; }
+    const ctx = card.c.getContext('2d'); fillBg(ctx, W, H);
+    const [s, x, y] = fit(card.S, W, H, 10 * dpr);
+    ctx.imageSmoothingQuality = 'high'; drawFrame(ctx, card.S, frameOf(card, t), x, y, s);
+  }
+  if (bigCard) {
+    const c = $('bigc'), S = bigCard.S, s = Math.min(innerWidth * 0.9 / S.w, innerHeight * 0.8 / S.h, 4);
+    c.width = Math.max(1, S.w * s | 0); c.height = Math.max(1, S.h * s | 0);
+    const ctx = c.getContext('2d'); fillBg(ctx, c.width, c.height); drawFrame(ctx, S, frameOf(bigCard, t), S.ox * s, S.oy * s, s);
+    $('bigcap').textContent = `${bigCard.name} · ${S.w}×${S.h} px at ${S.ppu} px/unit · click to close`;
+  }
+  requestAnimationFrame(tick);
+}
+fetch(ROOT + 'sprites.json', { cache: 'no-store' }).then(r => r.json()).then(d => {
+  DATA = d;
+  const groups = Object.keys(d.meta.pages).filter(g => g !== 'test');
+  group = groups[0];
+  $('groups').innerHTML = groups.map(g => `<button data-g="${g}">${g}</button>`).join('');
+  const mark = () => document.querySelectorAll('[data-g]').forEach(b => b.classList.toggle('on', b.dataset.g === group));
+  document.querySelectorAll('[data-g]').forEach(b => b.onclick = () => { group = b.dataset.g; mark(); build(); scrollTo(0, 0); });
+  mark(); build(); requestAnimationFrame(tick);
+}).catch(e => { $('grid').textContent = 'Could not load sprites.json — open this page through node server.js (' + e.message + ')'; });
+$('q').oninput = (e) => { filter = e.target.value.trim(); build(); };
+$('map').onchange = (e) => { mapKind = e.target.value; };
+$('bg').onchange = (e) => { bgMode = e.target.value; };
+$('anim').onchange = (e) => { animate = e.target.checked; };
+</script>
+</body>
+</html>
