@@ -236,7 +236,7 @@ function updateDock(dt) {
   for (const b of boarding.bolts) {                   // our bolts vs pirates
     if (b.owner !== 'crew') continue;
     const p = dk.pirates.find(p => !p.dead && Math.hypot(b.x - p.x, b.y - p.y) < 0.42);
-    if (p) { b.dead = true; hurtPirate(p, b.wrench ? 3 : 1, b.wrench ? 1.5 : 0); }
+    if (p) { b.dead = true; hurtPirate(p, boltDamage(b), boltStun(b)); }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);
   dk.pirates = dk.pirates.filter(p => !p.dead);

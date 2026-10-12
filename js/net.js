@@ -17,13 +17,13 @@ function netSerialize() {
       id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, face: c.face, walk: c.walk, mode: c.mode,
       gun: c.gun?.id || null,
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
-      repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen },
-      health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, snackT: c.snackT, slow: c.slow, kit: c.kit, armor: c.armor,
+      repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen, e: c.prompt.e },
+      health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, snackT: c.snackT, slow: c.slow, kit: c.kit, armor: c.armor, charge: c.charge, aim: c.aim,
       ui: { panel: c.ui.panel, mini: c.ui.mini, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
     })),
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
     caps: CAPACITORS.map(c => [c.charge, c.pulse || 0]),
-    power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses, patch: power.patch },
+    power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses, patch: power.patch, overcharge: power.overcharge },
     doors: DOORWAYS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.blastHold || 0]),
     locks: DECK_LOCKS.map(L => ({ open: L.open, doors: L.doors, phase: L.phase, t: L.t, target: L.target, entry: L.entry, locked: L.locked })),
     hatches: HATCHES.map(h => [h.open, h.locked]),
@@ -81,7 +81,7 @@ function netApply(s, myId) {
   }
   s.systems.forEach((b, i) => { SYSTEMS[i].broken = !!b; });
   s.caps.forEach(([ch, pu], i) => { CAPACITORS[i].charge = ch; CAPACITORS[i].pulse = pu; });
-  Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts; power.pulses = s.power.pulses || []; power.patch = s.power.patch || [0, 1, 2];
+  Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); power.bolts = s.power.bolts; power.pulses = s.power.pulses || []; power.patch = s.power.patch || [0, 1, 2]; power.overcharge = !!s.power.overcharge;
   s.doors.forEach(([o, l, b, bh], i) => { DOORWAYS[i].open = o; DOORWAYS[i].locked = l; DOORWAYS[i].blast = !!b; DOORWAYS[i].blastHold = bh; });
   s.locks.forEach((d, i) => Object.assign(DECK_LOCKS[i], d));
   s.hatches.forEach(([o, l], i) => { HATCHES[i].open = o; HATCHES[i].locked = l; });
@@ -258,8 +258,9 @@ function netPredict(dt) {
     if (c !== me || !canPredict(c)) { c.x = lerp(c.x, c.nx, k); c.y = lerp(c.y, c.ny, k); continue; }
     const blocked = debugOpen || !!me.ui.panel || !!mission.over;
     const ik = localInput.keys, has = (...codes) => !blocked && codes.some(x => ik.has(x));
-    const ix = (has('KeyD', 'ArrowRight') ? 1 : 0) - (has('KeyA', 'ArrowLeft') ? 1 : 0);
-    const iy = (has('KeyS', 'ArrowDown') ? 1 : 0) - (has('KeyW', 'ArrowUp') ? 1 : 0);
+    const ix = (has('KeyD') ? 1 : 0) - (has('KeyA') ? 1 : 0), iy = (has('KeyS') ? 1 : 0) - (has('KeyW') ? 1 : 0);
+    const ax = (has('ArrowRight') ? 1 : 0) - (has('ArrowLeft') ? 1 : 0), ay = (has('ArrowDown') ? 1 : 0) - (has('ArrowUp') ? 1 : 0);
+    c.aim = ax || ay ? Math.atan2(ay, ax) : null;
     updateCrew(me, dt, ix, iy);                        // move now, don't wait for the server
     const err = Math.hypot(c.nx - c.x, c.ny - c.y);
     if (err > PREDICT_SNAP) { c.x = c.nx; c.y = c.ny; }                       // way off (pushed, teleported): snap

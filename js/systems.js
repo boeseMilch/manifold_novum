@@ -1,6 +1,6 @@
 // Ship systems: energy (reactor, distribution lever, capacitors), breakable parts and
 // repairs, the inventory (weapon slot + item slot) with items lying around, and the
-// hand weapons (laser gun, wrench toss). Units: layout units.
+// hand weapons (laser gun, heavy blaster, wrench toss). Units: layout units.
 
 const CELL_ENERGY = 5, ENERGY_TIME = 20, REPAIR_TIME = 5;
 let SHOTS_PER_ENERGY = 3;                              // (ship upgrades: see progress.js)
@@ -12,6 +12,11 @@ const leverAngle = (i) => -Math.PI / 2 + (i - 1) * 0.9;
 const FUEL_CRATE = { x: 17.4, y: 19.6 };
 const REACH = 1.9;                                // how far you can reach to click things
 const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED = 13;
+// Heavy blaster (weapons specialist gear): slower shots of 1-2 damage; hold to charge a 3-damage blast
+// (outside it also flies on as a cannon shell). Carrying it slows you a bit, charging a lot.
+const BLASTER_COOLDOWN = LASER_COOLDOWN / 0.66, BLASTER_CHARGE = 1.5, BLASTER_SLOW_AFTER = 0.2;
+const BLASTER_CARRY_SPEED = 0.85, BLASTER_CHARGE_SPEED = 0.3;
+const OVERCHARGE_FIRE = 0.1;                      // overcharged reactor: chance per energy that it catches fire
 
 const power = {
   reactor: { fuel: CELL_ENERGY, t: 0 },          // energy left in the loaded cell, progress to the next one
@@ -20,6 +25,7 @@ const power = {
   bolts: [],                                      // energy travelling from the reactor to a capacitor
   pulses: [],                                     // energy travelling from a capacitor to what used it
   patch: [0, 1, 2],                               // patch board: lever output → capacitor it feeds
+  overcharge: false,                              // an engineer overcharged it: double speed, may catch fire
 };
 let inv = { weapon: null, item: null, cd: 0 };     // the acting crew member's inventory (see withCrew)
 const ITEMS = [
@@ -28,9 +34,9 @@ const ITEMS = [
   { kind: 'extinguisher', x: 15.3, y: 2.2 },     // bridge
   { kind: 'extinguisher', x: 31.7, y: 3.8 },     // starboard cannon room
 ];
-const ITEM_NAMES = { repair: 'repair kit', laser: 'laser gun', fuel: 'fuel cell', extinguisher: 'fire extinguisher', plate: 'hull plate',
+const ITEM_NAMES = { repair: 'repair kit', laser: 'laser gun', heavy: 'heavy blaster', fuel: 'fuel cell', extinguisher: 'fire extinguisher', plate: 'hull plate',
                      coolant: 'coolant canister', blackbox: 'black box', drill: 'mining drill', ore: 'ore sample' };
-const WEAPONS = new Set(['repair', 'laser', 'extinguisher', 'drill']);
+const WEAPONS = new Set(['repair', 'laser', 'heavy', 'extinguisher', 'drill']);
 const slotOf = (kind) => WEAPONS.has(kind) ? 'weapon' : 'item';
 
 // ---------------------------------------------------------------------------
@@ -132,9 +138,13 @@ function deliverEnergy() {
 function updatePower(dt) {
   const R = power.reactor;
   updateInserter(dt);
+  if (power.overcharge && broken(REACTOR)) power.overcharge = false;
   if (R.fuel > 0 && !broken(REACTOR) && !(enc.scram > 0)) {
-    R.t += dt;
-    if (R.t >= ENERGY_TIME) { R.t = 0; R.fuel--; deliverEnergy(); }
+    R.t += dt * (power.overcharge ? 2 : 1);
+    if (R.t >= ENERGY_TIME) {
+      R.t = 0; R.fuel--; deliverEnergy();
+      if (power.overcharge && Math.random() < OVERCHARGE_FIRE) igniteSystem(SYSTEMS.find(s => s.ref === REACTOR));
+    }
   }
   for (const b of power.bolts) {
     b.t += dt / 0.9;
@@ -235,11 +245,18 @@ function clickTarget(mx, my) {
   const R = REACTOR;
   if (Math.abs(mx - R.x) < R.w / 2 && Math.abs(my - R.y) < R.h / 2) {
     const t = { x: R.x, y: R.y, r: 1.9 };
-    const status = power.reactor.fuel ? `${power.reactor.fuel} energy left in the cell, next in ${Math.ceil(ENERGY_TIME - power.reactor.t)} s` : 'out of fuel';
-    if (inv.item !== 'fuel') return { ...t, text: `Reactor: ${status}`, ok: false };
-    if (!near(R.x, R.y, REACH + 1.4)) return { ...t, text: 'Reactor — get closer', ok: false };
-    if (power.reactor.fuel) return { ...t, text: `Reactor still has fuel (${power.reactor.fuel} energy left)`, ok: false };
-    return { ...t, ok: true, text: 'Click: load the fuel cell (push it in when the lock is green)', run: openSeat };
+    const status = power.reactor.fuel ? `${power.reactor.fuel} energy left in the cell, next in ${Math.ceil((ENERGY_TIME - power.reactor.t) / (power.overcharge ? 2 : 1))} s` : 'out of fuel';
+    const close = near(R.x, R.y, REACH + 1.4);
+    if (inv.item === 'fuel' && !power.reactor.fuel) {
+      if (!close) return { ...t, text: 'Reactor — get closer', ok: false };
+      return { ...t, ok: true, text: 'Click: load the fuel cell', run: () => { inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); sfx.poi(); combatBanner('Fuel cell loaded'); } };
+    }
+    if (power.overcharge && close)
+      return { ...t, ok: true, text: `Click: stop the overcharge (${status})`, run: () => { power.overcharge = false; sfx.clank(); combatBanner('Reactor back to normal speed'); } };
+    if (perk(player, 'overcharge') && close && !broken(REACTOR))
+      return { ...t, ok: true, text: `Click: overcharge the reactor — double speed, ${OVERCHARGE_FIRE * 100}% fire risk per energy (${status})`, run: () => { power.overcharge = true; sfx.spark(); combatBanner('Reactor OVERCHARGED — double speed, watch for fire'); } };
+    if (inv.item === 'fuel' && power.reactor.fuel) return { ...t, text: `Reactor still has fuel (${power.reactor.fuel} energy left)`, ok: false };
+    return { ...t, text: `Reactor: ${status}`, ok: false };
   }
   return null;
 }
@@ -250,15 +267,15 @@ function clickTarget(mx, my) {
 // Anyone can treat anyone by holding click on them for TREAT_TIME (down / out → hurt, hurt → ok).
 // Alone on the ship, someone who's out can still crawl back slowly (SOLO_TREAT s) — no softlocks.
 // ---------------------------------------------------------------------------
-const HURT_TIME = 30, SELF_TREAT = 10, SOLO_TREAT = 20;
-let TREAT_TIME = 2;
+const HURT_TIME = 30, SELF_TREAT = 10, SOLO_TREAT = 20, TREAT_TIME = 2;
+const hurtTime = (c) => perk(c, 'painkillers') ? 15 : HURT_TIME;
 const standing = (c) => (c.health || 'ok') === 'ok' || c.health === 'hurt';
 function hurtCrew(c) {
   if (!c) return;
   if (c.armor > 0) { c.armor--; combatBanner(`${c.name}'s armor vest took the hit`); sfx.clank(); return; }   // (gear: see progress.js)
   const h = c.health || 'ok';
   c.health = h === 'ok' ? 'hurt' : h === 'hurt' ? 'down' : 'out';
-  c.hurtT = HURT_TIME; c.treat = null;
+  c.hurtT = hurtTime(c); c.treat = null;
   if (c.health === 'down' || c.health === 'out') {
     if (c.mode === 'gun') { c.cover = 0; c.mode = 'inside'; [c.x, c.y] = c.gun.hatch; c.gun = null; }   // falls back down the ladder
     combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT — someone has to treat them!' : 'down!'}`);
@@ -271,11 +288,11 @@ function updateInjury(c, dt) {
 function treatInfo(who) {
   if (!who || standing(who) && who.health !== 'hurt') return null;
   if (who === player) {
-    if (who.health === 'down') return { time: perk(who, 'stim') ? 5 : who.kit?.profession === 'medic' ? 6 : SELF_TREAT, label: 'patch yourself up' };
+    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'medic') ? 6 : SELF_TREAT, label: 'patch yourself up' };
     if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'nobody can help — slowly patch yourself up' };
     return null;
   }
-  return standing(player) ? { time: player.kit?.profession === 'medic' ? Math.min(1, TREAT_TIME) : TREAT_TIME, label: `treat ${who.name}` } : null;
+  return standing(player) ? { time: perk(player, 'trauma') ? 0.7 : perk(player, 'medic') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
 }
 function updateTreat(dt, target, holding) {
   if (!target?.treat) { player.treat = null; return; }
@@ -292,7 +309,7 @@ function updateTreat(dt, target, holding) {
   player.treat.up = 0; player.treat.beat = Math.max(0, (player.treat.beat || 0) - dt * 3);
   player.treat.t += dt;
   if (player.treat.t >= target.time) {
-    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME;
+    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = hurtTime(who);
     sfx.poi(); combatBanner(who === player ? 'Patched up — still hurt for a while' : `${who.name} is back on their feet`);
     if (who !== player) hz.stats.treated[player.name] = (hz.stats.treated[player.name] || 0) + 1;
     player.treat = null;
@@ -304,7 +321,7 @@ function updateHold(dt, target, holding) {
   if (!holding || !target?.hold) { player.hold = null; return; }
   const h = target.hold;
   if (player.hold?.id !== h.id) player.hold = { id: h.id, t: 0, time: h.time };
-  player.hold.t += dt * (player.health === 'hurt' ? 0.8 : 1) * holdSpeed(player);
+  player.hold.t += dt * (player.health === 'hurt' ? 0.8 : 1) * repairSpeed(player);
   if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.hold.t >= h.time) { player.hold = null; h.done(); }
 }
@@ -318,7 +335,7 @@ function updateRepair(dt, target, holding) {
   if (!holding && player.repair && player.repair.t < 0.3 && target?.repair === player.repair.sys && !target.service) { const s = player.repair.sys; player.repair = null; openTape(s); return; }   // a quick click: the tape job
   if (!holding || !target?.repair) { player.repair = null; return; }
   if (player.repair?.sys !== target.repair) player.repair = { sys: target.repair, t: 0 };
-  player.repair.t += dt * holdSpeed(player);
+  player.repair.t += dt * repairSpeed(player);
   if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.repair.t >= REPAIR_TIME) {
     if (target.service) { mission.maint.serviced = true; combatBanner(`${player.repair.sys.name} serviced — it won't break now`); }
@@ -328,15 +345,53 @@ function updateRepair(dt, target, holding) {
   }
 }
 
-// Right click: use the weapon in hand. Laser: fast bolt. Repair kit: throw a wrench (long cooldown).
-function attack(mx, my) {
-  if (!inv.weapon || inv.weapon === 'extinguisher' || inv.weapon === 'drill' || inv.item === 'blackbox' || inv.cd > 0 || !(player.mode === 'inside' || player.mode === 'eva')) return;
-  const a = Math.atan2(my - player.y, mx - player.x), dx = Math.cos(a), dy = Math.sin(a);
+// The weapon in hand: right click towards the mouse, or Space the way you face (arrow keys aim).
+// The heavy blaster fires when you let go: a quick click is a shot, held until charged a blast.
+function updateWeapon(dt, mx, my) {
+  const keyHeld = keys.has('Space'), keyPressed = pressed.has('Space');
+  const mouseAim = () => Math.atan2(my - player.y, mx - player.x);
+  if (inv.weapon !== 'heavy') player.charge = null;
+  if (inv.weapon === 'heavy') {
+    if (player.charge == null && (mouse.rightClick || keyPressed) && canShoot()) { player.charge = 0; player.chargeKey = !mouse.rightClick; }
+    if (player.charge == null) return;
+    if (!canShoot(true)) { player.charge = null; return; }
+    const a = player.chargeKey ? player.face : mouseAim();
+    if (player.chargeKey ? keyHeld : mouse.right) { player.charge = Math.min(BLASTER_CHARGE, player.charge + dt); player.face = a; return; }
+    const blast = player.charge >= BLASTER_CHARGE; player.charge = null;
+    attack(a, blast);
+  } else if (mouse.rightClick) attack(mouseAim());
+  else if (keyPressed) attack(player.face);
+  if (inv.weapon === 'extinguisher' && player.mode === 'inside') {
+    if (mouse.right) spray(mx, my, dt);
+    else if (keyHeld) spray(player.x + Math.cos(player.face) * 2, player.y + Math.sin(player.face) * 2, dt);
+  }
+}
+function canShoot(ignoreCd = false) {
+  return !!inv.weapon && inv.weapon !== 'extinguisher' && inv.weapon !== 'drill' && inv.item !== 'blackbox' && (ignoreCd || inv.cd <= 0) && (player.mode === 'inside' || player.mode === 'eva');
+}
+const weaponCooldown = (w) => w === 'laser' ? LASER_COOLDOWN : w === 'heavy' ? BLASTER_COOLDOWN : WRENCH_COOLDOWN;
+// Fire the weapon in hand at angle a. Laser: fast bolt. Heavy blaster: slower 1-2 damage bolt, or a
+// charged blast. Repair kit: throw a wrench (long cooldown).
+function attack(a, blast = false) {
+  if (!canShoot()) return;
+  const dx = Math.cos(a), dy = Math.sin(a), x = player.x + dx * 0.4, y = player.y + dy * 0.4;
+  const fast = perk(player, 'weapons') ? 0.65 : 1;
   player.face = a;
   if (inv.weapon === 'laser') {
-    inv.cd = LASER_COOLDOWN * (player.kit?.profession === 'security' ? 0.65 : 1);
-    boarding.bolts.push({ x: player.x + dx * 0.4, y: player.y + dy * 0.4, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
+    inv.cd = LASER_COOLDOWN * fast;
+    boarding.bolts.push({ x, y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
     sfx.enemyShot();
+  } else if (inv.weapon === 'heavy') {
+    inv.cd = BLASTER_COOLDOWN * fast;
+    if (blast) {
+      boarding.bolts.push({ x, y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: 3, stun: 1, heavy: true });
+      if (player.mode === 'eva') combat.shells.push({ x, y, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE });   // hits like a ship cannon
+      for (let i = 0; i < 10; i++) combatFx(x, y, dx * 4 + (Math.random() - 0.5) * 3, dy * 4 + (Math.random() - 0.5) * 3, 0.3, '#9cd8ff', 0.1);
+      sfx.shoot();
+    } else {
+      boarding.bolts.push({ x, y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: Math.random() < 0.5 ? 1 : 2 });
+      sfx.enemyShot();
+    }
   } else if (inv.weapon === 'repair') {
     inv.cd = WRENCH_COOLDOWN;
     boarding.bolts.push({ x: player.x + dx * 0.4, y: player.y + dy * 0.4, vx: dx * WRENCH_SPEED, vy: dy * WRENCH_SPEED, life: 0.8, owner: 'crew', wrench: true, spin: 0 });
@@ -440,6 +495,12 @@ function drawItemIcon(kind, x, y, s = 1, t = 0) {
     rr(-10, 2, 6, 9, 2); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);
     ctx.fillStyle = '#ff6a4a'; ctx.fillRect(-8, -2, 10, 2.5);
     ctx.beginPath(); ctx.arc(15, 0, 2, 0, TAU); ctx.fillStyle = '#ffb0a0'; ctx.fill();
+  } else if (kind === 'heavy') {
+    rr(-16, -6, 26, 12, 3); ctx.fillStyle = '#4a5468'; ctx.fill(); stroke(2);                   // chunky body
+    rr(8, -4, 10, 8, 2); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);                     // muzzle
+    rr(-11, 4, 7, 9, 2); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);                     // grip
+    for (let i = 0; i < 3; i++) { ctx.fillStyle = '#9cd8ff'; ctx.fillRect(-12 + i * 6, -3, 4, 6); }   // charge cells
+    ctx.beginPath(); ctx.arc(18, 0, 2.5, 0, TAU); ctx.fillStyle = '#d8f0ff'; ctx.fill();
   } else if (kind === 'extinguisher') {
     extinguisher(-4, 0, 0);
   } else if (kind === 'plate') {
@@ -521,11 +582,11 @@ function drawSystemsHUD(top) {
     const x = x0 + i * 74;
     rr(x, y0, 66, 66, 8); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
     ctx.fillStyle = '#6b7486'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(slot === 'weapon' ? 'R-CLICK' : 'ITEM', x + 33, y0 + 4);
+    ctx.fillText(slot === 'weapon' ? 'R-CLICK/SPACE' : 'ITEM', x + 33, y0 + 4);
     if (inv[slot]) {
       drawItemIcon(inv[slot], x + 33, y0 + 36, 1.2);
       if (slot === 'weapon' && inv.cd > 0) {
-        const k = inv.cd / (inv.weapon === 'laser' ? LASER_COOLDOWN : WRENCH_COOLDOWN);
+        const k = Math.min(1, inv.cd / weaponCooldown(inv.weapon));
         ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(x + 2, y0 + 66 - 64 * k, 62, 64 * k);
       }
       ctx.fillStyle = '#c9ced8'; ctx.font = '10px system-ui, sans-serif'; ctx.textBaseline = 'bottom';
@@ -534,11 +595,11 @@ function drawSystemsHUD(top) {
   }
   ctx.textAlign = 'left';
   ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textBaseline = 'bottom';
-  ctx.fillText('Left click: interact · Right click: use weapon', x0, y0 - 4);
+  ctx.fillText('Left click / E: interact · Right click / Space: use weapon · Arrows: aim', x0, y0 - 4);
   // power panel
   const px = x0 + 156, R = power.reactor;
   const lines = [
-    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil(ENERGY_TIME - R.t)} s` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : '#c8ffe6'],
+    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil((ENERGY_TIME - R.t) / (power.overcharge ? 2 : 1))} s${power.overcharge ? ' · OVERCHARGED' : ''}` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : power.overcharge ? '#ffd28a' : '#c8ffe6'],
     [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve} · duct tape: ${hz.tape} · hull plates: ${hz.plates}`, '#c9ced8'],
     [`Capacitors  left ${CAPACITORS[0].charge}/${CAP_MAX}${capBroken(0) ? '✖' : ''}   mid ${CAPACITORS[1].charge}/${CAP_MAX}${capBroken(1) ? '✖' : ''}   right ${CAPACITORS[2].charge}/${CAP_MAX}${capBroken(2) ? '✖' : ''}`, '#9cd8ff'],
   ];

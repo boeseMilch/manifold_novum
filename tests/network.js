@@ -44,7 +44,7 @@ function client(name) {
     check(x1 > x0 + 1, `holding D moves Alice on the server (${x0.toFixed(1)} → ${x1.toFixed(1)})`);
     check(Math.abs(bx - x1) < 0.5, 'Bob sees Alice where she is');
     b.send({ t: 'cmd', cmd: ['debug', 'e'] }); await sleep(150);
-    check(a.state.caps.every(([ch]) => ch === 4), 'commands (debug: fill capacitors) are run by the server for everyone');
+    check(a.state.caps.every(([ch]) => ch === 3), 'commands (debug: fill capacitors) are run by the server for everyone');
     b.send({ t: 'cmd', cmd: ['debug', '1'] }); b.send({ t: 'cmd', cmd: ['debug', 'p'] }); await sleep(300);   // spawn an enemy, raise a shield (makes a sound)
     check(a.state.combat.enemies.length >= 1 && a.sfx > 0, `an enemy spawned and sounds are sent along (${a.sfx} sound events)`);
     // a browser-side copy can apply a real snapshot and draw it

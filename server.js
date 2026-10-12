@@ -81,7 +81,7 @@ const COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4'
 
 function lobbyState() {
   const unlocked = [...new Set([...clients].flatMap(c => c.unlocked || []))];
-  return { t: 'lobby', phase, mission: missionId, unlocked, players: [...clients].map(c => ({ id: c.id, name: c.name, color: COLORS[(c.id - 1) % COLORS.length], level: c.level || 1 })) };
+  return { t: 'lobby', phase, mission: missionId, unlocked, players: [...clients].map(c => ({ id: c.id, name: c.name, color: /^#[0-9a-f]{6}$/i.test(c.kit?.paint) ? c.kit.paint : COLORS[(c.id - 1) % COLORS.length], level: c.level || 1 })) };
 }
 const broadcast = (obj) => { const s = JSON.stringify(obj); for (const c of clients) sendFrame(c, s); };
 

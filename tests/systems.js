@@ -65,10 +65,7 @@ G.clickTarget(G.FUEL_CRATE.x, G.FUEL_CRATE.y).run();
 check(G.inv.item === 'fuel' && G.power.reserve === 2, 'clicking the crate takes a fuel cell (3 → 2 spare)');
 G.player.x = G.REACTOR.x - 2.5; G.player.y = G.REACTOR.y;
 G.clickTarget(G.REACTOR.x, G.REACTOR.y).run();
-check(G.ui.mini?.kind === 'seat', 'clicking the reactor with a fuel cell opens the seating mini-game');
-G.ui.mini.t0 = G.time;                       // needle at the start of the green zone
-G.miniCommand('seat');
-check(G.power.reactor.fuel === 5 && G.inv.item === null, 'pushing it in while the needle is green loads it (5 energy)');
+check(G.power.reactor.fuel === 5 && G.inv.item === null && !G.ui.panel, 'clicking the reactor with a fuel cell loads it right away (5 energy)');
 
 // --- inventory: grabbing into a full slot drops the old item where you stand
 reset(); G.inv.weapon = 'laser'; const before = G.ITEMS.length;

@@ -48,7 +48,6 @@ const PRACTICE = [
   // mini-games
   ['Mini-games', 'Radar dish', () => openRadar()],
   ['Mini-games', 'Oscilloscope (helm)', () => openScope()],
-  ['Mini-games', 'Seat a fuel cell', () => { power.reactor.fuel = 0; inv.item = 'fuel'; openSeat(); }],
   ['Mini-games', 'Patch board (arcs the left feed line)', () => { if (!surging('feed0')) hz.surges.push('feed0'); openPatch(); }],
   ['Mini-games', 'Tape job (breaks the nearest part)', () => { const s = nearestSys(); s.broken = true; inv.weapon = 'repair'; openTape(s); }],
   ['Mini-games', 'Crank a reload (front cannon, empty)', () => { const g = GUNS.find(g => g.id === 'front'); g.shots = 0; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); player.mode = 'gun'; player.gun = g; reloadCannon(g); }],
@@ -66,6 +65,8 @@ const PRACTICE = [
   ['Tools', 'Heal me', () => { player.health = 'ok'; player.hurtT = 0; }],
   ['Tools', 'Give: repair kit', () => give('repair')],
   ['Tools', 'Give: laser gun', () => give('laser')],
+  ['Tools', 'Give: heavy blaster', () => give('heavy')],
+  ['Tools', 'Overcharge the reactor', () => { power.overcharge = true; }],
   ['Tools', 'Give: extinguisher', () => give('extinguisher')],
   ['Tools', 'Give: hull plate', () => give('plate')],
   ['Tools', 'Go outside (left airlock)', () => { const h = HATCHES[0]; player.mode = 'eva'; player.gun = null; [player.x, player.y] = h.outside; }],

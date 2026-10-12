@@ -2,7 +2,6 @@
 // browser); actions arrive as commands ['mini', action, ...args], so solo and multiplayer work the same.
 //   radar dish      turn the dish by hand, ping, echoes come back from that direction only
 //   oscilloscope    the helm diagnosis: match two dials to the reference wave first
-//   seat            loading a fuel cell: push it in when the lock indicator is in the green
 //   patch board     next to the power lever: reroute which capacitor each lever output feeds
 //   tape            a quick (sloppy) repair: drag along the cracks; it breaks first at the next big hit
 //   crank           cannon reload: crank the breech (or hold R) to speed it up
@@ -10,7 +9,7 @@
 //   treat pulse     treating someone: clicking on the heartbeat speeds it up
 //   held shields    keep holding the button for +2 s of shield (1 more energy)
 
-const PING_CD = 2, SECTOR = Math.PI / 3, SEAT_SPEED = 2.4, SEAT_ZONE = 0.95, SEAT_PAUSE = 0.6;
+const PING_CD = 2, SECTOR = Math.PI / 3;
 const CRANK_K = 0.3, RELOAD_HOLD_RATE = 2.5, JUMP_PULL = 6, JUMP_PULL_TWO = 1.8;
 const PATCH_BOARD = { x: 20.0, y: 23.0 };
 const JUMP_HANDLE = { x: 20.6, y: -2.0 };
@@ -38,7 +37,6 @@ function openScope() {
   const ref = [r(), r()]; let dial = [r(), r()]; while (dial[0] === ref[0] && dial[1] === ref[1]) dial = [r(), r()];
   ui.panel = 'diagnosis'; ui.mini = { kind: 'scope', ref, dial, ok: false };
 }
-function openSeat() { ui.panel = 'mini'; ui.mini = { kind: 'seat', t0: time, fails: 0 }; }
 function openPatch() { ui.panel = 'mini'; ui.mini = { kind: 'patch', pick: null }; }
 function openTape(sys) { ui.panel = 'mini'; ui.mini = { kind: 'tape', sys: SYSTEMS.indexOf(sys), done: [false, false, false] }; }
 
@@ -52,8 +50,7 @@ function miniCommand(action, a, b) {
   else if (action === 'dial' && m?.kind === 'scope' && !m.ok) {
     m.dial[a] = clamp(m.dial[a] + Math.sign(b), 1, 7); sfx.clank();
     if (m.dial[0] === m.ref[0] && m.dial[1] === m.ref[1]) { m.ok = true; mission.diagRun = true; sfx.poi(); }
-  } else if (action === 'seat' && m?.kind === 'seat') seatCell(m);
-  else if (action === 'patch' && m?.kind === 'patch') {
+  } else if (action === 'patch' && m?.kind === 'patch') {
     if (a === 'out') m.pick = clamp(b | 0, 0, 2);
     else if (a === 'cap' && m.pick !== null) { power.patch[m.pick] = clamp(b | 0, 0, 2); m.pick = null; sfx.clank(); }
     else if (a === 'reset') { power.patch = [0, 1, 2]; sfx.clank(); }
@@ -93,16 +90,6 @@ function radarPing(m) {
     e.reveal = 3; m.blips.push({ a: DIR_ANGLE[dir], d: 0.1, t: -0.1, kind: 'stealth' });
   }
   combatBanner(dir ? `Radar (${dir}): ${n ? `${n} new contact${n > 1 ? 's' : ''}` : 'nothing new'} in the next ${RADAR_RANGE} s` : 'Radar: point the dish front, left or right');
-}
-
-// Seating a fuel cell: the lock indicator spins; push when it's in the green.
-const seatPhase = (m) => ((time - m.t0) * SEAT_SPEED) % TAU;
-function seatCell(m) {
-  if (time < m.t0) return;                               // still recoiling from a miss
-  if (seatPhase(m) < SEAT_ZONE) {
-    inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); sfx.poi();
-    combatBanner('Fuel cell seated'); ui.panel = null; ui.mini = null;
-  } else { m.fails++; m.t0 = time + SEAT_PAUSE; sfx.empty(); sfx.clank(); combatBanner('Clunk — it spat the cell back out. Push when it\'s in the green.'); }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +183,6 @@ function drawMiniPanel(t) {
   const m = ui.mini;
   if (!m) return;
   if (m.kind === 'radar') drawRadarPanel(m, t);
-  else if (m.kind === 'seat') drawSeatPanel(m, t);
   else if (m.kind === 'patch') drawPatchPanel(m, t);
   else if (m.kind === 'tape') drawTapePanel(m, t);
 }
@@ -235,18 +221,6 @@ function drawRadarPanel(m, t) {
   }
   if (m.static > 0) for (let i = 0; i < 300; i++) { ctx.fillStyle = `rgba(200,230,210,${Math.random() * 0.4 * m.static})`; ctx.fillRect(cx - r + Math.random() * 2 * r, cy - r + Math.random() * 2 * r, 2, 2); }
   miniButton(x + w / 2 - 80, y + h - 56, 160, 40, m.cd > 0 ? `PING (${m.cd.toFixed(1)} s)` : 'PING', ['mini', 'ping'], m.cd <= 0);
-}
-function drawSeatPanel(m, t) {
-  const w = 420, h = 340, [x, y] = panelFrame(w, h, 'REACTOR — seat the fuel cell');
-  const cx = x + w / 2, cy = y + 150, r = 80, ph = time < m.t0 ? 0 : seatPhase(m);
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fillStyle = '#1c2028'; ctx.fill(); stroke(3);
-  ctx.beginPath(); ctx.arc(cx, cy, r - 10, -Math.PI / 2, -Math.PI / 2 + SEAT_ZONE); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 14; ctx.stroke();   // the green zone
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(-Math.PI / 2 + ph);
-  ctx.fillStyle = '#ffe08a'; ctx.fillRect(0, -4, r - 4, 8); stroke(1.5); ctx.restore();
-  drawItemIcon('fuel', cx, cy, 2);
-  ctx.fillStyle = '#c9ced8'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Push when the needle is in the green. A miss spits the cell back out.', cx, cy + r + 24); ctx.textAlign = 'left';
-  miniButton(x + w / 2 - 90, y + h - 56, 180, 40, time < m.t0 ? 'CLUNK…' : 'PUSH IT IN', ['mini', 'seat'], time >= m.t0);
 }
 function drawPatchPanel(m, t) {
   const w = 460, h = 320, [x, y] = panelFrame(w, h, 'PATCH BOARD — which capacitor each lever output feeds');

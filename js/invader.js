@@ -310,6 +310,9 @@ function hurtInvader(a, dmg, stun = 0) {
   }
 }
 
+// What one of our bolts does: wrenches 3 (and a stun), heavy blaster shots carry their own damage.
+const boltDamage = (b) => b.dmg || (b.wrench ? 3 : 1);
+const boltStun = (b) => b.stun ?? (b.wrench ? 1.5 : 0);
 function updateBoarding(dt) {
   for (const a of boarding.invaders) updateInvader(a, dt);
   boarding.invaders = boarding.invaders.filter(a => !a.dead);
@@ -324,7 +327,7 @@ function updateBoarding(dt) {
     }
     if (b.owner === 'crew') {
       for (const a of boarding.invaders) {
-        if (a.state !== 'entering' && segCircle(x0, y0, b.x, b.y, a.x, a.y, 0.42)) { b.dead = true; hurtInvader(a, b.wrench ? 3 : 1, b.wrench ? 1.5 : 0); break; }
+        if (a.state !== 'entering' && segCircle(x0, y0, b.x, b.y, a.x, a.y, 0.42)) { b.dead = true; hurtInvader(a, boltDamage(b), boltStun(b)); break; }
       }
       // a near miss still gets its attention
       for (const a of boarding.invaders) if (a.state === 'wander' && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) { a.state = 'fight'; a.seen = 0; a.task = null; }
@@ -493,10 +496,10 @@ function drawBoarding(t) {
     if (b.wrench) { wrench(L(b.x), L(b.y), b.spin); continue; }
     const crew = b.owner === 'crew' || b.owner === 'pirate', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
     if (crew) {                                      // laser bolt: bright red streak (a pirate's fast shot: a long one)
-      const len = b.fast ? 2.2 : 0.7;
+      const len = b.fast ? 2.2 : 0.7, w = b.heavy ? 2.2 : b.dmg === 2 ? 1.5 : 1;   // heavy blaster: fatter (a charged blast: blue-white)
       ctx.beginPath(); ctx.moveTo(L(b.x), L(b.y)); ctx.lineTo(L(b.x - dx * len), L(b.y - dy * len));
-      ctx.strokeStyle = 'rgba(255,80,60,0.5)'; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.stroke();
-      ctx.strokeStyle = '#ffe0d8'; ctx.lineWidth = 2.5; ctx.stroke();
+      ctx.strokeStyle = b.heavy ? 'rgba(120,200,255,0.55)' : 'rgba(255,80,60,0.5)'; ctx.lineWidth = 7 * w; ctx.lineCap = 'round'; ctx.stroke();
+      ctx.strokeStyle = b.heavy ? '#f0f8ff' : '#ffe0d8'; ctx.lineWidth = 2.5 * w; ctx.stroke();
     } else {                                         // acid spit: green glob with a trail
       for (let i = 0; i < 3; i++) {
         ctx.beginPath(); ctx.arc(L(b.x - dx * i * 0.15), L(b.y - dy * i * 0.15), 6 - i * 1.6, 0, TAU);

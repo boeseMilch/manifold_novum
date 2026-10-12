@@ -460,7 +460,6 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   echoes; ion storm: static.
 - **Oscilloscope** (helm): match two dials (frequency, amplitude) to the reference wave before
   the diagnosis readings show.
-- **Seating a fuel cell:** push when the spinning needle is in the green; a miss spits it out.
 - **Patch board** (next to the lever): reroute which capacitor each lever output feeds (e.g.
   around an arcing feed line).
 - **Tape job:** a quick click with the repair kit on a broken part (instead of holding): drag along
@@ -521,11 +520,12 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   XP only if you're inside the ship and standing at the end (half without the objective);
   reputation for finished objectives (+1 the first time). Levels at 100/250/450/… XP.
 - **Ship upgrades** (reputation, `SHIP_UPGRADES`): spare cell, coffee machine, fuel inserter (with a
-  handle to scooch the cells out of its reach), efficient cannons (4 shots), second repair kit,
-  faster airlocks, long-range radar, shield capacitors (3 s), bigger capacitors (5), reinforced
-  hull, sprinklers, auto-doc. Multiplayer: the union of everyone's upgrades.
-- **Gear** (money, `GEAR`) and **professions** (level 2+): paint, gravity boots, thrusters, armor
-  vest, stim pack, toolbelt; engineer, gunner, medic, security. Sent to the server with `hello`.
+  handle to scooch the cells out of its reach), efficient cannons (4 shots), faster airlocks,
+  long-range radar, shield capacitors (3 s), bigger capacitors (4), reinforced hull, sprinklers.
+  Multiplayer: the union of everyone's upgrades.
+- **Gear** (money, `GEAR`) and **professions** (level 2+): gravity boots, thrusters, armor vest for
+  anyone; engineer, gunner, combat medic, weapons specialist, each with a gear track (see 8w). Suit
+  color is free, in the lobby. Sent to the server with `hello`.
 - **Profile:** versioned, cookie + localStorage, `migrateProfile()` reads any older version (see
   CLAUDE.md). Each browser credits its own player once per run (`mission.runId`).
 - **Lobby:** profile bar, Campaign / Skirmish / Practice tabs, briefing, Locker and Shipyard.
@@ -668,6 +668,36 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Removed the spare-suit wall racks from both airlock rooms: the "SUIT" labels were odd and the
   suits looked too much like crew members.
 
+### 8w. Profession tracks, keyboard controls, simpler reactor
+- **Removed:** the auto-doc and second repair kit ship upgrades (they fit better as personal
+  upgrades, and the professions already give starting gear), the paid suit paint (the suit color is
+  now a free pick in the lobby, also shown in the multiplayer crew list), and the fuel-seating
+  mini-game (clicking the empty reactor with a fuel cell loads it).
+- **Professions with gear tracks** (track gear only works in its profession; `perk()` checks):
+  - Engineer: own repair kit, repairs 20% faster. Toolbelt: another 25% (was 30% on every hold job
+    for anyone). Reactor overcharge: click the reactor to run it at double speed; each energy has a
+    10% chance to set it on fire. Anyone can switch it back off there.
+  - Combat medic: treats crewmates in 1.2 s (was 1 s; the auto-doc's number), self in 6 s. Trauma
+    kit: 0.7 s. Stim pack: self in 3 s. Painkillers: hurt slows you to 80% instead of 60%, and wears
+    off in 15 s instead of 30 s.
+  - Weapons specialist (was Security): own laser, fires 35% faster. Heavy blaster: 1-2 damage at 66%
+    of the laser's fire rate; hold to charge (1.5 s) a 3-damage blast, which on a spacewalk also flies
+    on as a cannon shell (hits ships, asteroids, drones, leeches like the ship cannon). 85% walking
+    speed while carrying it, 30% while charging.
+  - Gunner: unchanged.
+- **Gravity boots:** where the gravity failed you still walk (not float), at 80% speed.
+- **Capacitors** hold 3 (the bigger capacitors upgrade: 4).
+- **Keyboard:** WASD walks; the arrow keys aim in 8 directions while held (else you face the way you
+  walk); Space fires the weapon that way (also sprays the extinguisher, charges the heavy blaster).
+  E does what a click would on what's highlighted: under the mouse, or else the nearest thing in
+  reach, found by probing `clickTarget()` around you (hold E for repairs, treating and hold jobs, tap
+  E for a tape job). The prompt shows "E: …" and the target gets the dashed ring.
+- Profile v2: drops the old paint gear, auto-doc and second kit, renames Security to Weapons
+  specialist.
+- **Fuel vs. mission length** (normal speed: a cell = 5 energy = 100 s; 4 cells = 400 s): missions
+  jump at 247-312 s, so 1-1.5 cells are left over. Always overcharged, the 4 cells last 200 s, short
+  of every mission. Fuel left as it is for now.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
@@ -676,7 +706,9 @@ and the energy that side can have by then (simulated: auto lever, capacitor limi
 refuelling right away). Current result: every encounter is feasible even with 50% misses.
 The frigate is the tightest (it needs 5 energy and its side can have 5). The old
 6-asteroid swarm needed 11 energy from a capacitor that held 3, which made it impossible.
-To get there, capacitors now hold 4 and the frigate's heavy shot comes every 18 s.
+To get there, capacitors held 4 and the frigate's heavy shot comes every 18 s. With capacitors
+back at 3 (8w), the frigate with 50% misses is short again (needs 6, its side can have 4); with
+perfect aim it's fine, and the bigger capacitors upgrade restores 4.
 
 ## Sound
 

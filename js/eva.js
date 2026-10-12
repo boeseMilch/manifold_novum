@@ -136,7 +136,7 @@ function updateEva(dt) {
     const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4);
     if (m) { bo.dead = true; explodeMine(m, 'laser'); continue; }
     const b = evs.barnacles.find(b => Math.hypot(bo.x - b.x, bo.y - b.y) < 0.45);
-    if (b) { bo.dead = true; if (--b.hp <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
+    if (b) { bo.dead = true; if ((b.hp -= boltDamage(bo)) <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);
   // the canister drifts past, then it's gone

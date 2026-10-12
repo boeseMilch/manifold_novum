@@ -3,7 +3,7 @@
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
-  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission'];
+  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -86,6 +86,35 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G.simTick(1);
   check(!G.power.pulses.length, 'the pulse arrives and is gone');
 }
+// --- keyboard: arrows aim, Space shoots, E does what a click would
+{
+  const G = loadGame(NAMES); G.startMission('practice'); const me = G.me, k = me.input.keys, p = me.input.pressed;
+  me.x = 22.2; me.y = 4.5; const x0 = me.x, y0 = me.y;
+  k.add('ArrowUp'); tickN(G, 30);
+  check(Math.hypot(me.x - x0, me.y - y0) < 0.01 && Math.abs(me.face + Math.PI / 2) < 1e-6, 'arrow keys only aim (up), they don\'t walk');
+  k.add('ArrowRight'); tickN(G, 2);
+  check(Math.abs(me.face + Math.PI / 4) < 1e-6, 'two arrows: diagonal (8 directions)');
+  k.add('KeyA'); tickN(G, 30);
+  check(me.x < x0 - 0.5 && Math.abs(me.face + Math.PI / 4) < 1e-6, 'walking left while aiming up-right keeps facing up-right');
+  k.delete('ArrowUp'); k.delete('ArrowRight'); tickN(G, 5);
+  check(Math.abs(Math.abs(me.face) - Math.PI) < 0.1, 'let go of the arrows: you face the way you walk');
+  k.delete('KeyA'); tickN(G, 30);
+  me.inv.weapon = 'laser'; me.inv.cd = 0; G.boarding.bolts.length = 0; me.face = Math.PI / 2;
+  p.add('Space'); G.simTick(DT);
+  const b = G.boarding.bolts.find(b => b.owner === 'crew');
+  check(b && b.vy > 0 && Math.abs(b.vx) < 1e-6, 'Space fires the weapon the way you face');
+  // E picks up the item next to you (the mouse is somewhere else)
+  me.inv.weapon = null; G.ITEMS.length = 0; G.ITEMS.push({ kind: 'laser', x: me.x + 1, y: me.y });
+  me.input.mouse.wx = me.x - 8; me.input.mouse.wy = me.y; tickN(G, 12);
+  check(/^E: take the laser gun/.test(me.prompt?.text || ''), `the prompt says what E does ("${me.prompt?.text}")`);
+  p.add('KeyE'); k.add('KeyE'); G.simTick(DT); k.delete('KeyE'); G.simTick(DT);
+  check(me.inv.weapon === 'laser' && !G.ITEMS.length, 'E picks up the item next to you');
+  // hold E to repair
+  const s = G.SYSTEMS.find(s => s.kind === 'capacitor'); s.broken = true; me.inv.weapon = 'repair'; me.x = s.x; me.y = s.y - 0.9;
+  G.simTick(DT); p.add('KeyE'); k.add('KeyE');
+  tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
+  check(!s.broken, 'holding E on a broken part repairs it');
+}
 process.exitCode = failed ? 1 : 0;
 // --- the treadmill
 {
@@ -101,5 +130,34 @@ process.exitCode = failed ? 1 : 0;
   check(me.y > y0 + 0.3, 'standing still, the belt carries you off the back');
   me.x = B.x - 0.6; me.y = B.y + B.h / 2; me.input.keys.add('KeyD'); for (let i = 0; i < 60; i++) G.simTick(1 / 60); me.input.keys.delete('KeyD');
   check(me.x < B.x, 'the side rails keep you from stepping on sideways');
+}
+// --- keyboard: arrows aim, Space shoots, E does what a click would
+{
+  const G = loadGame(NAMES); G.startMission('practice'); const me = G.me, k = me.input.keys, p = me.input.pressed;
+  me.x = 22.2; me.y = 4.5; const x0 = me.x, y0 = me.y;
+  k.add('ArrowUp'); tickN(G, 30);
+  check(Math.hypot(me.x - x0, me.y - y0) < 0.01 && Math.abs(me.face + Math.PI / 2) < 1e-6, 'arrow keys only aim (up), they don\'t walk');
+  k.add('ArrowRight'); tickN(G, 2);
+  check(Math.abs(me.face + Math.PI / 4) < 1e-6, 'two arrows: diagonal (8 directions)');
+  k.add('KeyA'); tickN(G, 30);
+  check(me.x < x0 - 0.5 && Math.abs(me.face + Math.PI / 4) < 1e-6, 'walking left while aiming up-right keeps facing up-right');
+  k.delete('ArrowUp'); k.delete('ArrowRight'); tickN(G, 5);
+  check(Math.abs(Math.abs(me.face) - Math.PI) < 0.1, 'let go of the arrows: you face the way you walk');
+  k.delete('KeyA'); tickN(G, 30);
+  me.inv.weapon = 'laser'; me.inv.cd = 0; G.boarding.bolts.length = 0; me.face = Math.PI / 2;
+  p.add('Space'); G.simTick(DT);
+  const b = G.boarding.bolts.find(b => b.owner === 'crew');
+  check(b && b.vy > 0 && Math.abs(b.vx) < 1e-6, 'Space fires the weapon the way you face');
+  // E picks up the item next to you (the mouse is somewhere else)
+  me.inv.weapon = null; G.ITEMS.length = 0; G.ITEMS.push({ kind: 'laser', x: me.x + 1, y: me.y });
+  me.input.mouse.wx = me.x - 8; me.input.mouse.wy = me.y; tickN(G, 12);
+  check(/^E: take the laser gun/.test(me.prompt?.text || ''), `the prompt says what E does ("${me.prompt?.text}")`);
+  p.add('KeyE'); k.add('KeyE'); G.simTick(DT); k.delete('KeyE'); G.simTick(DT);
+  check(me.inv.weapon === 'laser' && !G.ITEMS.length, 'E picks up the item next to you');
+  // hold E to repair
+  const s = G.SYSTEMS.find(s => s.kind === 'capacitor'); s.broken = true; me.inv.weapon = 'repair'; me.x = s.x; me.y = s.y - 0.9;
+  G.simTick(DT); p.add('KeyE'); k.add('KeyE');
+  tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
+  check(!s.broken, 'holding E on a broken part repairs it');
 }
 process.exitCode = failed ? 1 : 0;

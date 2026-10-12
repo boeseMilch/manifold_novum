@@ -72,17 +72,18 @@ this should feel close to playing solo.
 
 | | |
 |---|---|
-| WASD / arrows | move |
+| WASD | move |
+| Arrow keys | aim (8 directions) while held; otherwise you face the way you walk |
 | Left click | interact with whatever you point at: airlocks, ladders, hatches, shield buttons, consoles, items, manual override. Hold to repair (with the repair kit) or to treat someone |
-| Right click | use your weapon: laser gun, thrown wrench, hold to spray the extinguisher |
+| E | the same as a click on what's highlighted: under the mouse, or else the nearest thing in reach (hold E for repairs and treating) |
+| Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), thrown wrench, hold to spray the extinguisher |
 | In a cannon | mouse to aim, left click / Space to fire, hold right click / Shift to raise cover, R or the button to reload (1 energy), the CLIMB DOWN button to leave |
 | Tab | hold for a ship overview |
 | M | mute (or the speaker button, top left) |
 | P | practice panel (in practice mode) |
 | ` | debug menu (spawn threats, teleport, …) |
 
-The prompt at the bottom of the screen always says what a click will do. (E still works as a
-shortcut for the prompt.)
+The prompt above you always says what a click (or E) will do.
 
 ## Campaign, progression, practice
 
@@ -91,10 +92,13 @@ shortcut for the prompt.)
 - **Rewards:** if the ship jumps out, the crew gets paid (more when the objective is done; some
   chapters pay per pirate). XP only if you're back aboard and on your feet at the end.
   Reputation comes from finished objectives.
-- **Locker** (money): suit paint, gravity boots, suit thrusters, armor vest, stim pack, toolbelt;
-  from level 2 a profession (engineer, gunner, medic, security).
+- **Suit color:** pick it in the lobby (free).
+- **Locker** (money): gravity boots, suit thrusters, armor vest; from level 2 a profession
+  (engineer, gunner, combat medic, weapons specialist), and gear for your profession's track:
+  engineer (toolbelt, reactor overcharge), combat medic (trauma kit, stim pack, painkillers),
+  weapons specialist (heavy blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
-  bigger capacitors, shield capacitors, reinforced hull, sprinklers, auto-doc, … In multiplayer the
+  bigger capacitors, shield capacitors, reinforced hull, sprinklers, … In multiplayer the
   ship gets every upgrade anyone in the crew has bought.
 - Progress is saved in your browser (a cookie), separately for each player.
 - **Skirmish:** standalone missions, from the easy intro to Nightmare.

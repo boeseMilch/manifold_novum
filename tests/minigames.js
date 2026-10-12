@@ -1,8 +1,8 @@
-// Station mini-games: radar dish, oscilloscope, fuel cell seating, patch board, tape job, cannon crank,
+// Station mini-games: radar dish, oscilloscope, patch board, tape job, cannon crank,
 // held shields, the jump handle, heartbeat treatment. Run: node tests/minigames.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'openRadar', 'openScope', 'openSeat',
-  'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'hurtCrew', 'netServer', 'evs', 'enc', 'SEAT_SPEED'];
+const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'openRadar', 'openScope',
+  'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'hurtCrew', 'netServer', 'evs', 'enc'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -32,17 +32,6 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
   check(!m.ok && !G.mission.diagRun, 'the diagnosis needs the scope calibrated first');
   for (let k = 0; k < 2; k++) while (m.dial[k] !== m.ref[k]) cmd(G, ['mini', 'dial', k, Math.sign(m.ref[k] - m.dial[k])]);
   check(m.ok && G.mission.diagRun, 'matching both dials calibrates it and shows the readings');
-}
-// --- seating a fuel cell
-{
-  const G = loadGame(NAMES); G.startMission('intro');
-  G.withCrew(G.me, () => { G.inv.item = 'fuel'; G.power.reactor.fuel = 0; G.openSeat(); });
-  G.me.ui.mini.t0 = G.time - Math.PI / G.SEAT_SPEED;          // needle half way round: red
-  cmd(G, ['mini', 'seat']);
-  check(G.power.reactor.fuel === 0 && G.me.inv.item === 'fuel', 'pushing in the red spits the cell back out');
-  G.me.ui.mini.t0 = G.time;
-  cmd(G, ['mini', 'seat']);
-  check(G.power.reactor.fuel === 5 && !G.me.ui.panel, 'pushing in the green seats it');
 }
 // --- patch board
 {

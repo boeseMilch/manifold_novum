@@ -10,7 +10,7 @@
 // PROFILES ARE SAVED IN PLAYERS' BROWSERS: keep loadProfile() able to read every older version
 // (bump PROFILE_VERSION and add a migration step; never rename or drop fields without one).
 
-const PROFILE_VERSION = 1;
+const PROFILE_VERSION = 2;
 const XP_LEVELS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000];
 const levelOf = (xp) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEVELS[l]) l++; return l; };
 
@@ -22,31 +22,33 @@ const SHIP_UPGRADES = [
   { id: 'coffee', name: 'Proper coffee machine', rep: 2, desc: 'The helm mug refills in 20 s instead of a minute.' },
   { id: 'inserter', name: 'Reactor fuel inserter', rep: 3, desc: 'Loads the next fuel cell into an empty reactor by itself. Scooch the cells left (click the crate\'s handle) to stop it.' },
   { id: 'cannons', name: 'Efficient cannons', rep: 3, desc: '4 shots per energy instead of 3.' },
-  { id: 'kit2', name: 'Second repair kit', rep: 3, desc: 'A second repair kit in the right airlock room.' },
   { id: 'airlocks', name: 'Faster airlock pumps', rep: 3, desc: 'Deck airlocks cycle in 0.7 s instead of 1.3 s.' },
   { id: 'radar', name: 'Long-range radar', rep: 4, desc: 'The radar sees 60 s ahead instead of 45 s.' },
   { id: 'shields', name: 'Shield capacitors', rep: 4, desc: 'Shields stay up 3 s instead of 2 s.' },
-  { id: 'caps', name: 'Bigger capacitors', rep: 5, desc: 'Capacitors hold 5 energy instead of 4.' },
+  { id: 'caps', name: 'Bigger capacitors', rep: 5, desc: 'Capacitors hold 4 energy instead of 3.' },
   { id: 'hull', name: 'Reinforced hull', rep: 5, desc: 'A side has to take two big hits before the next one breaches it.' },
   { id: 'sprinklers', name: 'Fire sprinklers', rep: 5, desc: 'Fires spread every 22 s instead of 15 s.' },
-  { id: 'autodoc', name: 'Auto-doc', rep: 6, desc: 'Treating a crewmate takes 1.2 s instead of 2 s.' },
 ];
 // ---------------------------------------------------------------------------
-// Personal gear (money) and professions (level 2+)
+// Personal gear (money): general gear for anyone, and a track of gear per profession (level 2+;
+// only usable in that profession).
 // ---------------------------------------------------------------------------
 const GEAR = [
-  { id: 'paint', name: 'Custom suit paint', cost: 50, level: 1, desc: 'Pick your own suit color.' },
-  { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster, and walk normally where the gravity has failed.' },
+  { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster. Where the gravity has failed you still walk (at 80%) instead of floating.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, level: 2, desc: 'Spacewalk 30% faster.' },
   { id: 'armor', name: 'Armor vest', cost: 220, level: 3, desc: 'Shrugs off the first hit you take each mission.' },
-  { id: 'stim', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 5 s instead of 10 s.' },
-  { id: 'toolbelt', name: 'Toolbelt', cost: 300, level: 5, desc: 'Repairs and other hold-click jobs go 30% faster.' },
+  { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, level: 3, desc: 'Repairs go another 25% faster.' },
+  { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, level: 4, desc: 'Click the reactor to overcharge it: double speed, but each energy has a 10% chance to set it on fire.' },
+  { id: 'trauma', prof: 'medic', name: 'Trauma kit', cost: 200, level: 3, desc: 'Treat crewmates in 0.7 s.' },
+  { id: 'stim', prof: 'medic', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 3 s.' },
+  { id: 'painkillers', prof: 'medic', name: 'Painkillers', cost: 300, level: 5, desc: 'Being hurt slows you down less, and wears off in 15 s instead of 30 s.' },
+  { id: 'heavy', prof: 'weapons', name: 'Heavy blaster', cost: 300, level: 3, desc: 'Start with a heavy blaster: 1-2 damage, fires slower. Hold to charge a 3-damage blast that hits like a ship cannon outside. You walk a bit slower with it, and very slowly while charging.' },
 ];
 const PROFESSIONS = [
   { id: 'engineer', name: 'Engineer', desc: 'Starts with a repair kit of their own. Repairs 20% faster.' },
   { id: 'gunner', name: 'Gunner', desc: 'Cranks cannon reloads 50% faster.' },
-  { id: 'medic', name: 'Medic', desc: 'Treats crewmates in 1 s. Patches themselves up in 6 s.' },
-  { id: 'security', name: 'Security', desc: 'Starts with a laser gun of their own, and fires it faster.' },
+  { id: 'medic', name: 'Combat medic', desc: 'Treats crewmates in 1.2 s instead of 2 s. Patches themselves up in 6 s.' },
+  { id: 'weapons', name: 'Weapons specialist', desc: 'Starts with a laser gun of their own, and fires it faster.' },
 ];
 const PAINTS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#e8e4dc', '#2b303a', '#ff7ab0'];
 
@@ -132,36 +134,43 @@ function applyShipUpgrades(ship = {}) {
   const has = (id) => !!ship[id];
   SHOTS_PER_ENERGY = has('cannons') ? 4 : 3;
   SHIELD_UP_TIME = has('shields') ? 3 : 2;
-  CAP_MAX = has('caps') ? 5 : 4;
+  CAP_MAX = has('caps') ? 4 : 3;
   FIRE_TIME = has('sprinklers') ? 22 : 15;
   RADAR_RANGE = has('radar') ? 60 : 45;
   LOCK_CYCLE = has('airlocks') ? 0.7 : 1.3;
   COFFEE_REFILL = has('coffee') ? 20 : 60;
-  TREAT_TIME = has('autodoc') ? 1.2 : 2;
 }
 // At mission start: the ship's one-off extras.
 function shipStartExtras(ship = {}) {
   if (ship.spareCell) power.reserve += 1;
   power.inserter = ship.inserter ? { on: true, t: 0 } : null;
-  if (ship.kit2 && ITEMS.filter(i => i.kind === 'repair').length < 2) ITEMS.push({ kind: 'repair', x: 34.6, y: 21.2 });
   hz.hullTough = !!ship.hull;
 }
-const perk = (c, id) => !!(c?.kit?.gear?.[id]) || c?.kit?.profession === id;
+// perk(c, id): a profession id, or a piece of gear (profession gear only counts in its profession).
+const perk = (c, id) => {
+  if (c?.kit?.profession === id) return true;
+  if (!c?.kit?.gear?.[id]) return false;
+  const g = GEAR.find(g => g.id === id);
+  return !g?.prof || g.prof === c.kit.profession;
+};
+const isPaint = (p) => typeof p === 'string' && /^#[0-9a-f]{6}$/i.test(p);
 // A player's kit (gear, profession, paint) on their crew member; starting items from the profession.
 function applyKit(c, kit) {
-  c.kit = kit ? { gear: { ...(kit.gear || {}) }, profession: kit.profession || null, paint: kit.paint || null } : { gear: {}, profession: null };
-  if (c.kit.gear.paint && c.kit.paint) c.color = c.kit.paint;
+  c.kit = kit ? { gear: { ...(kit.gear || {}) }, profession: kit.profession || null, paint: isPaint(kit.paint) ? kit.paint : null } : { gear: {}, profession: null };
+  if (c.kit.paint) c.color = c.kit.paint;
   c.armor = c.kit.gear.armor ? 1 : 0;
-  if (c.kit.profession === 'engineer' && !c.inv.weapon) c.inv.weapon = 'repair';
-  if (c.kit.profession === 'security' && !c.inv.weapon) c.inv.weapon = 'laser';
+  if (perk(c, 'engineer') && !c.inv.weapon) c.inv.weapon = 'repair';
+  if (perk(c, 'weapons') && (!c.inv.weapon || c.inv.weapon === 'laser')) c.inv.weapon = perk(c, 'heavy') ? 'heavy' : 'laser';
 }
-// Speed multiplier from gear (used by updateCrew).
+// Speed multiplier from gear and what you carry (used by updateCrew).
 function gearSpeed(c) {
-  if (c.mode === 'eva') return perk(c, 'thrusters') ? 1.3 : 1;
-  return perk(c, 'boots') ? 1.15 : 1;
+  const carry = c.inv?.weapon === 'heavy' ? (c.charge > BLASTER_SLOW_AFTER ? BLASTER_CHARGE_SPEED : BLASTER_CARRY_SPEED) : 1;
+  if (c.mode === 'eva') return (perk(c, 'thrusters') ? 1.3 : 1) * carry;
+  if (c.mode === 'inside' && noGravAt(c.x, c.y) && perk(c, 'boots')) return 0.8 * carry;   // boots: still walking, a bit slower
+  return (perk(c, 'boots') ? 1.15 : 1) * carry;
 }
-// Hold-click jobs (repairs etc.): speed multiplier for this crew member.
-const holdSpeed = (c) => (perk(c, 'toolbelt') ? 1.3 : 1) * (c?.kit?.profession === 'engineer' ? 1.2 : 1);
+// Repairs: speed multiplier for this crew member.
+const repairSpeed = (c) => (perk(c, 'engineer') ? 1.2 : 1) * (perk(c, 'toolbelt') ? 1.25 : 1);
 // The inserter: an empty reactor gets the next cell from the crate, unless the cells are scooched away.
 function updateInserter(dt) {
   const I = power.inserter;
@@ -217,7 +226,10 @@ function migrateProfile(p) {
   const out = { ...defaultProfile(), ...p };
   for (const k of ['done', 'ship', 'gear']) out[k] = { ...(p[k] && typeof p[k] === 'object' ? p[k] : {}) };
   out.xp = +out.xp || 0; out.money = +out.money || 0; out.rep = +out.rep || 0;
-  // (future: if (p.v < 2) { …convert… })
+  if (!(p.v >= 2)) {                       // v2: suit paint is free (lobby), auto-doc and second kit are gone, Security → Weapons specialist
+    delete out.gear.paint; delete out.ship.autodoc; delete out.ship.kit2;
+    if (out.profession === 'security') out.profession = 'weapons';
+  }
   out.v = PROFILE_VERSION;
   return out;
 }
@@ -293,6 +305,11 @@ const lobbyUI = {
     this.el('lobby-profile').innerHTML = `<b>Level ${lv}</b>${p.profession ? ` · ${PROFESSIONS.find(x => x.id === p.profession)?.name}` : ''}
       <span class="bar"><i style="width:${next ? Math.round((p.xp - prev) / (next - prev) * 100) : 100}%"></i></span>
       <span>${p.xp} XP</span><span>$${p.money}</span><span>★ ${p.rep} reputation</span>`;
+    const paint = this.el('lobby-paint');                    // suit color: free, saved in the profile
+    if (paint) {
+      paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}" title="Suit color"></button>`).join('');
+      paint.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => { p.paint = p.paint === b.dataset.paint ? null : b.dataset.paint; saveProfile(p); this.render(); this.onProfile?.(); });
+    }
     for (const b of document.querySelectorAll('#lobby-tabs button')) b.classList.toggle('chosen', b.dataset.tab === this.tab);
     const ids = this.tab === 'campaign' ? CAMPAIGN : this.tab === 'skirmish' ? SKIRMISH : ['practice'];
     const avail = this.available(), list = this.el('lobby-missions');
@@ -320,9 +337,13 @@ const lobbyUI = {
     let html = '';
     if (kind === 'locker') {
       html += `<h4>Profession ${lv < 2 ? '(from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => `<button class="item${p.profession === x.id ? ' chosen' : ''}" data-prof="${x.id}" ${lv < 2 ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('') + '</div>';
-      html += '<h4>Gear</h4><div class="grid">' + GEAR.map(g => { const own = p.gear[g.id], ok = !own && p.money >= g.cost && lv >= g.level;
+      const gearButtons = (list) => '<div class="grid">' + list.map(g => { const own = p.gear[g.id], ok = !own && p.money >= g.cost && lv >= g.level && (!g.prof || p.profession === g.prof);
         return `<button class="item${own ? ' chosen' : ''}" data-gear="${g.id}" ${ok ? '' : 'disabled'}><b>${g.name} ${own ? '✔' : `· $${g.cost}${lv < g.level ? ` · level ${g.level}` : ''}`}</b><span>${g.desc}</span></button>`; }).join('') + '</div>';
-      if (p.gear.paint) html += '<h4>Suit color</h4><div class="paints">' + PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}"></button>`).join('') + '</div>';
+      html += '<h4>Gear</h4>' + gearButtons(GEAR.filter(g => !g.prof));
+      for (const x of PROFESSIONS) {
+        const track = GEAR.filter(g => g.prof === x.id);
+        if (track.length) html += `<h4>${x.name} track${p.profession === x.id ? '' : ' (only as ' + x.name.toLowerCase() + ')'}</h4>` + gearButtons(track);
+      }
     } else {
       html += '<div class="grid">' + SHIP_UPGRADES.map(u => { const own = p.ship[u.id], ok = !own && p.rep >= u.rep;
         return `<button class="item${own ? ' chosen' : ''}" data-ship="${u.id}" ${ok ? '' : 'disabled'}><b>${u.name} ${own ? '✔' : `· ★${u.rep}`}</b><span>${u.desc}</span></button>`; }).join('') + '</div>';
@@ -331,7 +352,6 @@ const lobbyUI = {
     box.innerHTML = html;
     box.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => { p.profession = b.dataset.prof; this.saved(kind); });
     box.querySelectorAll('[data-gear]').forEach(b => b.onclick = () => { const g = GEAR.find(x => x.id === b.dataset.gear); if (p.money >= g.cost) { p.money -= g.cost; p.gear[g.id] = true; this.saved(kind); } });
-    box.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => { p.paint = b.dataset.paint; this.saved(kind); });
     box.querySelectorAll('[data-ship]').forEach(b => b.onclick = () => { const u = SHIP_UPGRADES.find(x => x.id === b.dataset.ship); if (p.rep >= u.rep) { p.rep -= u.rep; p.ship[u.id] = true; this.saved(kind); } });
     this.el('shop').hidden = false;
   },

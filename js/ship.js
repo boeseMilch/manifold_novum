@@ -53,7 +53,7 @@ const DECK_LOCKS = COLS.map((C0, col) => {
 
 
 // Capacitors: one in every bottom room, each starting at 1 charge.
-let CAP_MAX = 4;                                   // (ship upgrades can raise it; see progress.js)
+let CAP_MAX = 3;                                   // (ship upgrades can raise it; see progress.js)
 const CAPACITORS = [
   { room: 'portLock', x: 6.6, y: 22.6, charge: 1 },
   { room: 'reactor', x: 27.0, y: 24.9, charge: 1 },

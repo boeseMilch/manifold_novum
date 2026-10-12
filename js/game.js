@@ -20,7 +20,7 @@ const makeInput = () => ({ keys: new Set(), pressed: new Set(), mouse: { x: 0, y
 const localInput = makeInput();
 window.addEventListener('keydown', e => {
   if (e.target?.tagName === 'INPUT') return;                 // typing in the lobby
-  if (e.code === 'Tab' || e.code === 'Space') e.preventDefault();
+  if (e.code === 'Tab' || e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   if (!localInput.keys.has(e.code)) localInput.pressed.add(e.code); localInput.keys.add(e.code);
 });
 window.addEventListener('keyup', e => localInput.keys.delete(e.code));
@@ -44,7 +44,7 @@ const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
 const CREW_R = 0.2;                          // half-size of the crew collision box
 const LOCK_DOOR_TIME = 0.55;
 let LOCK_CYCLE = 1.3;                        // deck airlock: per door, and pressure cycle (upgradeable)
-const HURT_SPEED = 0.6;                       // walking speed while hurt
+const HURT_SPEED = 0.6;                       // walking speed while hurt (painkillers: 0.8)
 const HATCH_TIME = 1.6;                      // going through an outer airlock
 const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
@@ -112,7 +112,8 @@ function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.
 function updateCrew(c, dt, ix, iy) {
   if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
   const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y) && !perk(c, 'boots'));
-  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1) * crewSpeedMul(c) * (c.slow || 1) * gearSpeed(c);
+  const hurt = c.health === 'hurt' ? (perk(c, 'painkillers') ? 0.8 : HURT_SPEED) : 1;
+  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * hurt * crewSpeedMul(c) * (c.slow || 1) * gearSpeed(c);
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
   const k = Math.min(1, (floaty ? EVA_ACCEL * (eva ? 1 : 0.5) : WALK_ACCEL) * dt / speed);
   c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);
@@ -128,7 +129,8 @@ function updateCrew(c, dt, ix, iy) {
     if (len) c.walk += belt * dt * 3.2;                       // (and your legs keep going)
   }
   const sp = Math.hypot(c.vx, c.vy);
-  if (len && sp > 0.3) c.face = Math.atan2(c.vy, c.vx);
+  if (c.aim != null && standing(c)) c.face = c.aim;               // arrow keys: point that way
+  else if (len && sp > 0.3) c.face = Math.atan2(c.vy, c.vx);       // otherwise: the way you walk
   c.walk += sp * dt * (eva ? 1.2 : 3.2);
 }
 
@@ -224,9 +226,12 @@ function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zo
 
 function updatePlayer(dt) {
   const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
-  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); }
-  const ix = block ? 0 : (held('KeyD', 'ArrowRight') ? 1 : 0) - (held('KeyA', 'ArrowLeft') ? 1 : 0);
-  const iy = block ? 0 : (held('KeyS', 'ArrowDown') ? 1 : 0) - (held('KeyW', 'ArrowUp') ? 1 : 0);
+  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); player.eUsed = true; }
+  if (!keys.has('KeyE')) player.eUsed = false;           // (E that did something stays used until it's let go)
+  const ix = block ? 0 : (held('KeyD') ? 1 : 0) - (held('KeyA') ? 1 : 0);   // WASD walks, the arrow keys aim
+  const iy = block ? 0 : (held('KeyS') ? 1 : 0) - (held('KeyW') ? 1 : 0);
+  const ax = block ? 0 : (held('ArrowRight') ? 1 : 0) - (held('ArrowLeft') ? 1 : 0), ay = block ? 0 : (held('ArrowDown') ? 1 : 0) - (held('ArrowUp') ? 1 : 0);
+  player.aim = ax || ay ? Math.atan2(ay, ax) : null;
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
 
@@ -244,7 +249,7 @@ function updatePlayer(dt) {
       const [wx, wy] = mouseWorld();
       g.aim = Math.atan2(wy - g.y, wx - g.x);
     }
-    g.aim += ix * GUN_TURN * dt;
+    g.aim += (ix + ax) * GUN_TURN * dt;
     const d = wrapAngle(g.aim - g.a);
     const arc = gunArc(g);
     g.aim = g.a + clamp(d, -arc, arc);
@@ -349,23 +354,50 @@ function act(p) {
   if (!p.run) return;
   if ((debugOpen && player === me) || ui.panel || mission.over) return;
   const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r && !clickTarget(m[0], m[1])?.ok;   // something more specific under the mouse wins
-  if ((mouse.click && onIt) || (pressed.has('KeyE') && !ui.panel)) { mouse.click = false; pressed.delete('KeyE'); p.run(); }
+  const eForMe = pressed.has('KeyE') && !ui.panel && !hover?.ok;   // (E on something highlighted under the mouse goes there)
+  if ((mouse.click && onIt) || eForMe) { mouse.click = false; if (eForMe) player.eUsed = true; pressed.delete('KeyE'); p.run(); }
 }
 
 // Mouse in the world: left click grabs / uses / repairs (hold), right click attacks.
+// E does the same as a click on whatever is highlighted: under the mouse, or else the nearest thing
+// in reach (hold E for hold jobs). Space fires the weapon the way you face.
 function updateInteraction(dt) {
   hover = null;
-  if (mission.over || ui.panel) { player.repair = null; player.treat = null; player.hold = null; return; }
-  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; return; }
+  if (mission.over || ui.panel) { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
+  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
   const [mx, my] = mouseWorld();
   hover = pickHover(player, mx, my);
-  if (hover?.run && mouse.click) { hover.run(); mouse.click = false; }
-  updateRepair(dt, hover, mouse.down);
-  updateHold(dt, hover, mouse.down);
-  updateTreat(dt, hover, mouse.down);
-  if (!standing(player)) return;                     // down: no weapons
-  if (mouse.rightClick) attack(mx, my);
-  if (mouse.right && inv.weapon === 'extinguisher' && player.mode === 'inside') spray(mx, my, dt);
+  let target = hover, holding = mouse.down, click = mouse.click;
+  const eDown = keys.has('KeyE') && !player.eUsed, eTap = pressed.has('KeyE') && !player.eUsed;
+  if (!mouse.down) {
+    const e = hover?.ok ? hover : nearbyTarget(eDown || eTap);
+    if (e && !hover?.ok && !prompt?.run && !prompt?.screen)            // show what E would do
+      prompt = { text: e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r } };
+    if (eDown || eTap || (player.eHeld && !keys.has('KeyE'))) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
+  }
+  player.eHeld = eDown;
+  if (target?.run && click) { target.run(); mouse.click = false; player.eUsed = true; }
+  updateRepair(dt, target, holding);
+  updateHold(dt, target, holding);
+  updateTreat(dt, target, holding);
+  if (!standing(player)) { player.charge = null; return; }      // down: no weapons
+  updateWeapon(dt, mx, my);
+}
+// The nearest thing in reach that a click would do something with (for E). Rescanned every tick
+// while E is down, otherwise a few times a second (it's only shown as a prompt then).
+function nearbyTarget(now) {
+  if (!now && player.eScan && time - player.eScan.t < 0.15) return player.eScan.target;
+  let best = null, bd = Infinity;
+  if (player.mode === 'inside' || player.mode === 'eva')
+    for (let gx = -REACH; gx <= REACH; gx += 0.3) for (let gy = -REACH; gy <= REACH; gy += 0.3) {
+      if (gx * gx + gy * gy > REACH * REACH) continue;
+      const t = clickTarget(player.x + gx, player.y + gy);
+      if (!t?.ok || !(t.run || t.repair || t.treat || t.hold)) continue;
+      const d = Math.hypot(t.x - player.x, t.y - player.y);
+      if (d < bd) { bd = d; best = t; }
+    }
+  player.eScan = { t: time, target: best };
+  return best;
 }
 
 function climbDown() {
@@ -568,6 +600,14 @@ function drawInjuryOverlay(t) {
   }
 }
 
+// Charging the heavy blaster: a growing orb at the muzzle; fully charged it flickers blue-white.
+function drawBlasterCharge(c, t) {
+  const k = clamp(c.charge / BLASTER_CHARGE, 0, 1), full = k >= 1;
+  const x = (c.x + Math.cos(c.face) * 0.42) * T, y = (c.y + Math.sin(c.face) * 0.42) * T, r = T * (0.06 + 0.16 * k) * (full ? 1 + 0.15 * Math.sin(t * 30) : 1);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, full ? '#9cd8ff' : '#ffb07a'); g.addColorStop(1, 'rgba(120,200,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2, 0, TAU); ctx.fill();
+}
 function drawCrewOutside(c, t) {
   if (c.mode === 'eva') {                     // safety line back to the nearest hatch
     const h = HATCHES.reduce((a, b) => Math.hypot(c.x - a.outside[0], c.y - a.outside[1]) < Math.hypot(c.x - b.outside[0], c.y - b.outside[1]) ? a : b);
@@ -631,6 +671,7 @@ function render(t) {
   for (const s of SYSTEMS) if (s.broken) drawBroken(s, t);
   drawEnergyBolts();
   drawClickTarget(me.hover);
+  if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true });   // what E would do
   for (const c of crew) {
     if (!standing(c)) drawCrewDown(c, t);
     else if (c.mode === 'inside' || c.mode === 'hatch')
@@ -646,6 +687,7 @@ function render(t) {
       }
     }
     if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
+    if (c.charge != null) drawBlasterCharge(c, t);
     if (c !== me && crew.length > 1) {                // name tags for the others
       ctx.font = `700 ${T * 0.26}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, c.x * T, (c.y - 0.45) * T);
@@ -698,7 +740,7 @@ function drawHUD() {
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText('WASD move · Left click: interact · Right click: use weapon · Tab: overview · M: mute · `: debug', 200, 18);
+  ctx.fillText('WASD move · Arrows aim · E / left click: interact · Space / right click: weapon · Tab: overview · M: mute · `: debug', 200, 18);
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
     : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
