@@ -37,18 +37,20 @@ const GEAR = [
   { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster. Where the gravity has failed you still walk (at 80%) instead of floating.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, level: 2, desc: 'Spacewalk 30% faster.' },
   { id: 'armor', name: 'Armor vest', cost: 220, level: 3, desc: 'Shrugs off the first hit you take each mission.' },
+  { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, level: 2, desc: 'Start every mission with a repair kit of your own (the ship\'s kit stays where it is).' },
   { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, level: 3, desc: 'Repairs go another 25% faster.' },
   { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, level: 4, desc: 'Click the reactor to overcharge it: double speed, but each energy has a 10% chance to set it on fire.' },
   { id: 'trauma', prof: 'medic', name: 'Trauma kit', cost: 200, level: 3, desc: 'Treat crewmates in 0.7 s.' },
   { id: 'stim', prof: 'medic', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 3 s.' },
   { id: 'painkillers', prof: 'medic', name: 'Painkillers', cost: 300, level: 5, desc: 'Being hurt slows you down less, and wears off in 15 s instead of 30 s.' },
+  { id: 'ownLaser', prof: 'weapons', name: 'Own laser gun', cost: 120, level: 2, desc: 'Start every mission with a laser gun of your own (the ship\'s laser stays where it is).' },
   { id: 'heavy', prof: 'weapons', name: 'Heavy blaster', cost: 300, level: 3, desc: 'Start with a heavy blaster: 1-2 damage, fires slower. Hold to charge a 3-damage blast that hits like a ship cannon outside. You walk a bit slower with it, and very slowly while charging.' },
 ];
 const PROFESSIONS = [
-  { id: 'engineer', name: 'Engineer', desc: 'Starts with a repair kit of their own. Repairs 20% faster.' },
+  { id: 'engineer', name: 'Engineer', desc: 'Repairs 20% faster.' },
   { id: 'gunner', name: 'Gunner', desc: 'Cranks cannon reloads 50% faster.' },
   { id: 'medic', name: 'Combat medic', desc: 'Treats crewmates in 1.2 s instead of 2 s. Patches themselves up in 6 s.' },
-  { id: 'weapons', name: 'Weapons specialist', desc: 'Starts with a laser gun of their own, and fires it faster.' },
+  { id: 'weapons', name: 'Weapons specialist', desc: 'Fires the laser gun and the heavy blaster 35% faster.' },
 ];
 const PAINTS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#e8e4dc', '#2b303a', '#ff7ab0'];
 
@@ -159,8 +161,9 @@ function applyKit(c, kit) {
   c.kit = kit ? { gear: { ...(kit.gear || {}) }, profession: kit.profession || null, paint: isPaint(kit.paint) ? kit.paint : null } : { gear: {}, profession: null };
   if (c.kit.paint) c.color = c.kit.paint;
   c.armor = c.kit.gear.armor ? 1 : 0;
-  if (perk(c, 'engineer') && !c.inv.weapon) c.inv.weapon = 'repair';
-  if (perk(c, 'weapons') && (!c.inv.weapon || c.inv.weapon === 'laser')) c.inv.weapon = perk(c, 'heavy') ? 'heavy' : 'laser';
+  if (perk(c, 'ownKit') && !c.inv.weapon) c.inv.weapon = 'repair';                     // (on top of the ship's own items)
+  if (perk(c, 'heavy') && (!c.inv.weapon || c.inv.weapon === 'laser')) c.inv.weapon = 'heavy';
+  else if (perk(c, 'ownLaser') && !c.inv.weapon) c.inv.weapon = 'laser';
 }
 // Speed multiplier from gear and what you carry (used by updateCrew).
 function gearSpeed(c) {

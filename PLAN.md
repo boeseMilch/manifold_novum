@@ -674,13 +674,15 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   now a free pick in the lobby, also shown in the multiplayer crew list), and the fuel-seating
   mini-game (clicking the empty reactor with a fuel cell loads it).
 - **Professions with gear tracks** (track gear only works in its profession; `perk()` checks):
-  - Engineer: own repair kit, repairs 20% faster. Toolbelt: another 25% (was 30% on every hold job
+  - Engineer: repairs 20% faster. Own repair kit (first track upgrade, level 2): start with one, on
+    top of the ship's. Toolbelt: another 25% (was 30% on every hold job
     for anyone). Reactor overcharge: click the reactor to run it at double speed; each energy has a
     10% chance to set it on fire. Anyone can switch it back off there.
   - Combat medic: treats crewmates in 1.2 s (was 1 s; the auto-doc's number), self in 6 s. Trauma
     kit: 0.7 s. Stim pack: self in 3 s. Painkillers: hurt slows you to 80% instead of 60%, and wears
     off in 15 s instead of 30 s.
-  - Weapons specialist (was Security): own laser, fires 35% faster. Heavy blaster: 1-2 damage at 66%
+  - Weapons specialist (was Security): fires 35% faster. Own laser gun (first track upgrade, level
+    2): start with one, on top of the ship's. Heavy blaster (starts you with it instead): 1-2 damage at 66%
     of the laser's fire rate; hold to charge (1.5 s) a 3-damage blast, which on a spacewalk also flies
     on as a cannon shell (hits ships, asteroids, drones, leeches like the ship cannon). 85% walking
     speed while carrying it, 30% while charging.
