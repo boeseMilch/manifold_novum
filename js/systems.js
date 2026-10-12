@@ -268,14 +268,13 @@ function clickTarget(mx, my) {
 // Alone on the ship, someone who's out can still crawl back slowly (SOLO_TREAT s) — no softlocks.
 // ---------------------------------------------------------------------------
 const HURT_TIME = 30, SELF_TREAT = 10, SOLO_TREAT = 20, TREAT_TIME = 2;
-const hurtTime = (c) => perk(c, 'painkillers') ? 15 : HURT_TIME;
 const standing = (c) => (c.health || 'ok') === 'ok' || c.health === 'hurt';
 function hurtCrew(c) {
   if (!c) return;
   if (c.armor > 0) { c.armor--; combatBanner(`${c.name}'s armor vest took the hit`); sfx.clank(); return; }   // (gear: see progress.js)
   const h = c.health || 'ok';
   c.health = h === 'ok' ? 'hurt' : h === 'hurt' ? 'down' : 'out';
-  c.hurtT = hurtTime(c); c.treat = null;
+  c.hurtT = HURT_TIME; c.treat = null;
   if (c.health === 'down' || c.health === 'out') {
     if (c.mode === 'gun') { c.cover = 0; c.mode = 'inside'; [c.x, c.y] = c.gun.hatch; c.gun = null; }   // falls back down the ladder
     combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT — someone has to treat them!' : 'down!'}`);
@@ -288,11 +287,11 @@ function updateInjury(c, dt) {
 function treatInfo(who) {
   if (!who || standing(who) && who.health !== 'hurt') return null;
   if (who === player) {
-    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'medic') ? 6 : SELF_TREAT, label: 'patch yourself up' };
+    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 6 : SELF_TREAT, label: 'patch yourself up' };
     if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'nobody can help — slowly patch yourself up' };
     return null;
   }
-  return standing(player) ? { time: perk(player, 'trauma') ? 0.7 : perk(player, 'medic') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
+  return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
 }
 function updateTreat(dt, target, holding) {
   if (!target?.treat) { player.treat = null; return; }
@@ -309,7 +308,7 @@ function updateTreat(dt, target, holding) {
   player.treat.up = 0; player.treat.beat = Math.max(0, (player.treat.beat || 0) - dt * 3);
   player.treat.t += dt;
   if (player.treat.t >= target.time) {
-    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = hurtTime(who);
+    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME;
     sfx.poi(); combatBanner(who === player ? 'Patched up — still hurt for a while' : `${who.name} is back on their feet`);
     if (who !== player) hz.stats.treated[player.name] = (hz.stats.treated[player.name] || 0) + 1;
     player.treat = null;

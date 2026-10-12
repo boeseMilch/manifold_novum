@@ -44,7 +44,7 @@ const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
 const CREW_R = 0.2;                          // half-size of the crew collision box
 const LOCK_DOOR_TIME = 0.55;
 let LOCK_CYCLE = 1.3;                        // deck airlock: per door, and pressure cycle (upgradeable)
-const HURT_SPEED = 0.6;                       // walking speed while hurt (painkillers: 0.8)
+const HURT_SPEED = 0.6;                       // walking speed while hurt
 const HATCH_TIME = 1.6;                      // going through an outer airlock
 const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
@@ -112,8 +112,7 @@ function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.
 function updateCrew(c, dt, ix, iy) {
   if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
   const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y) && !perk(c, 'boots'));
-  const hurt = c.health === 'hurt' ? (perk(c, 'painkillers') ? 0.8 : HURT_SPEED) : 1;
-  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * hurt * crewSpeedMul(c) * (c.slow || 1) * gearSpeed(c);
+  const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1) * crewSpeedMul(c) * (c.slow || 1) * gearSpeed(c);
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
   const k = Math.min(1, (floaty ? EVA_ACCEL * (eva ? 1 : 0.5) : WALK_ACCEL) * dt / speed);
   c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);

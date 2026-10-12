@@ -523,8 +523,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   handle to scooch the cells out of its reach), efficient cannons (4 shots), faster airlocks,
   long-range radar, shield capacitors (3 s), bigger capacitors (4), reinforced hull, sprinklers.
   Multiplayer: the union of everyone's upgrades.
-- **Gear** (money, `GEAR`) and **professions** (level 2+): gravity boots, thrusters, armor vest for
-  anyone; engineer, gunner, combat medic, weapons specialist, each with a gear track (see 8w). Suit
+- **Gear** (money, `GEAR`) and **professions** (level 2+): general gear for anyone (gravity boots,
+  thrusters, first aid course, armor vest, stim pack); engineer and weapons specialist, each with a
+  gear track (see 8w, 8x). Suit
   color is free, in the lobby. Sent to the server with `hello`.
 - **Profile:** versioned, cookie + localStorage, `migrateProfile()` reads any older version (see
   CLAUDE.md). Each browser credits its own player once per run (`mission.runId`).
@@ -694,11 +695,22 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   E does what a click would on what's highlighted: under the mouse, or else the nearest thing in
   reach, found by probing `clickTarget()` around you (hold E for repairs, treating and hold jobs, tap
   E for a tape job). The prompt shows "E: …" and the target gets the dashed ring.
+- (8x below changes the medic and gunner again.)
 - Profile v2: drops the old paint gear, auto-doc and second kit, renames Security to Weapons
   specialist.
 - **Fuel vs. mission length** (normal speed: a cell = 5 energy = 100 s; 4 cells = 400 s): missions
   jump at 247-312 s, so 1-1.5 cells are left over. Always overcharged, the 4 cells last 200 s, short
   of every mission. Fuel left as it is for now.
+
+### 8x. Two professions: engineer and weapons specialist
+- **Gunner removed:** it had no track. Its faster cannon cranking (50%) now belongs to the weapons
+  specialist, whose first track upgrade starts you with your own laser gun (then the heavy blaster).
+- **Medic is gear now:** there weren't enough medic upgrades for a track. The general gear (the
+  locker's "General" section) has the **first aid course** (was the combat medic: treat crewmates in
+  1.2 s, patch yourself up in 6 s) and the **stim pack** (patch yourself up in 3 s). The trauma kit
+  and painkillers are gone.
+- Profile v3: Gunner → Weapons specialist, Medic → no profession plus the first aid course; trauma
+  kit and painkillers dropped.
 
 ## Balance
 

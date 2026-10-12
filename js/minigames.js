@@ -63,7 +63,7 @@ function miniCommand(action, a, b) {
     }
   } else if (action === 'crank' && player.mode === 'gun') {
     const g = player.gun;
-    if (g.reload > 0) g.reload = Math.max(0.01, g.reload - Math.min(Math.abs(+a || 0), 3) * CRANK_K * (player.health === 'hurt' ? 0.6 : 1) * (player.kit?.profession === 'gunner' ? 1.5 : 1));
+    if (g.reload > 0) g.reload = Math.max(0.01, g.reload - Math.min(Math.abs(+a || 0), 3) * CRANK_K * (player.health === 'hurt' ? 0.6 : 1) * (perk(player, 'weapons') ? 1.5 : 1));
   }
 }
 

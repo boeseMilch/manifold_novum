@@ -93,10 +93,10 @@ The prompt above you always says what a click (or E) will do.
   chapters pay per pirate). XP only if you're back aboard and on your feet at the end.
   Reputation comes from finished objectives.
 - **Suit color:** pick it in the lobby (free).
-- **Locker** (money): gravity boots, suit thrusters, armor vest; from level 2 a profession
-  (engineer, gunner, combat medic, weapons specialist), and gear for your profession's track:
-  engineer (own repair kit, toolbelt, reactor overcharge), combat medic (trauma kit, stim pack,
-  painkillers), weapons specialist (own laser gun, heavy blaster).
+- **Locker** (money): general gear for anyone (gravity boots, suit thrusters, first aid course,
+  armor vest, stim pack); from level 2 a profession (engineer or weapons specialist) and its track:
+  engineer (own repair kit, toolbelt, reactor overcharge), weapons specialist (own laser gun, heavy
+  blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
   bigger capacitors, shield capacitors, reinforced hull, sprinklers, … In multiplayer the
   ship gets every upgrade anyone in the crew has bought.

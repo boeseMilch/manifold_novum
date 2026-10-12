@@ -10,7 +10,7 @@
 // PROFILES ARE SAVED IN PLAYERS' BROWSERS: keep loadProfile() able to read every older version
 // (bump PROFILE_VERSION and add a migration step; never rename or drop fields without one).
 
-const PROFILE_VERSION = 2;
+const PROFILE_VERSION = 3;
 const XP_LEVELS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000];
 const levelOf = (xp) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEVELS[l]) l++; return l; };
 
@@ -36,21 +36,18 @@ const SHIP_UPGRADES = [
 const GEAR = [
   { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster. Where the gravity has failed you still walk (at 80%) instead of floating.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, level: 2, desc: 'Spacewalk 30% faster.' },
+  { id: 'firstAid', name: 'First aid course', cost: 150, level: 2, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s.' },
   { id: 'armor', name: 'Armor vest', cost: 220, level: 3, desc: 'Shrugs off the first hit you take each mission.' },
+  { id: 'stim', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 3 s.' },
   { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, level: 2, desc: 'Start every mission with a repair kit of your own (the ship\'s kit stays where it is).' },
   { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, level: 3, desc: 'Repairs go another 25% faster.' },
   { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, level: 4, desc: 'Click the reactor to overcharge it: double speed, but each energy has a 10% chance to set it on fire.' },
-  { id: 'trauma', prof: 'medic', name: 'Trauma kit', cost: 200, level: 3, desc: 'Treat crewmates in 0.7 s.' },
-  { id: 'stim', prof: 'medic', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 3 s.' },
-  { id: 'painkillers', prof: 'medic', name: 'Painkillers', cost: 300, level: 5, desc: 'Being hurt slows you down less, and wears off in 15 s instead of 30 s.' },
   { id: 'ownLaser', prof: 'weapons', name: 'Own laser gun', cost: 120, level: 2, desc: 'Start every mission with a laser gun of your own (the ship\'s laser stays where it is).' },
   { id: 'heavy', prof: 'weapons', name: 'Heavy blaster', cost: 300, level: 3, desc: 'Start with a heavy blaster: 1-2 damage, fires slower. Hold to charge a 3-damage blast that hits like a ship cannon outside. You walk a bit slower with it, and very slowly while charging.' },
 ];
 const PROFESSIONS = [
   { id: 'engineer', name: 'Engineer', desc: 'Repairs 20% faster.' },
-  { id: 'gunner', name: 'Gunner', desc: 'Cranks cannon reloads 50% faster.' },
-  { id: 'medic', name: 'Combat medic', desc: 'Treats crewmates in 1.2 s instead of 2 s. Patches themselves up in 6 s.' },
-  { id: 'weapons', name: 'Weapons specialist', desc: 'Fires the laser gun and the heavy blaster 35% faster.' },
+  { id: 'weapons', name: 'Weapons specialist', desc: 'Fires the laser gun and the heavy blaster 35% faster. Cranks cannon reloads 50% faster.' },
 ];
 const PAINTS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#e8e4dc', '#2b303a', '#ff7ab0'];
 
@@ -233,6 +230,11 @@ function migrateProfile(p) {
     delete out.gear.paint; delete out.ship.autodoc; delete out.ship.kit2;
     if (out.profession === 'security') out.profession = 'weapons';
   }
+  if (!(p.v >= 3)) {                       // v3: Gunner merged into Weapons specialist; the medic is gear now (first aid course)
+    if (out.profession === 'gunner') out.profession = 'weapons';
+    if (out.profession === 'medic') { out.profession = null; out.gear.firstAid = true; }
+    delete out.gear.trauma; delete out.gear.painkillers;
+  }
   out.v = PROFILE_VERSION;
   return out;
 }
@@ -342,7 +344,7 @@ const lobbyUI = {
       html += `<h4>Profession ${lv < 2 ? '(from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => `<button class="item${p.profession === x.id ? ' chosen' : ''}" data-prof="${x.id}" ${lv < 2 ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('') + '</div>';
       const gearButtons = (list) => '<div class="grid">' + list.map(g => { const own = p.gear[g.id], ok = !own && p.money >= g.cost && lv >= g.level && (!g.prof || p.profession === g.prof);
         return `<button class="item${own ? ' chosen' : ''}" data-gear="${g.id}" ${ok ? '' : 'disabled'}><b>${g.name} ${own ? '✔' : `· $${g.cost}${lv < g.level ? ` · level ${g.level}` : ''}`}</b><span>${g.desc}</span></button>`; }).join('') + '</div>';
-      html += '<h4>Gear</h4>' + gearButtons(GEAR.filter(g => !g.prof));
+      html += '<h4>General</h4>' + gearButtons(GEAR.filter(g => !g.prof));
       for (const x of PROFESSIONS) {
         const track = GEAR.filter(g => g.prof === x.id);
         if (track.length) html += `<h4>${x.name} track${p.profession === x.id ? '' : ' (only as ' + x.name.toLowerCase() + ')'}</h4>` + gearButtons(track);

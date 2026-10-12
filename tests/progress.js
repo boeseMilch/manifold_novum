@@ -29,10 +29,13 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 {
   const G = loadGame(NAMES);
   const p = G.migrateProfile({ xp: '120', money: 30, ship: { cannons: true }, someFutureField: 7 });
-  check(p.xp === 120 && p.v === 2 && p.ship.cannons && p.gear && p.done && p.someFutureField === 7, 'an old save is migrated: numbers fixed, missing fields added, unknown ones kept');
+  check(p.xp === 120 && p.v === 3 && p.ship.cannons && p.gear && p.done && p.someFutureField === 7, 'an old save is migrated: numbers fixed, missing fields added, unknown ones kept');
   const v1 = G.migrateProfile({ v: 1, gear: { paint: true, boots: true }, paint: '#3a8fc4', ship: { kit2: true, autodoc: true, caps: true }, profession: 'security' });
   check(!v1.gear.paint && v1.gear.boots && v1.paint === '#3a8fc4' && !v1.ship.kit2 && !v1.ship.autodoc && v1.ship.caps && v1.profession === 'weapons',
     'v1 → v2: paint is free (color kept), auto-doc and second kit dropped, Security is now Weapons specialist');
+  const v2a = G.migrateProfile({ v: 2, profession: 'gunner', gear: { trauma: true, stim: true } }), v2b = G.migrateProfile({ v: 2, profession: 'medic', gear: {} });
+  check(v2a.profession === 'weapons' && !v2a.gear.trauma && v2a.gear.stim && v2b.profession === null && v2b.gear.firstAid && v2a.v === 3,
+    'v2 → v3: Gunner becomes Weapons specialist, a medic gets the first aid course, trauma kit dropped, stim pack kept');
   check(G.migrateProfile(null).xp === 0 && G.migrateProfile('garbage').money === 0, 'a broken save gives a fresh profile instead of crashing');
   const u = G.unlockedMissions({ ...G.defaultProfile(), done: { c1: 1, c2: 1 } });
   check(u.has('c3') && !u.has('c4') && u.has('practice'), 'finishing a chapter unlocks the next one');
@@ -52,23 +55,21 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const fast = me.x - x0;
   G.applyKit(me, {}); me.x = x0; me.vx = 0; me.input.keys.add('KeyD'); tickN(G, 60); me.input.keys.delete('KeyD');
   check(fast > (me.x - x0) * 1.1, `gravity boots: faster walking (${fast.toFixed(2)} vs ${(me.x - x0).toFixed(2)})`);
-  G.applyKit(me, { profession: 'medic' }); me.health = 'down';
-  check(G.withCrew(me, () => G.treatInfo(me)).time === 6, 'a medic patches themselves up in 6 s');
-  G.applyKit(me, { profession: 'medic', gear: { stim: true } });
-  check(G.withCrew(me, () => G.treatInfo(me)).time === 3, '…in 3 s with a stim pack');
+  G.applyKit(me, { gear: { firstAid: true } }); me.health = 'down';
+  check(G.withCrew(me, () => G.treatInfo(me)).time === 6, 'with the first aid course you patch yourself up in 6 s');
   G.applyKit(me, { profession: 'engineer', gear: { stim: true } });
-  check(G.withCrew(me, () => G.treatInfo(me)).time === 10, 'profession gear only works in its profession (an engineer\'s stim pack does nothing)');
+  check(G.withCrew(me, () => G.treatInfo(me)).time === 3, '…in 3 s with a stim pack (anyone can use it)');
+  me.inv.weapon = null; G.applyKit(me, { profession: 'engineer', gear: { ownLaser: true } });
+  check(!me.inv.weapon, 'profession gear only works in its profession (an engineer gets no laser from it)');
   me.health = 'ok'; const other = G.crew[0] === me ? (G.netServer.addCrew(9, 'Bob'), G.crew.find(c => c.id === 9)) : G.crew[1]; other.health = 'down';
   const tt = (kit) => { G.applyKit(me, kit); return G.withCrew(me, () => G.treatInfo(other)).time; };
-  check(tt({}) === 2 && tt({ profession: 'medic' }) === 1.2 && tt({ profession: 'medic', gear: { trauma: true } }) === 0.7, 'treating a crewmate: 2 s, a combat medic 1.2 s, with a trauma kit 0.7 s');
-  G.applyKit(me, { profession: 'medic', gear: { painkillers: true } }); me.health = 'ok'; G.hurtCrew(me);
-  check(me.hurtT === 15, 'painkillers: being hurt wears off in 15 s');
+  check(tt({}) === 2 && tt({ gear: { firstAid: true } }) === 1.2, 'treating a crewmate: 2 s, with the first aid course 1.2 s');
   me.health = 'ok';
-  check(G.repairSpeed(me) === 1, 'repairs: normal speed for a medic');
+  check(G.repairSpeed(me) === 1, 'repairs: normal speed for a non-engineer');
   G.applyKit(me, { profession: 'engineer' }); const eng = G.repairSpeed(me);
   G.applyKit(me, { profession: 'engineer', gear: { toolbelt: true } });
   check(eng === 1.2 && Math.abs(G.repairSpeed(me) - 1.5) < 1e-9, 'repairs: an engineer 20% faster, with the toolbelt 50%');
-  check(!G.GEAR.some(g => g.id === 'paint') && G.GEAR.filter(g => g.prof).every(g => ['engineer', 'medic', 'weapons'].includes(g.prof)), 'suit paint is no gear any more; engineer, medic and weapons tracks');
+  check(!G.GEAR.some(g => g.id === 'paint') && G.GEAR.filter(g => g.prof).every(g => ['engineer', 'weapons'].includes(g.prof)), 'suit paint is no gear any more; engineer and weapons tracks');
 }
 // --- gravity boots where the gravity failed
 {
