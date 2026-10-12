@@ -10,18 +10,23 @@ belly towards our ship, the glowing spots along its back, the eye on the flank f
 Sprites (build/renders/organic/), all sharing the leviathan's origin through the manifest's ox/oy:
   leviathan_<side>_body<k>       k = 0..3: the static body in four horizontal bands (head first, k = 0 is
                                  the top of the screen = the tail end), exact windows that abut
-                                 pixel-perfectly: draw all four at the same origin. Eye open. Body k = 3
-                                 carries `spots`: [[px, py] or null, ...] the glowing spots' centres (null: that spot is off the
-                                 body's edge, where the game draws it over space) (pixels from the
-                                 origin, at the skin surface) in the game's order (k = 0..15, two per row),
-                                 for the game's travelling pulse (draw an additive glow there).
-  leviathan_<side>_fluke_f<i>    i = 0..7: tail stock and fluke beating up and down (the swim loop; the
-                                 game's sin(t * 1.2) -> period ~5.2 s, ~0.65 s per frame). Draw before the
-                                 body bands (the bands cover the joint).
-  leviathan_<side>_flipper<j>_f<i>  j = 0 (far side, -x) | 1 (near side, +x), i = 0..7: the pectoral
-                                 flippers paddling (the game's sin(t * 0.8 + sd): period ~7.9 s). Rendered with
-                                 the body as a holdout; draw before the body.
-  leviathan_<side>_eye_shut      a patch over the eye with the lid closed (the game's blink).
+                                 pixel-perfectly: draw all four at the same origin. Eye open (amber, slit
+                                 pupil towards our ship; modelled 1 unit further in than the game's (6.2, 18) so
+                                 it sits on the flank). Body k = 3 carries `spots`: [[px, py] or null, ...] the
+                                 glowing spots' centres (null: off the body's edge, where the game draws it over
+                                 space) (pixels from the origin at 96 px/unit, at the skin surface) in the game's
+                                 order (k = 0..15, two per row), for the game's travelling pulse (additive glow).
+  leviathan_<side>_eye_f<i>      the blink, a tight patch of the lids only (body and eye as holdout): i = 0 half
+                                 shut, 1 shut. Draw over the body at the same origin while the game blinks
+                                 (blink < 1: f1; ease in/out with f0 if wanted); nothing when the eye is open.
+  leviathan_<side>_fluke_f<i>    i = 0..4: tail stock and fluke at the poses sw = `poses`[i] = -1, -0.5, 0,
+                                 0.5, 1 (not a time loop: the game's sw = sin(t * 1.2), pick the nearest pose,
+                                 i = round((sw + 1) * 2)). Draw before the body bands (they cover the joint).
+  leviathan_<side>_flipper<j>    j = 0 (far side, -x) | 1 (near side, +x): one still each at the game's mean
+                                 angle (0.6). The game rotates it on screen by its paddle sd * 0.15 * sin(t * 0.8 + sd)
+                                 (sd = -1 for j = 0, +1 for j = 1; negated for star, the mirrored build: clockwise
+                                 positive, as canvas rotate()) around `pivot` [px, py] (pixels from the origin at 96 px/unit: the root,
+                                 hidden under the body). No holdout: draw before the body bands.
 The roll (rotate(sin(t * 0.4) * 0.03)) stays a runtime rotation of the whole stack; the warning wash on
 the room floor stays procedural.
 
@@ -35,7 +40,6 @@ import mn
 import orglib as O
 from orglib import P
 
-FR = list(range(1, 9))
 EYE = (6.2, 18.0)
 
 def bez(p0, p1, p2, p3, n=40):
@@ -65,8 +69,7 @@ def mats(S):
         barn_in=O.plain('lev_barn_in', '#1a1e1a', 0.8),
         scar=O.plain('lev_scar', '#8a9cab', 0.5, coat=0.3),
         spot=O.emit_mat('lev_spot', '#7af0ff', 1.5, base='#3ac0d8', coat=1.0),
-        eye=O.emit_mat('lev_iris', '#e8c34f', 0.45, base='#e8b030', coat=1.0),
-        pupil=O.plain('lev_pupil', '#05070a', 0.15, coat=1.0),
+        eyeball=eye_mat(S),
         glint=O.emit_mat('lev_glint', '#fff8d0', 1.2),
         lid=O.flesh('lev_lid', '#142638', '#2e5068', c2='#050a10', scale=1.0, coat=0.7),
         fin=O.flesh('lev_fin', '#0e1c2a', '#26445a', c2='#050a10', veins='#3a6a80', vein_k=0.3, scale=0.6, coat=0.7, mottle=1.2,
@@ -103,9 +106,10 @@ def body(M, quick):
     # a brow over the eye and a lumpy hide
     O.noise_displace(o, [(0.25, 0.25, 11), (0.06, 1.2, 12)])
     ex, ey = EYE
+    ex -= 1.0; ey -= 1.9                              # (the brow: just above the eye, see eye_frame)
     for v in o.data.vertices:
         lx, ly = v.co.x * O.S, -v.co.y
-        k = math.exp(-(((lx - ex) / 2.2) ** 2 + ((ly - ey) / 2.6) ** 2))
+        k = math.exp(-(((lx - ex) / 2.4) ** 2 + ((ly - ey) / 1.2) ** 2))
         if v.co.z > 0: v.co.z += 0.6 * k
     o.data.update()
     mn.assign(o, M['skin'])
@@ -154,27 +158,98 @@ def details(M, b, quick):
         for t in range(8):
             loc, n = surf(b, lx + math.cos(a) * t * 0.35, ly + math.sin(a) * t * 0.35); pts.append(loc - n * 0.03)
         objs.append(O.tube('scar', pts, [0.07] * 8, m=M['scar'], res=2, segs=6))
-    # the eye
+    # the eye: a big glossy amber dome bulging out of the flank, a vertical slit pupil (painted in its
+    # material, so it always sits on the surface), a glint, and a thick fleshy rim around it
+    objs += eye_ball(M, b)
+    return objs, spots, EYE_FRAME[0]
+
+EYE_FRAME = [None]
+EYE_SC = (1.8, 1.3, 0.62)
+def eye_frame(b):
+    """Centre and orientation of the eye: on the flank at the game's (6.2, 18), turned half towards the
+    sky so the camera sees it face-on rather than edge-on."""
+    from mathutils import Quaternion
     ex, ey = EYE
+    ex -= 1.0                                         # (a bit in from the game's spot, so all of it sits on the flank)
     loc, n = surf(b, ex, ey)
-    eye = mn.sphere('eye', 1.0, loc=loc - n * 0.25, m=M['eye'], scale=(1.8, 1.3, 0.75), segs=48)
-    eye.rotation_euler = (0, 0, -0.2 * O.S); objs.append(eye)
-    pu = mn.sphere('pupil', 1.0, loc=loc + n * 0.36 + Vector((0.55 * O.S, 0, 0)), m=M['pupil'], scale=(0.3, 0.95, 0.08), segs=32)
-    pu.rotation_euler = (0, 0, -0.2 * O.S); objs.append(pu)
-    objs.append(mn.sphere('glint', 0.24, loc=loc + n * 0.5 + Vector((-0.3 * O.S, 0.5, 0)), m=M['glint'], scale=(1, 1, 0.4), segs=12))
-    rim = [(loc - n * 0.1 + Vector((math.cos(a) * 1.85 * O.S, math.sin(a) * 1.4, 0)), 0.42, (1, 1, 0.7)) for a in (k / 30 * math.tau for k in range(30))]
-    objs.append(O.blob('eye_rim', rim, m=M['lid'], res=0.06))
-    return objs, spots, (loc, n)
+    axis = (n + Vector((0, 0, 1.1))).normalized()
+    xl = (Vector((1, 0, 0)) - axis * axis.x).normalized(); yl = axis.cross(xl)   # local x stays along world x (towards our ship for S = 1)
+    q = Matrix((xl, yl, axis)).transposed().to_quaternion() @ Quaternion((0, 0, 1), -0.2 * O.S)
+    return loc + n * 0.05, q
 
-def eyelid(M, eye):
-    loc, n = eye
-    lid = mn.sphere('eyelid', 1.0, loc=loc - n * 0.2, m=M['lid'], scale=(1.95, 1.45, 0.82), segs=48); lid.rotation_euler = (0, 0, -0.2 * O.S)
-    seam = O.tube('lid_seam', [loc + n * 0.58 + Vector((x * O.S, -0.12 * math.cos(x), -0.08 * abs(x))) for x in (-1.5, -0.75, 0, 0.75, 1.5)], [0.04, 0.06, 0.07, 0.06, 0.04], m=M['pupil'], res=4, segs=6)
-    return [lid, seam]
+def eye_mat(S):
+    """Amber iris with fibres and a dark limbal ring, the slit pupil, a soft inner glow. Unit-sphere object coords."""
+    m = bpy.data.materials.new('lev_eye'); m.use_nodes = True; nt = m.node_tree; N = nt.nodes; Lk = nt.links.new
+    b = N['Principled BSDF']; b.inputs['Roughness'].default_value = 0.12; b.inputs['Coat Weight'].default_value = 1.0
+    b.inputs['Coat Roughness'].default_value = 0.03
+    tc = N.new('ShaderNodeTexCoord'); sx = N.new('ShaderNodeSeparateXYZ'); Lk(tc.outputs['Object'], sx.inputs[0])
+    def mathn(op, a, bb=None):
+        n_ = N.new('ShaderNodeMath'); n_.operation = op
+        for i, v in enumerate((a, bb)):
+            if v is None: continue
+            if isinstance(v, (int, float)): n_.inputs[i].default_value = v
+            else: Lk(v, n_.inputs[i])
+        return n_.outputs[0]
+    X, Y = sx.outputs['X'], sx.outputs['Y']
+    # pupil: ((x - 0.6/1.8 S) / (0.36/1.8))^2 + (y / (1.0/1.3))^2 < 1
+    px = mathn('DIVIDE', mathn('SUBTRACT', X, 0.6 / 1.8 * S), 0.36 / 1.8); py = mathn('DIVIDE', Y, 1.0 / 1.3)
+    pd = mathn('ADD', mathn('MULTIPLY', px, px), mathn('MULTIPLY', py, py))
+    pupil = N.new('ShaderNodeMapRange'); pupil.inputs['From Min'].default_value = 1.08; pupil.inputs['From Max'].default_value = 0.92
+    Lk(pd, pupil.inputs['Value'])
+    rr = mathn('SQRT', mathn('ADD', mathn('MULTIPLY', X, X), mathn('MULTIPLY', Y, Y)))
+    limb = N.new('ShaderNodeMapRange'); limb.inputs['From Min'].default_value = 0.78; limb.inputs['From Max'].default_value = 0.97
+    Lk(rr, limb.inputs['Value'])
+    # fibres: noise stretched along the radius (angle-driven), plus mottling
+    ang = N.new('ShaderNodeMath'); ang.operation = 'ARCTAN2'; Lk(Y, ang.inputs[0]); Lk(X, ang.inputs[1])
+    cmb = N.new('ShaderNodeCombineXYZ'); Lk(ang.outputs[0], cmb.inputs['X']); Lk(mathn('MULTIPLY', rr, 0.15), cmb.inputs['Y'])
+    fn = N.new('ShaderNodeTexNoise'); fn.inputs['Scale'].default_value = 9.0; fn.inputs['Detail'].default_value = 3; Lk(cmb.outputs[0], fn.inputs['Vector'])
+    fr = N.new('ShaderNodeMapRange'); fr.inputs['From Min'].default_value = 0.35; fr.inputs['From Max'].default_value = 0.7; Lk(fn.outputs['Fac'], fr.inputs['Value'])
+    c = N.new('ShaderNodeMix'); c.data_type = 'RGBA'; Lk(fr.outputs[0], c.inputs['Factor'])
+    c.inputs[6].default_value = (*O.lift('#c8901c'), 1); c.inputs[7].default_value = (*O.lift('#f2d36a'), 1)
+    c2 = N.new('ShaderNodeMix'); c2.data_type = 'RGBA'; Lk(limb.outputs[0], c2.inputs['Factor'])
+    Lk(c.outputs[2], c2.inputs[6]); c2.inputs[7].default_value = (*mn.hex_rgb('#5a3008'), 1)
+    c3 = N.new('ShaderNodeMix'); c3.data_type = 'RGBA'; Lk(pupil.outputs[0], c3.inputs['Factor'])
+    Lk(c2.outputs[2], c3.inputs[6]); c3.inputs[7].default_value = (*mn.hex_rgb('#05070a'), 1)
+    Lk(c3.outputs[2], b.inputs['Base Color'])
+    # a soft inner glow (the iris lit from within), not in the pupil nor the limbal ring
+    gl = mathn('MULTIPLY', mathn('SUBTRACT', 1.0, pupil.outputs[0]), mathn('SUBTRACT', 1.0, limb.outputs[0]))
+    Lk(mathn('MULTIPLY', gl, 0.55), b.inputs['Emission Strength'])
+    Lk(c.outputs[2], b.inputs['Emission Color'])
+    return m
 
-def fluke(M, phase):
+def eye_ball(M, b):
+    c, q = eye_frame(b); EYE_FRAME[0] = (c, q)
+    R = q.to_matrix()
+    ball = mn.sphere('eye', 1.0, loc=c, m=M['eyeball'], scale=EYE_SC, segs=64)
+    ball.rotation_mode = 'QUATERNION'; ball.rotation_quaternion = q
+    def on_ball(u, v, lift_=0.0):                     # a point on the ball's surface, (u, v) in its local x/y units
+        z = EYE_SC[2] * math.sqrt(max(0.0, 1 - (u / EYE_SC[0]) ** 2 - (v / EYE_SC[1]) ** 2))
+        return c + R @ Vector((u, v, z + lift_))
+    glint = mn.sphere('glint', 0.26, loc=on_ball(-0.45 * O.S, 0.5, -0.02), m=M['glint'], scale=(1, 0.8, 0.25), segs=16)
+    glint2 = mn.sphere('glint', 0.11, loc=on_ball(-0.05 * O.S, 0.72, -0.01), m=M['glint'], scale=(1, 0.8, 0.25), segs=12)
+    rim = [(c + R @ Vector((math.cos(a) * 1.92, math.sin(a) * 1.42, 0.05)), 0.42, (1, 1, 0.75)) for a in (k / 36 * math.tau for k in range(36))]
+    rim = O.blob('eye_rim', rim, m=M['lid'], res=0.06)
+    return [ball, glint, glint2, rim]
+
+def eyelids(M, state):
+    """Lids closing over the eye, from above and below (half: the upper one down to the pupil's top)."""
+    c, q = EYE_FRAME[0]
+    cut = {'half': (0.2, -0.6), 'shut': (-0.12, -0.12)}[state]
+    objs = []
+    for sd, d in ((1, cut[0]), (-1, cut[1])):
+        lid = mn.sphere('lid', 1.0, loc=(0, 0, 0), m=M['lid'], segs=48)
+        bm = bmesh.new(); bm.from_mesh(lid.data)
+        k = d / 1.4                                       # (in the unit sphere: the lid shell is 1.4 high in its local y)
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], dist=1e-5, plane_co=(0, k, 0), plane_no=(0, sd, 0), clear_inner=True)
+        bm.to_mesh(lid.data); bm.free()
+        lid.scale = (1.9, 1.4, EYE_SC[2] + 0.17); lid.location = c; lid.rotation_mode = 'QUATERNION'; lid.rotation_quaternion = q
+        sol = lid.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.05
+        objs.append(lid)
+    return objs
+
+def fluke(M, sw):
     """Tail stock and fluke, hinged at local y = -31, beating (pitch) and swaying (the game's sw)."""
-    sw = math.sin(phase); pitch = 0.32 * sw
+    pitch = 0.32 * sw
     parts = [(P(0, -31.5, 0.2), 2.2, (0.8, 1.4, 0.55)), (P(0, -33.5, 0.1), 1.8, (0.7, 1.2, 0.45))]
     for sd in (-1, 1):
         for k in range(16):
@@ -187,13 +262,13 @@ def fluke(M, phase):
     o.data.transform(rot)
     for v in o.data.vertices:                    # trailing edge notched in the middle, flexing
         ly = -v.co.y
-        if ly < -36: v.co.z += 0.25 * math.sin(phase - 1.0) * (-(ly + 36)) / 4
+        if ly < -36: v.co.z -= 0.2 * sw * (-(ly + 36)) / 4   # (the tips lag behind the beat)
     o.data.update()
     return o
 
-def flipper(M, sd, phase):
-    """Pectoral flipper: long, knobbly front edge, rooted at (sd * 8, 10)."""
-    ang = sd * (0.6 + 0.15 * math.sin(phase))
+def flipper(M, sd, phase=None):
+    """Pectoral flipper: long, knobbly front edge, rooted at (sd * 8, 10). phase None: the mean angle."""
+    ang = sd * (0.6 + (0.15 * math.sin(phase) if phase is not None else 0.0))
     parts = []
     for k in range(16):
         u = k / 15
@@ -237,55 +312,71 @@ def render_side(side, what, quick):
                 extra = {'spots': pts}
             O.render_window(name, x0, x1, y0, y1, extra=extra)
         print(f'[leviathan] {side} body {time.time() - T0:.1f}s'); T0 = time.time()
+    if 'eyetest' in what:                                   # (iterating on the look: the eye region only)
+        c, q = EYE_FRAME[0]
+        x0, x1, y0, y1 = mn._bounds([o for o in det if o.name.startswith(('eye', 'eye_rim'))])
+        O.render_window(f'organic/_test_leviathan_{side}_eye', x0 - 1.5, x1 + 1.5, y0 - 1.5, y1 + 1.5)
+        for st in ('half', 'shut'):
+            lids = eyelids(M, st); mn.outline(lids, thickness=0.014)
+            O.render_window(f'organic/_test_leviathan_{side}_eye_{st}', x0 - 1.5, x1 + 1.5, y0 - 1.5, y1 + 1.5)
+            for o in lids: bpy.data.objects.remove(o)
     if 'eye' in what:
-        lids = eyelid(M, eye); mn.outline(lids[:1], thickness=0.014)
-        loc, n = eye
-        xs, ys = [], []
-        for dx in (-2.8, 2.8):
-            for dy in (-2.4, 2.4):
-                for dz in (-0.5, 1.6):
-                    sx, sy = mn._screen(loc + Vector((dx, dy, dz))); xs.append(sx); ys.append(sy)
-        O.render_window(f'organic/leviathan_{side}_eye_shut', min(xs), max(xs), min(ys), max(ys))
-        mn_feather = __import__('mother').feather
-        mn_feather(os.path.join(mn.OUT_DIR, f'organic/leviathan_{side}_eye_shut'))
-        O.show(lids, False)
-    O.holdout(statics, True)
+        # the blink: the lids alone, with the body and the open eye as a holdout (a tight patch over the eye)
+        O.holdout(statics, True)
+        sets = []
+        for st in ('half', 'shut'):
+            lids = eyelids(M, st); mn.outline(lids, thickness=0.014); sets.append(lids)
+        allf = [o for s_ in sets for o in s_]
+        x0, x1, y0, y1 = mn._bounds(allf)
+        scene = bpy.context.scene
+        for f in (1, 2):
+            scene.frame_set(f)
+            for j, objs in enumerate(sets):
+                for o in objs: o.hide_render = j != f - 1; o.keyframe_insert('hide_render', frame=f)
+        O.render_window(f'organic/leviathan_{side}_eye', x0 - 0.05, x1 + 0.05, y0 - 0.05, y1 + 0.05, frames=[1, 2])
+        for o in allf: o.animation_data_clear(); bpy.data.objects.remove(o)
+        O.holdout(statics, False)
+        print(f'[leviathan] {side} eye {time.time() - T0:.1f}s'); T0 = time.time()
     if 'fluke' in what:
-        O.holdout(statics, False)                           # (the fluke is drawn first, the body over it)
+        # drawn first, the body over it (no holdout). Poses, not a time loop: f<i> is the fluke at the game's
+        # sw = sin(t * 1.2) = FLUKE_SW[i]; the game picks the nearest one.
         O.show(statics, False)
         sets = []
-        for f in FR:
-            o = fluke(M, (f - 1) / len(FR) * math.tau); mn.outline([o], thickness=0.025); sets.append([o])
+        for sw in FLUKE_SW:
+            o = fluke(M, sw); mn.outline([o], thickness=0.025); sets.append([o])
         scene = bpy.context.scene
-        for f in FR:
+        fr = list(range(1, len(FLUKE_SW) + 1))
+        for f in fr:
             scene.frame_set(f)
             for j, objs in enumerate(sets):
                 for o in objs: o.hide_render = j != f - 1; o.keyframe_insert('hide_render', frame=f)
         allf = [o for s_ in sets for o in s_]
-        mn.render(f'organic/leviathan_{side}_fluke', objs=allf, frames=FR)
+        name = f'organic/leviathan_{side}_fluke'
+        mn.render(name, objs=allf, frames=fr)
+        O.merge_entry(name, {'poses': FLUKE_SW})
         for o in allf: o.animation_data_clear(); o.hide_render = True
-        O.show(statics, True); O.holdout(statics, True)
+        O.show(statics, True)
         print(f'[leviathan] {side} fluke {time.time() - T0:.1f}s'); T0 = time.time()
     if 'flippers' in what:
+        # one still each (at the game's mean angle 0.6); the game rotates it by its own paddle
+        # 0.15 * sin(t * 0.8 + sd) around `pivot` (the root, hidden under the body). Drawn before the body.
+        O.show(statics, False)
         for j, sd in enumerate((-1, 1)):
-            sets = []
-            for f in FR:
-                o = flipper(M, sd, (f - 1) / len(FR) * math.tau + sd); mn.outline([o], thickness=0.025); sets.append([o])
-            scene = bpy.context.scene
-            for f in FR:
-                scene.frame_set(f)
-                for jj, objs in enumerate(sets):
-                    for o in objs: o.hide_render = jj != f - 1; o.keyframe_insert('hide_render', frame=f)
-            allf = [o for s_ in sets for o in s_]
-            mn.render(f'organic/leviathan_{side}_flipper{j}', objs=allf, frames=FR)
-            for o in allf: o.animation_data_clear(); o.hide_render = True
+            o = flipper(M, sd); mn.outline([o], thickness=0.025)
+            name = f'organic/leviathan_{side}_flipper{j}'
+            mn.render(name, objs=[o])
+            sx, sy = mn._screen(P(sd * 7.5, 10.0, -0.6))
+            O.merge_entry(name, {'pivot': [round(sx * mn.PPU, 1), round(-sy * mn.PPU, 1)]})
+            o.hide_render = True
+        O.show(statics, True)
         print(f'[leviathan] {side} flippers {time.time() - T0:.1f}s')
-    O.holdout(statics, False)
+
+FLUKE_SW = [-1.0, -0.5, 0.0, 0.5, 1.0]
 
 if __name__ == '__main__':
     T = time.time()
     sel = [a for a in O.ARGS if a not in ('quick', 'cpu')]
     sides = [s for s in ('port', 'star') if s in sel] or ['port', 'star']
-    what = [w for w in ('body', 'fluke', 'flippers', 'eye') if w in sel] or ['body', 'fluke', 'flippers', 'eye']
+    what = [w for w in ('body', 'fluke', 'flippers', 'eye', 'eyetest') if w in sel] or ['body', 'fluke', 'flippers', 'eye']
     for side in sides: render_side(side, what, O.QUICK)
     print(f'[leviathan] total {time.time() - T:.1f}s')
