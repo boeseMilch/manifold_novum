@@ -521,10 +521,10 @@ function drawEnergyBolts() {
 
 // Broken look: scorch, a loose panel, smoke and the odd spark.
 // Sprites: the machine itself switches to its *_broken sprite where it has one (capacitors, shield buttons,
-// the lever, hatches, deck airlocks); systems/broken_scorch (radius 1, scaled to min(s.r, 1.1)) on the
+// the lever, hatches, deck airlocks, the reactor, the cannon ladders); systems/broken_scorch (radius 1, scaled to min(s.r, 1.1)) on the
 // floor round it, the loose cover panel (systems/broken_panel) lying on the floor in front of the machine,
-// where it can be seen; machines without a broken sprite (the reactor, the cannon ladders) get a burn mark on
-// their front (fx/scorch_*, upright); fx/smoke_* puffs rising; sparks 2D (glow layer), the BROKEN label on top.
+// where it can be seen; while the reactor's / a ladder's broken sprite is still loading they get a burn mark
+// on their front (fx/scorch_*, upright) instead; fx/smoke_* puffs rising; sparks 2D (glow layer), the BROKEN label on top.
 const BROKEN_FRONT = { reactor: 1.3, cannon: 0.36, shield: 0.32, capacitor: 0.42, lever: 0.45, lock: 0.3, hatch: 0.4 };
 function drawBrokenSprites(s, t) {
   const rad = Math.min(s.r, 1.1), panel = GFX.has('systems/broken_panel') ? 'systems/broken_panel' : 'fx/loose_panel';
@@ -534,7 +534,8 @@ function drawBrokenSprites(s, t) {
     GFX.sprite('systems/broken_scorch', 0, s.x, s.y + front * 0.5, 0, { layer: 'decal', scale: rad, alpha: 0.85 });
     GFX.sprite(panel, 0, s.x + 0.35, s.y + front + 0.22, 0, { sortY: s.y + front + 0.22 });
   }
-  if ((s.kind === 'reactor' || s.kind === 'cannon') && GFX.ready('fx/scorch_1'))   // no broken sprite: a burn mark on its front
+  const own = { reactor: 'ship/reactor_broken', cannon: 'interior/gun_ladder_broken' }[s.kind];
+  if (own && !GFX.ready(own) && GFX.ready('fx/scorch_1'))   // broken sprite not (yet) there: a burn mark on its front
     GFX.sprite('fx/scorch_1', 0, s.x - 0.15, s.y + front + 0.02, s.kind === 'reactor' ? 0.55 : 0.35, { billboard: true, scale: s.kind === 'reactor' ? 1.0 : 0.55, alpha: 0.8, sortY: s.y + front + 0.05, depthWrite: false });
   for (let i = 0; i < 3; i++) {
     const q = (t * 0.5 + i / 3) % 1;

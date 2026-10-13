@@ -3,12 +3,13 @@ drawDeckLock in js/art.js, updateDeckLock in js/game.js).
 
 Each lock: chamber R(L.x, 12.0, L.x + 2.2, 14.5), top door slot y 11.5..12.0, bottom door slot
 14.5..15.0; the doors slide sideways (x) into the spine. The shaft is a gap in the spine block, so
-the chamber floor is seen between the two spine ends. The top door sits in the (cut-down) near wall
-of the top deck, so its panels are cut down too (0.32 high: a closed top door hides no more of the
-top room than the spine does); the bottom door is a full-height door in the bottom rooms' back wall.
+the chamber floor is seen between the two spine ends. Both doors are full-height (1.5) doors with the
+same panels (face, porthole, number): the bottom one in the bottom rooms' back wall, the top one in the
+spine's low lip on the top deck's side, between two full-height jambs (0.6 wide, like the bottom door's
+posts) that its panels slide into; above the spine you see the door's upper part and the jambs.
 
 Every sprite: origin = (L.x, SPINE_Y1 = 15), the shaft's bottom-left corner on the floor; one shared
-canvas from L.x - 0.6 to L.x + 2.8 (it brings the 0.6 spine ends on both sides: draw the spine tiles
+canvas (game y 11.5 .. 15.12, up to 2.05 high) from L.x - 0.6 to L.x + 2.8 (it brings the 0.6 spine ends on both sides: draw the spine tiles
 up to L.x - 0.6 and from L.x + 2.8).
 
 Base (chamber, frames, spine ends, lamps, beacons, light strips):
@@ -43,6 +44,16 @@ def spine_end(M, x0, x1, side):
     body = gbox('body', x0, Y_HI, x1, 0.0, 0, H_FULL - 0.08, M['body'], 0.02)
     cap = gbox('cap', x0, Y_HI - 0.02, x1, 0.02, H_FULL - 0.08, H_FULL, M['cap'], 0.02)
     o += [lip, body, cap]; hold += [lip, body, cap]
+    # the top door's jamb: a full-height block in the lip next to the shaft (the door panels slide into it)
+    jx0, jx1 = (-0.6, 0.0) if side < 0 else (W, W + 0.6)
+    jamb = gbox('jamb', jx0, Y_TOP0, jx1, Y_HI + 0.02, 0, H_FULL - 0.08, M['panel2'], 0.02)
+    jcap = gbox('jamb_cap', jx0, Y_TOP0 - 0.02, jx1, Y_HI + 0.02, H_FULL - 0.08, H_FULL, M['cap'], 0.02)
+    o += [jamb, jcap]; hold += [jamb, jcap]
+    jin = jx1 if side < 0 else jx0                    # its edge at the shaft: hazard paint, like the bottom posts
+    o.append(gbox('jamb_edge', jin - 0.07, Y_TOP0 - 0.01, jin + 0.07, Y_HI, 0.0, H_FULL - 0.04, M['hazard'], 0.012))
+    o.append(gbox('jamb_plate', jx0 + 0.08, Y_TOP0 + 0.08, jx1 - 0.08, Y_HI - 0.1, H_FULL, H_FULL + 0.015, M['panel'], 0.01))
+    for xx in (jx0 + 0.13, jx1 - 0.13):
+        for yy in (Y_TOP0 + 0.13, Y_HI - 0.15): o.append(rivet(xx, yy, H_FULL + 0.015, M))
     if side < 0: o += wall_x(M, x0, -0.6, 0.0, H_FULL, tray_on=False, body=False)
     else: o += wall_x(M, W + 0.6, x1, 0.0, H_FULL, tray_on=False, body=False)
     fx = -0.6 if side < 0 else W + 0.6                # the front pipes go into the post: flanges
@@ -140,9 +151,9 @@ def base(M, state, t=0.0):
     return o, hold
 
 def door(M, which, k, state='ok'):
-    """Two panels sliding into the spine. which: 'top' (cut-down) or 'bot' (full height)."""
+    """Two full-height panels sliding into the spine (top: into the jambs). which: 'top' or 'bot'."""
     o = []
-    if which == 'top': yc, th, h = (Y_TOP0 + Y_CH0) / 2, 0.24, 0.32
+    if which == 'top': yc, th, h = (Y_TOP0 + Y_CH0) / 2, 0.24, 1.5
     else: yc, th, h = (Y_CH1 + 0.0) / 2, 0.26, 1.5
     half = W / 2; ext = half * (1 - k); plen = half + 1.3
     cap_m = M['red'] if state == 'locked' else M['yellow']
@@ -156,29 +167,25 @@ def door(M, which, k, state='ok'):
         fy = yc + th / 2                            # the south face (towards the camera)
         objs.append(gbox('cap', min(lead, lead + dirn * 0.12), yc - th / 2 - 0.005, max(lead, lead + dirn * 0.12), fy + 0.012, 0.02, h + 0.012, cap_m, 0.012))
         objs.append(gbox('lead_hz', min(lead + dirn * 0.12, lead + dirn * 0.32), fy - 0.005, max(lead + dirn * 0.12, lead + dirn * 0.32), fy + 0.012, 0.06, h - 0.05, M['hazard'], 0.005))
-        if which == 'bot':
-            # panel face: frame, porthole into the chamber, rivets, a big stencil number
-            cx = lead + dirn * 0.62
-            objs.append(gbox('face', min(lead + dirn * 0.38, lead + dirn * 1.06), fy - 0.005, max(lead + dirn * 0.38, lead + dirn * 1.06), fy + 0.015, 0.12, h - 0.1, M['panel2'], 0.012))
-            objs.append(mn.cyl('port_glass', 0.13, 0.02, loc=G(cx, fy - 0.005, 1.0), m=glow('port_glass', '#5fa8c9', 0.6), rot=R90, bevel=0, verts=24))
-            objs.append(ring('port_rim', 0.17, 0.06, 0.04, loc=G(cx, fy, 1.0), m=M['steel'], rot=R90))
-            for z in (0.25, 0.6):
-                for dx in (0.45, 0.8):
-                    objs.append(rivet(lead + dirn * dx, fy + 0.015, z, M, 'front', 0.02))
-            objs.append(label('num', '2' if s == 0 else '1', 0.22, (cx, -(fy + 0.017), 0.45), rot=(math.radians(90), 0, 0), m=M['paint_w']))
-            if s == 1 and state != 'forced': objs.append(tape_front(cx + 0.05, fy + 0.017, 1.3, 0.34, -18, M))
-        else:
-            for dx in (0.4, 0.75):
-                objs.append(rivet(lead + dirn * dx, yc, h, M, r=0.02))
+        # panel face: frame, porthole into the chamber, rivets, a big stencil number
+        cx = lead + dirn * 0.62
+        objs.append(gbox('face', min(lead + dirn * 0.38, lead + dirn * 1.06), fy - 0.005, max(lead + dirn * 0.38, lead + dirn * 1.06), fy + 0.015, 0.12, h - 0.1, M['panel2'], 0.012))
+        objs.append(mn.cyl('port_glass', 0.13, 0.02, loc=G(cx, fy - 0.005, 1.0), m=glow('port_glass', '#5fa8c9', 0.6), rot=R90, bevel=0, verts=24))
+        objs.append(ring('port_rim', 0.17, 0.06, 0.04, loc=G(cx, fy, 1.0), m=M['steel'], rot=R90))
+        for z in (0.25, 0.6):
+            for dx in (0.45, 0.8):
+                objs.append(rivet(lead + dirn * dx, fy + 0.015, z, M, 'front', 0.02))
+        objs.append(label('num', '2' if s == 0 else '1', 0.22, (cx, -(fy + 0.017), 0.45), rot=(math.radians(90), 0, 0), m=M['paint_w']))
+        if s == 1 and state != 'forced': objs.append(tape_front(cx + 0.05, fy + 0.017, 1.3, 0.34, -18, M))
         if state == 'forced' and s == 0:             # crumpled leading edge, scraped paint
             for ob in objs:
                 ob.rotation_euler.z += math.radians(7)
-            objs.append(gbox('scrape', min(lead, lead + dirn * 0.5), fy + 0.012, max(lead, lead + dirn * 0.5), fy + 0.02, 0.3, 0.45 if which == 'bot' else 0.25, M['scorch'], 0.0))
+            objs.append(gbox('scrape', min(lead, lead + dirn * 0.5), fy + 0.012, max(lead, lead + dirn * 0.5), fy + 0.02, 0.3, 0.45 if which == 'bot' else 1.3, M['scorch'], 0.0))
         o += objs
     return o
 
 def window(name, extra=None):
-    win(name, -0.6, W + 0.6, Y_HI, 0.12, H_FULL + 0.45, origin=(0.0, 0.0), zmin=0.0,
+    win(name, -0.6, W + 0.6, Y_TOP0, 0.12, H_FULL + 0.45, origin=(0.0, 0.0), zmin=0.0,
         extra=dict(extra or {}, note='deck airlock (DECK_LOCKS); origin = (L.x, SPINE_Y1) on the floor; covers L.x-0.6 .. L.x+2.8'))
 
 def render_base(name, state, t=0.0):

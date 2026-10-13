@@ -252,7 +252,7 @@ function drawLightPools() {
 // wall's foot at its front face, lamp 1.15 up), on and off with the zone's power. js/lights.js lights
 // both: the ceiling lights from above, a small warm glow at each wall lamp.
 const WALL_LAMPS = [[5.6, 3.4], [9.4, 3.4],                    // left cannon (back wall y 3.4)
-                    [19.4, -2.4], [27.1, 0.6], [25.75, -2.4],   // bridge (nose and right back wall)
+                    [19.4, -2.4], [27.1, 0.6], [23.8, -2.4],    // bridge (nose, clear of the front ladder, and right back wall)
                     [36.0, 2.6], [42.7, 2.6],                    // right cannon
                     [1.5, SPINE_Y1], [10.9, SPINE_Y1],           // left airlock (the spine is its back wall)
                     [24.9, SPINE_Y1], [29.1, SPINE_Y1],          // reactor

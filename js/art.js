@@ -521,7 +521,9 @@ function drawReactor(R, t) {
     const fuel = typeof power !== 'undefined' ? power.reactor.fuel : 1, over = typeof power !== 'undefined' && power.overcharge;
     const dead = !fuel || broken(R);
     if (sprReady('ship/reactor', 'ship/reactor_off')) {
-      if (dead) spr('ship/reactor_off', 0, R.x, R.y, 0, { emissive: 0.4, pick: [R.w / 2, 2.2] });
+      if (broken(R) && sprReady('ship/reactor_broken'))   // cracked, scorched, sparking; the core flickers now and then (frame 1)
+        spr('ship/reactor_broken', hash01(Math.floor(t * 9) + 7) < 0.18 ? 1 : 0, R.x, R.y, 0, { emissive: 0.6, pick: [R.w / 2, 2.2] });
+      else if (dead) spr('ship/reactor_off', 0, R.x, R.y, 0, { emissive: 0.4, pick: [R.w / 2, 2.2] });
       else spr('ship/reactor', Math.floor(t * (over ? 14 : 6)) % 6, R.x, R.y, 0, { emissive: over ? 1 : 0.7, pick: [R.w / 2, 2.2] });
       if (over && !dead) labelAt(R.x, R.y - R.h / 2, 2.1, 'OVERCHARGED', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffd28a', 'bottom', 'rgba(10,12,18,0.8)');
       return;
@@ -694,13 +696,14 @@ function drawShieldButton(b, state, k, t) {
   ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('SHIELD', x, y + T * 0.38); ctx.textAlign = 'left';
 }
 
-// Ladder hatch inside the ship that leads up into a cannon.
+// Floor hatch inside the ship with the ladder down the crawlway to a cannon.
 function drawGunLadder(g) {
   const [hx, hy] = g.hatch, x = hx * T, y = hy * T, s = T * 0.36;
   const manned = typeof crew !== 'undefined' && crew.some(c => c.mode === 'gun' && c.gun === g);
-  if (spr(manned ? 'interior/gun_ladder_lit' : 'interior/gun_ladder', 0, hx, hy, 0, { emissive: 0.6, pick: [0.4, 1.6] })) {
+  const name = broken(g) && sprReady('interior/gun_ladder_broken') ? 'interior/gun_ladder_broken' : manned ? 'interior/gun_ladder_lit' : 'interior/gun_ladder';
+  if (spr(name, 0, hx, hy, 0, { emissive: 0.6, pick: [0.4, 1.6] })) {
     ctx.fillStyle = 'rgba(232,236,244,0.6)'; ctx.font = `800 ${T * 0.14}px system-ui, sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('CANNON ↑', x, y + s + 3); ctx.textAlign = 'left';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('CANNON', x, y + s + 3); ctx.textAlign = 'left';
     return;
   }
   rr(x - s, y - s, 2 * s, 2 * s, 5); ctx.fillStyle = '#23272f'; ctx.fill(); stroke(2);
@@ -710,7 +713,7 @@ function drawGunLadder(g) {
   ctx.lineWidth = 2;
   for (let i = 0; i < 3; i++) { const yy = y - s + 14 + i * (2 * s - 18) / 2.5; ctx.beginPath(); ctx.moveTo(x - s * 0.45, yy); ctx.lineTo(x + s * 0.45, yy); ctx.stroke(); }
   ctx.fillStyle = 'rgba(232,236,244,0.6)'; ctx.font = `800 ${T * 0.14}px system-ui, sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('CANNON ↑', x, y + s + 3); ctx.textAlign = 'left';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('CANNON', x, y + s + 3); ctx.textAlign = 'left';
 }
 
 // Cover plate that rises in front of the cannon and its gunner (k: 0 down .. 1 up).

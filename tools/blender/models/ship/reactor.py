@@ -7,13 +7,22 @@ the top), pressure gauges and a fuel bar screen on the front.
 Renders
   ship/reactor      6-frame loop, the core pulsing (frames _f0.._f5)
   ship/reactor_off  out of fuel: core dark, socket empty, screen and lamps red
+  ship/reactor_broken  broken (drawReactor when broken(REACTOR)): 2 frames, f0 core dark, f1 a weak
+                    flicker (the game shows f1 now and then); cracked core window, scorched housing,
+                    an access panel hanging off one hinge, sparking cables out of the hole behind it,
+                    a cage bar snapped off. Same canvas and origin as the other two.
+
+MN_ONLY=ship/reactor_broken (comma list of names) renders only those sets.
 """
 import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..')); sys.path.insert(0, os.path.dirname(__file__))
 import bpy
+from mathutils import Matrix
 import mn
 from shiplib import pmat, glow, pipe, label, ring
 
+ONLY = os.environ.get('MN_ONLY', '').split(',') if os.environ.get('MN_ONLY') else None
+def want(n): return not ONLY or n in ONLY
 W, D = 3.8, 2.6                       # footprint (REACTOR.w, REACTOR.h)
 FRAMES = list(range(1, 7))
 s = mn.reset()
@@ -227,7 +236,7 @@ for i, f in enumerate(FRAMES):
     light_d.energy = 8 + 25 * k; light_d.keyframe_insert('energy', frame=f)
 
 objs = parts
-mn.render('ship/reactor', objs=objs, frames=FRAMES)
+if want('ship/reactor'): mn.render('ship/reactor', objs=objs, frames=FRAMES)
 
 # ---------------------------------------------------------------------------
 # Out of fuel: core dark, cell gone, screen and lamps red
@@ -246,4 +255,80 @@ for o in bpy.data.objects:
 for l in lamps: l.data.materials[0] = glow('lamp_red', '#ff2010', 1.2)
 light_d.animation_data_clear(); light_d.energy = 0
 M['core'].node_tree.animation_data_clear()
-mn.render('ship/reactor_off', objs=objs)
+if want('ship/reactor_off'): mn.render('ship/reactor_off', objs=objs)
+
+# ---------------------------------------------------------------------------
+# Broken (fuel still in): on top of the out-of-fuel look. New parts are framed by `objs` (the intact
+# reactor), so the canvas and origin stay those of ship/reactor and ship/reactor_off.
+# ---------------------------------------------------------------------------
+for o in cell: o.hide_render = False                                 # the cell is still in
+brk = []
+def B(o): brk.append(o); return o
+flick = glow('core_flicker', '#ff8a3a', 0.05)                         # the core: dark, now and then a sick orange flicker
+for o in bpy.data.objects:
+    if o.type == 'MESH' and o.data.materials and o.data.materials[0] == dead: o.data.materials[0] = flick
+fem = flick.node_tree.nodes['Emission']
+for f, k in ((1, 0.0), (2, 0.5)):
+    fem.inputs['Strength'].default_value = k; fem.inputs['Strength'].keyframe_insert('default_value', frame=f)
+light_d.color = (1.0, 0.55, 0.25)
+for f, k in ((1, 0.0), (2, 9.0)):
+    light_d.energy = k; light_d.keyframe_insert('energy', frame=f)
+BA = 7 * math.tau / 10 + 0.15                                         # one cage bar (front) snapped off
+for o in parts:
+    if o.name.startswith('bar') and not o.name.startswith('bar_') and abs(o.location.x - (CX + math.cos(BA) * 0.56)) < 1e-3 and abs(o.location.y - (CY + math.sin(BA) * 0.56)) < 1e-3:
+        o.hide_render = True
+P_ = (CX + math.cos(BA) * 0.56, CY + math.sin(BA) * 0.56)
+B(mn.cyl('bar_stub', 0.04, 0.28, loc=(P_[0], P_[1], CZ0), m=M['steel'], verts=10, bevel=0.01))
+B(mn.cyl('bar_bent', 0.04, 0.55, loc=(P_[0], P_[1], CZ1 - 0.02), m=M['steel'], verts=10, bevel=0.01, rot=(math.radians(150), math.radians(-25), 0)))
+
+# scorch: dark, mottled blotches over the paint (front round the window, the lid edge, the top)
+scorch = pmat('scorch', '#17130f', 0.95, 0.0, grime=1.0, grime_scale=9)
+soot = pmat('soot', '#3a2a20', 0.9, 0.0, grime=1.0, grime_scale=7)
+for (x, z, rx, rz, m) in ((-0.98, 0.8, 0.62, 0.3, soot), (-0.72, 0.9, 0.36, 0.18, scorch), (-1.3, 0.5, 0.2, 0.3, scorch), (0.0, 0.42, 0.5, 0.2, soot), (0.98, 0.98, 0.4, 0.12, soot)):
+    B(mn.sphere('scorch_f', 1.0, loc=(x, FY + 0.012, z), m=m, scale=(rx, 0.02, rz), segs=24))
+for (x, y, r, m) in ((-0.62, -0.42, 0.42, soot), (-0.42, -0.2, 0.26, scorch), (0.25, 0.75, 0.3, soot)):
+    B(mn.sphere('scorch_t', 1.0, loc=(x, y, LID), m=m, scale=(r, r * 0.8, 0.012), segs=24))
+
+# cracked core window: pale cracks from an impact point, a chip knocked out
+glass_crack = pmat('crack', '#dfe9ee', 0.25, 0.0)
+ix, iz = wx + 0.08, wz + 0.07
+B(mn.sphere('chip', 0.055, loc=(ix, FY - 0.045, iz), m=M['hole'], scale=(1.0, 0.2, 0.8), segs=12))
+for a, L in ((0.3, 0.27), (1.4, 0.2), (2.3, 0.3), (3.3, 0.24), (4.2, 0.33), (5.3, 0.22)):
+    c = B(mn.box('crack', (L, 0.006, 0.011), m=glass_crack, bevel=0))
+    c.location = (ix + math.cos(a) * L / 2, FY - 0.048, iz + math.sin(a) * L / 2); c.rotation_euler = (0, -a, 0)
+    a2 = a + 0.6; L2 = L * 0.45; ex, ez = ix + math.cos(a) * L * 0.7, iz + math.sin(a) * L * 0.7
+    c = B(mn.box('crack2', (L2, 0.006, 0.008), m=glass_crack, bevel=0))
+    c.location = (ex + math.cos(a2) * L2 / 2, FY - 0.048, ez + math.sin(a2) * L2 / 2); c.rotation_euler = (0, -a2, 0)
+
+# the vent's access panel: torn off at one side, hanging from its top-left hinge; a dark hole behind it
+B(mn.box('vent_hole', (0.6, 0.02, 0.3), loc=(0.01, FY - 0.035, 0.24), m=M['hole'], bevel=0.01))
+pn = B(mn.box('panel_hang', (0.62, 0.03, 0.32), m=M['paint'], bevel=0.015))
+pn.data.transform(Matrix.Translation((0.31, 0, -0.32)))                # pivot = its top-left corner
+pn.location = (-0.3, FY - 0.09, 0.56); pn.rotation_euler = (math.radians(-20), math.radians(68), math.radians(-14))
+B(mn.box('panel_stripe', (0.5, 0.034, 0.05), m=M['hazard'], bevel=0.004)).data.transform(Matrix.Translation((0.06 + 0.25, 0, -0.27)))
+brk[-1].location = pn.location; brk[-1].rotation_euler = pn.rotation_euler
+B(mn.cyl('hinge', 0.03, 0.05, loc=(-0.3, FY - 0.05, 0.56), m=M['steel'], verts=8, bevel=0.006, rot=R90))
+
+# sparking cables hanging out of the hole, frayed copper ends, sparks (glowing) at the ends
+spark = glow('spark', '#ffe7a0', 3.0)
+spark_hot = glow('spark_hot', '#ffffff', 4.0)
+for i, (x0, pts, c) in enumerate(((0.08, [(0.12, FY - 0.25, 0.3), (0.2, FY - 0.32, 0.2)], '#c9662e'),
+                                  (0.2, [(0.3, FY - 0.2, 0.36), (0.42, FY - 0.3, 0.24)], '#2e6ec9'),
+                                  (-0.08, [(-0.12, FY - 0.22, 0.26), (-0.2, FY - 0.3, 0.22)], '#d2a62e'))):
+    path = [(x0, FY + 0.02, 0.38), (x0, FY - 0.1, 0.38)] + pts
+    B(pipe('cable_hang', path, 0.03, pmat('cbl' + c, c, 0.6), corner=0.08))
+    ex, ey, ez = pts[-1]
+    for k in range(3):                                               # frayed strands
+        a = k * 2.1 + i
+        B(pipe('strand', [(ex, ey, ez), (ex + math.cos(a) * 0.05, ey - 0.03, ez - 0.04 + math.sin(a) * 0.02)], 0.008, M['copper'], corner=0.0))
+    if i < 2:
+        B(mn.sphere('spark_core', 0.045, loc=(ex, ey - 0.04, ez - 0.05), m=spark_hot, segs=10))
+        for k in range(5):                                          # spark streaks
+            a = k * 1.3 + i * 0.7
+            sp = B(mn.box('spark', (0.016, 0.016, 0.14 + 0.06 * (k % 2)), m=spark, bevel=0))
+            sp.location = (ex, ey - 0.04, ez - 0.05); sp.rotation_euler = (math.radians(20), a, 0)
+
+# fuel screen: the bars scrambled (red, every other), the lamps red (as when out of fuel)
+for k, b in enumerate(bars): b.data.materials[0] = red if k % 2 == 0 else M['screen_bg']
+mn.outline([o for o in brk if not o.name.startswith(('spark', 'crack', 'scorch'))], thickness=0.012)
+if want('ship/reactor_broken'): mn.render('ship/reactor_broken', objs=objs, frames=[1, 2])

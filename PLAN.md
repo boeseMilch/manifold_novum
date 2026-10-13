@@ -785,7 +785,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 ### 9c. Coherence pass: one look inside the ship
 - Lamps: the pendant ceiling lamps read as floor lamps in the tilted view; they're gone. The ceiling lights
   stay (invisible, the camera looks through the ceiling) and every room has bulkhead lamps on its back
-  wall (`interior/lamp_wall_on/off`, WALL_LAMPS in js/interior.js) with a small warm glow of their own.
+  wall (`interior/lamp_wall_on/off`, WALL_LAMPS in js/interior.js) with a small warm glow of their own:
+  chunky caged lamps ~1 unit wide (readable at room zoom), a glowing lens when on, a dark one when off;
+  the bridge's nose lamp moved left, clear of the front cannon's ladder.
 - Labels: text that belongs to the world is a sprite now (GFX.text, an upright billboard, depth-tested):
   room names on their plaques (backlit, outlined; the lower rooms' plaques moved clear of the deck airlocks),
   capacitor readouts, the VENT tag, the cat's z z z / hearts, the limpet mines' countdown; whoever walks in
@@ -793,7 +795,18 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   fade while a crew member stands in front of them. Steam (helm mug, kitchen stove) and the map table's
   radar sweep are canvas sprites in the world too (GFX.canvasSprite).
 - Broken machines: the scorch and the loose panel lie in front of the machine where they can be seen;
-  the reactor and the cannon ladders (no broken sprite) get a burn mark on their front; sparks glow.
+  sparks glow. The reactor and the cannon ladders have broken sprites of their own: `ship/reactor_broken`
+  (cracked core window, scorched housing, an access panel hanging off, sparking cables, a snapped cage
+  bar; 2 frames, the dead core flickers now and then) and `interior/gun_ladder_broken` (bent / missing
+  rungs, scorched hatch ring, smashed beacon, sparking cable); the old burn mark only while they load.
+- Cannon ladders go DOWN now: `interior/gun_ladder*` is an open floor hatch (hazard ring flush with the
+  floor, lid swung up, grab rails and the top rungs over a well seen only through the hole; a holdout
+  floor hides the rest, its height clamps to 0 so the hole counts as floor). _lit: light glowing up out of
+  the well; _broken: scorched ring, bent rail and rungs, sparks. Wording: 'Click: climb into the …',
+  'LADDER TO THE CANNON', 'CANNON'. Click area unchanged.
+- Deck airlocks: the top door is a full-height door like the bottom one (same panels), its panels slide
+  into two full-height jambs in the spine's low lip next to the shaft; the decklock canvas grew north to
+  y 11.5 to hold them (all decklock sprites re-rendered).
 - Power lines lie on the floor, clipped to the floors (they run under the walls and the spine instead of
   over them), with a clamp where they disappear under a machine; their energy and the pulses glow in a
   new unlit 2D layer ('glow', between the floor drawings and the crew), with the interaction brackets,

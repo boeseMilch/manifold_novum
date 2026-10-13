@@ -498,7 +498,7 @@ function drawFloorDecor(t) {
   const solid = (name, x, y, o) => spr(name, (o && o.f) || 0, x, y, 0, o);
   // --- Left cannon room
   if (!flat('props/crack_portgun', 4.6, 6.6)) { crack(U(4.6), U(6.6), U(1.6), 0.3, 41); tapeX(U(4.6), U(6.6), U(0.6), 42); }
-  stencil(U(5.2), U(8.6), '← LADDER UP TO THE CANNON', 0, 0.24);
+  stencil(U(5.2), U(8.6), '← LADDER TO THE CANNON', 0, 0.24);
   // --- Bridge
   stain(U(21.6), U(-0.9), U(0.35), 'rgba(80,45,20,0.45)', 50);          // spilled coffee
   if (!flat('props/papers_bridge', 17.0, 6.0)) papers(U(17.0), U(6.0), 53);

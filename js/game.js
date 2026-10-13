@@ -291,7 +291,7 @@ function updatePlayer(dt) {
   const ladder = GUNS.find(g => Math.hypot(player.x - g.hatch[0], player.y - g.hatch[1]) < 0.9);
   const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
   if (ladder) {
-    act({ text: `Click: climb up into the ${ladder.name.toLowerCase()}`, at: { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 },
+    act({ text: `Click: climb into the ${ladder.name.toLowerCase()}`, at: { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 },
           run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; player.gunReady = false; } });
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
