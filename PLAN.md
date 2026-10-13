@@ -755,12 +755,12 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   alien hunts you.
 - Art: `tools/blender/models/chars/saboteur.py` (slate stealth suit, egg helmet with a glowing visor
   slit, cloak emitter on the back, light strips through the tint mask: cyan calm, red fighting;
-  idle, walk, aim, sabotage, stunned, down). **Rendered but not packed yet** (the sandbox lacks
-  Pillow and the other chars renders). Until then: in the sprite view a stand-in (the crew suit with
-  the visor down, greyed out and half see-through, a glowing visor), in ?classic a 2D figure. To
-  pack, where Pillow/scipy and the chars renders are: render alien, pirate, npc and saboteur, then
-  `python3 tools/sprites/pack.py chars`. The work's progress ring is round its feet (a ring on a big
-  part like the reactor would be hidden under it).
+  idle, walk, aim, sabotage, stunned, down), **packed into the chars atlas** (29 sprites, 4.7 MB;
+  the alien, pirate and Dr. Varga entries are unchanged). Its raw renders were merged into the
+  laptop's build/renders/ (as of dbf51f4; the manifests had no overlap). If its sprites are missing
+  (still loading), the sprite view falls back to a stand-in (a greyed, half see-through crew suit with
+  a glowing visor); ?classic draws a 2D figure. The work's progress ring is round its feet (a ring on a
+  big part like the reactor would be hidden under it).
 - Debug menu: "Saboteur through the left / right airlock" (click the row; `I` / `P` clash with the
   key codes of i / p). Practice: "Saboteur (left airlock)".
 - **Travel times** (`tools/travel.js`): walks a crew member through the real game (walking speed,
