@@ -184,6 +184,9 @@ function shieldAbsorb(s, side, x, y) {
 }
 
 function shipHit(side, x, y, large) {
+  if (typeof tutorialHit === 'function' && tutorialHit('ship', side)) {   // tutorial: enemy hits are for show only (js/tutorial.js)
+    combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/explosion_s', x, y, 0.7, hitSurface(x, y).z); return;
+  }
   combat.hits[large ? 'large' : 'small']++;
   if (large) { damageColumn(side, true); onBigHit(side, x, y); bigHitFire(side, x, y); }   // (the fire after a breach: no fire in vacuum)   // small hits: see smallHit (fire / damage)
   // hot: when it hit (sim time), side: from where. js/hitfx.js plays the impact (sparks, smoke, debris,
@@ -194,6 +197,9 @@ function shipHit(side, x, y, large) {
   combatFlip(large ? 'fx/explosion_l' : 'fx/explosion_s', x, y, large ? 0.8 : 0.7, hitSurface(x, y).z);
 }
 function crewHit(side, c) {
+  if (typeof tutorialHit === 'function' && tutorialHit('crew', side, c)) {   // tutorial: for show only
+    combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/hit_spark', c.x, c.y, 1, gunnerZ(c)); return;
+  }
   combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c);
   const z = gunnerZ(c);                            // the front gunner is up on the roof
   for (let i = 0; i < 10; i++) combatFxAt(z, c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, '#e2574c', 0.12);

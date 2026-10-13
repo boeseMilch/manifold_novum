@@ -3,7 +3,7 @@
 
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
-const JUMP_DELAY = 22, JUMP_WINDOW = 15, MAX_DAMAGE = 3;   // the jump comes mid-battle: 22 s after the final fight starts
+const JUMP_DELAY = 22, JUMP_WINDOW = 15, MAX_DAMAGE = 5;   // the jump comes mid-battle: 22 s after the final fight starts
 const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
 let FIRE_TIME = 15;
 const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
@@ -380,6 +380,7 @@ function spawnFire(x, y) {
 }
 function updateFires(dt) {
   for (const f of [...fires]) {
+    if (f.tame) continue;                          // (the tutorial's fire: never spreads, burns out or goes out on its own)
     f.t += dt;
     if (fireLeft(f) > 0) continue;
     f.t = 0; f.period = firePeriod(f.plasma);
@@ -577,12 +578,12 @@ function drawPanels(t) {
   else if (ui.panel === 'mini') drawMiniPanel(t);
   if (mission.over) drawEndScreen();
 }
-function panelFrame(w, h, title) {
+function panelFrame(w, h, title, hint = 'E / Esc to close') {
   ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(0, 0, VW, VH);
   const x = VW / 2 - w / 2, y = VH / 2 - h / 2;
   rr(x, y, w, h, 12); ctx.fillStyle = 'rgba(14,17,24,0.96)'; ctx.fill(); stroke(2, '#5fd6a0');
   ctx.fillStyle = '#e8ecf4'; ctx.font = '700 16px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText(title, x + 18, y + 24);
-  ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.fillText('E / Esc to close', x + w - 18, y + 24); ctx.textAlign = 'left';
+  ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.fillText(hint, x + w - 18, y + 24); ctx.textAlign = 'left';
   return [x, y];
 }
 function drawSecurityPanel() {
@@ -656,7 +657,7 @@ function drawOverridePanel(t) {
   fx.shake = Math.max(0, fx.shake - 1 / 60);
   const sx = (Math.random() - 0.5) * 14 * fx.shake / 0.3, sy = (Math.random() - 0.5) * 14 * fx.shake / 0.3;
   ctx.save(); ctx.translate(sx, sy);
-  const w = 440, h = 340, [x, y] = panelFrame(w, h, `${o.name} — ${o.hits >= 3 ? 'it gives!' : 'locked'}`);
+  const w = 440, h = 340, [x, y] = panelFrame(w, h, `${o.name} — ${o.hits >= 3 ? 'it gives!' : 'locked'}`, 'E / click: hit · Esc to close');
   const cx = x + w / 2 - 20, cy = y + 150;
   // swing: wind up, then slam into the handle, then recoil
   const prog = o.swing > 0 ? 1 - o.swing / OVERRIDE_SWING : 0;

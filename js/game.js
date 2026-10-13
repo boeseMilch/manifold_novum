@@ -63,7 +63,7 @@ const CREW_COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a
 let crewIdCounter = 1;
 function makeCrew(name = 'Crew', x = 22.2, y = 4.5) {
   const id = crewIdCounter++;
-  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside', cover: 0, health: 'ok', hurtT: 0, treat: null, lamp: false,
+  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside', cover: 0, health: 'ok', hurtT: 0, treat: null, lamp: true,
            input: makeInput(), inv: { weapon: null, item: null, cd: 0 }, ui: { panel: null, override: null, hits: [] }, prompt: null, hover: null };
 }
 const crew = [makeCrew('You')];
@@ -231,7 +231,8 @@ function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zo
 
 function updatePlayer(dt) {
   const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
-  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape'))) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); player.eUsed = true; }
+  if (ui.override && !mission.over && keys.has('KeyE') && !player.eUsed && !pressed.has('Escape')) { pressed.delete('KeyE'); overrideHit(); }   // E hits, like the button (held: again after each swing)
+  if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape')) && tutAllows('closePanel')) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); player.eUsed = true; }
   if (!keys.has('KeyE')) player.eUsed = false;           // (E that did something stays used until it's let go)
   const ix = block ? 0 : (held('KeyD') ? 1 : 0) - (held('KeyA') ? 1 : 0);   // WASD walks, the arrow keys aim
   const iy = block ? 0 : (held('KeyS') ? 1 : 0) - (held('KeyW') ? 1 : 0);
@@ -265,20 +266,20 @@ function updatePlayer(dt) {
     const arc = gunArc(g);
     g.aim = g.a + clamp(d, -arc, arc);
     // cover: a metal plate that rises in front of you and the cannon; no firing while it's up
-    const covering = !block && (held('ShiftLeft', 'ShiftRight') || mouse.right);
+    const covering = !block && tutAllows('cover') && (held('ShiftLeft', 'ShiftRight') || mouse.right);
     player.cover = clamp(player.cover + (covering ? dt : -dt) * COVER_SPEED, 0, 1);
     // reload: R (the on-screen RELOAD button is handled by the browser and sent as a command)
-    if (!block && pressed.has('KeyR')) reloadCannon(g);
-    if (!block && held('KeyR') && g.reload > 0) g.reload = Math.max(0.01, g.reload - dt * RELOAD_HOLD_RATE * (player.health === 'hurt' ? 0.6 : 1));
+    if (!block && pressed.has('KeyR') && tutAllows('reload')) reloadCannon(g);
+    if (!block && held('KeyR') && g.reload > 0 && tutAllows('reload')) g.reload = Math.max(0.01, g.reload - dt * RELOAD_HOLD_RATE * (player.health === 'hurt' ? 0.6 : 1));
     if (!mouse.down) player.gunReady = true;            // the click that got you in doesn't fire: let go first
-    if (!block && player.cover < 0.3 && ((mouse.down && !mouse.suppress && player.gunReady) || held('Space'))) fireCannon(g);
+    if (!block && player.cover < 0.3 && tutAllows('fire') && ((mouse.down && !mouse.suppress && player.gunReady) || held('Space'))) fireCannon(g);
     // the gunner always sits opposite the barrel
     player.x = g.x - Math.cos(g.aim) * GUNNER_OFFSET; player.y = g.y - Math.sin(g.aim) * GUNNER_OFFSET; player.face = g.aim;
     prompt = { text: player.cover > 0.5 ? 'Cover raised — let go of the right mouse button to fire again'
                                         : broken(g) ? `${g.name} is BROKEN — repair it at its ladder`
                                         : g.shots ? `${g.name} · Left click: fire · Right click (hold): raise cover`
                                         : `${g.name} is empty — click RELOAD (uses 1 energy)`, screen: true };
-    if (use) climbDown();
+    if (use && tutAllows('climbDown')) climbDown();
     return;
   }
 
@@ -363,9 +364,10 @@ function promptHover(c, mx, my) {
 function act(p) {
   prompt = { ok: !!p.run || !!p.ok, ...p };
   if (!p.run) return;
+  if (!tutAllows('target', p)) { prompt.ok = false; return; }   // tutorial: not what this step asks for
   if ((debugOpen && player === me) || ui.panel || mission.over) return;
   const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r && !clickTarget(m[0], m[1])?.ok;   // something more specific under the mouse wins
-  const eForMe = pressed.has('KeyE') && !ui.panel && !hover?.ok && !p.noE;   // (E on something highlighted under the mouse goes there; noE: E goes to something more urgent nearby)
+  const eForMe = pressed.has('KeyE') && !ui.panel && !actionable(hover) && !p.noE;   // (E on something highlighted under the mouse goes there; noE: E goes to something more urgent nearby)
   if ((mouse.click && onIt) || eForMe) { mouse.click = false; if (eForMe) player.eUsed = true; pressed.delete('KeyE'); p.run(); }
 }
 
@@ -384,14 +386,16 @@ function updateInteraction(dt) {
   if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
   const [mx, my] = mouseWorld();
   hover = pickHover(player, mx, my);
+  if (hover?.ok && !tutAllows('target', hover)) hover = { text: hover.text, ok: false, x: hover.x, y: hover.y, r: hover.r };   // tutorial: only what the step asks for
   let target = hover, holding = mouse.down, click = mouse.click;
   const eDown = keys.has('KeyE') && !player.eUsed, eTap = pressed.has('KeyE') && !player.eUsed;
   if (!mouse.down) {
-    const e = hover?.ok ? hover : nearbyTarget(eDown || eTap);
-    if (e && !hover?.ok && (!prompt?.run || prompt.noE) && !prompt?.screen)            // show what E would do
-      prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r } };
+    const e = actionable(hover) ? hover : nearbyTarget(eDown || eTap);   // (pointing at your prompt's own spot doesn't count: act() runs that)
+    if (e && !actionable(hover) && (!prompt?.run || prompt.noE) && !prompt?.screen)            // show what E would do
+      prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r, hullTop: e.hullTop } };
     const eLetGo = player.eHeld && !keys.has('KeyE');
-    if (eDown || eTap || eLetGo) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
+    const treating = e?.treat && player.treat?.id === e.treat.id && !actionable(hover);   // (letting go of E for a moment keeps a treatment going, as with the mouse)
+    if (eDown || eTap || eLetGo || treating) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
     if ((eDown || eTap || eLetGo) && e?.eHold) {                // E on a tap-or-hold thing (the power lever): nothing on the press,
       const eh = e.eHold;                          // a tap on letting go, the hold action once held long enough
       if ((eLetGo && player.hold?.id === 'eHold') || (eTap && !eDown)) eh.tap();
@@ -403,10 +407,12 @@ function updateInteraction(dt) {
   if (target?.run && click) { target.run(); mouse.click = false; player.eUsed = true; }
   updateRepair(dt, target, holding);
   updateHold(dt, target, holding);
-  updateTreat(dt, target, holding);
+  updateTreat(dt, target, holding, click);
   if (!standing(player)) { player.charge = null; return; }      // down: no weapons
-  updateWeapon(dt, mx, my);
+  if (tutAllows('weapon')) updateWeapon(dt, mx, my);
 }
+// Something a click (or E) does something with; a prompt's spot (promptHover) is only its tooltip: act() runs it.
+const actionable = (t) => !!t?.ok && !!(t.run || t.repair || t.treat || t.hold);
 // The nearest thing in reach that a click would do something with (for E). Rescanned every tick
 // while E is down, otherwise a few times a second (it's only shown as a prompt then).
 function nearbyTarget(now) {
@@ -416,7 +422,7 @@ function nearbyTarget(now) {
     for (let gx = -REACH; gx <= REACH; gx += 0.3) for (let gy = -REACH; gy <= REACH; gy += 0.3) {
       if (gx * gx + gy * gy > REACH * REACH) continue;
       const t = clickTarget(player.x + gx, player.y + gy);
-      if (!t?.ok || !(t.run || t.repair || t.treat || t.hold)) continue;
+      if (!actionable(t) || !tutAllows('target', t)) continue;
       const d = Math.hypot(t.x - player.x, t.y - player.y);
       if (d < bd) { bd = d; best = t; }
     }
@@ -440,13 +446,16 @@ function runCommand(cmd) {
   else if (kind === 'bonk') { if (ui.override) overrideHit(); }
   else if (kind === 'closePanel') { ui.panel = null; ui.override = null; ui.mini = null; }
   else if (kind === 'mini') miniCommand(arg, cmd[2], cmd[3]);
-  else if (kind === 'reload') { if (player.mode === 'gun' && standing(player)) reloadCannon(player.gun); }
-  else if (kind === 'climbDown') climbDown();
+  else if (kind === 'reload') { if (player.mode === 'gun' && standing(player) && tutAllows('reload')) reloadCannon(player.gun); }
+  else if (kind === 'climbDown') { if (tutAllows('climbDown')) climbDown(); }
   else if (kind === 'reboot') rebootSwitch(arg);
   else if (kind === 'practice') runPractice(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
   else if (kind === 'lamp') player.lamp = !player.lamp;   // the helmet lamp (L): drawing only, see js/lights.js
 }
+// Tutorial gate (js/tutorial.js): while the tutorial runs, only what its current step asks for works
+// (interaction targets, cannon fire / reload / cover, climbing down, closing panels, hand weapons).
+const tutAllows = (what, arg) => typeof tutorialAllows !== 'function' || tutorialAllows(what, arg);
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
 
 // Doors between rooms: open unless locked; never close on someone standing in them.
@@ -554,7 +563,8 @@ function drawDebugMenu() {
 // ---------------------------------------------------------------------------
 // Camera. Inside: about one room fills the screen, aimed at a blend of nearby room
 // centers (weighted by how close you are), so moving between rooms glides. Outside it
-// follows you; on a cannon it frames the cannon's field of fire. Tab: whole ship.
+// follows you; on a cannon it frames the cannon's field of fire. The whole ship only in the tutorial's tour
+// and the debug menu (no Tab overview in the game: not knowing what's coming is part of it).
 // Projection: with the sprite renderer (GFX.on) the view is tilted, 50° above the horizon:
 // screen y = (y·sin50° − z·cos50°) × zoom·T (VIEW_SY = sin50°); the classic view is straight down.
 // ---------------------------------------------------------------------------
@@ -584,7 +594,8 @@ function cameraTarget() {
 }
 function updateCamera(dt) {
   const [tx, ty, tz] = cameraTarget();
-  cam.overview = clamp(cam.overview + (held('Tab') || DEBUG_OVERVIEW ? dt : -dt) * 4, 0, 1);
+  const tutView = typeof tutorialOverview === 'function' && tutorialOverview();   // (the tutorial's ship tour)
+  cam.overview = clamp(cam.overview + (DEBUG_OVERVIEW || tutView ? dt : -dt) * 4, 0, 1);
   const o = cam.overview * cam.overview * (3 - 2 * cam.overview);
   const vh = VH - HUD_H;
   const zShip = Math.min(VW / ((VIEW_SHIP.x1 - VIEW_SHIP.x0) * T), vh / ((VIEW_SHIP.y1 - VIEW_SHIP.y0) * T * viewSy()));
@@ -803,6 +814,7 @@ function render(t) {
   drawVacuumTint();
   drawDockDarkness();
   drawCombatFront(t);
+  if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
 
   ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
   const prompt = me.prompt, hover = me.hover;
@@ -833,6 +845,7 @@ function render(t) {
     ctx.fillStyle = hover.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(hover.text, tx + 8, ty);
   }
   drawHUD();
+  if (typeof drawTutorialHUD === 'function') drawTutorialHUD(t);
   drawDebugMenu();
   drawPanels(t);
   if (G) GFX.end();
@@ -850,7 +863,7 @@ function drawHUD() {
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText('WASD move · Arrows aim · E / left click: interact · Space / right click: weapon · Tab: overview · L: lamp · M: mute · `: debug', 200, 18);
+  ctx.fillText('WASD move · Arrows aim · E / left click: interact · Space / right click: weapon · M: mute · `: debug', 200, 18);
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
     : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
@@ -940,6 +953,7 @@ function simTick(dt) {
   updateMinigames(dt);
   updateOrganic(dt);
   updateDock(dt);
+  if (typeof updateTutorial === 'function') updateTutorial(dt);   // js/tutorial.js (solo only)
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.
@@ -956,9 +970,12 @@ function clientUpdate(dt) {
   }
   const m = localInput.mouse;
   [m.wx, m.wy] = screenToWorld(m.x, m.y);
-  if (GFX.on) { const p = GFX.pickAt(m.x, m.y); if (p) [m.wx, m.wy] = p; }   // pointing at a raised sprite (crew): its ground point
-  if (!debugOpen && localInput.pressed.has('KeyL')) sendCommand(['lamp']);   // helmet lamp (before the debug menu, whose 'l' is something else)
-  updateDebug();
+  if (GFX.on) {                                        // pointing at a raised sprite (crew): its ground point,
+    const p = GFX.pickAt(m.x, m.y);                    // unless it only hides something you can use on the ground behind it
+    const acts = (x, y) => withCrew(me, () => actionable(pickHover(me, x, y)));   // (e.g. your own back in front of a barnacle)
+    if (p && !(acts(m.wx, m.wy) && !acts(p[0], p[1]))) [m.wx, m.wy] = p;
+  }
+  if (tutAllows('debug')) updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
   music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0);
   music.setMission(mission.id || 'intro');                // each mission has its own piece, building up towards the jump
@@ -986,7 +1003,9 @@ function backToLobby() { location.reload(); }
 let last = performance.now();
 function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05); last = now;   // (the first frame's timestamp can be a hair before `last`)
-  if (NET.on) NET.frame(dt); else if (!lobbyOpen()) tick(dt); else clientUpdate(dt);
+  if (NET.on) NET.frame(dt);
+  else if (typeof tutorialPaused === 'function' && tutorialPaused()) tutorialClient(dt);   // a tutorial message is open: the game is paused
+  else if (!lobbyOpen()) tick(dt); else clientUpdate(dt);
   render(now / 1000);
   requestAnimationFrame(frame);
 }

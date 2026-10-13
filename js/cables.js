@@ -6,25 +6,28 @@
 // polylines: each visible stretch of a line (l.runs) is rasterized once, in pieces of ~3 units, into canvas
 // sprites with a normal and a height map (a tube profile, steel ribs every RIB units, a dark outline and a soft
 // contact shadow), so the runtime lights shade it and it casts small shadows. Along its top runs an indicator
-// window that shows the line's state: amber (and self-lit) while the line is live, dark when it has no charge,
+// window that shows the line's state: amber (and self-lit) while the line is live, dim amber on the lever's
+// branches it isn't on (idle), dark when it has no charge,
 // dark red when its capacitor is broken; the flowing dashes and the pulses stay in the 'glow' layer on top of
 // it (drawPowerGlow, drawEnergyBolts), so the state reads like before. The canvas is the ground projection (the
 // tube is not lifted on screen), so those 2D glows sit exactly on the window. Drawn in the 'decal' layer:
 // walls, machines and the crew cover it; the stretches inside walls aren't drawn at all.
-// Fittings (tools/blender/models/power/fittings.py): power/plug_* (machine sockets), power/box_* and
+// Fittings (tools/blender/models/power/fittings.py): power/plug_* (machine sockets), power/gland_* (on the power
+// lever's dial: the trunk from the reactor goes in, the three branches to the capacitors come out), power/box_* and
 // power/riser_* (wall boxes), power/jack_* (outside: wall outlet → cannon mount), power/clamp (straps holding
 // the cable down every CLAMP_EVERY units). Each has _on (LED / window lit: line live) and _off.
 
 const CABLE_R = 0.095, CABLE_PPU = 96, RIB = 0.075, CLAMP_EVERY = 3.2;
 const CABLE_COL = {
   jacket: [61, 67, 82], rib: [125, 134, 150], outline: [20, 22, 27],
-  live: [255, 190, 72], off: [74, 63, 44], dead: [96, 38, 32],
+  live: [255, 190, 72], idle: [128, 100, 52], off: [74, 63, 44], dead: [96, 38, 32],
 };
 const CABLES = {};                                   // per piece of a run: { D, x0, y0, img, win, winShade, state } (null: GFX off)
 const PIECE_LEN = 3, BUILDS_PER_FRAME = 4;            // runs are rasterized in pieces (small canvases), a few per frame
 let cableBuilds = 0;
 
-function cableState(l) { return capBroken(l.cap) ? 'dead' : powerLineLive(l) ? 'live' : 'off'; }
+// 'live' | 'idle' (a lever branch it isn't on: dimmed) | 'off' | 'dead' (js/systems.js lineState)
+function cableState(l) { return lineState(l); }
 
 // A run cut into pieces of about PIECE_LEN: [{ i0, i1 }] (segment index ranges, segment i = run[i-1] → run[i]).
 function runPieces(run) {

@@ -16,7 +16,8 @@ Needs python3 with Pillow (WebP), numpy and scipy. A full run takes ~2.5 min on 
 1. **Scale** to the group's pixels per unit (`PPU_RULES` at the top of `pack.py`): 96 for the
    interior, ship, systems, props, crew, chars, fx, dock, items and the hull body tiles; 72 for the hull
    exterior parts, enemies and organic; item icons (`icon: true`) keep their 128×128 canvas. Lanczos on
-   premultiplied alpha. Normal and height maps are stored at half that resolution, masks at full.
+   premultiplied alpha. Normal and height maps are stored at half that resolution (full for the groups in
+   `MAP_SCALE_GROUPS`: `props`, whose floor clutter is too small for half-size maps), masks at full.
 2. **Trim** every image to its alpha bounding box; the origin moves with it.
 3. **Delta crop**: frames of one entry, and entries that share a canvas, origin and name stem (the name
    without its last `_token`, e.g. `interior/door_v_frame_blast_f0..f3`), are compared with the last 24
@@ -72,7 +73,9 @@ The `.n` / `.h` pages have exactly half the beauty page's size and the same layo
   `(sx - ox * S / ppu, sy - oy * S / ppu)`, size `(w * S / ppu, h * S / ppu)`.
   A pixel (px, py) of the rect is `(px - ox) / ppu` units right of the origin and `(py - oy) / ppu`
   screen-units below it (the tilted-view projection is in `tools/blender/mn.py`).
-- Maps: the same rect in a `.n` / `.h` page is `(x, y, w, h) * mapScale`.
+- Maps: the same rect in a `.n` / `.h` page is `(x, y, w, h) * mapScale`, where a page's own `mapScale`
+  (`meta.pages[g][i].mapScale`, e.g. 1 for `props`) overrides `meta.mapScale`. The game samples the maps
+  with the beauty page's uv, so it doesn't need the scale; only tools that crop by pixels do (gallery.html).
 - `native: true` (icons): the canvas is kept as rendered; `ppu` is then nominal.
 - Fields copied from the raw manifest are as written by the model scripts: pixel values in them
   (`spots`, `tile_px`, ...) are at `rawPpu` (96), so multiply by `ppu / rawPpu`.

@@ -60,7 +60,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;
 // Draw frame k of sprite S onto ctx at canvas position (x, y) = the ground origin, scale s (screen px per sprite px).
 function drawFrame(ctx, S, k, x, y, s) {
   const fr = S.f[k]; if (!fr) return true;
-  const pg = DATA.meta.pages[S.group][fr[0]], ms = mapKind && mapKind !== 'm' ? DATA.meta.mapScale : 1;
+  const pg = DATA.meta.pages[S.group][fr[0]], ms = mapKind && mapKind !== 'm' ? (pg.mapScale ?? DATA.meta.mapScale) : 1;
   const im = img(pg.file + (mapKind ? '.' + mapKind : '')); if (!im.ready) return false;
   const blit = (r) => { if (r[3] > 0) ctx.drawImage(im, r[1] * ms, r[2] * ms, r[3] * ms, r[4] * ms, x - r[5] * s, y - r[6] * s, r[3] * s, r[4] * s); };
   if (fr.length > 7) {

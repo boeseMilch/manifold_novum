@@ -4,7 +4,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
   'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
-  'spawnInvader', 'power', 'JUMP_WINDOW', 'MAINT_WARNING'];
+  'spawnInvader', 'power', 'JUMP_WINDOW', 'MAX_DAMAGE', 'MAINT_WARNING'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -113,7 +113,7 @@ function fireAndJumpTests() {
     check(n > 160 && n < 240 && broke > 65 && broke < 135 && both === 0, `a small hit starts a fire 20% of the time (${n}/1000), breaks a part 10% (${broke}/1000), never both`);
     let bigFire = 0, bigBroke = 0, bigTwo = 0;
     for (let i = 0; i < 50; i++) {
-      G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; s.taped = false; }); G.shipHit('port', -0.2, 8, true);
+      G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.shipHit('port', -0.2, 8, true);
       if (G.fires.length) bigFire++; const nb = G.SYSTEMS.filter(s => s.broken).length; if (nb) bigBroke++; if (nb > 1) bigTwo++;
     }
     check(bigFire === 50 && bigBroke === 50 && bigTwo === 0, `a big hit always breaks exactly one part and starts a fire (${bigBroke}/50, ${bigFire}/50, two parts: ${bigTwo})`);
@@ -157,8 +157,10 @@ function fireAndJumpTests() {
   }
   {
     const G = fresh();
-    G.SYSTEMS.slice(0, 4).forEach(s => { s.broken = true; }); G.tick(DT);
-    check(G.mission.over?.won === false && /fell apart/.test(G.mission.over.reason), 'more than 3 broken systems at once: mission lost');
+    G.SYSTEMS.slice(0, G.MAX_DAMAGE).forEach(s => { s.broken = true; }); G.tick(DT);
+    check(!G.mission.over, `${G.MAX_DAMAGE} broken systems at once: still flying`);
+    G.SYSTEMS[G.MAX_DAMAGE].broken = true; G.tick(DT);
+    check(G.mission.over?.won === false && /fell apart/.test(G.mission.over.reason), `more than ${G.MAX_DAMAGE} broken systems at once: mission lost`);
   }
   process.exitCode = failed ? 1 : 0;
 }

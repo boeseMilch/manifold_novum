@@ -15,6 +15,8 @@ Renders (origin = the tile's top-left corner, game (x0, y0); repeat every 192 x 
   interior/floor_blue_a,  floor_blue_b     zone 2 (starboard, x >= 30.8),    tint #5f6a80
   interior/floor_tread                     all diamond plate, dark: the small floor rects the game
                                            draws as tread (doorways, airlock door slots; min side < 3)
+The tiles are clean: scratches, gouges and duct tape are drawn per tile by the game's shader
+(js/gfx.js, FS_SPRITE floor layer), so they don't repeat.
 Also writes /tmp/mn_interior/<name>_3x3.png (a 3 x 3 field from Blender) to verify the tiling.
 """
 import sys, os, math, random
@@ -41,8 +43,7 @@ def build(PLATES, seed):
     mn.reset()
     rnd = random.Random(seed)
     M = dict(sub=pmat('sub', '#16181d', 0.8), rivet=pmat('rivet', '#b4bcc8', 0.3, 0.8),
-             hole=pmat('hole', '#0e1014', 0.9), bar=pmat('bar', '#4a515e', 0.4, 0.7, grime=0.4),
-             tape=pmat('tape', '#b9bcc2', 0.85, 0.0), scuff=pmat('scuff', '#2a2d33', 0.9))
+             hole=pmat('hole', '#0e1014', 0.9), bar=pmat('bar', '#4a515e', 0.4, 0.7, grime=0.4))
     tile = []
     def T(o): tile.append(o); return o
     T(mn.box('sub', (N, DY, 0.01), loc=(N / 2, -DY / 2, -0.01), m=M['sub'], bevel=0))
@@ -97,11 +98,7 @@ if __name__ == '__main__':
             if only and only not in name: continue
             P = [(r, k, hexmul(tint, f)) for r, k, f in plates_def]
             tile, plates, M = build(P, zi * 10 + li)
-            if zone == 'red' and lay == 'b':               # a strip of duct tape over a cracked seam
-                tile.append(mn.box('tape', (0.5, 0.1, 0.006), loc=(0.5, -1.0 * SY, 0.035), m=M['tape'], bevel=0.002, rot=(0, 0, math.radians(8))))
-            if zone == 'blue' and lay == 'a':              # boot scuffs
-                for k in range(3):
-                    tile.append(mn.box('scuff', (0.16, 0.05, 0.002), loc=(0.3 + k * 0.17, -1.55 * SY + k * 0.06, 0.035), m=M['scuff'], bevel=0.0, rot=(0, 0, math.radians(20 + 30 * k))))
+            # no baked wear: scuffs, scratches and tape are procedural in the game (js/gfx.js, per tile)
             render_tile(name, tile, plates)
     if not only or only in 'interior/floor_tread':
         P = [((x, y, 1, 1), 'tread', hexmul('#6c7282', 0.82 + 0.04 * ((x + y) % 2))) for x in (0, 1) for y in (0, 1)]

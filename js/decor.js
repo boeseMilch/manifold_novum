@@ -418,7 +418,7 @@ function socks(x0, x1, y, t) {
   const cols = ['#e2574c', '#e8e4dc', '#5f9ad6', '#e8c34f', '#e2574c'];
   for (let i = 0; i < 5; i++) {
     const k = (i + 1) / 6, sx = lerp(x0, x1, k), sy = y + 12 * 4 * k * (1 - k) * 0.5;
-    ctx.save(); ctx.translate(sx, sy); ctx.rotate(Math.sin(t * 1.2 + i) * 0.12);
+    ctx.save(); ctx.translate(sx, sy); ctx.rotate(((i * 7) % 5 - 2) * 0.03);   // a little askew, but still
     ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-4, 14); ctx.quadraticCurveTo(-4, 20, 4, 20); ctx.lineTo(7, 20); ctx.lineTo(7, 14); ctx.lineTo(4, 14); ctx.lineTo(4, 0); ctx.closePath();
     ctx.fillStyle = cols[i]; ctx.fill(); stroke(1.3);
     ctx.restore();
@@ -521,9 +521,9 @@ function drawFloorDecor(t) {
   ctx.strokeStyle = 'rgba(210,166,46,0.55)'; ctx.lineWidth = 5;
   ctx.strokeRect(U(REACTOR.x - REACTOR.w / 2 - 0.6), U(REACTOR.y - REACTOR.h / 2 - 0.5), U(REACTOR.w + 1.2), U(REACTOR.h + 1.3));
   ctx.restore();
-  stencil(U(22.3), U(21.1), 'DO NOT LICK THE REACTOR', 0, 0.15);       // (between the engine cables)
-  if (!solid('props/cable_engine_l', 20.8, 20.6, { sortY: 21 })) cable([[U(20.8), U(20.6)], [U(19.9), U(22.3)], [U(20.3), U(23.8)]], '#c9662e', 5, 82);      // to the engine
-  if (!solid('props/cable_engine_r', 23.6, 20.6, { sortY: 21 })) cable([[U(23.6), U(20.6)], [U(24.5), U(22.3)], [U(24.2), U(23.8)]], '#d2a62e', 4, 83);
+  stencil(U(22.3), U(21.1), 'DO NOT LICK THE REACTOR', 0, 0.15);
+  // (the two orange cables from the reactor to the engine, props/cable_engine_l/r, are gone: the power lever's
+  // branches had to cross them)
   // --- Right airlock room
   stencil(U(42.95), U(19.4), 'EVA', Math.PI / 2, 0.45);
   if (!flat('props/crack_starlock', 39.2, 17.6)) { crack(U(39.2), U(17.6), U(1.4), 0.2, 91); tapeX(U(39.2), U(17.6), U(0.6), 92); }
@@ -560,7 +560,7 @@ function drawPropDecor(t) {
   if (!S('props/duck_reactor', 18.4, 23.1)) duck(U(18.4), U(23.1), 0.5);
   cat(U(CAT.x), U(CAT.y), t);
   const pl = K.sockPoleL, pr = K.sockPoleR;            // (the washing line: solid stands, CLUTTER in js/ship.js)
-  if (!S('props/socks', (pl.x + pr.x) / 2, pl.y, 0, { f: Math.floor(t * 4) % 6 })) socks(U(pl.x), U(pr.x), U(pl.y), t);
+  if (!S('props/socks', (pl.x + pr.x) / 2, pl.y, 0, { f: 0 })) socks(U(pl.x), U(pr.x), U(pl.y), t);   // (still: the swaying was distracting)
   fuelCrate(U(17.4), U(19.6), 0.08);
   // Right airlock room
   box('props/crate_tape', 'tape', '#6a6f7a', 'TAPE');

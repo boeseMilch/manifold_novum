@@ -30,9 +30,24 @@ function resetEva(rules = {}) {
                        coils: rules.coils ? COIL_SPOTS.map(c => ({ ...c, ok: false, a: 0.6 + Math.random() * 1.6 })) : [] });
 }
 function freeHullSpot(side) {
-  const used = [...evs.mines, ...evs.barnacles];
-  const pool = HULL_SPOTS[side].filter(([x, y]) => !used.some(u => Math.hypot(u.x - x, u.y - y) < 0.8));
+  // mines sit just off the hull, barnacles on it (onHullPlating): compare the places along the hull
+  const along = (x, y) => side === 'front' ? x : y, used = [...evs.mines, ...evs.barnacles].filter(u => u.side === side);
+  const pool = HULL_SPOTS[side].filter(([x, y]) => !used.some(u => Math.abs(along(u.x, u.y) - along(x, y)) < 0.8));
   return pool[Math.floor(Math.random() * pool.length)] || null;
+}
+// Barnacles grow ON the hull: on the outer wall's top over that stretch of hull (the side walls, the nose's
+// back wall), a crust straddling its outer edge, not out in space beside it. (b.x, b.y) is that point on the
+// hull (reach, clicks, drilling); the sprite renderer draws it up at the wall top's height (hullTopZ).
+const onHullPlating = (side, [x, y]) => side === 'port' ? [0.15, y] : side === 'star' ? [SHIP_W - 0.15, y] : [clamp(x, 18.4, 26.0), -2.85];   // (front: clear of the nose's corner posts)
+const BARNACLE_FX_Z = 1.6;                           // (slime bursts: up on the wall top too)
+// Drawing only: how high the top of the hull's outer wall is at (x, y), from the wall runs of js/sprites.js
+// (full height 1.6, the low cutaway 0.35 before a near wall; the spine's high top); 0 without sprites.
+function hullTopZ(x, y) {
+  if (!GFX.on || typeof WALLS === 'undefined' || !WALLS) return 0;
+  for (const v of WALLS.vRuns) if (Math.abs(x - v.x) <= 0.35 && y >= v.y0 - 0.05 && y <= v.y1 + 0.05) return y < v.step ? 1.6 : H_LOW;
+  for (const h of WALLS.hRuns) if (x >= h.x0 - 0.05 && x <= h.x1 + 0.05 && (h.kind === 'back' ? y >= h.y - 0.65 && y <= h.y + 0.05 : y >= h.y - 0.05 && y <= h.y + 0.65))
+    return h.kind === 'back' ? 1.6 : H_LOW;
+  return 1.6;                                        // (the spine block between the decks: its high top)
 }
 
 // ---------------------------------------------------------------------------
@@ -101,7 +116,7 @@ function updateEva(dt) {
     if (distToPoly(s.x, s.y) < 0.7 || pointInPoly(s.x, s.y)) {
       s.dead = true;
       const spot = freeHullSpot(s.side);
-      if (spot) { evs.barnacles.push({ uid: newUid(), side: s.side, x: spot[0], y: spot[1], age: 0, drain: 0, hp: 2 }); combatBanner('Spores stuck to the hull — barnacles are growing'); }
+      if (spot) { const [x, y] = onHullPlating(s.side, spot); evs.barnacles.push({ uid: newUid(), side: s.side, x, y, age: 0, drain: 0, hp: 2 }); combatBanner('Spores stuck to the hull — barnacles are growing'); }
     }
   }
   // barnacles grow; full grown ones drain power, and eventually drill through
@@ -139,8 +154,10 @@ function updateEva(dt) {
     if (bo.owner !== 'crew' || bo.wrench) continue;
     const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4);
     if (m) { bo.dead = true; explodeMine(m, 'laser'); continue; }
-    const b = evs.barnacles.find(b => Math.hypot(bo.x - b.x, bo.y - b.y) < 0.45);
-    if (b) { bo.dead = true; if ((b.hp -= boltDamage(bo)) <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
+    // (barnacles sit on the hull, where a bolt stops: it counts from just outside, the last place it was alive;
+    // bolts inside the ship never reach them)
+    const b = !pointInPoly(bo.x, bo.y) && evs.barnacles.find(b => Math.hypot(bo.x - b.x, bo.y - b.y) < 0.75);
+    if (b) { bo.dead = true; if ((b.hp -= boltDamage(bo)) <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12, 0.1, BARNACLE_FX_Z); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);
   // the canister drifts past, then it's gone
@@ -168,9 +185,10 @@ function evaJobTarget(mx, my) {
   }
   for (const b of evs.barnacles) {
     if (!at(b.x, b.y, 0.6)) continue;
-    if (!near(b.x, b.y)) return far('Barnacle', b.x, b.y, 0.6);
-    return holdTarget('scrape' + b.uid, SCRAPE_TIME, `Hold click: scrape the barnacle off (${SCRAPE_TIME} s)`, b.x, b.y, 0.6,
-                      () => { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12); combatBanner('Barnacle scraped off'); });
+    if (!near(b.x, b.y)) return { ...far('Barnacle', b.x, b.y, 0.6), hullTop: true };
+    return { ...holdTarget('scrape' + b.uid, SCRAPE_TIME, `Hold click: scrape the barnacle off (${SCRAPE_TIME} s)`, b.x, b.y, 0.6,
+                           () => { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12, 0.1, BARNACLE_FX_Z); combatBanner('Barnacle scraped off'); }),
+             hullTop: true };                       // (its ring is drawn up on the wall top, with the barnacle)
   }
   for (const [id, on] of Object.entries(evs.jams)) {
     if (!on) continue;
@@ -279,12 +297,15 @@ function drawEvaJobs(t) {
     ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 12, y - 9); ctx.stroke();
     jobMarker(jx, jy, t, reach(jx, jy), '#ffd84a');
   }
-  // barnacles: grow in three stages, pulse when they drain
+  // barnacles: grow in three stages, pulse when they drain. They sit on the hull wall's top (hullTopZ), straddling
+  // its outer edge; on screen that is lifted by the wall's height (sy), the marker goes there too
   for (const b of evs.barnacles) {
-    const x = L(b.x), y = L(b.y), k = Math.min(1, b.age / BARNACLE_GROW), r = 5 + 9 * k;
+    const z = hullTopZ(b.x, b.y), sy = b.y - GFX.lift(z);
+    const x = L(b.x), y = L(sy), k = Math.min(1, b.age / BARNACLE_GROW), r = 5 + 9 * k;
     if (GFX.on) {                                        // organic/barnacle_s<stage>_v<variant>, draining when grown
       const st = Math.min(3, Math.floor(k * 3)), v = b.uid % 2, n = st === 3 ? `organic/barnacle_s3_v${v}_drain` : `organic/barnacle_s${st}_v${v}`;
-      if (GFX.ready(n) && GFX.sprite(n, st === 3 ? Math.floor(t * 6) : 0, b.x, b.y, 0, { layer: 'main', emissive: 0.5 })) { jobMarker(b.x, b.y, t, reach(b.x, b.y), '#c08aff'); continue; }
+      // (pick: pointing at it on screen gives its point on the hull, so clicks find it up there)
+      if (GFX.ready(n) && GFX.sprite(n, st === 3 ? Math.floor(t * 6) : 0, b.x, b.y, z, { layer: 'main', depthBias: 0.04, emissive: 0.5, pick: [0.45, 0.55] })) { jobMarker(b.x, sy, t, reach(b.x, b.y), '#c08aff'); continue; }
     }
     for (let i = 0; i < 5; i++) {
       const a = i / 5 * TAU + b.uid, rr2 = r * (0.5 + 0.2 * (i % 2));
@@ -293,7 +314,7 @@ function drawEvaJobs(t) {
       ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5, rr2 * 0.35, 0, TAU); ctx.fillStyle = '#3a2a48'; ctx.fill();
     }
     if (k >= 1) { const p = 0.5 + 0.5 * Math.sin(t * 6); ctx.beginPath(); ctx.arc(x, y, r + 4 + p * 4, 0, TAU); ctx.strokeStyle = `rgba(190,120,255,${0.6 * p})`; ctx.lineWidth = 2; ctx.stroke(); }
-    jobMarker(b.x, b.y, t, reach(b.x, b.y), '#c08aff');
+    jobMarker(b.x, sy, t, reach(b.x, b.y), '#c08aff');
   }
   // limpet mines: blink faster as they run down
   for (const m of evs.mines) {

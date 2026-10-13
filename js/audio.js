@@ -6,6 +6,10 @@ const sfx = (() => {
   let ac = null, master = null, out = null, noiseBuf = null;
   let muted = false;
   try { muted = localStorage.getItem('mn-muted') === '1'; } catch (e) { /* storage unavailable */ }
+  // Test browsers (automation, headless, ?mute) start silent, so test runs never play over the real game.
+  const silent = typeof navigator !== 'undefined' && (navigator.webdriver || /Headless/.test(navigator.userAgent || '')
+    || (typeof location !== 'undefined' && /[?&]mute\b/.test(location.search)));
+  if (silent) muted = true;
   const ready = [];                                 // callbacks run once the context exists
   function ensure() {
     if (ac) { if (ac.state === 'suspended') ac.resume(); return true; }

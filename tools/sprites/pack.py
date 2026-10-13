@@ -38,6 +38,12 @@ PPU_RULES = [
     (r'', 96),                         # interior, ship, systems, props, crew, chars, fx, dock, items (world), test
 ]
 MAP_SCALE = 0.5            # normal and height maps: this fraction of the beauty resolution (mask: same as beauty)
+# Groups whose normal/height maps are stored at full resolution instead (written per page as
+# meta.pages[g][i].mapScale; the game samples maps by the beauty page's uv, so any scale works).
+# props: small floor clutter (nuts ~20 px across, tape, magazines): at half size their bevels and holes
+# were 1-2 map px, i.e. no readable shading at all.
+MAP_SCALE_GROUPS = {'props': 1.0}
+def map_scale(group): return MAP_SCALE_GROUPS.get(group, MAP_SCALE)
 PAGE_MAX = 4096            # atlas page size limit
 PAD = 4                    # beauty px of edge extrusion around every rect (PAD/2 in the half-size maps)
 ALPHA_MIN = 2              # trimming: pixels with alpha below this (0..255) count as empty
@@ -188,12 +194,12 @@ def half(block, default):
     b = (b[0::2, 0::2] + b[1::2, 0::2] + b[0::2, 1::2] + b[1::2, 1::2]) / 4
     return np.round(b).astype(np.uint8)
 
-def crop(f, bb, maps):
+def crop(f, bb, maps, ms=MAP_SCALE):
     x0, y0, x1, y1 = bb
     item = {'b': f.b[y0:y1, x0:x1]}
     for k in maps:
         a = getattr(f, k)[y0:y1, x0:x1]
-        item[k] = half(a, None) if k in 'nh' else np.ascontiguousarray(a)
+        item[k] = half(a, None) if k in 'nh' and ms != 1 else np.ascontiguousarray(a)
     return item
 
 def recon_error(base, patch_bb, frame):
@@ -224,7 +230,7 @@ def process_family(job):
     e0 = entries[0]
     s = 1.0 if ppu is None else ppu / RAW_PPU
     W, H = max(1, int(math.ceil(e0['w'] * s - 1e-6))), max(1, int(math.ceil(e0['h'] * s - 1e-6)))
-    maps = job['maps']
+    maps = job['maps']; ms = map_scale(group_of(names[0]))
     frames, owner = [], []
     for ni, (n, e) in enumerate(zip(names, entries)):
         for fi, stem in enumerate(e['files']):
@@ -259,10 +265,10 @@ def process_family(job):
             maxerr = max(maxerr, recon_error(frames[j], bb, f))
             if bb is None: specs[i] = ('patch', j, None, False)
             else:
-                items.append(crop(f, bb, maps)); specs[i] = ('patch', j, (len(items) - 1, bb), over_ok(frames[j], bb, f))
+                items.append(crop(f, bb, maps, ms)); specs[i] = ('patch', j, (len(items) - 1, bb), over_ok(frames[j], bb, f))
             delta_n += 1
         else:
-            items.append(crop(f, f.bbox, maps)); specs[i] = ('whole', (len(items) - 1, f.bbox)); standalone.append(i); whole.add(i)
+            items.append(crop(f, f.bbox, maps, ms)); specs[i] = ('whole', (len(items) - 1, f.bbox)); standalone.append(i); whole.add(i)
         hashes[hsh] = i
     raw_px = sum(area(f.bbox) for f in frames if f.bbox)
     return {'names': names, 'ppu': ppu, 'scale': s, 'W': W, 'H': H, 'specs': specs, 'owner': owner, 'items': items,
@@ -424,12 +430,13 @@ def main():
         # compose pages
         t = time.time()
         gmaps = ''.join(k for k in 'nhm' if any(k in r['maps'] for r in res))
+        ms = map_scale(g); md = 1 if ms == 1 else 2          # map pages: beauty size / md
         pdims = [(even(pg.used_w), even(pg.used_h)) for pg in pages]
         P = []
         for (w, h) in pdims:
             d = {'b': np.zeros((h, w, 4), np.uint8)}
-            if 'n' in gmaps: d['n'] = np.empty((h // 2, w // 2, 3), np.uint8); d['n'][...] = FLAT_NORMAL
-            if 'h' in gmaps: d['h'] = np.zeros((h // 2, w // 2), np.uint8)
+            if 'n' in gmaps: d['n'] = np.empty((h // md, w // md, 3), np.uint8); d['n'][...] = FLAT_NORMAL
+            if 'h' in gmaps: d['h'] = np.zeros((h // md, w // md), np.uint8)
             if 'm' in gmaps: d['m'] = np.zeros((h, w), np.uint8)
             P.append(d)
         for r in res:
@@ -437,7 +444,7 @@ def main():
                 pi, x, y = it['at']
                 blit(P[pi]['b'], it['b'], x, y, PAD)
                 for k in gmaps:
-                    if k in it: blit(P[pi][k], it[k], x // 2 if k in 'nh' else x, y // 2 if k in 'nh' else y, PAD // 2 if k in 'nh' else PAD)
+                    if k in it: blit(P[pi][k], it[k], x // md if k in 'nh' else x, y // md if k in 'nh' else y, PAD // md if k in 'nh' else PAD)
         T['compose'] += time.time() - t
         # old pages of this group go
         gdir = os.path.join(OUT, g); os.makedirs(gdir, exist_ok=True)
@@ -455,7 +462,8 @@ def main():
         T['encode'] += time.time() - t
         # sprites.json entries
         data['sprites'] = {k: v for k, v in data['sprites'].items() if v.get('group') != g}
-        data['meta']['pages'][g] = [{'file': f'{g}/page{pi}', 'w': w, 'h': h, 'maps': gmaps} for pi, (w, h) in enumerate(pdims)]
+        data['meta']['pages'][g] = [{'file': f'{g}/page{pi}', 'w': w, 'h': h, 'maps': gmaps, **({'mapScale': ms} if ms != MAP_SCALE else {})}
+                                    for pi, (w, h) in enumerate(pdims)]
         maxerr = 0.0; nframes = ndelta = 0; trim_px = stored_px = 0
         for r in res:
             maxerr = max(maxerr, r['maxerr']); nframes += r['nframes']; ndelta += r['delta']; trim_px += r['trim_px']; stored_px += r['stored_px']

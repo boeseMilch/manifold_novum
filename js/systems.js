@@ -4,11 +4,15 @@
 
 const CELL_ENERGY = 5, ENERGY_TIME = 20, REPAIR_TIME = 5;
 let SHOTS_PER_ENERGY = 3;                              // (ship upgrades: see progress.js)
-// Power lever: its position is the capacitor index it feeds, laid out left → right on the
-// dial (port, middle, starboard). Auto mode steps right and wraps: mid → stbd → port → mid.
+// Power lever: its position is the capacitor index it feeds (port, middle, starboard). Auto mode steps
+// on and wraps: mid → stbd → port → mid. Each position points exactly at the gland its branch leaves the
+// dial by (POWER_ROUTES): LEFT left (a little down), MID down-right, RIGHT up-right; the trunk from the
+// reactor comes in at the top, where no position points (the handle swings round the bottom).
 const LEVER_NAMES = ['LEFT', 'MID', 'RIGHT'];
 const LEVER = { x: 22.2, y: 22.75 }, LEVER_HUB = 0.22;
-const leverAngle = (i) => -Math.PI / 2 + (i - 1) * 0.9;
+const LEVER_ANGLES = [165, 15, -35].map(d => d * Math.PI / 180), LEVER_TRUNK_ANGLE = -Math.PI / 2;
+const leverAngle = (i) => LEVER_ANGLES[i];
+const LEVER_HANDLE_STEP = 10 * Math.PI / 180, LEVER_HANDLE_FRAMES = 21;   // the handle sprite's frames (tools/blender/models/systems/lever.py)
 const FUEL_CRATE = { x: 17.4, y: 19.6 };
 const REACH = 1.9;                                // how far you can reach to click things
 const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED = 13;
@@ -31,6 +35,8 @@ const power = {
   patch: [0, 1, 2],                               // patch board: lever output → capacitor it feeds
   overcharge: false,                              // an engineer overcharged it: double speed, may catch fire
 };
+// How full the loaded cell still is, 0..1, in whole energies (energy is discrete: one bar per energy left).
+const fuelFraction = (R = power.reactor) => Math.max(0, Math.min(1, R.fuel / CELL_ENERGY));
 let inv = { weapon: null, item: null, cd: 0 };     // the acting crew member's inventory (see withCrew)
 const ITEMS = [
   { kind: 'repair', x: 1.6, y: 22.35 },          // the one repair kit, bottom left
@@ -54,7 +60,7 @@ const SYSTEMS = [
   { kind: 'lever', ref: LEVER, col: 1, x: LEVER.x, y: LEVER.y, name: 'Power lever' },
   ...DECK_LOCKS.map(L => ({ kind: 'lock', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} deck airlock`, r: 2.4 })),
   ...HATCHES.map(h => ({ kind: 'hatch', ref: h, col: h.side === 'port' ? 0 : 2, x: h.inside[0] - h.dir * 0.4, y: h.inside[1], name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock` })),
-  // outside on the hull (outside: no fires in vacuum, no inside repair or tape job, no saboteur; fixed on a spacewalk)
+  // outside on the hull (outside: no fires in vacuum, no inside repair, no saboteur; fixed on a spacewalk)
   ...SHIELD_EMITTERS.map(e => ({ kind: 'emitter', ref: e, col: SIDE_CAP[e.side], x: e.x, y: e.y, name: `${SIDE_LABEL[e.side]} shield emitter`, r: 0.7, outside: true })),
 ].map(s => ({ ...s, broken: false, r: s.r || 1.0 }));
 const broken = (ref) => !!SYSTEMS.find(s => s.ref === ref)?.broken;
@@ -70,8 +76,6 @@ function breakSystem(s) {
 function damageColumn(side, large) {
   const col = side === 'port' ? 0 : side === 'star' ? 2 : 1;
   const intact = SYSTEMS.filter(s => s.col === col && !s.broken);
-  const taped = intact.filter(s => s.taped);              // quick tape jobs give first
-  if (large && taped.length) { breakSystem(taped[0]); taped[0].taped = false; return; }
   const n = large ? 1 : 0;                       // big hits: exactly one part (plus a fire: mission.js bigHitFire)
   for (let i = 0; i < n && intact.length; i++) breakSystem(intact.splice(Math.floor(Math.random() * intact.length), 1)[0]);
 }
@@ -90,11 +94,13 @@ function useEnergy(i, line) {
 }
 
 // ---------------------------------------------------------------------------
-// Power lines: the cables actually carry the energy. Reactor → each capacitor (feed), and each
-// capacitor → its shield button and its cannon. A line glows while its capacitor holds charge;
-// energy runs along it as a pulse when it's delivered or used.
+// Power lines: the cables actually carry the energy. One trunk from the reactor into the power lever,
+// from the lever a branch to each capacitor (feed0..2: LEFT / MID / RIGHT), and from each capacitor a
+// line to its shield button and its cannon. A line glows while its capacitor holds charge (the trunk and
+// the branches: while the reactor runs); energy runs along it as a pulse when it's delivered or used.
 // Each line's route starts and ends in a fitting (POWER_FITTINGS; sprites power/*, drawn in js/cables.js):
 //   plug  a socket on a machine's face (capacitor cabinets, the reactor, the shield buttons)
+//   gland a cable gland at the foot of the power lever's dial (the trunk in, the three branches out)
 //   box   a conduit box on a wall where the cable goes in;  riser: one on a lower-deck back wall whose
 //         conduit climbs into the spine (the line comes out of a box on the upper deck's near wall)
 // (x, y): the point on the face / wall at floor level, a: the way the cable leaves it. The cable starts
@@ -103,18 +109,30 @@ function useEnergy(i, line) {
 // The cannon lines end in a box on the room wall next to their cannon; outside, a jack (power/jack_*)
 // carries them on to the cannon's mount.
 // ---------------------------------------------------------------------------
-const FIT_REACH = { plug: 0.40, box: 0.48, riser: 0.48 };
-const powerFit = (kind, x, y, dir) => ({ kind, x, y, a: { E: 0, S: 0.5, W: 1, N: -0.5 }[dir] * Math.PI });   // dir: compass on screen (N = up)
+const FIT_REACH = { plug: 0.40, box: 0.48, riser: 0.48, gland: 0.22 };
+const COMPASS = { E: 0, SE: 0.25, S: 0.5, SW: 0.75, W: 1, NW: -0.75, N: -0.5, NE: -0.25 };
+const powerFit = (kind, x, y, dir) => ({ kind, x, y, a: COMPASS[dir] * Math.PI });   // dir: compass on screen (N = up)
+// A gland on the lever dial's rim (r LEVER_DIAL), facing out at angle a.
+const LEVER_DIAL = 0.5;
+const leverPort = (a) => ({ kind: 'gland', x: LEVER.x + Math.cos(a) * LEVER_DIAL, y: LEVER.y + Math.sin(a) * LEVER_DIAL, a });
 const POWER_ROUTES = [
-  { id: 'feed0', cap: 0, feed: true, route: [powerFit('plug', 20.3, 20.0, 'W'), [18.6, 21.1], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.5], powerFit('plug', 7.48, 22.6, 'E')] },
-  { id: 'feed1', cap: 1, feed: true, route: [powerFit('plug', 24.1, 20.25, 'E'), [25.3, 21.4], [25.45, 24.2], powerFit('plug', 26.12, 24.9, 'W')] },
-  { id: 'feed2', cap: 2, feed: true, route: [powerFit('plug', 24.1, 19.6, 'E'), [27.5, 20.2], [29.6, 19.8], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
+  // the trunk: out of the reactor's front, straight down into the lever's top (no capacitor: cap -1; it never arcs)
+  { id: 'trunk', cap: -1, feed: true, route: [powerFit('plug', 22.2, 20.6, 'S'), leverPort(LEVER_TRUNK_ANGLE)] },
+  // the lever's three outputs, each out of the gland its position points at: LEFT out to the left (to the left
+  // airlock), MID down-right (to the middle capacitor, bottom right), RIGHT up-right (over to the right airlock)
+  { id: 'feed0', cap: 0, feed: true, route: [leverPort(leverAngle(0)), [20.9, 22.75], [18.6, 21.5], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.5], powerFit('plug', 7.48, 22.6, 'E')] },
+  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [24.9, 23.1], [25.45, 24.2], powerFit('plug', 26.12, 24.9, 'W')] },
+  { id: 'feed2', cap: 2, feed: true, route: [leverPort(leverAngle(2)), [23.8, 21.6], [27.5, 20.4], [29.6, 19.8], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
   { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, 16.4], powerFit('plug', 6.6, 15.4, 'W')] },
-  { id: 'shield_front', cap: 1, route: [powerFit('plug', 27.88, 24.7, 'E'), [28.45, 23.8], [28.4, 17.8], [27.4, 16.6], [23.6, 16.2], powerFit('plug', 22.6, 15.4, 'E')] },
+  // the middle capacitor's two lines go into the right wall of its corner (below feed2's doorway, so they don't
+  // cross it) and climb inside it: the shield line comes out of the reactor room's back wall to the button,
+  // the cannon line out on the upper deck
+  { id: 'shield_front', cap: 1, route: [powerFit('plug', 27.88, 24.7, 'E'), powerFit('box', 30.2, 24.3, 'W'), 'hide',
+                                        powerFit('box', 24.2, 15.0, 'S'), [24.2, 15.9], powerFit('plug', 22.6, 15.4, 'E')] },
   { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, 16.4], powerFit('plug', 36.8, 15.4, 'W')] },
   { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.4, 21.8], [2.5, 18.6], powerFit('riser', 2.5, 15.0, 'S'), 'hide',
                                     powerFit('box', 2.5, 11.5, 'N'), [2.4, 7.2], [1.6, 5.95], powerFit('box', 0.6, 5.95, 'E')] },
-  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 25.1, 'E'), [28.95, 24.4], powerFit('riser', 28.95, 15.0, 'S'), 'hide',
+  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 25.1, 'E'), powerFit('box', 30.2, 25.0, 'W'), 'hide',
                                      powerFit('box', 28.4, 11.5, 'N'), [28.4, 6.0], [27.2, 1.6], [25.6, 0.3], [24.2, -0.9], powerFit('box', 24.2, -2.4, 'S')] },
   { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [41.6, 21.6], [42.6, 18.2], [43.35, 16.4], powerFit('riser', 43.35, 15.0, 'S'), 'hide',
                                     powerFit('box', 42.35, 11.5, 'N'), [42.35, 7.0], [42.8, 5.75], powerFit('box', 43.8, 5.75, 'W')] },
@@ -178,24 +196,39 @@ function floorClip(g) {                               // clip g (world transform
   for (const h of near) g.rect(L(h.x0), L(h.y - lift), L(h.x1 - h.x0), L(lift));
   g.clip('evenodd');
 }
-function powerLineLive(l) {
-  return !capBroken(l.cap) && (l.feed ? power.reactor.fuel > 0 && !broken(REACTOR) : CAPACITORS[l.cap].charge > 0);
+// Dead (dark red): its capacitor is broken; the trunk (cap -1): the reactor is.
+const lineDead = (l) => (l.cap >= 0 ? capBroken(l.cap) : broken(REACTOR));
+// The branch the next energy takes: the lever's (shown) output, through the patch board.
+const nextFeed = () => power.patch[leverShownPos()];
+// A line's look: 'dead' (dark red), 'live' (amber, self-lit, energy flowing along it), 'idle' (a branch the
+// lever isn't on: powered but dimmed, so the lit path reactor → lever → branch reads at a glance), 'off'
+// (no fuel / an empty capacitor).
+function lineState(l) {
+  if (lineDead(l)) return 'dead';
+  if (l.feed) {
+    if (!(power.reactor.fuel > 0) || broken(REACTOR)) return 'off';
+    return l.cap < 0 || l.cap === nextFeed() ? 'live' : 'idle';
+  }
+  return CAPACITORS[l.cap].charge > 0 ? 'live' : 'off';
 }
+const powerLineLive = (l) => lineState(l) === 'live';
 // GFX on: js/cables.js (lit 3D cables, Blender fittings). Classic: flat strokes along the visible stretches,
 // a small box for each fitting, clamps along the way.
 function drawPowerLines(t) {
   if (GFX.on && typeof drawCables3d === 'function' && drawCables3d(t)) return;
   for (const l of POWER_LINES) {
-    const dead = capBroken(l.cap), live = powerLineLive(l);
+    const st = lineState(l), dead = st === 'dead', live = st === 'live';
     for (const run of l.runs) {
       const path = () => { ctx.beginPath(); run.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y)))); };
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       path(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 11; ctx.save(); ctx.translate(2, 3); ctx.stroke(); ctx.restore();
       path(); ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.stroke();
-      path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? '#b8902e' : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
+      path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? '#b8902e' : st === 'idle' ? '#5e5236' : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
       if (live) {                                     // energy flowing (slowly) towards the far end
         ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
-        path(); ctx.strokeStyle = 'rgba(255,236,160,0.85)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
+        path(); ctx.strokeStyle = 'rgba(255,236,160,0.85)'; ctx.lineWidth = 2.5; ctx.stroke();
+        if (l.feed) feedPulse(t);
+        ctx.setLineDash([]);
       }
     }
     for (let d = 2.5; d < l.len - 1; d += 3.5) {        // clamps
@@ -213,6 +246,12 @@ function drawPowerLines(t) {
 }
 // GFX on: the energy on the live cables, glowing (in the 'glow' layer: unlit, under the crew) on the cable's
 // indicator window.
+// The lit feed path (the trunk and the branch the lever is on) gets a soft, slower pulse over its dashes, so
+// where the next energy goes stands out from the shield / cannon lines. Strokes the current path.
+function feedPulse(t) {
+  ctx.setLineDash([16, 44]); ctx.lineDashOffset = -t * 30;
+  ctx.strokeStyle = 'rgba(255,214,120,0.32)'; ctx.lineWidth = 6; ctx.stroke();
+}
 function drawPowerGlow(t) {
   ctx.save(); floorClip(ctx);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
@@ -221,7 +260,9 @@ function drawPowerGlow(t) {
     for (const run of l.runs) {
       ctx.beginPath(); run.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y))));
       ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
-      ctx.strokeStyle = 'rgba(255,240,190,0.85)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(255,240,190,0.85)'; ctx.lineWidth = 2; ctx.stroke();
+      if (l.feed) feedPulse(t);                      // the way the next energy goes: a soft, slow pulse on top
+      ctx.setLineDash([]);
     }
   }
   ctx.restore();
@@ -230,8 +271,43 @@ function deliverEnergy() {
   const i = power.patch[power.lever.pos];
   if (typeof surging === 'function' && surging('feed' + i)) {          // an arcing feed line: the energy is lost on the way
     combatBanner(`Energy lost — the ${lineName(LINE['feed' + i])} is arcing`); sfx.spark();
-  } else power.bolts.push({ to: i, t: 0 });
+  } else power.bolts.push({ to: i, out: power.lever.pos, t: 0 });
   if (!power.lever.jammed && !broken(LEVER)) power.lever.pos = (power.lever.pos + 1) % 3;
+}
+// A delivery bolt's way (it takes the same 0.9 s as ever, eased): down the trunk, through the lever's hub,
+// out along the branch to its capacitor (feed<to>; the patch board picks which). Returns [x, y] at progress t.
+const BOLT_TIME = 0.9;
+function boltPoint(b, t = b.t) {
+  const T = LINE.trunk, F = LINE['feed' + b.to];
+  if (!F) return null;
+  const k = clamp(t, 0, 1), e = k * k * (3 - 2 * k);
+  const tEnd = T.pts[T.pts.length - 1], fStart = F.pts[0];
+  const h1 = Math.hypot(LEVER.x - tEnd[0], LEVER.y - tEnd[1]), h2 = Math.hypot(fStart[0] - LEVER.x, fStart[1] - LEVER.y);
+  let d = e * (T.len + h1 + h2 + F.len);
+  if (d <= T.len) return linePoint(T, d / T.len);
+  d -= T.len;
+  if (d <= h1) return [lerp(tEnd[0], LEVER.x, d / h1), lerp(tEnd[1], LEVER.y, d / h1)];
+  d -= h1;
+  if (d <= h2) return [lerp(LEVER.x, fStart[0], d / h2), lerp(LEVER.y, fStart[1], d / h2)];
+  return linePoint(F, (d - h2) / F.len);
+}
+// Progress at which a bolt passes the lever's hub.
+function boltAtLever(b) {
+  const T = LINE.trunk, F = LINE['feed' + b.to];
+  if (!F) return 0;
+  const tEnd = T.pts[T.pts.length - 1], fStart = F.pts[0];
+  const h1 = Math.hypot(LEVER.x - tEnd[0], LEVER.y - tEnd[1]), h2 = Math.hypot(fStart[0] - LEVER.x, fStart[1] - LEVER.y);
+  const e = (T.len + h1) / (T.len + h1 + h2 + F.len);       // eased fraction → invert smoothstep (bisection)
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; (m * m * (3 - 2 * m) < e ? (lo = m) : (hi = m)); }
+  return lo;
+}
+// What the lever shows: while a delivery is on its way, the output it left by (the lever has already stepped
+// on in the game state; the handle, its lamp and the lit path follow once the energy has arrived), so the
+// bolt runs along the lit path the handle points at; else its position.
+function leverShownPos() {
+  for (const b of power.bolts) if (!b.done && b.out !== undefined) return b.out;
+  return power.lever.pos;
 }
 function updatePower(dt) {
   const R = power.reactor;
@@ -245,7 +321,7 @@ function updatePower(dt) {
     }
   }
   for (const b of power.bolts) {
-    b.t += dt / 0.9;
+    b.t += dt / BOLT_TIME;
     if (b.t >= 1 && !b.done) {
       b.done = true;
       const c = CAPACITORS[b.to];
@@ -259,7 +335,7 @@ function updatePower(dt) {
   for (const p of power.pulses) p.t += dt / 0.7;
   power.pulses = power.pulses.filter(p => p.t < 1);
   for (const c of CAPACITORS) c.pulse = Math.max(0, (c.pulse || 0) - dt * 2);
-  const target = leverAngle(power.lever.pos);                            // handle points at the active output
+  const target = leverAngle(leverShownPos());                            // handle points at the active output
   power.lever.angle = lerp(power.lever.angle || target, target, 1 - Math.exp(-10 * dt));
 }
 
@@ -309,7 +385,7 @@ function clickTarget(mx, my) {
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
     if (burning(s)) return { text: `${s.name} is on fire — put the fire out before you can repair it`, ok: false, ...s };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
-    return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s) · quick click: tape job`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
+    return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
   }
   for (const it of ITEMS) {
     if (Math.hypot(mx - it.x, my - it.y) > 0.45) continue;
@@ -353,11 +429,16 @@ function clickTarget(mx, my) {
       if (!close) return { ...t, text: 'Reactor — get closer', ok: false };
       return { ...t, ok: true, text: 'Click: load the fuel cell', run: () => { inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); sfx.poi(); combatBanner('Fuel cell loaded'); } };
     }
+    if (inv.item === 'fuel' && power.reactor.fuel) {             // early swap: the old cell is thrown out with what's left in it
+      if (!close) return { ...t, text: 'Reactor — get closer', ok: false };
+      const left = power.reactor.fuel;
+      return { ...t, ok: true, text: `Click: swap in a fresh cell (wastes the ${left} energy left in this one)`,
+               run: () => { inv.item = null; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); sfx.poi(); combatBanner(`Fresh fuel cell loaded (${left} energy wasted)`); } };
+    }
     if (power.overcharge && close)
       return { ...t, ok: true, text: `Click: stop the overcharge (${status})`, run: () => { power.overcharge = false; sfx.clank(); combatBanner('Reactor back to normal speed'); } };
     if (perk(player, 'overcharge') && close && !broken(REACTOR))
       return { ...t, ok: true, text: `Click: overcharge the reactor — double speed, ${OVERCHARGE_FIRE * 100}% fire risk per energy (${status})`, run: () => { power.overcharge = true; sfx.spark(); combatBanner('Reactor OVERCHARGED — double speed, watch for fire'); } };
-    if (inv.item === 'fuel' && power.reactor.fuel) return { ...t, text: `Reactor still has fuel (${power.reactor.fuel} energy left)`, ok: false };
     return { ...t, text: `Reactor: ${status}`, ok: false };
   }
   return null;
@@ -408,7 +489,7 @@ function treatInfo(who) {
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
 }
-function updateTreat(dt, target, holding) {
+function updateTreat(dt, target, holding, click = mouse.click) {   // (click: a fresh click or E press)
   if (!target?.treat) { player.treat = null; return; }
   const who = target.treat;
   if (!holding) {                                    // letting go briefly (to click on a heartbeat) doesn't lose progress
@@ -416,7 +497,7 @@ function updateTreat(dt, target, holding) {
     return;
   }
   if (player.treat?.id !== who.id) player.treat = { id: who.id, t: 0 };
-  if (mouse.click && player.treat.t > 0.1) {         // a click right on the heartbeat speeds it up
+  if (click && player.treat.t > 0.1) {               // a click (or E pressed again) right on the heartbeat speeds it up
     const off = Math.abs(((player.treat.t + BEAT / 2) % BEAT) - BEAT / 2);
     if (off < 0.15) { player.treat.t += 0.5; player.treat.beat = 1; sfx.poi(); }
   }
@@ -471,7 +552,6 @@ function outsideRepairTarget(mx, my) {
 
 // Repairing: hold the mouse on a broken system with the repair kit.
 function updateRepair(dt, target, holding) {
-  if (!holding && player.repair && player.repair.t < 0.3 && target?.repair === player.repair.sys && !target.service) { const s = player.repair.sys; player.repair = null; openTape(s); return; }   // a quick click: the tape job
   if (!holding || !target?.repair) { player.repair = null; return; }
   if (player.repair?.sys !== target.repair) player.repair = { sys: target.repair, t: 0 };
   player.repair.t += dt * repairSpeed(player);
@@ -559,41 +639,50 @@ function drawLights(dt) {
   }
 }
 
-// Sprites: systems/lever_base_p<pos> (or _broken), the handle (13 angles) and the wedged wrench,
+// Sprites: systems/lever_base_p<pos> (or _broken), the lit bus (systems/lever_bus, frame = the branch fed),
+// the handle (21 angles, LEVER_HANDLE_STEP apart from LEFT round the bottom to RIGHT) and the wedged wrench,
 // all with their origin at LEVER; the output names and AUTO / MANUAL stay text on the floor.
 function drawLeverSprite(lv) {
-  const base = broken(LEVER) ? 'systems/lever_base_broken' : `systems/lever_base_p${lv.pos}`;
+  const base = broken(LEVER) ? 'systems/lever_base_broken' : `systems/lever_base_p${leverShownPos()}`;
   if (!sprReady(base, 'systems/lever_handle')) return false;
   const o = { sortY: LEVER.y + 0.3 };
   spr(base, 0, LEVER.x, LEVER.y, 0, { ...o, emissive: 0.5 });
-  spr('systems/lever_handle', clamp(Math.round((lv.angle - leverAngle(0)) / 0.15), 0, 12), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
+  // the lit bus on the dial (trunk inlet → hub → the gland of the branch the energy takes) while the trunk is live
+  if (powerLineLive(LINE.trunk)) spr('systems/lever_bus', nextFeed(), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.305, emissive: 1 });
+  spr('systems/lever_handle', clamp(Math.round((leverAngle(0) - lv.angle) / LEVER_HANDLE_STEP), 0, LEVER_HANDLE_FRAMES - 1), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
   if (lv.jammed) spr('systems/lever_wrench', lv.pos, LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.32 });
   return true;
 }
 function drawLever(t) {
   const x = L(LEVER.x), y = L(LEVER.y), lv = power.lever;
   if (drawLeverSprite(lv)) {
-    // the labels stand up as billboards round the lever's top (flat on the floor the base and the engine
-    // housing hid them), the mode (AUTO / MANUAL) over MID; depth-tested, so the crew still cover them
+    // the labels stand up as billboards next to their outputs (flat on the floor the base and the engine
+    // housing hid them), the mode (AUTO / MANUAL) over the top; depth-tested, so the crew still cover them
     const o = { layer: 'main', depthBias: 0.4, outline: 'rgba(10,12,18,0.7)' }, f1 = `800 ${T * 0.13}px system-ui, sans-serif`;
     for (let i = 0; i < 3; i++) {
-      const a = leverAngle(i), lx = LEVER.x + Math.cos(a) * 0.9, ly = LEVER.y + Math.sin(a) * 0.74;   // (out and up, clear of the wedged wrench)
-      worldText(lx, ly, 0.68, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
+      const a = leverAngle(i), lx = LEVER.x + Math.cos(a) * 1.05, ly = LEVER.y + Math.sin(a) * 1.05;   // (low, over its own branch, just past the gland)
+      worldText(lx, ly, 0.3, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
     }
-    const my = LEVER.y + Math.sin(leverAngle(1)) * 0.62;
+    const my = LEVER.y - 0.62;
     worldText(LEVER.x, my, 1.0, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
     return;
   }
   shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);
   ctx.beginPath(); ctx.arc(x, y, T * 0.5, 0, TAU); ctx.fillStyle = '#3f4757'; ctx.fill(); stroke(2.5);
-  ctx.beginPath(); ctx.arc(x, y, T * 0.38, leverAngle(0) - 0.25, leverAngle(2) + 0.25);   // the track
+  ctx.beginPath(); ctx.arc(x, y, T * 0.38, leverAngle(2) - 0.25, leverAngle(0) + 0.25);   // the track (round the bottom)
   ctx.strokeStyle = '#262a33'; ctx.lineWidth = 7; ctx.stroke();
+  if (powerLineLive(LINE.trunk)) {                 // the lit bus: trunk inlet → hub → the branch the energy takes
+    const a = leverAngle(nextFeed()), r = T * 0.47;
+    ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x, y); ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = OUT; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = '#ffc860'; ctx.lineWidth = 4; ctx.stroke();
+  }
   for (let i = 0; i < 3; i++) {                    // the three outputs, left → right
-    const a = leverAngle(i), on = i === lv.pos;
+    const a = leverAngle(i), on = i === leverShownPos();
     ctx.beginPath(); ctx.arc(x + Math.cos(a) * T * 0.38, y + Math.sin(a) * T * 0.38, 4.5, 0, TAU);
     ctx.fillStyle = on ? '#5fd6a0' : '#4a515e'; ctx.fill(); stroke(1);
     ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(LEVER_NAMES[i], x + Math.cos(a) * T * 0.86, y + Math.sin(a) * T * 0.86);   // (out past the upright wrench)
+    ctx.fillText(LEVER_NAMES[i], x + Math.cos(a) * T * 1.1, y + Math.sin(a) * T * 1.1 - T * 0.12);   // (just past its gland, over its branch)
   }
   ctx.save(); ctx.translate(x, y); ctx.rotate(lv.angle + Math.PI / 2);   // handle
   rr(-4, -T * 0.42, 8, T * 0.42, 3); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(1.5);
@@ -622,7 +711,7 @@ function drawEnergyBolts() {
     g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#ffe08a'); g.addColorStop(1, 'rgba(255,200,90,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), 15, 0, TAU); ctx.fill();
   };
-  for (const b of power.bolts) if (b.t < 1) orb(linePoint(LINE['feed' + b.to], b.t * b.t * (3 - 2 * b.t)));
+  for (const b of power.bolts) if (b.t < 1) { const p = boltPoint(b); if (p) orb(p); }
   for (const p of power.pulses) if (LINE[p.line]) orb(linePoint(LINE[p.line], p.t));
   if (GFX.on) ctx.restore();
 }
@@ -778,6 +867,7 @@ function drawItems(t) {
 // Hover highlight + repair progress ring (world space).
 function drawClickTarget(target) {
   if (!target) return;
+  if (target.hullTop && typeof hullTopZ === 'function') target = { ...target, y: target.y - GFX.lift(hullTopZ(target.x, target.y)) };   // (up on the hull wall's top: barnacles)
   ctx.beginPath(); ctx.arc(L(target.x), L(target.y), L(target.r), 0, TAU);
   ctx.setLineDash([6, 5]); ctx.strokeStyle = target.ok ? 'rgba(95,214,160,0.9)' : 'rgba(180,186,198,0.6)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
   const hk = player.hold && target.hold?.id === player.hold.id ? player.hold.t / player.hold.time : null;
@@ -812,7 +902,7 @@ function drawSystemsHUD(top) {
   // power panel
   const px = x0 + 156, R = power.reactor;
   const lines = [
-    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil((ENERGY_TIME - R.t) / reactorSpeed())} s${power.overcharge ? ' · OVERCHARGED' : ''}` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : power.overcharge ? '#ffd28a' : '#c8ffe6'],
+    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy${power.overcharge ? ' · OVERCHARGED' : ''}` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : power.overcharge ? '#ffd28a' : '#c8ffe6'],
     [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve} · duct tape: ${hz.tape} · hull plates: ${hz.plates}`, '#c9ced8'],
     [`Capacitors  left ${CAPACITORS[0].charge}/${CAP_MAX}${capBroken(0) ? '✖' : ''}   mid ${CAPACITORS[1].charge}/${CAP_MAX}${capBroken(1) ? '✖' : ''}   right ${CAPACITORS[2].charge}/${CAP_MAX}${capBroken(2) ? '✖' : ''}`, '#9cd8ff'],
   ];

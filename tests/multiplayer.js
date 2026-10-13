@@ -49,20 +49,20 @@ const a = G.boarding.invaders[0];
 step(60 * 4);
 check(a.state === 'fight' && a.target === A, `the intruder engages the nearest crew member (${a.target?.name})`);
 
-// the helmet lamp: toggled per crew member by command, in the snapshot, applied in another browser, lit
+// the helmet lamp: always on for everyone, in the snapshot, applied in another browser, lit; the command
+// (debug menu) still switches one off, for everyone
 B.mode = 'inside'; B.x = 22; B.y = 5; B.health = 'ok';
-G.netServer.command(2, ['lamp']); step(1);
+step(1);
 const snap = JSON.parse(JSON.stringify(G.netSerialize()));
 const C2 = loadGame(['netApply', 'crew', 'gameLighting']);
 C2.netApply(snap, 1);
 const spots = (g) => g.gameLighting(0).lights.filter(l => l.cone && Math.abs(l.z - 1.32) < 0.01);
-check(B.lamp && !A.lamp && snap.crew.find(c => c.id === 2).lamp === true && snap.crew.find(c => c.id === 1).lamp === false,
-  'L toggles the helmet lamp of whoever sent it (Bob on, Alice off), and the snapshot carries it');
-check(C2.crew.find(c => c.id === 2)?.lamp === true && C2.crew.find(c => c.id === 1)?.lamp === false && spots(C2).length === 1,
-  'another browser sees Bob\'s lamp on (one helmet beam in its lighting), Alice\'s off');
+const lit0 = spots(C2).length;
+check(B.lamp && A.lamp && snap.crew.every(c => c.lamp === true) && C2.crew.find(c => c.id === 2)?.lamp === true && lit0 >= 1,
+  `helmet lamps are on for everyone from the start, and another browser lights them (${lit0} beams)`);
 G.netServer.command(2, ['lamp']); step(1);
 C2.netApply(JSON.parse(JSON.stringify(G.netSerialize())), 1);
-check(!B.lamp && C2.crew.find(c => c.id === 2)?.lamp === false && spots(C2).length === 0, 'L again switches it off, for everyone');
+check(!B.lamp && C2.crew.find(c => c.id === 2)?.lamp === false && spots(C2).length === lit0 - 1, 'the lamp command switches Bob\'s off, for everyone');
 
 // leaving drops your gear on the floor
 G.netServer.removeCrew(1);

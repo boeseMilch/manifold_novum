@@ -2,13 +2,17 @@
 (js/minigames.js PATCH_BOARD, drawMinigameProps).
 
 Lever: a round floor dial (r 0.5, the game's dial) with a track and three output lamps at r 0.38 on
-leverAngle(0..2) (LEFT, MID, RIGHT), a hub (r LEVER_HUB) and a handle. Origin = LEVER (x, y) for every
-lever sprite, so they stack: base, handle, wrench.
+leverAngle(0..2) (LEFT 165, MID 15, RIGHT -35 degrees: each exactly where that output's cable leaves the dial;
+the track runs round the bottom, the trunk from the reactor comes in at the top, -90), a hub (r LEVER_HUB) and
+a handle. Origin = LEVER (x, y) for every lever sprite, so they stack: base, bus, handle, wrench.
   lever_base_p0..p2      the dial, lamp of the active output (power.lever.pos) lit green
   lever_base_broken      lamps dead, soot, a cracked cover
-  lever_handle_f0..f12   the handle at game angle a_k = leverAngle(0) + k * 0.15 (k = 0..12, covers
-                         leverAngle(0..2) = -pi/2 - 0.9 .. -pi/2 + 0.9; f0 = LEFT, f6 = MID, f12 = RIGHT).
-                         Pick k = round((power.lever.angle - leverAngle(0)) / 0.15): the game lerps the angle.
+  lever_bus_f0..f2       the lit conductor on the dial: an amber bus bar from the trunk's inlet (top rim) to
+                         the hub and on to the rim at leverAngle(c), c = the branch the energy takes (the
+                         patch board's choice for the lever's output). Drawn while the trunk is live.
+  lever_handle_f0..f20   the handle at game angle a_k = leverAngle(0) - k * HANDLE_STEP (10 degrees; k = 0..20
+                         covers LEFT 165 .. RIGHT -35 round the bottom: f0 = LEFT, f15 = MID, f20 = RIGHT).
+                         Pick k = round((leverAngle(0) - power.lever.angle) / HANDLE_STEP): the game lerps the angle.
   lever_wrench_f0..f2    power.lever.jammed with pos = 0..2: a spanner (yellow grip) standing upright in the
                          track, ring end rammed into the groove at r 0.38, jaw up (~0.55 tall), at
                          leverAngle(pos) + WRENCH_OFF towards the next output (pos 2: back towards MID, the way
@@ -25,7 +29,10 @@ import os, sys, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from syslib import *
 
-def lever_angle(i): return -math.pi / 2 + (i - 1) * 0.9
+LEVER_DEG = (165, 15, -35)                         # js/systems.js LEVER_ANGLES
+TRUNK_DEG = -90
+HANDLE_STEP = math.radians(10)
+def lever_angle(i): return math.radians(LEVER_DEG[i])
 def gdir(a, r):                                    # game angle, radius -> Blender (x, y)
     return (math.cos(a) * r, -math.sin(a) * r)
 TOP = 0.26                                         # dial top height
@@ -43,7 +50,7 @@ def lever():
     B(mn.cyl('dial', 0.47, TOP - 0.06, loc=(0, 0, 0.06), m=M['paint'], bevel=0.04, verts=64))
     B(ring('hz', 0.5, 0.05, 0.05, loc=(0, 0, 0.02), m=M['hazard'], verts=64))
     # track: dark groove along the arc of the outputs
-    a0, a1 = lever_angle(0) - 0.25, lever_angle(2) + 0.25
+    a0, a1 = lever_angle(0) + 0.25, lever_angle(2) - 0.25   # (round the bottom: decreasing game angle)
     arc = [(*gdir(a0 + (a1 - a0) * k / 20, 0.38), TOP + 0.005) for k in range(21)]
     B(pipe('track', arc, 0.045, M['hole'], corner=0.0))
     for sg in (-1, 1): B(pipe('rail', [(*gdir(a0 + (a1 - a0) * k / 20, 0.38 + sg * 0.055), TOP + 0.01) for k in range(21)], 0.016, M['steel'], corner=0.0))
@@ -89,9 +96,19 @@ def lever():
     wup = mn.group('w_up', wp + [notch]); wup.rotation_euler = (0, -math.pi / 2, 0)   # (the hidden cutter turns with the head)
     wroot = mn.group('wrench', [wup])
     cap = P(mn.cyl('hub_cap', HUB * 0.62, 0.03, loc=(0, 0, TOP + 0.13), m=M['yellow'], bevel=0.01, verts=32))
+    # the bus: an amber conductor bar on low standoffs over the dial (above the track), trunk inlet -> hub,
+    # and one hub -> output c per frame (only that one shown)
+    M['bus'] = glow('bus', '#ffb640', 1.6)
+    BZ = TOP + 0.06
+    def bar(name, a, r0, r1):
+        return [P(pipe(name, [(*gdir(a, r0), BZ), (*gdir(a, r1), BZ)], 0.026, M['bus'], corner=0.0)),
+                P(mn.cyl(name + '_end', 0.034, 0.03, loc=(*gdir(a, r1), BZ - 0.015), m=M['steel'], verts=12, bevel=0.006))]
+    bus_in = bar('bus_in', math.radians(TRUNK_DEG), 0.06, 0.47)
+    bus_out = [bar(f'bus_out{c}', lever_angle(c), 0.06, 0.47) for c in range(3)]
     outline(P, 0.012)
 
     hset = hp + [hroot]; wset = wp + [wroot, cap]
+    bus_all = bus_in + [o for b in bus_out for o in b]
     def only(objs):
         for o in P: o.hide_render = o not in objs
     # base states
@@ -101,11 +118,21 @@ def lever():
         mn.render(f'systems/lever_base_p{p}', objs=base)
     for l in lamps: setmat([l], M['lamp_off'])
     show([soot, crack], True); mn.render('systems/lever_base_broken', objs=base)
+    # bus frames: the inlet bar plus output c, keyed visibility, canvas shared
+    only(bus_all)
+    for c in range(3):
+        f = c + 1; s.frame_set(f)
+        for k, b in enumerate(bus_out):
+            for o in b: key_hide(o, f, k != c)
+    mn.render('systems/lever_bus', objs=bus_all, frames=[1, 2, 3])
+    for b in bus_out:
+        for o in b: o.animation_data_clear(); o.hide_render = True
     # handle frames: rotation keyed per frame, canvas shared over all of them
     only(hp)
-    frames = list(range(1, 14))
+    nf = round((lever_angle(0) - lever_angle(2)) / HANDLE_STEP) + 1
+    frames = list(range(1, nf + 1))
     for k, f in enumerate(frames):
-        s.frame_set(f); hroot.rotation_euler.z = -(lever_angle(0) + k * 0.15); hroot.keyframe_insert('rotation_euler', index=2, frame=f)
+        s.frame_set(f); hroot.rotation_euler.z = -(lever_angle(0) - k * HANDLE_STEP); hroot.keyframe_insert('rotation_euler', index=2, frame=f)
     mn.render('systems/lever_handle', objs=hp, frames=frames)
     # wrench frames (jammed at pos 0..2)
     only(wp + [cap])

@@ -134,6 +134,8 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(G.power.reserve === cells - 1 + 1, `a spare fuel cell on top of the mission's ${cells}`);
   G.mission.active = false; G.power.reactor.fuel = 0; tickN(G, 60 * 2.2);
   check(G.power.reactor.fuel === 5 && G.power.reserve === cells - 1, 'the inserter loads the next fuel cell by itself');
+  G.power.reactor.fuel = 1; G.power.reactor.t = 3; tickN(G, 60 * 2.2);
+  check(G.power.reactor.fuel === 1 && G.power.reserve === cells - 1, 'the inserter leaves a part-full cell alone (it never swaps early)');
   const G2 = loadGame(NAMES); G2.startMission('c1');
   check(G2.SHOTS_PER_ENERGY === 3 && G2.CAP_MAX === 3, 'without upgrades everything is back to normal (capacitors hold 3)');
 }

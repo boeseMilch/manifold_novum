@@ -3,7 +3,7 @@
 const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'time', 'ui', 'miniCommand', 'player', 'combat', 'combatClear', 'combatSpawn', 'teleportToGun', 'fireCannon', 'pressShield', 'reloadCannon',
   'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'updateRepair', 'grab', 'lightLevel',
-  'drawLights', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
+  'drawLights', 'fuelFraction', 'CELL_ENERGY', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
   'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires']);
 const DT = 1 / 60;
 let failed = 0;
@@ -66,6 +66,33 @@ check(G.inv.item === 'fuel' && G.power.reserve === 2, 'clicking the crate takes 
 G.player.x = G.REACTOR.x - 2.5; G.player.y = G.REACTOR.y;
 G.clickTarget(G.REACTOR.x, G.REACTOR.y).run();
 check(G.power.reactor.fuel === 5 && G.inv.item === null && !G.ui.panel, 'clicking the reactor with a fuel cell loads it right away (5 energy)');
+
+// --- the fuel bar: how full the loaded cell still is, in whole energies
+G.power.reactor.fuel = 5; G.power.reactor.t = 0;
+check(G.fuelFraction() === 1, 'a fresh cell is 100% full');
+G.power.reactor.fuel = 3; G.power.reactor.t = G.ENERGY_TIME / 2;
+check(G.fuelFraction() === 3 / G.CELL_ENERGY, `3 energy left, half way to the next: still 3 of 5 bars (${G.fuelFraction()})`);
+G.power.reactor.fuel = 0; G.power.reactor.t = 0;
+check(G.fuelFraction() === 0, 'an empty reactor: 0');
+
+// --- early swap: a fresh cell into a reactor that still has fuel throws the rest away
+G.power.reactor.fuel = 2; G.power.reactor.t = 7; G.power.reserve = 2; G.inv.item = null;
+G.player.x = G.FUEL_CRATE.x + 0.8; G.player.y = G.FUEL_CRATE.y;
+G.clickTarget(G.FUEL_CRATE.x, G.FUEL_CRATE.y).run();
+G.player.x = G.REACTOR.x - 2.5; G.player.y = G.REACTOR.y;
+t = G.clickTarget(G.REACTOR.x, G.REACTOR.y);
+check(t.ok && /swap in a fresh cell \(wastes the 2 energy left in this one\)/.test(t.text), `holding a cell at a part-full reactor offers the swap and says what it wastes ("${t.text}")`);
+t.run();
+check(G.power.reactor.fuel === 5 && G.power.reactor.t === 0 && G.power.reserve === 1 && G.inv.item === null,
+      `the swap loads a full cell, wastes the 2 left and uses one spare (fuel ${G.power.reactor.fuel}, spare ${G.power.reserve})`);
+// no spare cells: nothing to swap in
+G.power.reactor.fuel = 2; G.power.reserve = 0; G.inv.item = null;
+t = G.clickTarget(G.REACTOR.x, G.REACTOR.y);
+check(!t.ok && !/swap/.test(t.text), `no cell in hand: no swap offered ("${t.text}")`);
+G.player.x = G.FUEL_CRATE.x + 0.8; G.player.y = G.FUEL_CRATE.y;
+t = G.clickTarget(G.FUEL_CRATE.x, G.FUEL_CRATE.y);
+check(!t.ok && G.inv.item === null, 'and with the crate empty there is no cell to take');
+G.power.reserve = 3;
 
 // --- inventory: grabbing into a full slot drops the old item where you stand
 reset(); G.inv.weapon = 'laser'; const before = G.ITEMS.length;

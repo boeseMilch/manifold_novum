@@ -28,8 +28,9 @@ security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js`
 
 - **Camera:** zoomed in so about one room fills the screen. It aims at a blend of nearby
   room centers, weighted by how close you are, and eases slowly, so it glides between
-  rooms. Outside it follows you, and on a cannon it frames the field of fire. Hold **Tab**
-  for an overview of the whole ship.
+  rooms. Outside it follows you, and on a cannon it frames the field of fire. No whole-ship overview
+  in the game (Tab was removed: not knowing what's coming is part of it); only the tutorial's tour and the
+  debug menu zoom out.
 - **Look:** the ship is old and held together by duct tape. Floors and hull are made of
   irregular plates (no visible grid), with mismatched replacement plates. Rooms have
   different sizes. There's one big engine at the stern. Clutter (purely visual, not
@@ -61,7 +62,7 @@ security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js`
   Lamps show the door state: green = open, red = closed, blinking amber = busy.
 - Starting state: the airlocks of the side zones sit at the upper deck, and the center
   one sits at the lower deck.
-- Controls: WASD or arrow keys to move, E or Space to use, hold Tab for the overview.
+- Controls: WASD or arrow keys to move, E or Space to use.
 - Debug: `index.html#overview` starts in the overview, and `index.html#x,y` starts the player at x, y.
 
 Tuning constants are at the top of `js/game.js` (walk speed, door and cycle times).
@@ -148,12 +149,22 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
     capacitor empty, there's no reload.
   - A shield costs 1 energy. With none, nothing happens and no cooldown starts.
 - **Reactor** ("REAKTOMAT 3000"):
-  - It starts with a fuel cell loaded. A cell holds 5 energy, made at one per 20 s; its
-    screen shows the fuel and the progress, and the cell visibly drains.
+  - It starts with a fuel cell loaded. A cell holds 5 energy, made at one per 20 s; the cell
+    visibly drains. Its fuel bar shows how full the cell still is, smoothly (`fuelFraction()`:
+    the energy left minus the progress to the next one, also as "% full" in the HUD line). In
+    the sprite look the front screen's five bars go dark from the right: the rendered frames
+    only know all-lit and all-dark, so the drained part is `ship/reactor_off` clipped to it and
+    drawn just in front (`reactorFuelBars` in js/art.js); the last bar turns red when under one
+    energy. In ?classic the keypad's little bar and the cell show the same fraction.
   - There are 3 spare cells in the crate next to it. Click the crate to take one, then
-    click the reactor (once it's empty) to load it.
-- **Power lever** (below the reactor): the dial reads left → right LEFT · MID · RIGHT and
-  starts on MID.
+    click the reactor to load it. A reactor that still has fuel can take a fresh cell too
+    ("swap in a fresh cell (wastes the N energy left in this one)"): the old cell is thrown out
+    with what's left in it. The inserter upgrade still only loads into an empty reactor, and
+    the tutorial's gate only allows loading the empty one.
+- **Power lever** (below the reactor): the dial reads LEFT · MID · RIGHT and
+  starts on MID. (Since 9r each position points at the gland its branch leaves the dial by: LEFT
+  165°, MID 15°, RIGHT -35°, the handle swinging round the bottom; the trunk from the reactor comes
+  in at the top.)
   - In auto mode it steps right after every energy and wraps around: mid → right → left →
     mid …
   - Click the dial to turn it by hand.
@@ -220,7 +231,7 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
 
 - **Encounter sidebar** (left edge):
   - A steel header plate shows the mission clock, time to jump, the last radar scan and
-    three damage lights.
+    MAX_DAMAGE (now 5) damage lights.
   - Below it, one riveted metal plate per encounter or problem (icon, colored stripe,
     title, status). New plates slide up from the bottom into their slot and stay until
     the problem is dealt with, then slide out to the left.
@@ -305,7 +316,7 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
 - **Win / lose:**
   - At jump time the drive tries for 15 s and needs 1 energy in the middle capacitor (the
     engine room). Jumping wins, even with enemies still around.
-  - Running out the 15 s loses, and so does having more than 3 systems broken at once.
+  - Running out the 15 s loses, and so does having more than MAX_DAMAGE (5; was 3) systems broken at once.
   - R restarts.
 - **Solo tuning:** the interceptor fires every 2.5–4 s.
 - **Debug menu:** also M (restart the mission), N (free play), F (start a fire next to you).
@@ -367,7 +378,8 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   - Treating anyone takes 2 s. Enemies and the intruder ignore downed crew.
   - Down in a cannon: you slump in the seat (see 9g).
 - **Shields** grow out of their generator in 0.1 s and shrink back into it in 0.1 s.
-- **Power lines:** real cables run from the reactor to the three capacitors and from each
+- **Power lines:** real cables run from the reactor to the three capacitors (since 9r: one trunk into the
+  power lever, a branch per output from there) and from each
   capacitor to its shield button and cannon. They glow amber while the capacitor has
   charge, and every spent unit of energy runs down the cable as a pulse. The random
   decorative cables that looked like wiring are gone.
@@ -446,6 +458,14 @@ get the rest.
   reach the hull seed barnacles. Full grown after 40 s, they drain that side's capacitor
   (1 per 10 s); at 75 s they drill through (breach, or a broken part). Scrape off outside (3 s)
   or burn off with two laser hits.
+  They grow ON the hull (playtest: "the barnacles are still next to the ship"): `onHullPlating` puts
+  them on the outer wall's top over that stretch (x 0.15 / SHIP_W − 0.15 on the sides, y −2.85 on the
+  nose, clear of its corner posts), straddling the outer edge; the sprite is drawn at that wall top's
+  height (`hullTopZ`: 1.6, or 0.35 on the low cutaway parts; before, the front ones were hidden behind
+  the nose wall and the side ones floated 0.55 out in space). The sprite's `pick` and the targets'
+  `hullTop` flag keep clicks, the hover ring and the job marker up there with it. Laser bolts from a
+  spacewalk count from just outside the hull (0.75), bolts from inside still never reach them.
+  Latched leeches in ?classic now put their mouth on the hull's edge too (the sprites already did).
 - **Debris** (event `debris`): a cannon's track is jammed, half its arc, until a spacewalker pulls
   it out (3 s).
 - **Antenna** (event `antenna`): radar scans come back garbled until it's straightened outside (2 s).
@@ -456,6 +476,7 @@ get the rest.
   no longer swallow clicks on something more specific under the mouse.
 - First version of the hard mission **Deep drift** (all damage rules + coils).
 - `node tests/eva.js`.
+- `node tests/interact.js`: E and left click both work (airlocks, barnacles, treating, the override).
 
 ### 8d. Ship-wide encounters (`js/encounters.js`)
 - **Solar flare** (event `flare`): 10 s warning (orange glare), then 8 s of radiation: anyone on
@@ -1242,10 +1263,10 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   reaches all free floor (no closed-off pockets) and every click target is in reach; no intruder / pirate
   route (NAV edges) runs through a solid; items dropped on a crate land next to it.
 
-### 9l. Helmet lamp (L; request: "a helmet light (directional), mostly so I can test where the normals work")
-- L toggles your helmet lamp (also the debug menu's `-` entry, `#do=-`; L inside the open debug menu stays
-  that menu's own `l` entry). Per crew member (`c.lamp`, default off), sent as the command `['lamp']` and
-  carried in every snapshot's crew entry, so everyone sees everyone's lamp. Drawing only, no gameplay.
+### 9l. Helmet lamp (request: "a helmet light (directional), mostly so I can test where the normals work"; later: "the headlamps should just always be on" ... "I guess the light is already soft enough")
+- Always on for every crew member (`c.lamp` defaults to true; the L key is gone, the debug menu's `-` entry
+  still toggles it for testing). Still carried in every snapshot's crew entry and the command `['lamp']`
+  still exists. Drawing only, no gameplay.
 - `LIGHT_TUNING.helmet` (js/lights.js): a cool white spot from the helmet (z 1.32, 0.28 ahead) where you
   face (with mouse-look it follows the cursor), tilted 22° down, half-angle 0.72 rad with the renderer's soft
   cone edge (full brightness within ~31°, gone at ~41°), reach 8.5, intensity 2, with shadows; plus a small
@@ -1287,6 +1308,147 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   the floor. Gameplay, saves and snapshots unchanged (the lines' ids, capacitors and timings are the same).
 - ?classic: the same routes as flat strokes, with a small box at each fitting.
 
+### 9n. Tutorial: RAIDER basic training (`js/tutorial.js`; request: "a tutorial that explains the game in great detail")
+
+- Entry: a TUTORIAL button on the main menu (glowing until you've finished it once; `localStorage`
+  `mn-tutorial-done`). Solo only: the server doesn't load the file, and every hook in the other files checks
+  that it exists. First it asks "mouse or keyboard?" (remembered in `localStorage` `mn-controls`, not in the
+  profile: no save-format change); every instruction then names only the matching controls (both keep working).
+- Messages: a parchment box in Patrick Hand at the bottom, click-through (NEXT, a click on the box, Enter or
+  Space). While one is open the simulation is paused (`frame()` runs `tutorialClient`: only the camera moves);
+  keys are held back from the game (a capture listener), and the key that turned the page stays swallowed
+  until it's let go, so a held Space never fires the cannon. Pages can mark things in the world and zoom out
+  to the whole ship (the only place outside the debug menu that shows it).
+- Railroading: `tutorialAllows(what, arg)`, asked at the central places in js/game.js (`tutAllows`):
+  interaction targets (hover, E's nearest target, `act` prompts), cannon fire / reload / cover / climb down
+  (also the RELOAD and CLIMB DOWN buttons), closing panels, hand weapons, the debug menu. Each step allows only
+  its own action. A pulsing ring with an arrow marks where to go or what to hit, and an objective line sits
+  under the HUD; walking to the other deck points at the nearest deck airlock first.
+- The run: a stock ship (no upgrades: 3 shots per energy, capacitors of 3), the reactor's cell empty, the
+  lever wedged on MID, the left capacitor with exactly 1 energy, the left cannon with 1 shot. The helm shows
+  the left shield button and the right capacitor as "irregular readings" (`mission.maint`; its maintenance
+  event is pushed to t = 10⁹, so it never fires). No jump. Enemy hits never do real damage (combat.js
+  `shipHit` / `crewHit` ask `tutorialHit`: just the flash and sparks).
+- Steps (data in `TUT_STEPS`, each `{ objective, marker, allow, enter, tick }`, `tutGo(id)` moves on):
+  welcome (RAIDER intro, you, a tour of the decks) → helm (the two yellow readings, orange = service it) →
+  radar (nothing: a safe part of space; scan again: an interceptor on the left) → climb into the left cannon
+  (spawns it; it holds its fire) → shoot the windshield (a miss gives the shot back; any other weak spot or hull
+  wear is fixed at once) → advantages (the interceptor's weak spots and effects from `ENEMY_TYPES`, frigate
+  examples, hull wear) → reload (the last energy) → block (one scripted shot; paused mid-air until you hold
+  the cover; a shot that gets through is explained (crew injuries, fires, broken parts, holes), costs nothing
+  and repeats) → kill (the cable and the cooling with 3 shots). Dead: climb down. Out of shots: "out of
+  energy, check the reactor" → reactor (take a cell from the crate, load it; energy, bolts, lever, capacitors,
+  the wrench) → pull the wrench → lever demo (the reactor runs fast for 4 energies: MID, RIGHT, LEFT, MID) →
+  if the interceptor lives: lock the lever on LEFT (turn it, wedge the wrench), back into the cannon (the
+  reactor runs ×4 while locked LEFT) and kill it. The reactor always comes first: the fire starts when you
+  climb out after the second fight, or (interceptor already dead in the first fight: climbing out starts
+  nothing) right after the lever demo. Presented as "it got a hit in after all": a boom on the left hull and a
+  fire at the left cannon's mount (a `tame` fire: `updateFires` skips its spreading / burning out / going out
+  entirely) → fetch the bridge's extinguisher (the nearest) and put it out →
+  the left shield button breaks (the irregular one from the helm): walk up to it, it does nothing; the repair
+  kit, hold to repair (a tape job counts too) → overview pages (laser gun for intruders, spacewalks, manual
+  override, vent panels, security console, shields, treating crewmates, hull plates / patch board / snacks,
+  the jump) → "more training modules coming soon" and BACK TO THE LOBBY.
+- `tests/tutorial.js` drives both branches headlessly.
+
+### 9o. E and left click do the same everywhere (playtest: "the EVA airlocks only work by clicking, barnacles only with E")
+
+- Rule: anything you can use works with E (next to it: the thing under the mouse if that's usable, else the
+  nearest) and with a left click on it in reach; hold jobs (repair, scrape, pry, weld, treat, …) by holding E or
+  the left button.
+- Airlock + E: with the mouse resting on the airlock's spot (on a spacewalk that's usually yourself, the camera
+  centres on you) the hover was the prompt's own tooltip, which swallowed E. Now only something with an action
+  (`actionable()` in game.js: run / repair / treat / hold) takes E away from the prompt.
+- Barnacle + click: the mouse picks raised sprites (`GFX.pickAt`), and standing in front of a barnacle your own
+  sprite covered it, so the click landed on your feet. A pick now loses to the ground point when only the ground
+  point has something to use (`clientUpdate`).
+- Treating with E: letting go of E for a moment keeps the progress (as with the mouse), and pressing E again on the
+  heartbeat speeds it up like a click.
+- Manual override panel: E hits like the button (holding E swings again after each hit); Esc closes it (E closed it
+  before). Other panels (security, diagnosis, mini-games) stay click-only on their buttons, E / Esc close.
+- Left click means something else only in a cannon (fire; E climbs down). Hand weapons use the right button / Space,
+  so the left click stays free for interacting.
+- `tests/interact.js`: airlocks (inside and out, E with the mouse anywhere, click), barnacles (hold E / hold mouse
+  from every side), treating (hold E / mouse), the override (E opens, E hits, held E, Esc).
+
+### 9p. Procedural floor scratches and tape (playtest: "the same tape all over" on the left, "still not procedurally generated" on the right)
+
+- The floor tiles were Blender renders with baked marks: boot scuffs on `floor_blue_a`, a strip of duct tape on
+  `floor_red_b`, so every tile of that variant showed the same marks. Those are gone from
+  `tools/blender/models/interior/floors.py` (re-rendered, interior group repacked); all tiles are clean now.
+- The marks are drawn per pixel by the sprite shader (`FLOOR_WEAR` in js/gfx.js, ported from
+  `tools/sprites/scratch_proto.html`), seeded by the world position, so every 1 × 1 plate cell and 2 × 2 tile is different:
+  - mostly fine hairlines, in the normals only (a box-filtered V-groove: a scratch thinner than a pixel is a faint light/dark
+    line, not noise) plus a glint in `lighting()` (`gGlintK` / `gGlintT`): a groove flashes when a light's half vector is
+    perpendicular to it, so scratches catch the ceiling lights and the helmet lamp as you move
+  - sometimes a cluster of parallel scuffs (a dragged crate) or a swirl (a chair), rarely a deep gouge (bare steel, dark burr rim)
+  - long drags across the seams, faded in and out by the wear so they never stop at a tile edge
+  - occasional duct tape (about 1 tile in 10): a strip across or along a seam, an X, an L round a corner, overlapping
+    strips; mostly silver, some black gaffer, rarely hazard tape (broad, filtered bands: no longer busy); soft crumples
+    instead of the prototype's crinkle and weave stripes (which looked stripy close up); tape bridges the seams and the tread
+- Wear (js/sprites.js `floorWear()`): a base per room (bridge and reactor busiest) plus more around the doorways, the deck
+  airlock doors, the outer hatches, the consoles and the reactor front. Each tile passes the wear at its four corners
+  (`opts.floor`), so it's continuous across tiles.
+- Cost: the tape was the expensive part at first (nine inlined copies of the strip code); now each taped tile lays out its
+  strips and one loop draws those near the pixel. Measured in SwiftShader (software GL, so only relative): bridge view,
+  half resolution, median frame 667 ms off → 767 ms on.
+- Off switch: `?noscratch` or `GFX.setScratches(false)` (remembered). `?classic` has none.
+
+### 9q. Floor nuts with a real normal map (request: "the littered nuts on the ground still need a normal map")
+
+- Cause: not the crop or the decal layer (decals are lit with their normal map like any sprite; the map rects lined up).
+  The nut model was a flat hex prism with a 0.008 bevel (under a pixel at 96 px/unit) and a raised, smooth-shaded disc
+  for the hole, so its normals were a flat top with a vague dome; stored at half size (`mapScale` 0.5) that was ~12 × 10
+  px of blocks. Its height map is near black on purpose (0.06 high in a 4-unit range).
+- Fix: `hex_nut()` in `tools/blender/models/props/clutter.py` (own job `nuts`) builds a flat-shaded mesh with a flat top
+  ring, a 35° chamfer cutting the six corners, and a countersunk bore going through (the floor shows in the middle);
+  lighter steel so it catches the lamps. And `tools/sprites/pack.py` stores the `props` group's normal/height maps at full
+  resolution (`MAP_SCALE_GROUPS`, per page `mapScale: 1` in sprites.json; +0.25 MB): all small floor clutter (nuts,
+  tape, magazine, papers) was losing its shading to half-size maps. The game samples maps by uv, so no JS change.
+
+### 9r. Reactor → lever → three branches (request: "it's not readable how the energy flows because the energy lever is totally removed from the reactor. you should have the reactor have a cable going into the lever, then from there the three sections branch off"; then: "the lever position for mid is where the reactor goes in ... the mid-lever position is exactly where the mid cable comes out ... the yellow lines should connect", "make sure the wires don't cross", "highlight the direction the energy goes next a little more than the inactive lines")
+- Topology (`POWER_ROUTES`, js/systems.js): a **trunk** (`id 'trunk'`, cap -1) runs from a plug on the reactor's front
+  face (22.2, 20.6) straight down into the top of the lever's dial. From the lever, one branch per output, each out of
+  a gland on the dial's rim: `feed0` (LEFT) to the left capacitor, `feed1` (MID) to the middle one (bottom right),
+  `feed2` (RIGHT) up-right to the right airlock's. The old plugs on the reactor's sides are gone.
+- **Lever positions = glands.** `LEVER_ANGLES` = LEFT 165°, MID 15°, RIGHT -35° (game angles, y down): the handle
+  points exactly at the gland its branch leaves by (`leverPort(leverAngle(i))`); the trunk comes in at -90° (top),
+  and the handle swings round the bottom (decreasing angle LEFT → MID → RIGHT, back the same way), so it never points
+  at or passes the trunk. The dial was re-rendered (tools/blender/models/systems/lever.py, `systems` group repacked):
+  lamps and track on the new angles, 21 handle frames 10° apart (`LEVER_HANDLE_STEP`, `LEVER_HANDLE_FRAMES`; each
+  position has its own frame), the wrench beside the new positions. The LEFT / MID / RIGHT billboards sit just past
+  their glands, AUTO / MANUAL over the top.
+- **The lit path.** `lineState(l)`: the trunk and the branch the next energy takes (`nextFeed()` = the patch board's
+  choice for the lever's shown output) are `live` (amber, self-lit window, flowing dashes); the other two branches
+  are `idle` (dim amber window, no dashes, LEDs off): still cables, clearly not connected. Through the dial: a lit bus
+  bar (`systems/lever_bus`, frame = the branch fed; classic: an amber line) from the trunk's inlet to the hub and on
+  to that branch's gland, under the handle. The live feed path also gets a soft, slower pulse over its dashes
+  (`feedPulse`), so where the next energy goes stands out a little from the shield / cannon lines. Patched (e.g. LEFT
+  → right capacitor): the handle points LEFT, the bus and the lit branch go RIGHT, the patch board's lamps are lit.
+  `off` (no fuel / empty capacitor) and `dead` (broken capacitor; the trunk: broken reactor) keep their looks, and
+  surges their arcs.
+- **Energy bolts:** `boltPoint(b)` runs down the trunk, through the hub (under the lever sprite) and out along
+  `feed<to>`, in the same 0.9 s (`BOLT_TIME`, eased as before): arrival times and charging unchanged, also on longer,
+  patched routes. Bolts remember the output they left by (`b.out`; extra field, old snapshots fine). The lever still
+  steps on at once in the game state, but what it shows (`leverShownPos()`: handle, lamp, bus, lit branch) waits until
+  the energy has arrived, so the bolt always runs along the lit path the handle points at; then the next path lights.
+- **No crossings.** No two power lines cross or touch anywhere on the ship (tested). With the trunk at the lever's top
+  and MID between LEFT and RIGHT, the middle capacitor's own lines can't climb to the back wall without crossing
+  `feed2`, so they now go into two conduit boxes on the right wall of its corner (below feed2's doorway) and run
+  inside the walls: the shield line comes out of a box on the reactor room's back wall next to the front shield
+  button, the cannon line out on the upper deck as before. The two orange decor cables from the reactor to the engine
+  (`props/cable_engine_l/r`) are gone: every branch had to cross them. The middle capacitor stayed where it is.
+- New fitting `power/gland_on/off` (`gland()` in tools/blender/models/power/fittings.py, 8 dirs, REACH 0.22): a steel
+  saddle clamped to the dial's foot with a hex cable gland, a ribbed boot and an amber LED; `leverPort(a)` puts one on
+  the rim at angle a. `power` group repacked.
+- Surges and splicing unchanged: the feeds keep their ids, capacitors and `linePoint(l, 0.5)` splice spot; the trunk
+  never arcs (no capacitor). ?classic draws all of it flat (idle branches in a dim brown, the bus as an amber line).
+- `tests/cables.js`: topology (trunk from the reactor into a lever gland, every feed from a lever gland to its
+  capacitor), the lines over open floor, no two lines anywhere crossing or touching, each lever position exactly at
+  its gland with its own handle frame and the trunk away from all of them and outside the handle's swing, the bolt's
+  way (continuous, through the hub), the 0.9 s arrival also when patched, the lever showing the bolt's output until
+  it arrives, live / idle / off / dead per lever position and patch, surges never on the trunk.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
@@ -1318,7 +1480,13 @@ dummy canvas):
   asteroid crack, can be hit from its cannon within 10 s with good aim (with lead, within
   the cannon's arc). Each case runs 6 random sway patterns. Hull wear is off, so only
   direct hits count.
+- `node tests/tutorial.js`: the tutorial's step machine, both branches (mouse with a failed block and the
+  lock-LEFT detour; keyboard with the interceptor dead in the first fight): gates, the shot back on a miss, the
+  block loop doing no damage, out of energy → reactor, the lever demo, the fire on climbing out (never spreads),
+  the repair and the overview.
 - `node tests/sway.js`: hitting an engine causes no position jump and no velocity kink.
+- `node tests/cables.js`: the power lines' topology (reactor → trunk → lever → branches → capacitors), the energy
+  bolts' way and timing, see 9r.
 - `node tests/systems.js`: 25 checks covering the cannon and shield energy, the reactor
   timing and lever order, wasted energy, the wrench override, fuel crate → reactor,
   dropping items, the 5 s repair, broken capacitors, dimming lights, hull hits breaking
@@ -1332,7 +1500,7 @@ dummy canvas):
   - Locks: door closing, never on someone, 3 bonks to force; locked airlock; the
     intruder bashing a locked outer airlock for 8 s.
   - Fires: start rate, spreading or breaking, the extinguisher.
-  - Win / lose: jump with energy, lose without, lose with more than 3 broken.
+  - Win / lose: jump with energy, lose without, lose with more than MAX_DAMAGE (5) broken.
 - `node tests/softlock.js`: you can always get out. Covers being trapped in a broken
   airlock, stranded outside by a broken outer airlock, security locking the door you
   stand in, and multiplayer airlock doors.

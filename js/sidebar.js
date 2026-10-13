@@ -130,7 +130,7 @@ function drawSidebarHeader(y) {
   ctx.fillText(`MISSION T+${fmt(mission.t)}`, x + 14, y + 15);
   const jumpIn = mission.jumpAt - mission.t;
   ctx.font = '800 18px system-ui, sans-serif'; ctx.fillStyle = mission.jump ? '#ffe08a' : '#f2f4f8';
-  ctx.fillText(mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : 'PRACTICE', x + 14, y + 35);
+  ctx.fillText(mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE', x + 14, y + 35);
   ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
   ctx.fillText(mission.lastScan === null ? 'radar: not scanned (map table)' : `radar: scanned ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 54);
   // damage lights: one per broken system; more than MAX_DAMAGE loses the ship
@@ -138,8 +138,8 @@ function drawSidebarHeader(y) {
   ctx.font = '700 9px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec'; ctx.textAlign = 'center';
   ctx.fillText('DAMAGE', x + w - 46, y + 15);
   for (let i = 0; i < MAX_DAMAGE; i++) {
-    const bx = x + w - 70 + i * 24, by = y + 36, on = i < dmg;
-    ctx.beginPath(); ctx.arc(bx, by, 8, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#2b303a'; ctx.fill(); stroke(1.5);
+    const bx = x + w - 46 + (i - (MAX_DAMAGE - 1) / 2) * 17, by = y + 36, on = i < dmg;   // (centred under DAMAGE)
+    ctx.beginPath(); ctx.arc(bx, by, 7, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#2b303a'; ctx.fill(); stroke(1.5);
     if (on) { ctx.beginPath(); ctx.arc(bx - 2, by - 2, 2.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill(); }
   }
   ctx.fillStyle = dmg >= MAX_DAMAGE ? '#ff8a7a' : '#c9ced8'; ctx.fillText(dmg >= MAX_DAMAGE ? 'one more = lost' : `${dmg}/${MAX_DAMAGE}`, x + w - 46, y + 54);

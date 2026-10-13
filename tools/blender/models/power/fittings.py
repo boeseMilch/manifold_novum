@@ -12,6 +12,11 @@ Renders (build/renders/power/), each in _on (line live: amber LED and window) an
                        shield buttons): mounting flange with hazard band and a PWR tag, socket collar, a
                        heavy plug with a yellow latch and a ribbed boot. Origin = the point on the machine's
                        face at floor level; REACH 0.40.
+  gland_{on,off}       8 dirs. Where the cables meet the power lever (js/systems.js leverPort): a steel saddle
+                       clamped to the foot of the lever's round dial (r 0.5, the dial at x < 0), a hex cable
+                       gland on it and a short ribbed boot down to the floor; an amber LED on top. The trunk
+                       from the reactor goes in through one, the three branches (LEFT, MID, RIGHT) come out of
+                       the others. Origin = the dial's rim at floor level; REACH 0.22.
   box_{on,off}         4 dirs. A conduit box on a wall where the cable goes into it (dir 0: on a left wall's
                        inner face, cable leaving east; 1: a back wall, leaving south; 2: a right wall;
                        3: a near wall, leaving north). Origin = the wall face at floor level; REACH 0.48.
@@ -27,7 +32,7 @@ Renders (build/renders/power/), each in _on (line live: amber LED and window) an
                        through the wall top right of the helm's turret, the cable along the wall top and a
                        connector collar at the turret's base. Origin = the turret as drawn: (22.2, -2.8), z 1.6.
 
-    blender -b --factory-startup --python tools/blender/models/power/fittings.py [-- quick] [-- plug box riser clamp jack]
+    blender -b --factory-startup --python tools/blender/models/power/fittings.py [-- quick] [-- plug gland box riser clamp jack]
 """
 import os, sys, math
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -107,6 +112,28 @@ def plug(on):
     outline(P, 0.012)
     root = mn.group('root', list(P))
     mn.render(f'power/plug_{"on" if on else "off"}', objs=list(P), root=root, dirs=8)
+
+DIAL_R = 0.5                             # the lever's dial (models/systems/lever.py)
+
+def gland(on):
+    s = mn.reset(); M = mats(on); P = Parts()
+    # saddle: a block hugging the dial's foot (its back half sunk into the dial)
+    P(mn.box('saddle', (0.14, 0.24, 0.2), loc=(0.02, 0, 0.0), m=M['frame'], bevel=0.02))
+    P(mn.box('saddle_hz', (0.145, 0.245, 0.04), loc=(0.02, 0, 0.15), m=M['hazard'], bevel=0.005))
+    for sy in (-0.085, 0.085):
+        P(mn.cyl('bolt', 0.018, 0.02, loc=(0.06, sy, 0.2), m=M['steel'], verts=6, bevel=0.004))
+    P(mn.cyl('lamp_rim', 0.036, 0.02, loc=(0.05, 0, 0.2), m=M['steel'], verts=16, bevel=0.005))
+    P(mn.sphere('led', 0.028, loc=(0.05, 0, 0.215), m=M['led'], scale=(1, 1, 0.7)))
+    # gland: hex nut and a yellow collar on the outer face, the boot down to the floor
+    gz = 0.09
+    P(mn.cyl('gland_nut', 0.1, 0.035, loc=(0.088, 0, gz), m=M['steel'], rot=Y90, verts=6, bevel=0.008))
+    P(mn.cyl('gland_y', 0.104, 0.015, loc=(0.12, 0, gz), m=M['yellow'], rot=Y90, verts=20, bevel=0.003))
+    P(pipe('boot', [(0.13, 0, gz), (0.17, 0, gz - 0.005), (0.22, 0, CABLE_R)], 0.092, M['rubber'], corner=0.03))
+    P(mn.cyl('boot_rib', 0.099, 0.014, loc=(0.155, 0, gz - 0.002), m=M['dark'], rot=Y90, verts=16, bevel=0.003))
+    armoured(P, M, 'lead', [(0.205, 0, CABLE_R), (0.24, 0, CABLE_R)], corner=0.0, rib_step=1.0)
+    outline(P, 0.012)
+    root = mn.group('root', list(P))
+    mn.render(f'power/gland_{"on" if on else "off"}', objs=list(P), root=root, dirs=8)
 
 def wall_box(P, M, riser=False):
     """A teal junction box against a wall face (wall at x < 0), its cable gland low on the front; the boot
@@ -236,7 +263,7 @@ def jack_front(on):
     mn.render(f'power/jack_front_{"on" if on else "off"}', objs=list(P))
 
 only = [a for a in ARGS if a != 'quick']
-for name, fn in [('plug', plug), ('box', box), ('riser', riser)]:
+for name, fn in [('plug', plug), ('gland', gland), ('box', box), ('riser', riser)]:
     if not only or name in only:
         for on in (True, False): fn(on)
 if not only or 'clamp' in only: clamp()

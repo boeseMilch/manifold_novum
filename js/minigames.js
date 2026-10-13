@@ -1,7 +1,6 @@
 // Hands-on station mini-games. Each player's open mini-game lives in their ui.mini (sent to their
 // browser); actions arrive as commands ['mini', action, ...args], so solo and multiplayer work the same.
 //   patch board     next to the power lever: reroute which capacitor each lever output feeds
-//   tape            a quick (sloppy) repair: drag along the cracks; it breaks first at the next big hit
 //   crank           cannon reload: crank the breech (or hold R) to speed it up
 //   jump handle     missions with the `handle` rule: someone pulls and holds it while the drive spools
 //   treat pulse     treating someone: clicking on the heartbeat speeds it up
@@ -25,7 +24,6 @@ function openPinPad(roomId) {
   const n = 4 + Math.floor(Math.random() * 3);
   ui.panel = 'mini'; ui.mini = { kind: 'pin', room: roomId, pin: Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join(''), typed: '', flash: null, flashT: 0 };
 }
-function openTape(sys) { ui.panel = 'mini'; ui.mini = { kind: 'tape', sys: SYSTEMS.indexOf(sys), done: [false, false, false] }; }
 
 // ---------------------------------------------------------------------------
 // Commands (run in the acting crew member's context)
@@ -36,13 +34,6 @@ function miniCommand(action, a, b) {
     if (a === 'out') m.pick = clamp(b | 0, 0, 2);
     else if (a === 'cap' && m.pick !== null) { power.patch[m.pick] = clamp(b | 0, 0, 2); m.pick = null; sfx.clank(); }
     else if (a === 'reset') { power.patch = [0, 1, 2]; sfx.clank(); }
-  } else if (action === 'taped' && m?.kind === 'tape') {
-    m.done[clamp(a | 0, 0, 2)] = true; sfx.clank();
-    if (m.done.every(Boolean)) {
-      const s = SYSTEMS[m.sys];
-      if (s?.broken) { s.broken = false; s.taped = true; hz.stats.repairs++; combatBanner(`${s.name} taped up — it'll give first at the next big hit`); sfx.win(); }
-      ui.panel = null; ui.mini = null;
-    }
   } else if (action === 'pin' && m?.kind === 'pin' && !m.flash) {
     if (a === 'key' && m.typed.length < PIN_MAX && /^[0-9]$/.test(String(b))) { m.typed += String(b); sfx.clank(); }
     else if (a === 'back') m.typed = m.typed.slice(0, -1);
@@ -109,23 +100,12 @@ function minigameSpots() {
 }
 
 // ---------------------------------------------------------------------------
-// Browser side: drags that turn into commands (crank, tape), rate-limited
+// Browser side: drags that turn into commands (crank), rate-limited
 // ---------------------------------------------------------------------------
-const miniDrag = { last: 0, prevA: null, tapeCov: null, tapeSys: -1 };
+const miniDrag = { last: 0, prevA: null };
 function miniClient(dt) {
   const m = me.ui.mini, mo = localInput.mouse;
   miniDrag.last += dt;
-  if (m?.kind === 'tape' && me.ui.panel === 'mini') {
-    if (miniDrag.tapeSys !== m.sys) { miniDrag.tapeSys = m.sys; miniDrag.tapeCov = TAPE_CRACKS.map(c => new Array(c.length).fill(false)); }
-    if (mo.down) {
-      const T0 = tapeLayout();
-      TAPE_CRACKS.forEach((crack, i) => {
-        if (m.done[i]) return;
-        crack.forEach(([px, py], k) => { if (Math.hypot(mo.x - (T0.x + px * T0.s), mo.y - (T0.y + py * T0.s)) < 14) miniDrag.tapeCov[i][k] = true; });
-        if (miniDrag.tapeCov[i].filter(Boolean).length >= crack.length * 0.8) { m.done[i] = true; sendCommand(['mini', 'taped', i]); }
-      });
-    }
-  }
   // the PIN pad: number keys (top row and numpad) type; they don't reach the rest of the game meanwhile
   if (m?.kind === 'pin' && me.ui.panel === 'mini') {
     for (const code of [...localInput.pressed]) {
@@ -157,7 +137,6 @@ function drawMiniPanel(t) {
   const m = ui.mini;
   if (!m) return;
   if (m.kind === 'patch') drawPatchPanel(m, t);
-  else if (m.kind === 'tape') drawTapePanel(m, t);
   else if (m.kind === 'pin') drawPinPanel(m, t);
 }
 function miniButton(x, y, w, h, label, cmd, active = true) {
@@ -272,25 +251,6 @@ function handText(str, cx, cy, font, wob) {
   });
   ctx.textAlign = 'center';
   return total;
-}
-// Three cracks on the broken part (panel coords 0..1), traced with the mouse.
-const TAPE_CRACKS = [
-  [[0.15, 0.2], [0.25, 0.3], [0.32, 0.42], [0.3, 0.55], [0.38, 0.68]],
-  [[0.55, 0.15], [0.6, 0.28], [0.72, 0.34], [0.8, 0.48]],
-  [[0.45, 0.62], [0.55, 0.7], [0.62, 0.82], [0.75, 0.86]],
-];
-const tapeLayout = () => ({ x: VW / 2 - 150, y: VH / 2 - 130, s: 300 });
-function drawTapePanel(m, t) {
-  const [x, y] = panelFrame(380, 400, `QUICK TAPE JOB — ${SYSTEMS[m.sys]?.name || ''}`);
-  const T0 = tapeLayout();
-  rr(T0.x, T0.y, T0.s, T0.s, 12); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(3);
-  TAPE_CRACKS.forEach((c, i) => {
-    ctx.beginPath(); c.forEach(([px, py], k) => (k ? ctx.lineTo : ctx.moveTo).call(ctx, T0.x + px * T0.s, T0.y + py * T0.s));
-    if (m.done[i]) { ctx.strokeStyle = '#c9c2b0'; ctx.lineWidth = 22; ctx.stroke(); ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1; ctx.stroke(); }
-    else { ctx.strokeStyle = '#14161b'; ctx.lineWidth = 4; ctx.stroke(); ctx.strokeStyle = 'rgba(255,224,138,0.5)'; ctx.setLineDash([4, 6]); ctx.lineWidth = 16; ctx.stroke(); ctx.setLineDash([]); }
-  });
-  ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Hold the mouse and drag along every crack. Quick, but it gives first at the next big hit.', VW / 2, y + 384); ctx.textAlign = 'left';
 }
 const crankLayout = () => ({ x: VW - 220, y: VH - 42, r: 26 });
 function drawCrank(g) {

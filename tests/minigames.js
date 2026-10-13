@@ -1,4 +1,4 @@
-// Station mini-games: radar and helm (just a click now), patch board, tape job, cannon crank,
+// Station mini-games: radar and helm (just a click now), patch board, cannon crank,
 // held shields, the jump handle, heartbeat treatment. Run: node tests/minigames.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'clickTarget',
@@ -33,15 +33,13 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
   tickN(G, 90);
   check(G.CAPACITORS[0].charge === 1 && G.CAPACITORS[1].charge === 0, 'rerouting MID to the left capacitor: the energy goes there');
 }
-// --- tape job
+// --- no tape job: a quick click with the repair kit on a broken part opens nothing and doesn't fix it
 {
   const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
   const s = G.SYSTEMS.find(s => s.kind === 'capacitor'); s.broken = true;
   const me = G.me; me.x = s.x; me.y = s.y - 1; G.withCrew(me, () => { G.inv.weapon = 'repair'; });
   const m = me.input.mouse; m.wx = s.x; m.wy = s.y; m.down = true; tickN(G, 6); m.down = false; tickN(G, 2);
-  check(me.ui.mini?.kind === 'tape', 'a quick click with the repair kit on a broken part opens the tape job');
-  for (let i = 0; i < 3; i++) cmd(G, ['mini', 'taped', i]);
-  check(!s.broken && s.taped, 'taping all three cracks fixes it (marked as taped)');
+  check(!me.ui.mini && s.broken, 'a quick click with the repair kit opens no tape job and leaves the part broken (only the full repair fixes it)');
 }
 // --- crank
 {

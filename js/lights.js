@@ -27,7 +27,7 @@
 // - Dynamic lights from the game state: fires, the reactor, screens, muzzle flashes, bolts and
 //   blasts, explosions (combat.fx clustered), sparks of broken systems, power surges, energy on the
 //   power lines, the engine's flickering blue plume, shields, enemy weak spots and engines, the leviathan, the jump drive spooling up.
-//   The crew's helmet lamps (L, per crew member: c.lamp): spot beams where they face, with shadows.
+//   The crew's helmet lamps (always on: c.lamp): spot beams where they face, with shadows.
 
 const LIGHT_TUNING = {
   outside: [0.36, 0.4, 0.5],                       // hull and space: low, cold
@@ -46,8 +46,8 @@ const LIGHT_TUNING = {
   // screen-space shadows took the bell and the hull's own edge for occluders and blacked it all out
   engine: { out: 1.8, len: 1.6, z: 0.6, radius: 9, intensity: 1.4, color: [0.35, 0.62, 1.0], spool: 1.3, spoolColor: [0.55, 0.8, 1.0], shadow: false },
   fire: { z: 0.55, radius: 4.2, intensity: 2.0, color: [1.0, 0.5, 0.16], plasma: [0.72, 0.38, 1.0] },
-  // the helmet lamp (L, per crew member; drawing only): a cool white spot from the helmet where they
-  // face, tilted down a little, plus a faint glow on the helmet itself
+  // the helmet lamp (always on, per crew member; drawing only): a cool white spot from the helmet where they
+  // face, tilted down a little, plus a faint glow on the helmet itself; where the lights are out it's what you see by
   helmet: { z: 1.32, fwd: 0.28, tilt: -0.4, cone: 0.72, radius: 8.5, intensity: 2.0, color: [0.86, 0.93, 1.0], glow: 0.5,
             // outside there's no floor under you: what the beam can hit is the hull beside and below you (the
             // airlock housings, blisters, cannons), close and low, so it points down more and wraps further
@@ -82,7 +82,7 @@ const BEACONS = { portGun: [[4.0, 3.55]], bridge: [[16.2, 0.75], [28.2, 0.75]], 
 
 function alarmState() {
   const dmg = typeof SYSTEMS !== 'undefined' ? SYSTEMS.filter(s => s.broken).length : 0;
-  const maxDmg = typeof MAX_DAMAGE !== 'undefined' ? MAX_DAMAGE : 3;
+  const maxDmg = typeof MAX_DAMAGE !== 'undefined' ? MAX_DAMAGE : 5;
   const H = typeof hz !== 'undefined' ? hz : null;
   const breach = !!(H && H.breaches && H.breaches.length);
   const hullHits = H && H.hull ? Math.max(0, ...Object.values(H.hull)) : 0;
@@ -237,7 +237,7 @@ function gameLighting(t) {
     const k = 1 - lamp[colAtX(c.x)];
     if (k > 0.05) add({ x: c.x, y: c.y + 0.15, z: 1.45, color: [0.75, 0.85, 1.0], radius: 2.6, intensity: 0.4 * k, wrap: 0.3 });
   }
-  // helmet lamps (toggled with L): inside, on spacewalks, in the hatch; the shadows keep the beam
+  // helmet lamps (always on): inside, on spacewalks, in the hatch; the shadows keep the beam
   // off what's behind a wall (or under the hull, from outside)
   if (typeof crew !== 'undefined') for (const c of crew) if (c.lamp && standing(c) && c.mode !== 'gun') {
     const H = Lt.helmet, cx = Math.cos(c.face), cy = Math.sin(c.face), out = c.mode === 'eva';
@@ -385,7 +385,7 @@ function gameLighting(t) {
   }
   // energy travelling along the power lines
   if (typeof power !== 'undefined') {
-    for (const b of power.bolts) if (b.t < 1 && LINE['feed' + b.to]) { const [x, y] = linePoint(LINE['feed' + b.to], b.t * b.t * (3 - 2 * b.t)); add({ x, y, z: 0.3, color: [1.0, 0.85, 0.45], radius: 2, intensity: 0.9 }); }
+    for (const b of power.bolts) if (b.t < 1 && LINE['feed' + b.to]) { const [x, y] = boltPoint(b); add({ x, y, z: 0.3, color: [1.0, 0.85, 0.45], radius: 2, intensity: 0.9 }); }
     for (const p of power.pulses) if (LINE[p.line]) { const [x, y] = linePoint(LINE[p.line], p.t); add({ x, y, z: 0.3, color: [1.0, 0.85, 0.45], radius: 2, intensity: 0.9 }); }
   }
   // the jump drive spooling up: blue, faster and brighter towards the jump

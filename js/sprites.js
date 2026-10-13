@@ -180,16 +180,42 @@ function drawHatchSprites(t) {
 
 // Floors: every floor rect tiled with the 2 x 2 tiles of its zone (variants mixed by a hash of the
 // tile's place on one ship-wide grid, so the seams line up), clipped to the rect. Doorways get tread.
+// The tiles are clean renders: scratches, gouges and duct tape are drawn on them per pixel by
+// js/gfx.js (FLOOR_WEAR), seeded by the world position, so no two tiles look alike. Each tile passes
+// its layout (which plate cells are tread / grille) and the wear field at its four corners: a base per
+// room (busy rooms more, doorways most) plus more where people walk (doorways, deck airlocks, outer
+// hatches, consoles, the reactor). floor: [layout, wear top-left, top-right, bottom-left, bottom-right].
 const hash2 = (a, b) => { let h = Math.imul(Math.round(a * 10) | 0, 374761393) ^ Math.imul(Math.round(b * 10) | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+const FLOOR_ROOM_WEAR = { bridge: 1.25, reactor: 1.2, portGun: 1.0, starGun: 1.0, portLock: 1.05, starLock: 1.05 };
+const FLOOR_LAYOUT = { 'ship/floor': 1, 'ship/floor_b': 2, 'interior/floor_tread': 3 };
+let floorWearSpots = null;
+function floorWear(base, x, y) {
+  if (!floorWearSpots) floorWearSpots = [
+    ...DOORWAYS.map(d => [d.x + d.w / 2, d.y + d.h / 2, 1.1, 5]),
+    ...DECK_LOCKS.flatMap(L => [[L.x + L.w / 2, SPINE_Y0, 0.9, 4], [L.x + L.w / 2, SPINE_Y1, 0.9, 4]]),
+    ...HATCHES.map(h => [h.inside[0], h.inside[1], 0.8, 4]),
+    ...STATIONS.map(s => [s.x, s.y + 1, 0.9, 3]),
+    [REACTOR.x, REACTOR.y + REACTOR.h / 2 + 0.6, 0.6, 5],
+  ];
+  let w = base;
+  for (const [sx, sy, k, r2] of floorWearSpots) { const dx = x - sx, dy = y - sy; w += k * Math.exp(-(dx * dx + dy * dy) / r2); }
+  return Math.min(w, 2.6);
+}
+const floorCache = new Map();
 function drawFloorSprites() {
   if (!GFX.ready('interior/floor_white_a')) return false;
   const rects = [...ROOM_RECTS, ...DOORWAYS];
   for (const r of rects) {
     const small = Math.min(r.w, r.h) < 3, zone = zoneAtX(r.x + 0.01).name;
+    let base = floorCache.get(r);
+    if (base == null) { const room = ROOMS.find(R => R.rects.includes(r)); base = room ? FLOOR_ROOM_WEAR[room.id] || 1 : 1.5; floorCache.set(r, base); }
     for (let ty = Math.floor(r.y / 2) * 2; ty < r.y + r.h - 1e-4; ty += 2) for (let tx = Math.floor(r.x / 2) * 2; tx < r.x + r.w - 1e-4; tx += 2) {
       const h = hash2(tx, ty);
       const name = small ? 'interior/floor_tread' : h < 0.08 ? (h < 0.04 ? 'ship/floor' : 'ship/floor_b') : h < 0.54 ? `interior/floor_${zone}_a` : `interior/floor_${zone}_b`;
-      GFX.sprite(name, 0, tx, ty, 0, { layer: 'ground', clip: [Math.max(r.x, tx), Math.max(r.y, ty), Math.min(r.x + r.w, tx + 2), Math.min(r.y + r.h, ty + 2)] });
+      const key = base + ':' + tx + ':' + ty;
+      let floor = floorCache.get(key);
+      if (!floor) floorCache.set(key, floor = [FLOOR_LAYOUT[name] || (name.endsWith('_b') ? 2 : 1), floorWear(base, tx, ty), floorWear(base, tx + 2, ty), floorWear(base, tx, ty + 2), floorWear(base, tx + 2, ty + 2)]);
+      GFX.sprite(name, 0, tx, ty, 0, { layer: 'ground', floor, clip: [Math.max(r.x, tx), Math.max(r.y, ty), Math.min(r.x + r.w, tx + 2), Math.min(r.y + r.h, ty + 2)] });
     }
   }
   return true;

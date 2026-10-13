@@ -12,7 +12,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; return G; };
 const emitter = (G, side) => G.SYSTEMS.find(s => s.kind === 'emitter' && s.ref.side === side);
-const fixAll = (G) => { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; s.taped = false; }); };
+const fixAll = (G) => { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); };
 function holdOn(G, x, y, max = 20) {
   const m = G.me.input.mouse; m.wx = x; m.wy = y; m.down = true; let t = 0;
   const s = G.SYSTEMS.find(s => s.x === x && s.y === y);

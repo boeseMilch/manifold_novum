@@ -41,6 +41,9 @@
 //             labels, steam: depth and lighting as if it stood at (x, y), rising from z)
 //   desat     0..1: desaturate the beauty (a crew member who is out cold)
 //   pick      [halfWidth, height] in screen units above the origin: GFX.pickAt() finds it
+//   floor     [layout, wear top-left, top-right, bottom-left, bottom-right]: a 2 x 2 floor tile; the
+//             shader draws procedural scratches, gouges and duct tape on it (FLOOR_WEAR; layout 1 / 2 /
+//             3 = tile layout a / b / all tread). Off with ?noscratch or GFX.setScratches(false) (remembered).
 //
 // Lighting (one place for it: js/lights.js gameLighting()):
 //   GFX.lighting({ ambient: [r,g,b], sun: { dir: [x,y,z], color: [r,g,b], k }, areas: [{ x, y, w, h,
@@ -98,7 +101,7 @@ const GFX = (() => {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
     begin: noop, end: noop, sprite: () => false, lighting: noop, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
-    setScale: noop, setShadows: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
+    setScale: noop, setShadows: noop, setScratches: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
   const off = (why) => { api.reason = why; return api; };
@@ -202,6 +205,11 @@ bool softShadows(vec3 P) {
   return bt.x >= 0;
 }
 float softVis(int c) { return texture(uShadowV, vec3(shUV, float(c >> 2)))[c & 3]; }
+// Floor scratches (FLOOR_WEAR): a groove along gGlintT reflects a light when the half vector is
+// perpendicular to it, so fine scratches flash up and go dark as a light (or the helmet lamp) moves.
+// gGlintK: its strength in units of spec (0: none, everything but the floor tiles).
+vec3 gGlintT = vec3(1.0, 0.0, 0.0);
+float gGlintK = 0.0;
 vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   vec3 amb = uAmbient; float sk = uSunK;
   for (int i = 0; i < ${MAX_AREAS}; i++) {
@@ -247,43 +255,362 @@ vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
       else a *= shadowRay(P + N * 0.03, S, l4.x, vec2(ign(gl_FragCoord.xy), ign(gl_FragCoord.yx + 17.0)), ${SHADOW_STEPS_MARCH}.0);   // no channel left, or no soft value here (moved, see-through)
     }
     acc += l1.rgb * a * ndl;
-    spec += l1.rgb * a * pow(max(dot(N, normalize(l + V)), 0.0), 28.0);
+    vec3 H = normalize(l + V);
+    spec += l1.rgb * a * pow(max(dot(N, H), 0.0), 28.0);
+    if (gGlintK > 0.0) { float ht = dot(H, gGlintT); spec += l1.rgb * a * gGlintK * exp(-ht * ht / 0.008) * smoothstep(0.35, 0.8, H.z); }
   }
   return acc;
 }`;
 
+  // Procedural floor wear for the floor tiles (GFX.sprite(..., { floor: [layout, wear x4] }); from
+  // tools/sprites/scratch_proto.html). Per pixel, from the world position, so every 1 x 1 plate cell
+  // and every 2 x 2 tile gets its own marks (nothing repeats with the baked tile variants):
+  //   fine hairlines  normal only: a V-groove box-filtered over the pixel's footprint (a scratch thinner
+  //                   than a pixel is a faint light/dark dipole, not aliasing), plus the glint (lighting())
+  //   scuff clusters  parallel lines (a crate's corner dragged); swirls (a chair turning)
+  //   deep gouges     rare: bare metal in the groove, a dark burr rim, a normal edge
+  //   drags           long lines across the seams (from the 3 x 3 neighbouring cells), faded by the wear
+  //   duct tape       occasional, per 2 x 2 tile: a strip across or along a seam, an X, an L round a
+  //                   corner, a patch of overlapping strips; mostly silver, some black, rarely hazard
+  // Wear (the instance's iFloor: the wear field at the tile's four corners, bilinear in between,
+  // see js/sprites.js floorWear()) scales the number of scratches. Layout (iXf.w): 1 = tile layout a
+  // (tread at the top right), 2 = b (wide plate on top, tread + grille below), 3 = all tread.
+  // The cost stays low: one hash yields four 8-bit randoms, a scratch is rejected by its bounding
+  // circle before its other parameters are drawn, tape only looks at the tiles whose margin holds the pixel.
+  const FLOOR_WEAR = `
+uniform vec4 uWear;          // on (0 / 1), fine scratch density, gouge chance per cell, tape chance per tile
+uint fwH(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
+uint fwH2(ivec2 c, uint s) { return fwH(uint(c.x) * 1597334677u ^ uint(c.y) * 3812015801u ^ s * 2654435769u); }
+uint fwSt;
+float fwR() { fwSt = fwH(fwSt + 0x9e3779b9u); return float(fwSt >> 8) / 16777216.0; }
+vec4 fwB4(uint h) { return vec4((uvec4(h, h >> 8, h >> 16, h >> 24) & 255u)) / 255.0; }   // four 8-bit randoms
+vec4 fwR4() { fwSt = fwH(fwSt + 0x9e3779b9u); return fwB4(fwSt); }
+vec2 fwDir(float a) { return vec2(cos(a), sin(a)); }
+vec2 fwTilt, fwTan, fwDx, fwDy;   // sum of normal tilts (world xy); the strongest groove's tangent; world units per pixel
+float fwCov, fwBare, fwRim;        // the strongest groove's coverage (glint); gouges: bare metal, dark rim
+// One groove: s along (total length L), d across (unit p, tangent t), half width w, depth h; kind 1 = gouge.
+void fwGroove(float s, float d, float L, vec2 p, vec2 t, float w, float h, float kind) {
+  float pw = abs(dot(p, fwDx)) + abs(dot(p, fwDy)), pl = abs(dot(t, fwDx)) + abs(dot(t, fwDy));
+  if (abs(d) > (kind > 0.5 ? 2.2 * w : w) + pw || s < -pl || s > L + pl) return;
+  float u = clamp(s / L, 0.0, 1.0);
+  float tap = sqrt(clamp(6.4 * u * (1.0 - u), 0.0, 1.0));             // tapered ends
+  float we = w * max(tap, 0.15), he = h * tap;
+  float endA = smoothstep(-pl, pl, s) * smoothstep(-pl, pl, L - s);
+  float r = max(pw * 0.5, we * 0.2);                                  // box filter over the pixel
+  float slope = (-he * max(0.0, 1.0 - abs(d + r) / we) + he * max(0.0, 1.0 - abs(d - r) / we)) / (2.0 * r);
+  fwTilt += p * (-slope) * endA;
+  float cov = clamp((min(d + r, we) - max(d - r, -we)) / (2.0 * r), 0.0, 1.0) * endA;
+  float unres = 1.0 - smoothstep(1.0, 4.0, we / pw);                  // thinner than a pixel: mostly glint
+  float g = cov * (0.35 + 0.65 * unres) * (h / (h + 0.0015));
+  if (g > fwCov) { fwCov = g; fwTan = t; }
+  if (kind > 0.5) {
+    fwBare = max(fwBare, cov * tap);
+    float rim = clamp((min(d + r, we * 2.2) - max(d - r, -we * 2.2)) / (2.0 * r), 0.0, 1.0) - cov;
+    fwRim = max(fwRim, rim * tap * endA);
+  }
+}
+void fwSeg(vec2 q, vec2 a, vec2 b, float w, float h, float kind) {
+  vec2 ab = b - a; float L = max(length(ab), 1e-4); vec2 t = ab / L, p = vec2(-t.y, t.x), rel = q - a;
+  fwGroove(dot(rel, t), dot(rel, p), L, p, t, w, h, kind);
+}
+void fwArc(vec2 q, vec2 c, float R, float a0, float span, float w, float h, float kind) {
+  vec2 rel = q - c; float rr = length(rel);
+  if (abs(rr - R) > 2.2 * w + 0.05) return;
+  float th = mod(atan(rel.y, rel.x) - a0 + 3.14159265, 6.2831853) - 3.14159265;
+  vec2 p = rel / max(rr, 1e-4), t = vec2(-p.y, p.x);
+  fwGroove(th * R, rr - R, span * R, p, t, w, h, kind);
+}
+// plate cell kind (sub: 0..1, 0..1 in the tile): 0 plain, 1 tread, 2 grille (tools/blender/models/interior/floors.py)
+float fwKind(float lay, ivec2 sub) {
+  if (lay > 2.5) return 1.0;
+  if (lay > 1.5) return sub.y == 0 ? 0.0 : sub.x == 0 ? 1.0 : 2.0;
+  return (sub.x == 1 && sub.y == 0) ? 1.0 : 0.0;
+}
+// The scratches at world point P (cell: its plate cell, kind, the cell's wear; wearP: the wear at P).
+void fwScratches(vec2 P, ivec2 cell, float kind, float wear, float wearP) {
+  vec2 q = P - vec2(cell);
+  float onPlate = kind < 0.5 ? 1.0 : kind < 1.5 ? 0.35 : 0.0;
+  if (onPlate > 0.0) {
+    uint seed = fwH2(cell, 17u);
+    fwSt = seed;
+    vec4 r0 = fwB4(seed);
+    float dir0 = r0.x * 3.14159265;                                    // the cell's main traffic direction
+    float cw = wear * mix(0.35, 1.6, r0.y * r0.z);
+    int nf = min(24, int(uWear.y * cw * (4.0 + 10.0 * r0.w) * onPlate));
+    for (int i = 0; i < 24; i++) {                                     // fine hairlines
+      if (i >= nf) break;
+      fwSt = fwH(seed + uint(i + 1) * 0x9e3779b9u);                   // each scratch its own stream: skipping one keeps the rest
+      vec4 a = fwB4(fwSt);
+      vec2 c = vec2(0.08) + a.xy * 0.84;
+      float L = 0.04 + 0.30 * a.z * a.z;
+      if (length(q - c) > L * 0.5 + 0.01) continue;                    // not near it: skip the rest
+      vec4 b = fwR4();
+      float ang = a.w < 0.65 ? dir0 + (b.x - 0.5) * 0.7 : b.x * 3.14159265;
+      vec2 hd = fwDir(ang) * L * 0.5;
+      fwSeg(q, clamp(c - hd, 0.05, 0.95), clamp(c + hd, 0.05, 0.95), 0.0025 + 0.003 * b.y, 0.0008 + 0.0012 * b.z, 0.0);
+    }
+    fwSt = fwH2(cell, 18u);
+    vec4 r1 = fwB4(fwSt);
+    if (r1.x < 0.2 * cw * onPlate) {                                   // a cluster of parallel scuffs
+      vec4 a = fwR4();
+      vec2 c = vec2(0.2) + a.xy * 0.6;
+      float ang = dir0 + (a.z - 0.5) * 0.5, L = 0.15 + 0.3 * a.w;
+      if (length(q - c) < L * 0.5 + 0.12) {
+        vec2 t = fwDir(ang), p = vec2(-t.y, t.x);
+        int n = 3 + int(r1.y * 4.99);
+        float gap = 0.008 + 0.014 * r1.z;
+        for (int k = 0; k < 7; k++) {
+          if (k >= n) break;
+          vec4 b = fwR4();
+          vec2 o = p * (float(k) * gap + (b.x - 0.5) * 0.004) + t * (b.y - 0.5) * 0.05;
+          float Lk = L * (0.6 + 0.4 * b.z);
+          fwSeg(q, clamp(c + o - t * Lk * 0.5, 0.05, 0.95), clamp(c + o + t * Lk * 0.5, 0.05, 0.95), 0.003 + 0.002 * b.w, 0.0012 + 0.001 * b.w, 0.0);
+        }
+      }
+    }
+    fwSt = fwH2(cell, 19u);
+    vec4 r2 = fwB4(fwSt);
+    if (r2.x < 0.1 * cw * onPlate) {                                   // a swirl (a chair on its casters)
+      vec2 c = vec2(0.3) + r2.yz * 0.4;
+      float R = 0.12 + 0.2 * r2.w, a0 = r0.w * 37.0;
+      if (abs(length(q - c) - R) < 0.06) {
+        int n = 2 + int(fwR() * 3.99);
+        for (int k = 0; k < 5; k++) {
+          if (k >= n) break;
+          vec4 b = fwR4();
+          fwArc(q, c, min(R + (b.x - 0.5) * 0.06, 0.45), a0 + b.y * 1.5, 0.6 + 1.8 * b.z, 0.0025 + 0.002 * b.w, 0.001 + 0.001 * b.w, 0.0);
+        }
+      }
+    }
+    fwSt = fwH2(cell, 20u);
+    vec4 r3 = fwB4(fwSt);
+    if (r3.x < uWear.z * mix(0.6, 1.4, clamp(cw / 1.6, 0.0, 1.5)) * onPlate) {   // a deep gouge: one slightly curved stroke
+      vec4 a = fwR4();
+      vec2 c = vec2(0.25) + r3.yz * 0.5;
+      float R = 0.6 + 2.0 * a.x, a0 = a.y * 6.2831853, L = 0.1 + 0.3 * a.z;
+      fwArc(q, c - fwDir(a0) * R, R, a0 - 0.5 * L / R, L / R, 0.004 + 0.005 * a.w, 0.003 + 0.003 * r3.w, 1.0);
+    }
+  }
+  // drags: long lines across the seams, started by any of the 3 x 3 cells around; faded in and out
+  // by the (continuous) wear at P, so they don't end at a tile edge where the wear differs
+  for (int k = 0; k < 9; k++) {
+    ivec2 nc = cell + ivec2(k % 3 - 1, k / 3 - 1);
+    fwSt = fwH2(nc, 91u);
+    vec4 a = fwB4(fwSt);
+    float gate = clamp((0.1 * wearP - a.x) / 0.03, 0.0, 1.0);
+    if (gate <= 0.0) continue;
+    vec2 s0 = vec2(nc) + a.yz;
+    float L = 0.8 + 1.0 * a.w;
+    if (length(P - s0) > L + 0.1) continue;
+    vec4 b = fwR4();
+    vec2 t = fwDir(b.x * 3.14159265), p = vec2(-t.y, t.x);
+    int n = 1 + int(b.y * 2.99);
+    float gap = 0.01 + 0.02 * b.z;
+    vec2 tilt0 = fwTilt; float cov0 = fwCov;
+    for (int j = 0; j < 3; j++) {
+      if (j >= n) break;
+      vec4 c = fwR4();
+      fwSeg(P, s0 + p * float(j) * gap, s0 + p * float(j) * gap + t * L * (0.7 + 0.3 * c.x), 0.003 + 0.002 * c.y, 0.001 + 0.0012 * c.z, 0.0);
+    }
+    fwTilt = mix(tilt0, fwTilt, gate); fwCov = mix(cov0, fwCov, gate);
+  }
+}
+
+// --- duct tape --------------------------------------------------------------------------------------
+float fwTape, fwTapeSpec;
+vec3 fwTapeCol;
+vec2 fwTapeTilt;
+float fwNoise(vec2 x) {
+  vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  ivec2 c = ivec2(i);
+  float a = float(fwH2(c, 7u) >> 8), b = float(fwH2(c + ivec2(1, 0), 7u) >> 8), d = float(fwH2(c + ivec2(0, 1), 7u) >> 8), e = float(fwH2(c + ivec2(1, 1), 7u) >> 8);
+  return mix(mix(a, b, f.x), mix(d, e, f.x), f.y) / 16777216.0;
+}
+float fwFbm(vec2 x) { return 0.6 * fwNoise(x) + 0.4 * fwNoise(mat2(0.8, -0.6, 0.6, 0.8) * x * 2.1 + 3.7); }
+// One strip: centre c, angle, half length hl, half width hw; col 0 silver, 1 hazard, 2 black; age 0..1;
+// peel (0: none) lifts a corner at one end; sd: its own seed.
+void fwStrip(vec2 P, vec2 c, float ang, float hl, float hw, int col, float age, float peel, float sd) {
+  vec2 t = fwDir(ang), p = vec2(-t.y, t.x), rel = P - c;
+  float s = dot(rel, t), d = dot(rel, p);
+  if (abs(s) > hl + 0.03 || abs(d) > hw + 0.03) return;
+  float pw = abs(dot(p, fwDx)) + abs(dot(p, fwDy)), pl = abs(dot(t, fwDx)) + abs(dot(t, fwDy));
+  float rw = max(pw * 0.5, 0.0015), rl = max(pl * 0.5, 0.0015);
+  float hwE = hw * (1.0 + 0.05 * (fwNoise(vec2(s * 22.0, sd * 50.0)) - 0.5));       // wavy edges
+  float tear = 0.009 * abs(fract(d * 38.0 + sd * 3.0) - 0.5) * 2.0 + 0.005 * fwNoise(vec2(d * 90.0, sd * 50.0 + 5.0));   // torn ends
+  float hlE = hl - tear;
+  float cw = clamp((hwE - abs(d)) / (2.0 * rw) + 0.5, 0.0, 1.0), cl = clamp((hlE - abs(s)) / (2.0 * rl) + 0.5, 0.0, 1.0);
+  float a = cw * cl;
+  float cut = 0.0, lip = 0.0;
+  if (peel > 0.0) {                                                   // a peeled corner, curling up
+    float pk = peel * hw * 1.6, e = (s * sign(sd - 0.5 + 1e-3) - hl) + (hw - d), rr = max(rl, rw);
+    cut = clamp((e + pk) / (2.0 * rr) + 0.5, 0.0, 1.0) * cl * cw;
+    lip = exp(-pow((e + pk) / max(0.006, rr * 2.0), 2.0)) * cw * cl;
+    a *= 1.0 - cut;
+  }
+  if (a <= 0.0 && lip <= 0.0 && cut <= 0.0) return;
+  vec3 tc = col == 0 ? vec3(0.4, 0.41, 0.43) * mix(vec3(1.0), vec3(1.04, 1.0, 0.9), age) : col == 1 ? vec3(0.62, 0.5, 0.17) : vec3(0.19, 0.19, 0.2);
+  if (col == 1) {                                                     // hazard: broad diagonal bands, filtered
+    float u = (s + d) * 3.2, tri = abs(fract(u) - 0.5) * 2.0, fw = (pw + pl) * 3.2 * 2.0 + 0.02;
+    tc = mix(tc, vec3(0.15, 0.135, 0.11), smoothstep(0.5 - fw, 0.5 + fw, tri));
+  }
+  float edge = min(hwE - abs(d), hlE - abs(s));                       // dirt along the edges and in blotches
+  float dirt = (0.2 + 0.4 * age) * exp(-max(edge, 0.0) / 0.012) + age * 0.3 * smoothstep(0.45, 0.75, fwFbm(rel * 18.0 + sd * 13.0));
+  tc *= 1.0 - 0.55 * clamp(dirt, 0.0, 1.0);
+  // relief: the edge is a small step up (box-filtered); soft crumples (isotropic bumps, no stripes),
+  // faded out once they get smaller than a few pixels
+  float th = 0.006;
+  float gw = (abs(abs(d) - hwE) < rw ? -sign(d) / (2.0 * rw) : 0.0) * cl;
+  float glE = (abs(abs(s) - hlE) < rl ? -sign(s) / (2.0 * rl) : 0.0) * cw;
+  vec2 tilt = -(p * gw + t * glE) * th * (1.0 - cut);
+  float wr = 1.0 - smoothstep(0.006, 0.02, max(pw, pl));
+  if (wr > 0.0 && col != 1) {
+    vec2 x = vec2(s * 14.0, d * 18.0) + sd * 31.0;
+    float n0 = fwFbm(x), nx = fwFbm(x + vec2(0.12, 0.0)), ny = fwFbm(x + vec2(0.0, 0.12));
+    tilt += (t * (nx - n0) + p * (ny - n0)) / 0.12 * 0.08 * wr * a;
+  }
+  vec2 pd = normalize(t * sign(sd - 0.5 + 1e-3) - p);                 // the lip faces away from the tape
+  tilt += pd * lip * 0.6;
+  float under = cut * 0.6;                                            // adhesive grime where it peeled off
+  fwTapeCol = mix(fwTapeCol * (1.0 - under), tc, a) + vec3(lip * 0.3);
+  fwTapeTilt = mix(fwTapeTilt, vec2(0.0), a) + tilt;
+  fwTapeSpec = mix(fwTapeSpec, col == 0 ? 0.5 : col == 2 ? 0.25 : 0.3, a);
+  fwTape = max(fwTape, max(a, under * 0.7));
+}
+// Tape on the 2 x 2 tiles around P (only those whose reach, 0.6 beyond the tile, holds P). Each taped
+// tile lays out its strips first (up to 3), then one loop draws those near P: a single fwStrip call
+// site (inlined once, not once per arrangement) keeps the shader small and cheap.
+void fwTapes(vec2 P, float chance) {
+  ivec2 t0 = ivec2(floor(P * 0.5));
+  vec4 S0[3]; vec2 S1[3];                     // per strip: centre, angle, half length; peel, seed
+  for (int k = 0; k < 9; k++) {
+    ivec2 tl = t0 + ivec2(k % 3 - 1, k / 3 - 1);
+    vec2 o = vec2(tl) * 2.0, rp = P - o;
+    if (rp.x < -0.6 || rp.y < -0.6 || rp.x > 2.6 || rp.y > 2.6) continue;
+    fwSt = fwH2(tl, 333u);
+    vec4 a = fwB4(fwSt);
+    if (a.x > chance) continue;
+    vec4 b = fwR4(), e = fwR4(), f = fwR4(), g = fwR4();
+    int type = a.y < 0.35 ? 0 : a.y < 0.6 ? 1 : a.y < 0.75 ? 2 : a.y < 0.85 ? 3 : 4;
+    int col = a.z < 0.8 ? 0 : a.z < 0.94 ? 2 : 1;
+    float age = a.w, hw = 0.04 + 0.02 * b.x, sd = b.y;
+    vec2 sp = o + vec2(b.z < 0.5 ? 0.0 : 1.0, b.w < 0.5 ? 0.0 : 1.0);   // a seam crossing on the 1-unit grid
+    bool vert = e.x < 0.5;
+    float base = vert ? 1.5707963 : 0.0, pe = e.z < 0.4 ? 0.4 + 0.5 * e.w : 0.0;
+    int n = 1;
+    if (type == 0) {             // across a seam
+      S0[0] = vec4(sp + (vert ? vec2(0.0, 0.15 + 0.7 * e.y) : vec2(0.15 + 0.7 * e.y, 0.0)), base + 1.5707963 + (f.x - 0.5) * 0.5, 0.12 + 0.25 * f.y);
+      S1[0] = vec2(pe, sd);
+    } else if (type == 1) {      // along a seam, over a long crack
+      S0[0] = vec4(sp + (vert ? vec2(0.0, 0.5 + (e.y - 0.5) * 0.4) : vec2(0.5 + (e.y - 0.5) * 0.4, 0.0)), base + (f.x - 0.5) * 0.1, 0.25 + 0.4 * f.y);
+      S1[0] = vec2(pe, sd);
+    } else if (type == 2) {      // an X over a crack (in the top-left plate: plain in every layout)
+      vec2 c = o + vec2(0.3 + 0.4 * e.y, 0.3 + 0.4 * e.w);
+      float a0 = f.x * 3.14159265, L = 0.12 + 0.12 * f.y;
+      S0[0] = vec4(c, a0, L); S1[0] = vec2(0.0, sd);
+      S0[1] = vec4(c, a0 + 1.2 + 0.7 * f.z, L * (0.85 + 0.3 * f.w)); S1[1] = vec2(pe, fract(sd + 0.37));
+      n = 2;
+    } else if (type == 3) {      // an L round a plate corner
+      vec2 sx = vec2(e.y < 0.5 ? 1.0 : -1.0, e.w < 0.5 ? 1.0 : -1.0), c = sp + sx * 0.08;
+      float L = 0.12 + 0.12 * f.x, j = (f.y - 0.5) * 0.15;
+      S0[0] = vec4(c + vec2(sx.x * L * 0.8, 0.0), j, L); S1[0] = vec2(pe, sd);
+      S0[1] = vec4(c + vec2(0.0, sx.y * L * 0.8), 1.5707963 + j, L); S1[1] = vec2(0.0, fract(sd + 0.61));
+      n = 2;
+    } else {                     // overlapping strips side by side (a patched plate)
+      vec2 c = sp + (vert ? vec2(0.0, 0.2 + 0.6 * e.y) : vec2(0.2 + 0.6 * e.y, 0.0));
+      float a0 = base + 1.5707963 + (f.x - 0.5) * 0.25, L = 0.15 + 0.2 * f.y;
+      vec2 pp = vec2(-sin(a0), cos(a0));
+      n = 2 + int(e.w * 1.99);
+      for (int m = 0; m < 3; m++) {
+        vec4 r = m == 0 ? g : m == 1 ? fwB4(fwH(fwSt + 1u)) : fwB4(fwH(fwSt + 2u));
+        S0[m] = vec4(c + pp * float(m) * hw * 1.4 + fwDir(a0) * (r.x - 0.5) * 0.1, a0 + (r.y - 0.5) * 0.12, L * (0.75 + 0.4 * r.z));
+        S1[m] = vec2(r.w < 0.3 ? 0.6 : 0.0, fract(sd + float(m) * 0.29));
+      }
+    }
+    for (int m = 0; m < 3; m++) {
+      if (m >= n) break;
+      if (length(P - S0[m].xy) > S0[m].w + hw + 0.04) continue;
+      fwStrip(P, S0[m].xy, S0[m].z, S0[m].w, hw, col, age, S1[m].x, S1[m].y);
+    }
+  }
+}
+// All of it, for the floor pixel at P (world, game axes; taken on the plate tops' plane, so the seams'
+// depth doesn't bend the marks) with base colour and normal: changes them and
+// returns the specular factor; sets gGlintK / gGlintT for lighting(). msk: the tile's plate mask;
+// dlx, dly: the canvas position's screen derivatives.
+float floorWear(vec3 P, inout vec3 base, inout vec3 N, float msk, vec2 dlx, vec2 dly) {
+  fwDx = vec2(dlx.x, dlx.y / ${SIN.toFixed(6)}) / vGround.w; fwDy = vec2(dly.x, dly.y / ${SIN.toFixed(6)}) / vGround.w;
+  fwTilt = vec2(0.0); fwCov = 0.0; fwTan = vec2(1.0, 0.0); fwBare = 0.0; fwRim = 0.0;
+  fwTape = 0.0; fwTapeCol = vec3(1.0); fwTapeTilt = vec2(0.0); fwTapeSpec = 0.0;
+  vec2 rel = P.xy - vGround.xy;
+  ivec2 sub = clamp(ivec2(floor(rel)), ivec2(0), ivec2(1));
+  ivec2 cell = ivec2(floor(vGround.xy + 0.5)) + sub;
+  vec2 u = clamp(rel * 0.5, 0.0, 1.0), uc = (vec2(sub) + 0.5) * 0.5;
+  float wearP = mix(mix(vFloor.x, vFloor.y, u.x), mix(vFloor.z, vFloor.w, u.x), u.y);
+  float wearC = mix(mix(vFloor.x, vFloor.y, uc.x), mix(vFloor.z, vFloor.w, uc.x), uc.y);
+  fwScratches(P.xy, cell, fwKind(vLayout, sub), wearC, wearP);
+  float flat_ = smoothstep(0.5, 0.9, msk) * smoothstep(0.96, 0.995, N.z);   // the plate tops only (not seams, bevels, rivets)
+  fwTilt *= flat_; fwCov *= flat_; fwBare *= flat_; fwRim *= flat_;
+  float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  base = mix(base, vec3(lum * 1.35 + 0.05) * vec3(0.97, 0.99, 1.03), fwBare * 0.75);   // bare steel in a gouge
+  base *= 1.0 - 0.45 * fwRim;                                                         // its burr + grime
+  float specK = 0.22;
+  if (uWear.w > 0.0) fwTapes(P.xy, uWear.w);
+  if (fwTape > 0.0) {
+    float cov = clamp(fwTape, 0.0, 1.0);
+    base = mix(base * min(fwTapeCol, vec3(1.0)), fwTapeCol, cov);
+    fwTilt *= 1.0 - cov; fwCov *= 1.0 - cov;
+    specK = mix(specK, fwTapeSpec, cov);
+    N.xy *= 1.0 - 0.6 * cov;                                          // tape bridges the tread and the seams
+  }
+  N = normalize(N + vec3(fwTilt + fwTapeTilt, 0.0));
+  gGlintT = vec3(fwTan, 0.0); gGlintK = fwCov * 0.5 / specK;
+  return specK;
+}
+`;
+  // Sprite instances: INST floats (INST / 4 vec4 texels) each, uploaded once per frame into an RGBA32F texture,
+  // INST_ROW instances per row; the vertex shader fetches its own with gl_InstanceID (one uniform per batch
+  // instead of re-pointing 11 instanced attributes, which cost more CPU than everything else in end())
+  const INST = 11 * 4, INST_ROW = 128;
   const VS_SPRITE = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;
-layout(location = 1) in vec4 iScreen;   // origin on screen (device px), device px per canvas px, flip (+1 / -1)
-layout(location = 2) in vec4 iQuad;     // drawn rect on the sprite canvas (canvas px)
-layout(location = 3) in vec4 iBase;     // base (or whole frame) rect on the canvas
-layout(location = 4) in vec4 iPatch;    // patch rect on the canvas (w = 0: none)
-layout(location = 5) in vec4 iOff;      // canvas -> page px: base xy, patch zw
-layout(location = 6) in vec4 iGround;   // world x, y, z of the origin; ppu
-layout(location = 7) in vec4 iOrigin;   // origin on the canvas (ox, oy), object scale, depth bias
-layout(location = 8) in vec4 iTint;     // rgb, strength
-layout(location = 9) in vec4 iMisc;     // tint reference luminance, emissive, alpha, flags (1 unlit)
-layout(location = 10) in vec4 iXf;      // screen rotation (rad, clockwise) around the origin, stretch along the sprite's x, desaturation, -
+// the instance (uploadInstances): INST / 4 texels in a row of the uInst texture, INST_ROW instances per row
+// (a new field: one more vec4 here, its texelFetch in main(), and INST += 4)
+uniform highp sampler2D uInst;
+uniform int uFirst;                     // the batch's first instance (drawQueue)
+vec4 iScreen;   // origin on screen (device px), device px per canvas px, flip (+1 / -1)
+vec4 iQuad;     // drawn rect on the sprite canvas (canvas px)
+vec4 iBase;     // base (or whole frame) rect on the canvas
+vec4 iPatch;    // patch rect on the canvas (w = 0: none)
+vec4 iOff;      // canvas -> page px: base xy, patch zw
+vec4 iGround;   // world x, y, z of the origin; ppu
+vec4 iOrigin;   // origin on the canvas (ox, oy), object scale, depth bias
+vec4 iTint;     // rgb, strength
+vec4 iMisc;     // tint reference luminance, emissive, alpha, flags (1 unlit)
+vec4 iXf;      // screen rotation (rad, clockwise) around the origin, stretch along the sprite's x, desaturation, floor layout (0: not a floor tile; see FLOOR_WEAR)
+vec4 iFloor;   // floor tiles: wear at the tile's corners (top-left, top-right, bottom-left, bottom-right)
 uniform vec2 uView;
 out vec2 vLp;
-flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc;
-flat out float vFlip, vRot, vDesat;
+flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor;
+flat out float vFlip, vRot, vDesat, vLayout;
 void main() {
+  int id = uFirst + gl_InstanceID;
+  ivec2 at = ivec2((id % ${INST_ROW}) * ${INST / 4}, id / ${INST_ROW});
+  iScreen = texelFetch(uInst, at + ivec2(0, 0), 0); iQuad = texelFetch(uInst, at + ivec2(1, 0), 0); iBase = texelFetch(uInst, at + ivec2(2, 0), 0); iPatch = texelFetch(uInst, at + ivec2(3, 0), 0); iOff = texelFetch(uInst, at + ivec2(4, 0), 0); iGround = texelFetch(uInst, at + ivec2(5, 0), 0); iOrigin = texelFetch(uInst, at + ivec2(6, 0), 0); iTint = texelFetch(uInst, at + ivec2(7, 0), 0); iMisc = texelFetch(uInst, at + ivec2(8, 0), 0); iXf = texelFetch(uInst, at + ivec2(9, 0), 0); iFloor = texelFetch(uInst, at + ivec2(10, 0), 0);
   vec2 lp = iQuad.xy + aPos * iQuad.zw;
   vLp = lp;
   vec2 q = vec2((lp.x - iOrigin.x) * iScreen.w * iXf.y, lp.y - iOrigin.y) * iScreen.z;
   float cr = cos(iXf.x), sr = sin(iXf.x);
   vec2 p = iScreen.xy + vec2(q.x * cr - q.y * sr, q.x * sr + q.y * cr);
   gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0);
-  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x; vDesat = iXf.z;
+  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x; vDesat = iXf.z; vLayout = iXf.w; vFloor = iFloor;
 }`;
 
   const FS_SPRITE = `#version 300 es
 precision highp float;
 in vec2 vLp;
-flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc;
-flat in float vFlip, vRot, vDesat;
+flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor;
+flat in float vFlip, vRot, vDesat, vLayout;
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies with the same uv
 uniform float uHasMask, uHR, uDepthScale;
@@ -292,6 +619,7 @@ layout(location = 0) out vec4 outDepth;   // the depth pre-pass (depthPass): thi
 #else
 layout(location = 0) out vec4 outColor;
 ${LIGHTING}
+${FLOOR_WEAR}
 #endif
 void main() {
   vec2 lp = vLp;
@@ -333,10 +661,12 @@ void main() {
     vec3 N = vec3(n.x * sign(vFlip), -n.y, n.z);
     if (vRot != 0.0) N.xy = vec2(N.x * cos(vRot) - N.y * sin(vRot), N.x * sin(vRot) + N.y * cos(vRot));
     N = normalize(N);
+    float specK = 0.22;
+    if (vLayout > 0.5 && uWear.x > 0.5) specK = floorWear(vec3(vGround.x + o.x, vGround.y + (o.y + 0.025 * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, 0.0), base, N, uHasMask > 0.5 ? textureGrad(uMask, uv, gdx, gdy).r : 1.0, gdx * uPage, gdy * uPage);
     vec3 spec;
     vec3 acc = lighting(P, N, spec);
     float e = vMisc.y * smoothstep(0.62, 0.97, max(base.r, max(base.g, base.b)));
-    col = base * acc + spec * 0.22;
+    col = base * acc + spec * specK;
     col = mix(col, base * 1.15, e);
   }
   outColor = vec4(col, alpha);
@@ -579,27 +909,25 @@ void main() {
     gl.uniform1i(prog.u.uShadowV, 7); gl.uniform1i(prog.u.uShadowD, 8);
   }
 
-  // geometry: a unit quad (location 0) and the instance buffer (locations 1..10, 10 vec4 per instance)
-  const INST = 10 * 4;
+  // geometry: a unit quad (location 0); the instances come from instTex (see INST)
   const vao = gl.createVertexArray();
   gl.bindVertexArray(vao);
   const quadBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-  const instBuf = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-  for (let i = 1; i <= 10; i++) { gl.enableVertexAttribArray(i); gl.vertexAttribDivisor(i, 1); }
-  let inst = new Float32Array(INST * 1024), instCap = 0;
+  const INST_UNIT = 9;                               // instTex stays bound on this texture unit (nothing else uses it)
+  const instTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0 + INST_UNIT); gl.bindTexture(gl.TEXTURE_2D, instTex);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+  gl.activeTexture(gl.TEXTURE0);
+  let inst = new Float32Array(INST * INST_ROW * 8), instRows = 0;
+  for (const prog of [P.sprite, P.spriteDepth]) { gl.useProgram(prog.p); gl.uniform1i(prog.u.uInst, INST_UNIT); }
   const vaoFull = gl.createVertexArray();            // full-screen passes: just the quad
   gl.bindVertexArray(vaoFull);
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
-  function pointInstances(first) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-    for (let i = 0; i < 10; i++) gl.vertexAttribPointer(i + 1, 4, gl.FLOAT, false, INST * 4, (first * INST + i * 4) * 4);
-  }
 
   // --- textures ---------------------------------------------------------------------------------------
   function texture(src, mips) {
@@ -712,8 +1040,12 @@ void main() {
   const lightData = new Float32Array(LIGHT_TEXELS * 4 * MAX_LIGHTS);
   gl.bindTexture(gl.TEXTURE_2D, lightTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, LIGHT_TEXELS, MAX_LIGHTS, 0, gl.RGBA, gl.FLOAT, lightData);
-  let tileData = new Uint8Array(0), tileW = 0, tileH = 0, tileSize = 64;
+  let tileData = new Uint8Array(0), tileW = 0, tileH = 0, tileSize = 64, tileTexW = 0, tileTexH = 0;
   let shadowsWanted = true, softReady = false;
+  // Procedural floor wear (FLOOR_WEAR): on unless ?noscratch or GFX.setScratches(false) (remembered).
+  let scratchOn = true;
+  try { if (/[?&]noscratch\b/.test(search) || localStorage.getItem('mn-gfx-scratch') === '0') scratchOn = false; } catch (e) { /* no storage */ }
+  const WEAR = { fine: 1, gouge: 0.07, tape: 0.1 };   // fine scratch density, deep gouge chance per plate cell, tape chance per 2 x 2 tile
   try { if (/[?&]noshadows\b/.test(search) || localStorage.getItem('mn-gfx-shadows') === '0') shadowsWanted = false; } catch (e) { /* no storage */ }
 
   // --- the sprite atlas: sprites.json + pages, loaded lazily per page --------------------------------
@@ -792,7 +1124,8 @@ void main() {
       const pg = { state: 'ready', w, h, maps: '', tex: {}, img: {} }, ox = o.ox != null ? o.ox : w / 2, oy = o.oy != null ? o.oy : h / 2;
       const name = 'dyn/' + key;
       const S = DYNS[name] = { name, group: 'dyn', dyn: pg, ppu: o.ppu || 96, w, h, ox, oy, dirs: 1, frames: 1, maps: '', f: [[0, 0, 0, w, h, ox, oy]] };
-      D = DYN[key] = { name, S, pg, w, h, c, ctx: c.getContext('2d'), commit() {
+      // (a CPU canvas: uploading a GPU-backed one makes the GPU process switch GL contexts twice per commit)
+      D = DYN[key] = { name, S, pg, w, h, c, ctx: c.getContext('2d', { willReadFrequently: true }), commit() {
         if (!api.on) return;
         if (!pg.tex.b) pg.tex.b = texture(c, true);
         else {
@@ -922,12 +1255,13 @@ void main() {
     const ey0 = sy + (qy0 - S.oy) * k, ey1 = sy + (qy1 - S.oy) * k;
     if (o.pick) picks.push({ x, y, sortY: o.sortY != null ? o.sortY : y, x0: sx - o.pick[0] * Sdev, x1: sx + o.pick[0] * Sdev, y0: sy - o.pick[1] * Sdev, y1: sy + 0.15 * Sdev });
     if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
-    const t = o.tint ? rgb(o.tint) : null, useMask = !!t && (S.maps || '').includes('m');
+    const t = o.tint ? rgb(o.tint) : null, useMask = !!t && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null;
     queue.push({
       layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || page(S.group, b[0]), mask: useMask,
       d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
-          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, 0],
+          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, fl ? fl[0] : 0,
+          fl ? fl[1] : 0, fl ? fl[2] : 0, fl ? fl[3] : 0, fl ? fl[4] : 0],
       depthWrite: o.depthWrite !== false,
       // anything for depthPass(): it writes the depth buffer, or can be a solid lit pixel
       inDepth: ((LAYERS[o.layer] ?? 3) === 2 || (LAYERS[o.layer] ?? 3) === 3) && o.depthWrite !== false || !o.unlit && !(o.alpha <= 0.6),
@@ -935,6 +1269,7 @@ void main() {
     return true;
   }
 
+  const areaRect = new Float32Array(MAX_AREAS * 4), areaCol = new Float32Array(MAX_AREAS * 4);
   function setLightUniforms(u) {
     const L = light;
     gl.uniform3fv(u.uAmbient, L.ambient);
@@ -942,9 +1277,13 @@ void main() {
     gl.uniform3f(u.uSunDir, sd[0] / n, sd[1] / n, sd[2] / n);
     gl.uniform3fv(u.uSunCol, sun && sun.color ? sun.color : [0, 0, 0]);
     gl.uniform1f(u.uSunK, sun ? (sun.k == null ? 1 : sun.k) : 0);
-    const areas = (L.areas || []).slice(0, MAX_AREAS), ar = new Float32Array(MAX_AREAS * 4), ac = new Float32Array(MAX_AREAS * 4);
-    areas.forEach((a, i) => { ar.set([a.x, a.y, a.x + a.w, a.y + a.h], i * 4); ac.set([a.color[0], a.color[1], a.color[2], a.sun || 0], i * 4); });
-    gl.uniform4fv(u.uAreaRect, ar); gl.uniform4fv(u.uAreaCol, ac); gl.uniform1i(u.uNumAreas, areas.length);
+    const areas = L.areas || [], na = Math.min(areas.length, MAX_AREAS), ar = areaRect.fill(0), ac = areaCol.fill(0);
+    for (let i = 0; i < na; i++) {
+      const a = areas[i], j = i * 4;
+      ar[j] = a.x; ar[j + 1] = a.y; ar[j + 2] = a.x + a.w; ar[j + 3] = a.y + a.h;
+      ac[j] = a.color[0]; ac[j + 1] = a.color[1]; ac[j + 2] = a.color[2]; ac[j + 3] = a.sun || 0;
+    }
+    gl.uniform4fv(u.uAreaRect, ar); gl.uniform4fv(u.uAreaCol, ac); gl.uniform1i(u.uNumAreas, na);
     const shadows = !!(RT && RT.depth);
     gl.uniform4i(u.uTileInfo, tileSize, H, shadows ? 1 : 0, 0);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, lightTex); gl.uniform1i(u.uLights, 4);
@@ -1013,7 +1352,8 @@ void main() {
     if (vis.length) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LIGHT_TEXELS, vis.length, gl.RGBA, gl.FLOAT, lightData, 0);
     gl.bindTexture(gl.TEXTURE_2D, tileTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, tileW, tileH, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, tileData);
+    if (tileTexW !== tileW || tileTexH !== tileH) { gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, tileW, tileH, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, tileData); tileTexW = tileW; tileTexH = tileH; }
+    else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, tileW, tileH, gl.RED_INTEGER, gl.UNSIGNED_BYTE, tileData);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     api.stats.lights = vis.length;
     api.stats.shadow = { soft: chBoxes.reduce((n, B) => n + B.length, 0), channels: chBoxes.filter(B => B.length).length, marched };
@@ -1066,8 +1406,7 @@ void main() {
 
   function drawLayer2d(name, lit) {
     const L = L2D[name];
-    if (!L || L.used !== frameNo) return;
-    uploadLayer(L);
+    if (!L || L.used !== frameNo) return;               // (uploaded at the start of end())
     const u = P.layer.u;
     gl.bindVertexArray(vaoFull);
     gl.useProgram(P.layer.p);
@@ -1085,35 +1424,44 @@ void main() {
   function uploadInstances(groups) {
     let n = 0;
     for (const g of groups) n += g.length;
-    if (instCap < n) { instCap = Math.max(n, instCap * 2, 256); inst = new Float32Array(INST * instCap); }
+    const rows = Math.max(1, Math.ceil(n / INST_ROW));
+    if (inst.length < rows * INST_ROW * INST) inst = new Float32Array(Math.max(rows, inst.length / (INST_ROW * INST) * 2) * INST_ROW * INST);
     n = 0;
     for (const g of groups) for (const it of g) { inst.set(it.d, n * INST); it.ii = n++; }
-    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, inst.subarray(0, Math.max(1, n) * INST), gl.STREAM_DRAW);
+    gl.activeTexture(gl.TEXTURE0 + INST_UNIT); gl.bindTexture(gl.TEXTURE_2D, instTex);
+    if (instRows < rows) {                             // (re)allocate: as many rows as inst holds
+      instRows = inst.length / (INST_ROW * INST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, INST_ROW * INST / 4, instRows, 0, gl.RGBA, gl.FLOAT, inst);
+    } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, INST_ROW * INST / 4, rows, gl.RGBA, gl.FLOAT, inst, 0);
+    gl.activeTexture(gl.TEXTURE0);
   }
   function drawQueue(items, prog = P.sprite) {
     if (!items.length) return;
     gl.bindVertexArray(vao);
-    const u = prog.u;
-    let i = 0;
+    const u = prog.u, bound = [undefined, undefined, undefined, undefined];   // (only the GL state that changes between batches is set)
+    let i = 0, mode = -1, pw = -1, ph = -1, hm = -1;
+    const modeOf = (it) => (it.layer === 2 || it.layer === 3 ? (it.depthWrite ? 2 : 1) : 0);   // 0: no depth test; 1: test; 2: test + write
+    const bind = (unit, t) => { if (bound[unit] !== t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); bound[unit] = t; } };
     while (i < items.length) {
-      const a = items[i];
+      const a = items[i], m = modeOf(a);
       let j = i + 1;
-      while (j < items.length && items[j].ii === a.ii + j - i && items[j].page === a.page && items[j].layer === a.layer && items[j].depthWrite === a.depthWrite) j++;
-      const depth = a.layer === 2 || a.layer === 3;
-      if (depth) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(a.depthWrite); }
-      else { gl.disable(gl.DEPTH_TEST); gl.depthMask(false); }
+      while (j < items.length && items[j].ii === a.ii + j - i && items[j].page === a.page && modeOf(items[j]) === m) j++;
+      if (m !== mode) {
+        if (m) { if (mode <= 0) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); } gl.depthMask(m === 2); }
+        else { gl.disable(gl.DEPTH_TEST); gl.depthMask(false); }
+        mode = m;
+      }
       const p = a.page;
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, p.tex.b);
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, p.tex.n || flatNormal);
-      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, p.tex.h || zero);
-      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, p.tex.m || zero);
-      gl.uniform2f(u.uPage, p.w, p.h); gl.uniform1f(u.uHasMask, p.tex.m ? 1 : 0);
-      pointInstances(a.ii);
+      bind(0, p.tex.b); bind(1, p.tex.n || flatNormal); bind(2, p.tex.h || zero); bind(3, p.tex.m || zero);
+      if (p.w !== pw || p.h !== ph) { gl.uniform2f(u.uPage, p.w, p.h); pw = p.w; ph = p.h; }
+      const has = p.tex.m ? 1 : 0;
+      if (has !== hm) { gl.uniform1f(u.uHasMask, has); hm = has; }
+      gl.uniform1i(u.uFirst, a.ii);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, j - i);
       api.stats.batches++;
       i = j;
     }
+    gl.activeTexture(gl.TEXTURE0);
   }
 
   // GFX.dome(d): queue a shield dome for this frame (see FS_DOME and the header).
@@ -1171,6 +1519,9 @@ void main() {
     api.stats = { sprites: queue.length, batches: 0, lights: 0 };
     lastPicks = picks;
     ensureTargets(W, H);
+    // the 2D layers first, all together: each upload makes the GPU process switch from the WebGL context to
+    // the 2D canvases' one and back (a costly MakeCurrent); between the WebGL passes that was 6 switches a frame
+    for (const k of ['back', 'mid', 'glow']) if (L2D[k] && L2D[k].used === frameNo) uploadLayer(L2D[k]);
     const by = (l) => queue.filter(q => q.layer === l);
     const ground = [...by(-1), ...by(0), ...by(1)];
     const sorted = (l) => by(l).sort((a, b) => a.sortY - b.sortY || a.seq - b.seq);
@@ -1191,6 +1542,7 @@ void main() {
     gl.useProgram(P.sprite.p);
     gl.uniform2f(u.uView, W, H); gl.uniform1f(u.uHR, HR); gl.uniform1f(u.uDepthScale, DEPTH_SCALE);
     gl.uniform1i(u.uBeauty, 0); gl.uniform1i(u.uNormal, 1); gl.uniform1i(u.uHeight, 2); gl.uniform1i(u.uMask, 3);
+    gl.uniform4f(u.uWear, scratchOn ? 1 : 0, WEAR.fine, WEAR.gouge, WEAR.tape);
     setLightUniforms(u);
     drawLayer2d('back', false);
     gl.useProgram(P.sprite.p); drawQueue(ground);
@@ -1235,7 +1587,9 @@ void main() {
   }
 
   Object.assign(api, {
-    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome,
+    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome, wear: WEAR,
+    get scratches() { return scratchOn; },
+    setScratches: (on) => { scratchOn = !!on; try { localStorage.setItem('mn-gfx-scratch', on ? '1' : '0'); } catch (e) { /* no storage */ } },
     has: (name) => !!(DYNS[name] || (MAN && MAN[name] && MAN[name].f && MAN[name].f.length)),
     ready: (name) => !!(DYNS[name] ? spriteReady(DYNS[name]) : MAN && MAN[name] && spriteReady(MAN[name])),
     info: (name) => DYNS[name] || (MAN && MAN[name]) || null,

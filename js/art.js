@@ -503,6 +503,21 @@ function drawStation(st, t) {
   ctx.restore();
 }
 
+// The sprite's fuel screen (front right): five bars, one per energy in the cell. The rendered frames
+// only know all-lit (ship/reactor) and all-dark (ship/reactor_off), so the drained part of the
+// screen is the reactor_off sprite clipped to it, drawn just in front: one lit bar per energy left,
+// the rest dark from the right.
+// BARS: each bar's left / right edge in the sprite canvas (px, ppu 96, origin 190 / 234.26); rows 254.5..266.
+const REACTOR_BARS = [[263, 270], [272, 279], [280, 288], [289, 296], [298, 305]];
+function reactorFuelBars(R) {
+  if (typeof power === 'undefined' || typeof fuelFraction === 'undefined') return;
+  const k = Math.round(fuelFraction() * REACTOR_BARS.length);
+  if (k >= REACTOR_BARS.length) return;                            // a full cell: nothing dark
+  const qx = REACTOR_BARS[k][0] - 0.5;
+  const X = (q) => R.x + (q - 190) / 96, Y = (q) => R.y + (q - 234.26) / (96 * Math.sin(50 * Math.PI / 180));
+  spr('ship/reactor_off', 0, R.x, R.y, 0, { emissive: 0.4, clip: [X(qx), Y(254.5), X(306), Y(266), 0], depthBias: 0.02, depthWrite: false });
+}
+
 // Reactor: half pizza oven, half vending machine, wrapped in cables. Front faces +y.
 // Has a fuel-cell slot (front middle) for later.
 function drawReactor(R, t) {
@@ -513,7 +528,10 @@ function drawReactor(R, t) {
       if (broken(R) && sprReady('ship/reactor_broken'))   // cracked, scorched, sparking; the core flickers now and then (frame 1)
         spr('ship/reactor_broken', hash01(Math.floor(t * 9) + 7) < 0.18 ? 1 : 0, R.x, R.y, 0, { emissive: 0.6, pick: [R.w / 2, 2.2] });
       else if (dead) spr('ship/reactor_off', 0, R.x, R.y, 0, { emissive: 0.4, pick: [R.w / 2, 2.2] });
-      else spr('ship/reactor', Math.floor(t * (over ? 14 : 6)) % 6, R.x, R.y, 0, { emissive: over ? 1 : 0.7, pick: [R.w / 2, 2.2] });
+      else {
+        spr('ship/reactor', Math.floor(t * (over ? 14 : 6)) % 6, R.x, R.y, 0, { emissive: over ? 1 : 0.7, pick: [R.w / 2, 2.2] });
+        reactorFuelBars(R);
+      }
       if (over && !dead) labelAt(R.x, R.y - R.h / 2, 2.1, 'OVERCHARGED', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffd28a', 'bottom', 'rgba(10,12,18,0.8)');
       return;
     }
@@ -586,7 +604,7 @@ function drawReactor(R, t) {
     cg.addColorStop(0, '#3a9a5a'); cg.addColorStop(0.5, '#9af0b0'); cg.addColorStop(1, '#2a7a4a');
     ctx.fillStyle = cg; ctx.fill(); stroke(1.5);
     ctx.fillStyle = 'rgba(10,40,20,0.75)';                                        // drained part of the cell
-    ctx.fillRect(sx + sw * 0.3 + 2, sy + sh * 0.12 + 2, sw * 0.4 - 4, (sh * 0.5 - 4) * (1 - (fuel.fuel - fuel.t / ENERGY_TIME) / CELL_ENERGY));
+    ctx.fillRect(sx + sw * 0.3 + 2, sy + sh * 0.12 + 2, sw * 0.4 - 4, (sh * 0.5 - 4) * (1 - fuelFraction(fuel)));
   }
   ctx.fillStyle = '#e9e6dc'; ctx.font = `800 ${T * 0.12}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
   ctx.fillText('FUEL', sx + sw / 2, sy + sh + 2); ctx.textAlign = 'left';
@@ -595,7 +613,10 @@ function drawReactor(R, t) {
   rr(kx, ky, w * 0.22, fh * 0.26, 3); ctx.fillStyle = fuel.fuel ? '#1d3a2a' : '#3a1d1d'; ctx.fill(); stroke(1.5);
   ctx.fillStyle = fuel.fuel ? '#7af0a0' : '#ff8a7a'; ctx.font = `700 ${T * 0.12}px monospace`; ctx.textBaseline = 'middle';
   ctx.fillText(fuel.fuel ? `FUEL ${fuel.fuel}` : 'EMPTY :(', kx + 4, ky + fh * 0.1);
-  if (fuel.fuel) { ctx.fillStyle = '#7af0a0'; ctx.fillRect(kx + 4, ky + fh * 0.19, (w * 0.22 - 8) * fuel.t / ENERGY_TIME, 2.5); }
+  if (fuel.fuel) {                                                              // the fuel bar: how full the cell still is
+    ctx.fillStyle = 'rgba(122,240,160,0.2)'; ctx.fillRect(kx + 4, ky + fh * 0.19, w * 0.22 - 8, 2.5);
+    ctx.fillStyle = '#7af0a0'; ctx.fillRect(kx + 4, ky + fh * 0.19, (w * 0.22 - 8) * fuelFraction(fuel), 2.5);
+  }
   for (let r = 0; r < 2; r++) for (let c = 0; c < 4; c++) {
     ctx.beginPath(); ctx.arc(kx + 7 + c * w * 0.05, ky + fh * 0.4 + r * 9, 3, 0, TAU);
     ctx.fillStyle = ['#e2574c', '#e8c34f', '#5fd6a0', '#c9ced8'][(r + c) % 4]; ctx.fill(); stroke(1);

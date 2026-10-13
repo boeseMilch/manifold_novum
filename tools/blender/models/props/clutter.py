@@ -588,15 +588,43 @@ def tape_job():
     tape_strip(k, 13 * U, 8 * U, 0.26, math.atan2(6, 11), 5, w=0.12)
     k.outline(0.012); place(k, 'tape_roll')
 
+def hex_nut(name, m, bore_m, R=4.5 * U * 1.15, H=0.06, rh=0.034, cs=0.02, rc_frac=0.8, chamfer=math.radians(35), seg=16):
+    """A hex nut lying flat (corners at multiples of 60 degrees): flat top ring, a 35-degree chamfer
+    that cuts the six corners (the bevelled rim), a countersunk bore going through (the floor shows in
+    the middle). Built as one flat-shaded mesh, so the normal map has the real facets: at 96 px/unit the
+    nut is ~20 px across, too small for bevel modifiers to show up."""
+    a = R * math.cos(math.pi / 6)                    # across flats / 2
+    rc, t = a * rc_frac, math.tan(chamfer)
+    me = bpy.data.meshes.new(name); bm = bmesh.new()
+    rings = []
+    for k in range(6 * seg):
+        th = k / (6 * seg) * math.tau
+        Rt = a / math.cos((th % (math.pi / 3)) - math.pi / 6)   # hex outline (corners at 0, 60, ...)
+        prof = [(rh, 0.0), (rh, H - cs), (rh + cs, H), (rc, H), (Rt, H - (Rt - rc) * t), (Rt, 0.0)]
+        rings.append([bm.verts.new((r * math.cos(th), r * math.sin(th), z)) for r, z in prof])
+    n = len(rings)
+    for k in range(n):
+        A, B = rings[k], rings[(k + 1) % n]
+        for j in range(6):
+            f = bm.faces.new((A[j], A[(j + 1) % 6], B[(j + 1) % 6], B[j]))
+            f.material_index = 1 if j == 0 else 0     # the bore wall: dark
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me); bm.free()
+    o = mn._obj(name, me)
+    o.data.materials.append(m); o.data.materials.append(bore_m)
+    return o
+
+@job('nuts')
+def nuts_job():
+    for i, deg in enumerate((0, 15, 30, 45)):      # nuts are 6-fold symmetric: 4 turns cover every angle
+        if i: mn.reset()
+        steel = worn('nut', '#b4bccb', 0.4, 0.6, grime=0.35, scratch=0.3, gain=1.35)   # lighter than bare chrome: it has to catch the room lamps / helmet lamp
+        k = Kit()
+        k(hex_nut('nut', steel, plain('bore', '#2a2e36', 0.6, metal=0.5)))
+        k.outline(0.006); place(k, f'nut_r{i}', math.radians(deg))
+
 @job('junk')
 def junk_job():
-    steel = worn('nut', '#9aa3b5', 0.35, 0.85, grime=0.5, scratch=0.3, gain=1.1)
-    for i, deg in enumerate((0, 15, 30, 45)):      # nuts are 6-fold symmetric: 4 turns cover every angle
-        if i: mn.reset(); steel = worn('nut', '#9aa3b5', 0.35, 0.85, grime=0.5, scratch=0.3, gain=1.1)
-        k = Kit()
-        k(prism('nut', [(math.cos(j / 6 * math.tau) * 4.5 * U * 1.15, math.sin(j / 6 * math.tau) * 4.5 * U * 1.15) for j in range(6)], 0, 0.05, steel, bevel=0.008))
-        k(mn.cyl('hole', 1.8 * U * 1.2, 0.052, m=plain('hole', '#3a3f4a', 0.6), bevel=0), outline=False)
-        k.outline(0.008); place(k, f'nut_r{i}', math.radians(deg))
     # soda can lying on its side, dented; body in the tint mask (game colours: red, blue, green, yellow)
     mn.reset(); k = Kit()
     can = k(mn.cyl('can', 5.5 * U, 0.36, m=plain('canw', '#e8ecf0', 0.3, metal=0.6), rot=(0, math.radians(90), 0), bevel=0.01))

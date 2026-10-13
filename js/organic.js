@@ -19,8 +19,8 @@ const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 4.5, MOTHE
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
 
 // Organic things die in a burst of green slime.
-function slimeBurst(x, y, n = 14, size = 0.1) {
-  for (let i = 0; i < n; i++) { const a = Math.random() * TAU, sp = 1 + Math.random() * 4; combatFx(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.8 + Math.random() * 0.6, ['#9cff5a', '#6ad13a', '#c8ff6e'][i % 3], size + Math.random() * size); }
+function slimeBurst(x, y, n = 14, size = 0.1, z = 0) {   // z: up on something (a barnacle on the wall top)
+  for (let i = 0; i < n; i++) { const a = Math.random() * TAU, sp = 1 + Math.random() * 4; combatFxAt(z, x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.8 + Math.random() * 0.6, ['#9cff5a', '#6ad13a', '#c8ff6e'][i % 3], size + Math.random() * size); }
   sfx.squelch?.();
 }
 function resetOrganic() { org.leeches = []; org.lev = null; }
@@ -508,7 +508,8 @@ function drawOrganicWorld(t) {
       ctx.beginPath(); ctx.arc(L(l.x) - Math.cos(ang) * (k + 3) * 13, L(l.y) - Math.sin(ang) * (k + 3) * 13 + Math.sin(l.t * 6 + k) * 3, 6 - k, 0, TAU); ctx.fillStyle = `rgba(200,255,150,${0.35 - k * 0.07})`; ctx.fill();
     }
     if (GFX.on && drawLeechSprite(l, ang)) { drawLeechChew(l, t); continue; }
-    ctx.save(); ctx.translate(L(l.x), L(l.y)); ctx.rotate(ang); ctx.scale(1.7, 1.7);   // big enough to see from a cannon
+    const bite = l.state === 'latched' ? (l.side === 'port' ? 1 : -1) * L(0.25) : 0;   // latched: the mouth on the hull's edge (as the sprite)
+    ctx.save(); ctx.translate(L(l.x) + bite, L(l.y)); ctx.rotate(ang); ctx.scale(1.7, 1.7);   // big enough to see from a cannon
     const squirm = l.state === 'latched' ? 1.5 : 3, pulse = l.state === 'latched' ? 1 + 0.12 * Math.sin(l.t * 9) : 1;
     for (let i = 4; i >= 0; i--) {                         // a fat, ringed worm-body, wriggling
       const cx = -i * 9 + Math.sin(l.t * 8 + i) * squirm, cy = Math.sin(l.t * 6 + i * 1.2) * 3, rx = (11 - i * 1.6) * pulse, ry = (9 - i * 1.3) * pulse;

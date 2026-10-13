@@ -2,7 +2,7 @@
 // antenna, a fuel canister drifting past, and the jump coils. Run: node tests/eva.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'evs', 'hz', 'mission', 'startMission', 'spawnMineDrone', 'spawnSpores', 'jamCannon', 'knockAntenna',
-  'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'BARNACLE_GROW', 'MISSIONS', 'JAM_SPOTS'];
+  'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'BARNACLE_GROW', 'MISSIONS', 'JAM_SPOTS', 'pointInPoly', 'distToPoly'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -59,6 +59,28 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
   outside(G, b.x + 0.7, b.y);
   const t = holdOn(G, b.x, b.y, () => !G.evs.barnacles.includes(b));
   check(!G.evs.barnacles.includes(b) && Math.abs(t - 3) < 0.3, `scraped off on a spacewalk in 3 s (${t.toFixed(1)} s)`);
+}
+{
+  const G = fresh();
+  for (const side of ['port', 'star', 'front']) { G.spawnSpores(side, null, 3, true); }
+  tickN(G, 60 * 30);
+  check(G.evs.barnacles.length >= 3 && G.evs.barnacles.every(b => G.pointInPoly(b.x, b.y) && G.distToPoly(b.x, b.y) < 0.4),
+        `barnacles grow on the hull plating, right at its outer edge, not in space beside it (${G.evs.barnacles.map(b => `${b.side} ${b.x.toFixed(2)},${b.y.toFixed(2)}`).join(' · ')})`);
+  for (const side of ['port', 'front']) {
+    const b = G.evs.barnacles.find(b => b.side === side); if (!b) continue;
+    const away = side === 'port' ? [b.x - 2.6, b.y] : [b.x, b.y - 2.6];
+    outside(G, ...away); G.withCrew(G.me, () => { G.inv.weapon = 'laser'; });
+    const m = G.me.input.mouse; m.wx = b.x; m.wy = b.y;
+    for (let i = 0; i < 4 && G.evs.barnacles.includes(b); i++) { m.rightClick = true; tickN(G, 60); }
+    check(!G.evs.barnacles.includes(b), `laser shots from a spacewalk burn a barnacle off the ${side} hull`);
+  }
+  const b = G.evs.barnacles.find(b => b.side === 'star');
+  if (b) {
+    G.me.mode = 'inside'; G.me.x = 42.5; G.me.y = b.y; G.withCrew(G.me, () => { G.inv.weapon = 'laser'; });
+    const m = G.me.input.mouse; m.wx = b.x; m.wy = b.y;
+    for (let i = 0; i < 4; i++) { m.rightClick = true; tickN(G, 60); }
+    check(G.evs.barnacles.includes(b), 'laser shots from inside the ship hit the wall, not the barnacle on the outside');
+  }
 }
 {
   const G = fresh();

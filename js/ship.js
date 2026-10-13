@@ -154,8 +154,8 @@ const CLUTTER = {
   snax: { x: 12.3, y: 5.6, w: 0.9, h: 0.8, a: 0.25 },
   snack: { x: 10.5, y: 3.85, w: 1.1, h: 0.8, a: 0 },          // the snack machine (SNACK, js/hazards.js)
   plant: { x: 14.95, y: 10.75, w: 0.5, h: 0.5, a: 0 },        // bridge: Steve, in his pot
-  ammoStar: { x: 43.25, y: 3.12, w: 1.0, h: 0.9, a: -0.05 },  // bedroom (right cannon room): along the back wall,
-  toolbox: { x: 42.1, y: 2.97, w: 0.84, h: 0.48, a: -0.3 },  //   right of the lockers, into the corner
+  ammoStar: { x: 43.25, y: 3.2, w: 1.0, h: 0.9, a: -0.05 },  // bedroom (right cannon room): along the back wall,
+  toolbox: { x: 42.1, y: 3.08, w: 0.84, h: 0.48, a: -0.3 },  //   right of the lockers, into the corner
   sleepingBag: { x: 35.0, y: 3.06, w: 1.8, h: 0.7, a: 0.12 }, //   bunk five, left of the bunks
   misc: { x: 41.6, y: 10.97, w: 0.9, h: 0.9, a: 0.15 },       //   against the front wall, clear of the cannon's power line
   platesA: { x: 12.6, y: 22.4, w: 1.0, h: 0.9, a: 0.1 },      // bathroom (left airlock): hull plates (PLATE_CRATES[0])
