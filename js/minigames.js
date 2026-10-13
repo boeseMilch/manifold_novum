@@ -1,13 +1,12 @@
 // Hands-on station mini-games. Each player's open mini-game lives in their ui.mini (sent to their
 // browser); actions arrive as commands ['mini', action, ...args], so solo and multiplayer work the same.
 //   patch board     next to the power lever: reroute which capacitor each lever output feeds
-//   crank           cannon reload: crank the breech (or hold R) to speed it up
 //   jump handle     missions with the `handle` rule: someone pulls and holds it while the drive spools
 //   treat pulse     treating someone: clicking on the heartbeat speeds it up
 //   held shields    keep holding the button for +2 s of shield (1 more energy)
 //   PIN pad         the airlock vent panel: type the admin password (it's on a sticky note right next to it)
 
-const CRANK_K = 0.3, RELOAD_HOLD_RATE = 2.5, JUMP_PULL = 6, JUMP_PULL_TWO = 1.8;
+const JUMP_PULL = 6, JUMP_PULL_TWO = 1.8;
 const PATCH_BOARD = { x: 20.0, y: 23.0 };
 const JUMP_HANDLE = { x: 20.6, y: -2.0 };
 const BEAT = 0.8;
@@ -43,9 +42,6 @@ function miniCommand(action, a, b) {
       m.flash = right ? 'granted' : 'denied'; m.flashT = right ? PIN_GRANTED_T : PIN_DENIED_T;
       if (right) sfx.poi(); else sfx.hit(false);
     }
-  } else if (action === 'crank' && player.mode === 'gun' && standing(player)) {
-    const g = player.gun;
-    if (g.reload > 0) g.reload = Math.max(0.01, g.reload - Math.min(Math.abs(+a || 0), 3) * CRANK_K * (player.health === 'hurt' ? 0.6 : 1) * (perk(player, 'weapons') ? 1.5 : 1));
   }
 }
 
@@ -100,9 +96,9 @@ function minigameSpots() {
 }
 
 // ---------------------------------------------------------------------------
-// Browser side: drags that turn into commands (crank), rate-limited
+// Browser side: key input for the open mini-game
 // ---------------------------------------------------------------------------
-const miniDrag = { last: 0, prevA: null };
+const miniDrag = { last: 0 };
 function miniClient(dt) {
   const m = me.ui.mini, mo = localInput.mouse;
   miniDrag.last += dt;
@@ -114,19 +110,6 @@ function miniClient(dt) {
                 : code === 'Enter' || code === 'NumpadEnter' ? ['mini', 'pin', 'ok'] : null;
       if (cmd) { localInput.pressed.delete(code); sendCommand(cmd); }
     }
-  }
-  // the cannon's crank: circle the mouse around it while holding the button
-  if (me.mode === 'gun' && standing(me) && me.gun?.reload > 0) {
-    const c = crankLayout(), d = Math.hypot(mo.x - c.x, mo.y - c.y);
-    if (mo.down && d < c.r * 1.6) {
-      mo.suppress = true; mo.moved = 0;                  // cranking isn't aiming or firing
-      const a = Math.atan2(mo.y - c.y, mo.x - c.x);
-      if (miniDrag.prevA !== null) {
-        miniDrag.acc = (miniDrag.acc || 0) + Math.abs(wrapAngle(a - miniDrag.prevA));
-        if (miniDrag.last > 0.08 && miniDrag.acc > 0) { miniDrag.last = 0; sendCommand(['mini', 'crank', miniDrag.acc]); miniDrag.acc = 0; }
-      }
-      miniDrag.prevA = a; miniDrag.crankA = a;
-    } else miniDrag.prevA = null;
   }
 }
 
@@ -251,17 +234,6 @@ function handText(str, cx, cy, font, wob) {
   });
   ctx.textAlign = 'center';
   return total;
-}
-const crankLayout = () => ({ x: VW - 220, y: VH - 42, r: 26 });
-function drawCrank(g) {
-  if (!(g.reload > 0)) return;
-  const c = crankLayout(), a = miniDrag.crankA ?? time * 2;
-  ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, TAU); ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fill(); stroke(2, '#e8c34f');
-  ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(a);
-  ctx.fillStyle = '#c9ced8'; ctx.fillRect(0, -3, c.r - 4, 6); ctx.beginPath(); ctx.arc(c.r - 6, 0, 6, 0, TAU); ctx.fillStyle = '#e2574c'; ctx.fill(); stroke(1.5);
-  ctx.restore();
-  ctx.fillStyle = '#ffe08a'; ctx.font = '700 10px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.fillText('CRANK! (or hold R)', c.x, c.y - c.r - 4); ctx.textAlign = 'left';
 }
 // World: the patch board box and the jump handle.
 function drawMinigameProps(t) {

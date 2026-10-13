@@ -65,6 +65,8 @@
 //   where the half-res buffer doesn't show the surface: see-through or thin slivers). ?noshadows /
 //   GFX.setShadows(false).
 //   grade multiplies the final picture (unless GFX.end(post) passes its own).
+//   walls: [[x0, y0, x1, y1], ...] (up to MAX_WALLS; height wallHeight, default 1.6): vertical planes that
+//   block every light (wallVis): the walls the camera sees over (cut down) but the light must not get past.
 
 // 2D layers: GFX.layer2d('back') is drawn first and unlit (space, things behind the ship);
 // GFX.layer2d('mid') is drawn after the 'ground', 'decal' and 'wall' sprites and before 'main', lit
@@ -121,7 +123,7 @@ const GFX = (() => {
   // Lights are binned per screen tile (tiled forward shading): MAX_LIGHTS on screen in all, up to
   // TILE_SLOTS - 1 per tile (the strongest win). Light data lives in a float texture (4 texels per
   // light), the per-tile index lists in an R8UI texture (slot 0 = count).
-  const MAX_LIGHTS = 255, TILE_SLOTS = 32, MAX_AREAS = 24, DEPTH_SCALE = 1 / 200;
+  const MAX_LIGHTS = 255, TILE_SLOTS = 32, MAX_AREAS = 24, MAX_WALLS = 16, DEPTH_SCALE = 1 / 200;
   // Shadows: one ray per pixel per light, SHADOW_STEPS samples, aimed at a random point of the light's
   // disc (size): computed at 1/SH_DIV resolution into SH_CH visibility channels (the RGBA of SH_LAYERS layers of an array texture),
   // blurred depth-aware, then read back depth-aware by the lighting (see shadowPass()).
@@ -136,6 +138,8 @@ uniform vec3 uSunDir, uSunCol;
 uniform vec4 uAreaRect[${MAX_AREAS}];   // x0, y0, x1, y1
 uniform vec4 uAreaCol[${MAX_AREAS}];    // rgb ambient, sun factor
 uniform int uNumAreas;
+uniform vec4 uWallSeg[${MAX_WALLS}];    // light occluders (cutaway walls, see lighting()): x0, y0, x1, y1 of the plane
+uniform vec4 uWallInfo;                 // count, the walls' height, their bounding box's min y, -
 uniform highp sampler2D uLights;        // per light (row): pos+radius, rgb*intensity+wrap, spot dir+cos, segment end+flags, size+shadow channel
 uniform highp usampler2D uTiles;        // per tile: count, light indices
 uniform ivec4 uTileInfo;                // tile size (device px), screen height (device px), shadows on, -
@@ -210,6 +214,28 @@ float softVis(int c) { return texture(uShadowV, vec3(shUV, float(c >> 2)))[c & 3
 // gGlintK: its strength in units of spec (0: none, everything but the floor tiles).
 vec3 gGlintT = vec3(1.0, 0.0, 0.0);
 float gGlintK = 0.0;
+// The cut-down walls (the near walls and the low ends of the up-down walls) still stop light at their full
+// height: the camera sees over them, the light doesn't. 0 where the segment P → S crosses one of these wall
+// planes below uWallInfo.y (soft over the last few cm, so the edge on the wall's top isn't a jagged line).
+// The screen-space shadows can't do it (they only know what's drawn: a 0.35 high wall).
+float wallVis(vec3 P, vec3 S) {
+  if (max(P.y, S.y) < uWallInfo.z) return 1.0;
+  float vis = 1.0;
+  for (int i = 0; i < ${MAX_WALLS}; i++) {
+    if (float(i) >= uWallInfo.x) break;
+    vec4 w = uWallSeg[i];
+    vec2 ab = w.zw - w.xy, n = normalize(vec2(-ab.y, ab.x));
+    float sp = dot(P.xy - w.xy, n), ss = dot(S.xy - w.xy, n);
+    if (sp * ss >= 0.0) continue;
+    float t = sp / (sp - ss), u = dot(mix(P.xy, S.xy, t) - w.xy, ab) / dot(ab, ab);
+    float zc = mix(P.z, S.z, t);
+    float k = smoothstep(-0.02, 0.0, u) * smoothstep(-0.02, 0.0, 1.0 - u)       // within the wall's length
+            * (1.0 - smoothstep(uWallInfo.y - 0.05, uWallInfo.y + 0.05, zc))     // below its top
+            * smoothstep(0.0, 0.03, min(abs(sp), abs(ss)));                      // (not just grazing it)
+    vis *= 1.0 - k;
+  }
+  return vis;
+}
 vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   vec3 amb = uAmbient; float sk = uSunK;
   for (int i = 0; i < ${MAX_AREAS}; i++) {
@@ -247,6 +273,8 @@ vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
     if (l2.w > -1.5) a *= smoothstep(l2.w, mix(l2.w, 1.0, 0.45), dot(-l, l2.xyz));   // spot cone
     float ndl = max((dot(N, l) + l1.w) / (1.0 + l1.w), 0.0);
     if (a * ndl <= 0.0) continue;
+    a *= wallVis(P, S);
+    if (a <= 0.0) continue;
     if (uTileInfo.z > 0 && flags > 1.5) {
       vec4 l4 = texelFetch(uLights, ivec2(4, li), 0);
       int ch = int(l4.y);
@@ -1269,7 +1297,7 @@ void main() {
     return true;
   }
 
-  const areaRect = new Float32Array(MAX_AREAS * 4), areaCol = new Float32Array(MAX_AREAS * 4);
+  const areaRect = new Float32Array(MAX_AREAS * 4), areaCol = new Float32Array(MAX_AREAS * 4), wallSeg = new Float32Array(MAX_WALLS * 4);
   function setLightUniforms(u) {
     const L = light;
     gl.uniform3fv(u.uAmbient, L.ambient);
@@ -1284,6 +1312,11 @@ void main() {
       ac[j] = a.color[0]; ac[j + 1] = a.color[1]; ac[j + 2] = a.color[2]; ac[j + 3] = a.sun || 0;
     }
     gl.uniform4fv(u.uAreaRect, ar); gl.uniform4fv(u.uAreaCol, ac); gl.uniform1i(u.uNumAreas, na);
+    const walls = L.walls || [], nw = Math.min(walls.length, MAX_WALLS), ws = wallSeg.fill(0);
+    let wy = Infinity;
+    for (let i = 0; i < nw; i++) { ws.set(walls[i], i * 4); wy = Math.min(wy, walls[i][1], walls[i][3]); }
+    if (u.uWallSeg) gl.uniform4fv(u.uWallSeg, ws);
+    if (u.uWallInfo) gl.uniform4f(u.uWallInfo, nw, L.wallHeight || 1.6, nw ? wy - 0.5 : 1e9, 0);
     const shadows = !!(RT && RT.depth);
     gl.uniform4i(u.uTileInfo, tileSize, H, shadows ? 1 : 0, 0);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, lightTex); gl.uniform1i(u.uLights, 4);

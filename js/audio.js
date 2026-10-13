@@ -61,6 +61,8 @@ const sfx = (() => {
     shieldUp() { tone('sine', 300, 900, 0.3, 0.25); tone('triangle', 450, 1350, 0.3, 0.12); },
     shieldBlock() { tone('sine', 1200, 600, 0.25, 0.3); noise(0.2, 2000, 0.2, 4); },
     hatch() { noise(0.6, 600, 0.25, 0.7); },
+    // Air rushing out of a vented room: a long, falling roar with a hiss on top.
+    whoosh() { noise(2.8, 350, 0.55, 0.5); noise(1.8, 1400, 0.3, 0.7); for (let i = 1; i < 4; i++) setTimeout(() => noise(0.9, 900 - i * 180, 0.25 / i, 0.6), i * 500); },
     // Big hit on the ship: deep boom, rumble and debris rattle.
     explosion() {
       noise(1.4, 120, 1.0, 0.6); noise(0.5, 900, 0.5, 0.8);

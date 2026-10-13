@@ -163,8 +163,8 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
     the tutorial's gate only allows loading the empty one.
 - **Power lever** (below the reactor): the dial reads LEFT · MID · RIGHT and
   starts on MID. (Since 9r each position points at the gland its branch leaves the dial by: LEFT
-  165°, MID 15°, RIGHT -35°, the handle swinging round the bottom; the trunk from the reactor comes
-  in at the top.)
+  west, MID north, RIGHT east, the handle swinging over the top; the trunk from the reactor comes
+  in from the NNW.)
   - In auto mode it steps right after every energy and wraps around: mid → right → left →
     mid …
   - Click the dial to turn it by hand.
@@ -425,7 +425,13 @@ get the rest.
   tabby: swept body along the curled spine with a haunch, tabby bands driven by mesh attributes so
   they curve with the body (spine stripe, tapering flank bands, ringed tail with a dark tip), a proper
   head (cheek ruffs, cream muzzle, nose, M on the forehead, pink ears with tufts), cream paws under
-  the chin; same states, frame counts and origins as before. **Emergency lighting** is
+  the chin; same states, frame counts and origins as before. Its back half then read as a lizard
+  (a smooth egg of a thigh stuck onto a tapering rump, a thin whip of a ringed tail, crisp bands,
+  shiny skin): the body is now one soft mass (tube + big round haunch + a filler in the curl, voxel
+  remeshed and smoothed, no seams or pinch), with fur clumps in the geometry (so the normal map shows
+  fur, not skin), matte fur (rough, low specular, a combed-fur bump), frayed soft stripe edges, bands
+  arcing round the thigh, and a thick bushy tail with a rounded tip tucked in under the haunch. The
+  front half (head, paws, bib) is unchanged. **Emergency lighting** is
   dim red. **Scorch marks** stay where fires burned. The end screen has a **mission report**
   (fires, breaches, repairs, medic of the day, cat pets).
 
@@ -509,8 +515,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   around an arcing feed line).
 - **Tape job:** a quick click with the repair kit on a broken part (instead of holding): drag along
   three cracks. Faster, but taped parts are the first to break at the next big hit.
-- **Crank:** reloading now takes 3 s on its own; cranking the wheel next to RELOAD (or holding R)
-  brings it down to ~1 s. Hurt: slower.
+- **Crank (removed later):** reloading takes 3 s; the crank wheel and holding R used to speed it up. Removed
+  ("Just R to reload, and if you want to reload faster there is an upgrade in the weapon specialist track"):
+  R (or RELOAD) only, and a weapons specialist in the seat reloads 50% faster (2 s).
 - **Held shields:** keep holding the shield button for +2 s (1 more energy). Shields grow by age now.
 - **Jump handle** (rule `handle`): when the drive spools up, someone holds the handle at the helm
   for 6 s (two people: faster); letting go resets it. The jump window doubles.
@@ -1406,18 +1413,24 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   resolution (`MAP_SCALE_GROUPS`, per page `mapScale: 1` in sprites.json; +0.25 MB): all small floor clutter (nuts,
   tape, magazine, papers) was losing its shading to half-size maps. The game samples maps by uv, so no JS change.
 
-### 9r. Reactor → lever → three branches (request: "it's not readable how the energy flows because the energy lever is totally removed from the reactor. you should have the reactor have a cable going into the lever, then from there the three sections branch off"; then: "the lever position for mid is where the reactor goes in ... the mid-lever position is exactly where the mid cable comes out ... the yellow lines should connect", "make sure the wires don't cross", "highlight the direction the energy goes next a little more than the inactive lines")
+### 9r. Reactor → lever → three branches (request: "it's not readable how the energy flows because the energy lever is totally removed from the reactor. you should have the reactor have a cable going into the lever, then from there the three sections branch off"; then: "the lever position for mid is where the reactor goes in ... the mid-lever position is exactly where the mid cable comes out ... the yellow lines should connect", "make sure the wires don't cross", "highlight the direction the energy goes next a little more than the inactive lines", then: "put the mid section's accumulator next to the cat ... the mid section's cable can come out of the top of the lever, the right from the right, and the left out of the left. The reactor cable can come in from NNW")
 - Topology (`POWER_ROUTES`, js/systems.js): a **trunk** (`id 'trunk'`, cap -1) runs from a plug on the reactor's front
-  face (22.2, 20.6) straight down into the top of the lever's dial. From the lever, one branch per output, each out of
-  a gland on the dial's rim: `feed0` (LEFT) to the left capacitor, `feed1` (MID) to the middle one (bottom right),
-  `feed2` (RIGHT) up-right to the right airlock's. The old plugs on the reactor's sides are gone.
-- **Lever positions = glands.** `LEVER_ANGLES` = LEFT 165°, MID 15°, RIGHT -35° (game angles, y down): the handle
-  points exactly at the gland its branch leaves by (`leverPort(leverAngle(i))`); the trunk comes in at -90° (top),
-  and the handle swings round the bottom (decreasing angle LEFT → MID → RIGHT, back the same way), so it never points
-  at or passes the trunk. The dial was re-rendered (tools/blender/models/systems/lever.py, `systems` group repacked):
-  lamps and track on the new angles, 21 handle frames 10° apart (`LEVER_HANDLE_STEP`, `LEVER_HANDLE_FRAMES`; each
-  position has its own frame), the wrench beside the new positions. The LEFT / MID / RIGHT billboards sit just past
-  their glands, AUTO / MANUAL over the top.
+  face (21.5, 20.6) down into the lever's dial from the NNW (-125°). From the lever, one branch per output, each out of a
+  gland on the dial's rim: `feed0` (LEFT) out of the west side to the left capacitor, `feed1` (MID) out of the top, right
+  along under the reactor and up past its right side to the middle capacitor, `feed2` (RIGHT) out of the east side over
+  to the right airlock's capacitor.
+- **The middle capacitor moved** from the bottom right corner to the reactor room's back wall next to the cat
+  (`CAPACITORS[1]` 27.0, 15.65; everything else reads its position). Its lines are visible all the way: the front
+  shield's straight along the back wall to the button's plug, the front cannon's a short hop into a riser right
+  beside the cabinet (up through the spine; out of the same box on the upper deck as before). Only that deck change is
+  hidden. The bottom right corner is empty now.
+- **Lever positions = glands.** `LEVER_ANGLES` = LEFT -180° (west), MID -90° (north), RIGHT 0° (east), game angles
+  with y down: the handle points exactly at the gland its branch leaves by (`leverPort(leverAngle(i))`). It swings over
+  the top, past the trunk's NNW inlet, but no position points at it. The dial was re-rendered
+  (tools/blender/models/systems/lever.py, `systems` group repacked): lamps and track on the new angles, 19 handle frames
+  10° apart (`LEVER_HANDLE_STEP`, `LEVER_HANDLE_FRAMES`, `LEVER_HANDLE_DIR`; each position has its own frame), the
+  wrench beside the positions, the bus inlet at -125°. LEFT / MID / RIGHT billboards sit just past their glands, AUTO /
+  MANUAL in front of the dial.
 - **The lit path.** `lineState(l)`: the trunk and the branch the next energy takes (`nextFeed()` = the patch board's
   choice for the lever's shown output) are `live` (amber, self-lit window, flowing dashes); the other two branches
   are `idle` (dim amber window, no dashes, LEDs off): still cables, clearly not connected. Through the dial: a lit bus
@@ -1432,22 +1445,45 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   patched routes. Bolts remember the output they left by (`b.out`; extra field, old snapshots fine). The lever still
   steps on at once in the game state, but what it shows (`leverShownPos()`: handle, lamp, bus, lit branch) waits until
   the energy has arrived, so the bolt always runs along the lit path the handle points at; then the next path lights.
-- **No crossings.** No two power lines cross or touch anywhere on the ship (tested). With the trunk at the lever's top
-  and MID between LEFT and RIGHT, the middle capacitor's own lines can't climb to the back wall without crossing
-  `feed2`, so they now go into two conduit boxes on the right wall of its corner (below feed2's doorway) and run
-  inside the walls: the shield line comes out of a box on the reactor room's back wall next to the front shield
-  button, the cannon line out on the upper deck as before. The two orange decor cables from the reactor to the engine
-  (`props/cable_engine_l/r`) are gone: every branch had to cross them. The middle capacitor stayed where it is.
+- **No crossings.** No two power lines cross or touch anywhere on the ship (tested). The two orange decor cables from the
+  reactor to the engine (`props/cable_engine_l/r`) are gone: the branches had to cross them.
 - New fitting `power/gland_on/off` (`gland()` in tools/blender/models/power/fittings.py, 8 dirs, REACH 0.22): a steel
   saddle clamped to the dial's foot with a hex cable gland, a ribbed boot and an amber LED; `leverPort(a)` puts one on
-  the rim at angle a. `power` group repacked.
+  the rim at angle a.
 - Surges and splicing unchanged: the feeds keep their ids, capacitors and `linePoint(l, 0.5)` splice spot; the trunk
   never arcs (no capacitor). ?classic draws all of it flat (idle branches in a dim brown, the bus as an amber line).
 - `tests/cables.js`: topology (trunk from the reactor into a lever gland, every feed from a lever gland to its
-  capacitor), the lines over open floor, no two lines anywhere crossing or touching, each lever position exactly at
-  its gland with its own handle frame and the trunk away from all of them and outside the handle's swing, the bolt's
-  way (continuous, through the hub), the 0.9 s arrival also when patched, the lever showing the bolt's output until
-  it arrives, live / idle / off / dead per lever position and patch, surges never on the trunk.
+  capacitor), the lines over open floor, no two lines anywhere crossing or touching, the middle capacitor by the cat
+  with its shield line fully visible and its cannon line hidden only through the riser beside it, each lever position
+  exactly at its gland (W / N / E) with its own handle frame, the trunk NNW and away from all of them, the bolt's way
+  (continuous, through the hub), the 0.9 s arrival also when patched, the lever showing the bolt's output until it
+  arrives, live / idle / off / dead per lever position and patch, surges never on the trunk.
+
+### 9s. The stern wall reads as a wall, and the helmet lamp stays inside (playtest: "the wall in front of the engine looks like it is a floor", "you can light it up with your helmet light which is just wrong because it should be on the outside")
+- In front of the engine housing there was no wall at all: the walls are built from the room rects, and the
+  housing's footprint (19.4..25.0 x 23.9..25.5) isn't one, so the hull's flat deck plating showed there. Now
+  `ENGINE_BAY` (js/sprites.js) counts as room for the walls: the stern's near wall runs unbroken from 13.6 to 30.8
+  and the wall stubs that hid under the housing are gone. The low near wall (`ship/wall_h_low`, walls.py) is
+  re-rendered: a near-black cut top (a section, not plating), a bright steel coping along its inner edge where
+  it meets the floor, a thin lip on the outer edge, and a dark face with vertical ribs every half unit (all
+  near walls, so the airlock rooms' south walls match).
+- Light through cut-down walls: the near walls are only 0.35 high and the screen-space shadows only know what's
+  drawn, so every light inside (the helmet lamp, ceiling lamps, alarms) lit their tops, their outer faces and
+  the hull outside them (the airlock rooms' too). `GFX.lighting({ walls })` (js/gfx.js `wallVis`) takes vertical
+  planes that block any light below 1.6 when the line from the lit point to the light crosses them;
+  `lightWalls()` (js/lights.js) gives the near walls (0.1 inside the room's edge, so the coping still catches
+  the room's light and the housing stays inside) and the low ends of the up-down walls. Light from outside (a
+  spacewalker's lamp, the engine plume) still lights the hull and stays out of the rooms. ?classic unchanged.
+
+### 9t. Venting blows the boarders out (request: "also damage any hostiles in the room when you manually override the airlock, and make some animation where you can see the air rushing out")
+- `js/hazards.js`: when a room is vented, every boarder inside (intruders and saboteurs in `boarding.invaders`,
+  boarded pirates in `dk.pirates`; not cloaked saboteurs) takes one hit (intruder 3 of 6, saboteur 3 = dead,
+  pirate 2 of 3) and is stunned 2.5 s; `hz.vent.hit` keeps anyone from being hit twice. Then the air drags them
+  to the open outer hatch (2.2 units/s for 3 s, then half; walls and clutter still stop them); reaching it
+  blows them out into space, a kill (through `hurtInvader` / `hurtPirate`, so objectives count it).
+- `drawVentRush(t)`: drawing only, from the synced `hz.vent`: air streaks, tumbling papers / nuts / cans,
+  a mist plume out of the hatch, a sheen over the room, strongest at first and easing off over the 10 s.
+  ?classic draws lines and puffs. `sfx.whoosh()` at the start. Tests in tests/hazards.js.
 
 ## Balance
 

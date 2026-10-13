@@ -270,7 +270,6 @@ function updatePlayer(dt) {
     player.cover = clamp(player.cover + (covering ? dt : -dt) * COVER_SPEED, 0, 1);
     // reload: R (the on-screen RELOAD button is handled by the browser and sent as a command)
     if (!block && pressed.has('KeyR') && tutAllows('reload')) reloadCannon(g);
-    if (!block && held('KeyR') && g.reload > 0 && tutAllows('reload')) g.reload = Math.max(0.01, g.reload - dt * RELOAD_HOLD_RATE * (player.health === 'hurt' ? 0.6 : 1));
     if (!mouse.down) player.gunReady = true;            // the click that got you in doesn't fire: let go first
     if (!block && player.cover < 0.3 && tutAllows('fire') && ((mouse.down && !mouse.suppress && player.gunReady) || held('Space'))) fireCannon(g);
     // the gunner always sits opposite the barrel
@@ -812,6 +811,7 @@ function render(t) {
   drawDockActors(t);
   if (!G) drawLights(1 / 60);
   drawVacuumTint();
+  drawVentRush(t);                                   // a room being vented: air, papers and mist rushing out (js/hazards.js)
   drawDockDarkness();
   drawCombatFront(t);
   if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
@@ -900,7 +900,6 @@ function drawCannonHUD(g) {
   if (g.reload) { rr(b.x + 3, b.y + 3, (b.w - 6) * (1 - g.reload / RELOAD_TIME), b.h - 6, 6); ctx.fillStyle = '#5fd6a0'; ctx.fill(); }
   ctx.fillStyle = '#fff'; ctx.font = '800 14px system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillText(g.reload ? 'RELOADING…' : 'RELOAD · 1 energy', b.x + b.w / 2, b.y + b.h / 2); ctx.textAlign = 'left';
-  drawCrank(g);
   const c = climbBtn(), ch = inClimbBtn(mouse.x, mouse.y);                       // climb back down
   rr(c.x, c.y, c.w, c.h, 8); ctx.fillStyle = ch ? '#4a515e' : '#2b303a'; ctx.fill(); stroke(2, '#6b7486');
   ctx.fillStyle = '#e8ecf4'; ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

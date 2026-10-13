@@ -4,7 +4,8 @@
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
   'clickTarget', 'inv', 'fires', 'SYSTEMS', 'igniteSystem', 'spray', 'startVent', 'pressShield', 'combat', 'surgeColumn', 'LINE', 'linePoint',
-  'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENT_PANELS', 'CAP_MAX'];
+  'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENT_PANELS', 'CAP_MAX',
+  'boarding', 'spawnInvader', 'spawnSaboteur', 'dk', 'HATCHES', 'roomAt'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -121,6 +122,34 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const G = fresh({}); const me = G.me; const [px, py] = G.VENT_PANELS.starLock; me.x = px - 0.9; me.y = py;
   const t = G.withCrew(me, () => G.clickTarget(px, py));
   check(t && !t.ok, 'without a plasma fire the vent panel does nothing');
+}
+// --- venting with hostiles aboard: they take a hit, get dragged to the hatch and blown out; kills count
+{
+  const G = fresh({}); const me = G.me; me.x = 22; me.y = 9;          // the operator is on the bridge
+  const put = (spawn, side, x, y) => { G[spawn](side); const a = G.boarding.invaders[G.boarding.invaders.length - 1]; Object.assign(a, { mode: 'inside', state: 'wander', x, y }); return a; };
+  const far = put('spawnInvader', 'port', 10, 21);                    // in the left airlock room, far from the hatch
+  const near = put('spawnInvader', 'port', 2.6, 19.2);                // right next to the outer hatch
+  const sab = put('spawnSaboteur', 'port', 8, 20);
+  const other = put('spawnInvader', 'star', 37, 19.6);                // in the other airlock room
+  const pirate = { uid: 9001, x: 3, y: 20.5, face: 0, walk: 0, hp: 3, carry: 'drill', state: 'steal', cd: 5, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 };
+  const pirate2 = { ...pirate, uid: 9002, x: 22, y: 16.6, carry: null, route: [] };     // in the reactor room
+  G.dk.pirates.push(pirate, pirate2);
+  G.mission.kills = 0;
+  G.startVent('portLock');
+  check(far.hp === 3 && far.stun > 0 && near.hp === 3, `the vent hits every intruder in the room hard and stuns it (hp ${far.hp}/${near.hp} of 6)`);
+  check(sab.dead && G.mission.kills === 1, 'a saboteur in the room goes down at once, and it counts as a kill');
+  check(pirate.hp === 1 && pirate2.hp === 3, 'a pirate in the room takes a hit, one in another room doesn\'t');
+  check(other.hp === 6 && !other.stun, 'an intruder in the other airlock room is untouched');
+  check(G.HATCHES.find(h => h.side === 'port').open === 1, 'both doors of the outer airlock stand open');
+  const x0 = far.x;
+  tickN(G, 60 * 3);
+  check(near.dead && pirate.dead, 'the ones near the hatch get dragged to it and blown out into space');
+  check(G.mission.kills === 2 && G.dk.defeated === 1, `those count: kills ${G.mission.kills}, pirates defeated ${G.dk.defeated}`);
+  check(G.ITEMS.some(it => it.kind === 'drill'), 'the pirate drops what it was carrying');
+  check(far.x < x0 - 1, `the far one gets pulled towards the hatch (x ${x0} → ${far.x.toFixed(1)})`);
+  check(other.hp === 6, 'the intruder in the other room is still untouched');
+  const hpNow = far.hp; tickN(G, 60);
+  check(far.dead || far.hp === hpNow, 'one hit per vent: no damage every tick');
 }
 // --- surges
 {

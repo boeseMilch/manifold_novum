@@ -34,7 +34,7 @@ const A = {
   HIT_RATE: 0.6,          // cannon shots that hit the weak spot you aimed at (--hit)
   HULL_SHARE: 0.5,        // of the misses, the share that still hits the enemy hull (D.wear hull hits break a weak spot)
   AIM_TIME: 1.2,          // s per cannon shot at a swaying target (the cannon itself allows one per CANNON_COOLDOWN)
-  CRANK_RELOAD: 1.5,      // s per cannon reload when the gunner cranks / holds R (RELOAD_TIME on its own)
+  RELOAD: 3,              // s per cannon reload (RELOAD_TIME; nothing speeds it up but the weapons specialist)
   CLIMB: 1.0,             // s to climb into a cannon and get the aim on target
   REACT: 4,               // s from an event nobody saw coming to someone heading off (sidebar, ???? plate, shouting);
                           // an event the radar has shown (scan within RADAR_RANGE before it): they set off early and are there when it starts
@@ -194,7 +194,7 @@ function shotsFor(pois, wear) {                   // expected shots to knock out
   const p = A.HIT_RATE, viaHull = (1 - p) * A.HULL_SHARE / (wear || 99);
   return pois / (p + viaHull);
 }
-const fightTime = (shots, g) => shots * A.AIM_TIME + Math.max(0, Math.ceil(shots / g.SHOTS_PER_ENERGY) - 1) * A.CRANK_RELOAD;
+const fightTime = (shots, g) => shots * A.AIM_TIME + Math.max(0, Math.ceil(shots / g.SHOTS_PER_ENERGY) - 1) * A.RELOAD;
 const rate = (kind) => { const c = calibrate(kind); return { small: c.smallRate, large: c.largeRate, from: c.first.small ?? 3 }; };
 
 function jobsFor(ev, ctx) {
@@ -540,7 +540,7 @@ function objectiveMet(o, got) {
 // ===========================================================================
 // One sandbox, reset for every run: the real reactor (reactorSpeed with the mission's pace and crew, fuel
 // cells, refuelling, scrams), the real lever (auto stepping, pinned with the wrench), the real capacitors
-// (CAP_MAX, upgrades), the real cannons (shots per energy, reloadCannon, cranking) and shields
+// (CAP_MAX, upgrades), the real cannons (shots per energy, reloadCannon) and shields
 // (pressShield: its capacitor, up time, cooldown), barnacles draining (updateEva) and the ion storm
 // arcing (updateEncounters). The crew's plan drives it: when which cannon fires, which shield goes up,
 // when the jump wants MID. Mode 'real': the lever is re-routed by someone walking over (a trip each
@@ -627,12 +627,12 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
       const f = fights.find(q => q.gun === id && q.left > 0 && q.t0 <= t);
       if (!f || t < f.next) continue;
       const g = gun(id), cap = CAPI[id];
-      if (g.reload > 0) continue;                                    // reloading (cranked)
+      if (g.reload > 0) continue;                                    // reloading
       if (g.shots > 0) {
         if (f.waitFrom !== null) { f.waited += t - f.waitFrom; waits.push({ key: f.key, side: id, t: f.waitFrom, wait: t - f.waitFrom }); f.waitFrom = null; }
         if (g.cd > 0) continue;
         G.fireCannon(g); f.left--; f.next = t + f.span / f.shots;
-      } else if (!(cap === 1 && Number.isFinite(jump.t) && !jump.done && t >= jump.t - prepFor && G.CAPACITORS[1].charge <= 1) && G.reloadCannon(g)) { used[cap]++; g.reload = Math.min(g.reload, A.CRANK_RELOAD); }   // (the last energy in MID is kept for the jump)
+      } else if (!(cap === 1 && Number.isFinite(jump.t) && !jump.done && t >= jump.t - prepFor && G.CAPACITORS[1].charge <= 1) && G.reloadCannon(g)) { used[cap]++; g.reload = Math.min(g.reload, A.RELOAD); }   // (the last energy in MID is kept for the jump)
       else if (f.waitFrom === null) f.waitFrom = t;                    // no energy at its capacitor: the fight waits
     }
     for (const s of shields) {

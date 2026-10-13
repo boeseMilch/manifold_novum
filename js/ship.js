@@ -56,7 +56,7 @@ const DECK_LOCKS = COLS.map((C0, col) => {
 let CAP_MAX = 3;                                   // (ship upgrades can raise it; see progress.js)
 const CAPACITORS = [
   { room: 'portLock', x: 6.6, y: 22.6, charge: 1 },
-  { room: 'reactor', x: 27.0, y: 24.9, charge: 1 },
+  { room: 'reactor', x: 27.0, y: 15.65, charge: 1 },   // against the back wall, next to the cat (its lines: js/systems.js POWER_ROUTES)
   { room: 'starLock', x: 37.6, y: 23.0, charge: 1 },
 ];
 

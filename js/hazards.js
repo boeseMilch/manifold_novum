@@ -154,18 +154,57 @@ const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.
 const fireIn = (roomId) => fires.some(f => f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));   // any fire: venting works on normal fires too
 // operator: whoever typed the override code — their visor is already down, so they're not hurt.
 // Everyone else in the room takes one hit the moment it opens (the vacuum afterwards only slows you).
+// Hostiles in there (boarders, the saboteur, pirates) take one solid hit each and are stunned (VENT_HIT:
+// the alien loses half its health, a saboteur goes down), then the rushing air drags them towards the
+// open outer airlock: whoever reaches it is blown out into space (a kill, counted like any other).
+const VENT_HIT = { alien: 3, saboteur: 3, pirate: 2 }, VENT_STUN = 2.5, VENT_PULL = 2.2, VENT_OUT = 0.6;
+const ventHatch = (roomId) => HATCHES.find(h => h.side === (roomId === 'portLock' ? 'port' : 'star'));
+function ventFoes(room) {
+  return [
+    ...boarding.invaders.filter(a => !a.dead && a.mode === 'inside' && roomAt(a.x, a.y) === room)
+      .map(a => ({ o: a, dmg: VENT_HIT[a.kind] ?? 3, hurt: (d, s) => hurtInvader(a, d, s), ok: (x, y) => canStand(x, y, walkRects()), name: a.kind === 'saboteur' ? 'The saboteur' : 'The intruder' })),
+    ...dk.pirates.filter(p => !p.dead && roomAt(p.x, p.y) === room)
+      .map(p => ({ o: p, dmg: VENT_HIT.pirate, hurt: (d, s) => hurtPirate(p, d, s), ok: pirateOk, name: 'A pirate' })),
+  ];
+}
+// One hit each for hostiles in the vented room (the first time they're caught in it), then the pull.
+function ventHostiles(dt) {
+  const v = hz.vent, room = roomById(v.room), h = ventHatch(v.room);
+  if (!h) return;
+  const pull = VENT_PULL * ((VENT_TIME - v.t) < 3 ? 1 : 0.5);
+  for (const f of ventFoes(room)) {
+    const a = f.o;
+    if (!v.hit.includes(a.uid)) { v.hit.push(a.uid); f.hurt(f.dmg, VENT_STUN); if (a.dead) continue; }
+    const dx = h.inside[0] - a.x, dy = h.inside[1] - a.y, d = Math.hypot(dx, dy);
+    if (d < VENT_OUT) {                                // at the open hatch: out it goes
+      combatBanner(`${f.name} got blown out of the airlock!`);
+      for (let i = 0; i < 12; i++) combatFx(h.x, h.y, h.dir * (2 + Math.random() * 4), (Math.random() - 0.5) * 3, 0.8, '#dfe8f0', 0.15);
+      f.hurt(a.hp, 0);
+      continue;
+    }
+    if (dt <= 0) continue;
+    const sp = Math.min(d, pull * dt), nx = a.x + dx / d * sp, ny = a.y + dy / d * sp;
+    if (f.ok(nx, a.y)) a.x = nx;
+    if (f.ok(a.x, ny)) a.y = ny;
+  }
+}
 function startVent(roomId, operator = null) {
-  hz.vent = { room: roomId, t: VENT_TIME };
+  hz.vent = { room: roomId, t: VENT_TIME, hit: [] };
   const room = roomById(roomId);
   combatBanner(`${room.name} vented to space — everything in there gets blown around!`);
-  sfx.explosion(); sfx.hatch(); sfx.say?.(`Venting ${room.name}.`);
+  sfx.explosion(); sfx.hatch(); sfx.whoosh?.(); sfx.say?.(`Venting ${room.name}.`);
   for (const c of crew) if (c !== operator && c.mode === 'inside' && roomAt(c.x, c.y) === room) { hurtCrew(c); combatFx(c.x, c.y, 0, -3, 0.6, '#c9ced8', 0.2); }
   for (const f of fires) if (sysRooms(f.sys).includes(room)) { f.hp = 0; scorch(f.x, f.y); }
+  ventHostiles(0);
+  const h = ventHatch(roomId); if (h) h.open = 1;
 }
 function updateVent(dt) {
   if (!hz.vent) return;
   const room = roomById(hz.vent.room), [vx, vy] = VENT_PANELS[hz.vent.room] || roomCenter(room);
+  hz.vent.hit ||= [];
   if (Math.random() < dt * 20) combatFx(vx + (Math.random() - 0.5), vy + (Math.random() - 0.5), (Math.random() - 0.5) * 2, -2 - Math.random() * 3, 0.7, '#dfe8f0', 0.2);
+  const h = ventHatch(hz.vent.room); if (h) h.open = 1;  // both doors of the outer airlock stand open
+  ventHostiles(dt);
   if ((hz.vent.t -= dt) <= 0) { hz.vent = null; hz.repress = { room: room.id, t: REPRESS_TIME }; combatBanner(`${room.name}: vent closed, repressurizing`); }
 }
 
@@ -258,7 +297,7 @@ function hazardClickTarget(mx, my) {
     if (!near(x, y)) return { text: 'Airlock vent panel — get closer', ok: false, x, y, r: 0.5 };
     if (!fireIn(id)) return { text: 'Airlock vent panel (only when this room is on fire)', ok: false, x, y, r: 0.5 };
     if (hz.vent) return { text: 'The room is already being vented', ok: false, x, y, r: 0.5 };
-    return { text: 'Click: type the override code to open BOTH airlock doors and vent the fire — everyone else still inside gets hurt (your visor goes down)', ok: true, x, y, r: 0.5,
+    return { text: 'Click: type the override code to open BOTH airlock doors and vent the fire — everyone else still inside gets hurt, boarders get blown about (your visor goes down)', ok: true, x, y, r: 0.5,
              run: () => openPinPad(id) };
   }
   // snack machine: free, one snack per minute each, and only worth it when you're hurt (ends it 10 s sooner)
@@ -384,6 +423,95 @@ function drawAirStreaks(x, y, t) {
     ctx.strokeStyle = `rgba(220,235,250,${0.5 * k})`; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + (x - px) * 0.15, py + (y - py) * 0.15); ctx.stroke();
   }
+}
+// A room being vented (hz.vent, from the snapshot, so every client sees the same): drawn only, never
+// simulated. Air streaks race across the room into the open outer airlock, papers and nuts tumble along
+// and out through the hatch, and a burst of mist blows out into space; strongest in the first seconds.
+// Each particle is a pure function of the time (its own lane, speed and phase; a fresh start spot every
+// loop), so it costs nothing to keep. Sprites: dyn/vent_air (a soft white dot, stretched into streaks
+// and blown up into mist), dyn/vent_paper, fx/junk_bolt / _shard / _can; ?classic draws it all in 2D.
+let VENT_SPR = null;
+function ventSprites() {
+  if (VENT_SPR || !GFX.on) return VENT_SPR;
+  const A = GFX.canvasSprite('vent_air', 32, 32, { ppu: 320 }), P = GFX.canvasSprite('vent_paper', 20, 26, { ppu: 160 });
+  if (!A || !P) return null;
+  const gr = A.ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(225,238,255,0.8)'); gr.addColorStop(1, 'rgba(210,228,255,0)');
+  A.ctx.fillStyle = gr; A.ctx.fillRect(0, 0, 32, 32); A.commit();
+  const g = P.ctx; g.fillStyle = '#f2f0e8'; g.fillRect(1, 1, 18, 24); g.fillStyle = '#9aa6b8';
+  for (let i = 0; i < 5; i++) g.fillRect(4, 5 + i * 4, i === 4 ? 7 : 12, 1.5);   // a few lines of text
+  P.commit();
+  return (VENT_SPR = { air: A.name, paper: P.name });
+}
+const VENT_JUNK = ['paper', 'bolt', 'paper', 'shard', 'paper', 'can', 'bolt', 'paper'];
+function drawVentRush(t) {
+  const v = hz.vent, room = v && roomById(v.room), h = v && ventHatch(v.room);
+  if (!room || !h) return;
+  const q = room.rects[0], e = VENT_TIME - v.t;
+  const I = clamp(0.3 + 0.5 * v.t / VENT_TIME + 0.9 * Math.exp(-e / 1.6), 0, 1.4) * clamp(e * 4, 0, 1) * clamp(v.t * 2, 0, 1);
+  const ex = h.x + h.dir * 0.15, ey = h.y;                        // the open hatch: where everything goes
+  const S = GFX.on ? ventSprites() : null, junkOk = S && GFX.ready('fx/junk_bolt');
+  const at = (r) => [q.x + 0.5 + r() * (q.w - 1), q.y + 0.4 + r() * (q.h - 0.8)];
+  const path = (sx, sy, k, bend) => {                              // from (sx, sy) to the hatch, speeding up, a slight curve
+    const u = k ** 1.7, side = Math.sin(Math.PI * u) * bend;
+    const dx = ex - sx, dy = ey - sy;
+    return [sx + dx * u - dy * side * 0.15, sy + dy * u + dx * side * 0.15];
+  };
+  ctx.save(); ctx.lineCap = 'round';
+  // streaks of air
+  const nS = Math.round(34 * Math.min(1, I));
+  for (let i = 0; i < nS; i++) {
+    const sp = 0.8 + (i * 0.37 % 1) * 0.9, c = t * sp + i * 0.618, k = c % 1, r = rng(i * 7919 + Math.floor(c) * 104729 + (v.room.length << 3));
+    const [sx, sy] = at(r), bend = (r() - 0.5) * 2;
+    const [x0, y0] = path(sx, sy, Math.max(0, k - 0.12), bend), [x1, y1] = path(sx, sy, k, bend);
+    const a = Math.sin(Math.PI * k) * 0.8 * Math.min(1, I), len = Math.hypot(x1 - x0, y1 - y0);
+    if (S) {
+      const ang = Math.atan2((y1 - y0) * GFX.SIN, x1 - x0);
+      GFX.sprite(S.air, 0, (x0 + x1) / 2, (y0 + y1) / 2, 0.25 + r() * 0.5, { sortY: y1 + 0.3, depthWrite: false, unlit: true, scale: 1.1, sx: Math.max(1, len / 0.11), rot: ang, alpha: a });
+    } else {
+      ctx.strokeStyle = `rgba(225,238,252,${a})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(L(x0), L(y0)); ctx.lineTo(L(x1), L(y1)); ctx.stroke();
+    }
+  }
+  // papers, nuts and bits, tumbling along and out of the hatch into space
+  const nJ = Math.round(10 * Math.min(1, I));
+  for (let i = 0; i < nJ; i++) {
+    const sp = 0.35 + (i * 0.53 % 1) * 0.3, c = t * sp + i * 0.381, k = c % 1, r = rng(i * 6007 + Math.floor(c) * 15485863 + 11);
+    const [sx, sy] = at(r), bend = (r() - 0.5) * 2, kind = VENT_JUNK[i % VENT_JUNK.length], spin = (r() < 0.5 ? -1 : 1) * (4 + r() * 6);
+    let x, y;
+    if (k < 0.8) [x, y] = path(sx, sy, k / 0.8, bend);
+    else { const o = (k - 0.8) / 0.2; x = ex + h.dir * o * 4; y = ey + (r() - 0.5) * o * 2.5; }
+    const z = 0.15 + 0.5 * Math.abs(Math.sin(t * 3 + i)) * (1 - k), a = Math.min(1, k * 8) * (k > 0.8 ? 1 - (k - 0.8) / 0.2 : 1);
+    if (S && (kind === 'paper' || junkOk)) {
+      const o = k < 0.8 ? { sortY: y + 0.2, depthWrite: false } : { layer: 'top' };
+      if (kind === 'paper') GFX.sprite(S.paper, 0, x, y, z, { ...o, unlit: true, scale: 1.7, rot: t * spin, sx: 0.4 + 0.6 * Math.abs(Math.cos(t * spin * 0.7)), alpha: a * 0.95 });
+      else GFX.sprite(`fx/junk_${kind}`, Math.floor(t * spin * 2.4) & 7, x, y, z, { ...o, scale: 1.1, alpha: a });
+      continue;
+    }
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(L(x), L(y - GFX.lift(z))); ctx.rotate(t * spin);
+    if (kind === 'paper') { ctx.scale(0.4 + 0.6 * Math.abs(Math.cos(t * spin * 0.7)), 1); ctx.fillStyle = '#f2f0e8'; ctx.fillRect(-4, -5, 8, 10); ctx.fillStyle = '#9aa6b8'; ctx.fillRect(-2.5, -3, 5, 1); ctx.fillRect(-2.5, 0, 5, 1); }
+    else { ctx.fillStyle = kind === 'can' ? '#b8402e' : '#8a93a5'; ctx.fillRect(-2.5, -2.5, 5, 5); ctx.strokeStyle = '#2b303a'; ctx.lineWidth = 1; ctx.strokeRect(-2.5, -2.5, 5, 5); }
+    ctx.restore();
+  }
+  // mist bursting out of the hatch into space
+  const nM = Math.round(12 * Math.min(1, I));
+  for (let i = 0; i < nM; i++) {
+    const sp = 0.9 + (i * 0.29 % 1) * 0.6, c = t * sp + i * 0.4142, k = c % 1, r = rng(i * 3571 + Math.floor(c) * 7727 + 5);
+    const x = h.x + h.dir * (0.2 + k * (2.5 + r() * 2.5)), y = h.y + (r() - 0.5) * k * 3.2, R = 0.25 + k * (0.8 + r() * 0.8);
+    const a = (1 - k) * Math.min(1, k * 6) * 0.5 * Math.min(1.2, I);
+    if (S) { GFX.sprite(S.air, 0, x, y, 0.4, { layer: 'top', unlit: true, scale: R / 0.05, alpha: a * 0.6 }); continue; }
+    const X = L(x), Y = L(y), g = ctx.createRadialGradient(X, Y, 0, X, Y, L(R));
+    g.addColorStop(0, `rgba(228,238,250,${a})`); g.addColorStop(1, 'rgba(228,238,250,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Y, L(R), 0, TAU); ctx.fill();
+  }
+  // the whoosh: a pale sheen sweeping over the room towards the hatch (first seconds only)
+  const w = clamp(1 - e / 2.5, 0, 1);
+  if (w > 0) {
+    const X0 = L(q.x), X1 = L(q.x + q.w), up = GFX.lift(1.6), g = ctx.createLinearGradient(h.dir < 0 ? X1 : X0, 0, L(ex), 0), m = (e * 1.3) % 1;
+    g.addColorStop(0, 'rgba(220,235,255,0)'); g.addColorStop(clamp(m, 0.01, 0.98), `rgba(220,235,255,${0.16 * w})`); g.addColorStop(1, 'rgba(220,235,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(X0, L(q.y - up), X1 - X0, L(q.h + up));
+  }
+  ctx.restore();
 }
 function drawBreachesOutside(t) {                      // on the hull: the hole, a loose plate, or the nailed-on patch
   for (const p of hz.patches || []) if (!breachAt(p.room)) drawPatch(...holeAt(p.room), p.seed, true);

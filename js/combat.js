@@ -98,7 +98,7 @@ function combatClear() {
 // ---------------------------------------------------------------------------
 // A cannon holds SHOTS_PER_ENERGY shots. When it's empty it just clicks; reloading (R or the
 // RELOAD button) takes one energy from the cannon's capacitor and refills it after a moment.
-const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 3;   // on its own; cranking (or holding R) is much faster
+const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 3;   // s per reload (a weapons specialist gunner: 50% faster)
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
   if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`No energy for the ${g.name.toLowerCase()} (its capacitor is empty)`); return false; }
@@ -227,7 +227,8 @@ function pressShield(side) {
 function updateCombat(dt) {
   for (const g of GUNS) {
     g.cd = Math.max(0, (g.cd || 0) - dt); g.flash = Math.max(0, g.flash - dt * 6);
-    if (g.reload > 0 && (g.reload -= dt) <= 0) { g.reload = 0; g.shots = SHOTS_PER_ENERGY; sfx.clank(); }
+    const fast = crew.some(c => c.mode === 'gun' && c.gun === g && perk(c, 'weapons')) ? 1.5 : 1;   // (the weapons specialist's perk)
+    if (g.reload > 0 && (g.reload -= dt * fast) <= 0) { g.reload = 0; g.shots = SHOTS_PER_ENERGY; sfx.clank(); }
   }
   for (const side in combat.shields) {             // its emitter got knocked out: the shield collapses (and recharges as usual)
     const s = combat.shields[side];

@@ -51,7 +51,6 @@ const PRACTICE = [
   ['Stations', 'Radar scan', () => radarScan()],
   ['Stations', 'Helm diagnosis', () => openDiagnosis()],
   ['Mini-games', 'Patch board (arcs the left feed line)', () => { if (!surging('feed0')) hz.surges.push('feed0'); openPatch(); }],
-  ['Mini-games', 'Crank a reload (front cannon, empty)', () => { const g = GUNS.find(g => g.id === 'front'); g.shots = 0; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); player.mode = 'gun'; player.gun = g; reloadCannon(g); }],
   ['Mini-games', 'Jump handle (spool the drive now)', () => { mission.rules.handle = true; mission.jumpAt = mission.t; mission.coilsChecked = true; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); }],
   ['Mini-games', 'Get hurt (try treating, snacks, coffee)', () => hurtCrew(player)],
   // rules

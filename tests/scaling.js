@@ -128,14 +128,14 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   const plan = { fights: [{ key: 'a', gun: 'port', t0: 30, shots: 15, span: 14 }], shields: [{ t: 50, side: 'star', key: 'b' }], jumpAt: 100, window: 15, end: 102, scrams: [], drains: [], storms: [] };
   b.energy = { ...b.energy, cells: 4 };
   const sim = B.energySim(b, plan, 'auto');
-  // the same by hand: simTick, the left cannon fired / reloaded (cranked) as planned, the lever left alone
+  // the same by hand: simTick, the left cannon fired / reloaded as planned, the lever left alone
   const G = loadGame(['simTick', 'GUNS', 'fireCannon', 'reloadCannon', 'pressShield', 'power', 'CAPACITORS', 'mission', 'useEnergy', 'me']);
   G.mission.active = false; Object.assign(G.me, { x: 22.2, y: 16.6 });
   const g = G.GUNS.find(x => x.id === 'port'); let left = 15, next = 30, waitFrom = null, shield = null, jump = null; const waits = [];
   for (let t = 0; t <= 115; t += 0.1) {
     if (t >= 30 && left > 0 && t >= next && !(g.reload > 0)) {
       if (g.shots > 0) { if (waitFrom !== null) { waits.push([waitFrom, t - waitFrom]); waitFrom = null; } if (!(g.cd > 0)) { G.fireCannon(g); left--; next = t + 14 / 15; } }
-      else if (G.reloadCannon(g)) g.reload = Math.min(g.reload, B.A.CRANK_RELOAD);
+      else if (G.reloadCannon(g)) g.reload = Math.min(g.reload, B.A.RELOAD);
       else if (waitFrom === null) waitFrom = t;
     }
     if (shield === null && t >= 50 && G.pressShield('star') === true) shield = t;

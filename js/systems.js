@@ -6,13 +6,14 @@ const CELL_ENERGY = 5, ENERGY_TIME = 20, REPAIR_TIME = 5;
 let SHOTS_PER_ENERGY = 3;                              // (ship upgrades: see progress.js)
 // Power lever: its position is the capacitor index it feeds (port, middle, starboard). Auto mode steps
 // on and wraps: mid → stbd → port → mid. Each position points exactly at the gland its branch leaves the
-// dial by (POWER_ROUTES): LEFT left (a little down), MID down-right, RIGHT up-right; the trunk from the
-// reactor comes in at the top, where no position points (the handle swings round the bottom).
+// dial by (POWER_ROUTES): LEFT out of the left side, MID out of the top (up to the middle capacitor by the
+// cat), RIGHT out of the right side; the trunk from the reactor comes in from the NNW, between LEFT and MID.
 const LEVER_NAMES = ['LEFT', 'MID', 'RIGHT'];
 const LEVER = { x: 22.2, y: 22.75 }, LEVER_HUB = 0.22;
-const LEVER_ANGLES = [165, 15, -35].map(d => d * Math.PI / 180), LEVER_TRUNK_ANGLE = -Math.PI / 2;
+const LEVER_ANGLES = [-180, -90, 0].map(d => d * Math.PI / 180), LEVER_TRUNK_ANGLE = -125 * Math.PI / 180;
 const leverAngle = (i) => LEVER_ANGLES[i];
-const LEVER_HANDLE_STEP = 10 * Math.PI / 180, LEVER_HANDLE_FRAMES = 21;   // the handle sprite's frames (tools/blender/models/systems/lever.py)
+// the handle sprite's frames (tools/blender/models/systems/lever.py): from LEFT, LEVER_HANDLE_STEP apart towards RIGHT
+const LEVER_HANDLE_STEP = 10 * Math.PI / 180, LEVER_HANDLE_FRAMES = 19, LEVER_HANDLE_DIR = Math.sign(LEVER_ANGLES[2] - LEVER_ANGLES[0]);
 const FUEL_CRATE = { x: 17.4, y: 19.6 };
 const REACH = 1.9;                                // how far you can reach to click things
 const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED = 13;
@@ -116,23 +117,22 @@ const powerFit = (kind, x, y, dir) => ({ kind, x, y, a: COMPASS[dir] * Math.PI }
 const LEVER_DIAL = 0.5;
 const leverPort = (a) => ({ kind: 'gland', x: LEVER.x + Math.cos(a) * LEVER_DIAL, y: LEVER.y + Math.sin(a) * LEVER_DIAL, a });
 const POWER_ROUTES = [
-  // the trunk: out of the reactor's front, straight down into the lever's top (no capacitor: cap -1; it never arcs)
-  { id: 'trunk', cap: -1, feed: true, route: [powerFit('plug', 22.2, 20.6, 'S'), leverPort(LEVER_TRUNK_ANGLE)] },
-  // the lever's three outputs, each out of the gland its position points at: LEFT out to the left (to the left
-  // airlock), MID down-right (to the middle capacitor, bottom right), RIGHT up-right (over to the right airlock)
+  // the trunk: out of the reactor's front, down into the lever from the NNW (no capacitor: cap -1; it never arcs)
+  { id: 'trunk', cap: -1, feed: true, route: [powerFit('plug', 21.5, 20.6, 'S'), leverPort(LEVER_TRUNK_ANGLE)] },
+  // the lever's three outputs, each out of the gland its position points at: LEFT out of the left side (to the
+  // left airlock), MID out of the top and up past the reactor's right side to the middle capacitor (back wall,
+  // by the cat), RIGHT out of the right side (over to the right airlock)
   { id: 'feed0', cap: 0, feed: true, route: [leverPort(leverAngle(0)), [20.9, 22.75], [18.6, 21.5], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.5], powerFit('plug', 7.48, 22.6, 'E')] },
-  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [24.9, 23.1], [25.45, 24.2], powerFit('plug', 26.12, 24.9, 'W')] },
-  { id: 'feed2', cap: 2, feed: true, route: [leverPort(leverAngle(2)), [23.8, 21.6], [27.5, 20.4], [29.6, 19.8], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
+  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [22.3, 21.45], [24.7, 21.25], [25.25, 20.0], [25.25, 16.6], powerFit('plug', 26.12, 15.85, 'W')] },
+  { id: 'feed2', cap: 2, feed: true, route: [leverPort(leverAngle(2)), [25.8, 22.65], [28.9, 20.9], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
   { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, 16.4], powerFit('plug', 6.6, 15.4, 'W')] },
-  // the middle capacitor's two lines go into the right wall of its corner (below feed2's doorway, so they don't
-  // cross it) and climb inside it: the shield line comes out of the reactor room's back wall to the button,
-  // the cannon line out on the upper deck
-  { id: 'shield_front', cap: 1, route: [powerFit('plug', 27.88, 24.7, 'E'), powerFit('box', 30.2, 24.3, 'W'), 'hide',
-                                        powerFit('box', 24.2, 15.0, 'S'), [24.2, 15.9], powerFit('plug', 22.6, 15.4, 'E')] },
+  // the middle capacitor's lines: the front shield's along the back wall to its button, the front cannon's into
+  // a riser right beside the cabinet (up through the spine to the upper deck)
+  { id: 'shield_front', cap: 1, route: [powerFit('plug', 26.12, 15.45, 'W'), powerFit('plug', 22.6, 15.4, 'E')] },
   { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, 16.4], powerFit('plug', 36.8, 15.4, 'W')] },
   { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.4, 21.8], [2.5, 18.6], powerFit('riser', 2.5, 15.0, 'S'), 'hide',
                                     powerFit('box', 2.5, 11.5, 'N'), [2.4, 7.2], [1.6, 5.95], powerFit('box', 0.6, 5.95, 'E')] },
-  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 25.1, 'E'), powerFit('box', 30.2, 25.0, 'W'), 'hide',
+  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 15.65, 'E'), powerFit('riser', 28.9, 15.0, 'S'), 'hide',
                                      powerFit('box', 28.4, 11.5, 'N'), [28.4, 6.0], [27.2, 1.6], [25.6, 0.3], [24.2, -0.9], powerFit('box', 24.2, -2.4, 'S')] },
   { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [41.6, 21.6], [42.6, 18.2], [43.35, 16.4], powerFit('riser', 43.35, 15.0, 'S'), 'hide',
                                     powerFit('box', 42.35, 11.5, 'N'), [42.35, 7.0], [42.8, 5.75], powerFit('box', 43.8, 5.75, 'W')] },
@@ -640,7 +640,7 @@ function drawLights(dt) {
 }
 
 // Sprites: systems/lever_base_p<pos> (or _broken), the lit bus (systems/lever_bus, frame = the branch fed),
-// the handle (21 angles, LEVER_HANDLE_STEP apart from LEFT round the bottom to RIGHT) and the wedged wrench,
+// the handle (LEVER_HANDLE_FRAMES angles, LEVER_HANDLE_STEP apart from LEFT over the top to RIGHT) and the wedged wrench,
 // all with their origin at LEVER; the output names and AUTO / MANUAL stay text on the floor.
 function drawLeverSprite(lv) {
   const base = broken(LEVER) ? 'systems/lever_base_broken' : `systems/lever_base_p${leverShownPos()}`;
@@ -649,7 +649,7 @@ function drawLeverSprite(lv) {
   spr(base, 0, LEVER.x, LEVER.y, 0, { ...o, emissive: 0.5 });
   // the lit bus on the dial (trunk inlet → hub → the gland of the branch the energy takes) while the trunk is live
   if (powerLineLive(LINE.trunk)) spr('systems/lever_bus', nextFeed(), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.305, emissive: 1 });
-  spr('systems/lever_handle', clamp(Math.round((leverAngle(0) - lv.angle) / LEVER_HANDLE_STEP), 0, LEVER_HANDLE_FRAMES - 1), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
+  spr('systems/lever_handle', clamp(Math.round((lv.angle - leverAngle(0)) * LEVER_HANDLE_DIR / LEVER_HANDLE_STEP), 0, LEVER_HANDLE_FRAMES - 1), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
   if (lv.jammed) spr('systems/lever_wrench', lv.pos, LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.32 });
   return true;
 }
@@ -663,13 +663,13 @@ function drawLever(t) {
       const a = leverAngle(i), lx = LEVER.x + Math.cos(a) * 1.05, ly = LEVER.y + Math.sin(a) * 1.05;   // (low, over its own branch, just past the gland)
       worldText(lx, ly, 0.3, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
     }
-    const my = LEVER.y - 0.62;
-    worldText(LEVER.x, my, 1.0, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
+    const my = LEVER.y + 0.6;                       // (in front, the top is where the trunk and MID come in)
+    worldText(LEVER.x, my, 0.5, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
     return;
   }
   shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);
   ctx.beginPath(); ctx.arc(x, y, T * 0.5, 0, TAU); ctx.fillStyle = '#3f4757'; ctx.fill(); stroke(2.5);
-  ctx.beginPath(); ctx.arc(x, y, T * 0.38, leverAngle(2) - 0.25, leverAngle(0) + 0.25);   // the track (round the bottom)
+  ctx.beginPath(); ctx.arc(x, y, T * 0.38, Math.min(...LEVER_ANGLES) - 0.25, Math.max(...LEVER_ANGLES) + 0.25);   // the track (LEFT → MID → RIGHT)
   ctx.strokeStyle = '#262a33'; ctx.lineWidth = 7; ctx.stroke();
   if (powerLineLive(LINE.trunk)) {                 // the lit bus: trunk inlet → hub → the branch the energy takes
     const a = leverAngle(nextFeed()), r = T * 0.47;

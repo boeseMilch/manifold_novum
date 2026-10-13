@@ -2,17 +2,17 @@
 (js/minigames.js PATCH_BOARD, drawMinigameProps).
 
 Lever: a round floor dial (r 0.5, the game's dial) with a track and three output lamps at r 0.38 on
-leverAngle(0..2) (LEFT 165, MID 15, RIGHT -35 degrees: each exactly where that output's cable leaves the dial;
-the track runs round the bottom, the trunk from the reactor comes in at the top, -90), a hub (r LEVER_HUB) and
+leverAngle(0..2) (LEFT -180 = west, MID -90 = north, RIGHT 0 = east: each exactly where that output's cable leaves
+the dial; the track runs over the top, the trunk from the reactor comes in from the NNW, -125), a hub (r LEVER_HUB) and
 a handle. Origin = LEVER (x, y) for every lever sprite, so they stack: base, bus, handle, wrench.
   lever_base_p0..p2      the dial, lamp of the active output (power.lever.pos) lit green
   lever_base_broken      lamps dead, soot, a cracked cover
   lever_bus_f0..f2       the lit conductor on the dial: an amber bus bar from the trunk's inlet (top rim) to
                          the hub and on to the rim at leverAngle(c), c = the branch the energy takes (the
                          patch board's choice for the lever's output). Drawn while the trunk is live.
-  lever_handle_f0..f20   the handle at game angle a_k = leverAngle(0) - k * HANDLE_STEP (10 degrees; k = 0..20
-                         covers LEFT 165 .. RIGHT -35 round the bottom: f0 = LEFT, f15 = MID, f20 = RIGHT).
-                         Pick k = round((leverAngle(0) - power.lever.angle) / HANDLE_STEP): the game lerps the angle.
+  lever_handle_f0..f18   the handle at game angle a_k = leverAngle(0) + k * HANDLE_STEP (10 degrees; k = 0..18
+                         covers LEFT -180 .. RIGHT 0 over the top: f0 = LEFT, f9 = MID, f18 = RIGHT).
+                         Pick k = round((power.lever.angle - leverAngle(0)) / HANDLE_STEP): the game lerps the angle.
   lever_wrench_f0..f2    power.lever.jammed with pos = 0..2: a spanner (yellow grip) standing upright in the
                          track, ring end rammed into the groove at r 0.38, jaw up (~0.55 tall), at
                          leverAngle(pos) + WRENCH_OFF towards the next output (pos 2: back towards MID, the way
@@ -29,8 +29,8 @@ import os, sys, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from syslib import *
 
-LEVER_DEG = (165, 15, -35)                         # js/systems.js LEVER_ANGLES
-TRUNK_DEG = -90
+LEVER_DEG = (-180, -90, 0)                         # js/systems.js LEVER_ANGLES
+TRUNK_DEG = -125
 HANDLE_STEP = math.radians(10)
 def lever_angle(i): return math.radians(LEVER_DEG[i])
 def gdir(a, r):                                    # game angle, radius -> Blender (x, y)
@@ -50,7 +50,8 @@ def lever():
     B(mn.cyl('dial', 0.47, TOP - 0.06, loc=(0, 0, 0.06), m=M['paint'], bevel=0.04, verts=64))
     B(ring('hz', 0.5, 0.05, 0.05, loc=(0, 0, 0.02), m=M['hazard'], verts=64))
     # track: dark groove along the arc of the outputs
-    a0, a1 = lever_angle(0) + 0.25, lever_angle(2) - 0.25   # (round the bottom: decreasing game angle)
+    SG = math.copysign(1, lever_angle(2) - lever_angle(0))   # the way the handle turns from LEFT to RIGHT
+    a0, a1 = lever_angle(0) - SG * 0.25, lever_angle(2) + SG * 0.25
     arc = [(*gdir(a0 + (a1 - a0) * k / 20, 0.38), TOP + 0.005) for k in range(21)]
     B(pipe('track', arc, 0.045, M['hole'], corner=0.0))
     for sg in (-1, 1): B(pipe('rail', [(*gdir(a0 + (a1 - a0) * k / 20, 0.38 + sg * 0.055), TOP + 0.01) for k in range(21)], 0.016, M['steel'], corner=0.0))
@@ -129,10 +130,10 @@ def lever():
         for o in b: o.animation_data_clear(); o.hide_render = True
     # handle frames: rotation keyed per frame, canvas shared over all of them
     only(hp)
-    nf = round((lever_angle(0) - lever_angle(2)) / HANDLE_STEP) + 1
+    nf = round(abs(lever_angle(2) - lever_angle(0)) / HANDLE_STEP) + 1
     frames = list(range(1, nf + 1))
     for k, f in enumerate(frames):
-        s.frame_set(f); hroot.rotation_euler.z = -(lever_angle(0) - k * HANDLE_STEP); hroot.keyframe_insert('rotation_euler', index=2, frame=f)
+        s.frame_set(f); hroot.rotation_euler.z = -(lever_angle(0) + SG * k * HANDLE_STEP); hroot.keyframe_insert('rotation_euler', index=2, frame=f)
     mn.render('systems/lever_handle', objs=hp, frames=frames)
     # wrench frames (jammed at pos 0..2)
     only(wp + [cap])

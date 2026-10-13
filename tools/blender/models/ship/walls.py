@@ -35,6 +35,7 @@ def mats():
         body=pmat('body', '#3a414f', 0.6, 0.3, grime=0.4),
         cap=pmat('cap', '#2b303a', 0.55, 0.4, grime=0.5, grime_scale=3),
         cut=pmat('cut', '#23272f', 0.7, 0.2, grime=0.4, grime_scale=3),
+        section=pmat('section', '#15171c', 0.8, 0.1, grime=0.3, grime_scale=3),
         rim=pmat('rim', '#6a7383', 0.35, 0.8, grime=0.3),
         panel=pmat('panel', '#566070', 0.5, 0.35, grime=0.5, grime_scale=3),
         panel2=pmat('panel2', '#626c7c', 0.45, 0.35, grime=0.4, grime_scale=3),
@@ -78,13 +79,21 @@ def wall_h(H):
     yc = THICK / 2                                                    # body centre (Blender +y = north)
     low = H < 1
     objs.append(mn.box('body', (B - A, THICK, H - 0.08), loc=((A + B) / 2, yc, 0), m=M['body'], bevel=0.02))
-    objs.append(mn.box('cap', (B - A, THICK + 0.04, 0.08), loc=((A + B) / 2, yc, H - 0.08), m=M['cut' if low else 'cap'], bevel=0.02))
+    objs.append(mn.box('cap', (B - A, THICK + 0.04, 0.08), loc=((A + B) / 2, yc, H - 0.08), m=M['section' if low else 'cap'], bevel=0.02))
     objs.append(mn.box('skirt', (B - A, 0.05, 0.12), loc=((A + B) / 2, -0.02, 0), m=M['skirt'], bevel=0.015))
     if low:
-        for u in range(int(A), int(B)):
-            objs.append(mn.box('lpanel', (0.95, 0.03, H - 0.24), loc=(u + 0.5, -0.01, 0.13), m=M['panel'], bevel=0.01))
-            for x in (0.12, 0.88): objs.append(mn.cyl('rv', 0.02, 0.02, loc=(u + x, -0.025, 0.13 + (H - 0.24) / 2), m=M['steel'], rot=R90, verts=8, bevel=0.005))
-        return objs + []
+        # The cutaway near wall must read as a wall seen over its cut top, not as a strip of floor: a dark face
+        # with vertical ribs (frames every half unit, lit from the side), a near-black cut top (a section, not
+        # a surface you'd walk on), a bright steel coping along its inner edge, where it meets the room's
+        # floor, and a thin lip along its outer edge.
+        for k in range(int(A) * 2, int(B) * 2 + 1):
+            x = k * 0.5
+            objs.append(mn.box('rib', (0.07, 0.05, H - 0.02), loc=(x, -0.025, 0.0), m=M['rim'], bevel=0.012))          # face rib
+            for z in (0.1, H - 0.1):
+                objs.append(mn.cyl('rv', 0.016, 0.02, loc=(x, -0.055, z), m=M['steel'], rot=R90, verts=8, bevel=0.004))
+        objs.append(mn.box('coping', (B - A, 0.07, 0.035), loc=((A + B) / 2, THICK - 0.03, H), m=M['steel'], bevel=0.012))   # inner top edge
+        objs.append(mn.box('lip', (B - A, 0.05, 0.025), loc=((A + B) / 2, 0.0, H - 0.005), m=M['rim'], bevel=0.01))          # outer top edge
+        return objs
     for u in range(int(A), int(B)):                                   # per-unit panels
         objs.append(mn.box('lpanel', (0.95, 0.03, 0.66), loc=(u + 0.5, -0.01, 0.13), m=M['panel'], bevel=0.012))
         objs.append(mn.box('inset', (0.5, 0.02, 0.26), loc=(u + 0.5, -0.03, 0.3), m=M['body'], bevel=0.01))

@@ -2,7 +2,7 @@
 // and how. Only used when GFX.on (the classic look keeps drawLights / drawLightPools), except
 // alarmState() and drawAlarmHUD(), which work in both looks.
 //
-// gameLighting(t) returns { ambient, sun, areas, lights, grade } for GFX.lighting():
+// gameLighting(t) returns { ambient, sun, areas, lights, walls, grade } for GFX.lighting():
 //   ambient  [r, g, b]  outside every area (space, the hull)
 //   sun      { dir: [x, y, z] (towards the light; x right, y down the screen, z up), color, k }
 //   areas    [{ x, y, w, h, color: [r, g, b], sun }]  ambient per area; the last one containing a
@@ -10,6 +10,7 @@
 //   lights   [{ x, y, z, color, radius, intensity, wrap, dir, cone, x2, y2, z2, shadow }]  (layout
 //            units; dir + cone: a spot; x2, y2, z2: a strip; shadow: casts screen-space shadows)
 //   grade    [r, g, b]  multiplies the final picture (the red alarm's strobe)
+//   walls    [[x0, y0, x1, y1], ...]  the cut-down walls as light occluders (lightWalls() below)
 // 1 = the sprite as rendered in Blender; the beauty pass already has its key light baked in.
 //
 // The lighting model:
@@ -28,6 +29,26 @@
 //   blasts, explosions (combat.fx clustered), sparks of broken systems, power surges, energy on the
 //   power lines, the engine's flickering blue plume, shields, enemy weak spots and engines, the leviathan, the jump drive spooling up.
 //   The crew's helmet lamps (always on: c.lamp): spot beams where they face, with shadows.
+
+// The walls the camera looks over (the near walls along the stern, cut down to 0.35, and the low south ends
+// of the up-down walls: js/sprites.js buildWalls) still stop light at their full height (GFX.lighting walls,
+// js/gfx.js wallVis): a lamp inside, the helmet lamp above all, doesn't light their tops, their outer faces or
+// the hull outside them, and light from outside (a spacewalker's lamp, the engine plume) stays out of the
+// rooms. Near walls: a plane just inside their inner face (0.1 in: the steel coping on the top's inner edge
+// still catches the room's light, and the engine housing, which reaches 0.08 into the stern wall, stays
+// inside); up-down walls: their middle.
+const LIGHT_WALL_IN = 0.1;
+let lightWallCache = null;
+function lightWalls() {
+  if (typeof WALLS === 'undefined' || !WALLS) return [];
+  if (lightWallCache && lightWallCache.src === WALLS) return lightWallCache.walls;
+  const walls = [
+    ...WALLS.hRuns.filter(h => h.kind === 'near').map(h => [h.x0, h.y + LIGHT_WALL_IN, h.x1, h.y + LIGHT_WALL_IN]),
+    ...WALLS.vRuns.filter(v => v.step < v.y1 - 0.05).map(v => [v.x, Math.max(v.y0, v.step), v.x, v.y1]),
+  ];
+  lightWallCache = { src: WALLS, walls };
+  return walls;
+}
 
 const LIGHT_TUNING = {
   outside: [0.36, 0.4, 0.5],                       // hull and space: low, cold
@@ -412,6 +433,6 @@ function gameLighting(t) {
   if (flare?.phase === 'rad') { sunCol = [1.6, 1.4, 1.1]; outside = [0.6, 0.55, 0.5]; }
   else if (flare?.phase === 'warn') sunCol = addTo(sunCol, [0.4, 0.2, 0.0], 0.5 + 0.5 * Math.sin(t * 6));
   const strobe = lvl && lvl.strobe ? lvl.strobe * Math.max(0, Math.sin(t * 2.2)) ** 4 : 0;
-  return { ambient: outside, sun: { dir: Lt.sun.dir, color: sunCol, k: 1 }, areas, lights,
+  return { ambient: outside, sun: { dir: Lt.sun.dir, color: sunCol, k: 1 }, areas, lights, walls: lightWalls(),
            grade: strobe ? [1 + strobe, 1 - strobe * 0.6, 1 - strobe * 0.6] : null };
 }

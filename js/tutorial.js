@@ -264,7 +264,7 @@ const TUT_STEPS = {
         `That's the deal with weak spots: *every hit on one gives you an advantage*. On an interceptor: ${effects}. Hit them all and it's done for.`,
         { text: 'Bigger ships have more of them: a frigate\'s shield emitter (its shield is down for good) or its heavy cannon coils (no more heavy shots). The list at the top right shows every enemy\'s weak spots and which ones you\'ve hit.', mark: () => ({ x: -12, y: 8 }) },
         'And plain hull hits aren\'t wasted: every few of them shake a weak spot loose anyway.',
-        `Your cannon is empty, so: *reload*. Press *R*${tutC(' (or click *RELOAD*, bottom right)', '')}. A reload takes *one energy* from the capacitor this cannon is wired to (the left one) and gives you *${SHOTS_PER_ENERGY} shots*. It takes a few seconds; holding *R* cranks it faster.`,
+        `Your cannon is empty, so: *reload*. Press *R*${tutC(' (or click *RELOAD*, bottom right)', '')}. A reload takes *one energy* from the capacitor this cannon is wired to (the left one) and gives you *${SHOTS_PER_ENERGY} shots*.`,
         'Heads-up: that is the *last energy* in the left capacitor. Make the shots count.',
       ], () => tutGo('reload'));
     },

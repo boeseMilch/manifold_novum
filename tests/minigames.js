@@ -1,4 +1,4 @@
-// Station mini-games: radar and helm (just a click now), patch board, cannon crank,
+// Station mini-games: radar and helm (just a click now), patch board, cannon reload,
 // held shields, the jump handle, heartbeat treatment. Run: node tests/minigames.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'clickTarget',
@@ -41,13 +41,17 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
   const m = me.input.mouse; m.wx = s.x; m.wy = s.y; m.down = true; tickN(G, 6); m.down = false; tickN(G, 2);
   check(!me.ui.mini && s.broken, 'a quick click with the repair kit opens no tape job and leaves the part broken (only the full repair fixes it)');
 }
-// --- crank
+// --- reload: R only (holding R or cranking doesn't speed it up); a weapons specialist reloads 50% faster
 {
   const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
   const g = G.GUNS[0], me = G.me; me.mode = 'gun'; me.gun = g; g.shots = 0; G.CAPACITORS[1].charge = 2;
   G.reloadCannon(g);
-  let t = 0; while (g.reload > 0 && t < 5) { cmd(G, ['mini', 'crank', 1.2]); tickN(G, 6); t += 0.1; }
-  check(g.shots === 3 && t < 1.5, `cranking the breech reloads much faster than 3 s (${t.toFixed(1)} s)`);
+  let t = 0; while (g.reload > 0 && t < 5) { me.input.keys.add('KeyR'); tickN(G, 6); t += 0.1; }
+  me.input.keys.delete('KeyR');
+  check(g.shots === 3 && t > 2.8 && t < 3.3, `holding R doesn't speed the reload up: ${t.toFixed(1)} s`);
+  g.shots = 0; me.kit = { ...(me.kit || {}), profession: 'weapons' }; G.reloadCannon(g);
+  t = 0; while (g.reload > 0 && t < 5) { tickN(G, 6); t += 0.1; }
+  check(g.shots === 3 && t > 1.8 && t < 2.2, `a weapons specialist in the seat reloads 50% faster: ${t.toFixed(1)} s`);
 }
 // --- shields: up 15 s for 1 energy (holding the button doesn't extend it), then 5 s recharge
 {

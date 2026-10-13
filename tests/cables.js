@@ -4,7 +4,7 @@ const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'power', 'POWER_LINES', 'POWER_FITTINGS', 'LINE', 'LEVER', 'LEVER_DIAL', 'REACTOR', 'CAPACITORS', 'SYSTEMS',
   'SOLIDS', 'ROOM_RECTS', 'DOORWAYS', 'ENERGY_TIME', 'BOLT_TIME', 'boltPoint', 'boltAtLever', 'leverShownPos', 'linePoint',
   'powerLineLive', 'lineDead', 'lineState', 'nextFeed', 'surgeColumn', 'hz', 'combatClear', 'paceFactor',
-  'leverAngle', 'LEVER_NAMES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES']);
+  'leverAngle', 'LEVER_NAMES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES', 'CAT']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -44,6 +44,15 @@ for (const id of ['trunk', 'feed0', 'feed1', 'feed2']) {
   }
   check(!bad, `${id} runs over open floor${bad ? ': ' + bad : ''}`);
 }
+// --- the middle capacitor stands by the cat; its shield line runs visibly all the way, its cannon line only
+// leaves the room through a riser right next to the cabinet
+const C1 = G.CAPACITORS[1];
+check(Math.hypot(C1.x - G.CAT.x, C1.y - G.CAT.y) < 3 && C1.room === 'reactor', `the middle capacitor is next to the cat (${C1.x}, ${C1.y})`);
+check(G.LINE.shield_front.runs.length === 1, 'the front shield line is one visible run (no stretch inside the walls)');
+const riser = fitsOf('gun_front').find(f => f.kind === 'riser');
+check(!!riser && Math.hypot(riser.x - C1.x, riser.y - C1.y) < 2.2 && G.LINE.gun_front.runs.length === 2, 'the front cannon line climbs out through a riser right by the cabinet (one hidden stretch: the spine)');
+check(G.POWER_LINES.every(l => l.runs.length <= 2), 'no line hides more than the one deck change');
+
 // --- no two power lines cross or touch anywhere on the ship (visible stretches: closer than a cable's width
 // counts as touching)
 const segs = (l) => l.runs.flatMap(r => r.slice(1).map((p, i) => [r[i], p]));
@@ -73,17 +82,17 @@ for (let i = 0; i < 3; i++) {
   check(angDiff(angOf(g), G.leverAngle(i)) < 1e-6 && angDiff(g.a, G.leverAngle(i)) < 1e-6, `${G.LEVER_NAMES[i]} points exactly at feed${i}'s gland`);
 }
 const tA = angOf(tOut);
-check([0, 1, 2].every(i => angDiff(tA, G.leverAngle(i)) > 0.7), 'the trunk comes in well away from every lever position');
-// the handle swings LEFT → MID → RIGHT one way round (decreasing angle) and never over the trunk
-const L0 = G.leverAngle(0), L1 = G.leverAngle(1), L2 = G.leverAngle(2);
-check(L0 > L1 && L1 > L2 && L0 - L2 < 2 * Math.PI, 'the positions run one way round the dial');
-const tUn = tA < L2 ? tA + 2 * Math.PI : tA;            // the trunk's angle, unwrapped above RIGHT
-check(!(tUn >= L2 && tUn <= L0), 'the handle never swings over the trunk');
+check([0, 1, 2].every(i => angDiff(tA, G.leverAngle(i)) > 0.5), 'the trunk comes in away from every lever position');
+const L0 = G.leverAngle(0), L1 = G.leverAngle(1), L2 = G.leverAngle(2), dir = Math.sign(L2 - L0);
+check((L1 - L0) * dir > 0 && (L2 - L1) * dir > 0 && Math.abs(L2 - L0) < 2 * Math.PI, 'the positions run one way round the dial');
+check(angDiff(L0, Math.PI) < 1e-6 && angDiff(L1, -Math.PI / 2) < 1e-6 && angDiff(L2, 0) < 1e-6, 'LEFT out of the left side, MID out of the top, RIGHT out of the right side');
+check(tA < -Math.PI / 2 && tA > -Math.PI, `the trunk comes in from the north-west quarter, between LEFT and MID (${(tA * 180 / Math.PI).toFixed(0)} degrees)`);
 // the handle sprite has a frame exactly at each position
 for (let i = 0; i < 3; i++) {
-  const k = (L0 - G.leverAngle(i)) / G.LEVER_HANDLE_STEP;
-  check(Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) < G.LEVER_HANDLE_FRAMES, `${G.LEVER_NAMES[i]} has its own handle frame (${Math.round(k)})`);
+  const k = (G.leverAngle(i) - L0) * dir / G.LEVER_HANDLE_STEP;
+  check(Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) >= 0 && Math.round(k) < G.LEVER_HANDLE_FRAMES, `${G.LEVER_NAMES[i]} has its own handle frame (${Math.round(k)})`);
 }
+check(Math.round(Math.abs(L2 - L0) / G.LEVER_HANDLE_STEP) + 1 === G.LEVER_HANDLE_FRAMES, 'the handle frames span LEFT to RIGHT exactly');
 
 // --- a bolt's way: reactor → trunk → the lever's hub → its branch → its capacitor, without jumps
 for (let i = 0; i < 3; i++) {

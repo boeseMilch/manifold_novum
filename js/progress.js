@@ -57,7 +57,7 @@ const GEAR = [
 ];
 const PROFESSIONS = [
   { id: 'engineer', name: 'Engineer', desc: 'Repairs 20% faster.' },
-  { id: 'weapons', name: 'Weapons specialist', desc: 'Fires the laser gun and the heavy blaster 35% faster. Cranks cannon reloads 50% faster.' },
+  { id: 'weapons', name: 'Weapons specialist', desc: 'Fires the laser gun and the heavy blaster 35% faster. Reloads cannons 50% faster.' },
 ];
 const PAINTS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#e8e4dc', '#2b303a', '#ff7ab0'];
 
