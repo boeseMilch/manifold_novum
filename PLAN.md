@@ -938,6 +938,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   (else the nearest one that does; only surfaces missing from last frame's buffer still march per
   pixel). The depth buffer is RG32F now (depth + "casts shadows"), so every lit surface gets soft
   shadows, not just the casters. About the same GPU cost as the old per-pixel march (±0.5 ms).
+- Alarm beacons: their spot beams now start `ALARM_TUNING.out` (0.45) out from the back wall instead
+  of 0.15. Right at the wall, the screen-space shadows took the wall (and what hangs on it) for an
+  occluder of the beacon's own light and cut the beams into big straight-edged wedges, or hid them.
 
 ### 9c. Coherence pass: one look inside the ship
 - Lamps: the pendant ceiling lamps read as floor lamps in the tilted view; they're gone. The ceiling lights

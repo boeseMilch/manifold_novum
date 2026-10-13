@@ -61,8 +61,12 @@ const ALARM_TUNING = {
             red2: { spin: 6.2, beam: 2.8, wash: 0.12, dim: 0.62, strobe: 0.08 } },
   z: 1.3, cone: 0.34, radius: 11, tilt: -0.2,    // beacon height, beam half-angle, reach, beam tilt (down)
   burning: 1.6,                                   // yellow: the burning room's beacons this much stronger
+  // the beams start this far out from the wall (into the room): from right at the wall, the
+  // screen-space shadows took the wall (and what hangs on it) for an occluder of its own beacon
+  // and cut the beams into big straight-edged wedges
+  out: 0.45,
 };
-// Beacons (on each room's back wall, clear of the consoles and doors).
+// Beacons (on each room's back wall, clear of the consoles and doors; all walls face +y).
 const BEACONS = { portGun: [[4.0, 3.55]], bridge: [[16.2, 0.75], [28.2, 0.75]], starGun: [[33.4, 2.75]],
                   portLock: [[9.4, 15.15]], reactor: [[20.6, 15.15], [27.6, 15.15]], starLock: [[40.6, 15.15]] };
 
@@ -234,7 +238,7 @@ function gameLighting(t) {
     for (const off of [0, Math.PI]) {
       const c = Math.cos(a + off), s = Math.sin(a + off);
       if (s < -0.35) continue;                         // pointing into the wall it hangs on: hidden by the housing
-      add({ x: bx, y: by, z: AT.z, dir: [c, s, AT.tilt], cone: AT.cone, color: alarmCol, radius: AT.radius, intensity: I, wrap: 0.05, shadow: true });
+      add({ x: bx, y: by + AT.out, z: AT.z, dir: [c, s, AT.tilt], cone: AT.cone, color: alarmCol, radius: AT.radius, intensity: I, wrap: 0.05, shadow: true });
     }
     const face = Math.max(Math.sin(a), Math.sin(a + Math.PI));   // the housing glows brightest when a beam faces the camera
     add({ x: bx, y: by + 0.25, z: AT.z, color: alarmCol, radius: 1.6, intensity: (0.5 + 0.9 * face) * hot });
