@@ -804,74 +804,71 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Note: tests/encounters.js fails about 1 run in 10 ("doors lock themselves"): it's random (the AI
   glitch), not new; worth making deterministic.
 
-### 8z3. Balance: crew size, and a model that rates the missions
-- **Encounters come faster with more crew:** `crewPace(n) = 1/√n` (js/mission.js): 100 / 71 / 58 / 50 /
-  35 % of the solo gaps for 1 / 2 / 3 / 4 / 8 players. Timelines stay written for one player; every gap
-  after the first event scales; the lead-in, JUMP_DELAY and the encounters' own timers don't. Intro:
-  40, 100, 160, 220, 280 → jump 302 solo; 4 players 40, 70, 100, 130, 160 → jump 182. Each event keeps
-  its solo time in `e.t1`.
-- **Joining / leaving mid-mission:** `updateMission` notices `crew.length` change and calls
-  `retimeMission`: past events stay, pending ones move to now + (t − now) × pace(new)/pace(old)
-  (from the first event while still in the lead-in); the jump keeps its distance to the last event.
-  The server's flow (start, then add the crew) re-times on the first tick.
-- **More crew, more energy:** the reactor runs 1/crewPace(n) times as fast (`reactorSpeed()` in
-  js/systems.js: an energy every 20 / 14.1 / 11.5 / 10 / 7.1 s; overcharge doubles it), so the energy
-  made per gap between encounters stays the same. One extra spare fuel cell per extra crew member
-  (the most aboard so far; leaving doesn't take one back). The fuel crate shows "×N" when it holds
-  more cells than it can draw. No profile change.
-  Why √n for the reactor: demand per mission doesn't change with the crew (same shots and shields);
-  with a solo-speed reactor, fights would wait 27-29 s per mission for energy instead of 4-11 s.
-- **The model** (`node tools/balance.js`; `--detail <mission> <n>`, `--calibration`, `--hit`, `--ship`,
-  `--players`, `--runs`): builds the real timeline for n crew, reads reactor speed, cells and
-  capacitors from the game; turns each event into crew jobs (walks from tools/travel.js + work from
-  the game's constants), schedules them (urgent first, repairs after, chores when idle), turns enemy
-  fire into repair jobs and runs an energy pass (reactor → lever → capacitors vs reloads and shields).
-  Calibrated by running each encounter in the game for 60 s with nobody fighting back. Verdicts:
-  impossible (> 3 parts broken at once, no energy for the jump, objective out of reach, crew > 115 %
-  busy), tight (≥ 2 broken at once, crew > 80 % busy or > 15 s of fights waiting for energy), doable.
-  Score = 45·load + 30·broken/3 + 15·energy + 10·late. Assumptions (all at the top of the file): hit
-  rate 0.6, 1.2 s per shot, 4 s to react, laser 50 % on boarders, … An expected-value model: it shows
-  where the pressure is, not exact odds. Sanity check: the intro comes out doable solo (68 % busy),
-  rush hour tight.
-- **Results** (d / t / i = doable / tight / impossible + score; 1 / 2 / 3 / 4 / 8 players):
+### 8z3. Fixed-length missions: the crew size sets the encounters; energy in spec; prerequisites
+- History: first the gaps between encounters scaled with 1/√players (and the reactor with them); the
+  model then showed busy time falling 68 % → 25 % from 1 to 4 players, and calibrating gaps alone to
+  68 % idle made solo missions 18-35 min long. So now the length is fixed and the event count varies.
+- **Length:** every mission jumps at `MISSION_LENGTH` = 360 s (or `MISSIONS[id].length`), for any crew.
+- **Per crew size** `MISSIONS[id].crew` (fitted by `node tools/balance.js --calibrate` for ~68 % idle):
+  `events` (how many encounters), `cells` (fuel cells, counting the one in the reactor), optional
+  `reactor` (an ENERGY_TIME multiplier < 1 where the energy needs it) and `overcharge` (the model plans
+  with an overcharging engineer; the game never overcharges by itself). Arrays for 1-8 players.
+- **Which events go:** never the essential ones (`MISSIONS[id].essential`: pirates in c1 / c4 / Pirate
+  cove, the intruder in c2, spores and leeches in c6; plus `ESSENTIAL_KINDS`: derelict, rock, prison
+  barge, leviathan), then optional ones in a fixed `DROP_ORDER` (canister, antenna, debris, glitch, storm,
+  coolant, maintenance, flare, spores, mines, leeches, grappler, tractor, stealth, saboteur, mother,
+  intruder, swarm, frigate, interceptor, pirates): a solo run of a chapter always has the same kinds, and
+  a smaller crew's events are a subset of a bigger crew's. Above the written count: repeats of the most
+  important optional kinds.
+- **Layout:** the kept events stay in written order, spaced evenly from the first event's written time
+  to 338 s; the finale is a fight that isn't an objective's. Reactor: ENERGY_TIME × gap / the written gap
+  × `crew.reactor` (`paceFactor()`). Fuel: `crew.cells` (the spare-cell upgrade adds one on top).
+- **Join / leave:** during the lead-in the timeline is rebuilt for the new crew size (that's also how the
+  server's start works); after the first encounter events and the jump stay, the crate only gets more
+  cells if the new size needs them.
+- **Prerequisites:** `MISSIONS[id].needs = { ship: [upgrade ids], overcharge }`; `missionRequirements(id)`
+  shows them in the lobby briefing ("⚠ Needs: Efficient cannons", "⚠ Needs an engineer with reactor
+  overcharge"). A warning, never a block. Early missions (intro, practice, c1, c2) must be in spec on the
+  base ship.
+- **The model** (`node tools/balance.js`, ~3 min; `--calibrate` ~15 min, `--base`, `--detail <mission> <n>`,
+  `--hit`, `--target`): builds the timelines through the game; crew jobs = walks (tools/travel.js) + work,
+  now including the radar (a 9 s scan at the map table; the next is due when a seen contact arrives, else
+  90 s later), the helm diagnosis, every lever re-route (walk + step + hold E 0.5 s), fetching fuel cells
+  and overcharge fires. **Energy runs on the game's own code** (reactor, lever, capacitors, reloadCannon,
+  pressShield with the 15 s shields, the jump drive, storms, barnacles), checked against a direct game run.
+  **In spec** = on every random build: no cannon waits > 2 s for energy before the jump, no shield pressed
+  without energy, MID has the jump's energy; checked with realistic and with perfect routing.
+- **Results** (hit rate 0.6; events / idle for 1/2/3/4/8 players; spec for 1-4):
 
-  | Mission | 1 | 2 | 3 | 4 | 8 |
-  |---|---|---|---|---|---|
-  | Intro run | d50 | d35 | d31 | d28 | d23 |
-  | Rush hour | t74 | t55 | t50 | t48 | d37 |
-  | Ore run | t72 | t49 | d36 | d31 | d26 |
-  | Pirate cove | i88 | t62 | t51 | d38 | d32 |
-  | Black box | d47 | d34 | d30 | d30 | d25 |
-  | Stranded engineer | t73 | d51 | d41 | d38 | d35 |
-  | Deep drift | i123 | i111 | i95 | i92 | i78 |
-  | Nightmare | i146 | i145 | i143 | i136 | i121 |
-  | 1 First Contract | d42 | d30 | d27 | d24 | d20 |
-  | 2 Strange Cargo | t72 | d36 | d32 | d41 | d25 |
-  | 3 The Empty Lab | t65 | d42 | d29 | d27 | d23 |
-  | 4 Red Comet Cove | i86 | i62 | t50 | t47 | i47 |
-  | 5 Rescue Dr. Varga | d46 | d43 | d39 | d28 | d30 |
-  | 6 Spore Season | t92 | t48 | t43 | t39 | t33 |
-  | 7 The Deep | i138 | i121 | i113 | i102 | i96 |
-  | 8 The Mother of All | i147 | i137 | i134 | i127 | i116 |
+  | Mission | Events | Idle % | Spec 1-4 | Prerequisites |
+  |---|---|---|---|---|
+  | Intro | 2/5/6/11/21 | 72/66/73/67/71 | in | none |
+  | Rush hour | 2/4/8/9/18 | 66/66/60/67/70 | out at every size | overcharge |
+  | Ore run | 2/5/8/12/23 | 63/70/70/68/75 | in | cannons + inserter + overcharge |
+  | Pirate cove | 2/4/8/12/23 | 57/69/66/68/74 | in (×3: 1 of 6 builds short) | cannons |
+  | Black box | 2/5/8/11/23 | 62/71/70/68/69 | in | cannons |
+  | Stranded engineer | 2/4/7/10/24 | 61/65/68/69/69 | in (×3 borderline) | none |
+  | Deep drift | 1/1/1/1/19 | 65/78/85/89/65 | in | none |
+  | Nightmare | 1/2/3/3/15 | 65/73/71/80/66 | out at ×3/×4 | all three + overcharge |
+  | c1 | 3/4/8/12/21 | 54/75/71/67/73 | in (reactor ×0.5-0.85) | none |
+  | c2 | 2/2/7/8/20 | 70/83/68/74/70 | in (reactor ×0.7-0.85) | none |
+  | c3 | 2/5/8/11/22 | 62/71/67/69/69 | in | none |
+  | c4 | 3/4/7/11/23 | 41/68/70/68/72 | in | cannons |
+  | c5 | 2/5/9/13/22 | 65/66/68/68/79 | in | cannons + inserter |
+  | c6 | 4/5/9/11/23 | 42/68/67/73/74 | in (×2: 1 of 6 short) | all three + overcharge |
+  | c7 | 1/2/3/4/19 | 64/72/66/69/68 | out at ×2-×4 | all three + overcharge |
+  | c8 | 1/3/3/4/21 | 65/61/69/59/68 | out at ×2-×4 | all three + overcharge |
 
-  With f = 1/√n more crew means easier (crew busy 68 % → 25 % in the intro from 1 to 4 players); equal
-  difficulty for every size would need f nearer 1/n. Campaign order (solo): big jump c1 → c2, c3 easier
-  than c2, c5 much easier than c4, big jumps c5 → c6 → c7; c7 and c8 impossible at every size.
-  tests/scaling.js keeps a `KNOWN` list of the missions rated impossible (none caused by the scaling).
-- **Proposals (not applied; scores 1 / 2 / 3 / 4 players):**
-  1. Pirate cove: a second raider instead of the interceptor (2 pirates without letting one dock):
-     i88 → d38, t62 → d30, t51 → d26, d45 → d24.
-  2. Red Comet Cove (c4, 3 pirates from 2 raiders): A) a third raider at 135 s → t76 / d46 / d38 / d35
-     (stays harder than c3); B) objective 2 pirates → d52 / d35 / d29 / d27.
-  3. Order: c5 + a frigate at 170 s → t71 / t73 / d50 / t53 (with 2A, c4 ≈ c5); c2 with an interceptor
-     instead of the frigate → d38 / d30 / d26 / d24 (clearly easier than c3, smaller c1 → c2 jump).
-  4. The Deep (c7): 10 events (drop interceptor, tractor, saboteur, storm) at 30 s gaps → i108 / t71 /
-     t67 / t50; at 26 s gaps i121 / t74 / t65 / t70.
-  5. The Mother of All (c8): nothing tried gets below impossible for 1-3 players (best: 10 events at
-     26 s + leviathan at 160 → i141 / i121 / i107 / t87): a smaller pool, or a 4+ player chapter.
-  6. Deep drift: 24 s gaps instead of 17 → i122 / t77 / t77 / t75.
-  7. Nightmare: impossible even at 20 s gaps; maybe fine for "Everything. Good luck."
-- Mission blurbs still say "about 40 s apart" (solo pacing).
+  ("all three" = efficient cannons, fuel inserter, bigger capacitors; checked against the rep the
+  campaign has paid out by then.) Playtest anchor: intro, 2 players, old pacing → 60 % idle (the user:
+  "good for two, but 3 attempts"); the 68 % target is a bit easier. At hit rate 0.5: idle 68 → 65 %,
+  energy in spec 29 of 48 cases instead of 48 of 64 (the energy spec is the sensitive part).
+- **Open:** solo crews get very few encounters (1-4); Pirate cove, c4 and c6 solo can't reach 68 % (their
+  essentials alone keep the crew busier); Rush hour is unlocked at 0 rep but needs overcharge and is
+  still short solo / 2; The Deep, The Mother of All and Nightmare overrun the energy even with 3-4
+  encounters (fewer energy-hungry kinds needed). With idle levelled, chapters differ only by content:
+  give tiers lower idle targets (`--target`) to make later chapters harder again. Not modelled yet:
+  raising the 15 s shields against light fire; the energy chain itself breaking.
 
 ### 9. Prototype: Blender sprites in a tilted top-down view (not in the game yet)
 - Goal: replace the hand-drawn canvas art with pre-rendered Blender models that look finished.

@@ -1,26 +1,27 @@
 // Mission script, radar, diagnosis + servicing, security locks + manual override,
 // fires + extinguisher, and the jump / lose rules. Run: node tests/mission.js
 const { loadGame } = require('./harness');
-const NAMES = ['tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
+const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
   'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
   'spawnInvader', 'power', 'JUMP_WINDOW', 'MAINT_WARNING'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
-const fresh = () => { const G = loadGame(NAMES); G.startMission(); G.power.reactor.fuel = 0; return G; };   // no surprise energy
+// the intro with all its written events (a small crew gets fewer: MISSIONS.intro.crew, see tests/scaling.js)
+const fresh = () => { const G = loadGame(NAMES); G.MISSIONS.intro.crew = null; G.startMission(); G.power.reactor.fuel = 0; return G; };   // no surprise energy
 const runTo = (G, t, each) => { while (G.mission.t < t && !G.mission.over) { each?.(); G.tick(DT); } };
 // For timing checks: no stray enemy shots or fires breaking things (only scripted events count).
 const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0; G.SYSTEMS.forEach(s => { if (s !== keep) s.broken = false; }); };
 
-// --- timeline: each encounter happens once, about a minute apart
+// --- timeline: each encounter happens once, evenly spread over the mission (jump at MISSION_LENGTH)
 {
   const G = fresh(), seen = [];
   const kinds = G.mission.events.map(e => e.kind);
   check(['interceptor', 'maintenance', 'frigate', 'swarm', 'intruder'].every(k => kinds.filter(x => x === k).length === 1),
         `mission has one of each: ${kinds.join(', ')}`);
-  const gaps = G.mission.events.slice(1).map((e, i) => e.t - G.mission.events[i].t);
-  check(gaps.every(g => g >= 50 && g <= 70), `events about a minute apart (gaps ${gaps.join(', ')} s)`);
+  const gaps = G.mission.events.slice(1).map((e, i) => e.t - G.mission.events[i].t), want = (G.MISSION_LENGTH - G.JUMP_DELAY - 40) / 4;
+  check(gaps.every(g => Math.abs(g - want) < 1e-6) && G.mission.jumpAt === G.MISSION_LENGTH, `events ${want.toFixed(0)} s apart, the jump at ${G.MISSION_LENGTH} s (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s)`);
   runTo(G, 45, calm(G));
   check(G.combat.enemies.some(e => e.kind === 'interceptor'), 'the interceptor shows up on schedule');
 }
@@ -32,7 +33,8 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   G.radarScan();
   const r1 = G.radarList();
   check(r1.known.length === 1 && r1.known[0].kind === 'interceptor', 'scan at T+20 reveals only the interceptor (T+40)');
-  runTo(G, 155, calm(G));                  // frigate at T+160, never scanned
+  const fr = G.mission.events.find(e => e.kind === 'frigate').t;
+  runTo(G, fr - 5, calm(G));               // the frigate, never scanned
   const r2 = G.radarList();
   check(r2.mocks.length === 1 && r2.mocks[0].kind === 'frigate', `an unscanned frigate 5 s out shows up as "???? T-???" (t=${G.mission.t.toFixed(1)}, over=${JSON.stringify(G.mission.over)}, mocks=${r2.mocks.map(e => e.kind)})`);
   G.radarScan();

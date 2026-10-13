@@ -52,7 +52,8 @@ function client(name) {
     a.send({ t: 'start' }); await sleep(400);
     check(a.started === 'rush' && b.started === 'rush', 'the host starts: both are in the game');
     check(a.state && a.state.crew.length === 2, `snapshots arrive with both crew members (${a.state?.crew.map(c => c.name)})`);
-    check(a.state.mission.id === 'rush' && a.state.mission.events.length === 7, `the rush mission has 7 incidents (${a.state.mission.events.map(e => e.kind).join(', ')})`);
+    const want = require('./harness').loadGame(['missionCrew']).missionCrew('rush', 2).events;   // (the number of encounters follows the crew size)
+    check(a.state.mission.id === 'rush' && a.state.mission.events.length === want, `the rush mission has ${want} incidents for 2 players (${a.state.mission.events.map(e => e.kind).join(', ')})`);
     const x0 = a.state.crew.find(c => c.id === a.id).x;
     for (let i = 0; i < 30; i++) { a.send({ t: 'input', keys: ['KeyD'], pressed: [], mouse: { wx: 0, wy: 0 } }); await sleep(16); }
     a.send({ t: 'input', keys: [], pressed: [], mouse: { wx: 0, wy: 0 } }); await sleep(150);

@@ -125,8 +125,8 @@ The prompt above you always says what a click (or E) will do.
 
 ## Missions
 
-- **Intro run:** one of everything, about a minute apart.
-- **Rush hour:** 7 incidents in random order, about 40 s apart.
+- **Intro run:** one of everything, well spaced out.
+- **Rush hour:** 7 incidents in random order, more trouble.
 
 ## For developers
 

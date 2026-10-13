@@ -2,7 +2,7 @@
 // professions, ship upgrades, campaign objectives, and every practice-panel button.
 // Run: node tests/progress.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
+const NAMES = ['missionCrew', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
   'applyKit', 'perk', 'hurtCrew', 'SHOTS_PER_ENERGY', 'CAP_MAX', 'power', 'ITEMS', 'dk', 'combat', 'combatSpawn', 'hitPoi', 'enemyToWorld', 'objectiveStatus',
   'PRACTICE', 'runCommand', 'withCrew', 'CAPACITORS', 'levelOf', 'treatInfo', 'netServer', 'SHIELD_UP_TIME', 'endMission', 'boarding', 'spawnInvader', 'hurtInvader',
   'gearSpeed', 'failGravity', 'ENERGY_TIME', 'REACTOR', 'clickTarget', 'fires', 'SYSTEMS', 'GEAR', 'BLASTER_CHARGE', 'inv', 'evs', 'repairSpeed'];
@@ -130,9 +130,10 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const G = loadGame(NAMES);
   G.startMission('c1', { ship: { cannons: true, caps: true, shields: true, inserter: true, spareCell: true } });
   check(G.SHOTS_PER_ENERGY === 4 && G.CAP_MAX === 4 && G.SHIELD_UP_TIME === 18, 'upgrades: 4 shots per energy, capacitors hold 4, shields last 18 s');
-  check(G.power.reserve === 4, 'a spare fuel cell');
+  const cells = G.missionCrew('c1', 1).cells;               // (the mission's fuel for one player, js/mission.js)
+  check(G.power.reserve === cells - 1 + 1, `a spare fuel cell on top of the mission's ${cells}`);
   G.mission.active = false; G.power.reactor.fuel = 0; tickN(G, 60 * 2.2);
-  check(G.power.reactor.fuel === 5 && G.power.reserve === 3, 'the inserter loads the next fuel cell by itself');
+  check(G.power.reactor.fuel === 5 && G.power.reserve === cells - 1, 'the inserter loads the next fuel cell by itself');
   const G2 = loadGame(NAMES); G2.startMission('c1');
   check(G2.SHOTS_PER_ENERGY === 3 && G2.CAP_MAX === 3, 'without upgrades everything is back to normal (capacitors hold 3)');
 }

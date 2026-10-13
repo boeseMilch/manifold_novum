@@ -49,7 +49,8 @@ const EVENT_RUNNERS = {};                              // event kinds added by o
 const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
   intro: {
-    name: 'Intro run', blurb: 'One of everything, about a minute apart. The one you know.',
+    name: 'Intro run', blurb: 'One of everything, well spaced out. The one you know.',
+    crew: {events: [2, 5, 6, 11, 11, 16, 16, 21], cells: [2, 4, 4, 6, 6, 9, 9, 14], reactor: [1, 1, 1, 1, 1, 1, 1, 0.7]},   // --calibrate: 72% 66% 73% 67% 74% 68% 73% 71% idle for 1-8 players
     build(target) {
       const s1 = randSide();
       return [
@@ -62,7 +63,9 @@ const MISSIONS = {
     },
   },
   rush: {
-    name: 'Rush hour', blurb: '7 incidents in random order, about 40 s apart. Same time, more trouble.',
+    name: 'Rush hour', blurb: '7 incidents in random order. More trouble.',
+    crew: {events: [2, 4, 8, 9, 10, 13, 15, 18], cells: [2, 4, 6, 8, 8, 10, 11, 11], reactor: [1, 1, 1, 1, 1, 0.7, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 61% 65% 62% 68% 70% 70% 70% 69% idle for 1-8 players
+    needs: {ship: [], overcharge: true},
     rules: { breach: true, surge: true },
     build(target) {
       const kinds = ['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance'];
@@ -76,6 +79,7 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Hull breaches, plasma fires, failing gravity, things on the hull — and the jump coils need aligning outside.',
+    crew: {events: [1, 1, 1, 1, 3, 3, 7, 19], cells: [2, 2, 2, 2, 2, 2, 3, 4]},   // --calibrate: 65% 78% 85% 89% 65% 65% 68% 67% idle for 1-8 players
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
       return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister', 'flare', 'storm', 'coolant', 'stealth', 'grappler', 'leeches'], target, 20, 17);
@@ -83,26 +87,36 @@ const MISSIONS = {
   },
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Defeat the pirates. If their raider docks, they come aboard to steal — board them back.',
+    crew: {events: [2, 4, 8, 12, 16, 19, 22, 23], cells: [2, 2, 4, 5, 6, 8, 8, 9]},   // --calibrate: 58% 69% 66% 68% 68% 67% 72% 74% idle for 1-8 players
+    needs: {ship: ['cannons'], overcharge: false},
+    essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     rules: { breach: true, surge: true }, objective: { kind: 'pirates', count: 2 },
     build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['interceptor', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
   },
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something is asleep over there.',
+    crew: {events: [2, 5, 8, 11, 15, 18, 22, 23], cells: [2, 2, 2, 5, 5, 7, 8, 8]},   // --calibrate: 62% 71% 71% 68% 69% 68% 68% 69% idle for 1-8 players
+    needs: {ship: ['cannons'], overcharge: false},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
   },
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
+    crew: {events: [2, 4, 7, 10, 12, 16, 18, 24], cells: [2, 2, 2, 3, 4, 6, 6, 8], reactor: [1, 1, 1, 0.85, 1, 1, 1, 1]},   // --calibrate: 61% 65% 68% 70% 68% 69% 68% 69% idle for 1-8 players
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'Drill an ore sample out of a big asteroid on a spacewalk while the front cannon keeps the small ones off.',
+    crew: {events: [2, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 3, 7, 7, 11, 10, 10], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 69% 70% 68% 67% 68% 72% 75% idle for 1-8 players
+    needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true }, objective: { kind: 'ore' },
     build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
   },
   nightmare: {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
+    crew: {events: [1, 2, 3, 3, 8, 10, 10, 15], cells: [2, 2, 2, 2, 3, 4, 4, 5], reactor: [1, 1, 1, 0.7, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 73% 74% 84% 76% 68% 70% 68% idle for 1-8 players
+    needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
       return [...shuffledTimeline(['interceptor', 'frigate', 'frigate', 'swarm', 'intruder', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'flare', 'storm', 'coolant', 'glitch',
@@ -126,34 +140,77 @@ function makeEvent(kind, t, target) {
 const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
 
 // ---------------------------------------------------------------------------
-// Crew size: the timelines above are paced for one player. With n players the time between
-// encounters shrinks to crewPace(n) of that (n players could in theory work n times as fast, but
-// co-ordination isn't perfect: 1/sqrt(n) gives 100%, 71%, 58%, 50% for 1-4 players, 35% for 8).
-// What scales: every gap after the first event. What doesn't: the lead-in before the first event,
-// JUMP_DELAY (the finale fight), and the encounters themselves (fights, timers). The reactor runs
-// 1/crewPace(n) times as fast (js/systems.js), so the energy made between two encounters stays the same.
+// Pacing: every mission lasts about MISSION_LENGTH (time to the jump) for any crew; a smaller crew gets
+// fewer encounters instead of longer gaps. Per mission and crew size, MISSIONS[id].crew says how many
+// events (crew.events[n - 1]) and fuel cells (crew.cells[n - 1]) — fitted by `node tools/balance.js
+// --calibrate` for a crew that's ~68% idle. Which events go: never the mission's essential ones
+// (MISSIONS[id].essential, plus ESSENTIAL_KINDS), then optional ones in DROP_ORDER (first dropped first),
+// so a solo run of a chapter always has the same kind of content. More events than written: repeats
+// of the mission's most important optional kinds.
+//   The kept events stay in their written order and are spread evenly from the first event's written
+// time to MISSION_LENGTH - JUMP_DELAY. The reactor follows the gaps: ENERGY_TIME × gap / the written gap
+// (paceFactor), so the energy made per gap is what the mission was written for.
+//   Crew joining / leaving: while nobody has seen an encounter yet (the lead-in), the timeline is rebuilt
+// for the new crew size (that's also how the server's start works: crew are added right after
+// startMission). After that the encounters and their times stay; only the fuel crate gets the new
+// size's extra cells if it needs more.
 // ---------------------------------------------------------------------------
-const crewPace = (n) => 1 / Math.sqrt(Math.max(1, n));
+const MISSION_LENGTH = 360;
+const ESSENTIAL_KINDS = new Set(['derelict', 'rock', 'brig', 'leviathan']);
+const DROP_ORDER = ['canister', 'antenna', 'debris', 'glitch', 'storm', 'coolant', 'maintenance', 'flare', 'spores', 'mines', 'leeches', 'grappler',
+                    'tractor', 'stealth', 'saboteur', 'mother', 'intruder', 'swarm', 'frigate', 'interceptor', 'pirates'];
 const crewSize = () => Math.max(1, crew.length);
-// Re-time the events that haven't started yet for a crew of n (at mission start and whenever someone
-// joins or leaves). Events already running are untouched; the remaining gaps are scaled by the ratio of
-// the paces, measured from now (or from the first event, while still in the lead-in).
-function retimeMission(n) {
-  const ratio = crewPace(n) / crewPace(mission.paceN || 1);
-  mission.paceN = n;
-  if (ratio === 1 || !mission.events.length) return;
-  const anchor = Math.max(mission.t, mission.lead ?? 0);
-  const pending = mission.events.filter(e => !e.done);
-  const lastBefore = Math.max(-Infinity, ...pending.map(e => e.t));
-  for (const e of pending) if (e.t > anchor) e.t = anchor + (e.t - anchor) * ratio;
-  const lastAfter = Math.max(-Infinity, ...pending.map(e => e.t));
-  if (pending.length && !mission.jump && Number.isFinite(mission.jumpAt)) mission.jumpAt += lastAfter - lastBefore;   // the jump keeps its distance to the finale
+const missionCrew = (id, n) => { const C = MISSIONS[id]?.crew, i = Math.min(8, Math.max(1, n)) - 1; return { events: C?.events?.[i], cells: C?.cells?.[i] ?? 4, reactor: C?.reactor?.[i] ?? 1, overcharge: !!C?.overcharge?.[i] }; };
+// The reactor's ENERGY_TIME multiplier: the gap / the written gap, × the crew size's reactor tuning (crew.reactor,
+// < 1 where the energy needs a faster reactor to be in spec).
+const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
+// The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
+function selectEvents(id, written, n, target) {
+  const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]);
+  const want = missionCrew(id, n).events ?? written.length;
+  const rank = (e) => (ess.has(e.kind) ? Infinity : DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
+  const order = written.map((e, i) => ({ e, i })).sort((a, b) => rank(b.e) - rank(a.e) || a.i - b.i);   // most important first; ties: the earlier one
+  const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(want, written.length))).map(o => o.e);
+  // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump)
+  const objective = new Set(M.essential || []), optionalFight = order.find(o => rank(o.e) !== Infinity && COMBAT_KINDS.has(o.e.kind) && !keep.includes(o.e));
+  if (objective.size && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind))) keep.push(optionalFight.e);
+  const extra = [...new Set(order.filter(o => rank(o.e) !== Infinity).map(o => o.e.kind))];   // repeats: most important optional kinds, in turn
+  for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target), repeat: true });
+  return written.filter(e => keep.includes(e)).concat(keep.filter(e => e.repeat));
 }
-// One more spare fuel cell for every extra crew member (the most there have been aboard this mission;
-// someone leaving doesn't take cells away, rejoining doesn't add more).
+function layoutMission(id, n) {
+  const M = MISSIONS[id] || MISSIONS.intro, written = mission.written;
+  const evs = selectEvents(id, written, n, mission.maint?.target).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
+    sys: e.kind === 'maintenance' ? mission.maint?.target : e.sys }));
+  if (!evs.length) { Object.assign(mission, { events: [], lead: Infinity, gap: null, writtenGap: null, paceN: n, jumpAt: M.practice ? Infinity : JUMP_DELAY, overcharge: false }); return; }
+  const lead = Math.min(...written.map(e => e.t)), end = (M.length || MISSION_LENGTH) - JUMP_DELAY;
+  const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
+  evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = evs.length > 1 ? lead + i * gap : end; });   // (t1: the time as written; a lone event is the finale)
+  // the finale: the last event is a fight, and the jump comes while it's still going
+  // (and not an objective's event: it needs more than the 22 s before the jump)
+  const sorted = () => [...evs].sort((a, b) => a.t - b.t), objective = new Set(M.essential || []);
+  let last = sorted().pop();
+  if (last && (!COMBAT_KINDS.has(last.kind) || objective.has(last.kind))) {
+    const fight = sorted().filter(e => e !== last && COMBAT_KINDS.has(e.kind) && !objective.has(e.kind)).pop();
+    if (fight) [fight.t, last.t] = [last.t, fight.t];
+  }
+  const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - lead) / (written.length - 1) : gap;
+  Object.assign(mission, { events: evs, lead, gap, writtenGap: wl || gap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + JUMP_DELAY });
+  mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
+}
+// Fuel: the cells this crew size needs (the reactor's own cell plus the crate), on top of what's been
+// given already (never taken back).
 function crewFuel(n) {
-  const extra = Math.max(0, n - 1), had = mission.crewCells || 0;
-  if (extra > had) { power.reserve += extra - had; mission.crewCells = extra; }
+  const want = missionCrew(mission.id, n).cells - 1;
+  if (want > (mission.crewCells ?? -1)) { power.reserve += want - Math.max(0, mission.crewCells ?? 0); mission.crewCells = want; }
+}
+// Someone joined or left: in the lead-in the timeline is rebuilt for the new crew size; after that the
+// encounters and their times stay (the mission keeps its length; a late joiner just makes it easier),
+// and the crate gets the new size's extra fuel cells if it needs more.
+function crewChanged(n) {
+  if (!mission.events.some(e => e.done) && mission.t < mission.lead) layoutMission(mission.id, n);
+  mission.paceN = n;
+  crewFuel(n);
 }
 function startMission(id = 'intro', opts = {}) {
   applyShipUpgrades(opts.ship || {});
@@ -164,25 +221,15 @@ function startMission(id = 'intro', opts = {}) {
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
-    events: (MISSIONS[id] || MISSIONS.intro).build(target).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false })),
-    maint: { target, decoy, serviced: false },
+    maint: { target, decoy, serviced: false }, crewCells: undefined,
   });
+  mission.written = (MISSIONS[id] || MISSIONS.intro).build(target).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
+  layoutMission(id, crewSize());
   if (mission.objective?.kind === 'ore' && !ITEMS.some(i => i.kind === 'drill')) ITEMS.push({ kind: 'drill', x: 4.2, y: 21.8 });   // the mining drill, left airlock room
+  power.reserve = 0; crewFuel(crewSize());              // (the crew's cells, then the ship's spare cell on top)
   shipStartExtras(opts.ship || {});
   mission.upgrades = { ...(opts.ship || {}) }; mission.runId = `${Date.now().toString(36)}-${newUid()}`; mission.kills = 0;
   for (const c of crew) applyKit(c, c.kit);
-  // The finale: the last event is a fight, and the jump comes while it's still going.
-  const evs2 = mission.events, last = evs2.reduce((a, e) => (e.t > a.t ? e : a), evs2[0] || { t: 0 });
-  if (last && !COMBAT_KINDS.has(last.kind)) {
-    const fight = evs2.filter(e => COMBAT_KINDS.has(e.kind)).sort((a, b) => b.t - a.t)[0];
-    if (fight) [fight.t, last.t] = [last.t, fight.t];
-  }
-  mission.jumpAt = MISSIONS[id]?.practice ? Infinity : Math.max(0, ...evs2.map(e => e.t)) + JUMP_DELAY;
-  // paced for one player; then re-timed for the crew aboard (the server adds its crew right after this,
-  // so updateMission re-times again on its first tick)
-  mission.lead = Math.min(Infinity, ...evs2.map(e => e.t)); mission.paceN = 1; mission.crewCells = 0;
-  for (const e of evs2) e.t1 = e.t;                    // the solo time (for tools and tests)
-  retimeMission(crewSize()); crewFuel(crewSize());
   combatBanner('Jumped into the hot zone. Survive until the jump drive is ready!');
 }
 
@@ -204,8 +251,7 @@ function runEvent(ev) {
 function updateMission(dt) {
   if (!mission.active || mission.over) return;
   mission.t += dt;
-  if (crewSize() !== mission.paceN) retimeMission(crewSize());          // someone joined or left
-  crewFuel(crewSize());
+  if (crewSize() !== mission.paceN) crewChanged(crewSize());            // someone joined or left
   for (const ev of mission.events) if (!ev.done && mission.t >= ev.t) runEvent(ev);
   // jump: after the last encounter the drive tries for JUMP_WINDOW seconds; it needs energy in the engine room
   if (mission.t >= mission.jumpAt && !mission.jump && !mission.coilsChecked) {          // misaligned jump coils: the drive takes longer

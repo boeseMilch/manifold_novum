@@ -29,6 +29,16 @@ const SHIP_UPGRADES = [
   { id: 'hull', name: 'Reinforced hull', rep: 5, desc: 'A side has to take two big hits before the next one breaches it.' },
   { id: 'sprinklers', name: 'Fire sprinklers', rep: 5, desc: 'Fires spread every 22 s instead of 15 s.' },
 ];
+// A mission's prerequisites (MISSIONS[id].needs: { ship: [upgrade ids], overcharge }), as warning lines for
+// the lobby: without them the energy isn't enough (tools/balance.js --calibrate). Not a hard block.
+function missionRequirements(id) {
+  const N = MISSIONS[id]?.needs, out = [];
+  if (!N) return out;
+  const names = (N.ship || []).map(u => SHIP_UPGRADES.find(x => x.id === u)?.name).filter(Boolean);
+  if (names.length) out.push(`Needs: ${names.join(', ')}`);
+  if (N.overcharge) out.push('Needs an engineer with reactor overcharge');
+  return out;
+}
 // ---------------------------------------------------------------------------
 // Personal gear (money): general gear for anyone, and a track of gear per profession (level 2+;
 // only usable in that profession).
@@ -59,6 +69,8 @@ const CAMPAIGN = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
 Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 100, perPirate: 40, rep: 1, xp: 80 },
+    crew: {events: [2, 4, 8, 12, 15, 18, 21, 21], cells: [3, 3, 7, 8, 11, 13, 11, 11], reactor: [0.5, 0.6, 0.7, 0.85, 0.7, 0.6, 1, 1]},   // --calibrate: 54% 75% 71% 67% 68% 68% 69% 73% idle for 1-8 players
+    essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     objective: { kind: 'pirates', count: 2 }, rules: {},
     blurb: 'Clear pirate raiders out of the trade lanes. $40 per pirate.',
     briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The Guild pays $40 for every pirate you put down — a raider shot to scrap counts, and so does every boarder. If a raider docks, its crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
@@ -66,6 +78,8 @@ Object.assign(MISSIONS, {
   },
   c2: {
     name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 150, rep: 1, xp: 100 },
+    crew: {events: [2, 2, 7, 8, 13, 15, 19, 20], cells: [2, 2, 6, 5, 12, 9, 14, 15], reactor: [1, 0.85, 0.7, 0.85, 0.5, 1, 0.6, 0.6]},   // --calibrate: 70% 83% 68% 74% 68% 71% 67% 70% idle for 1-8 players
+    essential: ['intruder'],
     objective: { kind: 'intruder', count: 1 }, rules: {},
     blurb: 'Something crawled out of the bonus salvage pod. Kill it.',
     briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nSomething with too many legs is loose on the ship. It forces its way around, room by room, hunting whoever it can find. Lock it in with the security console, get a weapon, and kill it. The Xenobiology Institute will pay for the remains.',
@@ -73,6 +87,7 @@ Object.assign(MISSIONS, {
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
+    crew: {events: [2, 5, 8, 11, 14, 16, 17, 22], cells: [2, 3, 5, 5, 6, 6, 6, 9]},   // --calibrate: 62% 71% 67% 69% 67% 68% 70% 69% idle for 1-8 players
     objective: { kind: 'blackbox' }, rules: { breach: true },
     blurb: 'Dr. Varga\'s lab went quiet. Bring back its black box.',
     briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something is asleep in there. Don\'t wake it.',
@@ -80,6 +95,9 @@ Object.assign(MISSIONS, {
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 200, perPirate: 50, rep: 2, xp: 160 },
+    crew: {events: [2, 4, 7, 11, 12, 18, 23, 23], cells: [2, 2, 2, 5, 6, 8, 9, 9]},   // --calibrate: 57% 68% 70% 68% 72% 67% 68% 72% idle for 1-8 players
+    needs: {ship: ['cannons'], overcharge: false},
+    essential: ['pirates'],
     objective: { kind: 'pirates', count: 3 }, rules: { breach: true, surge: true },
     blurb: 'Pirates took Dr. Varga. Hunt the Red Comet gang.',
     briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away.\n\nTheir raiders patrol the Cove. Take them on — defeat at least three pirates. If they dock, board them back: their loot crate is full, and jamming their reactor sends them running. Power lines can arc now; splice them with the repair kit.',
@@ -87,6 +105,8 @@ Object.assign(MISSIONS, {
   },
   c5: {
     name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 300, rep: 3, xp: 200 },
+    crew: {events: [2, 5, 9, 13, 17, 20, 20, 22], cells: [2, 2, 5, 7, 7, 9, 9, 10], reactor: [1, 1, 1, 1, 1, 1, 1, 0.85]},   // --calibrate: 65% 66% 68% 68% 68% 69% 74% 78% idle for 1-8 players
+    needs: {ship: ['cannons', 'inserter'], overcharge: false},
     objective: { kind: 'rescue', npc: 'Dr. Varga' }, rules: { breach: true, surge: true, gravity: true },
     blurb: 'Dock with the pirates\' prison barge and bring Dr. Varga home.',
     briefing: 'We tracked the Red Comet\'s prison barge. Dr. Varga is aboard — hurt, by the sound of her distress ping.\n\nWhen the barge docks, get past the guards, find her in the cargo hold, patch her up (hold click on her) and lead her back. She\'ll follow your footsteps, slowly. Don\'t let the barge cast off with her still on it.',
@@ -94,6 +114,9 @@ Object.assign(MISSIONS, {
   },
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 300, rep: 3, xp: 220 },
+    crew: {events: [3, 5, 9, 11, 16, 17, 23, 23], cells: [2, 4, 8, 9, 16, 14, 23, 20], reactor: [1, 1, 1, 1, 0.7, 1, 0.7, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 51% 69% 67% 73% 67% 71% 70% 74% idle for 1-8 players
+    needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
+    essential: ['spores', 'leeches'],
     objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
     blurb: 'Drill a sample of the living rock in the Mire Nebula.',
     briefing: 'Dr. Varga is grateful — and terrified. The intruder\'s DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. It will park right in front of us: take the mining drill (left airlock room), spacewalk out and drill a sample, then bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
@@ -101,6 +124,8 @@ Object.assign(MISSIONS, {
   },
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 350, rep: 3, xp: 260 },
+    crew: {events: [1, 2, 3, 4, 10, 14, 17, 19], cells: [2, 2, 2, 3, 4, 6, 5, 6], reactor: [1, 1, 1, 1, 1, 0.7, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 64% 72% 61% 65% 71% 69% 69% 68% idle for 1-8 players
+    needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Fly into the deep beyond the Mire and get out alive.',
     briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in, take readings, survive. Out there the jump drive is fussy: the three jump coils on the hull have to be aligned on a spacewalk, and when it spools up someone has to pull and hold the jump handle at the helm.',
@@ -108,6 +133,8 @@ Object.assign(MISSIONS, {
   },
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 500, rep: 5, xp: 400 },
+    crew: {events: [1, 3, 3, 4, 4, 9, 9, 21], cells: [2, 2, 2, 2, 2, 4, 4, 7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 68% 69% 61% 62% 70% 68% 68% idle for 1-8 players
+    needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Sit next to the leviathan for five minutes. Survive.',
     briefing: 'Varga\'s theory: the swarms answer to one creature. To prove it, someone has to sit right next to it for five minutes and survive.\n\nThat someone is you. Everything out there will come for the ship at once. Good luck — and bring the cat.',
@@ -337,14 +364,15 @@ const lobbyUI = {
       }
       if (open.length < ids.length) { const n = document.createElement('div'); n.className = 'mission-more'; n.textContent = title === 'Campaign' ? 'More chapters unlock as you go.' : 'More unlock as you go.'; list.appendChild(n); }
     }
+    list.scrollTop = scroll;
+    list.querySelector('.mission.chosen')?.scrollIntoView?.({ block: 'nearest' });
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
       const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'intruder' ? 'Kill the intruder.' : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
-    list.scrollTop = scroll;
-    list.querySelector('.mission.chosen')?.scrollIntoView?.({ block: 'nearest' });
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
+        ${missionRequirements(this.chosen).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
         ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep} · ${R.xp} XP (if you make it back aboard on your feet)` : ''}</p>`}`;
     }
   },

@@ -17,10 +17,10 @@ const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED =
 const BLASTER_COOLDOWN = LASER_COOLDOWN / 0.66, BLASTER_CHARGE = 1.5, BLASTER_SLOW_AFTER = 0.2;
 const BLASTER_CARRY_SPEED = 0.85, BLASTER_CHARGE_SPEED = 0.3;
 const OVERCHARGE_FIRE = 0.1;                      // overcharged reactor: chance per energy that it catches fire
-// How fast the reactor runs: 1/crewPace(n) for n crew (js/mission.js: the encounters come that much
-// faster, so the energy per gap between encounters stays the same), doubled while overcharged.
-// 1 player: an energy every ENERGY_TIME (20 s); 2: 14.1 s; 3: 11.5 s; 4: 10 s; 8: 7.1 s.
-const reactorSpeed = () => (power.overcharge ? 2 : 1) / crewPace(crewSize());
+// How fast the reactor runs: 1/paceFactor() (js/mission.js: the mission's pace times the crew-size curve;
+// the encounters come that much faster or slower, so the energy per gap between encounters stays the
+// same), doubled while overcharged.
+const reactorSpeed = () => (power.overcharge ? 2 : 1) / paceFactor();
 
 const power = {
   reactor: { fuel: CELL_ENERGY, t: 0 },          // energy left in the loaded cell, progress to the next one
