@@ -4,7 +4,7 @@
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
 const JUMP_DELAY = 22, JUMP_WINDOW = 15, MAX_DAMAGE = 3;   // the jump comes mid-battle: 22 s after the final fight starts
-const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
+const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
 let FIRE_TIME = 15;
 const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
 
@@ -33,6 +33,7 @@ function eventLabel(ev) {
   if (ev.kind === 'frigate') return `Frigate — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'swarm') return 'Asteroid swarm — front';
   if (ev.kind === 'intruder') return `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
+  if (ev.kind === 'saboteur') return `Saboteur — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'mines') return `Mine drone — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'spores') return `Spore cloud — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'canister') return `Fuel canister — ${SIDE_NAME[ev.side]}`;
@@ -65,7 +66,7 @@ const MISSIONS = {
     rules: { breach: true, surge: true },
     build(target) {
       const kinds = ['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance'];
-      const extras = ['interceptor', 'swarm', 'intruder'];
+      const extras = ['interceptor', 'swarm', 'intruder', 'saboteur'];
       for (let i = 0; i < 2; i++) kinds.push(extras[Math.floor(Math.random() * extras.length)]);
       for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
       if (kinds[0] === 'frigate') kinds.push(kinds.shift());          // don't open with the big one
@@ -77,7 +78,7 @@ const MISSIONS = {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Hull breaches, plasma fires, failing gravity, things on the hull — and the jump coils need aligning outside.',
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
-      return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister', 'flare', 'storm', 'coolant', 'stealth', 'grappler', 'leeches'], target, 20, 18);
+      return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister', 'flare', 'storm', 'coolant', 'stealth', 'grappler', 'leeches'], target, 20, 17);
     },
   },
   pirates: {
@@ -93,7 +94,7 @@ const MISSIONS = {
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
-    build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder'], target, 60, 38)]; },
+    build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'Drill an ore sample out of a big asteroid on a spacewalk while the front cannon keeps the small ones off.',
@@ -104,7 +105,7 @@ const MISSIONS = {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
-      return [...shuffledTimeline(['interceptor', 'frigate', 'frigate', 'swarm', 'intruder', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'flare', 'storm', 'coolant', 'glitch',
+      return [...shuffledTimeline(['interceptor', 'frigate', 'frigate', 'swarm', 'intruder', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'flare', 'storm', 'coolant', 'glitch',
                                    'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 15, 13), makeEvent('leviathan', 150, target)];
     },
   },
@@ -116,7 +117,7 @@ function shuffledTimeline(kinds, target, start, gap) {
 }
 function makeEvent(kind, t, target) {
   const ev = { t, kind };
-  if (['interceptor', 'frigate', 'intruder', 'mines', 'spores', 'canister'].includes(kind) || EVENT_SIDES[kind]) ev.side = EVENT_SIDES[kind]?.() || randSide();
+  if (['interceptor', 'frigate', 'intruder', 'saboteur', 'mines', 'spores', 'canister'].includes(kind) || EVENT_SIDES[kind]) ev.side = EVENT_SIDES[kind]?.() || randSide();
   if (kind === 'maintenance') { ev.sys = target; ev.radar = false; }
   if (kind === 'debris') ev.gun = ['port', 'front', 'star'][Math.floor(Math.random() * 3)];
   if (kind === 'antenna' || kind === 'coolant' || kind === 'glitch') ev.radar = false;
@@ -154,6 +155,7 @@ function runEvent(ev) {
   if (ev.kind === 'interceptor' || ev.kind === 'frigate') combatSpawn(ev.kind, ev.side);
   else if (ev.kind === 'swarm') combatSpawn('swarm');
   else if (ev.kind === 'intruder') spawnInvader(ev.side);
+  else if (ev.kind === 'saboteur') spawnSaboteur(ev.side);
   else if (ev.kind === 'maintenance' && !mission.maint.serviced && !ev.sys.broken) breakSystem(ev.sys);
   else if (ev.kind === 'mines') spawnMineDrone(ev.side);
   else if (ev.kind === 'spores') spawnSpores(ev.side);
@@ -507,7 +509,7 @@ function drawSecurityPanel() {
   };
   for (const c of crew) if (c.mode === 'inside' || c.mode === 'hatch') blip(c.x, c.y, 'rgba(90,170,255,1)', c === player);
   if (dk.npc) blip(dk.npc.x, dk.npc.y, 'rgba(90,170,255,1)', false);
-  for (const a of boarding.invaders) if (a.state !== 'dormant') blip(a.x, a.y, 'rgba(255,70,60,1)', true);
+  for (const a of boarding.invaders) if (a.state !== 'dormant' && a.mode !== 'cloaked') blip(a.x, a.y, 'rgba(255,70,60,1)', true);
   for (const p of dk.pirates) blip(p.x, p.y, 'rgba(255,70,60,1)', true);
   for (const [li, l] of lockables().entries()) {
     const [cx, cy] = P(l.x, l.y), hover = Math.hypot(mouse.x - cx, mouse.y - cy) < 15;

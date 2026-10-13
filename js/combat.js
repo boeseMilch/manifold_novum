@@ -336,7 +336,7 @@ function drawCombatBack(t) {
 // Hits on the hull: hull/decal_small_v0..2 (r 0.5) / decal_large_v0..1 (r 1.1) when GFX.on, variant by seed.
 function drawShipDecals() {
   for (const d of combat.decals) {
-    if (d.goo || d.scorch) continue;
+    if (d.goo || d.scorch || d.body) continue;
     if (GFX.on) {
       const big = d.r > 0.8, n = `hull/decal_${big ? 'large' : 'small'}_v${Math.floor(d.seed || 0) % (big ? 2 : 3)}`;
       if (GFX.sprite(n, 0, d.x, d.y, 0, { layer: 'decal', scale: d.r / (big ? 1.1 : 0.5) })) continue;

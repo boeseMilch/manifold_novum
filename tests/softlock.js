@@ -73,7 +73,7 @@ const sysOf = (G, ref) => G.SYSTEMS.find(s => s.ref === ref);
     while (G.roomAt(a.x, a.y)?.id === 'portLock' && t < 90) { G.tick(DT); t += DT; }
     sabotaged = G.SYSTEMS.filter(s => s.broken).length;
     check(t >= 90, `locked in by security, the intruder stays contained (still in the left airlock room after ${t.toFixed(0)} s)`);
-    check(sabotaged >= 2, `…and wrecks the room it is locked in instead (${G.SYSTEMS.filter(s => s.broken).map(s => s.name).join(', ')})`);
+    check(sabotaged === 0, `…and paces the room it is locked in without wrecking anything (the alien hunts, it doesn't sabotage)`);
   }
   // 7. long runs with parts breaking and doors locking at random: it never sits in an airlock for long
   {

@@ -75,6 +75,7 @@ const send = (c, obj) => sendFrame(c, JSON.stringify(obj));
 // Lobby + game
 // ---------------------------------------------------------------------------
 let nextId = 1;
+const MAX_PLAYERS = 8;                                 // (8 spawn spots and 8 crew colours)
 const clients = new Set();
 let phase = 'lobby', missionId = 'intro', game = null;
 const COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#c43a3a'];
@@ -86,6 +87,10 @@ function lobbyState() {
 const broadcast = (obj) => { const s = JSON.stringify(obj); for (const c of clients) sendFrame(c, s); };
 
 function join(c) {
+  if (clients.size >= MAX_PLAYERS) {                   // full: say so, and the browser plays solo instead
+    send(c, { t: 'full', max: MAX_PLAYERS }); c.alive = false; setTimeout(() => c.socket.end(), 200);
+    return;
+  }
   clients.add(c);
   send(c, { t: 'welcome', id: c.id });
   if (phase === 'game') { game.sim.netServer.addCrew(c.id, c.name, c.kit); send(c, { t: 'start', mission: missionId }); }
@@ -99,6 +104,7 @@ function drop(c) {
   else broadcast(lobbyState());
 }
 function onMessage(c, m) {
+  if (!clients.has(c)) return;                       // (turned away: the server was full)
   if (m.t === 'hello') {
     c.name = String(m.name || 'Crew').slice(0, 20);
     if (m.kit && typeof m.kit === 'object') c.kit = m.kit;                  // the player's gear and profession (from their own saved profile)

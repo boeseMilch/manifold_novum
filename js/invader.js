@@ -1,10 +1,13 @@
-// Alien invader: forces its way in through a side outer airlock, then roams the ship room
-// by room (using the deck airlocks like the crew does). Once you attack it, it fights:
-// keeps its distance, strafes, sidesteps incoming shots and spits acid back.
-// Also holds the indoor projectiles (laser bolts, thrown wrenches, acid spit).
+// Boarders that come in through a side outer airlock (boarding.invaders, `kind` 'alien' or 'saboteur'):
+// - the alien (the fighter): hunts the crew room by room (using the deck airlocks like the crew does)
+//   and fights whoever it finds: keeps its distance, strafes, sidesteps incoming shots, spits acid, pounces.
+// - the saboteur (the sneak): cloaks once inside and pops up next to a part in one of the rooms next to
+//   that airlock (you know the airlock, not which of the two rooms), then wrecks the part. Solo there's
+//   just time to run over from the other room; with a crew you need someone in each. Weak in a fight.
+// Also holds the indoor projectiles (laser bolts, thrown wrenches, acid spit, the saboteur's shots).
 
 const ALIEN_HP = 6, ALIEN_SPEED = 2.6;              // footprint is the crew's (CREW_R), so it fits doors and airlocks
-const ENGAGE_RANGE = 4.5, SABOTAGE_TIME = 10;
+const ENGAGE_RANGE = 4.5, HUNT_SIGHT = 8, HUNT_REPLAN = 2.5;
 const SPIT_SPEED = 9, SPIT_COOLDOWN = [1.6, 2.6], SPIT_WINDUP = 0.7, DODGE_SPEED = 9, DODGE_TIME = 0.25, DODGE_COOLDOWN = 2.2;
 const POUNCE_RANGE = 3.4, POUNCE_WINDUP = 0.65, POUNCE_TIME = 0.32, POUNCE_SPEED = 12;
 
@@ -71,13 +74,14 @@ const freeAt = (x, y) => walkRects().some(r => inRect(x, y, r)) || !pointInPoly(
 function spawnInvader(side) {
   const h = HATCHES.find(h => h.side === side);
   boarding.invaders.push({
-    uid: newUid(), x: h.outside[0], y: h.outside[1], vx: 0, vy: 0, face: h.dir < 0 ? 0 : Math.PI, walk: 0, mode: 'outside',
+    uid: newUid(), kind: 'alien', x: h.outside[0], y: h.outside[1], vx: 0, vy: 0, face: h.dir < 0 ? 0 : Math.PI, walk: 0, mode: 'outside',
     state: 'entering', hatch: h, t: 0, hp: ALIEN_HP, path: [], linger: 0, stuck: 0,
     spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0,
   });
   combatBanner(`Intruder alert — something is coming in through the ${side === 'port' ? 'left' : 'right'} airlock!`);
   sfx.hatch();
 }
+const invaderMaxHp = (a) => (a.kind === 'saboteur' ? SAB_HP : ALIEN_HP);
 
 function alienMove(a, tx, ty, speed, dt) {
   const dx = tx - a.x, dy = ty - a.y, d = Math.hypot(dx, dy);
@@ -98,26 +102,35 @@ function alienStep(a, vx, vy, dt) {
   return moved;
 }
 
+// Forcing the outer airlock open and stepping in (both kinds). True while it's still at it.
+function enterHatch(a, dt) {
+  if (a.state !== 'entering') return false;
+  if (a.hatch.locked) {                            // locked by security: the alien bashes it open, the saboteur picks the lock
+    const sab = a.kind === 'saboteur', step = sab ? 0.9 : 0.7;
+    a.bash = (a.bash || 0) + dt;
+    if (Math.floor(a.bash / step) !== Math.floor((a.bash - dt) / step)) {
+      if (sab) sfx.spark(); else sfx.clank();
+      for (let i = 0; i < 5; i++) combatFx(a.hatch.x, a.hatch.y, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, sab ? '#5ae0ff' : '#ffd28a', 0.07);
+    }
+    if (a.bash >= (sab ? SAB_PICK_TIME : 8)) {
+      a.hatch.locked = false; a.bash = 0;
+      combatBanner(sab ? `The saboteur cracked the ${a.hatch.side === 'port' ? 'left' : 'right'} airlock's lock!` : `The intruder bashed the ${a.hatch.side === 'port' ? 'left' : 'right'} airlock open!`);
+    }
+    return true;
+  }
+  a.t += dt;
+  const k = a.t / HATCH_TIME, h = a.hatch;
+  h.open = Math.max(h.open, Math.sin(Math.PI * clamp(k, 0, 1)));
+  const q = clamp((k - 0.25) / 0.5, 0, 1);
+  a.x = lerp(h.outside[0], h.inside[0], q); a.y = lerp(h.outside[1], h.inside[1], q);
+  if (k >= 1) { a.state = 'wander'; a.mode = 'inside'; }
+  return true;
+}
+
 function updateInvader(a, dt) {
   a.flash = Math.max(0, a.flash - dt * 4);
-  if (a.state === 'entering') {                    // forcing the outer airlock open
-    if (a.hatch.locked) {                          // locked by security: it has to bash it open first
-      a.bash = (a.bash || 0) + dt;
-      if (Math.floor(a.bash / 0.7) !== Math.floor((a.bash - dt) / 0.7)) {
-        sfx.clank();
-        for (let i = 0; i < 5; i++) combatFx(a.hatch.x, a.hatch.y, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, '#ffd28a', 0.07);
-      }
-      if (a.bash >= 8) { a.hatch.locked = false; combatBanner(`The intruder bashed the ${a.hatch.side === 'port' ? 'left' : 'right'} airlock open!`); }
-      return;
-    }
-    a.t += dt;
-    const k = a.t / HATCH_TIME, h = a.hatch;
-    h.open = Math.max(h.open, Math.sin(Math.PI * clamp(k, 0, 1)));
-    const q = clamp((k - 0.25) / 0.5, 0, 1);
-    a.x = lerp(h.outside[0], h.inside[0], q); a.y = lerp(h.outside[1], h.inside[1], q);
-    if (k >= 1) { a.state = 'wander'; a.mode = 'inside'; }
-    return;
-  }
+  if (a.kind === 'saboteur') return updateSaboteur(a, dt);
+  if (enterHatch(a, dt)) return;
   if (a.stun > 0) { a.stun -= dt; return; }
   if (a.state === 'dormant') {                     // asleep (on a derelict) until someone comes close
     const c = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < ENGAGE_RANGE && lineOfSight(a.x, a.y, c.x, c.y));
@@ -134,7 +147,7 @@ function updateInvader(a, dt) {
   if (a.state === 'fight') {
     a.seen = seesPlayer ? 0 : a.seen + dt;
     if ((a.seen > 6 || player.mode !== 'inside') && a.dormantHome) { a.state = 'dormant'; a.act = null; return; }
-    if (a.seen > 6 || player.mode !== 'inside') { a.state = 'wander'; a.path = []; a.task = null; a.doneRoom = null; a.act = null; return; }
+    if (a.seen > 3 || player.mode !== 'inside') { a.state = 'wander'; a.path = []; a.replanT = 0; a.act = null; return; }   // lost them: hunt
     const dx = player.x - a.x, dy = player.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
     a.dodgeCd -= dt; a.spitT -= dt;
     const act = a.act;                               // current move: windup → strike → recover, all readable
@@ -198,60 +211,49 @@ function updateInvader(a, dt) {
     return;
   }
 
-  // engage when the crew gets close
-  if (seesPlayer && Math.hypot(player.x - a.x, player.y - a.y) < ENGAGE_RANGE) { a.state = 'fight'; a.seen = 0; a.task = null; return; }
+  // it's out for blood: engage whoever it can see in reach
+  if (seesPlayer && Math.hypot(player.x - a.x, player.y - a.y) < HUNT_SIGHT) { a.state = 'fight'; a.seen = 0; a.path = []; return; }
   if (a.linger > 0) { a.linger -= dt; return; }
-  // routine: go to an adjacent room, sabotage a part there (SABOTAGE_TIME), move on, repeat
-  if (a.task?.kind === 'sabotage') {
-    const sys = a.task.sys;
-    a.face = Math.atan2(sys.y - a.y, sys.x - a.x); a.walk += dt * 6;
-    const before = a.task.t; a.task.t += dt;
-    if (Math.floor(a.task.t / 0.8) !== Math.floor(before / 0.8)) {
-      sfx.spark();
-      for (let i = 0; i < 4; i++) combatFx(sys.x + (Math.random() - 0.5) * 0.6, sys.y + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 3, -Math.random() * 3, 0.4, '#9cff5a', 0.07);
+  // hunt: head for the room of the nearest crew member aboard (re-planned as they move); with nobody
+  // aboard, or while every way to them is locked, it prowls from room to room
+  const prey = crew.filter(c => c.mode === 'inside' && standing(c)).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
+  a.replanT = (a.replanT || 0) - dt; a.prowl = Math.max(0, (a.prowl || 0) - dt);
+  if (prey && !a.prowl && (a.replanT <= 0 || !a.path.length)) {
+    a.replanT = HUNT_REPLAN;
+    const pr = roomAt(prey.x, prey.y), goal = pr ? NAV.roomNode[pr.id] : nearestNav(prey.x, prey.y);
+    if (!a.path.length || a.path[a.path.length - 1] !== goal) {   // (same goal: keep the route, so being stuck adds up)
+      const path = navPath(nearestNav(a.x, a.y), goal);
+      a.path = path.length > 1 ? path : [];
+      if (!a.path.length) { a.linger = 0.4; a.walkTo = [prey.x, prey.y]; }
     }
-    if (sys.broken) { a.task = null; return; }
-    if (a.task.t >= SABOTAGE_TIME) { breakSystem(sys); combatBanner(`The intruder sabotaged the ${sys.name.toLowerCase()}!`); a.task = null; a.linger = 1; }
-    return;
   }
-  if (a.task?.kind === 'approach') {
-    const [sx, sy] = a.task.spot, sys = a.task.sys;
-    const moved = alienMove(a, sx, sy, ALIEN_SPEED * 0.75, dt);
-    const close = Math.hypot(sx - a.x, sy - a.y) < 0.25;
-    a.task.stuck = moved < 0.002 ? (a.task.stuck || 0) + dt : 0;
-    if (close || (a.task.stuck > 1.5 && Math.hypot(sys.x - a.x, sys.y - a.y) < 2.8)) a.task = { kind: 'sabotage', sys, t: 0 };
-    else if (a.task.stuck > 4) a.task = null;
+  if (!a.path.length && a.walkTo) {                 // same room, out of sight (round a corner): go to where they are
+    const [tx, ty] = a.walkTo;
+    if (alienMove(a, tx, ty, ALIEN_SPEED * 0.85, dt) < 0.002 || Math.hypot(tx - a.x, ty - a.y) < 0.4) a.walkTo = null;
     return;
   }
   if (!a.path.length) {
     const room = roomAt(a.x, a.y) || NAV.nodes[nearestNav(a.x, a.y)].room && ROOMS.find(r => r.id === NAV.nodes[nearestNav(a.x, a.y)].room) || ROOMS[0];
-    if (a.doneRoom !== room.id) {                   // new room: find something to break
-      a.doneRoom = room.id;
-      const pool = SYSTEMS.filter(s => !s.broken && sysRooms(s).includes(room));
-      const target = pool[Math.floor(Math.random() * pool.length)];
-      const spot = target && sabotageSpot(target, room);
-      if (spot) { a.task = { kind: 'approach', sys: target, spot }; return; }
-    }
     const next = adjacentRooms(room).filter(r => r.id !== a.prevRoom);
     const to = (next.length ? next : adjacentRooms(room))[Math.floor(Math.random() * (next.length || adjacentRooms(room).length))];
     a.prevRoom = room.id;
     a.path = navPath(nearestNav(a.x, a.y), NAV.roomNode[to.id]);
-    if (!a.path.length) { a.linger = 1.5; if (++a.lockedOut >= 2) { a.doneRoom = null; a.lockedOut = 0; } return; }
+    if (!a.path.length) { a.linger = 1.5; return; }
   }
   const n = NAV.nodes[a.path[0]];
-  const moved = alienMove(a, n.x, n.y, ALIEN_SPEED * 0.75, dt);
+  const moved = alienMove(a, n.x, n.y, ALIEN_SPEED * (prey && !a.prowl ? 0.9 : 0.75), dt);
   if (Math.hypot(n.x - a.x, n.y - a.y) < 0.15) {
     a.path.shift(); a.stuck = 0;
     if (n.lock) a.linger = 0.3;
   } else if (moved < 0.002) {                       // blocked (closed door): wait, try another route, then bash
     a.stuck += dt;
-    // Doors locked by security contain it: it never bashes those, it tries elsewhere, and if every way
-    // out is locked it keeps wrecking the room it's shut in. Broken / jammed doors it bashes open.
+    // Doors locked by security contain it: it never bashes those, it gives up on that way for a while and
+    // prowls about instead (shut in, it paces the room). Broken / jammed doors it bashes open.
     const lock = lockAround(a), door = lock ? { lock, side: n.y < (SPINE_Y0 + SPINE_Y1) / 2 ? 'top' : 'bottom' } : blockingDoor(a);
     const locked = door && (door.doorway?.locked || door.doorway?.blast || door.lock?.locked);
     if (locked && a.stuck > 2) {
       a.path = []; a.stuck = 0; a.linger = 1.5;
-      if (++a.lockedOut >= 2) { a.doneRoom = null; a.lockedOut = 0; }   // can't get out: break something else in here
+      if (++a.lockedOut >= 2) { a.prowl = 8; a.lockedOut = 0; }         // that way is shut: prowl about for a while
     } else if (door && !locked && a.stuck > (lock ? 3 : 6)) bashDoor(a, dt, door, lock ? 4 : 5);
     else if (!door && a.stuck > 6) { a.path = []; a.stuck = 0; }
   } else { a.bash = 0; if (moved > 0.01) a.replanned = false; }
@@ -268,6 +270,131 @@ function sabotageSpot(sys, room) {
     if (canStand(x, y, rects) && room.rects.some(q => inRect(x, y, q, -0.3))) return [x, y];
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Saboteur: cloak → pop up next to a part in a neighbouring room → wreck it → cloak again
+// ---------------------------------------------------------------------------
+// Timings come from tools/travel.js (real walking times): the two rooms next to a side airlock are
+// 7–9.5 s apart, next-door rooms never less than 3.7 s. Solo, the work takes long enough to run over
+// from the other room (tests/saboteur.js checks this against the measured times); with a crew it's too
+// quick to get there from anywhere but that room.
+const SAB_HP = 3, SAB_SPEED = 2.3, SAB_PICK_TIME = 6;
+const SAB_FADE = 0.8, SAB_SNEAK = [3.5, 5], SAB_WORK_SOLO = 12, SAB_WORK_TEAM = 2;
+const SAB_NOTICE = 5, SAB_LOSE = 3;                  // spots crew this close (in view); cloaks away once out of sight this long
+const SAB_SHOT_SPEED = 4.5, SAB_SHOT_COOLDOWN = [3.5, 5], SAB_AIM = 1.0;   // slow, telegraphed, easy to sidestep
+const sabWorkTime = () => (crew.length > 1 ? SAB_WORK_TEAM : SAB_WORK_SOLO);
+
+function spawnSaboteur(side) {
+  const h = HATCHES.find(h => h.side === side);
+  boarding.invaders.push({
+    uid: newUid(), kind: 'saboteur', x: h.outside[0], y: h.outside[1], vx: 0, vy: 0, face: h.dir < 0 ? 0 : Math.PI, walk: 0, mode: 'outside',
+    state: 'entering', hatch: h, t: 0, hp: SAB_HP, path: [], stuck: 0, act: null, shotT: 1.5, strafe: Math.random() < 0.5 ? 1 : -1,
+    stun: 0, seen: 0, flash: 0, room: roomAt(...h.inside)?.id, from: null,
+  });
+  const where = adjacentRooms(roomAt(...h.inside)).map(r => r.name.toLowerCase()).join(' or the ');
+  combatBanner(`Saboteur at the ${side === 'port' ? 'left' : 'right'} airlock! It cloaks inside — watch the ${where}!`);
+  sfx.hatch();
+}
+
+// Can it slip from one room to a neighbour? Not through a door or deck airlock security has locked.
+function roomLinkOpen(a, b) {
+  if (a.col === b.col) return !DECK_LOCKS[a.col].locked;
+  const x = COLS[Math.max(a.col, b.col)].x - 0.3;
+  const d = DOORWAYS.find(d => Math.abs(d.x + d.w / 2 - x) < 0.5 && (d.y < SPINE_Y0) === (a.deck === 'top'));
+  return !d || !(d.locked || d.blast);
+}
+const sabTargets = (room) => SYSTEMS.filter(s => !s.broken && sysRooms(s).includes(room)).map(s => [s, sabotageSpot(s, room)]).filter(([, p]) => p);
+// Where it turns up next: a random open neighbour with something left to break (the room it's in if it's shut in).
+function sabPickRoom(a) {
+  const here = ROOMS.find(r => r.id === a.room) || roomAt(a.x, a.y) || ROOMS[0];
+  const open = adjacentRooms(here).filter(r => roomLinkOpen(here, r) && sabTargets(r).length);
+  const pool = open.length ? open : sabTargets(here).length ? [here] : adjacentRooms(here).filter(r => roomLinkOpen(here, r));
+  return (pool.length ? pool : [here])[Math.floor(Math.random() * (pool.length || 1))];
+}
+function sabCloak(a) {
+  a.state = 'cloak'; a.t = 0; a.task = null; a.act = null;
+  sfx.hatch();
+  for (let i = 0; i < 14; i++) combatFx(a.x + (Math.random() - 0.5) * 0.6, a.y + (Math.random() - 0.5) * 0.9, (Math.random() - 0.5) * 2, -Math.random() * 2, 0.6, '#5ae0ff', 0.06);
+}
+function sabPopUp(a) {
+  // security locked the way while it was sneaking over: it's stuck in the room it was leaving, and works there
+  const here = ROOMS.find(r => r.id === a.room), there = ROOMS.find(r => r.id === a.dest) || ROOMS[0];
+  const room = here && here !== there && !roomLinkOpen(here, there) ? here : there, targets = sabTargets(room);
+  const [sys, spot] = targets[Math.floor(Math.random() * targets.length)] || [null, roomCenter(room)];
+  a.x = spot[0]; a.y = spot[1]; a.room = room.id; a.mode = 'inside'; a.state = 'decloak'; a.t = 0; a.seen = 0;
+  a.task = sys ? { kind: 'sabotage', sys, t: 0, need: sabWorkTime() } : null;
+  if (sys) a.face = Math.atan2(sys.y - a.y, sys.x - a.x);
+  combatBanner(`The saboteur decloaked in the ${room.name.toLowerCase()}${sys ? ` — it's at the ${sys.name.toLowerCase()}!` : '!'}`);
+  sfx.spark();
+  for (let i = 0; i < 14; i++) combatFx(a.x + (Math.random() - 0.5) * 0.6, a.y + (Math.random() - 0.5) * 0.9, (Math.random() - 0.5) * 2, -Math.random() * 2, 0.6, '#5ae0ff', 0.06);
+}
+// Crew it can see close by (who'd catch it at work).
+function sabWatchers(a, range) {
+  return crew.filter(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < range && lineOfSight(a.x, a.y, c.x, c.y))
+             .sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
+}
+function sabProvoke(a) { if (['work', 'decloak', 'lurk'].includes(a.state)) { a.state = 'fight'; a.seen = 0; a.task = null; a.act = null; a.shotT = Math.max(a.shotT, 1.2); } }
+
+function updateSaboteur(a, dt) {
+  if (enterHatch(a, dt)) { if (a.state !== 'entering') { a.room = roomAt(a.x, a.y)?.id || a.room; sabCloak(a); } return; }
+  if (a.stun > 0) { a.stun -= dt; return; }
+  a.t += dt;
+  if (a.state === 'cloak') {                         // fading out (it can still be shot)
+    if (a.t >= SAB_FADE) { a.state = 'sneak'; a.mode = 'cloaked'; a.t = 0; a.sneak = SAB_SNEAK[0] + Math.random() * (SAB_SNEAK[1] - SAB_SNEAK[0]); a.dest = sabPickRoom(a).id; }
+    return;
+  }
+  if (a.state === 'sneak') { if (a.t >= a.sneak) sabPopUp(a); return; }
+  if (a.state === 'decloak') {                       // shimmering in: already at the part, already catchable
+    if (sabWatchers(a, SAB_NOTICE).length) { sabProvoke(a); return; }
+    if (a.t >= SAB_FADE) { a.state = a.task ? 'work' : 'lurk'; a.t = 0; }
+    return;
+  }
+  if (a.state === 'lurk') { if (sabWatchers(a, SAB_NOTICE).length) sabProvoke(a); else if (a.t > 3) sabCloak(a); return; }
+  if (a.state === 'work') {
+    const sys = a.task.sys;
+    if (sabWatchers(a, SAB_NOTICE).length) { sabProvoke(a); return; }
+    if (sys.broken) { sabCloak(a); return; }         // somebody else got there first: move on
+    a.face = Math.atan2(sys.y - a.y, sys.x - a.x);
+    const before = a.task.t; a.task.t += dt;
+    if (Math.floor(a.task.t / 0.6) !== Math.floor(before / 0.6)) {
+      sfx.spark();
+      for (let i = 0; i < 3; i++) combatFx(sys.x + (Math.random() - 0.5) * 0.6, sys.y + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 3, -Math.random() * 3, 0.35, '#5ae0ff', 0.06);
+    }
+    if (a.task.t >= a.task.need) { breakSystem(sys); combatBanner(`The saboteur wrecked the ${sys.name.toLowerCase()}!`); sabCloak(a); }
+    return;
+  }
+  if (a.state === 'fight') {
+    const seen = sabWatchers(a, 14), foe = seen[0];
+    a.seen = foe ? 0 : a.seen + dt;
+    if (a.seen > SAB_LOSE) { sabCloak(a); return; }  // shook them off: slip away to the next room
+    a.shotT -= dt;
+    const act = a.act;
+    if (act) {                                       // aim (laser sight, 1 s) → a slow shot → lower the gun
+      act.t += dt;
+      if (foe && !act.fired) a.face = Math.atan2(foe.y - a.y, foe.x - a.x);
+      if (act.t >= SAB_AIM && !act.fired) {
+        act.fired = true;
+        const ux = Math.cos(a.face), uy = Math.sin(a.face);
+        boarding.bolts.push({ x: a.x + ux * 0.45, y: a.y + uy * 0.45, vx: ux * SAB_SHOT_SPEED, vy: uy * SAB_SHOT_SPEED, life: 2.6, owner: 'saboteur' });
+        sfx.spit();
+      }
+      if (act.t >= SAB_AIM + 0.4) a.act = null;
+      return;
+    }
+    if (!foe) return;
+    const dx = foe.x - a.x, dy = foe.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
+    if (a.shotT <= 0) { a.shotT = SAB_SHOT_COOLDOWN[0] + Math.random() * (SAB_SHOT_COOLDOWN[1] - SAB_SHOT_COOLDOWN[0]); a.act = { kind: 'aim', t: 0 }; return; }
+    // backs off to 5–7 units and edges sideways
+    const want = d < 5 ? -1 : d > 7 ? 0.6 : 0;
+    if (Math.random() < dt * 0.3) a.strafe *= -1;
+    const vx = ux * want * SAB_SPEED - uy * a.strafe * SAB_SPEED * 0.5, vy = uy * want * SAB_SPEED + ux * a.strafe * SAB_SPEED * 0.5;
+    if (alienStep(a, vx, vy, dt) < 0.01 * dt) a.strafe *= -1;
+    a.face = Math.atan2(dy, dx);
+    a.room = roomAt(a.x, a.y)?.id || a.room;
+    return;
+  }
+  sabCloak(a);                                       // (anything else, e.g. a state from an older save of the sync: start over)
 }
 
 // No getting stuck: an intruder that can't get through bashes its way out.
@@ -298,16 +425,24 @@ function bashDoor(a, dt, door, time) {
 }
 
 function hurtInvader(a, dmg, stun = 0) {
+  const sab = a.kind === 'saboteur';
   a.hp -= dmg; a.flash = 1; a.stun = Math.max(a.stun, stun);
-  if (a.state !== 'entering') { a.state = 'fight'; a.seen = 0; a.task = null; }
-  for (let i = 0; i < 8; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#9cff5a', 0.1);
+  if (sab) sabProvoke(a);
+  else if (a.state !== 'entering') { a.state = 'fight'; a.seen = 0; }
+  for (let i = 0; i < 8; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, sab ? '#5ae0ff' : '#9cff5a', 0.1);
   sfx.alienHurt();
   if (a.hp <= 0) {
     a.dead = true; mission.kills = (mission.kills || 0) + 1;
-    for (let i = 0; i < 30; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 1, i % 2 ? '#9cff5a' : '#5a2a6a', 0.16);
-    combat.decals.push({ x: a.x, y: a.y, r: 0.6, goo: true });
-    combatBanner('Intruder neutralized'); sfx.win();
-  }
+    if (sab) {
+      for (let i = 0; i < 24; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.8, i % 2 ? '#5ae0ff' : '#ffffff', 0.12);
+      combat.decals.push({ x: a.x, y: a.y, r: 0.5, body: 'saboteur', face: a.face });
+      combatBanner('Saboteur down'); sfx.win();
+    } else {
+      for (let i = 0; i < 30; i++) combatFx(a.x, a.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 1, i % 2 ? '#9cff5a' : '#5a2a6a', 0.16);
+      combat.decals.push({ x: a.x, y: a.y, r: 0.6, goo: true });
+      combatBanner('Intruder neutralized'); sfx.win();
+    }
+  } else if (sab && a.hp === 1 && a.state === 'fight') sabCloak(a);   // nearly done for: it tries to slip away
 }
 
 // What one of our bolts does: wrenches 3 (and a stun), heavy blaster shots carry their own damage.
@@ -322,20 +457,22 @@ function updateBoarding(dt) {
     if (b.fast && !freeAt((x0 + b.x) / 2, (y0 + b.y) / 2)) { b.x = (x0 + b.x) / 2; b.y = (y0 + b.y) / 2; }   // (fast shots: don't skip through a wall)
     if (!freeAt(b.x, b.y)) {                       // hit a wall
       b.dead = true;
-      for (let i = 0; i < 5; i++) combatFx(x0, y0, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, b.owner === 'alien' ? '#9cff5a' : '#ffb0a0', 0.07);
+      for (let i = 0; i < 5; i++) combatFx(x0, y0, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, b.owner === 'alien' ? '#9cff5a' : b.owner === 'saboteur' ? '#5ae0ff' : '#ffb0a0', 0.07);
       continue;
     }
     if (b.owner === 'crew') {
       for (const a of boarding.invaders) {
-        if (a.state !== 'entering' && segCircle(x0, y0, b.x, b.y, a.x, a.y, 0.42)) { b.dead = true; hurtInvader(a, boltDamage(b), boltStun(b)); break; }
+        if (a.state !== 'entering' && a.mode === 'inside' && segCircle(x0, y0, b.x, b.y, a.x, a.y, 0.42)) { b.dead = true; hurtInvader(a, boltDamage(b), boltStun(b)); break; }
       }
       // a near miss still gets its attention
-      for (const a of boarding.invaders) if (a.state === 'wander' && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) { a.state = 'fight'; a.seen = 0; a.task = null; }
+      for (const a of boarding.invaders) if (a.mode === 'inside' && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) {
+        if (a.kind === 'saboteur') sabProvoke(a); else if (a.state === 'wander') { a.state = 'fight'; a.seen = 0; }
+      }
     } else {
       const c = crew.find(c => c.mode === 'inside' && segCircle(x0, y0, b.x, b.y, c.x, c.y, 0.35));
       if (c) {
         b.dead = true; combat.hits.crew++; combat.flashes[b.vx > 0 ? 'port' : 'star'] = 1; sfx.hit(false); hurtCrew(c);
-        for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#9cff5a', 0.1);
+        for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, b.owner === 'saboteur' ? '#5ae0ff' : '#9cff5a', 0.1);
       }
     }
   }
@@ -476,7 +613,7 @@ function alienSprite(a, t, P) {
     if (act.kind === 'recover') return ['chars/alien/sprawl', 0, eyes];
   }
   if (fight) return ['chars/alien/ready', m.moving > 0 ? walkF(ALIEN_WALK_CYCLE * 0.65) : 0, eyes];
-  if (a.task?.kind === 'sabotage' || (a.bash > 0 && a.stuck > 0)) return ['chars/alien/sabotage', Math.floor(t * 6), eyes];
+  if (a.bash > 0 && a.stuck > 0) return ['chars/alien/sabotage', Math.floor(t * 6), eyes];   // bashing a door
   return m.moving > 0 ? ['chars/alien/walk', walkF(ALIEN_WALK_CYCLE), eyes] : ['chars/alien/idle', 0, eyes];
 }
 function drawAlienSprite(a, t, P) {
@@ -546,16 +683,109 @@ function drawAlienCorpses() {
   }
 }
 
+// Saboteur (chars/saboteur/*, models/chars/saboteur.py): slim infiltrator in a charcoal stealth suit,
+// visor slit and seam lights through the tint mask (cyan sneaking / working, red fighting). Cloaking
+// fades it out (it's gone while it sneaks), decloaking fades it in. While it aims: a laser sight.
+const SAB_LIGHT = { calm: '#5ae0ff', fight: '#ff4a3a' }, SAB_GUN_Z = 1.0;
+function sabAlpha(a) {
+  if (a.state === 'sneak') return 0;
+  if (a.state === 'cloak') return Math.max(0, 1 - a.t / SAB_FADE) * (0.75 + 0.25 * Math.sin(a.t * 40));
+  if (a.state === 'decloak') return Math.min(1, a.t / SAB_FADE) * (0.75 + 0.25 * Math.sin(a.t * 40));
+  return 1;
+}
+function sabSprite(a, t) {
+  const moving = actorMoving(a.uid, a.walk), wf = Math.floor((a.walk / 4 / ALIEN_WALK_CYCLE) * 8);
+  if (a.state === 'entering') return a.hatch.locked ? ['chars/saboteur/sabotage', Math.floor(t * 8)] : ['chars/saboteur/walk', Math.floor(t * 12)];
+  if (a.stun > 0) return ['chars/saboteur/stunned', Math.floor(t * 2.5)];
+  if (a.state === 'work') return ['chars/saboteur/sabotage', Math.floor(t * 8)];
+  if (a.act?.kind === 'aim') return ['chars/saboteur/aim', 0];
+  return moving ? ['chars/saboteur/walk', wf] : ['chars/saboteur/idle', 0];
+}
+function drawSaboteurBody(a, t, light) {            // 2D fallback (classic view, or while the sprites load), facing +x
+  shadowEllipse(2, 4, T * 0.26, T * 0.2, 0.35);
+  ctx.rotate(a.face);
+  const crouch = a.state === 'work' ? 0.85 : 1, sw = Math.sin(a.walk * 1.6) * 0.18 * (a.state === 'work' ? 0 : 1);
+  ctx.fillStyle = '#23282f';                          // legs
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.ellipse(T * sd * sw * 0.6, sd * T * 0.08, T * 0.11, T * 0.06, 0, 0, TAU); ctx.fill(); stroke(1.2); }
+  ctx.fillStyle = '#2e353e'; ctx.fillRect(-T * 0.26, -T * 0.13, T * 0.12, T * 0.26); stroke(1.2);   // cloak emitter pack
+  ctx.beginPath(); ctx.arc(-T * 0.2, 0, T * 0.05, 0, TAU); ctx.strokeStyle = light; ctx.lineWidth = 2; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(-T * 0.02, 0, T * 0.15 * crouch, T * 0.2, 0, 0, TAU);   // shoulders
+  const g = ctx.createLinearGradient(0, -T * 0.2, 0, T * 0.2); g.addColorStop(0, '#47505c'); g.addColorStop(1, '#262c34');
+  ctx.fillStyle = g; ctx.fill(); stroke(2);
+  ctx.strokeStyle = light; ctx.lineWidth = 1.4; ctx.globalAlpha *= 0.8;          // seam lights
+  ctx.beginPath(); ctx.moveTo(-T * 0.1, -T * 0.16); ctx.lineTo(T * 0.06, -T * 0.12); ctx.moveTo(-T * 0.1, T * 0.16); ctx.lineTo(T * 0.06, T * 0.12); ctx.stroke();
+  ctx.globalAlpha /= 0.8;
+  const arm = a.act?.kind === 'aim' ? 1 : a.state === 'work' ? 0.6 : 0;
+  if (arm) {                                          // pistol arm forward (aiming), or both hands at the part
+    ctx.strokeStyle = '#2b3139'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, T * 0.12); ctx.lineTo(T * 0.32 * arm, T * 0.04); ctx.stroke();
+    if (a.state === 'work') { ctx.beginPath(); ctx.moveTo(0, -T * 0.12); ctx.lineTo(T * 0.28, -T * 0.04 + Math.sin(t * 20) * 2); ctx.stroke(); }
+    else { ctx.fillStyle = '#15181d'; ctx.fillRect(T * 0.3, T * 0.01, T * 0.12, T * 0.06); }
+  }
+  ctx.beginPath(); ctx.arc(T * 0.04, 0, T * 0.11, 0, TAU); ctx.fillStyle = '#323943'; ctx.fill(); stroke(1.8);   // helmet
+  ctx.beginPath(); ctx.arc(T * 0.04, 0, T * 0.085, -0.7, 0.7); ctx.strokeStyle = light; ctx.lineWidth = 3; ctx.stroke();   // visor slit
+}
+function drawSaboteur(a, t) {
+  const alpha = sabAlpha(a), light = a.state === 'fight' ? SAB_LIGHT.fight : SAB_LIGHT.calm;
+  if (alpha <= 0.01) return;
+  let sprited = false;
+  if (GFX.on) {
+    const [name, f] = sabSprite(a, t);
+    sprited = GFX.sprite(name, GFX.frameIndex(name, a.face, f), a.x, a.y, 0, { tint: light, emissive: 0.5, alpha, pick: [0.32, 1.2], depthWrite: alpha > 0.9 });
+    if (!sprited) {                                    // stand-in until its own sprites are packed: a ghostly grey suit, visor down
+      const sn = name === 'chars/saboteur/walk' ? 'crew/walk_visor' : 'crew/idle_visor';
+      sprited = GFX.sprite(sn, GFX.frameIndex(sn, a.face, sn === 'crew/walk_visor' ? f : 0), a.x, a.y, 0, { tint: '#3a4048', desat: 1, alpha: alpha * 0.6, pick: [0.32, 1.2], depthWrite: false });
+      if (sprited && alpha > 0.3) {                    // its visor slit glowing through
+        const [vx, vy] = [L(a.x + Math.cos(a.face) * 0.12), L(a.y + Math.sin(a.face) * 0.05 - GFX.lift(1.05))];
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = alpha;
+        const g = ctx.createRadialGradient(vx, vy, 0, vx, vy, L(0.3)); g.addColorStop(0, light); g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(vx, vy, L(0.3), 0, TAU); ctx.fill();
+        ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+      }
+    }
+  }
+  const lz = sprited ? GFX.lift(SAB_GUN_Z) : 0;
+  if (a.act?.kind === 'aim' && !a.act.fired) {        // laser sight: faint, then bright and flickering just before the shot
+    const k = a.act.t / SAB_AIM, hot = k > 0.65;
+    let len = 0; while (len < 14 && freeAt(a.x + Math.cos(a.face) * len, a.y + Math.sin(a.face) * len)) len += 0.1;
+    ctx.beginPath(); ctx.moveTo(L(a.x + Math.cos(a.face) * 0.4), L(a.y + Math.sin(a.face) * 0.4 - lz)); ctx.lineTo(L(a.x + Math.cos(a.face) * len), L(a.y + Math.sin(a.face) * len - lz));
+    ctx.strokeStyle = hot ? `rgba(255,${Math.sin(t * 40) > 0 ? 70 : 170},70,0.9)` : 'rgba(90,224,255,0.35)'; ctx.lineWidth = hot ? 2.5 : 1.2; ctx.stroke();
+  }
+  if (!sprited) {
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(L(a.x), L(a.y));
+    drawSaboteurBody(a, t, light);
+    ctx.restore();
+  }
+  const view = camera(), up = sprited ? 1.35 : 0.75;
+  if (a.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${a.flash * 0.4})`; ctx.beginPath(); ctx.ellipse(L(a.x), L(a.y - (sprited ? GFX.lift(0.65) : 0)), L(0.3), L(sprited ? 0.55 : 0.3), 0, 0, TAU); ctx.fill(); }
+  if (a.stun > 0) for (let i = 0; i < 3; i++) {
+    const q = t * 4 + i * TAU / 3;
+    ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.arc(L(a.x) + Math.cos(q) * 12, L(a.y - (sprited ? GFX.lift(1.3) : 0.6)) + Math.sin(q) * 4, 2.5, 0, TAU); ctx.fill();
+  }
+  if (a.hp < SAB_HP && alpha > 0.5) {
+    const pips = () => { for (let i = 0; i < SAB_HP; i++) { ctx.fillStyle = i < a.hp ? '#5ae0ff' : '#2b303a'; ctx.fillRect(-8 + i * 6, 0, 5, 3); } };
+    if (sprited) upright(view, a.x, a.y, up, pips); else { ctx.save(); ctx.translate(L(a.x), L(a.y) - L(0.5)); pips(); ctx.restore(); }
+  }
+}
+// A dead saboteur lies where it fell (the decal hurtInvader leaves).
+function drawSaboteurCorpses() {
+  for (const d of combat.decals) if (d.body === 'saboteur') {
+    if (GFX.on && GFX.sprite('chars/saboteur/down', GFX.frameIndex('chars/saboteur/down', d.face || 0), d.x, d.y, 0, { tint: '#203038', sortY: d.y - 0.4 })) continue;
+    ctx.save(); ctx.translate(L(d.x), L(d.y)); ctx.globalAlpha = 0.9;
+    drawSaboteurBody({ face: d.face || 0, walk: 0, state: 'down' }, 0, '#203038'); ctx.restore();
+  }
+}
+
 function drawBoarding(t) {
   drawAlienCorpses();
+  drawSaboteurCorpses();
   for (const a of boarding.invaders) {
-    if (a.task?.kind === 'sabotage') glowLayer(() => {   // green progress ring on the part it's wrecking (on the floor, under the sprites)
-      const sys = a.task.sys;
-      ctx.beginPath(); ctx.arc(L(sys.x), L(sys.y), L(0.9), -Math.PI / 2, -Math.PI / 2 + (a.task.t / SABOTAGE_TIME) * TAU);
+    if (a.task?.kind === 'sabotage' && a.state === 'work') glowLayer(() => {   // progress ring round its feet (on the floor; big parts would hide one on the part)
+      ctx.beginPath(); ctx.arc(L(a.x), L(a.y), L(0.6), -Math.PI / 2, -Math.PI / 2 + (a.task.t / a.task.need) * TAU);
       ctx.strokeStyle = 'rgba(20,22,27,0.6)'; ctx.lineWidth = 8; ctx.stroke();
-      ctx.strokeStyle = '#9cff5a'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = SAB_LIGHT.calm; ctx.lineWidth = 4; ctx.stroke();
     });
-    drawAlien(a, t);
+    if (a.kind === 'saboteur') drawSaboteur(a, t); else drawAlien(a, t);
   }
   for (const b of boarding.bolts) {
     if (b.wrench) { wrench(L(b.x), L(b.y), b.spin); continue; }
@@ -565,6 +795,13 @@ function drawBoarding(t) {
       ctx.beginPath(); ctx.moveTo(L(b.x), L(b.y)); ctx.lineTo(L(b.x - dx * len), L(b.y - dy * len));
       ctx.strokeStyle = b.heavy ? 'rgba(120,200,255,0.55)' : 'rgba(255,80,60,0.5)'; ctx.lineWidth = 7 * w; ctx.lineCap = 'round'; ctx.stroke();
       ctx.strokeStyle = b.heavy ? '#f0f8ff' : '#ffe0d8'; ctx.lineWidth = 2.5 * w; ctx.stroke();
+    } else if (b.owner === 'saboteur') {             // the saboteur's shot: a slow, fat cyan plasma ball (easy to see coming)
+      const pulse = 0.8 + 0.2 * Math.sin(b.life * 30);
+      for (let i = 3; i >= 0; i--) {
+        ctx.beginPath(); ctx.arc(L(b.x - dx * i * 0.18), L(b.y - dy * i * 0.18), (7 - i * 1.4) * pulse, 0, TAU);
+        ctx.fillStyle = i ? `rgba(90,224,255,${0.45 - i * 0.1})` : '#e8fbff'; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(L(b.x), L(b.y), 7 * pulse, 0, TAU); ctx.strokeStyle = 'rgba(90,224,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
     } else {                                         // acid spit: green glob with a trail
       for (let i = 0; i < 3; i++) {
         ctx.beginPath(); ctx.arc(L(b.x - dx * i * 0.15), L(b.y - dy * i * 0.15), 6 - i * 1.6, 0, TAU);

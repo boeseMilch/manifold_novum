@@ -1,6 +1,6 @@
 // End to end over the network: real server, WebSocket clients (Node's built-in client).
 // Lobby → pick mission → start → snapshots with both crew → input moves you → commands work →
-// a browser-side copy applies a snapshot and renders it → late join / leave. Run: node tests/network.js
+// a browser-side copy applies a snapshot and renders it → late join / leave → 8 players at most. Run: node tests/network.js
 const { spawn } = require('child_process');
 const path = require('path');
 const { loadGame } = require('./harness');
@@ -15,6 +15,7 @@ function client(name) {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.t === 'welcome') c.id = m.id;
+    if (m.t === 'full') c.full = m.max;
     if (m.t === 'lobby') c.lobby = m;
     if (m.t === 'start') c.started = m.mission;
     if (m.t === 'state') { c.state = m.s; c.you = m.you; c.sfx += m.sfx.length; }
@@ -72,6 +73,14 @@ function client(name) {
     check(c.started && c.state?.crew.some(x => x.name === 'Carol'), 'someone joining mid-game drops straight in');
     c.ws.close(); await sleep(300);
     check(!a.state.crew.some(x => x.name === 'Carol'), 'leaving removes them from the ship');
+    // at most 8 players: a 9th is told the server is full and never joins
+    const more = [3, 4, 5, 6, 7, 8].map(i => client('P' + i)); await Promise.all(more.map(m => m.open)); await sleep(400);
+    const ninth = client('Nine'); await ninth.open; await sleep(400);
+    check(a.state.crew.length === 8 && ninth.full === 8 && !ninth.started && !a.state.crew.some(x => x.name === 'Nine'), `8 players fit; the 9th is told the server is full (${a.state.crew.length} aboard, full=${ninth.full})`);
+    more[0].ws.close(); await sleep(300);
+    const again = client('Nine again'); await again.open; await sleep(400);
+    check(again.started && !again.full && a.state.crew.length === 8, 'once someone leaves, there is room again');
+    for (const m of [...more, again]) m.ws.close();
     a.ws.close(); b.ws.close();
   } finally { srv.kill(); }
   process.exitCode = failed ? 1 : 0;

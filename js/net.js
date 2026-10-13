@@ -215,6 +215,7 @@ function netClientMain() {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.t === 'welcome') myId = m.id;
+    else if (m.t === 'full') { ws.onclose = null; ws.close(); ws = null; $('lobby-status').textContent = `The server is full (${m.max} players) — playing solo`; }
     else if (m.t === 'lobby') {
       if (phase === 'game') { if (m.phase === 'lobby') location.reload(); return; }   // mission over: fresh page, rejoin the lobby
       chosen = m.mission; lobbyUI.union = m.unlocked || null; markChosen();

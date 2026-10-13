@@ -16,6 +16,7 @@ const PRACTICE = [
   ['Enemies', 'Tractor tug (right)', () => combatSpawn('tractor', 'star', true)],
   ['Enemies', 'Pirate raider (left)', () => combatSpawn('pirate', 'port', true)],
   ['Enemies', 'Intruder (left airlock)', () => spawnInvader('port')],
+  ['Enemies', 'Saboteur (left airlock)', () => spawnSaboteur('port')],
   ['Organic', 'Grappler (left)', () => combatSpawn('grappler', 'port', true)],
   ['Organic', 'Spore mother (right)', () => combatSpawn('mother', 'star', true)],
   ['Organic', 'Leech swarm (right)', () => spawnLeeches('star')],

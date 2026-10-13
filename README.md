@@ -33,6 +33,7 @@ One person hosts. Everyone else only needs a browser on the same network (Wi-Fi 
 
    To use a different port: `node server.js 9000`, or `PORT=9000 node server.js`.
 3. Open that address yourself too (or `http://localhost:8080` on the host machine).
+   Up to 8 players; a 9th browser is told the server is full and plays solo.
 
 **Everyone:**
 

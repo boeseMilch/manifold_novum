@@ -151,12 +151,14 @@ function updateBreaches(dt) {
 const inPlasmaRoom = (s) => sysRooms(s).some(r => PLASMA_ROOMS.has(r.id));
 const plasmaPart = (s) => inPlasmaRoom(s) && s.kind === 'capacitor' && s.ref.charge >= 3;   // a well charged capacitor in a lower side room
 const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));
-function startVent(roomId) {
+// operator: whoever typed the override code — their visor is already down, so they're not hurt.
+// Everyone else in the room takes one hit the moment it opens (the vacuum afterwards only slows you).
+function startVent(roomId, operator = null) {
   hz.vent = { room: roomId, t: VENT_TIME };
   const room = roomById(roomId);
   combatBanner(`${room.name} vented to space — everything in there gets blown around!`);
   sfx.explosion(); sfx.hatch(); sfx.say?.(`Venting ${room.name}.`);
-  for (const c of crew) if (c.mode === 'inside' && roomAt(c.x, c.y) === room) { hurtCrew(c); combatFx(c.x, c.y, 0, -3, 0.6, '#c9ced8', 0.2); }
+  for (const c of crew) if (c !== operator && c.mode === 'inside' && roomAt(c.x, c.y) === room) { hurtCrew(c); combatFx(c.x, c.y, 0, -3, 0.6, '#c9ced8', 0.2); }
   for (const f of fires) if (sysRooms(f.sys).includes(room)) { f.hp = 0; scorch(f.x, f.y); }
 }
 function updateVent(dt) {
@@ -248,14 +250,15 @@ function hazardClickTarget(mx, my) {
     return holdTarget('grav' + id, GRAV_TIME, `Hold click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
                       () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); });
   }
-  // plasma fire in a lower side room: the panel next to its outer airlock vents the room (manual override)
+  // plasma fire in a lower side room: the panel next to its outer airlock vents the room (manual override:
+  // a PIN pad, with the admin password on a sticky note right next to it — js/minigames.js)
   for (const [id, [x, y]] of Object.entries(VENT_PANELS)) {
     if (!at(x, y, 0.5)) continue;
     if (!near(x, y)) return { text: 'Airlock vent panel — get closer', ok: false, x, y, r: 0.5 };
     if (!plasmaIn(id)) return { text: 'Airlock vent panel (only for plasma fires in this room)', ok: false, x, y, r: 0.5 };
     if (hz.vent) return { text: 'The room is already being vented', ok: false, x, y, r: 0.5 };
-    return { text: 'Click: open BOTH airlock doors to vent the plasma fire (manual override) — anyone still inside gets hurt', ok: true, x, y, r: 0.5,
-             run: () => startOverride({ vent: id }, 'Airlock vent', () => startVent(id)) };
+    return { text: 'Click: type the override code to open BOTH airlock doors and vent the plasma fire — everyone else still inside gets hurt (your visor goes down)', ok: true, x, y, r: 0.5,
+             run: () => openPinPad(id) };
   }
   // snack machine: free, one snack per minute each, and only worth it when you're hurt (ends it 10 s sooner)
   if (at(SNACK.x, SNACK.y, 0.6)) {

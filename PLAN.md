@@ -712,6 +712,61 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Profile v3: Gunner → Weapons specialist, Medic → no profession plus the first aid course; trauma
   kit and painkillers dropped.
 
+### 8y. The saboteur (stealth) and the alien (fight)
+- **Two boarders with their own jobs** (`js/invader.js`, `boarding.invaders`, `kind` 'alien' / 'saboteur'):
+  the alien is the fighter, the saboteur the sneak.
+- **Alien:** no more sabotage. It hunts: it heads for the room of the nearest crew member aboard
+  (re-planned when they change rooms) and attacks whoever it sees within 8 units; it keeps hunting
+  after losing you for 3 s. Nobody aboard (all on a spacewalk): it prowls room to room. Doors locked by
+  security still contain it: it gives up on that way for a while and paces about (it breaks nothing).
+- **Saboteur** (event `saboteur`, practice button "Saboteur (left airlock)"): forces the outer
+  airlock (picks a locked one in 6 s), steps in and cloaks (0.8 s fade, still hittable), sneaks unseen
+  for 3.5-5 s and decloaks next to a random intact part in one of the two rooms next to that airlock
+  (you know the airlock, not the room). Then it works on the part: **12 s solo** (just enough to run
+  over from the other room), **2 s with 2+ players** (only someone already in that room gets there), plus
+  the 0.8 s decloak. Done: the part breaks, it cloaks and pops up next door to where it was.
+- Caught at it (anyone within 5 units in view, a hit or a near miss): it stops and fights, weakly:
+  backs off to 5-7 units, edges sideways, and every 3.5-5 s aims a laser sight for 1 s (cyan, then
+  flickering red) and fires a slow (4.5 u/s), fat cyan plasma ball: a step aside dodges it. 3 hp; at
+  1 hp it tries to cloak away. Out of sight for 3 s: it cloaks and moves on.
+- **Security decides where it can go:** it never goes through a door or deck airlock locked by
+  security. Lock one way out of the airlock room and you know where it will turn up; lock both and it
+  sabotages the airlock room itself. Locked while it sneaks over: it's stuck in the room it left.
+- Shown: sidebar plate (cloaked / wrecking X · n s / attacking), a progress ring on the part, no blip
+  on the security map while cloaked, a body where it died. Events: rush hour, deep drift, stranded
+  engineer, nightmare and campaign chapters 7 and 8 can roll it; chapter 2's briefing now says the
+  alien hunts you.
+- Art: `tools/blender/models/chars/saboteur.py` (slate stealth suit, egg helmet with a glowing visor
+  slit, cloak emitter on the back, light strips through the tint mask: cyan calm, red fighting;
+  idle, walk, aim, sabotage, stunned, down). **Rendered but not packed yet** (the sandbox lacks
+  Pillow and the other chars renders). Until then: in the sprite view a stand-in (the crew suit with
+  the visor down, greyed out and half see-through, a glowing visor), in ?classic a 2D figure. To
+  pack, where Pillow/scipy and the chars renders are: render alien, pirate, npc and saboteur, then
+  `python3 tools/sprites/pack.py chars`. The work's progress ring is round its feet (a ring on a big
+  part like the reactor would be hidden under it).
+- Debug menu: "Saboteur through the left / right airlock" (click the row; `I` / `P` clash with the
+  key codes of i / p). Practice: "Saboteur (left airlock)".
+- **Travel times** (`tools/travel.js`): walks a crew member through the real game (walking speed,
+  furniture, doorways, deck-airlock cycles) on an A* route, steering with WASD like a player. Between
+  rooms, parts / stations or points; best case (airlocks open towards you) and worst (wait a cycle).
+  Room middle to middle: next door 3.7-5.4 s (7.5 s when the airlock has to cycle), the far corner
+  11-13 s. tests/saboteur.js checks the saboteur's timers against these numbers.
+
+### 8z. Airlock vent PIN pad; at most 8 players
+- **Vent PIN pad** (js/minigames.js, js/hazards.js). The vent panel next to a lower side room's outer
+  airlock no longer uses the door-bashing manual override (all other overrides still do). It opens a
+  keypad with a little green terminal display ("MANUAL OVERRIDE — OPEN AIRLOCK / ADMIN PASSWORD: ****"),
+  and stuck crookedly next to it is a yellow sticky note with the admin password: a fresh random 4-6
+  digit code each time. The joke is that the password is right there; the mini-game is just typing it
+  in, with the on-screen keys or the number keys (Backspace / CLR correct, Enter / OK confirm). A wrong
+  code flashes ACCESS DENIED and clears; the right one shows ACCESS GRANTED, then both airlock doors
+  open. The operator's visor is down, so they're not hurt; everyone else still in the room takes one
+  hit the moment it opens (no extra damage from the vacuum afterwards). Like the other mini-games it
+  lives in ui.mini and every key press is a ['mini', 'pin', …] command, so it works the same solo and
+  on the server; while the pad is open, the digit keys go only to the pad. Tests: tests/pinpad.js.
+- **At most 8 players** (server.js MAX_PLAYERS: 8 spawn spots, 8 crew colours). A 9th browser is told
+  the server is full and plays solo; once someone leaves there's room again (tests/network.js).
+
 ### 9. Prototype: Blender sprites in a tilted top-down view (not in the game yet)
 - Goal: replace the hand-drawn canvas art with pre-rendered Blender models that look finished.
   View: orthographic, 50° above the horizon, not rotated (rooms stay rectangles, WASD stays

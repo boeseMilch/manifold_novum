@@ -8,12 +8,14 @@
 //   jump handle     missions with the `handle` rule: someone pulls and holds it while the drive spools
 //   treat pulse     treating someone: clicking on the heartbeat speeds it up
 //   held shields    keep holding the button for +2 s of shield (1 more energy)
+//   PIN pad         the airlock vent panel: type the admin password (it's on a sticky note right next to it)
 
 const PING_CD = 2, SECTOR = Math.PI / 3;
 const CRANK_K = 0.3, RELOAD_HOLD_RATE = 2.5, JUMP_PULL = 6, JUMP_PULL_TWO = 1.8;
 const PATCH_BOARD = { x: 20.0, y: 23.0 };
 const JUMP_HANDLE = { x: 20.6, y: -2.0 };
 const BEAT = 0.8;
+const PIN_MAX = 8, PIN_DENIED_T = 0.7, PIN_GRANTED_T = 0.8;
 
 // Which way an event comes from, for the radar dish: 'front' | 'left' | 'right' | 'all' | null (not on radar).
 function eventDir(ev) {
@@ -38,6 +40,11 @@ function openScope() {
   ui.panel = 'diagnosis'; ui.mini = { kind: 'scope', ref, dial, ok: false };
 }
 function openPatch() { ui.panel = 'mini'; ui.mini = { kind: 'patch', pick: null }; }
+// The airlock vent's PIN pad: a fresh random 4–6 digit admin password each time it opens.
+function openPinPad(roomId) {
+  const n = 4 + Math.floor(Math.random() * 3);
+  ui.panel = 'mini'; ui.mini = { kind: 'pin', room: roomId, pin: Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join(''), typed: '', flash: null, flashT: 0 };
+}
 function openTape(sys) { ui.panel = 'mini'; ui.mini = { kind: 'tape', sys: SYSTEMS.indexOf(sys), done: [false, false, false] }; }
 
 // ---------------------------------------------------------------------------
@@ -60,6 +67,15 @@ function miniCommand(action, a, b) {
       const s = SYSTEMS[m.sys];
       if (s?.broken) { s.broken = false; s.taped = true; hz.stats.repairs++; combatBanner(`${s.name} taped up — it'll give first at the next big hit`); sfx.win(); }
       ui.panel = null; ui.mini = null;
+    }
+  } else if (action === 'pin' && m?.kind === 'pin' && !m.flash) {
+    if (a === 'key' && m.typed.length < PIN_MAX && /^[0-9]$/.test(String(b))) { m.typed += String(b); sfx.clank(); }
+    else if (a === 'back') m.typed = m.typed.slice(0, -1);
+    else if (a === 'clr') m.typed = '';
+    else if (a === 'ok') {
+      const right = m.typed === m.pin;
+      m.flash = right ? 'granted' : 'denied'; m.flashT = right ? PIN_GRANTED_T : PIN_DENIED_T;
+      if (right) sfx.poi(); else sfx.hit(false);
     }
   } else if (action === 'crank' && player.mode === 'gun') {
     const g = player.gun;
@@ -99,6 +115,15 @@ function updateMinigames(dt) {
   for (const c of crew) {
     const m = c.ui.mini;
     if (m?.kind === 'radar') { m.cd = Math.max(0, m.cd - dt); m.static = Math.max(0, m.static - dt); for (const b of m.blips) b.t += dt; }
+    if (m?.kind === 'pin' && m.flash && c.ui.panel && (m.flashT -= dt) <= 0) {
+      if (m.flash === 'denied') { m.flash = null; m.typed = ''; }
+      else {                                             // ACCESS GRANTED: the operator closes their visor, both doors open
+        c.ui.panel = null; c.ui.mini = null;
+        if (hz.vent) continue;                           // (someone else got there first)
+        if (plasmaIn(m.room)) startVent(m.room, c); else combatBanner('The plasma fire is already out — vent cancelled');
+        continue;
+      }
+    }
     if (m && !c.ui.panel) c.ui.mini = null;              // panel closed: forget it
   }
   // the jump handle: everyone holding it pulls together; letting go resets the needle
@@ -160,6 +185,15 @@ function miniClient(dt) {
       });
     }
   }
+  // the PIN pad: number keys (top row and numpad) type; they don't reach the rest of the game meanwhile
+  if (m?.kind === 'pin' && me.ui.panel === 'mini') {
+    for (const code of [...localInput.pressed]) {
+      const d = /^(?:Digit|Numpad)([0-9])$/.exec(code);
+      const cmd = d ? ['mini', 'pin', 'key', +d[1]] : code === 'Backspace' ? ['mini', 'pin', 'back'] : code === 'Delete' ? ['mini', 'pin', 'clr']
+                : code === 'Enter' || code === 'NumpadEnter' ? ['mini', 'pin', 'ok'] : null;
+      if (cmd) { localInput.pressed.delete(code); sendCommand(cmd); }
+    }
+  }
   // the cannon's crank: circle the mouse around it while holding the button
   if (me.mode === 'gun' && me.gun?.reload > 0) {
     const c = crankLayout(), d = Math.hypot(mo.x - c.x, mo.y - c.y);
@@ -185,6 +219,7 @@ function drawMiniPanel(t) {
   if (m.kind === 'radar') drawRadarPanel(m, t);
   else if (m.kind === 'patch') drawPatchPanel(m, t);
   else if (m.kind === 'tape') drawTapePanel(m, t);
+  else if (m.kind === 'pin') drawPinPanel(m, t);
 }
 function miniButton(x, y, w, h, label, cmd, active = true) {
   const hover = mouse.x > x && mouse.x < x + w && mouse.y > y && mouse.y < y + h;
@@ -243,6 +278,90 @@ function drawPatchPanel(m, t) {
   ctx.textAlign = 'left'; ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
   ctx.fillText(m.pick === null ? 'Click a lever output, then the capacitor it should feed.' : 'Now click the capacitor it should feed.', x + 18, y + h - 22);
   miniButton(x + w - 120, y + h - 50, 100, 32, 'RESET', ['mini', 'patch', 'reset']);
+}
+// The airlock vent's PIN pad, and the sticky note with the admin password next to it.
+const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'OK'];
+const PIN_HAND = "'Segoe Print', 'Bradley Hand', 'Comic Sans MS', 'Comic Neue', 'Marker Felt', 'Chalkboard SE', cursive";
+function drawPinPanel(m, t) {
+  const w = 560, h = 466, [x, y] = panelFrame(w, h, `AIRLOCK VENT — ${roomById(m.room)?.name || ''}`);
+  // the keypad housing: a brushed metal plate with screws
+  const px = x + 30, py = y + 52, pw = 284, ph = 392;
+  rr(px, py, pw, ph, 12);
+  const g = ctx.createLinearGradient(px, py, px + pw, py + ph); g.addColorStop(0, '#6b7486'); g.addColorStop(1, '#3f4757');
+  ctx.fillStyle = g; ctx.fill(); stroke(3, '#14161b');
+  for (const [sx, sy] of [[10, 10], [pw - 10, 10], [10, ph - 10], [pw - 10, ph - 10]]) { ctx.beginPath(); ctx.arc(px + sx, py + sy, 3.5, 0, TAU); ctx.fillStyle = '#2b303a'; ctx.fill(); }
+  // the terminal display
+  const dx = px + 18, dy = py + 22, dw = pw - 36, dh = 84;
+  const flash = m.flash, red = flash === 'denied', green = flash === 'granted';
+  rr(dx, dy, dw, dh, 6); ctx.fillStyle = red ? '#2a0806' : '#06140e'; ctx.fill(); stroke(3, '#14161b');
+  ctx.save(); rr(dx, dy, dw, dh, 6); ctx.clip();
+  ctx.fillStyle = 'rgba(95,214,160,0.05)'; for (let sy = dy; sy < dy + dh; sy += 3) ctx.fillRect(dx, sy, dw, 1);   // scanlines
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const col = red ? '#ff6a5a' : '#5fd6a0';
+  ctx.shadowColor = col; ctx.shadowBlur = 6; ctx.fillStyle = col;
+  ctx.font = '700 12px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText('MANUAL OVERRIDE — OPEN AIRLOCK', dx + 10, dy + 16);
+  if (flash) {
+    ctx.font = '800 22px ui-monospace, Menlo, Consolas, monospace'; ctx.textAlign = 'center';
+    if (green || Math.floor(t * 8) % 2 === 0) ctx.fillText(red ? 'ACCESS DENIED' : 'ACCESS GRANTED', dx + dw / 2, dy + 54);
+    ctx.textAlign = 'left';
+  } else {
+    ctx.fillText('ADMIN PASSWORD:', dx + 10, dy + 40);
+    ctx.font = '800 22px ui-monospace, Menlo, Consolas, monospace';
+    const stars = '*'.repeat(m.typed.length);
+    ctx.fillText(stars, dx + 10, dy + 64);
+    if (Math.floor(t * 2) % 2 === 0) ctx.fillRect(dx + 12 + ctx.measureText(stars).width, dy + 54, 11, 18);   // blinking cursor
+  }
+  ctx.restore();
+  // the keys: 3 × 4 rubbery keycaps
+  const kw = 66, kh = 50, gap = 14, kx0 = px + (pw - 3 * kw - 2 * gap) / 2, ky0 = dy + dh + 20;
+  PIN_KEYS.forEach((k, i) => {
+    const kx = kx0 + (i % 3) * (kw + gap), ky = ky0 + Math.floor(i / 3) * (kh + gap);
+    const hover = !flash && mouse.x > kx && mouse.x < kx + kw && mouse.y > ky && mouse.y < ky + kh, down = hover && mouse.down;
+    const face = k === 'OK' ? ['#1d4a36', '#2f8a5f'] : k === 'CLR' ? ['#5a2a22', '#8e2f22'] : ['#262b35', '#3a404d'];
+    rr(kx, ky + 4, kw, kh, 8); ctx.fillStyle = '#14161b'; ctx.fill();                                  // key shadow
+    rr(kx, ky + (down ? 3 : 0), kw, kh, 8); ctx.fillStyle = hover ? face[1] : face[0]; ctx.fill();
+    stroke(2, k === 'OK' ? '#5fd6a0' : k === 'CLR' ? '#ff8a7a' : '#14161b');
+    ctx.fillStyle = flash ? '#6b7486' : '#e8ecf4'; ctx.font = `800 ${k.length > 1 ? 15 : 20}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(k, kx + kw / 2, ky + kh / 2 + (down ? 3 : 0));
+    if (!flash) ui.hits.push({ x: kx + kw / 2, y: ky + kh / 2, w: kw, h: kh, cmd: k === 'OK' ? ['mini', 'pin', 'ok'] : k === 'CLR' ? ['mini', 'pin', 'clr'] : ['mini', 'pin', 'key', +k] });
+  });
+  ctx.textAlign = 'left';
+  // the sticky note, stuck on crooked next to the pad
+  const nx = x + 436, ny = y + 176, ns = 168;
+  ctx.save(); ctx.translate(nx, ny); ctx.rotate(-0.09);
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 10; ctx.shadowOffsetX = 3; ctx.shadowOffsetY = 5;
+  ctx.beginPath(); ctx.moveTo(-ns / 2, -ns / 2); ctx.lineTo(ns / 2, -ns / 2); ctx.lineTo(ns / 2, ns / 2 - 14);
+  ctx.quadraticCurveTo(ns / 2 - 6, ns / 2 - 2, ns / 2 - 20, ns / 2 + 2); ctx.lineTo(-ns / 2, ns / 2); ctx.closePath();   // the bottom corner curls up a bit
+  const ng = ctx.createLinearGradient(0, -ns / 2, 0, ns / 2); ng.addColorStop(0, '#fff07a'); ng.addColorStop(0.2, '#ffe95c'); ng.addColorStop(1, '#f5d94a');
+  ctx.fillStyle = ng; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.fillStyle = 'rgba(0,0,0,0.06)'; ctx.fillRect(-ns / 2, -ns / 2, ns, 22);                           // the sticky strip
+  ctx.fillStyle = '#26324f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  handText('admin password', 0, -32, `20px ${PIN_HAND}`, 1);
+  ctx.save(); ctx.rotate(0.03); const pw2 = handText(m.pin, 0, 14, `700 34px ${PIN_HAND}`, 3);
+  ctx.strokeStyle = '#26324f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-pw2 / 2 - 4, 36); ctx.quadraticCurveTo(0, 41, pw2 / 2 + 6, 34); ctx.stroke();   // underlined
+  ctx.restore();
+  ctx.font = `14px ${PIN_HAND}`; ctx.fillStyle = 'rgba(38,50,79,0.75)'; ctx.fillText('(don\'t tell anyone!)', 0, 58);
+  ctx.restore(); ctx.textAlign = 'left';
+  ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Type it in: click the keys,', x + 436, y + h - 62);
+  ctx.fillText('or 0–9 · Backspace · Enter', x + 436, y + h - 44); ctx.textAlign = 'left';
+}
+// Text that looks written by hand even without a handwriting font: every letter a little tilted and
+// off the line (the same wobble every frame). Centred on (cx, cy); returns its width.
+function handText(str, cx, cy, font, wob) {
+  ctx.font = font; ctx.textAlign = 'left';
+  const ws = [...str].map(ch => ctx.measureText(ch).width), total = ws.reduce((a, b) => a + b, 0);
+  let x0 = cx - total / 2;
+  [...str].forEach((ch, i) => {
+    const r = Math.sin(i * 12.9898 + str.length * 78.233) * 43758.5453 % 1;   // a fixed pseudo-random -1..1 per letter
+    ctx.save(); ctx.translate(x0 + ws[i] / 2, cy + r * wob); ctx.rotate(r * 0.05 * wob);
+    ctx.textAlign = 'center'; ctx.fillText(ch, 0, 0); ctx.restore();
+    x0 += ws[i];
+  });
+  ctx.textAlign = 'center';
+  return total;
 }
 // Three cracks on the broken part (panel coords 0..1), traced with the mouse.
 const TAPE_CRACKS = [

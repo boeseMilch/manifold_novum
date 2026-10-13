@@ -281,7 +281,7 @@ function gameLighting(t) {
     add({ x: g.x + Math.cos(g.aim) * 1.2, y: g.y + Math.sin(g.aim) * 1.2, z: 0.6 + gunZ(g), color: [1.0, 0.75, 0.45], radius: 5, intensity: 2.6 * g.flash });
   if (typeof boarding !== 'undefined') for (const b of boarding.bolts) {
     if (b.wrench) continue;
-    const col = b.owner === 'alien' ? [0.6, 1.0, 0.35] : b.heavy ? [0.6, 0.85, 1.0] : [1.0, 0.32, 0.22];
+    const col = b.owner === 'alien' ? [0.6, 1.0, 0.35] : b.owner === 'saboteur' ? [0.35, 0.88, 1.0] : b.heavy ? [0.6, 0.85, 1.0] : [1.0, 0.32, 0.22];
     add({ x: b.x, y: b.y, z: 0.9, color: col, radius: b.heavy ? 3.4 : 2.4, intensity: b.heavy ? 2.2 : 1.3 });
   }
   if (typeof crew !== 'undefined') for (const c of crew) if (c.charge != null && typeof BLASTER_CHARGE !== 'undefined') {   // heavy blaster charging

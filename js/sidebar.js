@@ -20,10 +20,14 @@ function encounterPlates() {
   if (combat.swarm || combat.asteroids.length)
     add('swarm', { icon: 'asteroid', title: 'ASTEROID SWARM', sub: `front · ${combat.asteroids.length} incoming${combat.swarm?.left ? `, ${combat.swarm.left} more` : ''}`, stripe: '#e2574c', red: true });
   for (const a of boarding.invaders) {
+    const room = (id) => ROOMS.find(r => r.id === id)?.name.toLowerCase();
     const where = a.state === 'dormant' ? 'asleep on the derelict' : a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'
-      : a.task?.kind === 'sabotage' ? `sabotaging ${a.task.sys.name.toLowerCase()} · ${Math.ceil(SABOTAGE_TIME - a.task.t)} s`
-      : `in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'airlock'}`;
-    add('inv' + uid(a), { icon: 'alien', title: 'INTRUDER', sub: `${where} · ${a.hp}/${ALIEN_HP} hp`, stripe: '#9cff5a', red: true });
+      : a.state === 'work' ? `wrecking the ${a.task.sys.name.toLowerCase()} · ${Math.ceil(a.task.need - a.task.t)} s`
+      : a.state === 'sneak' || a.state === 'cloak' ? `cloaked · somewhere next to the ${room(a.room) || "airlock"}`
+      : a.kind === 'saboteur' ? `in the ${room(a.room) || 'ship'}`
+      : `hunting · in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'airlock'}`;
+    const sab = a.kind === 'saboteur';
+    add('inv' + uid(a), { icon: 'alien', title: sab ? 'SABOTEUR' : 'INTRUDER', sub: `${where} · ${a.hp}/${invaderMaxHp(a)} hp`, stripe: sab ? '#5ae0ff' : '#9cff5a', red: true });
   }
   for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · ${Math.ceil(fireLeft(f))} s${f.plasma ? ' · vent it at the airlock panel!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
   for (const b of hz.breaches) add('breach' + b.room, { icon: 'breach', title: b.tarp ? 'TARPED BREACH' : 'HULL BREACH', sub: `${roomById(b.room).name}${b.tarp ? ' · holds until the next hit' : b.plated ? ' · nail the plate down (repair kit)' : ' · plate + repair kit, outside'}`, stripe: b.tarp ? '#e8c34f' : '#7ab8ff', red: !b.tarp });

@@ -1,48 +1,43 @@
-// Intruder routine (adjacent room → sabotage a part for 10 s → next room), engaging when the
-// crew comes close (strafes, no sabotage while fighting), plus luck from petting the cat and
-// the front shield. Run: node tests/intruder.js
+// Intruder (the alien): hunts the crew room by room and fights whoever it finds; it no longer
+// sabotages anything. Plus luck from petting the cat and the front shield. Run: node tests/intruder.js
 const { loadGame } = require('./harness');
-const NAMES = ['tick', 'player', 'boarding', 'spawnInvader', 'SYSTEMS', 'roomAt', 'adjacentRooms', 'ROOMS', 'SABOTAGE_TIME',
+const NAMES = ['tick', 'player', 'boarding', 'spawnInvader', 'SYSTEMS', 'roomAt', 'adjacentRooms', 'ROOMS',
   'luck', 'lucky', 'petCat', 'clickTarget', 'CAT', 'smallHit', 'fires', 'combat', 'pressShield', 'CAPACITORS', 'makeAsteroid',
   'shieldYFront', 'combatClear'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 
-// routine: rooms visited are always adjacent, and parts get sabotaged after ~10 s of work
+// nobody aboard: it prowls from room to room (always to an adjacent room) and breaks nothing
 {
   const G = loadGame(NAMES); G.spawnInvader('port'); const a = G.boarding.invaders[0];
-  G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;   // outside the ship: nobody to fight
-  let room = null, hops = 0, badHop = 0, firstBreak = null, workT = 0;
+  G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;   // outside the ship: nobody to hunt
+  let room = null, hops = 0, badHop = 0;
   for (let i = 0; i < 60 * 200; i++) {
     G.tick(DT);
-    if (a.task?.kind === 'sabotage') workT = a.task.t;
-    if (firstBreak === null && G.SYSTEMS.some(s => s.broken)) firstBreak = { t: i * DT, work: workT };
     const r = G.roomAt(a.x, a.y);
     if (r && r !== room) { if (room && !G.adjacentRooms(room).includes(r)) badHop++; if (room) hops++; room = r; }
-    G.SYSTEMS.forEach(s => { s.broken = false; });                // keep giving it things to break
   }
-  check(hops >= 4 && badHop === 0, `it moves room to room, always to an adjacent room (${hops} hops, ${badHop} non-adjacent)`);
-  check(firstBreak && Math.abs(firstBreak.work - G.SABOTAGE_TIME) < 0.2, `it breaks a part after working on it for ${G.SABOTAGE_TIME} s (first break at T+${firstBreak?.t.toFixed(0)} s)`);
+  check(hops >= 4 && badHop === 0, `with nobody aboard it prowls room to room, always to an adjacent room (${hops} hops, ${badHop} non-adjacent)`);
+  check(!G.SYSTEMS.some(s => s.broken), 'it never sabotages anything (that is the saboteur\'s job)');
 }
-// engaging: come close and it fights (strafes, stops sabotaging)
+// hunting: it finds you wherever you are and attacks
+for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the bridge'], [37.5, 21, 'the right airlock room']]) {
+  const G = loadGame(NAMES); G.spawnInvader('port'); const a = G.boarding.invaders[0];
+  G.player.x = x; G.player.y = y;
+  let t = 0;
+  for (; t < 60 && a.state !== 'fight'; t += DT) { G.tick(DT); G.player.x = x; G.player.y = y; }
+  check(a.state === 'fight' && Math.hypot(a.x - x, a.y - y) < 9, `it hunts you down in ${where} and attacks (after ${t.toFixed(0)} s, from ${Math.hypot(a.x - x, a.y - y).toFixed(1)} away)`);
+}
+// it follows when you leave the room
 {
   const G = loadGame(NAMES); G.spawnInvader('port'); const a = G.boarding.invaders[0];
-  G.player.x = 37; G.player.y = 7;
-  for (let i = 0; i < 60 * 60 && a.task?.kind !== 'sabotage'; i++) G.tick(DT);
-  check(a.task?.kind === 'sabotage', `it gets to work on a part (${a.task?.sys?.name})`);
-  const target = a.task.sys;
-  // walk up to it (closest free spot in view)
-  G.player.x = a.x + 3; G.player.y = a.y;
-  for (let k = 0; k < 16; k++) {
-    const x = a.x + Math.cos(k / 16 * Math.PI * 2) * 3.5, y = a.y + Math.sin(k / 16 * Math.PI * 2) * 3.5;
-    if (G.roomAt(x, y)) { G.player.x = x; G.player.y = y; break; }
-  }
-  for (let i = 0; i < 30; i++) G.tick(DT);
-  check(a.state === 'fight' && !a.task, 'when you come close it engages and drops the sabotage');
-  let side = 0; const x0 = a.x, y0 = a.y;
-  for (let i = 0; i < 60 * 3; i++) { G.tick(DT); side += Math.abs((a.x - x0) * (G.player.y - a.y) - (a.y - y0) * (G.player.x - a.x)); }
-  check(side > 0 && !target.broken, 'while fighting it moves around (strafing) and the part stays intact');
+  G.player.x = 7; G.player.y = 7;
+  for (let i = 0; i < 60 * 40 && a.state !== 'fight'; i++) { G.tick(DT); G.player.x = 7; G.player.y = 7; }
+  G.player.x = 37.5; G.player.y = 21;                          // gone: now in the far corner of the ship
+  let t = 0;
+  for (; t < 60 && !(a.state === 'fight' && G.roomAt(a.x, a.y)?.id === 'starLock'); t += DT) { G.tick(DT); G.player.x = 37.5; G.player.y = 21; }
+  check(t < 60, `it loses you, then tracks you to the right airlock room (${t.toFixed(0)} s)`);
 }
 // telegraphed moves: spit windup, pounce hits, no dodging right after a lunge
 {

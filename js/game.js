@@ -453,6 +453,8 @@ const DEBUG_ITEMS = [
   { key: '9', label: 'Teleport: bridge', run: () => { player.mode = 'inside'; player.gun = null; player.x = 22.2; player.y = 4.5; } },
   { key: 'i', label: 'Invader through the left airlock', run: () => spawnInvader('port') },
   { key: 'o', label: 'Invader through the right airlock', run: () => spawnInvader('star') },
+  { key: 'I', label: 'Saboteur through the left airlock', run: () => spawnSaboteur('port') },
+  { key: 'P', label: 'Saboteur through the right airlock', run: () => spawnSaboteur('star') },
   { key: '0', label: 'Clear threats and reset hit counts', run: () => { combatClear(); boarding.invaders = []; boarding.bolts = []; } },
   { key: 'm', label: 'Restart the mission', run: () => { combatClear(); boarding.invaders = []; fires.length = 0; startMission(); } },
   { key: 'n', label: 'Stop the mission (free play)', run: () => { mission.active = false; } },

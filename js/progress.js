@@ -68,7 +68,7 @@ Object.assign(MISSIONS, {
     name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 150, rep: 1, xp: 100 },
     objective: { kind: 'intruder', count: 1 }, rules: {},
     blurb: 'Something crawled out of the bonus salvage pod. Kill it.',
-    briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nSomething with too many legs is loose on the ship. It forces its way around, room by room, and wrecks whatever it finds. Lock it in with the security console, get a weapon, and kill it. The Xenobiology Institute will pay for the remains.',
+    briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nSomething with too many legs is loose on the ship. It forces its way around, room by room, hunting whoever it can find. Lock it in with the security console, get a weapon, and kill it. The Xenobiology Institute will pay for the remains.',
     build: () => [evAt('interceptor', 30, { side: randSide() }), evAt('intruder', 75, { side: randSide() }), evAt('frigate', 140, { side: randSide() }), evAt('swarm', 200), evAt('maintenance', 250, { radar: false })],
   },
   c3: {
@@ -104,14 +104,14 @@ Object.assign(MISSIONS, {
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Fly into the deep beyond the Mire and get out alive.',
     briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in, take readings, survive. Out there the jump drive is fussy: the three jump coils on the hull have to be aligned on a spacewalk, and when it spools up someone has to pull and hold the jump handle at the helm.',
-    build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 20, 19),
+    build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 20, 18),
   },
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 500, rep: 5, xp: 400 },
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Sit next to the leviathan for five minutes. Survive.',
     briefing: 'Varga\'s theory: the swarms answer to one creature. To prove it, someone has to sit right next to it for five minutes and survive.\n\nThat someone is you. Everything out there will come for the ship at once. Good luck — and bring the cat.',
-    build: (target) => [...shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'maintenance', 'mines', 'spores', 'debris', 'flare', 'storm', 'coolant', 'glitch', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 15, 14), evAt('leviathan', 150)],
+    build: (target) => [...shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'flare', 'storm', 'coolant', 'glitch', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 15, 13), evAt('leviathan', 150)],
   },
   practice: {
     name: 'Practice', tier: 0, practice: true, rules: {}, objective: null,
