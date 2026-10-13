@@ -1035,8 +1035,17 @@ void main() {
     return T;
   }
   function freeShadowTarget(T) { if (!T) return; gl.deleteFramebuffer(T.fb); for (const t of [T.v, T.d]) gl.deleteTexture(t); }
+  // → false if the render targets can't be made (the context was lost mid-frame, a 0-sized canvas): skip
+  // the frame and try again on the next one, rather than drawing into a null framebuffer.
   function ensureTargets(w, h) {
-    if (RT && RT.w === w && RT.h === h) return;
+    if (!targets(w, h)) {
+      if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); freeT(RT.depth); freeShadowTarget(RT.sh0); freeShadowTarget(RT.sh1); }
+      RT = null; return false;
+    }
+    return true;
+  }
+  function targets(w, h) {
+    if (RT && RT.w === w && RT.h === h) return !!(RT.scene && RT.a1 && RT.b1 && RT.a2 && RT.b2);
     if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); freeT(RT.depth); freeShadowTarget(RT.sh0); freeShadowTarget(RT.sh1); }
     let scene = useHdr && target(w, h, true, true);
     if (!scene) { useHdr = false; scene = target(w, h, true, false); }
@@ -1056,6 +1065,7 @@ void main() {
         if (!RT.sh1) { freeShadowTarget(RT.sh0); RT.sh0 = null; }
       }
     }
+    return !!(RT.scene && RT.a1 && RT.b1 && RT.a2 && RT.b2);
   }
   // Light data and the per-tile light lists (see LIGHTING)
   function dataTex() {
@@ -1551,7 +1561,7 @@ void main() {
     const t0 = performance.now();
     api.stats = { sprites: queue.length, batches: 0, lights: 0 };
     lastPicks = picks;
-    ensureTargets(W, H);
+    if (gl.isContextLost() || !ensureTargets(W, H)) return;
     // the 2D layers first, all together: each upload makes the GPU process switch from the WebGL context to
     // the 2D canvases' one and back (a costly MakeCurrent); between the WebGL passes that was 6 switches a frame
     for (const k of ['back', 'mid', 'glow']) if (L2D[k] && L2D[k].used === frameNo) uploadLayer(L2D[k]);

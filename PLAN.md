@@ -568,12 +568,21 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   Dr. Varga's drifting lab) → Red Comet Cove (pirates took her) → Rescue Dr. Varga (pirate prison
   barge) → Spore Season (living rock sample) → The Deep (coils + jump handle) → The Mother of All
   (the leviathan). Each finished chapter unlocks the next.
-- **Rewards** (`computeRewards`): pay if the ship jumped (full with the objective, plus per pirate);
-  XP only if you're inside the ship and standing at the end (half without the objective);
-  reputation for finished objectives (+1 the first time). Levels at 100/250/450/… XP.
+- **Success** (`missionSuccess`): the ship jumped out AND the objective is done (missions without
+  one: the jump is enough). Only a success earns reputation (+1 the first time), counts as finished
+  (`profile.done`, the ✔ in the lobby) and unlocks the next chapter.
+- **Rewards** (`computeRewards`): if the ship jumped, the crew gets paid (base pay plus per pirate),
+  objective or not; XP (full, objective or not) only if you're inside the ship and standing at the
+  end. Jumped without the objective: the end screen says "objective failed", shows the pay and
+  that the next chapter stays locked. (Before: no base pay and half XP without the objective.)
+  `profile.done` always meant "completed with the objective", so no save migration. Each browser
+  credits its own player from the synced `mission.over.results` (`creditMission`), so multiplayer
+  follows the same rule. Levels at 100/250/450/… XP.
 - **Ship upgrades** (reputation, `SHIP_UPGRADES`): spare cell, coffee machine, fuel inserter (with a
   handle to scooch the cells out of its reach), efficient cannons (4 shots), faster airlocks,
-  long-range radar, shield capacitors (3 s), bigger capacitors (4), reinforced hull, sprinklers.
+  long-range radar, longer shields (3 s; shown as "Longer shields", id `shields`), bigger capacitors (4),
+  reinforced hull (MAX_DAMAGE 5 → 6: the ship survives one more broken part; set per mission in
+  `applyShipUpgrades`, so it reaches clients and doesn't leak into the next mission), sprinklers.
   Multiplayer: the union of everyone's upgrades.
 - **Gear** (money, `GEAR`) and **professions** (level 2+): general gear for anyone (gravity boots,
   thrusters, first aid course, armor vest, stim pack); engineer and weapons specialist, each with a
@@ -1484,6 +1493,57 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - `drawVentRush(t)`: drawing only, from the synced `hz.vent`: air streaks, tumbling papers / nuts / cans,
   a mist plume out of the hatch, a sheen over the room, strongest at first and easing off over the 10 s.
   ?classic draws lines and puffs. `sfx.whoosh()` at the start. Tests in tests/hazards.js.
+
+### 9u. Text pass (request: a review of all player-facing text, 108 suggestions, "apply all of them")
+
+Rules adopted for every text in the game:
+- **Banners** are on screen for 3 s: what happened plus at most one short instruction, about 8 words.
+  The details live on the sidebar plates.
+- **Separators:** " — " between the thing and what to do, " · " between list items, at most one pair
+  of parentheses per string. Units with a space: "3.2 s", "22%".
+- **"Manual override"** only means forcing a locked / broken / jammed door or airlock (three whacks).
+  The power lever has "the wrench" (wedged / auto, sign WEDGED / AUTO); the airlock vent has a
+  "vent code" (panel title EMERGENCY VENT).
+- **Room names** (display only, ids unchanged): Left cannon room, Bridge, Right cannon room, Left
+  airlock room, Reactor room, Right airlock room. Gun names stay "Left cannon" etc.
+- **Prompts name both mouse and key** where both work ("hold click or E", "click / Space: fire",
+  "R or RELOAD"); "parts", not "systems", for what breaks; weak-spot effects in lower case.
+- Also: the down / out-cold screen prompt is assembled per case (down vs out cold, alone vs not),
+  the tutorial tour now explains injuries and the DAMAGE counter for everyone, practice has its own
+  start banner, the end screen says R goes back to the lobby, and the duplicate HUD lines (bottom-left
+  controls hint, "Broken:" list, live hits tally) are gone. The reinforced hull upgrade, which did
+  nothing, now raises MAX_DAMAGE to 6.
+
+### Jump animation (wind-up and jump-out)
+
+Before, the jump was hard to see: the bell's spool sprite only showed while `mission.jump` ran, and
+with energy in MID that lasts one tick, so there was no wind-up. The end screen opened with a 1.8 s
+streak overlay on its own browser clock. Now (js/mission.js, "The jump, seen and heard"; looks and
+sound only, the game rules and timing are unchanged):
+- **Wind-up**: `jumpCharge()` 0..1 rises over the last 8 s of the countdown (to 0.6, counting the
+  coils' delay), then to 1 while the drive spools and waits for energy or the handle. It drives the
+  engine bell and plume (spool sprites, faster flicker and bell frames, a bigger, throbbing plume with a
+  second translucent copy; classic: a higher throttle), the blue spool and coil lights, a faint blue
+  throb on the floors of every room, the engine light (js/lights.js), blue crackle on power lines, room
+  walls and the hull (`drawJumpCrackle`, glow layer) with glowing jump coils, stars that start to
+  streak (`jumpSpace` → `drawSpace`), a blue pulse at the screen edges (the middle stays clear), a
+  small rumble, and a rising hum (`sfx.hum`, a synth whose pitch, filter, level and throb follow the
+  charge).
+- **The jump** (only when the ship jumps out: `mission.over.survived`, also with a failed objective):
+  2.3 s before the end screen. The camera pulls out to the whole ship, the ship pulls back and is
+  thrown forward up the screen, the stars stretch into long lines, a tunnel of light streaks out of the
+  middle, a white bloom becomes a full flash at 1.6 s, and the end screen fades in from white.
+  `sfx.jumpOut` winds up and booms on the flash, and the win jingle comes with the results. Enemies
+  stop shooting and shots still in flight do nothing (`enemyFire` / `shipHit`). R only goes back to
+  the lobby once the end screen is up (`endScreenReady`). A loss has no animation.
+- **Multiplayer**: the clock is `mission.over.at` (the synced sim `time` at the end), smoothed per
+  browser (`jumpFxUpdate`, since `time` arrives at 30 Hz), so every client plays it together. The
+  server's end flow is unchanged: it still waits for someone's R.
+- **Robustness**: rewards are credited early in `clientUpdate`, a drawing error can no longer stop the
+  game loop (`frame` catches it), and `GFX.end` skips a frame when its render targets can't be made
+  (context lost, 0-sized canvas) instead of using a null framebuffer.
+- Test: tests/jumpfx.js (wind-up builds; animation, then the end screen, result unchanged; no shots;
+  no animation when stranded).
 
 ## Balance
 

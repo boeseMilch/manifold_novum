@@ -18,17 +18,17 @@ function resetEncounters() { Object.assign(enc, { flare: null, storm: null, cool
 // ---------------------------------------------------------------------------
 function startFlare() {
   enc.flare = { phase: 'warn', t: FLARE_WARN, hits: 0 };
-  combatBanner(`SOLAR FLARE in ${FLARE_WARN} s — get off the upper deck and come inside!`); sfx.alarm(); sfx.say?.('Solar flare incoming. Please shelter on the lower deck.');
+  combatBanner(`SOLAR FLARE in ${FLARE_WARN} s — everyone to the lower deck!`); sfx.alarm(); sfx.say?.('Solar flare incoming. Please shelter on the lower deck.');
 }
 function startStorm() {
   enc.storm = { t: STORM_TIME, arc: 0 };
-  combatBanner('ION STORM — lights out, radar and security scrambled. Spend full capacitors!'); sfx.spark();
+  combatBanner('ION STORM — full capacitors will arc, use the energy!'); sfx.spark();
   arcFullCaps();
 }
 function startCoolantLeak() {
   if (enc.coolant) return;
   enc.coolant = { heat: 0 };
-  combatBanner('Coolant leak — the reactor is heating up! Screw in a coolant canister (crate in the left airlock room).'); sfx.alarm();
+  combatBanner('Coolant leak — get a canister from the left airlock room!'); sfx.alarm();
 }
 function startGlitch() {
   const order = [0, 1, 2].sort(() => Math.random() - 0.5);
@@ -144,7 +144,7 @@ ENEMY_TYPES.tractor = {
   ...ENEMY_TYPES.interceptor, name: 'Tractor tug', fire: [3.5, 5],
   paint: { hull: ['#c09a3a', '#6a5018'], stripe: '#2b2b2b', pod: ['#7a7a70', '#3a3a34'] },   // work-yard yellow
   solids: [...ENEMY_TYPES.interceptor.solids, box(2.3, 1.6, 2.8, 1.9)],
-  pois: [...ENEMY_TYPES.interceptor.pois, { id: 'emitter', name: 'Tractor emitter', effect: 'Beam off — the jump clock runs again', shape: { circle: TRACTOR_EMITTER } }],
+  pois: [...ENEMY_TYPES.interceptor.pois, { id: 'emitter', name: 'Tractor emitter', effect: 'beam off, jump clock runs again', shape: { circle: TRACTOR_EMITTER } }],
   update(e, dt) {
     if (poiHit(e, 'emitter') || !mission.active || mission.jump || mission.over) return;
     mission.jumpAt += dt;                              // held in the beam: the jump countdown doesn't move
@@ -227,8 +227,8 @@ function drawEncounterOverlay(view, t) {
 // Sidebar plates.
 function shipEventPlates(add) {
   if (enc.flare) add('flare', { icon: 'flare', title: 'SOLAR FLARE', sub: enc.flare.phase === 'warn' ? `in ${Math.ceil(enc.flare.t)} s · shelter on the lower deck!` : `radiation · ${Math.ceil(enc.flare.t)} s`, stripe: '#ffb347', red: true });
-  if (enc.storm) add('storm', { icon: 'surge', title: 'ION STORM', sub: `${Math.ceil(enc.storm.t)} s · spend full capacitors`, stripe: '#9cc4ff', red: true });
-  if (enc.coolant) add('coolant', { icon: 'fire', title: 'COOLANT LEAK', sub: `reactor ${Math.round(enc.coolant.heat)}°% · coolant canister (left airlock room)`, stripe: '#4ac0e0', red: true });
+  if (enc.storm) add('storm', { icon: 'surge', title: 'ION STORM', sub: `${Math.ceil(enc.storm.t)} s · full capacitors arc`, stripe: '#9cc4ff', red: true });
+  if (enc.coolant) add('coolant', { icon: 'fire', title: 'COOLANT LEAK', sub: `reactor heat ${Math.round(enc.coolant.heat)}% · canister in the left airlock room`, stripe: '#4ac0e0', red: true });
   if (enc.scram) add('scram', { icon: 'fire', title: 'REACTOR SCRAM', sub: `no energy for ${Math.ceil(enc.scram)} s`, stripe: '#ff4a3a', red: true });
   if (enc.glitch) add('glitch', { icon: 'unknown', title: 'AI GLITCH', sub: 'doors lock themselves · reboot at security', stripe: '#c08aff', red: true });
 }

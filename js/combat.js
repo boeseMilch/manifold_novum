@@ -101,7 +101,7 @@ function combatClear() {
 const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 3;   // s per reload (a weapons specialist gunner: 50% faster)
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
-  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`No energy for the ${g.name.toLowerCase()} (its capacitor is empty)`); return false; }
+  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`${['Left', 'Mid', 'Right'][GUN_CAP[g.id]]} capacitor empty — no reload`); return false; }
   g.reload = RELOAD_TIME; sfx.hatch();
   const gunner = crew.find(c => c.mode === 'gun' && c.gun === g); if (gunner) zap(gunner, 'gun_' + g.id);
   return true;
@@ -156,6 +156,7 @@ function pickEnemyTarget(e) {
   return { atCrew: false, tx: hullEdgeX(ty, e.side), ty };
 }
 function enemyFire(e, mx, my, heavy, target) {
+  if (mission.over?.survived) return;                // jumping out: nothing to shoot at any more
   const { atCrew, tx, ty } = target;
   const d = Math.hypot(tx - mx, ty - my) || 1, sp = heavy ? 30 : e.D.shotSpeed;
   const tc = atCrew && crew.find(c => c.id === target.crewId), tz = gunnerZ(tc);
@@ -184,6 +185,7 @@ function shieldAbsorb(s, side, x, y) {
 }
 
 function shipHit(side, x, y, large) {
+  if (mission.over?.survived) return;                // (shots still in flight as the ship jumps away)
   if (typeof tutorialHit === 'function' && tutorialHit('ship', side)) {   // tutorial: enemy hits are for show only (js/tutorial.js)
     combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/explosion_s', x, y, 0.7, hitSurface(x, y).z); return;
   }
@@ -212,7 +214,7 @@ const emitterOf = (side) => SHIELD_EMITTERS.find(e => e.side === side);
 function pressShield(side) {
   const s = combat.shields[side];
   if (broken(SHIELD_BUTTONS.find(b => b.side === side))) return 'broken';
-  if (broken(emitterOf(side))) { sfx.empty(); combatBanner(`The ${SIDE_LABEL[side].toLowerCase()} shield emitter outside is broken — repair it on a spacewalk`); return 'emitter'; }
+  if (broken(emitterOf(side))) { sfx.empty(); combatBanner(`${SIDE_LABEL[side]} shield emitter (outside) is broken — fix it on a spacewalk`); return 'emitter'; }
   if (grabbed(side)) { sfx.empty(); combatBanner('A tentacle is wrapped around that side — the shield can\'t go up'); return 'grabbed'; }
   if (s.up > 0 || s.cd > 0) return false;
   if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
@@ -557,12 +559,11 @@ function drawCombatHUD(view, top) {
     ctx.textAlign = 'left'; ctx.globalAlpha = 1;
   }
 
-  // tallies + enemy weak points
+  // shields + enemy weak points (the hits-taken tally is on the end screen)
   const lines = [];
-  lines.push({ text: `Hits taken — small ${combat.hits.small} · large ${combat.hits.large} · crew ${combat.hits.crew}`, col: '#e8ecf4' });
   for (const side of ['port', 'front', 'star']) {
     const s = combat.shields[side];
-    const dead = broken(emitterOf(side)), st = dead ? 'EMITTER BROKEN' : s.up > 0 ? 'UP' : s.cd > 0 ? `recharging ${s.cd.toFixed(1)}s` : 'ready';
+    const dead = broken(emitterOf(side)), st = dead ? 'EMITTER BROKEN' : s.up > 0 ? 'UP' : s.cd > 0 ? `recharging ${s.cd.toFixed(1)} s` : 'ready';
     lines.push({ text: `${SIDE_LABEL[side]} shield: ${st}`, col: dead ? '#ff8a7a' : s.up > 0 ? '#9cd8ff' : s.cd > 0 ? '#9aa3b5' : '#5fd6a0' });
   }
   for (const e of combat.enemies) {

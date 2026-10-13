@@ -133,9 +133,9 @@ function tutRoute(x, y) {
   if (me.mode !== 'inside' || md === td || md === 'lock') return { x, y };
   const mid = (Lk) => Lk.x + Lk.w / 2;
   const Lk = [...DECK_LOCKS].sort((a, b) => (Math.abs(mid(a) - me.x) + Math.abs(mid(a) - x)) - (Math.abs(mid(b) - me.x) + Math.abs(mid(b) - x)))[0];
-  return { x: mid(Lk), y: (SPINE_Y0 + SPINE_Y1) / 2, via: true };
+  return { x: mid(Lk), y: (SPINE_Y0 + SPINE_Y1) / 2, via: true, down: md === 'top' };
 }
-const viaText = (p) => (p.via ? ' — first down / up through the deck airlock (walk in, it cycles)' : '');
+const viaText = (p) => (p.via ? ` — first ${p.down ? 'down' : 'up'} through a deck airlock (walk in, it cycles)` : '');
 function tutBoom() {                                  // a late hit on the left hull (for show)
   combat.bigFlashes.port = 1; combat.shake = 0.7; sfx.explosion();
   combatFlip('fx/explosion_l', -0.4, 9.4, 0.8);
@@ -155,12 +155,11 @@ const TUT_STEPS = {
         'Welcome to the *Rapid Assistance & Interplanetary Defense Enterprise Resources* corporation — *RAIDER* for short. We are professionals who help people in need!',
         { text: 'This is the ship you\'ll be working on. Wondering why we don\'t give a newbie an old, rusty ship? Well, our ships usually don\'t last long enough to become old and rusty.', view: 'ship' },
         'But don\'t worry: if you follow this tutorial, you will be fine. Probably. And if not, we just use your salary to make another clone of you.',
-        'As a RAIDER you jump straight into action, solve the problem you have been contracted for, and then jump out. Easy peasy.',
         { text: 'This is you (marked). Company-issue suit, company-issue legs. Walk with *W A S D*.', mark: () => me },
         { text: 'A quick tour. The ship has two decks. Up top: the *left cannon room*, the *bridge* in the middle and the *right cannon room*.', view: 'ship', mark: () => ['portGun', 'bridge', 'starGun'].map(roomMark) },
-        { text: 'Down below: the *left airlock room*, the *reactor room* and the *right airlock room*. The *deck airlocks* between the decks are the only way up and down: walk in, and they cycle.', view: 'ship',
+        { text: 'Below: the *left airlock room*, the *reactor room* and the *right airlock room*. The *deck airlocks* are the only way up and down: walk in and they cycle.', view: 'ship',
           mark: () => [...['portLock', 'reactor', 'starLock'].map(roomMark), ...DECK_LOCKS.map(Lk => ({ x: Lk.x + Lk.w / 2, y: MIDDLE[0] }))] },
-        { text: 'Take a good look: on the job you only see the room you\'re in. The *grey speech bubble* above you always says what you can do with the thing next to you.', view: 'ship' },
+        { text: 'On the job you only see the room you\'re in. The *label above your head* always says what you can do right here.', view: 'ship' },
         `First stop: the *helm*, at the front of the bridge. Walk up to it and ${tutC('click it', 'press *E*')}.`,
       ], () => tutGo('helm'));
     },
@@ -175,7 +174,7 @@ const TUT_STEPS = {
       tutSay([
         'This is the *systems diagnosis*: every part of the ship and how it\'s doing. Green means fine.',
         `Two lines are *yellow*: "irregular readings" on the *${lc(m.target)}* and the *${lc(m.decoy)}*. RAIDER engineering calls that "character".`,
-        'One of them *will really fail* later. Shortly before it does, its line turns *orange* and counts down. Service it with the *repair kit* while it\'s orange, and it won\'t break. The other one is just being dramatic.',
+        'One of them *will fail* later. Before it does, its line turns *orange* and counts down: service it with the *repair kit* then and it won\'t break. The other one is just being dramatic.',
         'Remember those two. We\'ll come back to them. Close the panel with *E* or *Esc*.',
       ], () => tutGo('helmClose'));
     },
@@ -262,10 +261,9 @@ const TUT_STEPS = {
       tutSay([
         'Bullseye! The pirates are now *duct-taping their windshield*. While they do, they can\'t see, so they can\'t shoot.',
         `That's the deal with weak spots: *every hit on one gives you an advantage*. On an interceptor: ${effects}. Hit them all and it's done for.`,
-        { text: 'Bigger ships have more of them: a frigate\'s shield emitter (its shield is down for good) or its heavy cannon coils (no more heavy shots). The list at the top right shows every enemy\'s weak spots and which ones you\'ve hit.', mark: () => ({ x: -12, y: 8 }) },
+        { text: 'Bigger ships have more of them. The list at the top right shows every enemy\'s weak spots and which ones you\'ve hit.', mark: () => ({ x: -12, y: 8 }) },
         'And plain hull hits aren\'t wasted: every few of them shake a weak spot loose anyway.',
-        `Your cannon is empty, so: *reload*. Press *R*${tutC(' (or click *RELOAD*, bottom right)', '')}. A reload takes *one energy* from the capacitor this cannon is wired to (the left one) and gives you *${SHOTS_PER_ENERGY} shots*.`,
-        'Heads-up: that is the *last energy* in the left capacitor. Make the shots count.',
+        `Cannon empty: *reload*. Press *R*${tutC(' (or click *RELOAD*)', '')}. One reload costs *one energy* from the left capacitor and gives *${SHOTS_PER_ENERGY} shots*. That's the left capacitor's *last* energy: make them count.`,
       ], () => tutGo('reload'));
     },
   },
@@ -317,10 +315,10 @@ const TUT_STEPS = {
           const first = !tut.blockFails++;
           tutSay(first ? [
             'Ouch. That one got through: you let go too early. Luckily this was a training round, so nothing happened. Here\'s what would have:',
-            `*You*: the first hit leaves you *hurt* for 30 s (slower, tunnel vision). A second one puts you *down*: ${tutC('hold click on yourself', 'hold *E*')} to patch yourself up, or a crewmate treats you. A third, and you're *out cold*.`,
+            '*You*: that hit would have left you *hurt*. More on injuries at the end of training.',
             '*The ship*: a small hit on the hull sometimes starts a *fire* or *breaks a part*. Big hits (heavy shots) always break a part and start a fire, and later in your career they tear *holes* in the hull.',
             'The plate goes up in front of the cannon, so keep it pointed at the interceptor. Let\'s try that again.',
-          ] : ['Through again. Remember: hold the cover until the shot hits it, and keep the cannon pointed at the interceptor (the plate goes up in front of the cannon). One more time.'], () => tutGo('block'));
+          ] : ['Through again. Hold the cover until the shot hits it, and keep the cannon pointed at the interceptor. Again.'], () => tutGo('block'));
         }
       }
     },
@@ -386,7 +384,7 @@ const TUT_STEPS = {
         { text: 'Each energy flies as a glowing *bolt* along the power lines, through the *power lever* (marked), to one of three *capacitors*: LEFT, MID or RIGHT.', mark: () => LEVER },
         { text: `A capacitor stores up to ${CAP_MAX} energy. The *left* one feeds the left cannon and the left shield, the *right* one the right side, the *middle* one the front cannon, the front shield and the *jump drive*. One energy is *one reload* or *one shield*.`, view: 'ship', mark: caps },
         { text: 'Normally the lever steps on after every energy: MID, RIGHT, LEFT, MID… so every capacitor gets its share.', mark: () => LEVER },
-        { text: 'But see the *wrench* stuck in it? That\'s a *manual override*: it locks the lever where it is. Someone wedged it on *MID*, so all the energy went to the middle and none to your cannon.', mark: () => LEVER },
+        { text: 'See the *wrench* stuck in it? It locks the lever. Someone wedged it on *MID*, so all the energy went to the middle and none to your cannon.', mark: () => LEVER },
         `Pull the wrench out: ${tutC('click the *hub* in the middle of the lever', 'stand at the lever and *hold E* for half a second')}.`,
       ], () => tutGo('wrench'));
     },
@@ -452,7 +450,7 @@ const TUT_STEPS = {
       if (tutFoe()) return;
       if (tut.t - (tut.d.deadT ??= tut.t) < 1.5) return;
       tut.killed = true;
-      tutSay([`Interceptor *destroyed*! RAIDER thanks you for your service. Climb down (${tutC('*CLIMB DOWN* or *E*', '*E*')}).`], () => tutGo('exitCannon'));
+      tutSay([`Interceptor *destroyed*! Climb down (${tutC('*CLIMB DOWN* or *E*', '*E*')}).`], () => tutGo('exitCannon'));
     },
   },
   fire: {
@@ -469,9 +467,8 @@ const TUT_STEPS = {
       tut.d.said = true;
       const f = tut.d.fire, ext = tutExtinguisher();
       tutSay([
-        { text: '*BOOM.* That interceptor got a hit in on the left hull after all: the left cannon\'s mount is *on fire*.', mark: () => f },
-        'That\'s how fires start: *hits on the ship*. Small hits sometimes, big hits always.',
-        'Left alone, a fire *spreads* to the parts around it, or *burns its part out* (broken). The red ring under a fire fills up until it does one of those. But fires *can be put out*.',
+        { text: '*BOOM.* That interceptor got a hit in on the left hull after all: the left cannon\'s mount is *on fire*. Hits do that.', mark: () => f },
+        'Left alone, a fire *spreads* or *burns its part out*. The red ring under it shows when. Put it out first.',
         { text: `The nearest *fire extinguisher* is on the bridge (marked). Pick it up (${tutC('click it', '*E*')}), walk up to the fire and spray: ${tutC('*hold the right mouse button* towards the fire', 'face the fire with the *arrow keys* and *hold Space*')}.`, mark: () => ext },
       ], () => tutGo('extinguish'));
     },
@@ -506,7 +503,7 @@ const TUT_STEPS = {
       if (tut.t - (tut.d.seenT ??= tut.t) < 1.2) return;
       const s = mission.maint.target;
       tutSay([
-        `See? Broken. No shield on the left until it's fixed. Same everywhere: a broken cannon only sparks, a broken capacitor holds no energy, a broken airlock stays the way it is.`,
+        `See? Broken: no left shield until it's fixed. Same everywhere: broken cannons only spark, broken capacitors hold nothing.`,
         'Had you serviced it with the repair kit while its line at the helm was orange, it would never have broken. Next time.',
         { text: `The ship's one *repair kit* is right here in the left airlock room (marked). Take it, then ${tutC('*hold click* on the broken button', 'stand next to the broken button and *hold E*')} for 5 seconds.`, mark: () => tutItem('repair') },
       ], () => tutGo('fix'));
@@ -519,7 +516,7 @@ const TUT_STEPS = {
     tick() {
       if (mission.maint.target.broken) return;
       tutSay(['Repaired. Honestly, that\'s most of the job: things break, you fix them. Repeat until the jump.',
-              'Last part: a quick look at everything else on board. Click through.'], () => tutGo('overview'));
+              `Last part: a quick tour of everything else on board. ${tutC('Click', 'Enter')} to go on.`], () => tutGo('overview'));
     },
   },
   overview: {
@@ -527,13 +524,15 @@ const TUT_STEPS = {
       const pt = (x, y) => ({ x, y });
       tutSay([
         { text: 'The *laser gun* (right airlock room). Just in case an intruder walks onto the ship. Unheard of, of course. Pick it up and shoot with ' + tutC('the *right mouse button*', '*Space*') + '.', view: 'ship', mark: () => tutItem('laser') || pt(42.4, 22.4) },
-        { text: 'The *outer airlocks* (left and right lower rooms) take you outside for a *spacewalk*, on a safety line. Some parts sit on the hull, like the *shield emitters*, and some jobs are out there: mines, debris in a cannon track, a knocked radar antenna.', view: 'ship', mark: () => HATCHES.map(h => pt(h.x, h.y)) },
+        { text: 'The *outer airlocks* (left and right airlock rooms) take you out on a *spacewalk*. The *shield emitters* sit out there, and so do jobs like mines, jammed cannon tracks and a crooked radar antenna.', view: 'ship', mark: () => HATCHES.map(h => pt(h.x, h.y)) },
         { text: 'Doors and airlocks that are *locked* or *broken* can be forced with a *manual override*: three good whacks on the handle.', view: 'ship', mark: () => [...DECK_LOCKS.map(Lk => pt(Lk.x + Lk.w / 2, MIDDLE[0])), ...DOORWAYS.map(d => pt(d.x + d.w / 2, d.y + d.h / 2))] },
-        { text: 'Next to each outer airlock: a *vent panel*. It blows the room\'s air out into space, and every fire in it with it. (Your visor drops, so you\'re fine.) Just make sure there are no other people in the room when you let the air out.', view: 'ship', mark: () => Object.values(VENT_PANELS).map(([x, y]) => pt(x, y)) },
+        { text: 'Next to each outer airlock: a *vent panel*. It blows the room\'s air into space, fires and all. You\'re fine (visor), but anyone else in there gets hurt.', view: 'ship', mark: () => Object.values(VENT_PANELS).map(([x, y]) => pt(x, y)) },
         { text: 'The *security console* (left cannon room): lock and unlock doors and airlocks (handy to shut an intruder in), and see where everyone is.', view: 'ship', mark: () => pt(SECURITY.x, SECURITY.y + 0.5) },
-        { text: `The *shield buttons*, one per side on the lower deck: one energy raises that side's shield for ${SHIELD_UP_TIME} s, and it stops everything that hits it. Then it needs ${SHIELD_COOLDOWN} s to recharge. A heavy shot charging? That's what they're for.`, view: 'ship', mark: () => SHIELD_BUTTONS.map(b => pt(b.x, b.y)) },
-        { text: `Hurt or down crewmates: ${tutC('*hold click* on them', 'stand next to them and *hold E*')} for 2 s to get them back on their feet. Clicking right on the heartbeat speeds it up.`, view: 'ship' },
-        { text: '*Hull plates* (crates in the lower side rooms) seal holes in the hull. The *patch board* next to the power lever reroutes which capacitor each lever output feeds. The snack machine and the helm\'s coffee are there for morale.', view: 'ship', mark: () => [...PLATE_CRATES.map(c => pt(c.x, c.y)), pt(SNACK.x, SNACK.y)] },
+        { text: `The *shield buttons* (left, front, right; lower deck): one energy = that side's shield for ${SHIELD_UP_TIME} s, then ${SHIELD_COOLDOWN} s to recharge. Heavy shot charging? That's what they're for.`, view: 'ship', mark: () => SHIELD_BUTTONS.map(b => pt(b.x, b.y)) },
+        { text: `*Injuries*: the first hit leaves you *hurt* for 30 s (slower, tunnel vision). A second one puts you *down*: ${tutC('hold click on yourself', 'hold *E*')} to get back up, or a crewmate treats you. A third, and you're *out cold*.`, view: 'ship' },
+        { text: `Hurt or down crewmates: ${tutC('*hold click* on them', 'stand next to them and *hold E*')} for 2 s. ${tutC('Click', 'Tap E')} in time with the heartbeat to go faster.`, view: 'ship' },
+        { text: `Top left: *DAMAGE*. Every broken part counts. At ${MAX_DAMAGE + 1} broken parts at once the ship falls apart, so fix things.`, view: 'ship' },
+        { text: '*Hull plates* (crates in the airlock rooms) seal holes in the hull. The *patch board* by the power lever reroutes power when a line breaks. Snacks help when you\'re hurt; the helm\'s coffee makes you quicker.', view: 'ship', mark: () => [...PLATE_CRATES.map(c => pt(c.x, c.y)), pt(SNACK.x, SNACK.y)] },
         { text: 'And the *jump*: at the end of every mission the jump drive spools up and needs *one energy in the middle capacitor*. Keep some there. No energy, no jump, and you\'re stranded.', view: 'ship', mark: () => pt(CAPACITORS[1].x, CAPACITORS[1].y) },
       ], () => tutGo('end'));
     },

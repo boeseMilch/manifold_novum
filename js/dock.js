@@ -127,7 +127,7 @@ ENEMY_TYPES.pirate = {
 EVENT_SIDES.pirates = randSide; EVENT_SIDES.derelict = randSide;
 EVENT_RUNNERS.pirates = (ev) => combatSpawn('pirate', ev.side);
 EVENT_RUNNERS.derelict = (ev) => dockShip('derelict', ev.side, { blackbox: mission.objective?.kind === 'blackbox', npc: mission.objective?.kind === 'rescue' });
-EVENT_RUNNERS.rock = () => { dk.rock = { x: 22.2, y: -7.6, r: 2.2, seed: 4242 }; combatBanner('A big ore asteroid drifted in front — drill it on a spacewalk (drill in the left airlock room)!'); };
+EVENT_RUNNERS.rock = () => { dk.rock = { x: 22.2, y: -7.6, r: 2.2, seed: 4242 }; combatBanner('Ore asteroid ahead — drill it on a spacewalk!'); };
 Object.assign(EVENT_LABELS, { pirates: (ev) => `Pirate raider — ${SIDE_NAME[ev.side]}`, derelict: (ev) => `Derelict — ${SIDE_NAME[ev.side]}`, rock: () => 'Ore asteroid — front' });
 
 // ---------------------------------------------------------------------------
@@ -290,8 +290,8 @@ function dockClickTarget(mx, my) {
     const t = { x: g.core.x, y: g.core.y, r: 1.0 };
     if (d.overloaded) return { ...t, text: `Overloading — they cast off in ${Math.ceil(d.detachT)} s. Get out!`, ok: false };
     if (!near(t.x, t.y, REACH + 0.5)) return { ...t, text: 'Pirate reactor — get closer', ok: false };
-    if (inv.weapon !== 'repair') return { ...t, text: 'Pirate reactor — jam its overload with the repair kit\'s wrench', ok: false };
-    return holdTarget('overload', OVERLOAD_TIME, `Hold click: shove their lever into the red and jam it (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
+    if (inv.weapon !== 'repair') return { ...t, text: 'Pirate reactor — bring the repair kit to jam it', ok: false };
+    return holdTarget('overload', OVERLOAD_TIME, `Hold click: jam their reactor into overload (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
                       () => { d.overloaded = true; d.detachT = DETACH_TIME; sfx.alarm(); combatBanner(`Their reactor is overloading — they'll cast off in ${DETACH_TIME} s! Get back aboard!`); });
   }
   return null;
@@ -304,7 +304,7 @@ function dockAct() {
     if (!d.doors[i]) continue;
     const q = g.doors[i], cx = q.x + q.w / 2, cy = q.y + q.h / 2;
     if (Math.hypot(player.x - cx, player.y - cy) > 1.4) continue;
-    act({ text: 'Click: this door is jammed — manual override', at: { x: cx, y: cy, r: 1.2 }, run: () => startOverride({ dockDoor: i }, 'Jammed door', () => { d.doors[i] = false; }) });
+    act({ text: 'Click: force the jammed door (manual override)', at: { x: cx, y: cy, r: 1.2 }, run: () => startOverride({ dockDoor: i }, 'Jammed door', () => { d.doors[i] = false; }) });
     return true;
   }
   return false;

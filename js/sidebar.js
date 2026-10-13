@@ -29,11 +29,11 @@ function encounterPlates() {
     const sab = a.kind === 'saboteur';
     add('inv' + uid(a), { icon: 'alien', title: sab ? 'SABOTEUR' : 'INTRUDER', sub: `${where} · ${a.hp}/${invaderMaxHp(a)} hp`, stripe: sab ? '#5ae0ff' : '#9cff5a', red: true });
   }
-  for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · ${Math.ceil(fireLeft(f))} s${f.plasma ? ' · vent it at the airlock panel!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
+  for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · flares up in ${Math.ceil(fireLeft(f))} s${f.plasma ? ' · vent it at the airlock panel!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
   for (const b of hz.breaches) add('breach' + b.room, { icon: 'breach', title: b.tarp ? 'TARPED BREACH' : 'HULL BREACH', sub: `${roomById(b.room).name}${b.tarp ? ' · holds until the next hit' : b.plated ? ' · nail the plate down (repair kit)' : ' · plate + repair kit, outside'}`, stripe: b.tarp ? '#e8c34f' : '#7ab8ff', red: !b.tarp });
   if (hz.vent) add('vent', { icon: 'breach', title: 'VENTING', sub: `${roomById(hz.vent.room).name} · ${Math.ceil(hz.vent.t)} s`, stripe: '#7ab8ff', red: true });
   for (const id of hz.surges) add('surge' + id, { icon: 'surge', title: 'POWER SURGE', sub: `${lineName(LINE[id])} · splice it (repair kit)`, stripe: '#bfe8ff', red: true });
-  for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the breaker`, stripe: '#7af0ff', red: true });
+  for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the floor breaker (repair kit)`, stripe: '#7af0ff', red: true });
   if (mission.active && mission.objective && !mission.over) { const o = objectiveStatus(); add('objective', { icon: 'jump', title: o.done ? 'OBJECTIVE ✔' : 'OBJECTIVE', sub: o.text, stripe: o.done ? '#5fd6a0' : '#ffe08a' }); }
   evaPlates(add);
   shipEventPlates(add);
@@ -45,7 +45,7 @@ function encounterPlates() {
   if (mission.active && !mission.over) {
     const { known, mocks } = radarList();
     for (const e of known) if (!e.done) add('ev' + e.id, { icon: e.kind === 'swarm' ? 'asteroid' : e.kind === 'intruder' ? 'alien' : e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });
-    for (const e of mocks) add('mock' + e.id, { icon: 'unknown', title: '????', sub: 'T-???  (should have used the radar)', stripe: 'hazard', mock: true });
+    for (const e of mocks) add('mock' + e.id, { icon: 'unknown', title: '????', sub: 'T-??? (should have used the radar)', stripe: 'hazard', mock: true });
     if (mission.diagRun) for (const s of SYSTEMS) if (diagState(s)?.col === '#ffd84a') add('irr' + s.name, { icon: 'wrench', title: 'IRREGULAR', sub: s.name, stripe: '#ffd84a' });
   }
   return out;
@@ -135,14 +135,15 @@ function drawSidebarHeader(y) {
   ctx.fillText(mission.lastScan === null ? 'radar: not scanned (map table)' : `radar: scanned ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 54);
   // damage lights: one per broken system; more than MAX_DAMAGE loses the ship
   const dmg = SYSTEMS.filter(s => s.broken).length;
+  const gap = MAX_DAMAGE > 5 ? 15 : 17, cx = x + w - (MAX_DAMAGE > 5 ? 54 : 46);   // (6 lights with the reinforced hull: tighter, and in from the edge)
   ctx.font = '700 9px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec'; ctx.textAlign = 'center';
-  ctx.fillText('DAMAGE', x + w - 46, y + 15);
+  ctx.fillText('DAMAGE', cx, y + 15);
   for (let i = 0; i < MAX_DAMAGE; i++) {
-    const bx = x + w - 46 + (i - (MAX_DAMAGE - 1) / 2) * 17, by = y + 36, on = i < dmg;   // (centred under DAMAGE)
+    const bx = cx + (i - (MAX_DAMAGE - 1) / 2) * gap, by = y + 36, on = i < dmg;   // (centred under DAMAGE)
     ctx.beginPath(); ctx.arc(bx, by, 7, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#2b303a'; ctx.fill(); stroke(1.5);
     if (on) { ctx.beginPath(); ctx.arc(bx - 2, by - 2, 2.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill(); }
   }
-  ctx.fillStyle = dmg >= MAX_DAMAGE ? '#ff8a7a' : '#c9ced8'; ctx.fillText(dmg >= MAX_DAMAGE ? 'one more = lost' : `${dmg}/${MAX_DAMAGE}`, x + w - 46, y + 54);
+  ctx.fillStyle = dmg >= MAX_DAMAGE ? '#ff8a7a' : '#c9ced8'; ctx.fillText(dmg >= MAX_DAMAGE ? 'one more = lost' : `${dmg}/${MAX_DAMAGE}`, cx, y + 54);
   ctx.textAlign = 'left';
 }
 

@@ -134,7 +134,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
     send([], []); G.simTick(DT);
     check(lv.jammed && lv.pos === 2, `${tag}: keeping E down and letting go afterwards does nothing more`);
     tickN(G, 5);
-    check(/^E: nothing .*hold E: pull the wrench out/.test(c.prompt?.text || ''), `${tag}: jammed, the prompt offers pulling the wrench ("${c.prompt?.text}")`);
+    check(/^Hold E: pull the wrench out/.test(c.prompt?.text || ''), `${tag}: jammed, the prompt offers pulling the wrench ("${c.prompt?.text}")`);
     send(['KeyE'], ['KeyE']); G.simTick(DT); for (let i = 0; i < 5; i++) { send(['KeyE'], []); G.simTick(DT); }
     send([], []); G.simTick(DT);
     check(lv.jammed && lv.pos === 2, `${tag}: a tap while the wrench is in doesn't move the lever`);

@@ -20,14 +20,14 @@ const levelOf = (xp) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEV
 const SHIP_UPGRADES = [
   { id: 'spareCell', name: 'Spare fuel cell', rep: 2, desc: 'One more spare fuel cell in the crate.' },
   { id: 'coffee', name: 'Proper coffee machine', rep: 2, desc: 'The helm mug refills in 20 s instead of a minute.' },
-  { id: 'inserter', name: 'Reactor fuel inserter', rep: 3, desc: 'Loads the next fuel cell into an empty reactor by itself. Scooch the cells left (click the crate\'s handle) to stop it.' },
+  { id: 'inserter', name: 'Reactor fuel inserter', rep: 3, desc: 'Loads a fresh fuel cell into an empty reactor by itself (switch it off at the crate\'s handle).' },
   { id: 'cannons', name: 'Efficient cannons', rep: 3, desc: '4 shots per energy instead of 3.' },
   { id: 'airlocks', name: 'Faster airlock pumps', rep: 3, desc: 'Deck airlocks cycle in 0.7 s instead of 1.3 s.' },
   { id: 'radar', name: 'Long-range radar', rep: 4, desc: 'The radar sees 60 s ahead instead of 45 s.' },
-  { id: 'shields', name: 'Shield capacitors', rep: 4, desc: 'Shields stay up 18 s instead of 15 s.' },
+  { id: 'shields', name: 'Longer shields', rep: 4, desc: 'Shields stay up 18 s instead of 15 s.' },
   { id: 'caps', name: 'Bigger capacitors', rep: 5, desc: 'Capacitors hold 4 energy instead of 3.' },
-  { id: 'hull', name: 'Reinforced hull', rep: 5, desc: 'A side has to take two big hits before the next one breaches it.' },
-  { id: 'sprinklers', name: 'Fire sprinklers', rep: 5, desc: 'Fires spread every 22 s instead of 15 s.' },
+  { id: 'hull', name: 'Reinforced hull', rep: 5, desc: 'The ship holds together with one more broken part (6 instead of 5).' },
+  { id: 'sprinklers', name: 'Fire sprinklers', rep: 5, desc: 'Fires spread and burn parts out a third slower (22 s instead of 15 s).' },
 ];
 // A mission's prerequisites (MISSIONS[id].needs: { ship: [upgrade ids], overcharge }), as warning lines for
 // the lobby: without them the energy isn't enough (tools/balance.js --calibrate). Not a hard block.
@@ -35,8 +35,8 @@ function missionRequirements(id) {
   const N = MISSIONS[id]?.needs, out = [];
   if (!N) return out;
   const names = (N.ship || []).map(u => SHIP_UPGRADES.find(x => x.id === u)?.name).filter(Boolean);
-  if (names.length) out.push(`Needs: ${names.join(', ')}`);
-  if (N.overcharge) out.push('Needs an engineer with reactor overcharge');
+  if (names.length) out.push(`Recommended: ${names.join(', ')}`);
+  if (N.overcharge) out.push('Recommended: an engineer with reactor overcharge');
   return out;
 }
 // ---------------------------------------------------------------------------
@@ -44,16 +44,16 @@ function missionRequirements(id) {
 // only usable in that profession).
 // ---------------------------------------------------------------------------
 const GEAR = [
-  { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster. Where the gravity has failed you still walk (at 80%) instead of floating.' },
+  { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster, and keep walking where gravity fails.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, level: 2, desc: 'Spacewalk 30% faster.' },
   { id: 'firstAid', name: 'First aid course', cost: 150, level: 2, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s.' },
   { id: 'armor', name: 'Armor vest', cost: 220, level: 3, desc: 'Shrugs off the first hit you take each mission.' },
   { id: 'stim', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 3 s.' },
-  { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, level: 2, desc: 'Start every mission with a repair kit of your own (the ship\'s kit stays where it is).' },
+  { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, level: 2, desc: 'Start every mission with your own repair kit (on top of the ship\'s).' },
   { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, level: 3, desc: 'Repairs go another 25% faster.' },
-  { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, level: 4, desc: 'Click the reactor to overcharge it: double speed, but each energy has a 10% chance to set it on fire.' },
-  { id: 'ownLaser', prof: 'weapons', name: 'Own laser gun', cost: 120, level: 2, desc: 'Start every mission with a laser gun of your own (the ship\'s laser stays where it is).' },
-  { id: 'heavy', prof: 'weapons', name: 'Heavy blaster', cost: 300, level: 3, desc: 'Start with a heavy blaster: 1-2 damage, fires slower. Hold to charge a 3-damage blast that hits like a ship cannon outside. You walk a bit slower with it, and very slowly while charging.' },
+  { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, level: 4, desc: 'Overcharge the reactor (at the reactor): double speed, 10% fire risk per energy.' },
+  { id: 'ownLaser', prof: 'weapons', name: 'Own laser gun', cost: 120, level: 2, desc: 'Start every mission with your own laser gun (on top of the ship\'s).' },
+  { id: 'heavy', prof: 'weapons', name: 'Heavy blaster', cost: 300, level: 3, desc: 'Start with a heavy blaster: harder hits, slower fire. Hold to charge a blast that hits like a cannon. Heavy: slows you down, a lot while charging.' },
 ];
 const PROFESSIONS = [
   { id: 'engineer', name: 'Engineer', desc: 'Repairs 20% faster.' },
@@ -73,7 +73,7 @@ Object.assign(MISSIONS, {
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     objective: { kind: 'pirates', count: 2 }, rules: {},
     blurb: 'Clear pirate raiders out of the trade lanes. $40 per pirate.',
-    briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The Guild pays $40 for every pirate you put down — a raider shot to scrap counts, and so does every boarder. If a raider docks, its crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
+    briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The Guild pays $40 per pirate: raiders shot to scrap and boarders both count. If a raider docks, its crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
     build: () => [evAt('pirates', 30, { side: randSide() }), evAt('interceptor', 85, { side: randSide() }), evAt('pirates', 145, { side: randSide() }), evAt('swarm', 205), evAt('maintenance', 255, { radar: false })],
   },
   c2: {
@@ -109,7 +109,7 @@ Object.assign(MISSIONS, {
     needs: {ship: ['cannons', 'inserter'], overcharge: false},
     objective: { kind: 'rescue', npc: 'Dr. Varga' }, rules: { breach: true, surge: true, gravity: true },
     blurb: 'Dock with the pirates\' prison barge and bring Dr. Varga home.',
-    briefing: 'We tracked the Red Comet\'s prison barge. Dr. Varga is aboard — hurt, by the sound of her distress ping.\n\nWhen the barge docks, get past the guards, find her in the cargo hold, patch her up (hold click on her) and lead her back. She\'ll follow your footsteps, slowly. Don\'t let the barge cast off with her still on it.',
+    briefing: 'We tracked the Red Comet\'s prison barge. Dr. Varga is aboard — hurt, by the sound of her distress ping.\n\nWhen the barge docks, get past the guards, find her in the cargo hold, patch her up (hold click or E on her) and lead her back. She\'ll follow your footsteps, slowly. Don\'t let the barge cast off with her still on it.',
     build: () => [evAt('brig', 20, { side: randSide() }), evAt('interceptor', 65, { side: randSide() }), evAt('stealth', 110, { side: randSide() }), evAt('maintenance', 150, { radar: false }), evAt('storm', 190), evAt('swarm', 230)],
   },
   c6: {
@@ -119,7 +119,7 @@ Object.assign(MISSIONS, {
     essential: ['spores', 'leeches'],
     objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
     blurb: 'Drill a sample of the living rock in the Mire Nebula.',
-    briefing: 'Dr. Varga is grateful — and terrified. The intruder\'s DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. It will park right in front of us: take the mining drill (left airlock room), spacewalk out and drill a sample, then bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
+    briefing: 'Dr. Varga is grateful — and terrified. The intruder\'s DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. One will drift right in front of us: take the mining drill (left airlock room), spacewalk out, drill a sample and bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
     build: () => [evAt('rock', 8), evAt('spores', 35, { side: randSide() }), evAt('leeches', 80, { side: randSide() }), evAt('mother', 120, { side: randSide() }), evAt('swarm', 170), evAt('coolant', 210, { radar: false }), evAt('grappler', 245, { side: randSide() })],
   },
   c7: {
@@ -128,7 +128,7 @@ Object.assign(MISSIONS, {
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Fly into the deep beyond the Mire and get out alive.',
-    briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in, take readings, survive. Out there the jump drive is fussy: the three jump coils on the hull have to be aligned on a spacewalk, and when it spools up someone has to pull and hold the jump handle at the helm.',
+    briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in and survive. Out there the jump drive is fussy: align the three jump coils on the hull (spacewalk), and when it spools up, someone holds the jump handle at the helm.',
     build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 20, 18),
   },
   c8: {
@@ -143,7 +143,7 @@ Object.assign(MISSIONS, {
   practice: {
     name: 'Practice', tier: 0, practice: true, rules: {}, objective: null,
     blurb: 'Free play: start any encounter, damage or mini-game from the practice panel.',
-    briefing: 'No timeline, no jump: the ship is yours. Open the PRACTICE panel (button at the top right, or the P key) to start any encounter, damage type or mini-game, switch the harder rules on, fill the capacitors or clear everything.',
+    briefing: 'No timeline, no jump: the ship is yours. The PRACTICE panel (top right, or P) starts anything, toggles the harder rules and clears up after you.',
     build: () => [],
   },
 });
@@ -165,12 +165,12 @@ function applyShipUpgrades(ship = {}) {
   RADAR_RANGE = has('radar') ? 60 : 45;
   LOCK_CYCLE = has('airlocks') ? 0.7 : 1.3;
   COFFEE_REFILL = has('coffee') ? 20 : 60;
+  MAX_DAMAGE = has('hull') ? 6 : 5;
 }
 // At mission start: the ship's one-off extras.
 function shipStartExtras(ship = {}) {
   if (ship.spareCell) power.reserve += 1;
   power.inserter = ship.inserter ? { on: true, t: 0 } : null;
-  hz.hullTough = !!ship.hull;
 }
 // perk(c, id): a profession id, or a piece of gear (profession gear only counts in its profession).
 const perk = (c, id) => {
@@ -213,14 +213,17 @@ function missionResults(jumped) {
     crew: crew.map(c => ({ id: c.id, survived: jumped && c.mode === 'inside' && !inDock(c.x, c.y) && standing(c) })),
   };
 }
-// Rewards for one player from a mission's results.
+// A mission counts as a success (finished, unlocks the next chapter, earns reputation) only if the ship
+// jumped out with the objective done; missions without an objective just need the jump.
+const missionSuccess = (id, results) => !!results?.jumped && (!!results.objective || !MISSIONS[id]?.objective);
+// Rewards for one player from a mission's results. Jumped out = the crew gets paid (base + per pirate)
+// and XP for whoever is aboard and on their feet, objective or not; reputation only for a success.
 function computeRewards(id, results, survived, firstClear) {
   const M = MISSIONS[id] || {}, R = M.rewards || { money: 40, rep: 0, xp: 50 };
   if (!results.jumped) return { xp: 0, money: 0, rep: 0 };
-  const objOk = results.objective || !M.objective;
-  const money = (objOk ? R.money : 0) + (R.perPirate || 0) * (results.pirates || 0);
-  const rep = objOk ? (R.rep || 0) + (firstClear ? 1 : 0) : 0;
-  const xp = survived ? Math.round((R.xp || 50) * (objOk ? 1 : 0.5)) : 0;
+  const money = (R.money || 0) + (R.perPirate || 0) * (results.pirates || 0);
+  const rep = missionSuccess(id, results) ? (R.rep || 0) + (firstClear ? 1 : 0) : 0;
+  const xp = survived ? (R.xp || 50) : 0;
   return { xp, money, rep };
 }
 
@@ -304,23 +307,28 @@ function creditMission() {
   const o = mission.over;
   if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice') return;
   const mine = o.results.crew.find(c => c.id === me.id);
-  const first = !profile.done[mission.id] && o.results.objective;
+  const ok = missionSuccess(mission.id, o.results), first = ok && !profile.done[mission.id];
   const r = computeRewards(mission.id, o.results, !!mine?.survived, first);
   const lv0 = levelOf(profile.xp);
   profile.xp += r.xp; profile.money += r.money; profile.rep += r.rep;
-  if (o.results.jumped && (o.results.objective || !MISSIONS[mission.id]?.objective)) profile.done[mission.id] = (profile.done[mission.id] || 0) + 1;
+  if (ok) profile.done[mission.id] = (profile.done[mission.id] || 0) + 1;     // done = completed (objective included)
   profile.lastRun = mission.runId;
   saveProfile(profile);
-  lastReward = { ...r, survived: !!mine?.survived, levelUp: levelOf(profile.xp) > lv0 ? levelOf(profile.xp) : 0, unlocked: CAMPAIGN[CAMPAIGN.indexOf(mission.id) + 1] && first ? MISSIONS[CAMPAIGN[CAMPAIGN.indexOf(mission.id) + 1]].name : null };
+  const next = CAMPAIGN[CAMPAIGN.indexOf(mission.id) + 1], nextName = next && CAMPAIGN.includes(mission.id) ? MISSIONS[next].name : null;
+  lastReward = { ...r, survived: !!mine?.survived, levelUp: levelOf(profile.xp) > lv0 ? levelOf(profile.xp) : 0, unlocked: first ? nextName : null,
+    objFailed: !!o.results.jumped && !ok, locked: !ok && !profile.done[mission.id] && nextName && !unlockedMissions().has(next) ? nextName : null };
 }
 // The rewards block on the end screen.
 function drawRewards(cx, y) {
   if (!lastReward || mission.id === 'practice') return;
   const r = lastReward;
   ctx.textAlign = 'center'; ctx.font = '700 16px system-ui, sans-serif'; ctx.fillStyle = '#ffe08a';
-  ctx.fillText(`+${r.xp} XP${r.survived ? '' : ' (you didn\'t make it back aboard on your feet)'}  ·  +$${r.money}  ·  +${r.rep} reputation`, cx, y);
-  if (r.levelUp) { ctx.fillStyle = '#7af0b0'; ctx.font = '800 18px system-ui, sans-serif'; ctx.fillText(`LEVEL UP — level ${r.levelUp}!${r.levelUp === 2 ? ' Pick a profession in the locker.' : ''}`, cx, y + 26); }
-  if (r.unlocked) { ctx.fillStyle = '#9cd8ff'; ctx.font = '600 14px system-ui, sans-serif'; ctx.fillText(`Unlocked: ${r.unlocked}`, cx, y + (r.levelUp ? 50 : 26)); }
+  const xpText = `+${r.xp} XP${r.survived ? '' : ' (you didn\'t make it back aboard on your feet)'}`;
+  ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  ${xpText}  ·  no reputation` : `${xpText}  ·  +$${r.money}  ·  +${r.rep} reputation`, cx, y);
+  let dy = 26;
+  if (r.levelUp) { ctx.fillStyle = '#7af0b0'; ctx.font = '800 18px system-ui, sans-serif'; ctx.fillText(`LEVEL UP — level ${r.levelUp}!${r.levelUp === 2 ? ' Pick a profession in the locker.' : ''}`, cx, y + dy); dy += 24; }
+  if (r.unlocked) { ctx.fillStyle = '#9cd8ff'; ctx.font = '600 14px system-ui, sans-serif'; ctx.fillText(`Unlocked: ${r.unlocked}`, cx, y + dy); }
+  else if (r.objFailed) { ctx.fillStyle = '#ffb0a0'; ctx.font = '600 14px system-ui, sans-serif'; ctx.fillText(r.locked ? `Not completed: ${r.locked} stays locked until you complete the objective.` : 'Objective failed: this run doesn\'t count as completed.', cx, y + dy); }
   ctx.textAlign = 'left';
 }
 
@@ -373,7 +381,7 @@ const lobbyUI = {
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
         ${missionRequirements(this.chosen).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
-        ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep} · ${R.xp} XP (if you make it back aboard on your feet)` : ''}</p>`}`;
+        ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''} · ${R.xp} XP (only if you're aboard and on your feet at the jump)` : ''}</p>`}`;
     }
   },
   shop(kind) {
@@ -381,7 +389,7 @@ const lobbyUI = {
     this.el('shop-title').textContent = kind === 'locker' ? `LOCKER — $${p.money} · level ${lv}` : `SHIPYARD — ★ ${p.rep} reputation`;
     let html = '';
     if (kind === 'locker') {
-      html += `<h4>Profession ${lv < 2 ? '(from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => `<button class="item${p.profession === x.id ? ' chosen' : ''}" data-prof="${x.id}" ${lv < 2 ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('') + '</div>';
+      html += `<h4>Profession${lv < 2 ? ' (from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => `<button class="item${p.profession === x.id ? ' chosen' : ''}" data-prof="${x.id}" ${lv < 2 ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('') + '</div>';
       const gearButtons = (list) => '<div class="grid">' + list.map(g => { const own = p.gear[g.id], ok = !own && p.money >= g.cost && lv >= g.level && (!g.prof || p.profession === g.prof);
         return `<button class="item${own ? ' chosen' : ''}" data-gear="${g.id}" ${ok ? '' : 'disabled'}><b>${g.name} ${own ? '✔' : `· $${g.cost}${lv < g.level ? ` · level ${g.level}` : ''}`}</b><span>${g.desc}</span></button>`; }).join('') + '</div>';
       html += '<h4>General</h4>' + gearButtons(GEAR.filter(g => !g.prof));

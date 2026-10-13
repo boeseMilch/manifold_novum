@@ -48,7 +48,7 @@ function holdOn(G, x, y, max = 20) {
   const r = G.withCrew(G.me, () => G.pressShield('port'));
   check(r === 'emitter' && G.combat.shields.port.up === 0 && G.CAPACITORS[0].charge === 3, 'with the left emitter broken the left shield button does nothing (no shield, no energy spent)');
   const b = G.SHIELD_BUTTONS.find(b => b.side === 'port'); G.me.mode = 'inside'; G.me.x = b.x; G.me.y = b.y + 0.7; G.simTick(DT);
-  check(/emitter outside is broken/.test(G.me.prompt?.text || ''), `the button's prompt says so ("${G.me.prompt?.text}")`);
+  check(/emitter \(outside\) is broken/.test(G.me.prompt?.text || ''), `the button's prompt says so ("${G.me.prompt?.text}")`);
   check(G.diagState(emitter(G, 'port'))?.text.includes('spacewalk'), 'the helm diagnosis lists it as broken (fix it on a spacewalk)');
   const r2 = G.withCrew(G.me, () => G.pressShield('star'));
   check(r2 === true && G.combat.shields.star.up > 0, 'the other shields still work');

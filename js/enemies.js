@@ -62,9 +62,9 @@ const ENEMY_TYPES = {
     solids: [{ poly: INTERCEPTOR_HULL }, box(1.42, -0.35, 2.02, 1.9), box(-2.02, -0.35, -1.42, 1.9), { circle: [1.0, -0.45, 0.28] },
              box(2.0, 0.0, 2.3, 1.6)],
     pois: [
-      { id: 'cable', name: 'Weapon cable', effect: 'Gun sparks every 2nd shot', shape: { line: [[0.5, -1.25], [0.82, -1.08], [0.98, -0.72]], w: 0.16 } },
-      { id: 'cooling', name: 'Engine cooling', effect: 'Barely moves', shape: box(2.02, 0.35, 2.3, 1.25) },
-      { id: 'crack', name: 'Windshield crack', effect: 'No firing for 10 s', shape: { poly: [[0.12, -1.95], [0.36, -1.85], [0.44, -1.5], [0.4, -1.15], [0.24, -1.05], [0.14, -1.5]] } },
+      { id: 'cable', name: 'Weapon cable', effect: 'misfires every 2nd shot', shape: { line: [[0.5, -1.25], [0.82, -1.08], [0.98, -0.72]], w: 0.16 } },
+      { id: 'cooling', name: 'Engine cooling', effect: 'barely moves', shape: box(2.02, 0.35, 2.3, 1.25) },
+      { id: 'crack', name: 'Windshield crack', effect: 'no firing for 10 s', shape: { poly: [[0.12, -1.95], [0.36, -1.85], [0.44, -1.5], [0.4, -1.15], [0.24, -1.05], [0.14, -1.5]] } },
     ],
   },
   frigate: {
@@ -74,11 +74,11 @@ const ENEMY_TYPES = {
     solids: [{ poly: FRIGATE_HULL }, { circle: [2.15, -3.65, 0.45] }, box(2.5, 1.7, 3.2, 2.1), box(2.5, 3.4, 3.1, 3.8), box(-0.3, 6.3, 0.3, 6.6),
              box(2.2, -1.3, 3.3, 0.9), { circle: [3.55, 1.9, 0.55] }, box(3.0, 3.0, 3.85, 5.2), box(-0.95, 6.4, 0.95, 7.7)],
     pois: [
-      { id: 'cable', name: 'Turret power cable', effect: 'Turret sparks every 2nd shot', shape: { line: [[1.3, -5.7], [1.85, -5.15], [2.1, -4.2]], w: 0.2 } },
-      { id: 'heavy', name: 'Heavy cannon coils', effect: 'No more heavy shots', shape: box(3.35, -0.68, 5.45, 0.28) },
-      { id: 'dish', name: 'Shield emitter', effect: 'Shield down for good', shape: { circle: [3.98, 1.9, 0.36] } },
-      { id: 'aux', name: 'Side engine coolant', effect: 'Moves less', shape: box(2.95, 3.85, 3.95, 4.75) },
-      { id: 'main', name: 'Main engine coolant', effect: 'Moves less', shape: box(-1.1, 6.8, 1.1, 7.3) },
+      { id: 'cable', name: 'Turret power cable', effect: 'turret misfires every 2nd shot', shape: { line: [[1.3, -5.7], [1.85, -5.15], [2.1, -4.2]], w: 0.2 } },
+      { id: 'heavy', name: 'Heavy cannon coils', effect: 'no more heavy shots', shape: box(3.35, -0.68, 5.45, 0.28) },
+      { id: 'dish', name: 'Shield emitter', effect: 'shield down for good', shape: { circle: [3.98, 1.9, 0.36] } },
+      { id: 'aux', name: 'Side engine coolant', effect: 'moves less', shape: box(2.95, 3.85, 3.95, 4.75) },
+      { id: 'main', name: 'Main engine coolant', effect: 'moves less', shape: box(-1.1, 6.8, 1.1, 7.3) },
     ],
   },
 };

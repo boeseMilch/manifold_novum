@@ -112,8 +112,8 @@ function alarmState() {
   for (const f of burning) { const r = typeof roomAt === 'function' ? roomAt(f.x, f.y) : null; if (r) fireRooms.add(r.id); }
   const red = dmg >= maxDmg ? 2 : (dmg >= Math.max(1, maxDmg - 1) || breach || hullHits >= 2) ? 1 : 0;
   const yellow = burning.length > 0;
-  const why = red === 2 ? `${dmg} systems broken — one more and the ship is lost`
-    : red ? [dmg >= maxDmg - 1 && `${dmg} systems broken`, breach && 'hull breach', hullHits >= 2 && 'hull close to breaching'].filter(Boolean).join(' · ')
+  const why = red === 2 ? `${dmg} parts broken — one more and the ship is lost`
+    : red ? [dmg >= maxDmg - 1 && `${dmg} parts broken`, breach && 'hull breach', hullHits >= 2 && 'hull close to breaching'].filter(Boolean).join(' · ')
     : yellow ? `fire${burning.length > 1 ? 's' : ''} on board` : '';
   return { red, yellow, level: red ? 'red' + red : yellow ? 'yellow' : null, fireRooms, dmg, why };
 }
@@ -218,7 +218,6 @@ function gameLighting(t) {
   COLS.forEach((C, col) => {                        // the spine between the decks, per column (with its deck airlock)
     areas.push({ x: col ? C.x - 0.3 : -0.2, y: SPINE_Y0, w: C.w + (col ? 0.6 : 1.1) + (col === 2 ? 0.6 : 0), h: SPINE, color: mix3(Lt.spineDark, Lt.spine, lamp[col]), sun: 0.25 * lamp[col] });
   });
-  areas.push({ x: ENGINE.x - ENGINE.w / 2 - 0.3, y: ENGINE.y - 0.3, w: ENGINE.w + 0.6, h: 2.0, color: mix3(Lt.roomDark, Lt.roomLit, lamp[1]), sun: 0 });   // the engine housing in the reactor room
   // the docked ship: a dead derelict is dark inside but for its (dying) emergency strips; the
   // pirates keep their ship lit, warm and reddish. The tube between takes after ours.
   if (typeof dk !== 'undefined' && dk.dock && typeof DG === 'function') {
@@ -410,16 +409,20 @@ function gameLighting(t) {
     for (const p of power.pulses) if (LINE[p.line]) { const [x, y] = linePoint(LINE[p.line], p.t); add({ x, y, z: 0.3, color: [1.0, 0.85, 0.45], radius: 2, intensity: 0.9 }); }
   }
   // the jump drive spooling up: blue, faster and brighter towards the jump
-  if (typeof mission !== 'undefined' && mission.jump && !mission.over) {
-    const k = clamp(mission.jump.t / (JUMP_WINDOW * (mission.rules?.handle ? 2 : 1)), 0, 1), w = 0.8 + 0.2 * Math.sin(t * (6 + 16 * k));
-    add({ x: ENGINE.x, y: ENGINE.y - 0.6, z: 1.0, color: [0.45, 0.78, 1.0], radius: 4 + 4 * k, intensity: (0.7 + 1.6 * k) * w });
+  // (jumpCharge, js/mission.js: builds over the last seconds of the countdown and while the drive spools;
+  // 1 while the ship jumps out), plus a faint blue throb on the floors through the whole ship
+  const jc = typeof jumpCharge === 'function' ? jumpCharge() : 0;
+  if (jc > 0.02) {
+    const k = jc, w = 0.8 + 0.2 * Math.sin(t * (6 + 16 * k));
+    add({ x: ENGINE.x, y: 24.6, z: 1.0, color: [0.45, 0.78, 1.0], radius: 4 + 4 * k, intensity: (0.7 + 1.6 * k) * w });
     if (typeof COIL_SPOTS !== 'undefined') for (const c of COIL_SPOTS) add({ x: c.x, y: c.y, z: 0.8, color: [0.45, 0.78, 1.0], radius: 3 + 2 * k, intensity: (0.5 + 1.2 * k) * w });
+    for (const r of ROOM_RECTS) add({ x: r.x + r.w / 2, y: r.y + r.h / 2, z: 1.6, color: [0.35, 0.6, 1.0], radius: Math.max(r.w, r.h) * 0.7, intensity: 0.6 * k * k * w, shadow: false });
   }
   // the engine's blue plume: a flickering light behind the stern (the plume frame's brightness, js/art.js
   // engineFlame), out in the plume rather than in the bell: it lights the bell, the stern hull and
   // whoever is out there; brighter and longer while the jump drive spools
   if (typeof engineFlame === 'function') {
-    const F = Lt.engine, fl = engineFlame(t), sp = fl.spool ? F.spool : 1;
+    const F = Lt.engine, fl = engineFlame(t), sp = (fl.spool ? F.spool : 1) * (1 + 0.8 * (fl.charge || 0));
     add({ x: ENGINE.x, y: SHIP_H + F.out, z: F.z, x2: ENGINE.x, y2: SHIP_H + F.out + F.len * sp, z2: F.z - 0.2, color: fl.spool ? F.spoolColor : F.color,
           radius: F.radius * (0.9 + 0.1 * sp), intensity: F.intensity * fl.k * sp, wrap: 0.1, shadow: F.shadow });
   }

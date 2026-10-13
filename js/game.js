@@ -247,11 +247,11 @@ function updatePlayer(dt) {
     const self = treatInfo(player);
     if (player.mode === 'gun') {                                // slumped in the cannon's seat: no aiming, no firing (updateInteraction: patching)
       const where = player.gun.name.toLowerCase();
-      prompt = { text: self ? `Down in the ${where} — hold click to ${self.label.replace(' — ', ': ')} (${self.time} s)` : `Out cold in the ${where} — a crewmate has to pull you out at its ladder`, screen: true };
+      prompt = { text: self ? `${player.health === 'out' ? 'Out cold' : 'Down'} in the ${where} — hold click or E to ${self.label} (${self.time} s)` : `Out cold in the ${where} — a crewmate has to pull you out at its ladder`, screen: true };
       return;
     }
     updateCrew(player, dt, 0, 0);
-    prompt = { text: self ? `You're down — hold click on yourself to ${self.label.replace(' — ', ': ')} (${self.time} s)` : 'You are out cold — a crewmate has to treat you (hold click on you, 2 s)', screen: true };
+    prompt = { text: self ? `${player.health === 'out' ? 'Out cold' : 'Down'} — hold click on yourself or E to ${self.label} (${self.time} s)` : 'Out cold — a crewmate has to treat you (hold click or E on you, 2 s)', screen: true };
     return;
   }
 
@@ -274,10 +274,10 @@ function updatePlayer(dt) {
     if (!block && player.cover < 0.3 && tutAllows('fire') && ((mouse.down && !mouse.suppress && player.gunReady) || held('Space'))) fireCannon(g);
     // the gunner always sits opposite the barrel
     player.x = g.x - Math.cos(g.aim) * GUNNER_OFFSET; player.y = g.y - Math.sin(g.aim) * GUNNER_OFFSET; player.face = g.aim;
-    prompt = { text: player.cover > 0.5 ? 'Cover raised — let go of the right mouse button to fire again'
+    prompt = { text: player.cover > 0.5 ? 'Cover up — let go to fire again'
                                         : broken(g) ? `${g.name} is BROKEN — repair it at its ladder`
-                                        : g.shots ? `${g.name} · Left click: fire · Right click (hold): raise cover`
-                                        : `${g.name} is empty — click RELOAD (uses 1 energy)`, screen: true };
+                                        : g.shots ? `${g.name} · click / Space: fire · hold right click / Shift: cover`
+                                        : `${g.name} is empty — R or RELOAD (1 energy)`, screen: true };
     if (use && tutAllows('climbDown')) climbDown();
     return;
   }
@@ -290,7 +290,7 @@ function updatePlayer(dt) {
     if (h) {
       const at = { x: h.x, y: h.y, r: 1.2 };
       if (broken(h)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(h, 'Broken outer airlock', () => startHatch(h, 'in')) });
-      else if (h.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(h, 'Outer airlock') });
+      else if (h.locked) act({ text: 'Click: force the locked outer airlock (manual override)', at, run: () => startOverride(h, 'Outer airlock') });
       else act({ text: 'Click: go back inside', at, run: () => startHatch(h, 'in') });
     }
     return;
@@ -310,24 +310,24 @@ function updatePlayer(dt) {
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
-    else if (broken(emitterOf(button.side))) act({ text: `The ${SIDE_LABEL[button.side].toLowerCase()} shield emitter outside is broken — repair it on a spacewalk (repair kit)`, at });
+    else if (broken(emitterOf(button.side))) act({ text: `${SIDE_LABEL[button.side]} shield emitter (outside) is broken — fix it on a spacewalk`, at });
     else if (s.up > 0) act({ text: `Shield is up! (${Math.ceil(s.up)} s)`, at, ok: true });
     else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
-    else if (cap.charge <= 0 || broken(cap)) act({ text: 'No energy for the shield (capacitor empty)', at });
+    else if (cap.charge <= 0 || broken(cap)) act({ text: broken(cap) ? 'Capacitor broken — no shield' : 'No energy for the shield (capacitor empty)', at });
     else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
   } else if (hatch) {
     const at = { x: hatch.x - hatch.dir * 0.2, y: hatch.y, r: 1.1 };
     if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')) });
-    else if (hatch.locked) act({ text: 'Click: outer airlock is locked — manual override', at, run: () => startOverride(hatch, 'Outer airlock') });
+    else if (hatch.locked) act({ text: 'Click: force the locked outer airlock (manual override)', at, run: () => startOverride(hatch, 'Outer airlock') });
     else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
   } else if (dockAct()) {
   } else if (doorway && doorway.blast && doorRooms(doorway).some(r => r.id === 'reactor')) {
-    act({ text: 'Blast door sealed — no pressure on the other side, and the cat lives in the reactor room. Go around.', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 } });
+    act({ text: 'Blast door sealed — vacuum behind it, and the cat lives here. Go around.', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 } });
   } else if (doorway && doorway.blast) {
     act({ text: 'Click: blast door (vacuum behind it) — force it up for 5 s (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 },
           run: () => startOverride(doorway, 'Blast door', () => { doorway.blastHold = 5; doorway.blast = false; }) });
   } else if (doorway && doorway.locked) {
-    act({ text: 'Click: door is locked by security — manual override', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 }, run: () => startOverride(doorway, 'Door') });
+    act({ text: 'Click: force the locked door (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 }, run: () => startOverride(doorway, 'Door') });
   } else {
     const L = DECK_LOCKS.find(L => player.x > L.x - 0.2 && player.x < L.x + L.w + 0.2 &&
                                    player.y > SPINE_Y0 - 1.2 && player.y < SPINE_Y1 + 1.2);
@@ -335,10 +335,10 @@ function updatePlayer(dt) {
       const inside = player.y > SPINE_Y0 && player.y < SPINE_Y1, at = { x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, r: 1.8 };
       if (broken(L)) {
         const stuck = !(L.doors.top > 0.95 && L.doors.bottom > 0.95);
-        if (stuck) act({ text: 'Click: airlock is broken — force a door open (manual override)', at, run: () => startOverride(L, 'Broken deck airlock', () => forceDeckLock(L)) });
+        if (stuck) act({ text: 'Click: force the broken deck airlock (manual override)', at, run: () => startOverride(L, 'Broken deck airlock', () => forceDeckLock(L)) });
         else act({ text: 'Deck airlock is broken (doors forced open)', at });
       }
-      else if (L.locked) act({ text: 'Click: airlock is locked by security — manual override', at, run: () => startOverride(L, 'Deck airlock') });
+      else if (L.locked) act({ text: 'Click: force the locked deck airlock (manual override)', at, run: () => startOverride(L, 'Deck airlock') });
       else if (L.phase === 'cycling') act({ text: 'Airlock cycling…', at });
       else if (L.phase !== 'idle') act({ text: 'Airlock doors moving…', at });
       else if (inside) act({ text: 'Click: cycle the airlock', at, run: () => startCycle(L, other(L.open)) });
@@ -484,8 +484,8 @@ const DEBUG_ITEMS = [
   { key: '7', label: 'Teleport: front cannon', run: () => teleportToGun('front') },
   { key: '8', label: 'Teleport: right cannon', run: () => teleportToGun('star') },
   { key: '9', label: 'Teleport: bridge', run: () => { player.mode = 'inside'; player.gun = null; player.x = 22.2; player.y = 4.5; } },
-  { key: 'i', label: 'Invader through the left airlock', run: () => spawnInvader('port') },
-  { key: 'o', label: 'Invader through the right airlock', run: () => spawnInvader('star') },
+  { key: 'i', label: 'Intruder through the left airlock', run: () => spawnInvader('port') },
+  { key: 'o', label: 'Intruder through the right airlock', run: () => spawnInvader('star') },
   { key: 'I', label: 'Saboteur through the left airlock', run: () => spawnSaboteur('port') },
   { key: 'P', label: 'Saboteur through the right airlock', run: () => spawnSaboteur('star') },
   { key: '0', label: 'Clear threats and reset hit counts', run: () => { combatClear(); boarding.invaders = []; boarding.bolts = []; } },
@@ -497,7 +497,7 @@ const DEBUG_ITEMS = [
   { key: 'h', label: 'Hull breach in this room (or the nearest)', run: () => { const r = roomAt(player.x, player.y); breachRoom(r && BREACH_SPOTS[r.id] ? r.id : 'portLock'); } },
   { key: 'j', label: 'Surge, no gravity, plasma fire (here)', run: () => { const r = roomAt(player.x, player.y) || ROOMS[0]; surgeColumn(r.col); failGravity(r.id); const s = SYSTEMS.filter(s => !burning(s)).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; igniteSystem(s, true); } },
   { key: 'k', label: 'Spacewalk jobs: mines, spores, debris, antenna, canister', run: () => { spawnMineDrone('port'); spawnSpores('star'); jamCannon('port'); knockAntenna(); spawnCanister('port'); } },
-  { key: '-', code: 'Minus', label: 'Helmet lamp on / off (also L)', run: () => { player.lamp = !player.lamp; } },
+  { key: '-', code: 'Minus', label: 'Helmet lamp on / off (debug)', run: () => { player.lamp = !player.lamp; } },
   { key: 'l', label: 'Ship-wide: flare, storm, coolant leak, AI glitch', run: () => { startFlare(); startStorm(); startCoolantLeak(); startGlitch(); } },
   { key: 'z', label: 'Stealth fighter left, tractor tug right', run: () => { combatSpawn('stealth', 'port', true); combatSpawn('tractor', 'star', true); } },
   { key: 'c', label: 'Organic: grappler left, leeches + spore mother right, leviathan', run: () => { combatSpawn('grappler', 'port', true); combatSpawn('mother', 'star', true); spawnLeeches('star'); startLeviathan(); } },
@@ -594,7 +594,8 @@ function cameraTarget() {
 function updateCamera(dt) {
   const [tx, ty, tz] = cameraTarget();
   const tutView = typeof tutorialOverview === 'function' && tutorialOverview();   // (the tutorial's ship tour)
-  cam.overview = clamp(cam.overview + (DEBUG_OVERVIEW || tutView ? dt : -dt) * 4, 0, 1);
+  const jumping = !!mission.over?.survived && isFinite(jumpOutT());                // (jumping out: the whole ship in view)
+  cam.overview = clamp(cam.overview + (DEBUG_OVERVIEW || tutView || jumping ? dt : -dt) * 4, 0, 1);
   const o = cam.overview * cam.overview * (3 - 2 * cam.overview);
   const vh = VH - HUD_H;
   const zShip = Math.min(VW / ((VIEW_SHIP.x1 - VIEW_SHIP.x0) * T), vh / ((VIEW_SHIP.y1 - VIEW_SHIP.y0) * T * viewSy()));
@@ -606,6 +607,7 @@ function updateCamera(dt) {
   cam.oy = lerp(0, (VIEW_SHIP.y0 + VIEW_SHIP.y1) / 2 - cam.y, o);
   const s = combat.shake * combat.shake * 0.35;        // big hits rattle the whole ship
   cam.sx = s * (Math.sin(time * 61) + 0.5 * Math.sin(time * 97)); cam.sy = s * (Math.cos(time * 53) + 0.5 * Math.sin(time * 89));
+  const J = jumpCamera(time); cam.sx += J.x; cam.sy += J.y;          // the jump drive's rumble, the jump's lurch (js/mission.js)
 }
 // Screen (CSS px) = (ox + x·T·zoom, oy + y·T·zoom·sy) for a point on the ground.
 function camera() {
@@ -696,7 +698,8 @@ const SCREEN_CTX = ctx;
 let glowLayer = (fn) => fn();                      // (set by render(): draw fn into the unlit 'glow' layer with sprites)
 function render(t) {
   const view = camera(), G = GFX.on;
-  const space = { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 * view.sy - t * CRUISE_SPEED, rot: 0 };
+  const js = jumpSpace();                            // (the jump: stars streak; js/mission.js)
+  const space = { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 * view.sy - t * CRUISE_SPEED - js.drift, rot: 0, streak: js.streak };
   const world = (k) => ctx.setTransform(k * view.zoom, 0, 0, k * view.zoom * view.sy, k * view.ox, k * view.oy);
   // markers, halos and energy glows: in the unlit 'glow' layer with sprites (under the crew, not dimmed by the dark)
   const glow = glowLayer = (fn) => { if (!G) return fn(); const prev = ctx; ctx = GFX.layer2d('glow'); world(GFX.layer2dScale); fn(); ctx = prev; };
@@ -742,7 +745,7 @@ function render(t) {
   drawBreaches(t);
   drawPowerLines(t);
   if (G) glow(() => drawPowerGlow(t));
-  drawEngineHousing(t, ENGINE);
+  glow(() => drawJumpCrackle(t));                    // the jump drive charging: blue crackle on the cables and the hull
   if (!parts.locks) for (const L of DECK_LOCKS) drawDeckLock(L, t);
   if (!parts.doors) drawDoorways();
   if (!parts.hatches) for (const h of HATCHES) drawHatch(h);
@@ -827,6 +830,7 @@ function render(t) {
   });
   ctx.restore();
   drawInjuryOverlay(t);                              // (under the screen prompt: being down, you still read what to do)
+  drawJumpVignette(t);
   if (prompt && prompt.screen) {
     ctx.font = '600 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(prompt.text).width + 30;
@@ -863,7 +867,7 @@ function drawHUD() {
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText('WASD move · Arrows aim · E / left click: interact · Space / right click: weapon · M: mute · `: debug', 200, 18);
+  ctx.fillText('WASD move · E / click: use · Space / right click: weapon · arrows: aim · M: mute', 200, 18);
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
     : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
@@ -981,14 +985,16 @@ function clientUpdate(dt) {
   music.setIntensity(!mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
   music.setJump(!!mission.jump && !mission.over);
   if (mission.over?.survived) music.jumped();              // the big final hit as we jump out
+  if (mission.over) creditMission();                 // rewards for this browser's player (once per run; early, before anything else can throw)
+  jumpFxUpdate(dt);                                        // the jump's animation clock (js/mission.js)
+  try { sfx.hum(jumpCharge()); } catch (e) { /* no audio */ }   // the drive's hum
   miniClient(dt);
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
   if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && standing(me) && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
-  if (mission.over) creditMission();                 // rewards for this browser's player (once per run)
-  if (mission.over && localInput.pressed.has('KeyR')) backToLobby();
+  if (endScreenReady() && localInput.pressed.has('KeyR')) backToLobby();   // (not during the jump animation)
   if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? pickHover(me, m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
   updateSidebar(HUD_H, dt);
   updateCamera(dt);
@@ -1005,7 +1011,8 @@ function frame(now) {
   if (NET.on) NET.frame(dt);
   else if (typeof tutorialPaused === 'function' && tutorialPaused()) tutorialClient(dt);   // a tutorial message is open: the game is paused
   else if (!lobbyOpen()) tick(dt); else clientUpdate(dt);
-  render(now / 1000);
+  // a drawing error must never stop the game loop (the end of a mission, its rewards: clientUpdate above)
+  try { render(now / 1000); } catch (e) { if (!frame.err) { frame.err = true; console.error('render error', e); } }
   requestAnimationFrame(frame);
 }
 mission.active = false;                              // the lobby starts a mission

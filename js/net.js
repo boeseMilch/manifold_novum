@@ -212,10 +212,10 @@ function netClientMain() {
     status.textContent = { none: 'offline', connecting: 'connecting…', online: 'server online', lost: 'connection lost' }[netState];
     if (netState !== 'online') {
       box.innerHTML = `<li class="empty">${netState === 'connecting' ? 'Looking for the server…'
-        : 'No server here, so there is no multiplayer. To play together, run <code>node server.js</code> and open its <code>http://…</code> address. Solo works as always.'}</li>`;
+        : 'No server, so solo only. To play together, run <code>node server.js</code> and open the <code>http://…</code> address it prints.'}</li>`;
       return;
     }
-    if (!games.length) { box.innerHTML = '<li class="empty">No open games yet. Open one, and everyone on this server sees it here.</li>'; return; }
+    if (!games.length) { box.innerHTML = '<li class="empty">No games yet. Open one and it shows up here for everyone.</li>'; return; }
     box.innerHTML = games.map(g => `<li class="game${g.full ? ' full' : ''}">
         <i class="dot" style="background:${g.color}"></i>
         <span class="who"><b>${escapeHtml(g.host)}'s game</b><small>${escapeHtml(missionName(g.mission))}</small></span>

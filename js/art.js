@@ -121,6 +121,16 @@ function drawSpace(t, cam, vw, vh) {
     ctx.fillStyle = g; ctx.fillRect(-D / 2, -D / 2, D, D);
   }
   for (const L of STAR_LAYERS) {
+    const len = (cam.streak || 0) * L.f / 0.22;       // the jump drive (js/mission.js jumpSpace): stars stretch into lines
+    if (len > 1.5) {
+      ctx.globalAlpha = L.alpha; ctx.strokeStyle = '#d8e6ff'; ctx.lineCap = 'round'; ctx.beginPath();
+      for (const s of L.stars) {
+        const x = wrap(s.x * D - cam.x * L.f), y = wrap(s.y * D - cam.y * L.f);
+        ctx.moveTo(x, y); ctx.lineTo(x, y - len);
+      }
+      ctx.lineWidth = (L.size[0] + L.size[1]) / 2; ctx.stroke();
+      continue;
+    }
     for (const s of L.stars) {
       ctx.globalAlpha = L.alpha * (0.75 + 0.25 * Math.sin(t * 2 + s.tw));
       ctx.fillStyle = s.tint;
@@ -625,7 +635,7 @@ function drawReactor(R, t) {
   tapeStrip(x + w * 0.04, y + 10, T * 0.5, -0.6, 813);
 }
 
-// One big engine: housing in the reactor room, bell sticking out of the stern (+y).
+// One big engine: the bell sticking out of the stern (+y; the housing in the reactor room was removed).
 // Sprites: hull/engine_bell_cruise_f0..3 / _spool_f0..3 (the jump drive spooling up) at the stern's middle,
 // over the hull; the blue exhaust plume hull/engine_flame_cruise / _spool (8 frames, Blender volume, alpha =
 // brightness, unlit) right over the bell, so it comes out of the nozzle. Its frame is picked at random ~14
@@ -635,45 +645,23 @@ const FLAME_FRAMES = {                                 // brightness per plume f
   cruise: [1.0, 1.08, 0.92, 1.04, 0.97, 1.12, 0.95, 1.02],
   spool: [1.25, 1.45, 1.65, 1.5, 1.3, 1.55, 1.7, 1.4],
 };
+// charge: the jump drive's charge 0..1 (js/mission.js jumpCharge): the plume switches to 'spool', flickers
+// faster, grows and pulses as it charges.
 function engineFlame(t) {
-  const spool = typeof mission !== 'undefined' && !!mission.jump && !mission.over, F = FLAME_FRAMES[spool ? 'spool' : 'cruise'];
-  const n = Math.floor(t * 14), r = Math.sin(n * 91.7 + 13.1) * 43758.5453, f = Math.floor((r - Math.floor(r)) * F.length);
-  return { spool, f, k: F[f] };
+  const charge = typeof jumpCharge === 'function' ? jumpCharge() : 0, spool = charge > 0.15, F = FLAME_FRAMES[spool ? 'spool' : 'cruise'];
+  const n = Math.floor(t * (14 + 22 * charge)), r = Math.sin(n * 91.7 + 13.1) * 43758.5453, f = Math.floor((r - Math.floor(r)) * F.length);
+  return { spool, f, k: F[f], charge };
 }
 function drawEngineBell(t, E) {
-  const fl = engineFlame(t), state = fl.spool ? 'spool' : 'cruise';
-  const bell = GFX.on && GFX.sprite(`hull/engine_bell_${state}_f${Math.floor(t * 8) % 4}`, 0, E.x, SHIP_H, 0, { layer: 'decal', emissive: 0.8 });
-  const flame = bell && GFX.sprite(`hull/engine_flame_${state}`, fl.f, E.x, SHIP_H, 0, { layer: 'decal', unlit: true });
+  const fl = engineFlame(t), state = fl.spool ? 'spool' : 'cruise', c = fl.charge;
+  const grow = 1 + c * (0.3 + 0.12 * Math.sin(t * (8 + 22 * c)));      // charging: a bigger, throbbing plume
+  const bell = GFX.on && GFX.sprite(`hull/engine_bell_${state}_f${Math.floor(t * (8 + 16 * c)) % 4}`, 0, E.x, SHIP_H, 0, { layer: 'decal', emissive: 0.8 + 0.2 * c });
+  const flame = bell && GFX.sprite(`hull/engine_flame_${state}`, fl.f, E.x, SHIP_H, 0, { layer: 'decal', unlit: true, scale: grow });
+  if (flame && c > 0.3) GFX.sprite(`hull/engine_flame_${state}`, (fl.f + 3) % 8, E.x, SHIP_H, 0, { layer: 'decal', unlit: true, scale: grow * 1.15, alpha: 0.6 * (c - 0.3) / 0.7 });
   if (flame) return;
   ctx.save(); ctx.translate(E.x * T, (SHIP_H - 0.5) * T); ctx.rotate(-Math.PI / 2); ctx.scale(3.4, 3.4);
-  drawEngines(t, 0.45 + 0.04 * Math.sin(t * 1.3), [0], bell);
+  drawEngines(t, 0.45 + 0.04 * Math.sin(t * 1.3) + c * (0.5 + 0.1 * Math.sin(t * (8 + 22 * c))), [0], bell);
   ctx.restore();
-}
-function drawEngineHousing(t, E) {
-  const spool = typeof mission !== 'undefined' && !!mission.jump && !mission.over;
-  if (spr(spool ? 'hull/engine_housing_spool' : 'hull/engine_housing', Math.floor(t * 8) % 6, E.x, E.y, 0, { emissive: 0.6, sortY: E.y + 0.8 })) return;
-  const w = E.w * T, x = E.x * T - w / 2, y = E.y * T, h = (25.5 - E.y) * T + 4;
-  rr(x, y, w, h, 6);
-  const g = ctx.createLinearGradient(0, y, 0, y + h);
-  g.addColorStop(0, '#5f6879'); g.addColorStop(1, '#3a414f');
-  ctx.fillStyle = g; ctx.fill(); stroke(3);
-  hazardStripe(x + 6, y + 5, w - 12, 9);
-  // intake ring with a warm, slowly breathing glow
-  const cx = E.x * T, cy = y + h * 0.62, r = h * 0.32;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fillStyle = '#20242b'; ctx.fill(); stroke(2);
-  const k = 0.6 + 0.15 * Math.sin(t * 1.3);
-  const gg = ctx.createRadialGradient(cx, cy, 1, cx, cy, r);
-  gg.addColorStop(0, `rgba(255,200,120,${k})`); gg.addColorStop(1, 'rgba(255,120,40,0)');
-  ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(cx, cy, r * 0.9, 0, TAU); ctx.fill();
-  ctx.save(); ctx.translate(cx, cy); ctx.rotate(t * 2);                // turbine blades
-  ctx.strokeStyle = 'rgba(30,32,38,0.8)'; ctx.lineWidth = 3;
-  for (let i = 0; i < 6; i++) { ctx.rotate(TAU / 6); ctx.beginPath(); ctx.moveTo(3, 0); ctx.lineTo(r * 0.85, 4); ctx.stroke(); }
-  ctx.restore();
-  for (const s of [-1, 1]) {                                            // side pipes
-    rr(cx + s * w * 0.36 - 8, y + h * 0.3, 16, h * 0.6, 5); ctx.fillStyle = '#7a5a3b'; ctx.fill(); stroke(2);
-  }
-  ctx.fillStyle = 'rgba(232,236,244,0.5)'; ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('ENGINE', cx, y + h * 0.26 + 5); ctx.textAlign = 'left';
 }
 
 // Outer airlock hatch set into a side wall; h.open 0..1 slides the doors apart.

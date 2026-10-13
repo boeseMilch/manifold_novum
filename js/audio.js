@@ -3,7 +3,7 @@
 // Everything (effects and music) goes through one output gain, which the mute button sets.
 
 const sfx = (() => {
-  let ac = null, master = null, out = null, noiseBuf = null;
+  let ac = null, master = null, out = null, noiseBuf = null, hum = null;
   let muted = false;
   try { muted = localStorage.getItem('mn-muted') === '1'; } catch (e) { /* storage unavailable */ }
   // Test browsers (automation, headless, ?mute) start silent, so test runs never play over the real game.
@@ -31,11 +31,11 @@ const sfx = (() => {
     g.gain.exponentialRampToValueAtTime(peak, t0 + a);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
   }
-  function tone(type, f0, f1, dur, peak = 0.5, delay = 0) {
+  function tone(type, f0, f1, dur, peak = 0.5, delay = 0, attack = 0.01) {
     if (!ac) return;
     const t0 = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
     o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
-    env(g, t0, 0.01, peak, dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05);
+    env(g, t0, attack, peak, dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05);
   }
   function noise(dur, freq, peak = 0.5, q = 1) {
     if (!ac) return;
@@ -76,7 +76,29 @@ const sfx = (() => {
     spray() { noise(0.2, 3000, 0.12, 0.6); },
     alarm() { tone('square', 880, 880, 0.07, 0.08); tone('square', 660, 660, 0.07, 0.08, 0.09); },
     purr() { for (let i = 0; i < 6; i++) tone('sawtooth', 48, 44, 0.22, 0.1, i * 0.25); },
-    win() { [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, f, 0.25, 0.3, i * 0.11)); },
+    win(delay = 0) { [523, 659, 784, 1047].forEach((f, i) => tone('triangle', f, f, 0.25, 0.3, delay + i * 0.11)); },
+    // Jumping out (js/mission.js drawJumpOut): a whine winding up for ~1.5 s, then the deep boom of the jump.
+    jumpOut() {
+      tone('sawtooth', 110, 1600, 1.55, 0.18, 0, 1.4); tone('sine', 55, 220, 1.55, 0.4, 0, 1.4);
+      setTimeout(() => { noise(1.8, 160, 1.0, 0.5); noise(0.9, 2400, 0.35, 0.6); tone('sine', 110, 28, 1.6, 0.9); tone('triangle', 220, 50, 0.8, 0.35); }, 1500);
+    },
+    // The jump drive's hum while it charges: call every frame with the charge 0..1 (0: silent). Pitch,
+    // brightness, loudness and the throb all rise with it.
+    hum(k) {
+      if (!ac || (!hum && !(k > 0))) return;
+      const t = ac.currentTime;
+      if (!hum) {
+        const o1 = ac.createOscillator(), o2 = ac.createOscillator(), lfo = ac.createOscillator(), lg = ac.createGain(), f = ac.createBiquadFilter(), g = ac.createGain();
+        o1.type = 'sawtooth'; o2.type = 'sine'; lfo.type = 'sine'; f.type = 'lowpass'; f.Q.value = 3; g.gain.value = 0; lg.gain.value = 0;
+        o1.connect(f); o2.connect(g); f.connect(g); lfo.connect(lg); lg.connect(g.gain); g.connect(master);
+        o1.start(t); o2.start(t); lfo.start(t);
+        hum = { o1, o2, lfo, lg, f, g };
+      }
+      k = Math.max(0, Math.min(1, k || 0));
+      hum.o1.frequency.setTargetAtTime(55 + 165 * k, t, 0.15); hum.o2.frequency.setTargetAtTime(27.5 + 82 * k, t, 0.15);
+      hum.lfo.frequency.setTargetAtTime(2 + 14 * k, t, 0.15); hum.f.frequency.setTargetAtTime(200 + 2200 * k * k, t, 0.15);
+      hum.g.gain.setTargetAtTime(0.1 * k, t, 0.1); hum.lg.gain.setTargetAtTime(0.04 * k, t, 0.1);
+    },
     // The ship's voice: an old, polite computer (speech synthesis; respects mute; never more than one at a time).
     say(text) {
       if (muted || typeof speechSynthesis === 'undefined' || speechSynthesis.speaking) return;

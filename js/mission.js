@@ -3,7 +3,8 @@
 
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
-const JUMP_DELAY = 22, JUMP_WINDOW = 15, MAX_DAMAGE = 5;   // the jump comes mid-battle: 22 s after the final fight starts
+const JUMP_DELAY = 22, JUMP_WINDOW = 15;   // the jump comes mid-battle: 22 s after the final fight starts
+let MAX_DAMAGE = 5;                         // broken parts at once the ship survives (6 with the reinforced hull: applyShipUpgrades, js/progress.js)
 const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
 let FIRE_TIME = 15;
 const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
@@ -49,7 +50,7 @@ const EVENT_RUNNERS = {};                              // event kinds added by o
 const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
   intro: {
-    name: 'Intro run', blurb: 'One of everything, well spaced out. The one you know.',
+    name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
     crew: {events: [2, 5, 6, 11, 11, 16, 16, 21], cells: [2, 4, 4, 6, 6, 9, 9, 14], reactor: [1, 1, 1, 1, 1, 1, 1, 0.7]},   // --calibrate: 72% 66% 73% 67% 74% 68% 73% 71% idle for 1-8 players
     build(target) {
       const s1 = randSide();
@@ -78,7 +79,7 @@ const MISSIONS = {
     },
   },
   deep: {
-    name: 'Deep drift', tier: 3, blurb: 'Hard. Hull breaches, plasma fires, failing gravity, things on the hull — and the jump coils need aligning outside.',
+    name: 'Deep drift', tier: 3, blurb: 'Hard. Breaches, plasma fires, failing gravity, things on the hull, and a fussy jump drive.',
     crew: {events: [1, 1, 1, 1, 3, 3, 7, 19], cells: [2, 2, 2, 2, 2, 2, 3, 4]},   // --calibrate: 65% 78% 85% 89% 65% 65% 68% 67% idle for 1-8 players
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
@@ -107,7 +108,7 @@ const MISSIONS = {
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
-    name: 'Ore run', tier: 2, blurb: 'Drill an ore sample out of a big asteroid on a spacewalk while the front cannon keeps the small ones off.',
+    name: 'Ore run', tier: 2, blurb: 'Spacewalk out and drill a big asteroid while the front cannon holds off the small ones.',
     crew: {events: [2, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 3, 7, 7, 11, 10, 10], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 69% 70% 68% 67% 68% 72% 75% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true }, objective: { kind: 'ore' },
@@ -230,7 +231,8 @@ function startMission(id = 'intro', opts = {}) {
   shipStartExtras(opts.ship || {});
   mission.upgrades = { ...(opts.ship || {}) }; mission.runId = `${Date.now().toString(36)}-${newUid()}`; mission.kills = 0;
   for (const c of crew) applyKit(c, c.kit);
-  combatBanner('Jumped into the hot zone. Survive until the jump drive is ready!');
+  const mDef = MISSIONS[mission.id] || {};
+  combatBanner(mDef.practice ? 'Practice — the ship is yours' : mDef.tutorial ? 'Training — welcome aboard' : 'Jumped into the hot zone. Hold out until the jump!');
 }
 
 function runEvent(ev) {
@@ -259,20 +261,20 @@ function updateMission(dt) {
     const extra = coilDelay();
     if (extra) { mission.jumpAt += extra; combatBanner(`Jump coils misaligned — the jump drive needs ${extra} s longer!`); }
   }
-  if (mission.t >= mission.jumpAt && !mission.jump) { mission.jump = { t: 0 }; combatBanner('Jump drive spooling up — it needs energy in the middle capacitor!'); sfx.say?.('Jump drive spooling up.'); }
+  if (mission.t >= mission.jumpAt && !mission.jump) { mission.jump = { t: 0 }; combatBanner('Jump drive spooling up — needs 1 energy in MID!'); sfx.say?.('Jump drive spooling up.'); }
   if (mission.jump) {
     mission.jump.t += dt;
     const pulled = !mission.rules?.handle || (mission.jump.pull || 0) >= JUMP_PULL;      // harder missions: someone has to pull the handle
     if (pulled && !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) {
       CAPACITORS[1].charge--;
       const obj = objectiveStatus();
-      if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out safely — but ${obj.fail}. Mission failed.`, true);
+      if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out ${obj.fail}: objective failed.`, true);
       return;
     }
     if (mission.jump.t >= JUMP_WINDOW * (mission.rules?.handle ? 2 : 1)) { endMission(false, 'The jump drive never got energy — stranded in the hot zone.'); return; }
   }
   const dmg = SYSTEMS.filter(s => s.broken).length;
-  if (dmg > MAX_DAMAGE) endMission(false, `The ship fell apart (${dmg} systems broken at once).`);
+  if (dmg > MAX_DAMAGE) endMission(false, `The ship fell apart (${dmg} parts broken at once).`);
 }
 // The mission's objective (beyond surviving): { done, fail (what's missing), text }.
 function objectiveStatus() {
@@ -286,9 +288,10 @@ function objectiveStatus() {
   return { done: true };
 }
 function endMission(won, reason, survived = won) {
-  mission.over = { won, reason, t: mission.t, survived, results: missionResults(!!survived) };
+  // at: the sim time it ended (synced): the jump-out animation's clock (see jumpOutT)
+  mission.over = { won, reason, t: mission.t, survived, results: missionResults(!!survived), at: time };
   for (const e of combat.enemies) e.stopCharge?.();
-  if (won) sfx.win(); else sfx.explosion();
+  if (survived) { sfx.jumpOut(); if (won) sfx.win(JUMP_FLASH + 0.15); } else sfx.explosion();
 }
 
 // Radar: reveals everything coming in the next RADAR_RANGE seconds, for the whole crew.
@@ -349,7 +352,7 @@ function igniteSystem(s, plasma = false) {
   plasma = (plasma || (!!mission.rules?.plasma && plasmaPart(s))) && inPlasmaRoom(s);   // plasma fires only in the lower side rooms
   fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100, plasma, period: firePeriod(plasma) });
   hz.stats.fires++;
-  if (plasma) { combatBanner(`PLASMA FIRE at the ${s.name.toLowerCase()}! Extinguishers won't do — vent the room at its airlock panel.`); sfx.say?.('Plasma fire. Vent the room.'); }
+  if (plasma) { combatBanner(`PLASMA FIRE at the ${s.name.toLowerCase()} — vent the room!`); sfx.say?.('Plasma fire. Vent the room.'); }
   else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
   return true;
 }
@@ -622,7 +625,7 @@ function drawSecurityPanel() {
   }
   ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText('D door · A deck airlock · H outer airlock — locked doors can still be forced with a manual override. Red: enemies · blue: crew.', x + 18, y + h - 18);
+  ctx.fillText('D door · A deck airlock · H outer airlock · red: enemies · blue: crew. Locked doors can still be forced.', x + 18, y + h - 18);
 }
 // During an AI glitch the console only shows the reboot switches (the order is on the helm).
 function drawRebootPanel() {
@@ -639,7 +642,7 @@ function drawRebootPanel() {
   ctx.textAlign = 'left';
 }
 function drawDiagnosisPanel() {
-  const w = 560, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — systems diagnosis');
+  const w = 560, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — ship diagnosis');
   const top = 50;
   ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'top';
   SYSTEMS.forEach((s, i) => {
@@ -657,7 +660,7 @@ function drawOverridePanel(t) {
   fx.shake = Math.max(0, fx.shake - 1 / 60);
   const sx = (Math.random() - 0.5) * 14 * fx.shake / 0.3, sy = (Math.random() - 0.5) * 14 * fx.shake / 0.3;
   ctx.save(); ctx.translate(sx, sy);
-  const w = 440, h = 340, [x, y] = panelFrame(w, h, `${o.name} — ${o.hits >= 3 ? 'it gives!' : 'locked'}`, 'E / click: hit · Esc to close');
+  const w = 440, h = 340, [x, y] = panelFrame(w, h, `${o.name} — ${o.hits >= 3 ? 'it gives!' : 'whack the handle'}`, 'E / click: hit · Esc to close');
   const cx = x + w / 2 - 20, cy = y + 150;
   // swing: wind up, then slam into the handle, then recoil
   const prog = o.swing > 0 ? 1 - o.swing / OVERRIDE_SWING : 0;
@@ -738,32 +741,138 @@ function drawOverridePanel(t) {
   ctx.fillText(o.hits >= 3 ? 'OPEN!' : `MANUAL OVERRIDE (${o.hits}/3)`, bx + bw / 2, by + bh / 2); ctx.textAlign = 'left';
   ui.hits.push({ x: bx + bw / 2, y: by + bh / 2, w: bw, h: bh, cmd: ['bonk'] });
 }
-// Jumping out: the stars stretch into streaks and the screen flashes before the results show.
-let warpFx = null;
-function drawWarp(k) {
-  ctx.fillStyle = `rgba(4,6,14,${0.4 + 0.5 * k})`; ctx.fillRect(0, 0, VW, VH);
-  const r = rng(7), cx = VW / 2, cy = VH / 2;
-  for (let i = 0; i < 160; i++) {
-    const a = r() * TAU, d0 = r() * Math.hypot(VW, VH) * 0.5, len = 40 + 900 * k * k * r();
-    ctx.strokeStyle = `rgba(${200 + r() * 55 | 0},${220 + r() * 35 | 0},255,${0.5 + 0.5 * r()})`; ctx.lineWidth = 1 + 2 * r();
-    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * d0, cy + Math.sin(a) * d0); ctx.lineTo(cx + Math.cos(a) * (d0 + len), cy + Math.sin(a) * (d0 + len)); ctx.stroke();
+// ---------------------------------------------------------------------------
+// The jump, seen and heard (looks and sound only: nothing here changes the game).
+// - Wind-up: jumpCharge() 0..1 builds over the last JUMP_PRESPOOL s of the countdown (to 0.6) and while the
+//   drive spools (on to 1). It drives the engine bell and plume (js/art.js engineFlame / drawEngineBell),
+//   the blue lights (js/lights.js), blue crackle along the power lines and the hull (drawJumpCrackle),
+//   streaking stars (jumpSpace → drawSpace), a pulsing blue screen edge (drawJumpVignette), a faint
+//   rumble (jumpCamera) and a rising hum (sfx.hum, from clientUpdate).
+// - The jump: when the ship jumps out (mission.over.survived), JUMP_OUT s of animation before the end
+//   screen: the ship pulls back, then lurches forward and away (the camera pulls out to the whole ship),
+//   the stars stretch into lines, a tunnel of light, a white flash (JUMP_FLASH), then the end screen
+//   fades in from white. Its clock starts at mission.over.at (synced sim time), so every client plays it
+//   at the same moment; R (back to the lobby) only works once it's done. Not on a loss.
+// ---------------------------------------------------------------------------
+const JUMP_PRESPOOL = 8, JUMP_FLASH = 1.6, JUMP_OUT = 2.3;
+let jumpClock = null;                                // this browser's smooth clock for the jump-out (time is 30 Hz in multiplayer)
+function jumpFxUpdate(dt) {                          // (clientUpdate)
+  const o = mission.over;
+  if (!o?.survived || o.at == null) { jumpClock = null; return; }
+  if (!jumpClock || jumpClock.at !== o.at) jumpClock = { at: o.at, t: Math.max(0, time - o.at) };
+  else jumpClock.t = Math.max(jumpClock.t + dt, time - o.at - 0.15);
+}
+// Seconds since the ship jumped out (Infinity: it didn't, or long ago).
+function jumpOutT() {
+  const o = mission.over;
+  if (!o?.survived || o.at == null) return Infinity;
+  return jumpClock && jumpClock.at === o.at ? jumpClock.t : Math.max(0, time - o.at);
+}
+// The end screen (results) shows: the mission is over and the jump animation (if any) has played.
+const endScreenReady = () => !!mission.over && jumpOutT() >= JUMP_OUT;
+function jumpCharge() {
+  if (!mission.active) return 0;
+  if (mission.over) return jumpOutT() < JUMP_OUT ? 1 : 0;
+  if (mission.jump) return 0.6 + 0.4 * clamp(mission.jump.t / 6, 0, 1);
+  if (!isFinite(mission.jumpAt)) return 0;
+  const at = mission.jumpAt + (!mission.coilsChecked && typeof coilDelay === 'function' ? coilDelay() : 0);   // (misaligned coils: later)
+  return 0.6 * Math.pow(clamp(1 - (at - mission.t) / JUMP_PRESPOOL, 0, 1), 1.5);
+}
+// The starfield: { streak: px (the nearest stars), drift: extra px travelled }.
+function jumpSpace() {
+  const u = jumpOutT();
+  if (u < JUMP_FLASH) { const s = Math.max(0, u - 0.35); return { streak: 30 + 2600 * s * s, drift: 2400 * s * s * s }; }
+  const k = jumpCharge();
+  return { streak: k > 0 ? 3 + 30 * k * k : 0, drift: 0 };
+}
+// Camera offset in tiles: a rumble while charging; jumping: the ship pulls back, then is thrown forward (up the screen) and away.
+function jumpCamera(t) {
+  const u = jumpOutT(), k = jumpCharge();
+  const sh = u < JUMP_FLASH ? 0.12 * (1 - u / JUMP_FLASH) + 0.05 : k > 0.5 ? 0.03 * (k - 0.5) / 0.5 : 0;
+  let y = 0;
+  if (u < 0.45) y = -0.7 * Math.sin(u / 0.45 * Math.PI / 2);
+  else if (isFinite(u)) y = -0.7 + 16 * Math.pow(u - 0.45, 2.2);
+  if (u >= JUMP_FLASH && isFinite(u)) y = 400;          // gone: only the new stars behind the results
+  return { x: sh * Math.sin(t * 73), y: y + sh * Math.cos(t * 59) };   // (+y: the camera moves on, so the ship moves up the screen)
+}
+// Blue energy crackling along the power lines and the hull (world transform; the unlit glow layer with sprites).
+function drawJumpCrackle(t) {
+  const k = jumpCharge();
+  if (k < 0.05 || jumpOutT() >= JUMP_FLASH && mission.over) return;
+  const r = rng(Math.floor(t * 15) * 7 + 3), arcs = Math.round(2 + 24 * k), a = 0.45 + 0.55 * k;
+  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (let i = 0; i < arcs; i++) {
+    const pts = [];
+    const where = r();
+    if (where < 0.4 && typeof POWER_LINES !== 'undefined') {           // along a power line
+      const l = POWER_LINES[Math.floor(r() * POWER_LINES.length)], u0 = r(), du = (1.2 + 2 * r()) / Math.max(1, l.len);
+      for (let j = 0; j <= 6; j++) pts.push(linePoint(l, u0 + du * j / 6));
+    } else {                                                            // along the hull, or a room's walls (inside)
+      const room = where < 0.75 && ROOM_RECTS[Math.floor(r() * ROOM_RECTS.length)];
+      const poly = room ? [[room.x, room.y], [room.x + room.w, room.y], [room.x + room.w, room.y + room.h], [room.x, room.y + room.h]] : HULL;
+      const i0 = Math.floor(r() * poly.length), p = poly[i0], q = poly[(i0 + 1) % poly.length], el = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+      const len = Math.min(el, 1.5 + 2 * r()), s0 = r() * (el - len);
+      for (let j = 0; j <= 6; j++) { const s = (s0 + len * j / 6) / el; pts.push([lerp(p[0], q[0], s), lerp(p[1], q[1], s)]); }
+    }
+    for (let j = 1; j < pts.length - 1; j++) { pts[j][0] += (r() - 0.5) * 0.45; pts[j][1] += (r() - 0.5) * 0.45; }
+    const path = () => { ctx.beginPath(); pts.forEach(([x, y], j) => (j ? ctx.lineTo(x * T, y * T) : ctx.moveTo(x * T, y * T))); };
+    path(); ctx.strokeStyle = `rgba(80,160,255,${0.3 * a})`; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = `rgba(150,215,255,${0.7 * a})`; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = `rgba(240,250,255,${a})`; ctx.lineWidth = 1.2; ctx.stroke();
   }
-  if (k > 0.8) { ctx.fillStyle = `rgba(255,255,255,${(k - 0.8) * 5})`; ctx.fillRect(0, 0, VW, VH); }
+  if (typeof COIL_SPOTS !== 'undefined') for (const c of COIL_SPOTS) {   // the jump coils on the hull glow
+    const rr0 = T * (0.5 + 0.5 * k) * (1 + 0.2 * Math.sin(t * (6 + 18 * k))), g = ctx.createRadialGradient(c.x * T, c.y * T, 0, c.x * T, c.y * T, rr0);
+    g.addColorStop(0, `rgba(230,245,255,${0.8 * k})`); g.addColorStop(0.35, `rgba(110,190,255,${0.5 * k})`); g.addColorStop(1, 'rgba(80,150,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x * T, c.y * T, rr0, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+// Screen space: a blue glow pulsing at the screen's edges while the drive charges (the middle stays clear).
+function drawJumpVignette(t) {
+  const k = jumpCharge();
+  if (k < 0.05 || mission.over) return;
+  const w = 0.75 + 0.25 * Math.sin(t * (4 + 14 * k)), R = Math.hypot(VW, VH) / 2;
+  const g = ctx.createRadialGradient(VW / 2, VH / 2, R * 0.55, VW / 2, VH / 2, R);
+  g.addColorStop(0, 'rgba(60,140,255,0)'); g.addColorStop(1, `rgba(70,150,255,${0.45 * k * w})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+// Screen space, the jump itself (u: seconds since it started, < JUMP_FLASH): the edge glow flares, a tunnel
+// of light streaks out of the middle, a white bloom swells into a full flash.
+function drawJumpOut(u) {
+  const p = clamp(u / JUMP_FLASH, 0, 1), cx = VW / 2, cy = VH / 2, R = Math.hypot(VW, VH) / 2;
+  const v = ctx.createRadialGradient(cx, cy, R * (0.5 - 0.3 * p), cx, cy, R);
+  v.addColorStop(0, 'rgba(60,140,255,0)'); v.addColorStop(1, `rgba(90,170,255,${0.4 + 0.4 * p})`);
+  ctx.fillStyle = v; ctx.fillRect(0, 0, VW, VH);
+  const q = clamp((p - 0.3) / 0.7, 0, 1);
+  if (q > 0) {                                        // the tunnel
+    ctx.fillStyle = `rgba(4,8,22,${0.55 * q})`; ctx.fillRect(0, 0, VW, VH);
+    const r = rng(7); ctx.lineCap = 'round';
+    for (let i = 0; i < 180; i++) {
+      const a = r() * TAU, sp = 0.4 + r(), d0 = R * (((r() + u * sp * 1.6) % 1) * 1.1), len = 30 + R * 1.2 * q * q * sp;
+      const d1 = Math.max(4, d0 - len * 0.2), hue = r();
+      ctx.strokeStyle = `rgba(${170 + hue * 85 | 0},${210 + hue * 45 | 0},255,${(0.35 + 0.6 * r()) * q})`; ctx.lineWidth = 1 + 2.5 * r() * q;
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * d1, cy + Math.sin(a) * d1); ctx.lineTo(cx + Math.cos(a) * (d0 + len), cy + Math.sin(a) * (d0 + len)); ctx.stroke();
+    }
+  }
+  const b = clamp((p - 0.55) / 0.45, 0, 1);
+  if (b > 0) {                                        // the bloom, then everything white
+    const rb = R * (0.05 + 1.4 * b * b), g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rb);
+    g.addColorStop(0, `rgba(255,255,255,${Math.min(1, 0.6 + b)})`); g.addColorStop(0.4, `rgba(200,230,255,${0.8 * b})`); g.addColorStop(1, 'rgba(120,180,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    if (b > 0.75) { ctx.fillStyle = `rgba(255,255,255,${(b - 0.75) * 4})`; ctx.fillRect(0, 0, VW, VH); }
+  }
 }
 function drawEndScreen() {
   const o = mission.over;
-  if (o.survived) {                                     // the jump itself first (1.8 s)
-    if (!warpFx || warpFx.run !== mission.runId) warpFx = { run: mission.runId, t0: performance.now() };
-    const k = (performance.now() - warpFx.t0) / 1800;
-    if (k < 1) { drawWarp(k); return; }
-  }
+  const u = jumpOutT();                                  // jumped out: the jump itself first (JUMP_OUT s)
+  if (u < JUMP_FLASH) { drawJumpOut(u); return; }
   ctx.fillStyle = o.won ? 'rgba(10,30,20,0.75)' : 'rgba(40,8,8,0.78)'; ctx.fillRect(0, 0, VW, VH);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = o.won ? '#7af0b0' : '#ff7a6a'; ctx.font = '800 48px system-ui, sans-serif';
   ctx.fillText(o.won ? 'JUMP SUCCESSFUL' : o.survived ? 'JUMPED — OBJECTIVE FAILED' : 'MISSION FAILED', VW / 2, VH / 2 - 40);
   ctx.fillStyle = '#e8ecf4'; ctx.font = '18px system-ui, sans-serif'; ctx.fillText(o.reason, VW / 2, VH / 2 + 10);
   ctx.fillStyle = '#9aa3b5'; ctx.font = '14px system-ui, sans-serif';
-  ctx.fillText(`Time ${fmt(o.t)} · hits taken: ${combat.hits.small} small, ${combat.hits.large} large, ${combat.hits.crew} crew · press R to play again`, VW / 2, VH / 2 + 46);
+  ctx.fillText(`Time ${fmt(o.t)} · hits taken: ${combat.hits.small} small, ${combat.hits.large} large, ${combat.hits.crew} crew · R: back to the lobby`, VW / 2, VH / 2 + 46);
   // the mission report
   const S = hz.stats, medics = Object.entries(S.treated).sort((a, b) => b[1] - a[1]);
   const lines = [
@@ -775,6 +884,7 @@ function drawEndScreen() {
   lines.forEach((l, i) => ctx.fillText(l, VW / 2, VH / 2 + 80 + i * 20));
   ctx.textAlign = 'left';
   drawRewards(VW / 2, VH / 2 + 160);
+  if (u < JUMP_OUT) { ctx.fillStyle = `rgba(255,255,255,${1 - (u - JUMP_FLASH) / (JUMP_OUT - JUMP_FLASH)})`; ctx.fillRect(0, 0, VW, VH); }   // fading in from the flash
 }
 // Click handling for panels (screen coords). Returns true if the click was used.
 function panelClick(mx, my) {

@@ -18,16 +18,9 @@
 // The spine (between the decks) is its own block (interior/spine_*), with the deck airlock shafts in it.
 // ---------------------------------------------------------------------------------------------
 const WALL_T = 0.6, H_LOW = 0.35, SPINE_HI = 12.549;   // spine: high block from 12.549 (see models/interior/structure.py)
-// The engine housing's footprint counts as room for the walls: the stern's outer (near) wall then runs on
-// unbroken in front of the housing, instead of leaving the hull's flat deck plating there (it read as floor),
-// and no wall stubs hide under the housing.
-const ENGINE_BAY = (() => {
-  const rs = ROOMS.find(r => r.id === 'reactor').rects;
-  return R(ENGINE.x - ENGINE.w / 2, ENGINE.y, ENGINE.x + ENGINE.w / 2, Math.max(...rs.map(q => q.y + q.h)));
-})();
 let WALLS = null;
 function buildWalls() {
-  const floors = [...FLOOR_RECTS, ENGINE_BAY], E = 1e-6;
+  const floors = FLOOR_RECTS, E = 1e-6;
   const isFloor = (x, y) => floors.some(r => x > r.x + E && x < r.x + r.w - E && y > r.y + E && y < r.y + r.h - E);
   const intervals = (a, b, cuts, test) => {                // parts of [a, b] where test(mid) holds
     const pts = [...new Set([a, b, ...cuts.filter(c => c > a && c < b)])].sort((p, q) => p - q), out = [];
@@ -40,7 +33,7 @@ function buildWalls() {
   };
   const xs = floors.flatMap(r => [r.x, r.x + r.w]), ys = floors.flatMap(r => [r.y, r.y + r.h]);
   const H = [], V = [];
-  for (const r of [...ROOM_RECTS, ENGINE_BAY]) {
+  for (const r of ROOM_RECTS) {
     const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h;
     if (Math.abs(y0 - SPINE_Y1) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05)))
       H.push({ kind: 'back', y: y0, x0: isFloor(a - 0.05, y0 + 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y0 + 0.05) ? b : b + WALL_T });

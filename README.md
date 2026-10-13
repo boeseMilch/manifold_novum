@@ -2,13 +2,12 @@
 
 A cooperative, real-time Space Alert-style game. Your crew jumps a duct-taped ship into a
 dangerous region of space, survives a pile of overlapping threats for about five minutes,
-and jumps out again. It runs in the browser and is drawn entirely in code, with no assets
-and no build step.
+and jumps out again. It runs in the browser, with no build step.
 
 ## Play solo
 
-Open `index.html` in a browser (double-clicking it works). Pick a mission in the lobby and
-press **START MISSION**.
+Open `index.html` in a browser (double-clicking it works). New? Press **TUTORIAL**. Otherwise
+press **PLAY SOLO**, pick a mission and press **START MISSION**.
 
 ## Play together on a local network
 
@@ -37,7 +36,7 @@ One person hosts. Everyone else only needs a browser on the same network (Wi-Fi 
 
 **Everyone:**
 
-1. Open the address the host shared. You land in the main menu: your name, suit colour,
+1. Open the address the host shared. You land in the main menu: your name, suit color,
    locker and shipyard, **PLAY SOLO**, **OPEN A GAME**, and the live list of open games
    (host, mission, players n/8; "in mission" if it's already running).
 2. One of you presses **OPEN A GAME** and becomes that game's host. The others press **JOIN**
@@ -80,10 +79,9 @@ this should feel close to playing solo.
 |---|---|
 | WASD | move |
 | Arrow keys | aim (8 directions) while held; otherwise you face the way you walk |
-| Left click | interact with whatever you point at: airlocks, ladders, hatches, shield buttons, consoles, items, manual override. Hold to repair (with the repair kit) or to treat someone |
-| E | the same as a click on what's highlighted: under the mouse, or else the nearest thing in reach (hold E for repairs and treating). On the power lever: tap E steps it, hold E (0.5 s) wedges the wrench in or pulls it out |
+| Left click / E | use what you point at (E: or the nearest thing). Hold to repair or treat. Power lever: tap E to turn, hold E for the wrench |
 | Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), thrown wrench, hold to spray the extinguisher |
-| In a cannon | mouse to aim, left click / Space to fire, hold right click / Shift to raise cover, R or the button to reload (1 energy), the CLIMB DOWN button to leave |
+| In a cannon | mouse or A / D to aim, click / Space to fire, hold right click / Shift for cover, R to reload (1 energy), E or CLIMB DOWN to leave |
 | M | mute (or the speaker button, top left) |
 | P | practice panel (in practice mode) |
 | ` | debug menu (spawn threats, teleport, …) |
@@ -94,19 +92,19 @@ The prompt above you always says what a click (or E) will do.
 
 - **Campaign:** eight chapters with a story (pirates, a stowaway alien, a kidnapped scientist, the
   spore nebula, the deep). Each has a briefing and an objective; finishing one unlocks the next.
-- **Rewards:** if the ship jumps out, the crew gets paid (more when the objective is done; some
-  chapters pay per pirate). XP only if you're back aboard and on your feet at the end.
-  Reputation comes from finished objectives.
+- **Rewards:** if the ship jumps out, the crew gets paid (some chapters also pay per pirate). XP
+  only if you're back aboard and on your feet at the end. The mission only counts as completed
+  (reputation, next chapter unlocked) if the objective is done too.
 - **Suit color:** pick it in the lobby (free).
 - **Locker** (money): general gear for anyone (gravity boots, suit thrusters, first aid course,
   armor vest, stim pack); from level 2 a profession (engineer or weapons specialist) and its track:
   engineer (own repair kit, toolbelt, reactor overcharge), weapons specialist (own laser gun, heavy
   blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
-  bigger capacitors, shield capacitors, reinforced hull, sprinklers, … In multiplayer the
+  bigger capacitors, longer shields, reinforced hull, sprinklers, … In multiplayer the
   ship gets every upgrade anyone in the crew has bought.
 - Progress is saved in your browser (a cookie), separately for each player.
-- **Skirmish:** standalone missions, from the easy intro to Nightmare.
+- **Skirmish:** Intro run, Rush hour, Ore run, Pirate cove, Black box, Stranded engineer, Deep drift, Nightmare.
 - **Music:** every mission has its own synthesized piece that builds up to a crescendo at the jump
   and ends on a final hit when you jump out. Listen to them on their own with the ♪ MUSIC button in
   the lobby (or open `music.html`): it plays each piece along a simulated mission, sped up if you like.
@@ -119,13 +117,8 @@ The prompt above you always says what a click (or E) will do.
 - The first hit hurts you for 30 s: tunnel vision, and you move slower.
 - A second hit puts you down. Hold click on yourself for 10 s to get back up (still hurt).
 - A hit while you're down knocks you out cold. Someone else has to treat you.
-- Anyone can treat anyone: hold click on them for 2 s. Alone on the ship, you crawl back up
-  on your own after 20 s.
-
-## Missions
-
-- **Intro run:** one of everything, well spaced out.
-- **Rush hour:** 7 incidents in random order, more trouble.
+- Anyone can treat anyone: hold click on them for 2 s. Alone on the ship, you can still crawl
+  back up: hold click on yourself for 20 s.
 
 ## For developers
 

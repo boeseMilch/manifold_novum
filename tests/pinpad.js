@@ -28,7 +28,7 @@ const key = (G, code) => { G.listeners.keydown({ code, preventDefault() {} }); G
   check(G.roomAt(bob.x, bob.y)?.id === 'portLock' && G.roomAt(me.x, me.y)?.id === 'portLock' && G.roomAt(carol.x, carol.y)?.id !== 'portLock',
         'Bob is in the same room as the operator, Carol is elsewhere');
   const t = G.withCrew(me, () => G.clickTarget(px, py));
-  check(t?.ok && /code/i.test(t.text) && /visor/i.test(t.text), `the vent panel's prompt mentions the code and the visor ("${t?.text}")`);
+  check(t?.ok && /code/i.test(t.text) && /anyone else/i.test(t.text), `the vent panel's prompt mentions the code and who gets hurt (anyone else, not you) ("${t?.text}")`);
   G.withCrew(me, () => t.run());
   const m = me.ui.mini;
   check(me.ui.panel === 'mini' && m?.kind === 'pin' && !me.ui.override, 'the vent panel opens the PIN pad, not the door-bashing override');

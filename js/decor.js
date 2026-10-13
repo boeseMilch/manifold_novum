@@ -13,7 +13,7 @@ const sprReady = (...names) => GFX.on && names.every(n => GFX.ready(n));
 // Labels in the world. With GFX on there are two kinds:
 // - worldText(): text that belongs to the world (capacitor readouts, a VENT tag, the cat's
 //   z z z): a small upright sprite (GFX.text, billboard), depth-tested, so whoever walks in front hides it.
-// - labelAt() / later(): text that must stay readable over everything (CLICK TO TAKE, OVERCHARGED,
+// - labelAt() / later(): text that must stay readable over everything (TAKE, OVERCHARGED,
 //   BROKEN): drawn later on the top canvas (render() flushes it via drawInteriorWalls), upright and lifted
 //   by z; it fades while a crew member stands in front of it, so it never sits on someone's face.
 // Classic: both are drawn at once, flat, like before.

@@ -5,7 +5,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['missionCrew', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
   'applyKit', 'perk', 'hurtCrew', 'SHOTS_PER_ENERGY', 'CAP_MAX', 'power', 'ITEMS', 'dk', 'combat', 'combatSpawn', 'hitPoi', 'enemyToWorld', 'objectiveStatus',
   'PRACTICE', 'runCommand', 'withCrew', 'CAPACITORS', 'levelOf', 'treatInfo', 'netServer', 'SHIELD_UP_TIME', 'endMission', 'boarding', 'spawnInvader', 'hurtInvader',
-  'gearSpeed', 'failGravity', 'ENERGY_TIME', 'REACTOR', 'clickTarget', 'fires', 'SYSTEMS', 'GEAR', 'BLASTER_CHARGE', 'inv', 'evs', 'repairSpeed'];
+  'gearSpeed', 'creditMission', 'profile', 'lastReward', 'missionSuccess', 'MAX_DAMAGE', 'failGravity', 'ENERGY_TIME', 'REACTOR', 'clickTarget', 'fires', 'SYSTEMS', 'GEAR', 'BLASTER_CHARGE', 'inv', 'evs', 'repairSpeed'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -22,8 +22,29 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const lost = G.computeRewards('c1', { jumped: false, objective: false, pirates: 1 }, false, false);
   check(lost.money === 0 && lost.xp === 0, 'the ship didn\'t make it: nothing');
   const half = G.computeRewards('c3', { jumped: true, objective: false, pirates: 0 }, true, false);
-  check(half.money === 0 && half.xp === 70 && half.rep === 0, 'jumped without the objective: half XP, no pay or reputation');
+  check(half.money === G.MISSIONS.c3.rewards.money && half.xp === G.MISSIONS.c3.rewards.xp && half.rep === 0, 'jumped without the objective: paid and full XP, but no reputation');
   check(G.levelOf(0) === 1 && G.levelOf(100) === 2 && G.levelOf(260) === 3, 'levels: 100 XP → level 2, 250 → level 3');
+}
+// --- success needs the objective: pay either way, reputation / finished / unlock only with it
+{
+  const credit = (id, results) => {           // one run of mission `id`, credited to this browser's profile
+    const G = loadGame(NAMES); G.startMission(id);
+    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id, survived: true }], ...results } };
+    G.creditMission();
+    return G;
+  };
+  const R1 = credit('c1', { jumped: true, objective: true, pirates: 2 });
+  check(R1.profile.money === 100 + 2 * 40 && R1.profile.rep === 2 && R1.profile.xp === 80 && R1.profile.done.c1 === 1 && R1.unlockedMissions(R1.profile).has('c2') && R1.lastReward.unlocked && !R1.lastReward.objFailed,
+    'success (jumped, objective done): paid, reputation (+1 first clear), XP, finished, next chapter unlocked');
+  const R2 = credit('c1', { jumped: true, objective: false, pirates: 1 });
+  check(R2.profile.money === 100 + 40 && R2.profile.rep === 0 && R2.profile.xp === 80 && !R2.profile.done.c1 && !R2.unlockedMissions(R2.profile).has('c2'),
+    'jumped without the objective: base pay + per pirate and XP, but no reputation, not finished, next chapter stays locked');
+  check(R2.lastReward.objFailed && R2.lastReward.locked === R2.MISSIONS.c2.name && !R2.lastReward.unlocked, '…and the end screen says so (objective failed, next chapter locked)');
+  const R3 = credit('c7', { jumped: true, objective: false, pirates: 0 });
+  check(R3.missionSuccess('c7', { jumped: true, objective: false }) && R3.profile.done.c7 === 1 && R3.profile.rep === R3.MISSIONS.c7.rewards.rep + 1 && R3.unlockedMissions(R3.profile).has('c8') && !R3.lastReward.objFailed,
+    'a mission without an objective: surviving the jump is a success (finished, reputation, next chapter)');
+  const R4 = credit('c1', { jumped: false, objective: true, pirates: 2 });
+  check(R4.profile.money === 0 && R4.profile.xp === 0 && R4.profile.rep === 0 && !R4.profile.done.c1, 'the ship didn\'t jump out: nothing, even with the objective');
 }
 // --- profiles: old and odd saves still load
 {
@@ -138,6 +159,18 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(G.power.reactor.fuel === 1 && G.power.reserve === cells - 1, 'the inserter leaves a part-full cell alone (it never swaps early)');
   const G2 = loadGame(NAMES); G2.startMission('c1');
   check(G2.SHOTS_PER_ENERGY === 3 && G2.CAP_MAX === 3, 'without upgrades everything is back to normal (capacitors hold 3)');
+}
+// --- reinforced hull: the ship survives one more broken part (6 instead of 5), and only in that mission
+{
+  const G = loadGame(NAMES);
+  G.startMission('intro', { ship: { hull: true } }); G.combat.enemies.length = 0;
+  check(G.MAX_DAMAGE === 6, 'reinforced hull: the ship takes 6 broken parts');
+  G.SYSTEMS.slice(0, 6).forEach(s => { s.broken = true; }); G.simTick(DT);
+  check(!G.mission.over, '…6 broken at once: still flying');
+  G.SYSTEMS[6].broken = true; G.simTick(DT);
+  check(G.mission.over?.won === false && /fell apart/.test(G.mission.over.reason), '…the 7th loses the ship');
+  G.startMission('intro');
+  check(G.MAX_DAMAGE === 5, 'the next mission without the upgrade: back to 5 (it doesn\'t leak between missions)');
 }
 // --- campaign objectives
 {

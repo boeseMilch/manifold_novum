@@ -96,7 +96,7 @@ function breachRoom(roomId) {
   hz.breaches.push({ room: roomId, tarp: false, plated: false, leak: 0, repress: 0 });
   hz.stats.breaches++;
   const name = roomById(roomId).name;
-  combatBanner(`HULL BREACH — ${name}! Blast doors down. Nail a hull plate over it from outside (plate + repair kit).`);
+  combatBanner(`HULL BREACH — ${name}! Blast doors down.`);
   sfx.explosion(); sfx.say?.(`Hull breach. ${name}. Please hold on.`);
   for (const f of fires) if (sysRooms(f.sys).some(r => r.id === roomId)) { f.hp = 0; scorch(f.x, f.y); }   // vacuum: no more fire
   const s = BREACH_SPOTS[roomId];
@@ -152,7 +152,7 @@ const inPlasmaRoom = (s) => sysRooms(s).some(r => PLASMA_ROOMS.has(r.id));
 const plasmaPart = (s) => inPlasmaRoom(s) && s.kind === 'capacitor' && s.ref.charge >= 3;   // a well charged capacitor in a lower side room
 const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));
 const fireIn = (roomId) => fires.some(f => f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));   // any fire: venting works on normal fires too
-// operator: whoever typed the override code — their visor is already down, so they're not hurt.
+// operator: whoever typed the vent code — their visor is already down, so they're not hurt.
 // Everyone else in the room takes one hit the moment it opens (the vacuum afterwards only slows you).
 // Hostiles in there (boarders, the saboteur, pirates) take one solid hit each and are stunned (VENT_HIT:
 // the alien loses half its health, a saboteur goes down), then the rushing air drags them towards the
@@ -268,7 +268,7 @@ function hazardClickTarget(mx, my) {
     const s = BREACH_SPOTS[b.room];
     if (b.tarp || !at(s.x, s.y, 0.8)) continue;
     if (!near(s.x, s.y)) return { text: 'Hull breach — get closer', ok: false, x: s.x, y: s.y, r: 0.8 };
-    if (!hz.tape) return { text: 'Hull breach — out of duct tape. Weld a hull plate on from outside.', ok: false, x: s.x, y: s.y, r: 0.8 };
+    if (!hz.tape) return { text: 'Hull breach — out of duct tape. Nail a hull plate on from outside.', ok: false, x: s.x, y: s.y, r: 0.8 };
     return holdTarget('tarp' + b.room, TARP_TIME, `Hold click: tape a tarp over the hole (${TARP_TIME} s, 1 of ${hz.tape} duct tape)`, s.x, s.y, 0.8,
                       () => { hz.tape--; sealBreach(b.room, 'tarp'); });
   }
@@ -290,14 +290,14 @@ function hazardClickTarget(mx, my) {
     return holdTarget('grav' + id, GRAV_TIME, `Hold click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
                       () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); });
   }
-  // a fire (plasma or normal) in a lower side room: the panel next to its outer airlock vents the room (manual override:
+  // a fire (plasma or normal) in a lower side room: the panel next to its outer airlock vents the room (vent code:
   // a PIN pad, with the admin password on a sticky note right next to it — js/minigames.js)
   for (const [id, [x, y]] of Object.entries(VENT_PANELS)) {
     if (!at(x, y, 0.5)) continue;
     if (!near(x, y)) return { text: 'Airlock vent panel — get closer', ok: false, x, y, r: 0.5 };
     if (!fireIn(id)) return { text: 'Airlock vent panel (only when this room is on fire)', ok: false, x, y, r: 0.5 };
     if (hz.vent) return { text: 'The room is already being vented', ok: false, x, y, r: 0.5 };
-    return { text: 'Click: type the override code to open BOTH airlock doors and vent the fire — everyone else still inside gets hurt, boarders get blown about (your visor goes down)', ok: true, x, y, r: 0.5,
+    return { text: 'Click: vent the room (code on the sticky note) — puts out fires, hurts anyone else inside, blows boarders out', ok: true, x, y, r: 0.5,
              run: () => openPinPad(id) };
   }
   // snack machine: free, one snack per minute each, and only worth it when you're hurt (ends it 10 s sooner)
@@ -322,7 +322,7 @@ function hazardClickTarget(mx, my) {
     const t = { x: pc.x, y: pc.y, r: 0.6 };
     if (!hz.plates) return { ...t, text: 'Hull plate crate is empty', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Hull plates — get closer', ok: false };
-    return { ...t, ok: true, text: `Click: take a hull plate (${hz.plates} left; nail it over a breach from outside with the repair kit)${inv.item ? ` (drops your ${ITEM_NAMES[inv.item]})` : ''}`,
+    return { ...t, ok: true, text: `Click: take a hull plate (${hz.plates} left; for breaches, from outside${inv.item ? `; drops your ${ITEM_NAMES[inv.item]}` : ''})`,
              run: () => { hz.plates--; grab('plate'); } };
   }
   return null;

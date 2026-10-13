@@ -52,7 +52,6 @@ const PRACTICE = [
   ['Stations', 'Helm diagnosis', () => openDiagnosis()],
   ['Mini-games', 'Patch board (arcs the left feed line)', () => { if (!surging('feed0')) hz.surges.push('feed0'); openPatch(); }],
   ['Mini-games', 'Jump handle (spool the drive now)', () => { mission.rules.handle = true; mission.jumpAt = mission.t; mission.coilsChecked = true; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); }],
-  ['Mini-games', 'Get hurt (try treating, snacks, coffee)', () => hurtCrew(player)],
   // rules
   ['Rules', 'Toggle hull breaches', () => toggleRule('breach')],
   ['Rules', 'Toggle power surges', () => toggleRule('surge')],
@@ -62,6 +61,7 @@ const PRACTICE = [
   ['Tools', 'Fill all capacitors', () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; })],
   ['Tools', 'Repair everything, put out fires', () => { SYSTEMS.forEach(s => { s.broken = false; }); fires.length = 0; hz.breaches = []; hz.surges = []; hz.noGrav = []; hz.hull = { port: 0, front: 0, star: 0 }; }],
   ['Tools', 'Clear all threats', () => { combatClear(); boarding.invaders = []; boarding.bolts = []; resetEva({}); resetEncounters(); resetOrganic(); dk.pirates = []; dk.rock = null; }],
+  ['Tools', 'Get hurt (to try treating, snacks, coffee)', () => hurtCrew(player)],
   ['Tools', 'Heal me', () => { player.health = 'ok'; player.hurtT = 0; }],
   ['Tools', 'Give: repair kit', () => give('repair')],
   ['Tools', 'Give: laser gun', () => give('laser')],

@@ -16,7 +16,7 @@ const HULL_SPOTS = {
   front: [[17.9, -3.75], [19.6, -3.75], [21.0, -3.75], [23.6, -3.75], [25.0, -3.75], [26.6, -3.75]],
 };
 const ANTENNA = { x: 34.6, y: -0.15 };
-const COIL_SPOTS = [{ x: -0.6, y: 13.4, name: 'left' }, { x: 45.0, y: 13.2, name: 'right' }, { x: 16.2, y: 26.75, name: 'stern' }];
+const COIL_SPOTS = [{ x: -0.6, y: 13.4, name: 'left' }, { x: 45.0, y: 13.2, name: 'right' }, { x: 16.2, y: 26.75, name: 'rear' }];
 // Debris jamming a cannon's track: on the gun blister behind the side cannons. The front one lies up on the
 // nose wall's top (y -2.75, z 1.6) beside the turret (drawn there with depth); its spot is where that roof
 // point shows on screen (y -2.75 - lift(1.6)), out in front of the nose where a spacewalker can reach it.
@@ -71,7 +71,7 @@ function spawnSpores(side, from = null, n = 3, quiet = false) {   // from: [x, y
 function jamCannon(id) {
   if (evs.jams[id]) return;
   evs.jams[id] = true;
-  combatBanner(`Debris wedged in the ${GUNS.find(g => g.id === id).name.toLowerCase()}'s track — half its arc. Pull it out on a spacewalk.`);
+  combatBanner(`Debris jams the ${GUNS.find(g => g.id === id).name.toLowerCase()} — half arc until it's cleared outside`);
   sfx.clank();
 }
 function knockAntenna() {
@@ -83,7 +83,7 @@ function knockAntenna() {
 function spawnCanister(side) {
   const x = side === 'port' ? -1.9 : SHIP_W + 1.9;
   evs.canister = { x, y: 2, vy: 0.55, t: 0, side };
-  combatBanner(`A fuel canister is drifting past on the ${SIDE_LABEL[side].toLowerCase()} side — grab it on a spacewalk!`);
+  combatBanner(`Fuel canister drifting past, ${SIDE_LABEL[side].toLowerCase()} side — grab it outside!`);
 }
 
 // ---------------------------------------------------------------------------

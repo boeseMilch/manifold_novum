@@ -385,7 +385,7 @@ function clickTarget(mx, my) {
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
     if (burning(s)) return { text: `${s.name} is on fire — put the fire out before you can repair it`, ok: false, ...s };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
-    return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
+    return { text: `Hold click: repair the ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
   }
   for (const it of ITEMS) {
     if (Math.hypot(mx - it.x, my - it.y) > 0.45) continue;
@@ -397,19 +397,19 @@ function clickTarget(mx, my) {
   if (power.inserter && Math.hypot(mx - (FUEL_CRATE.x - 0.8), my - FUEL_CRATE.y) < 0.3) {   // the inserter: scooch the cells out of its reach (or back)
     const t = { x: FUEL_CRATE.x - 0.8, y: FUEL_CRATE.y, r: 0.3 };
     if (!near(t.x, t.y)) return { ...t, text: 'Inserter handle — get closer', ok: false };
-    return { ...t, ok: true, text: power.inserter.on ? 'Click: scooch the cells left (the inserter stops loading)' : 'Click: scooch the cells back (the inserter loads again)', run: () => { power.inserter.on = !power.inserter.on; sfx.clank(); } };
+    return { ...t, ok: true, text: power.inserter.on ? 'Click: switch the inserter off' : 'Click: switch the inserter on', run: () => { power.inserter.on = !power.inserter.on; sfx.clank(); } };
   }
   if (Math.hypot(mx - FUEL_CRATE.x, my - FUEL_CRATE.y) < 0.75) {
     const t = { x: FUEL_CRATE.x, y: FUEL_CRATE.y, r: 0.75 };
     if (!power.reserve) return { ...t, text: 'Fuel crate is empty', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Fuel crate — get closer', ok: false };
-    return { ...t, text: `Click: take a fuel cell (${power.reserve} left)${inv.item ? ` (drops your ${ITEM_NAMES[inv.item]})` : ''}`, ok: true,
+    return { ...t, text: `Click: take a fuel cell (${power.reserve} left${inv.item ? `, drops your ${ITEM_NAMES[inv.item]}` : ''})`, ok: true,
              run: () => { power.reserve--; grab('fuel'); } };
   }
   if (Math.hypot(mx - LEVER.x, my - LEVER.y) < LEVER_HUB) {          // the hub: wedge / pull the wrench
     const t = { x: LEVER.x, y: LEVER.y, r: LEVER_HUB + 0.05 };
     if (!near(t.x, t.y)) return { ...t, text: 'Power lever — get closer', ok: false };
-    return { ...t, ok: true, eHold: leverEHold(), text: power.lever.jammed ? 'Click: pull the wrench out (lever steps on its own again)' : 'Click: manual override — wedge a wrench in so the lever can\'t move on',
+    return { ...t, ok: true, eHold: leverEHold(), text: power.lever.jammed ? 'Click: pull the wrench out (lever steps on its own again)' : `Click: wedge the wrench in (locks the lever on ${LEVER_NAMES[power.lever.pos]})`,
              run: () => { power.lever.jammed = !power.lever.jammed; sfx.clank(); } };
   }
   if (Math.hypot(mx - LEVER.x, my - LEVER.y) < 0.6) {
@@ -461,7 +461,7 @@ function hurtCrew(c) {
   if (c.health === 'down' || c.health === 'out') {
     if (c.mode === 'gun') {                       // slumps in the seat, below the rim: shots can't reach them (js/combat.js)
       c.cover = 0; c.gunReady = false;
-      combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT' : 'down'} in the ${c.gun.name.toLowerCase()} — pull them out at its ladder`);
+      combatBanner(c.health === 'out' ? `${c.name} is OUT in the ${c.gun.name.toLowerCase()} — pull them out at its ladder` : `${c.name} is down in the ${c.gun.name.toLowerCase()}`);
     } else combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT — someone has to treat them!' : 'down!'}`);
   }
 }
@@ -483,8 +483,8 @@ function updateInjury(c, dt) {
 function treatInfo(who) {
   if (!who || standing(who) && who.health !== 'hurt') return null;
   if (who === player) {
-    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 6 : SELF_TREAT, label: 'patch yourself up' };
-    if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'nobody can help — slowly patch yourself up' };
+    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 6 : SELF_TREAT, label: 'get up' };
+    if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'crawl back up' };
     return null;
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
@@ -519,7 +519,7 @@ function leverEHold() {
   const lv = power.lever, next = LEVER_NAMES[(lv.pos + 1) % 3];
   return {
     time: LEVER_E_HOLD,
-    text: lv.jammed ? 'E: nothing (the wrench blocks the lever) · hold E: pull the wrench out' : `E: turn lever to ${next} · hold E: wedge the wrench in`,
+    text: lv.jammed ? 'Hold E: pull the wrench out' : `E: turn lever to ${next} · hold E: wedge the wrench in`,
     tap: () => { if (power.lever.jammed) return; power.lever.pos = (power.lever.pos + 1) % 3; sfx.clank(); },
     hold: () => { power.lever.jammed = !power.lever.jammed; sfx.clank(); },
   };
@@ -664,7 +664,7 @@ function drawLever(t) {
       worldText(lx, ly, 0.3, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
     }
     const my = LEVER.y + 0.6;                       // (in front, the top is where the trunk and MID come in)
-    worldText(LEVER.x, my, 0.5, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
+    worldText(LEVER.x, my, 0.5, lv.jammed ? 'WEDGED' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
     return;
   }
   shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);
@@ -698,7 +698,7 @@ function drawLever(t) {
   }
   ctx.beginPath(); ctx.arc(x, y, T * LEVER_HUB * 0.55, 0, TAU); ctx.fillStyle = lv.jammed ? '#e8c34f' : '#9aa3b5'; ctx.fill(); stroke(1.5);   // hub
   ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.11}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText(lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', x, y + T * 0.55);
+  ctx.fillText(lv.jammed ? 'WEDGED' : 'AUTO', x, y + T * 0.55);
   ctx.textAlign = 'left';
 }
 
@@ -845,12 +845,12 @@ function pickupHalo(x, y, r, t, inReach, seed = 0) {
   ctx.restore();
   if (inReach && GFX.on) {
     ctx.beginPath(); ctx.arc(x, y, r - 4, 0, TAU); ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * k})`; ctx.stroke();
-    labelAt(x / T, (y - r - 6) / T, 0.5, 'CLICK TO TAKE', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffe08a', 'bottom', 'rgba(10,12,18,0.85)');
+    labelAt(x / T, (y - r - 6) / T, 0.5, 'TAKE', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffe08a', 'bottom', 'rgba(10,12,18,0.85)');
   } else if (inReach) {
     ctx.beginPath(); ctx.arc(x, y, r - 4, 0, TAU); ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(255,255,255,${0.6 + 0.4 * k})`; ctx.stroke();
     ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('CLICK TO TAKE', x, y - r - 6);
-    ctx.fillStyle = '#ffe08a'; ctx.fillText('CLICK TO TAKE', x, y - r - 6); ctx.textAlign = 'left';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('TAKE', x, y - r - 6);
+    ctx.fillStyle = '#ffe08a'; ctx.fillText('TAKE', x, y - r - 6); ctx.textAlign = 'left';
   }
 }
 function drawItems(t) {
@@ -897,17 +897,13 @@ function drawSystemsHUD(top) {
     }
   }
   ctx.textAlign = 'left';
-  ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textBaseline = 'bottom';
-  ctx.fillText('Left click / E: interact · Right click / Space: use weapon · Arrows: aim', x0, y0 - 4);
   // power panel
   const px = x0 + 156, R = power.reactor;
   const lines = [
     [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy${power.overcharge ? ' · OVERCHARGED' : ''}` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : power.overcharge ? '#ffd28a' : '#c8ffe6'],
-    [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve} · duct tape: ${hz.tape} · hull plates: ${hz.plates}`, '#c9ced8'],
+    [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'wedged' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · cells ${power.reserve} · tape ${hz.tape} · plates ${hz.plates}`, '#c9ced8'],
     [`Capacitors  left ${CAPACITORS[0].charge}/${CAP_MAX}${capBroken(0) ? '✖' : ''}   mid ${CAPACITORS[1].charge}/${CAP_MAX}${capBroken(1) ? '✖' : ''}   right ${CAPACITORS[2].charge}/${CAP_MAX}${capBroken(2) ? '✖' : ''}`, '#9cd8ff'],
   ];
-  const broke = SYSTEMS.filter(s => s.broken).map(s => s.name);
-  if (broke.length) lines.push([`Broken: ${broke.join(', ')}`, '#ff9a8a']);
   ctx.font = '12px system-ui, sans-serif';
   const w = Math.max(...lines.map(l => ctx.measureText(l[0]).width)) + 20, h = lines.length * 17 + 10;
   rr(px, VH - 18 - h, w, h, 6); ctx.fillStyle = 'rgba(10,12,18,0.75)'; ctx.fill();

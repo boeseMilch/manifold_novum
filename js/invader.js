@@ -293,7 +293,7 @@ function spawnSaboteur(side) {
     stun: 0, seen: 0, flash: 0, room: roomAt(...h.inside)?.id, from: null,
   });
   const where = adjacentRooms(roomAt(...h.inside)).map(r => r.name.toLowerCase()).join(' or the ');
-  combatBanner(`Saboteur at the ${side === 'port' ? 'left' : 'right'} airlock! It cloaks inside — watch the ${where}!`);
+  combatBanner(`Saboteur at the ${side === 'port' ? 'left' : 'right'} airlock — it cloaks! Watch the ${where}.`);
   sfx.hatch();
 }
 

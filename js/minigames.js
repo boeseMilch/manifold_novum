@@ -172,7 +172,7 @@ function drawPinPanel(m, t) {
   const col = red ? '#ff6a5a' : '#5fd6a0';
   ctx.shadowColor = col; ctx.shadowBlur = 6; ctx.fillStyle = col;
   ctx.font = '700 12px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText('MANUAL OVERRIDE — OPEN AIRLOCK', dx + 10, dy + 16);
+  ctx.fillText('EMERGENCY VENT — OPEN BOTH DOORS', dx + 10, dy + 16);
   if (flash) {
     ctx.font = '800 22px ui-monospace, Menlo, Consolas, monospace'; ctx.textAlign = 'center';
     if (green || Math.floor(t * 8) % 2 === 0) ctx.fillText(red ? 'ACCESS DENIED' : 'ACCESS GRANTED', dx + dw / 2, dy + 54);
@@ -217,8 +217,7 @@ function drawPinPanel(m, t) {
   ctx.font = `14px ${PIN_HAND}`; ctx.fillStyle = 'rgba(38,50,79,0.75)'; ctx.fillText('(don\'t tell anyone!)', 0, 58);
   ctx.restore(); ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
-  ctx.fillText('Type it in: click the keys,', x + 436, y + h - 62);
-  ctx.fillText('or 0–9 · Backspace · Enter', x + 436, y + h - 44); ctx.textAlign = 'left';
+  ctx.fillText('Click the keys, or type 0–9 + Enter', x + 436, y + h - 53); ctx.textAlign = 'left';
 }
 // Text that looks written by hand even without a handwriting font: every letter a little tilted and
 // off the line (the same wobble every frame). Centred on (cx, cy); returns its width.

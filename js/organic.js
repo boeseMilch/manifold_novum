@@ -53,7 +53,7 @@ ENEMY_TYPES.grappler = {
       const room = e.side === 'port' ? 'portGun' : 'starGun', [hx, hy] = holeAt(room);   // it always grabs the upper room's outer wall
       Object.assign(T0, { state: 'attached', t: 0, x: hx + (e.side === 'port' ? -0.5 : 0.5), y: hy, room, acid: T0.acid || 0 });
       combat.shake = Math.max(combat.shake, 0.6); sfx.hit(true);
-      combatBanner(`The grappler wrapped a tentacle around the ${SIDE_LABEL[e.side].toLowerCase()} side — no shield there, and its acid is eating the hull!`);
+      combatBanner(`Tentacle on the ${SIDE_LABEL[e.side].toLowerCase()} side — no shield, acid on the hull!`);
     } else if (T0.state === 'attached') {
       if (!poiHit(e, 'sac')) T0.acid += dt;              // a shot-up poison sac: no acid while it heals
       if (T0.acid >= ACID_TIME) ripHull(e);
@@ -145,7 +145,7 @@ function startLeviathan() {
   const start = Math.floor(Math.random() * LEV_ORDER.length), dir = Math.random() < 0.5 ? 1 : -1;
   const order = Array.from({ length: 7 }, (_, i) => LEV_ORDER[(start + i * dir + LEV_ORDER.length * 7) % LEV_ORDER.length]);
   org.lev = { t: LEV_TIME, step: LEV_STEP, order, i: 0, x: 0 };
-  combatBanner('LEVIATHAN — something enormous is brushing past. Stay out of the rooms it\'s about to bump!'); sfx.say?.('Unidentified. Very large. Object.');
+  combatBanner('LEVIATHAN — keep out of the rooms it\'s about to bump!'); sfx.say?.('Unidentified. Very large. Object.');
 }
 function updateOrganic(dt) {
   // grappler tentacles: one cannon hit cuts them

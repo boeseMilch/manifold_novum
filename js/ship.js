@@ -19,14 +19,13 @@ const zoneAtX = (x) => ZONES[x < COLS[1].x ? 0 : x < COLS[2].x ? 1 : 2];
 
 const R = (x0, y0, x1, y1) => ({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
 const ROOMS = [
-  { id: 'portGun', name: 'Left Cannon', col: 0, deck: 'top', rects: [R(0.6, 3.4, 13.6, SPINE_Y0)] },
+  { id: 'portGun', name: 'Left cannon room', col: 0, deck: 'top', rects: [R(0.6, 3.4, 13.6, SPINE_Y0)] },
   { id: 'bridge', name: 'Bridge', col: 1, deck: 'top', rects: [R(14.2, 0.6, 30.2, SPINE_Y0), R(18.2, -2.4, 26.2, 0.6)] },
-  { id: 'starGun', name: 'Right Cannon', col: 2, deck: 'top', rects: [R(30.8, 2.6, 43.8, SPINE_Y0)] },
-  { id: 'portLock', name: 'Left Airlock', col: 0, deck: 'bottom', rects: [R(0.6, SPINE_Y1, 13.6, 23.2)] },
-  // the engine housing pokes into the bottom of the reactor room
-  { id: 'reactor', name: 'Reactor', col: 1, deck: 'bottom',
-    rects: [R(14.2, SPINE_Y1, 30.2, 23.9), R(14.2, 23.9, 19.4, 25.5), R(25.0, 23.9, 30.2, 25.5)] },
-  { id: 'starLock', name: 'Right Airlock', col: 2, deck: 'bottom', rects: [R(30.8, SPINE_Y1, 43.8, 23.6)] },
+  { id: 'starGun', name: 'Right cannon room', col: 2, deck: 'top', rects: [R(30.8, 2.6, 43.8, SPINE_Y0)] },
+  { id: 'portLock', name: 'Left airlock room', col: 0, deck: 'bottom', rects: [R(0.6, SPINE_Y1, 13.6, 23.2)] },
+  { id: 'reactor', name: 'Reactor room', col: 1, deck: 'bottom',
+    rects: [R(14.2, SPINE_Y1, 30.2, 25.5)] },   // (the engine housing that poked in here is gone: floor to the stern wall)
+  { id: 'starLock', name: 'Right airlock room', col: 2, deck: 'bottom', rects: [R(30.8, SPINE_Y1, 43.8, 23.6)] },
 ].map(r => ({ ...r, zone: ZONES[r.col] }));
 const ROOM_RECTS = ROOMS.flatMap(r => r.rects);
 
@@ -69,7 +68,7 @@ const STATIONS = [
 // Reactor: a pizza-oven / vending-machine hybrid with a fuel-cell slot. Center + footprint.
 const REACTOR = { x: 22.2, y: 19.3, w: 3.8, h: 2.6 };
 const CAT = { x: 29.45, y: 15.75 };                // the ship cat's favourite corner (reactor room)
-// Engine: the housing sits in the reactor room, the bell sticks out of the stern.
+// Engine: only the bell, sticking out of the stern (the housing in the reactor room was removed).
 const ENGINE = { x: 22.2, y: 23.9, w: 5.6 };
 
 // Outer airlocks (hatches) in the side walls of the bottom side rooms. Going through
