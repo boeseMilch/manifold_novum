@@ -247,37 +247,49 @@ function drawLightPools() {
   ctx.restore();
 }
 
-// Ceiling lamps (interior/lamp_ceiling_*, hanging 2.0 above LIGHTS; off when the zone is dark).
+// The ceiling lights (LIGHTS) have no visible fixture in the cutaway view (the ceiling is what the camera
+// looks through); what you see are bulkhead lamps on the back walls (interior/lamp_wall_*, origin = the
+// wall's foot at its front face, lamp 1.15 up), on and off with the zone's power. js/lights.js lights
+// both: the ceiling lights from above, a small warm glow at each wall lamp.
+const WALL_LAMPS = [[5.6, 3.4], [9.4, 3.4],                    // left cannon (back wall y 3.4)
+                    [19.4, -2.4], [27.1, 0.6], [25.75, -2.4],   // bridge (nose and right back wall)
+                    [36.0, 2.6], [42.7, 2.6],                    // right cannon
+                    [1.5, SPINE_Y1], [10.9, SPINE_Y1],           // left airlock (the spine is its back wall)
+                    [24.9, SPINE_Y1], [29.1, SPINE_Y1],          // reactor
+                    [31.6, SPINE_Y1], [42.7, SPINE_Y1]];         // right airlock
+const WALL_LAMP_Z = 1.15;
 function drawLampSprites() {
-  for (const [lx, ly] of LIGHTS) {
+  for (const [lx, wy] of WALL_LAMPS) {
     const col = lx < COLS[1].x ? 0 : lx < COLS[2].x ? 1 : 2, on = lightFx.lamp[col] > 0.5;   // (flickers with the light: js/lights.js)
-    spr(on ? 'interior/lamp_ceiling_on' : 'interior/lamp_ceiling_off', 0, lx, ly, 0, { sortY: ly + 1.5, emissive: on ? 1 : 0 });
+    spr(on ? 'interior/lamp_wall_on' : 'interior/lamp_wall_off', 0, lx, wy, 0, { layer: 'wall', sortY: wy + 0.02, depthBias: 0.05, emissive: on ? 1 : 0.2 });
   }
 }
+// Where a room's plaque starts on its back wall (default: 0.4 in from the left; the lower rooms' back
+// wall is the spine, where the deck airlock's shaft takes the left part)
+const PLAQUE_X = { portLock: 7.65, starLock: 37.95 };
 // The room-name plaques (interior/plaque_<zone>_l, m..., r) on the back wall, the name as text on top.
 function drawRoomPlaque(r) {
   const q = r.rects[0], z = r.zone.name, l = `interior/plaque_${z}_l`, m = `interior/plaque_${z}_m`, rr_ = `interior/plaque_${z}_r`;
   if (!sprReady(l, m, rr_)) return false;
   const font = `800 ${T * 0.2}px system-ui, sans-serif`;
   ctx.save(); ctx.font = font; ctx.letterSpacing = '2px'; const tw = ctx.measureText(r.name.toUpperCase()).width / T; ctx.restore();
-  const n = Math.max(1, Math.ceil((tw + 0.05) / 0.25)), x0 = q.x + 0.4, o = { layer: 'wall', sortY: q.y + 0.02, depthBias: 0.05 };
+  const n = Math.max(1, Math.ceil((tw + 0.05) / 0.25)), x0 = PLAQUE_X[r.id] ?? q.x + 0.4, o = { layer: 'wall', sortY: q.y + 0.02, depthBias: 0.05 };
   spr(l, 0, x0, q.y, 0, o);
   for (let i = 0; i < n; i++) spr(m, 0, x0 + 0.1875 + i * 0.25, q.y, 0, o);
   spr(rr_, 0, x0 + 0.1875 + n * 0.25, q.y, 0, o);
-  const cx = x0 + 0.1875 + n * 0.125;
-  later(() => {
-    ctx.save(); ctx.translate(cx * T, (q.y - GFX.lift(0.52)) * T); ctx.scale(1, 1 / GFX.SIN);
-    ctx.font = font; ctx.letterSpacing = '2px'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = r.zone.label; ctx.fillText(r.name.toUpperCase(), 0, 0); ctx.restore();
-  });
+  const cx = x0 + 0.1875 + n * 0.125;               // the name, on the plaque (lit like a backlit sign: readable in the dark too)
+  const dy = 0.1;                                   // (just in front of the plaque's face; z raised so it lands at 0.52 on screen)
+  worldText(cx, q.y + dy, 0.52 + dy * GFX.SIN / GFX.COS, r.name.toUpperCase(), font, r.zone.label, { spacing: 2, layer: 'wall', sortY: q.y + 0.03, depthBias: 0.12, outline: 'rgba(8,10,14,0.55)' });   // (bias: over the pipe brackets, still behind anyone standing at the wall)
   return true;
 }
 
 function drawInteriorWalls() { toiletSign(); incidentBoard(); flushLater(); }
 function drawInterior(t) {
-  kitchen(t); bunkRoom(t); toiletStall(t); couch(); exerciseBike(t);
+  kitchen(t); kitchenSteam(t); bunkRoom(t); toiletStall(t); couch(); exerciseBike(t);
   if (GFX.on) drawLampSprites();
 }
+// Steam from the pot on the kitchen stove (its sprite: props/kitchen_counter; the classic drawing has its own).
+function kitchenSteam(t) { if (GFX.on && GFX.ready('props/kitchen_counter')) steamWisps('stove', 8.05, 11.0, 1.05, t * 0.8, 1.3, 11.2); }
 
 // ---------------------------------------------------------------------------
 // Everything clickable gets green corner brackets: faint when you're in the room, bright and

@@ -23,6 +23,7 @@ function segCircle(x0, y0, x1, y1, cx, cy, r) {
   const k = clamp(((cx - x0) * dx + (cy - y0) * dy) / l2, 0, 1);
   return Math.hypot(x0 + dx * k - cx, y0 + dy * k - cy) <= r;
 }
+const SLIME_COLS = ['#9cff5a', '#6ad13a', '#c8ff6e'];   // (slimeBurst, organic deaths: drawn as slime drops with sprites)
 function combatFx(x, y, vx, vy, life, col, size) {
   combat.fx.push({ x, y, vx, vy, life, max: life, col, size });
 }
@@ -335,6 +336,7 @@ function drawGoo() {
       continue;
     }
     if (!d.goo) continue;
+    if (GFX.on && GFX.ready('chars/alien/dead')) continue;   // the corpse sprite (drawAlienCorpses) lies in its own puddle
     const k = Math.floor(d.x * 13);
     if (GFX.on && fxDecal(`organic/goo_${((k % 4) + 4) % 4}`, d.x, d.y, d.r / 0.6, 0.95)) continue;
     stain(L(d.x), L(d.y), L(d.r), 'rgba(120,220,70,0.45)', Math.floor(d.x * 13));
@@ -411,6 +413,8 @@ function drawCombatFront(t) {
   }
   for (const p of combat.fx) {
     if (p.flip) { if (GFX.on) drawFlip(p); continue; }
+    const slime = GFX.on ? SLIME_COLS.indexOf(p.col) : -1;   // organic slime: the drop sprites (organic/slime_drop_*, ~0.12 across)
+    if (slime >= 0 && GFX.sprite(`organic/slime_drop_${slime}`, 0, p.x, p.y, 0, { layer: 'top', scale: p.size / 0.12, alpha: clamp(p.life / p.max, 0, 1), emissive: 0.4 })) continue;
     ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
     ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(p.size), 0, TAU); ctx.fill();
   }

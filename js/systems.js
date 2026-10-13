@@ -110,26 +110,64 @@ function linePoint(l, k) {                          // point at fraction k (0..1
   const q = (d - l.seg[i - 1]) / ((l.seg[i] - l.seg[i - 1]) || 1);
   return [lerp(l.pts[i - 1][0], l.pts[i][0], q), lerp(l.pts[i - 1][1], l.pts[i][1], q)];
 }
+// With sprites (GFX on) the cables lie on the floor in the 2D 'mid' layer (lit like the floor), clipped to
+// the floors so they run under the walls and the spine instead of over them; the energy running along a
+// live cable glows in the unlit 'glow' layer (still under the crew), and clamp sprites hold the cable
+// down along the way and where it disappears under a machine.
+function floorClip(g) {                               // clip g (world transform set) to the floors, minus the strip the near walls' tops cover
+  if (!(GFX.on && typeof WALLS !== 'undefined' && WALLS)) return;
+  g.beginPath(); for (const r of [...ROOM_RECTS, ...DOORWAYS]) g.rect(L(r.x), L(r.y), L(r.w), L(r.h)); g.clip();
+  const lift = GFX.lift(H_LOW), near = WALLS.hRuns.filter(h => h.kind === 'near');
+  g.beginPath(); g.rect(L(-50), L(-50), L(150), L(150));
+  for (const h of near) g.rect(L(h.x0), L(h.y - lift), L(h.x1 - h.x0), L(lift));
+  g.clip('evenodd');
+}
+function powerLineLive(l) {
+  return !capBroken(l.cap) && (l.feed ? power.reactor.fuel > 0 && !broken(REACTOR) : CAPACITORS[l.cap].charge > 0);
+}
 function drawPowerLines(t) {
+  ctx.save(); floorClip(ctx);
   for (const l of POWER_LINES) {
-    const cap = CAPACITORS[l.cap], dead = capBroken(l.cap);
-    const live = !dead && (l.feed ? power.reactor.fuel > 0 && !broken(REACTOR) : cap.charge > 0);
+    const dead = capBroken(l.cap), live = powerLineLive(l);
     const path = () => { ctx.beginPath(); l.pts.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y)))); };
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     path(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 11; ctx.save(); ctx.translate(2, 3); ctx.stroke(); ctx.restore();
     path(); ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.stroke();
-    path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? '#b8902e' : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
-    if (live) {                                       // energy flowing (slowly) towards the far end
+    path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? (GFX.on ? '#a8832c' : '#b8902e') : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
+    if (live && !GFX.on) {                            // energy flowing (slowly) towards the far end (GFX: drawPowerGlow)
       ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
       path(); ctx.strokeStyle = 'rgba(255,236,160,0.85)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
     }
-    for (let d = 2.5; d < l.len - 1; d += 3.5) {      // clamps
-      const [x, y] = linePoint(l, d / l.len);
-      const [ax, ay] = linePoint(l, Math.max(0, d - 0.1) / l.len), [bx, by] = linePoint(l, Math.min(l.len, d + 0.1) / l.len);
-      if (spr('systems/power_clamp', GFX.frameIndex('systems/power_clamp', Math.atan2(by - ay, bx - ax)), x, y, 0, { sortY: y - 0.3 })) continue;
+  }
+  ctx.restore();
+  for (const l of POWER_LINES) {
+    const at = (d) => {                               // a clamp d along the line, turned with it
+      const [x, y] = linePoint(l, d / l.len), [ax, ay] = linePoint(l, Math.max(0, d - 0.1) / l.len), [bx, by] = linePoint(l, Math.min(l.len, d + 0.1) / l.len);
+      return [x, y, Math.atan2(by - ay, bx - ax)];
+    };
+    const spots = [];
+    for (let d = 2.5; d < l.len - 1; d += 3.5) spots.push(at(d));
+    if (GFX.on) for (const d of [0.55, l.len - 0.55]) {   // where it goes under a machine (or into a wall): one more clamp, so it reads as plugged in
+      const [x, y, a] = at(d);
+      if (GFX.on && typeof WALLS !== 'undefined' && WALLS && [...ROOM_RECTS, ...DOORWAYS].some(r => inRect(x, y, r))) spots.push([x, y, a]);
+    }
+    for (const [x, y, a] of spots) {
+      if (spr('systems/power_clamp', GFX.frameIndex('systems/power_clamp', a), x, y, 0, { sortY: y - 0.3 })) continue;
       rr(L(x) - 4, L(y) - 4, 8, 8, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.2);
     }
   }
+}
+// GFX on: the energy on the live cables, glowing (in the 'glow' layer: unlit, under the crew).
+function drawPowerGlow(t) {
+  ctx.save(); floorClip(ctx);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const l of POWER_LINES) {
+    if (!powerLineLive(l)) continue;
+    ctx.beginPath(); l.pts.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y))));
+    ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
+    ctx.strokeStyle = 'rgba(255,226,140,0.75)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.restore();
 }
 function deliverEnergy() {
   const i = power.patch[power.lever.pos];
@@ -470,6 +508,7 @@ function drawLever(t) {
 // Glowing energy packets flying from the reactor to a capacitor.
 // Energy pulses running along the power lines (deliveries from the reactor, and energy being used).
 function drawEnergyBolts() {
+  if (GFX.on) ctx.save(), floorClip(ctx);
   const orb = ([x, y]) => {
     const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), 15);
     g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#ffe08a'); g.addColorStop(1, 'rgba(255,200,90,0)');
@@ -477,17 +516,26 @@ function drawEnergyBolts() {
   };
   for (const b of power.bolts) if (b.t < 1) orb(linePoint(LINE['feed' + b.to], b.t * b.t * (3 - 2 * b.t)));
   for (const p of power.pulses) if (LINE[p.line]) orb(linePoint(LINE[p.line], p.t));
+  if (GFX.on) ctx.restore();
 }
 
 // Broken look: scorch, a loose panel, smoke and the odd spark.
-// Sprites: systems/broken_scorch (radius 1, scaled to min(s.r, 1.1)) on the floor, the loose cover
-// panel (systems/broken_panel, else fx/loose_panel), fx/smoke_* puffs rising; sparks stay 2D, the
-// BROKEN label stays text (upright in the tilted view).
+// Sprites: the machine itself switches to its *_broken sprite where it has one (capacitors, shield buttons,
+// the lever, hatches, deck airlocks); systems/broken_scorch (radius 1, scaled to min(s.r, 1.1)) on the
+// floor round it, the loose cover panel (systems/broken_panel) lying on the floor in front of the machine,
+// where it can be seen; machines without a broken sprite (the reactor, the cannon ladders) get a burn mark on
+// their front (fx/scorch_*, upright); fx/smoke_* puffs rising; sparks 2D (glow layer), the BROKEN label on top.
+const BROKEN_FRONT = { reactor: 1.3, cannon: 0.36, shield: 0.32, capacitor: 0.42, lever: 0.45, lock: 0.3, hatch: 0.4 };
 function drawBrokenSprites(s, t) {
   const rad = Math.min(s.r, 1.1), panel = GFX.has('systems/broken_panel') ? 'systems/broken_panel' : 'fx/loose_panel';
   if (!GFX.ready('systems/broken_scorch') || !GFX.ready(panel) || !GFX.ready('fx/smoke_0')) return false;
-  GFX.sprite('systems/broken_scorch', 0, s.x, s.y, 0, { layer: 'decal', scale: rad, alpha: 0.85 });
-  GFX.sprite(panel, 0, s.x + rad * 0.3, s.y - rad * 0.2, 0, { sortY: s.y - rad * 0.2 });
+  const front = BROKEN_FRONT[s.kind] ?? 0.4;
+  if (s.kind !== 'lock' && s.kind !== 'hatch') {       // (the airlocks have broken sprites of their own; nothing lies in the spine / the side wall)
+    GFX.sprite('systems/broken_scorch', 0, s.x, s.y + front * 0.5, 0, { layer: 'decal', scale: rad, alpha: 0.85 });
+    GFX.sprite(panel, 0, s.x + 0.35, s.y + front + 0.22, 0, { sortY: s.y + front + 0.22 });
+  }
+  if ((s.kind === 'reactor' || s.kind === 'cannon') && GFX.ready('fx/scorch_1'))   // no broken sprite: a burn mark on its front
+    GFX.sprite('fx/scorch_1', 0, s.x - 0.15, s.y + front + 0.02, s.kind === 'reactor' ? 0.55 : 0.35, { billboard: true, scale: s.kind === 'reactor' ? 1.0 : 0.55, alpha: 0.8, sortY: s.y + front + 0.05, depthWrite: false });
   for (let i = 0; i < 3; i++) {
     const q = (t * 0.5 + i / 3) % 1;
     fxSmoke(s.x + Math.sin(t + i * 2) * 0.1, s.y + 0.05, 0.3 + q * 1.3, 0.12 + q * 0.25, 0.6 * (1 - q) * Math.min(1, q * 6), i + Math.floor(s.x), 2);   // (biased: out of the machine it rises from)
@@ -509,9 +557,10 @@ function drawBroken(s, t) {
     }
   }
   const rr2 = rng(Math.floor(t * 5) + s.x * 7);
-  if (rr2() < 0.15) {
+  if (rr2() < 0.15) {                                 // (GFX: at the machine's front, a little up; js/lights.js flashes with it)
+    const sx = x, sy = GFX.on ? L(s.y + (BROKEN_FRONT[s.kind] ?? 0.4) - GFX.lift(0.5)) : y;
     ctx.strokeStyle = 'rgba(255,220,120,0.85)'; ctx.lineWidth = 1.5;
-    for (let i = 0; i < 3; i++) { const a = rr2() * TAU; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * 9, y + Math.sin(a) * 9); ctx.stroke(); }
+    for (let i = 0; i < 3; i++) { const a = rr2() * TAU; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * 9, sy + Math.sin(a) * 9); ctx.stroke(); }
   }
   if (!GFX.on) drawBrokenLabel(s);
 }
@@ -520,6 +569,7 @@ function drawBroken(s, t) {
 function drawBrokenLabel(s) {
   const x = L(s.x), r = L(Math.min(s.r, 1.1)), y = L(s.y - GFX.lift(1.1)) - r * 0.6;
   ctx.save(); ctx.translate(x, y); ctx.scale(1, 1 / viewSy());
+  if (crewInFront(s.x, s.y, 1.1 + Math.min(s.r, 1.1) * 0.6 / GFX.COS)) ctx.globalAlpha = 0.3;
   ctx.fillStyle = 'rgba(255,120,100,0.9)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
   if (GFX.on) { ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(20,10,10,0.7)'; ctx.strokeText('BROKEN', 0, 0); }
   ctx.fillText('BROKEN', 0, 0); ctx.restore(); ctx.textAlign = 'left';

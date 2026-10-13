@@ -549,12 +549,12 @@ function drawAlienCorpses() {
 function drawBoarding(t) {
   drawAlienCorpses();
   for (const a of boarding.invaders) {
-    if (a.task?.kind === 'sabotage') {               // green progress ring on the part it's wrecking
+    if (a.task?.kind === 'sabotage') glowLayer(() => {   // green progress ring on the part it's wrecking (on the floor, under the sprites)
       const sys = a.task.sys;
       ctx.beginPath(); ctx.arc(L(sys.x), L(sys.y), L(0.9), -Math.PI / 2, -Math.PI / 2 + (a.task.t / SABOTAGE_TIME) * TAU);
       ctx.strokeStyle = 'rgba(20,22,27,0.6)'; ctx.lineWidth = 8; ctx.stroke();
       ctx.strokeStyle = '#9cff5a'; ctx.lineWidth = 4; ctx.stroke();
-    }
+    });
     drawAlien(a, t);
   }
   for (const b of boarding.bolts) {

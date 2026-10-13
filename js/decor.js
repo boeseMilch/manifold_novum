@@ -9,18 +9,65 @@
 // ---------------------------------------------------------------------------
 function spr(name, frame, x, y, z = 0, o) { return GFX.on && GFX.sprite(name, frame, x, y, z, o); }
 const sprReady = (...names) => GFX.on && names.every(n => GFX.ready(n));
-// Text that must stay readable over raised sprites (counters, labels): with GFX on it is drawn
-// later, on the top canvas (drawInteriorWalls flushes it), upright and lifted by z; classic: now.
+// Labels in the world. With GFX on there are two kinds:
+// - worldText(): text that belongs to the world (room plaques, capacitor readouts, a VENT tag, the cat's
+//   z z z): a small upright sprite (GFX.text, billboard), depth-tested, so whoever walks in front hides it.
+// - labelAt() / later(): text that must stay readable over everything (CLICK TO TAKE, OVERCHARGED,
+//   BROKEN): drawn later on the top canvas (render() flushes it via drawInteriorWalls), upright and lifted
+//   by z; it fades while a crew member stands in front of it, so it never sits on someone's face.
+// Classic: both are drawn at once, flat, like before.
 const LATER = [];
 function later(fn) { if (GFX.on) LATER.push(fn); else fn(); }
 function flushLater() { for (const f of LATER.splice(0)) f(); }
+// Is the screen point of world (x, y, z) covered by a crew member standing in front of it (closer to the camera)?
+function crewInFront(x, y, z) {
+  if (!GFX.on || typeof crew === 'undefined') return false;
+  const sy = y - GFX.lift(z);
+  return crew.some(c => c.mode === 'inside' && c.y > y + 0.05 && Math.abs(c.x - x) < 0.5 && sy > c.y - GFX.lift(standing(c) ? 1.75 : 0.6) - 0.15 && sy < c.y + 0.25);
+}
 function labelAt(x, y, z, text, font, fill, base = 'middle', outline = null) {   // x, y in layout units
   later(() => {
     ctx.save(); ctx.translate(x * T, (y - GFX.lift(z)) * T); if (GFX.on) ctx.scale(1, 1 / GFX.SIN);
+    if (crewInFront(x, y, z)) ctx.globalAlpha = 0.3;
     ctx.font = font; ctx.textAlign = 'center'; ctx.textBaseline = base;
-    if (outline) { ctx.lineWidth = 3; ctx.strokeStyle = outline; ctx.strokeText(text, 0, 0); }
+    if (outline) { ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = outline; ctx.strokeText(text, 0, 0); }
     ctx.fillStyle = fill; ctx.fillText(text, 0, 0); ctx.restore();
   });
+}
+// o: { outline, base, layer ('main'), sortY (y), depthBias, alpha, lit (false: glows like a display) }
+function worldText(x, y, z, text, font, fill, o = {}) {
+  if (GFX.on) {
+    const name = GFX.text(text, font, fill, { outline: o.outline, base: o.base, spacing: o.spacing });
+    if (name && GFX.sprite(name, 0, x, y, z, { billboard: true, unlit: !o.lit, emissive: o.lit ? 0.6 : 0, layer: o.layer || 'main', sortY: o.sortY != null ? o.sortY : y,
+      depthBias: o.depthBias || 0, depthWrite: false, alpha: o.alpha })) return;
+  }
+  ctx.save(); ctx.translate(x * T, (y - GFX.lift(z)) * T);
+  ctx.font = font; ctx.letterSpacing = (o.spacing || 0) + 'px'; ctx.textAlign = 'center'; ctx.textBaseline = o.base || 'middle';
+  if (o.alpha != null) ctx.globalAlpha = o.alpha;
+  if (o.outline) { ctx.lineWidth = 3; ctx.strokeStyle = o.outline; ctx.strokeText(text, 0, 0); }
+  ctx.fillStyle = fill; ctx.fillText(text, 0, 0); ctx.restore();
+}
+// Steam wisps rising from (x, y, z) (a mug, a pot): with GFX on an upright canvas sprite redrawn every
+// frame (key: one per source), so it sits in the world; classic: 2D strokes at once.
+function steamWisps(key, x, y, z, t, k = 1, sortY = y + 0.05) {
+  const draw = (g, ox, oy, s) => {
+    for (let i = 0; i < 3; i++) {
+      const q = (t * 0.45 + i / 3) % 1;
+      g.beginPath(); g.moveTo(ox + Math.sin(t * 2 + i * 2) * 3 * s, oy - q * 26 * s);
+      g.quadraticCurveTo(ox + 6 * s * Math.sin(t * 3 + i), oy - (6 + q * 26) * s, ox + Math.sin(t * 2.5 + i) * 4 * s, oy - (12 + q * 26) * s);
+      g.strokeStyle = `rgba(235,240,245,${0.35 * (1 - q)})`; g.lineWidth = 2.5 * s; g.lineCap = 'round'; g.stroke();
+    }
+  };
+  if (GFX.on) {
+    const S = 2, D = GFX.canvasSprite('steam_' + key, 30 * S * k, 46 * S * k, { ppu: T * S, ox: 15 * S * k, oy: 44 * S * k });
+    if (D) {
+      D.ctx.setTransform(1, 0, 0, 1, 0, 0); D.ctx.clearRect(0, 0, D.w, D.h);
+      draw(D.ctx, 15 * S * k, 42 * S * k, S * k); D.commit();
+      GFX.sprite(D.name, 0, x, y, z, { billboard: true, unlit: true, sortY, depthWrite: false });
+      return;
+    }
+  }
+  draw(ctx, x * T, (y - GFX.lift(z)) * T, k);
 }
 // Item / gear / upgrade icons (items/icon_*, 128 x 128) on the 2D canvas (HUD, panels): straight
 // from the atlas page. size = the icon canvas' size in CSS px. False until the page has loaded.
@@ -138,11 +185,16 @@ function mapTable(x, y, t) {
   const r = T * 1.1;
   const off = typeof CAPACITORS !== 'undefined' && (CAPACITORS[1].charge <= 0 || broken(CAPACITORS[1]));
   if (spr(off ? 'systems/maptable_off' : 'systems/maptable', 0, x / T, y / T, 0, { emissive: off ? 0 : 0.8, pick: [1.1, 1.3] })) {
-    if (!off) later(() => {                          // the sweep over the screen, at the table's top
-      const ty = y - GFX.lift(TABLE_Z) * T, a = t * 0.6;
-      ctx.beginPath(); ctx.moveTo(x, ty); ctx.arc(x, ty, r * 0.72, a, a + 0.5); ctx.closePath();
-      ctx.fillStyle = 'rgba(95,214,228,0.18)'; ctx.fill();
-    });
+    const D = !off && GFX.canvasSprite('map_sweep', 112, 112 * GFX.SIN, { ppu: 96 });
+    if (D) {                                         // the radar sweep, lying on the table's screen (a flat sprite at its height)
+      const g = D.ctx, a = t * 0.6, R = 0.72 * 1.1 * 48;
+      g.setTransform(1, 0, 0, GFX.SIN, D.w / 2, D.h / 2); g.clearRect(-D.w, -D.h / GFX.SIN, 2 * D.w, 2 * D.h / GFX.SIN);
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, R);
+      gr.addColorStop(0, 'rgba(95,214,228,0.05)'); gr.addColorStop(1, 'rgba(120,230,240,0.32)');
+      g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R, a, a + 0.5); g.closePath(); g.fillStyle = gr; g.fill();
+      D.commit();
+      GFX.sprite(D.name, 0, x / T, y / T, TABLE_Z, { unlit: true, sortY: y / T + 0.01, depthBias: 0.03, depthWrite: false });
+    }
     return;
   }
   shadowEllipse(x + 6, y + 9, r * 1.05, r * 0.9, 0.35);
@@ -250,19 +302,13 @@ function catSprite(x, y, t) {                       // props/cat_*: origin CAT o
   if (petted) spr('props/cat_pet', Math.floor(t * 8) % 6, CAT.x, CAT.y, 0, o);
   else if (fl < 1) spr('props/cat_flick', Math.floor(fl * 6), CAT.x, CAT.y, 0, o);
   else spr('props/cat_sleep', Math.floor(t / 3.93 * 8) % 8, CAT.x, CAT.y, 0, o);
-  later(() => {                                      // hearts / z z z over the cat, on top
-    const k = (t * 0.5) % 1, ly = y - GFX.lift(0.45) * T;
-    if (petted) {
-      for (let i = 0; i < 3; i++) {
-        const q = (t * 0.8 + i / 3) % 1, hx = x + Math.sin(i * 2 + t * 2) * 10, hy = ly - q * 30;
-        ctx.fillStyle = `rgba(255,110,150,${1 - q})`; ctx.beginPath();
-        ctx.moveTo(hx, hy + 4); ctx.bezierCurveTo(hx - 7, hy - 2, hx - 3, hy - 7, hx, hy - 3); ctx.bezierCurveTo(hx + 3, hy - 7, hx + 7, hy - 2, hx, hy + 4); ctx.fill();
-      }
-    } else {
-      ctx.fillStyle = `rgba(232,236,244,${0.7 * (1 - k)})`; ctx.font = `700 ${10 + k * 8}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
-      ctx.fillText('z', x + T * 0.3 + k * 10, ly - k * 22);
+  const k = (t * 0.5) % 1, up = (px) => px / T / GFX.COS;   // hearts / z z z rising over the cat (world px up → height)
+  if (petted) {
+    for (let i = 0; i < 3; i++) {
+      const q = (t * 0.8 + i / 3) % 1;
+      worldText(CAT.x + Math.sin(i * 2 + t * 2) * 10 / T, CAT.y, 0.45 + up(q * 30), '♥', `700 ${T * 0.3}px system-ui, sans-serif`, '#ff6e96', { alpha: 1 - q, sortY: CAT.y + 0.02 });
     }
-  });
+  } else worldText(CAT.x + 0.3 + k * 10 / T, CAT.y, 0.45 + up(k * 22), 'z', `700 ${T * 0.3}px system-ui, sans-serif`, '#e8ecf4', { alpha: 0.7 * (1 - k), sortY: CAT.y + 0.02 });
   return true;
 }
 function cat(x, y, t) {
@@ -489,15 +535,7 @@ function drawPropDecor(t) {
   // Bridge: the helm runs on coffee (the mug: systems/mug_*, origin on the floor, lands on the desk)
   const full = typeof hz === 'undefined' || hz.coffee >= 1;
   if (S(full ? 'systems/mug_full' : 'systems/mug_empty', 22.75, -2.1, 0, { sortY: -1.75, depthBias: 0.03, pick: [0.15, 1.0] })) {
-    if (full) later(() => {                          // steam over the mug, at desk height
-      const x = U(22.75), y = U(-2.1) - GFX.lift(DESK_Z + 0.2) * T;
-      for (let i = 0; i < 3; i++) {
-        const k = (t * 0.45 + i / 3) % 1;
-        ctx.beginPath(); ctx.moveTo(x + Math.sin(t * 2 + i * 2) * 3, y - k * 26);
-        ctx.quadraticCurveTo(x + 6 * Math.sin(t * 3 + i), y - 6 - k * 26, x + Math.sin(t * 2.5 + i) * 4, y - 12 - k * 26);
-        ctx.strokeStyle = `rgba(235,240,245,${0.35 * (1 - k)})`; ctx.lineWidth = 2.5; ctx.stroke();
-      }
-    });
+    if (full) steamWisps('mug', 22.75, -2.1, DESK_Z + 0.2, t, 1, -1.7);   // steam over the mug, at desk height
   } else coffee(U(22.75), U(-2.1), t);
   if (!S('props/sticky_yellow', 21.65, -2.1, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.65), U(-2.1), 0.2);
   if (!S('props/sticky_pink', 21.95, -1.95, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.95), U(-1.95), -0.3, '#f29bc4');

@@ -271,9 +271,7 @@ function drawEvaJobs(t) {
   for (const m of evs.mines) {
     const x = L(m.x), y = L(m.y), rate = 2 + (1 - m.t / MINE_TIME) * 14, on = Math.sin(t * rate) > 0;
     if (GFX.on && GFX.ready('enemy/limpet_mine') && GFX.sprite('enemy/limpet_mine', on ? 0 : 1, m.x, m.y, 0, { layer: 'main', emissive: on ? 0.9 : 0.3 })) {
-      const ty = L(m.y - GFX.lift(0.5)) - 4;              // the countdown above it
-      ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.18}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(Math.ceil(m.t), x, ty); ctx.fillText(Math.ceil(m.t), x, ty); ctx.textAlign = 'left';
+      worldText(m.x, m.y, 0.55, String(Math.ceil(m.t)), `800 ${T * 0.18}px system-ui, sans-serif`, '#ffd0c8', { base: 'bottom', outline: 'rgba(10,12,18,0.8)', sortY: m.y + 0.01 });   // the countdown above it
       jobMarker(m.x, m.y, t, reach(m.x, m.y), '#ff6a5a');
       continue;
     }
@@ -329,11 +327,13 @@ function drawEvaJobs(t) {
   }
 }
 // A pulsing ring around a spacewalk job, brighter in reach (the outside version of the brackets).
-function jobMarker(x, y, t, close, col) {
-  const k = 0.5 + 0.5 * Math.sin(t * 4);
-  ctx.beginPath(); ctx.arc(L(x), L(y), L(0.6) + k * 3, 0, TAU);
-  ctx.setLineDash([5, 5]); ctx.strokeStyle = close ? '#ffffff' : col; ctx.globalAlpha = close ? 0.9 : 0.55; ctx.lineWidth = 2.5; ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
+function jobMarker(x, y, t, close, col) {          // (a dashed ring on the hull: unlit glow layer with sprites, so it reads in the dark)
+  glowLayer(() => {
+    const k = 0.5 + 0.5 * Math.sin(t * 4);
+    ctx.beginPath(); ctx.arc(L(x), L(y), L(0.6) + k * 3, 0, TAU);
+    ctx.setLineDash([5, 5]); ctx.strokeStyle = close ? '#ffffff' : col; ctx.globalAlpha = close ? 0.9 : 0.55; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+  });
 }
 
 // Sidebar plates for all of the above.

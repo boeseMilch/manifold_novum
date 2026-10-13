@@ -758,14 +758,15 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   `js/game.js`): before the crew → composited under the crew and over the walls; after → on top.
 - `?classic` keeps the old look; it's also the fallback without WebGL2 / from `file://`, and what the
   tests and the server use. Overview with ~560 sprites: ~6 ms a frame at 2560×1600 (classic 2D: ~20 ms).
-- Known: the front cannon and its gunner sit behind the bridge's nose wall, so they're drawn in front of
-  it (depth bias); 2D props near a room's south edge can be covered by the low wall top.
+- (The front cannon and its gunner now stand on the nose's roof: see 9c.)
 
 ### 9b. Lighting from the game state (`js/lights.js`, shading in `js/gfx.js`)
-- Power per zone column: with charge, warm caged ceiling lamps (LIGHTS, inside the lamp sprites) light
-  from above; without, they die and red emergency strips along every wall base light the rooms low and
+- Power per zone column: with charge, warm ceiling lights (LIGHTS; no visible fixture in the cutaway, see
+  9c) light from above, plus bulkhead lamps on the back walls (WALL_LAMPS); without, they die and red emergency strips along every wall base light the rooms low and
   grazing (lit sides, dark centre), with amber markers at the doors and faint suit lamps on the crew.
-  Lamps flicker back on when power returns (the lamp sprites follow). Ion storm: lamps out, flashlights.
+  Lamps flicker back on when power returns (the wall lamp sprites follow). Ion storm: lamps out, flashlights.
+  Consoles run on their column's power: without it their screens are off (`systems/*_off`) with an amber
+  standby LED, so they can still be found.
 - Outside: low cold ambient + a distant star from the front right (the baked key's side); a solar flare
   makes it glare.
 - Alarms (rules in `alarmState()`): yellow for any fire on board; red 1 at MAX_DAMAGE - 1 broken
@@ -780,6 +781,29 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Renderer: tiled forward lighting (up to 255 lights on screen, 31 per 64-px tile; point, spot and strip
   lights) and screen-space shadows marched through last frame's depth buffer (2nd colour attachment,
   reprojected). Overview at 2560×1600 with ~55 lights, red alert, fires: ~130 fps (shadows off ~140).
+
+### 9c. Coherence pass: one look inside the ship
+- Lamps: the pendant ceiling lamps read as floor lamps in the tilted view; they're gone. The ceiling lights
+  stay (invisible, the camera looks through the ceiling) and every room has bulkhead lamps on its back
+  wall (`interior/lamp_wall_on/off`, WALL_LAMPS in js/interior.js) with a small warm glow of their own.
+- Labels: text that belongs to the world is a sprite now (GFX.text, an upright billboard, depth-tested):
+  room names on their plaques (backlit, outlined; the lower rooms' plaques moved clear of the deck airlocks),
+  capacitor readouts, the VENT tag, the cat's z z z / hearts, the limpet mines' countdown; whoever walks in
+  front hides them. Labels that must stay readable (CLICK TO TAKE, BROKEN, OVERCHARGED) stay on top but
+  fade while a crew member stands in front of them. Steam (helm mug, kitchen stove) and the map table's
+  radar sweep are canvas sprites in the world too (GFX.canvasSprite).
+- Broken machines: the scorch and the loose panel lie in front of the machine where they can be seen;
+  the reactor and the cannon ladders (no broken sprite) get a burn mark on their front; sparks glow.
+- Power lines lie on the floor, clipped to the floors (they run under the walls and the spine instead of
+  over them), with a clamp where they disappear under a machine; their energy and the pulses glow in a
+  new unlit 2D layer ('glow', between the floor drawings and the crew), with the interaction brackets,
+  pickup halos, click rings, job markers and the pirates' halos (all readable in the dark, under the crew).
+- The front cannon stands on the nose's roof (z 1.6) with its gunner up in the hatch, instead of being
+  drawn through the nose wall and the helm (depth bias). Crew who are out: suit and gear greyed.
+- 2D leftovers converted: the ore asteroid (`enemy/ore_rock` + pulsing glow), slime drops
+  (`organic/slime_drop_*`), the derelict's fires (the fire sprites). The alien corpse no longer gets a
+  second goo puddle under its own. The storm darkness and flare glare go under the prompts. The spine
+  never goes pitch black without power. Favicon (no more 404 on every page load).
 
 ## Balance
 

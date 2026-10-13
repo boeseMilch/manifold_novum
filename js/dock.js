@@ -388,7 +388,7 @@ function drawDock(t) {
       // cargo crate
       crate(L(g.crate.x), L(g.crate.y), L(1.3), L(1.0), 0.05, pir ? '#8a5a3a' : '#6a6f7a', pir ? 'LOOT' : 'CARGO');
     }
-    if (d.crate.length) pickupHalo(L(g.crate.x), L(g.crate.y), T * 0.8, t, me.mode === 'inside' && Math.hypot(me.x - g.crate.x, me.y - g.crate.y) <= REACH, 2.2);
+    if (d.crate.length) glowLayer(() => pickupHalo(L(g.crate.x), L(g.crate.y), T * 0.8, t, me.mode === 'inside' && Math.hypot(me.x - g.crate.x, me.y - g.crate.y) <= REACH, 2.2));
     // core: a pirate reactor (red, overloading?) or a dead one
     const cx = L(g.core.x), cy = L(g.core.y);
     if (!sprited) {
@@ -402,12 +402,17 @@ function drawDock(t) {
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(`OVERLOAD ${Math.ceil(d.detachT)}`, 0, 0);
       ctx.fillStyle = Math.sin(t * 20) > 0 ? '#ffe08a' : '#ff7a6a'; ctx.fillText(`OVERLOAD ${Math.ceil(d.detachT)}`, 0, 0); ctx.textAlign = 'left';
     });
-    for (const f of d.fires || []) {                   // derelict fire (simple flames)
+    for (const f of d.fires || []) {                   // derelict fire (the fire sprites like ours; else simple flames)
+      if (GFX.on && drawFireSprite({ x: f.x, y: f.y, seed: f.x * 2.3 + f.y }, (0.55 + 0.45 * f.hp) * 1.6, t)) continue;
       for (let i = 0; i < 4; i++) { const h = L(0.6 + 0.3 * Math.sin(t * 9 + i)) * f.hp; ctx.beginPath(); ctx.ellipse(L(f.x) + (i - 1.5) * 8, L(f.y) - h / 2, 6, h / 2, 0, 0, TAU); ctx.fillStyle = i % 2 ? '#ff9a2e' : '#d8401c'; ctx.fill(); }
     }
   }
-  if (GFX.on) for (const p of dk.pirates) pirateHalo(p);   // (on the floor, under the sprites)
-  if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
+  if (GFX.on) glowLayer(() => { for (const p of dk.pirates) pirateHalo(p); });   // (on the floor, under the sprites; unlit so they read in the dark)
+  const R = dk.rock;                                    // the ore asteroid: enemy/ore_rock (modelled at r 2.2), its crystals' glow pulsing on top
+  if (R && GFX.on && GFX.ready('enemy/ore_rock') && GFX.ready('enemy/ore_rock_glow')) {
+    GFX.sprite('enemy/ore_rock', 0, R.x, R.y, 0, { layer: 'under', scale: R.r / 2.2 });
+    GFX.sprite('enemy/ore_rock_glow', 0, R.x, R.y, 0, { layer: 'under', scale: R.r / 2.2, emissive: 1, alpha: 0.6 + 0.3 * Math.sin(t * 2) });
+  } else if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
 }
 // Walking, for sprites: is this actor's walk counter advancing? (works on snapshots too)
 const actorAnim = new Map();

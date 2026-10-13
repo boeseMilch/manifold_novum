@@ -638,10 +638,13 @@ function drawCrewOutside(c, t) {
 //   Each layer gets the same world transform (y squashed by sin 50°), so old drawings stay at
 //   ground level where they belong.
 const SCREEN_CTX = ctx;
+let glowLayer = (fn) => fn();                      // (set by render(): draw fn into the unlit 'glow' layer with sprites)
 function render(t) {
   const view = camera(), G = GFX.on;
   const space = { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 * view.sy - t * CRUISE_SPEED, rot: 0 };
   const world = (k) => ctx.setTransform(k * view.zoom, 0, 0, k * view.zoom * view.sy, k * view.ox, k * view.oy);
+  // markers, halos and energy glows: in the unlit 'glow' layer with sprites (under the crew, not dimmed by the dark)
+  const glow = glowLayer = (fn) => { if (!G) return fn(); const prev = ctx; ctx = GFX.layer2d('glow'); world(GFX.layer2dScale); fn(); ctx = prev; };
   let parts = {};
   ctx = SCREEN_CTX;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -684,6 +687,7 @@ function render(t) {
   drawGoo();
   drawBreaches(t);
   drawPowerLines(t);
+  if (G) glow(() => drawPowerGlow(t));
   drawEngineHousing(t, ENGINE);
   if (!parts.locks) for (const L of DECK_LOCKS) drawDeckLock(L, t);
   if (!parts.doors) drawDoorways();
@@ -703,13 +707,15 @@ function render(t) {
   drawEncounterProps(t);
   drawMinigameProps(t);
   drawInserter(t);
-  drawInteractMarkers(t);
-  drawItems(t);
+  glow(() => drawInteractMarkers(t));
+  glow(() => drawItems(t));
   drawFires(t);
-  for (const s of SYSTEMS) if (s.broken) drawBroken(s, t);
-  drawEnergyBolts();
-  drawClickTarget(me.hover);
-  if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true });   // what E would do
+  glow(() => { for (const s of SYSTEMS) if (s.broken) drawBroken(s, t); });
+  glow(() => {
+    drawEnergyBolts();
+    drawClickTarget(me.hover);
+    if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true });   // what E would do
+  });
   // the crew (as sprites when they're loaded, else in 2D)
   const visorOf = (c) => isOutside(c) || (c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y));
   const sprited = new Set();
@@ -752,6 +758,7 @@ function render(t) {
   drawDockDarkness();
   drawCombatFront(t);
 
+  ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
   const prompt = me.prompt, hover = me.hover;
   if (prompt && !prompt.screen) upright(view, me.x, me.y, G && sprited.has(me) ? 1.45 : 0.55, () => {
     ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
@@ -767,7 +774,6 @@ function render(t) {
     rr(VW / 2 - w / 2, VH - 54, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, '#5fd6a0');
     ctx.fillStyle = '#c8ffe6'; ctx.fillText(prompt.text, VW / 2, VH - 37); ctx.textAlign = 'left';
   }
-  drawEncounterOverlay(view, t);
   drawInjuryOverlay(t);
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);

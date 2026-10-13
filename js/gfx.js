@@ -37,6 +37,9 @@
 //   clip      [x0, y0, x1, y1, cz]: only the part of the sprite inside this world rectangle, taken
 //             at height cz (default 0) — for tiles (null / ±Infinity = open side)
 //   depthBias added to the pixel depth (+ = closer to the camera)   depthWrite  false: test only
+//   billboard true: ignore the height map, the sprite is an upright plane through its origin (text
+//             labels, steam: depth and lighting as if it stood at (x, y), rising from z)
+//   desat     0..1: desaturate the beauty (a crew member who is out cold)
 //   pick      [halfWidth, height] in screen units above the origin: GFX.pickAt() finds it
 //
 // Lighting (one place for it: js/lights.js gameLighting()):
@@ -54,8 +57,15 @@
 
 // 2D layers: GFX.layer2d('back') is drawn first and unlit (space, things behind the ship);
 // GFX.layer2d('mid') is drawn after the 'ground', 'decal' and 'wall' sprites and before 'main', lit
-// like the floor (flat, at z = 0). Both are at the internal resolution and cleared on first use per frame;
-// GFX.layer2dScale is their pixels per CSS px.
+// like the floor (flat, at z = 0); GFX.layer2d('glow') right after it, unlit (markers, halos, energy
+// glows: under the crew, but not dimmed by the dark). All are at the internal resolution and cleared on
+// first use per frame; GFX.layer2dScale is their pixels per CSS px.
+//
+// Sprites drawn by the game: GFX.canvasSprite(key, w, h, { ppu, ox, oy }) → { name, ctx, w, h, commit() }
+// (draw into ctx, commit() uploads it, then GFX.sprite(name, ...) like any sprite; flat normal, no height
+// map: it lies at z, or stands up with { billboard: true }). GFX.text(text, font, fill, { outline, base,
+// spacing, ppu }) → the name of a text label sprite (rasterized once per distinct label; font in world
+// px, T = 48). Both return null when GFX is off.
 //
 // Internal resolution: min(1, 2048 / physical width) of the screen, upscaled with linear filtering;
 // change it with ?gfxscale=0.75 (remembered) or GFX.setScale(k) (null = default).
@@ -68,7 +78,7 @@ const GFX = (() => {
   const noop = () => {};
   const api = {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
-    begin: noop, end: noop, sprite: () => false, lighting: noop, layer2d: () => null,
+    begin: noop, end: noop, sprite: () => false, lighting: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
     setScale: noop, setShadows: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
   };
@@ -182,11 +192,11 @@ layout(location = 6) in vec4 iGround;   // world x, y, z of the origin; ppu
 layout(location = 7) in vec4 iOrigin;   // origin on the canvas (ox, oy), object scale, depth bias
 layout(location = 8) in vec4 iTint;     // rgb, strength
 layout(location = 9) in vec4 iMisc;     // tint reference luminance, emissive, alpha, flags (1 unlit)
-layout(location = 10) in vec4 iXf;      // screen rotation (rad, clockwise) around the origin, stretch along the sprite's x
+layout(location = 10) in vec4 iXf;      // screen rotation (rad, clockwise) around the origin, stretch along the sprite's x, desaturation, -
 uniform vec2 uView;
 out vec2 vLp;
 flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc;
-flat out float vFlip, vRot;
+flat out float vFlip, vRot, vDesat;
 void main() {
   vec2 lp = iQuad.xy + aPos * iQuad.zw;
   vLp = lp;
@@ -194,14 +204,14 @@ void main() {
   float cr = cos(iXf.x), sr = sin(iXf.x);
   vec2 p = iScreen.xy + vec2(q.x * cr - q.y * sr, q.x * sr + q.y * cr);
   gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0);
-  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x;
+  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x; vDesat = iXf.z;
 }`;
 
   const FS_SPRITE = `#version 300 es
 precision highp float;
 in vec2 vLp;
 flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc;
-flat in float vFlip, vRot;
+flat in float vFlip, vRot, vDesat;
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies with the same uv
 uniform float uHasMask, uHR, uDepthScale;
@@ -224,6 +234,7 @@ void main() {
   float hz = textureGrad(uHeight, uv, gdx, gdy).r * uHR * sc;
   vec2 o = vec2(vFlip * (lp.x - vOrigin.x), lp.y - vOrigin.y) / vGround.w * sc;   // screen offset from the origin (units)
   if (vRot != 0.0) o = vec2(o.x * cos(vRot) - o.y * sin(vRot), o.x * sin(vRot) + o.y * cos(vRot));
+  if (mod(floor(vMisc.w * 0.5), 2.0) > 0.5) hz = -o.y / ${COS.toFixed(6)};   // billboard: an upright plane through the origin
   vec3 P = vec3(vGround.x + o.x, vGround.y + (o.y + hz * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, vGround.z + hz);
   float depth = P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)} + vOrigin.w;   // larger = closer to the camera
   vec3 base = b.rgb;
@@ -235,6 +246,7 @@ void main() {
     t = mix(t, vec3(1.0), clamp(lum / ref - 1.3, 0.0, 0.6));   // keep specular glints white
     base = mix(base, t, m);
   }
+  if (vDesat > 0.0) base = mix(base, vec3(dot(base, vec3(0.2126, 0.7152, 0.0722))), vDesat);
   vec3 col = base;
   if (mod(vMisc.w, 2.0) < 0.5) {
     vec3 N = vec3(n.x * sign(vFlip), -n.y, n.z);
@@ -465,6 +477,7 @@ void main() {
     return S._pages;
   }
   function spriteReady(S) {
+    if (S.dyn) return !!S.dyn.tex.b;
     let ok = true;
     for (const i of pagesOf(S)) if (page(S.group, i).state !== 'ready') ok = false;
     return ok;
@@ -497,6 +510,54 @@ void main() {
       v = [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; rgbCache.set(c, v);
     }
     return v;
+  }
+
+  // --- sprites the game draws itself, at runtime: a 2D canvas each (text labels, steam, glows) ---------
+  // GFX.canvasSprite(key, w, h, { ppu, ox, oy }) → { name, ctx, w, h, commit() }: draw into ctx, then
+  // commit() uploads it; GFX.sprite(name, ...) draws it like any sprite (flat normal, no height: lying
+  // at z, or upright with { billboard: true }). GFX.text(text, font, fill, { outline, base, ppu }) → a
+  // sprite name for a text label (rasterized once per distinct label; font sizes in world px, T = 48).
+  const DYNS = {}, DYN = {};
+  function canvasSprite(key, w, h, o = {}) {
+    w = Math.max(1, Math.ceil(w)); h = Math.max(1, Math.ceil(h));
+    let D = DYN[key];
+    if (D && (D.w !== w || D.h !== h)) { if (D.pg.tex.b) gl.deleteTexture(D.pg.tex.b); D = null; }
+    if (!D) {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const pg = { state: 'ready', w, h, maps: '', tex: {}, img: {} }, ox = o.ox != null ? o.ox : w / 2, oy = o.oy != null ? o.oy : h / 2;
+      const name = 'dyn/' + key;
+      const S = DYNS[name] = { name, group: 'dyn', dyn: pg, ppu: o.ppu || 96, w, h, ox, oy, dirs: 1, frames: 1, maps: '', f: [[0, 0, 0, w, h, ox, oy]] };
+      D = DYN[key] = { name, S, pg, w, h, c, ctx: c.getContext('2d'), commit() {
+        if (!api.on) return;
+        if (!pg.tex.b) pg.tex.b = texture(c, true);
+        else {
+          gl.bindTexture(gl.TEXTURE_2D, pg.tex.b);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c); gl.generateMipmap(gl.TEXTURE_2D);
+        }
+      } };
+    }
+    return D;
+  }
+  const TEXTS = new Map(), measure = document.createElement('canvas').getContext('2d');
+  function text(str, font, fill, o = {}) {
+    const key = [str, font, fill, o.outline || '', o.base || 'middle', o.spacing || 0, o.ppu || 120].join('|');
+    let name = TEXTS.get(key);
+    if (name) return name;
+    const ppu = o.ppu || 120, k = ppu / 48, ow = o.outline ? (o.outlineWidth || 3) : 0;
+    measure.font = font; measure.letterSpacing = (o.spacing || 0) + 'px';
+    const m = measure.measureText(str), size = parseFloat((font.match(/([\d.]+)px/) || [0, 12])[1]);
+    const pad = ow + 2, tw = m.width + pad * 2, th = size * 1.3 + pad * 2;
+    const D = canvasSprite('t' + TEXTS.size, tw * k, th * k, { ppu, ox: tw * k / 2, oy: (o.base === 'bottom' ? th - pad : o.base === 'top' ? pad : th / 2) * k });
+    const g = D.ctx;
+    g.setTransform(k, 0, 0, k, 0, 0); g.clearRect(0, 0, tw, th);
+    g.font = font; g.letterSpacing = (o.spacing || 0) + 'px'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    const cy = th / 2 + size * 0.04;
+    if (ow) { g.lineJoin = 'round'; g.lineWidth = ow; g.strokeStyle = o.outline; g.strokeText(str, tw / 2, cy); }
+    g.fillStyle = fill; g.fillText(str, tw / 2, cy);
+    D.commit();
+    TEXTS.set(key, D.name);
+    return D.name;
   }
 
   // --- frame state ----------------------------------------------------------------------------------
@@ -559,8 +620,8 @@ void main() {
   }
 
   function sprite(name, frame, x, y, z = 0, o = {}) {
-    if (!api.on || !active || !MAN) return false;
-    const S = MAN[name]; if (!S || !S.f || !S.f.length) return false;
+    if (!api.on || !active) return false;
+    const S = DYNS[name] || (MAN && MAN[name]); if (!S || !S.f || !S.f.length) return false;
     if (!spriteReady(S)) return false;
     const fr = S.f[frame] !== undefined ? S.f[frame] : S.f[((frame % S.f.length) + S.f.length) % S.f.length];
     if (!fr) return true;                              // an empty frame: nothing to draw
@@ -589,10 +650,10 @@ void main() {
     if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
     const t = o.tint ? rgb(o.tint) : null, useMask = !!t && (S.maps || '').includes('m');
     queue.push({
-      layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: page(S.group, b[0]), mask: useMask,
+      layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || page(S.group, b[0]), mask: useMask,
       d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
-          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, o.unlit ? 1 : 0, o.rot || 0, o.sx || 1, 0, 0],
+          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, 0],
       depthWrite: o.depthWrite !== false,
     });
     return true;
@@ -752,6 +813,7 @@ void main() {
     gl.useProgram(P.sprite.p); drawQueue(ground);
     gl.useProgram(P.sprite.p); drawQueue(sorted(2));
     drawLayer2d('mid', true);
+    drawLayer2d('glow', false);
     gl.useProgram(P.sprite.p); drawQueue(sorted(3));
     gl.useProgram(P.sprite.p); drawQueue(by(4));
     // bloom + composite
@@ -790,10 +852,10 @@ void main() {
   }
 
   Object.assign(api, {
-    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows,
-    has: (name) => !!(MAN && MAN[name] && MAN[name].f && MAN[name].f.length),
-    ready: (name) => !!(MAN && MAN[name] && spriteReady(MAN[name])),
-    info: (name) => (MAN && MAN[name]) || null,
+    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text,
+    has: (name) => !!(DYNS[name] || (MAN && MAN[name] && MAN[name].f && MAN[name].f.length)),
+    ready: (name) => !!(DYNS[name] ? spriteReady(DYNS[name]) : MAN && MAN[name] && spriteReady(MAN[name])),
+    info: (name) => DYNS[name] || (MAN && MAN[name]) || null,
     preload: (groups) => { if (META) for (const g of groups) (META.pages[g] || []).forEach((_, i) => page(g, i)); },
     setScale: (k) => { userScale = k || null; try { if (k) localStorage.setItem('mn-gfx-scale', String(k)); else localStorage.removeItem('mn-gfx-scale'); } catch (e) { /* no storage */ } },
     toScreen: (x, y, z = 0) => { const [sx, sy] = toDev(x, y, z); return [sx / K, sy / K]; },

@@ -34,7 +34,9 @@ const LIGHT_TUNING = {
   roomLit: [0.5, 0.49, 0.5],                       // room ambient with power (plus the lamps)
   roomDark: [0.09, 0.065, 0.075],                  // without power: almost nothing but the strips
   spine: [0.55, 0.55, 0.58],                       // the block between the decks (deck airlocks)
+  spineDark: [0.2, 0.15, 0.16],                    // ... without power (its top is the hull's roof: never pitch black)
   lamp: { z: 1.82, radius: 7.4, intensity: 0.95, color: [1.0, 0.86, 0.68] },
+  wallLamp: { radius: 2.4, intensity: 0.5 },          // the glow round each bulkhead lamp (WALL_LAMPS, js/interior.js)
   strip: { z: 0.2, inset: 0.12, radius: 6.5, intensity: 0.55, color: [1.0, 0.27, 0.1], doorColor: [1.0, 0.55, 0.12] },
   flicker: 1.3,                                    // seconds of lamp flicker when power comes back
   reactor: { z: 1.4, radius: 5.5, intensity: 1.0, color: [0.55, 1.0, 0.4], over: [0.85, 1.0, 0.8] },
@@ -179,7 +181,7 @@ function gameLighting(t) {
     for (const q of r.rects) areas.push({ x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6, color, sun: 0 });
   }
   COLS.forEach((C, col) => {                        // the spine between the decks, per column (with its deck airlock)
-    areas.push({ x: col ? C.x - 0.3 : -0.2, y: SPINE_Y0, w: C.w + (col ? 0.6 : 1.1) + (col === 2 ? 0.6 : 0), h: SPINE, color: mix3(Lt.roomDark, Lt.spine, lamp[col]), sun: 0.25 * lamp[col] });
+    areas.push({ x: col ? C.x - 0.3 : -0.2, y: SPINE_Y0, w: C.w + (col ? 0.6 : 1.1) + (col === 2 ? 0.6 : 0), h: SPINE, color: mix3(Lt.spineDark, Lt.spine, lamp[col]), sun: 0.25 * lamp[col] });
   });
   areas.push({ x: ENGINE.x - ENGINE.w / 2 - 0.3, y: ENGINE.y - 0.3, w: ENGINE.w + 0.6, h: 2.0, color: mix3(Lt.roomDark, Lt.roomLit, lamp[1]), sun: 0 });   // the engine housing in the reactor room
   // the docked ship: a dead derelict is dark inside but for its (dying) emergency strips; the
@@ -196,10 +198,14 @@ function gameLighting(t) {
     });
   }
 
-  // --- ceiling lamps (with power) -------------------------------------------------------------------
+  // --- ceiling lights (with power; no visible fixture in the cutaway) and the bulkhead lamps on the back walls
   for (const [x, y] of LIGHTS) {
     const k = lamp[colAtX(x)];
     if (k > 0.02) add({ x, y, z: Lt.lamp.z, color: Lt.lamp.color, radius: Lt.lamp.radius, intensity: Lt.lamp.intensity * k * dim, shadow: true });
+  }
+  if (typeof WALL_LAMPS !== 'undefined') for (const [x, wy] of WALL_LAMPS) {
+    const k = lamp[colAtX(x)], W = Lt.wallLamp;
+    if (k > 0.02) add({ x, y: wy + 0.2, z: WALL_LAMP_Z, color: Lt.lamp.color, radius: W.radius, intensity: W.intensity * k * dim, wrap: 0.3 });
   }
   // --- emergency strips (without power): low along the wall bases ----------------------------------
   for (const s of emergencyStrips()) {
@@ -258,9 +264,10 @@ function gameLighting(t) {
   }
 
   // --- screens and consoles, capacitors, shield buttons ------------------------------------------------
-  for (const s of STATIONS) {
-    const k = Math.max(lamp[colAtX(s.x)], 0.35), S = Lt.screen;   // the screens stay on (battery), dimmer
-    add({ x: s.x, y: s.y + 0.5, z: S.z, color: S.color, radius: S.radius, intensity: S.intensity * k * (0.92 + 0.08 * Math.sin(t * 3 + s.x)) });
+  for (const s of STATIONS) {                         // the consoles run on their column's power: off (systems/*_off) without it,
+    const col = colAtX(s.x), S = Lt.screen;           // just an amber standby LED, so they can still be found in the dark
+    if (!lightFx.dark[col]) add({ x: s.x, y: s.y + 0.5, z: S.z, color: S.color, radius: S.radius, intensity: S.intensity * lamp[col] * (0.92 + 0.08 * Math.sin(t * 3 + s.x)) });
+    else add({ x: s.x, y: s.y + 0.45, z: 0.85, color: [1.0, 0.6, 0.2], radius: 1.4, intensity: 0.35 * (0.6 + 0.4 * (Math.sin(t * 1.6 + s.x) > 0)) });
   }
   CAPACITORS.forEach((c, i) => {
     if (capBroken(i) || c.charge <= 0) return;
@@ -271,7 +278,7 @@ function gameLighting(t) {
 
   // --- muzzle flashes, bolts and blasts in flight ------------------------------------------------------
   for (const g of GUNS) if (g.flash > 0)
-    add({ x: g.x + Math.cos(g.aim) * 1.2, y: g.y + Math.sin(g.aim) * 1.2, z: 0.6, color: [1.0, 0.75, 0.45], radius: 5, intensity: 2.6 * g.flash });
+    add({ x: g.x + Math.cos(g.aim) * 1.2, y: g.y + Math.sin(g.aim) * 1.2, z: 0.6 + gunZ(g), color: [1.0, 0.75, 0.45], radius: 5, intensity: 2.6 * g.flash });
   if (typeof boarding !== 'undefined') for (const b of boarding.bolts) {
     if (b.wrench) continue;
     const col = b.owner === 'alien' ? [0.6, 1.0, 0.35] : b.heavy ? [0.6, 0.85, 1.0] : [1.0, 0.32, 0.22];

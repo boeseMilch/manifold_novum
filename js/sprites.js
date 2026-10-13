@@ -231,13 +231,14 @@ function drawCrewSprite(c, visor, t) {
   else if (a.moving > 0) { name = visor ? 'crew/walk_visor' : 'crew/walk'; f = Math.floor((c.walk / TAU) * 8); pose = 'walk'; }
   else { name = visor ? 'crew/idle_visor' : 'crew/idle'; pose = 'idle'; }
   if (!GFX.has(name)) { name = visor ? 'crew/idle_visor' : 'crew/idle'; pose = 'idle'; }
-  const k = GFX.frameIndex(name, c.face, f), bias = c.mode === 'gun' ? GUN_DEPTH_BIAS : 0, alpha = c.health === 'out' ? 0.85 : 1;
-  if (!GFX.sprite(name, k, c.x, c.y, 0, { tint, emissive: 0.4, pick: down ? [0.6, 0.7] : [0.32, 1.25], alpha, depthBias: bias })) return false;
+  const out = c.health === 'out', k = GFX.frameIndex(name, c.face, f), gz = c.mode === 'gun' ? gunZ(c.gun) : 0, bias = c.mode === 'gun' ? gunBias(c.gun) : 0, alpha = out ? 0.85 : 1;
+  const desat = out ? 0.75 : 0;                     // out cold: suit, visor and worn gear all greyed
+  if (!GFX.sprite(name, k, c.x, c.y, gz, { tint, emissive: out ? 0.15 : 0.4, pick: down ? [0.6, 0.7] : [0.32, 1.25], alpha, depthBias: bias, desat })) return false;
   const gear = CREW_GEAR.filter(id => (id === 'armor' ? c.armor > 0 : perk(c, id)) && GFX.has(`crew/gear_${id}_${pose}`)).map(id => {
     const g = `crew/gear_${id}_${pose}`, gk = GFX.frameIndex(g, c.face, f);
     return { g, gk, d: GFX.info(g).depth?.[gk] ?? 0 };
   }).sort((p, q) => q.d - p.d);
-  for (const { g, gk } of gear) GFX.sprite(g, gk, c.x, c.y, 0, { tint: down && c.health === 'out' ? '#7a7f8a' : undefined, emissive: 0.3, alpha, depthBias: bias + 0.02 });
+  for (const { g, gk } of gear) GFX.sprite(g, gk, c.x, c.y, gz, { tint: out ? '#7a7f8a' : undefined, emissive: out ? 0.1 : 0.3, alpha, depthBias: bias + 0.02, desat });
   return true;
 }
 
@@ -245,18 +246,24 @@ function drawCrewSprite(c, visor, t) {
 // Cannons: the turret (hull/gun, 48 aim directions, origin = the pivot; the mount is in the hull
 // body), recoiling with g.flash; the muzzle flash stays a 2D glow on top (drawMuzzleFlash).
 // ---------------------------------------------------------------------------------------------
-const GUN_DEPTH_BIAS = 3;                          // (the gunner gets it too: see drawCrewSprite)
+// The front cannon stands on the nose's roof (z = GUN_Z, the walls' height): at floor level just north of
+// the 1.6 high nose wall it would hide behind it (and behind the helm) in the tilted view; up there it
+// reads as a roof turret, its gunner up in the hatch with it. The side cannons stand beside the hull and
+// are drawn in front of what's next to them (depth bias). The gunner, the cover plate and the muzzle
+// flash follow their cannon (gunZ / gunBias).
+const GUN_Z = { front: 1.6 }, GUN_DEPTH_BIAS = 3;
+const gunZ = (g) => (GFX.on && g && GUN_Z[g.id]) || 0, gunBias = (g) => (g && GUN_Z[g.id] ? 0.3 : GUN_DEPTH_BIAS);
 function drawGunSprite(g) {
   const name = broken(g) ? 'hull/gun_broken' : 'hull/gun';
   if (!GFX.ready(name)) return false;
   const rec = g.flash * 6 / T;                      // the barrel kicks back like drawGun's
   // depthBias: the front cannon sits on a sponson just behind the bridge's 1.6 high nose wall, which would
   // hide it in the tilted view; drawn in front of the wall it reads as mounted on top of it
-  return GFX.sprite(name, GFX.frameIndex(name, g.aim), g.x - Math.cos(g.aim) * rec, g.y - Math.sin(g.aim) * rec, 0, { layer: 'wall', sortY: g.y, emissive: 0.3, depthBias: GUN_DEPTH_BIAS });
+  return GFX.sprite(name, GFX.frameIndex(name, g.aim), g.x - Math.cos(g.aim) * rec, g.y - Math.sin(g.aim) * rec, gunZ(g), { layer: 'wall', sortY: g.y, emissive: 0.3, depthBias: gunBias(g) });
 }
 function drawMuzzleFlash(g) {
   if (!(g.flash > 0)) return;
-  const x = (g.x + Math.cos(g.aim) * 1.15) * T, y = (g.y + Math.sin(g.aim) * 1.15 - GFX.lift(0.4)) * T, r = T * 0.5;
+  const x = (g.x + Math.cos(g.aim) * 1.15) * T, y = (g.y + Math.sin(g.aim) * 1.15 - GFX.lift(0.4 + gunZ(g))) * T, r = T * 0.5;
   const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
   gr.addColorStop(0, '#fff6d0'); gr.addColorStop(0.4, 'rgba(255,190,80,0.8)'); gr.addColorStop(1, 'rgba(255,120,40,0)');
   ctx.globalAlpha = g.flash; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;

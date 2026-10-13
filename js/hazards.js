@@ -436,7 +436,7 @@ function drawHazardProps(t) {
     const x = L(vx), y = L(vy), live = plasmaIn(id), on = hz.vent?.room === id;
     const side = id === 'portLock' ? 'port' : 'star';
     if (spr(`systems/vent_${side}_${on ? 'venting' : live ? `alarm_f${Math.sin(t * 8) > 0 ? 0 : 1}` : 'idle'}`, 0, vx, vy, 0, { emissive: 0.9, pick: [0.25, 0.8] })) {
-      if (live) labelAt(vx, vy + 0.27, 0, 'VENT', `800 ${T * 0.1}px system-ui, sans-serif`, 'rgba(255,170,150,0.9)', 'top');
+      if (live) worldText(vx, vy + 0.27, 0, 'VENT', `800 ${T * 0.1}px system-ui, sans-serif`, 'rgba(255,170,150,0.9)', { base: 'top' });
       continue;
     }
     rr(x - 9, y - 12, 18, 24, 3); ctx.fillStyle = '#3a3f4a'; ctx.fill(); stroke(1.5);

@@ -441,7 +441,7 @@ function drawDeckLock(L, t) {
 function drawCapacitor(cap, max, t) {
   const name = broken(cap) ? `systems/cap${max}_broken` : `systems/cap${max}_c${clamp(cap.charge, 0, max)}${cap.pulse > 0 && cap.charge > 0 ? '_pulse' : ''}`;
   if (spr(name, 0, cap.x, cap.y, 0, { emissive: 0.7, pick: [max * 0.3, 1.0] })) {
-    labelAt(cap.x, cap.y - 0.45, 1.05, `${cap.charge}/${max}`, `700 ${T * 0.22}px system-ui, sans-serif`, C.glow, 'bottom', 'rgba(10,12,18,0.7)');
+    worldText(cap.x, cap.y - 0.45, 1.05, `${cap.charge}/${max}`, `700 ${T * 0.22}px system-ui, sans-serif`, broken(cap) ? '#ff8a78' : C.glow, { base: 'bottom', outline: 'rgba(10,12,18,0.7)', sortY: cap.y + 0.01, depthBias: 0.05 });
     return;
   }
   const cw = T * 0.42, gap = 5, w = max * cw + (max - 1) * gap + 14, h = T * 0.9;
@@ -474,7 +474,7 @@ function drawStation(st, t) {
     const off = typeof CAPACITORS !== 'undefined' && (CAPACITORS[col].charge <= 0 || broken(CAPACITORS[col]));
     const [sx, sy] = rot(0, 1.05, st.face + Math.PI / 2);
     if (sprReady(`systems/${kind}`, 'systems/seat')) {
-      if (off) spr(`systems/${kind}_off`, 0, st.x, st.y, 0, { pick: [0.8, 1.2] });
+      if (off) spr(`systems/${kind}_off`, 0, st.x, st.y, 0, { emissive: 0.35, pick: [0.8, 1.2] });   // (no power: dark screens; js/lights.js gives it a standby LED)
       else spr(`systems/${kind}`, Math.floor(t * 2 + st.x) % 4, st.x, st.y, 0, { emissive: 0.8, pick: [0.8, 1.2] });
       spr('systems/seat', GFX.frameIndex('systems/seat', st.face), st.x + sx, st.y + sy, 0);
       ctx.save();
@@ -669,12 +669,7 @@ function drawHatch(h) {
 function drawShieldButton(b, state, k, t) {
   const x = b.x * T, y = b.y * T;
   const name = broken(b) ? 'systems/shield_broken' : state === 'up' ? 'systems/shield_up' : state === 'ready' ? 'systems/shield_ready' : `systems/shield_cd${clamp(Math.floor(k * 8), 0, 7)}`;
-  if (spr(name, 0, b.x, b.y, 0, { emissive: 0.8, pick: [0.42, 1.0] })) {
-    if (state === 'up') {
-      const g = ctx.createRadialGradient(x, y, 0, x, y, T * 0.9);
-      g.addColorStop(0, 'rgba(120,200,255,0.5)'); g.addColorStop(1, 'rgba(120,200,255,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, T * 0.9, 0, TAU); ctx.fill();
-    }
+  if (spr(name, 0, b.x, b.y, 0, { emissive: 0.8, pick: [0.42, 1.0] })) {   // (shield up: its glow is a real light, js/lights.js)
     ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('SHIELD', x, y + T * 0.42); ctx.textAlign = 'left';
     return;
@@ -722,7 +717,7 @@ function drawGunLadder(g) {
 function drawCover(g, k) {
   if (GFX.on) {                                     // hull/cover_k1..3 by progress, fading in below 1/3 (in front of the gun: same depth bias)
     const n = `hull/cover_k${k <= 1 / 3 ? 1 : k <= 2 / 3 ? 2 : 3}`;
-    if (GFX.ready(n) && GFX.sprite(n, GFX.frameIndex(n, g.aim), g.x, g.y, 0, { layer: 'wall', sortY: g.y + 0.02, alpha: Math.min(1, k * 3), depthBias: typeof GUN_DEPTH_BIAS !== 'undefined' ? GUN_DEPTH_BIAS : 0 })) return;
+    if (GFX.ready(n) && GFX.sprite(n, GFX.frameIndex(n, g.aim), g.x, g.y, gunZ(g), { layer: 'wall', sortY: g.y + 0.02, alpha: Math.min(1, k * 3), depthBias: gunBias(g) })) return;
   }
   const r = T * 1.35, a = g.aim, half = 0.95 * k;
   ctx.save(); ctx.translate(g.x * T, g.y * T);
