@@ -493,12 +493,23 @@ def main():
         print(f'[pack] {g}: {len(names)} sprites, {nframes} frames ({ndelta} as patches), {len(pages)} page(s) {pdims}, '
               f'{raw_bytes / 1e6:.1f} MB -> {out_bytes / 1e6:.2f} MB, delta max error {maxerr:.1f}/255, {time.time() - t_g:.1f}s', flush=True)
     pool.close()
-    data['sprites'] = dict(sorted(data['sprites'].items()))
-    data['meta']['pages'] = dict(sorted(data['meta']['pages'].items()))
+    # Several packs may run at once (one group each): under a lock, re-read sprites.json and replace only
+    # the groups packed here, so a parallel run's groups aren't lost.
+    import fcntl
     os.makedirs(OUT, exist_ok=True)
-    tmp = out_json + '.tmp'
-    with open(tmp, 'w') as f: json.dump(data, f, separators=(',', ':'))
-    os.replace(tmp, out_json)
+    with open(out_json + '.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        cur = json.load(open(out_json)) if os.path.exists(out_json) else {}
+        cur.setdefault('meta', {}); cur.setdefault('sprites', {}); cur['meta'].setdefault('pages', {})
+        cur['meta'].update({k: v for k, v in data['meta'].items() if k != 'pages'})
+        cur['sprites'] = {k: v for k, v in cur['sprites'].items() if v.get('group') not in groups}
+        cur['sprites'].update({k: v for k, v in data['sprites'].items() if v.get('group') in groups})
+        for g in groups: cur['meta']['pages'][g] = data['meta']['pages'][g]
+        cur['sprites'] = dict(sorted(cur['sprites'].items()))
+        cur['meta']['pages'] = dict(sorted(cur['meta']['pages'].items()))
+        tmp = out_json + '.tmp'
+        with open(tmp, 'w') as f: json.dump(cur, f, separators=(',', ':'))
+        os.replace(tmp, out_json)
     with open(os.path.join(RAW, 'pack_report.json'), 'w') as f: json.dump({'groups': report, 'times': T, 'warnings': warnings}, f, indent=1)
     for w in warnings: print('[pack] warning:', w)
     print('[pack] time per step (summed over workers):', ', '.join(f'{k} {v:.1f}s' for k, v in T.items()))

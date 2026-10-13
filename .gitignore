@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 # raw Blender renders (tools/blender/mn.py); packed into assets/sprites/ by tools/sprites/pack.py
 build/
+assets/sprites/sprites.json.lock
