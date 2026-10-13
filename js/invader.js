@@ -203,7 +203,7 @@ function updateInvader(a, dt) {
       return;
     }
     // otherwise keep ~4–6 units away and strafe sideways around the player
-    const want = d > 6 ? 1 : d < 4 ? -0.6 : 0;
+    const want = lockAround(a) ? 1 : d > 6 ? 1 : d < 4 ? -0.6 : 0;   // (caught in a deck airlock: get out of it, towards them)
     if (Math.random() < dt * 0.4) a.strafe *= -1;
     const vx = ux * want * ALIEN_SPEED + -uy * a.strafe * ALIEN_SPEED * 0.8, vy = uy * want * ALIEN_SPEED + ux * a.strafe * ALIEN_SPEED * 0.8;
     if (alienStep(a, vx, vy, dt) < 0.01 * dt) a.strafe *= -1;
@@ -212,7 +212,7 @@ function updateInvader(a, dt) {
   }
 
   // it's out for blood: engage whoever it can see in reach
-  if (seesPlayer && Math.hypot(player.x - a.x, player.y - a.y) < HUNT_SIGHT) { a.state = 'fight'; a.seen = 0; a.path = []; return; }
+  if (seesPlayer && Math.hypot(player.x - a.x, player.y - a.y) < HUNT_SIGHT && !lockAround(a)) { a.state = 'fight'; a.seen = 0; a.path = []; return; }   // (not from inside a deck airlock: out first)
   if (a.linger > 0) { a.linger -= dt; return; }
   // hunt: head for the room of the nearest crew member aboard (re-planned as they move); with nobody
   // aboard, or while every way to them is locked, it prowls from room to room
