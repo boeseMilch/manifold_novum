@@ -302,11 +302,7 @@ function updatePlayer(dt) {
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
-    else if (s.up > 0) {                              // hold the button to keep it up 2 s longer (1 more energy)
-      const onIt = Math.hypot(mouse.wx - at.x, mouse.wy - at.y) <= at.r;
-      if (mouse.down && onIt && !s.extended && s.up < 0.5 && cap.charge > 0 && useEnergy(SIDE_CAP[button.side], 'shield_' + button.side)) { s.up += 2; s.cd += 2; s.extended = true; sfx.shieldUp(); }
-      act({ text: s.extended ? 'Shield is up! (extended)' : 'Shield is up! Keep holding click on the button for +2 s (1 more energy)', at, ok: true });
-    }
+    else if (s.up > 0) act({ text: `Shield is up! (${Math.ceil(s.up)} s)`, at, ok: true });
     else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
     else if (cap.charge <= 0 || broken(cap)) act({ text: 'No energy for the shield (capacitor empty)', at });
     else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
@@ -378,8 +374,15 @@ function updateInteraction(dt) {
   if (!mouse.down) {
     const e = hover?.ok ? hover : nearbyTarget(eDown || eTap);
     if (e && !hover?.ok && !prompt?.run && !prompt?.screen)            // show what E would do
-      prompt = { text: e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r } };
-    if (eDown || eTap || (player.eHeld && !keys.has('KeyE'))) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
+      prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r } };
+    const eLetGo = player.eHeld && !keys.has('KeyE');
+    if (eDown || eTap || eLetGo) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
+    if ((eDown || eTap || eLetGo) && e?.eHold) {                // E on a tap-or-hold thing (the power lever): nothing on the press,
+      const eh = e.eHold;                          // a tap on letting go, the hold action once held long enough
+      if ((eLetGo && player.hold?.id === 'eHold') || (eTap && !eDown)) eh.tap();
+      target = { ...e, run: null, hold: { id: 'eHold', time: eh.time, exact: true, done: () => { eh.hold(); player.eUsed = true; } } };
+      click = false;
+    }
   }
   player.eHeld = eDown;
   if (target?.run && click) { target.run(); mouse.click = false; player.eUsed = true; }
@@ -722,7 +725,7 @@ function render(t) {
   glow(() => {
     drawEnergyBolts();
     drawClickTarget(me.hover);
-    if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true });   // what E would do
+    if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true, hold: me.hold });   // what E would do
   });
   // the crew (as sprites when they're loaded, else in 2D)
   const visorOf = (c) => isOutside(c) || (c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y));

@@ -2,8 +2,8 @@
 // hit flashes and the combat HUD. Units: layout units (world == ship frame).
 
 const SHELL_SPEED = 45, SHELL_LIFE = 1.7, CANNON_COOLDOWN = 0.45;
-let SHIELD_UP_TIME = 2;                              // (ship upgrades: see progress.js)
-const SHIELD_COOLDOWN = 10;                          // cooldown starts once the shield drops
+let SHIELD_UP_TIME = 15;                             // (ship upgrades: see progress.js)
+const SHIELD_COOLDOWN = 5;                           // cooldown starts once the shield drops
 const SWARM_SIZE = 2, SWARM_INTERVAL = 6;
 const ASTEROID_WEAR = 4;                         // body hits that split a big asteroid even without hitting the crack
 
@@ -206,7 +206,7 @@ function pressShield(side) {
   if (grabbed(side)) { sfx.empty(); combatBanner('A tentacle is wrapped around that side — the shield can\'t go up'); return 'grabbed'; }
   if (s.up > 0 || s.cd > 0) return false;
   if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
-  s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; s.extended = false; s.age = 0; sfx.shieldUp();
+  s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; s.age = 0; sfx.shieldUp();
   if (player && player.mode === 'inside') zap(player, 'shield_' + side);
   return true;
 }

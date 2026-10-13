@@ -26,7 +26,7 @@
 //   room (and its normal maps), plus a pulsing wash; red wins over yellow, fires still glow locally.
 // - Dynamic lights from the game state: fires, the reactor, screens, muzzle flashes, bolts and
 //   blasts, explosions (combat.fx clustered), sparks of broken systems, power surges, energy on the
-//   power lines, shields, enemy weak spots and engines, the leviathan, the jump drive spooling up.
+//   power lines, the engine's flickering blue plume, shields, enemy weak spots and engines, the leviathan, the jump drive spooling up.
 
 const LIGHT_TUNING = {
   outside: [0.36, 0.4, 0.5],                       // hull and space: low, cold
@@ -41,6 +41,9 @@ const LIGHT_TUNING = {
   flicker: 1.3,                                    // seconds of lamp flicker when power comes back
   reactor: { z: 1.4, radius: 5.5, intensity: 1.0, color: [0.55, 1.0, 0.4], over: [0.85, 1.0, 0.8] },
   screen: { z: 1.0, radius: 2.6, intensity: 0.45, color: [0.45, 0.8, 1.0] },
+  // the exhaust plume: a strip along it, behind the stern. No shadows: from right behind the bell, the
+  // screen-space shadows took the bell and the hull's own edge for occluders and blacked it all out
+  engine: { out: 1.8, len: 1.6, z: 0.6, radius: 9, intensity: 1.4, color: [0.35, 0.62, 1.0], spool: 1.3, spoolColor: [0.55, 0.8, 1.0], shadow: false },
   fire: { z: 0.55, radius: 4.2, intensity: 2.0, color: [1.0, 0.5, 0.16], plasma: [0.72, 0.38, 1.0] },
 };
 
@@ -373,6 +376,14 @@ function gameLighting(t) {
     const k = clamp(mission.jump.t / (JUMP_WINDOW * (mission.rules?.handle ? 2 : 1)), 0, 1), w = 0.8 + 0.2 * Math.sin(t * (6 + 16 * k));
     add({ x: ENGINE.x, y: ENGINE.y - 0.6, z: 1.0, color: [0.45, 0.78, 1.0], radius: 4 + 4 * k, intensity: (0.7 + 1.6 * k) * w });
     if (typeof COIL_SPOTS !== 'undefined') for (const c of COIL_SPOTS) add({ x: c.x, y: c.y, z: 0.8, color: [0.45, 0.78, 1.0], radius: 3 + 2 * k, intensity: (0.5 + 1.2 * k) * w });
+  }
+  // the engine's blue plume: a flickering light behind the stern (the plume frame's brightness, js/art.js
+  // engineFlame), out in the plume rather than in the bell: it lights the bell, the stern hull and
+  // whoever is out there; brighter and longer while the jump drive spools
+  if (typeof engineFlame === 'function') {
+    const F = Lt.engine, fl = engineFlame(t), sp = fl.spool ? F.spool : 1;
+    add({ x: ENGINE.x, y: SHIP_H + F.out, z: F.z, x2: ENGINE.x, y2: SHIP_H + F.out + F.len * sp, z2: F.z - 0.2, color: fl.spool ? F.spoolColor : F.color,
+          radius: F.radius * (0.9 + 0.1 * sp), intensity: F.intensity * fl.k * sp, wrap: 0.1, shadow: F.shadow });
   }
   // navigation lights on the hull: red left, green right, a white strobe on the nose
   add({ x: -1.6, y: 7.0, z: 0.6, color: [1.0, 0.15, 0.1], radius: 2.2, intensity: 0.5 + 0.4 * (Math.sin(t * 2) > 0) });

@@ -502,7 +502,7 @@ function drawFloorDecor(t) {
   // --- Bridge
   stain(U(21.6), U(-0.9), U(0.35), 'rgba(80,45,20,0.45)', 50);          // spilled coffee
   if (!flat('props/papers_bridge', 17.0, 6.0)) papers(U(17.0), U(6.0), 53);
-  if (!solid('props/plant', 14.95, 10.75, { f: Math.floor(t * 3) % 6 })) plant(U(14.95), U(10.75), t);
+  if (!solid('props/plant', 14.95, 10.75, { f: 0 })) plant(U(14.95), U(10.75), 0);   // (still: a swaying plant looked fake)
   if (!flat('props/crack_bridge', 25.0, 8.0)) { crack(U(25.0), U(8.0), U(2.0), -0.5, 54); tapeStrip(U(25.0), U(8.0), U(0.6), 1.0, 55); tapeStrip(U(25.6), U(7.7), U(0.6), 1.2, 56); }
   stencil(U(22.2), U(10.4), 'NO RUNNING ON THE BRIDGE', 0, 0.26, 'rgba(232,236,244,0.25)');
   // --- Right cannon room
@@ -559,6 +559,9 @@ function drawPropDecor(t) {
   if (!S('props/crate_tape', 32.0, 22.6)) crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
   if (!S(`systems/plates_b_${plates}`, 33.1, 22.8, 0, { pick: [0.45, 0.8] })) crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
   if (!S('props/crate_blank_star', 32.4, 21.6)) crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');
+  // (the gym: a dumbbell rack against the back wall, top right corner, between the wall beacon and the
+  // cannon's power line; decoration only, not solid; models/props/gym.py. The classic view skips it.)
+  S('props/weight_rack', 41.5, 15.36);
 }
 
 // Small junk scattered on every floor: nuts, soda cans, wrappers, tape scraps.

@@ -276,7 +276,7 @@ function clickTarget(mx, my) {
   if (Math.hypot(mx - LEVER.x, my - LEVER.y) < LEVER_HUB) {          // the hub: wedge / pull the wrench
     const t = { x: LEVER.x, y: LEVER.y, r: LEVER_HUB + 0.05 };
     if (!near(t.x, t.y)) return { ...t, text: 'Power lever — get closer', ok: false };
-    return { ...t, ok: true, text: power.lever.jammed ? 'Click: pull the wrench out (lever steps on its own again)' : 'Click: manual override — wedge a wrench in so the lever can\'t move on',
+    return { ...t, ok: true, eHold: leverEHold(), text: power.lever.jammed ? 'Click: pull the wrench out (lever steps on its own again)' : 'Click: manual override — wedge a wrench in so the lever can\'t move on',
              run: () => { power.lever.jammed = !power.lever.jammed; sfx.clank(); } };
   }
   if (Math.hypot(mx - LEVER.x, my - LEVER.y) < 0.6) {
@@ -284,7 +284,7 @@ function clickTarget(mx, my) {
     if (!near(t.x, t.y)) return { ...t, text: 'Power lever — get closer', ok: false };
     if (power.lever.jammed) return { ...t, text: 'The wrench blocks the lever (click the hub to pull it out)', ok: false };
     const nextPos = (power.lever.pos + 1) % 3;
-    return { ...t, ok: true, text: `Click: turn lever to ${LEVER_NAMES[nextPos]} (now ${LEVER_NAMES[power.lever.pos]})`,
+    return { ...t, ok: true, eHold: leverEHold(), text: `Click: turn lever to ${LEVER_NAMES[nextPos]} (now ${LEVER_NAMES[power.lever.pos]})`,
              run: () => { power.lever.pos = nextPos; sfx.clank(); } };
   }
   const R = REACTOR;
@@ -360,14 +360,28 @@ function updateTreat(dt, target, holding) {
   }
 }
 
+// E on the power lever (hub or handle): a tap (let go before LEVER_E_HOLD s) steps the lever like a
+// click on the handle; holding E that long wedges the wrench in (or pulls it out) instead.
+// target.eHold = { time, tap, hold, text }: game.js updateInteraction runs it (only for E; clicks stay as they are).
+const LEVER_E_HOLD = 0.5;
+function leverEHold() {
+  const lv = power.lever, next = LEVER_NAMES[(lv.pos + 1) % 3];
+  return {
+    time: LEVER_E_HOLD,
+    text: lv.jammed ? 'E: nothing (the wrench blocks the lever) · hold E: pull the wrench out' : `E: turn lever to ${next} · hold E: wedge the wrench in`,
+    tap: () => { if (power.lever.jammed) return; power.lever.pos = (power.lever.pos + 1) % 3; sfx.clank(); },
+    hold: () => { power.lever.jammed = !power.lever.jammed; sfx.clank(); },
+  };
+}
+
 // Generic "hold click" jobs (tarps, welds, splices, …): target.hold = { id, time, done }.
 function updateHold(dt, target, holding) {
   if (!holding || !target?.hold) { player.hold = null; return; }
   const h = target.hold;
   if (player.hold?.id !== h.id) player.hold = { id: h.id, t: 0, time: h.time };
-  player.hold.t += dt * (player.health === 'hurt' ? 0.8 : 1) * repairSpeed(player);
-  if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
-  if (player.hold.t >= h.time) { player.hold = null; h.done(); }
+  player.hold.t += h.exact ? dt : dt * (player.health === 'hurt' ? 0.8 : 1) * repairSpeed(player);   // (exact: a key-hold timing, not work)
+  if (!h.exact && Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
+  if (player.hold.t >= h.time - 1e-6) { player.hold = null; h.done(); }
 }
 // What a click does on a spacewalk (hazards, EVA jobs).
 function evaClickTarget(mx, my) {
@@ -482,11 +496,11 @@ function drawLever(t) {
     // housing hid them), the mode (AUTO / MANUAL) over MID; depth-tested, so the crew still cover them
     const o = { layer: 'main', depthBias: 0.4, outline: 'rgba(10,12,18,0.7)' }, f1 = `800 ${T * 0.13}px system-ui, sans-serif`;
     for (let i = 0; i < 3; i++) {
-      const a = leverAngle(i), lx = LEVER.x + Math.cos(a) * 0.78, ly = LEVER.y + Math.sin(a) * 0.62;
-      worldText(lx, ly, 0.35, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
+      const a = leverAngle(i), lx = LEVER.x + Math.cos(a) * 0.9, ly = LEVER.y + Math.sin(a) * 0.74;   // (out and up, clear of the wedged wrench)
+      worldText(lx, ly, 0.68, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
     }
     const my = LEVER.y + Math.sin(leverAngle(1)) * 0.62;
-    worldText(LEVER.x, my, 0.62, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
+    worldText(LEVER.x, my, 1.0, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
     return;
   }
   shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);
@@ -498,15 +512,19 @@ function drawLever(t) {
     ctx.beginPath(); ctx.arc(x + Math.cos(a) * T * 0.38, y + Math.sin(a) * T * 0.38, 4.5, 0, TAU);
     ctx.fillStyle = on ? '#5fd6a0' : '#4a515e'; ctx.fill(); stroke(1);
     ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(LEVER_NAMES[i], x + Math.cos(a) * T * 0.72, y + Math.sin(a) * T * 0.72);
+    ctx.fillText(LEVER_NAMES[i], x + Math.cos(a) * T * 0.86, y + Math.sin(a) * T * 0.86);   // (out past the upright wrench)
   }
   ctx.save(); ctx.translate(x, y); ctx.rotate(lv.angle + Math.PI / 2);   // handle
   rr(-4, -T * 0.42, 8, T * 0.42, 3); ctx.fillStyle = '#c9ced8'; ctx.fill(); stroke(1.5);
   ctx.beginPath(); ctx.arc(0, -T * 0.42, 6, 0, TAU); ctx.fillStyle = '#e2574c'; ctx.fill(); stroke(1.5);
   ctx.restore();
-  if (lv.jammed) {                                 // wrench wedged right where the handle would go next
-    const next = (lv.pos + 1) % 3, a = leverAngle(lv.pos) + Math.sign(leverAngle(next) - leverAngle(lv.pos)) * 0.42;
-    wrench(x + Math.cos(a) * T * 0.3, y + Math.sin(a) * T * 0.3, a);
+  if (lv.jammed) {                                 // wrench stood upright right next to the handle, on the side it would step to
+    const next = (lv.pos + 1) % 3, a = leverAngle(lv.pos) + Math.sign(leverAngle(next) - leverAngle(lv.pos)) * 0.42;   // (as the sprite: ±0.42 rad, r 0.38)
+    const wx = x + Math.cos(a) * T * 0.38, wy = y + Math.sin(a) * T * 0.38, h = T * 0.24;
+    shadowEllipse(wx + 2, wy + 2, 7, 3.5, 0.35);   // its foot in the track
+    rr(wx - 3, wy - h, 6, h, 2.5); ctx.fillStyle = '#a9b2c0'; ctx.fill(); stroke(1.5);   // shaft, standing up
+    ctx.beginPath(); ctx.arc(wx, wy - h, 7, -Math.PI / 2 + 0.6, -Math.PI / 2 - 0.6 + TAU); ctx.lineTo(wx, wy - h); ctx.closePath();   // open jaw on top
+    ctx.fillStyle = '#c3cad6'; ctx.fill(); stroke(1.5);
   }
   ctx.beginPath(); ctx.arc(x, y, T * LEVER_HUB * 0.55, 0, TAU); ctx.fillStyle = lv.jammed ? '#e8c34f' : '#9aa3b5'; ctx.fill(); stroke(1.5);   // hub
   ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.11}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top';

@@ -24,7 +24,7 @@ const SHIP_UPGRADES = [
   { id: 'cannons', name: 'Efficient cannons', rep: 3, desc: '4 shots per energy instead of 3.' },
   { id: 'airlocks', name: 'Faster airlock pumps', rep: 3, desc: 'Deck airlocks cycle in 0.7 s instead of 1.3 s.' },
   { id: 'radar', name: 'Long-range radar', rep: 4, desc: 'The radar sees 60 s ahead instead of 45 s.' },
-  { id: 'shields', name: 'Shield capacitors', rep: 4, desc: 'Shields stay up 3 s instead of 2 s.' },
+  { id: 'shields', name: 'Shield capacitors', rep: 4, desc: 'Shields stay up 18 s instead of 15 s.' },
   { id: 'caps', name: 'Bigger capacitors', rep: 5, desc: 'Capacitors hold 4 energy instead of 3.' },
   { id: 'hull', name: 'Reinforced hull', rep: 5, desc: 'A side has to take two big hits before the next one breaches it.' },
   { id: 'sprinklers', name: 'Fire sprinklers', rep: 5, desc: 'Fires spread every 22 s instead of 15 s.' },
@@ -132,7 +132,7 @@ const npcName = () => mission.objective?.npc || 'the engineer';
 function applyShipUpgrades(ship = {}) {
   const has = (id) => !!ship[id];
   SHOTS_PER_ENERGY = has('cannons') ? 4 : 3;
-  SHIELD_UP_TIME = has('shields') ? 3 : 2;
+  SHIELD_UP_TIME = has('shields') ? 18 : 15;
   CAP_MAX = has('caps') ? 4 : 3;
   FIRE_TIME = has('sprinklers') ? 22 : 15;
   RADAR_RANGE = has('radar') ? 60 : 45;

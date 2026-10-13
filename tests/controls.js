@@ -3,7 +3,7 @@
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
-  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME'];
+  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -114,6 +114,46 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G.simTick(DT); p.add('KeyE'); k.add('KeyE');
   tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
   check(!s.broken, 'holding E on a broken part repairs it');
+}
+// --- E on the power lever: tap (let go before 0.5 s) steps it, hold 0.5 s wedges / pulls the wrench
+{
+  const leverE = (G, c, send) => {                 // send(keys, pressed): one tick of E input for crew c
+    const lv = G.power.lever; lv.pos = 1; lv.jammed = false; G.power.reactor.fuel = 0;
+    c.x = G.LEVER.x; c.y = G.LEVER.y + 0.75; c.input.mouse.wx = c.x - 8; c.input.mouse.wy = c.y; tickN(G, 12);
+    const tag = send.tag;
+    check(/^E: turn lever to RIGHT · hold E: wedge the wrench in/.test(c.prompt?.text || ''), `${tag}: the prompt says what tapping and holding E do ("${c.prompt?.text}")`);
+    send(['KeyE'], ['KeyE']); G.simTick(DT); for (let i = 0; i < 10; i++) { send(['KeyE'], []); G.simTick(DT); }
+    check(lv.pos === 1 && !lv.jammed, `${tag}: pressing E does nothing yet`);
+    send([], []); G.simTick(DT);
+    check(lv.pos === 2 && !lv.jammed, `${tag}: a short tap steps the lever when E is let go`);
+    tickN(G, 5);
+    send(['KeyE'], ['KeyE']); G.simTick(DT); let t = DT;
+    while (!lv.jammed && t < 2) { send(['KeyE'], []); G.simTick(DT); t += DT; }
+    check(lv.jammed && Math.abs(t - 0.5) < 0.05 && lv.pos === 2, `${tag}: holding E 0.5 s wedges the wrench in, without stepping (${t.toFixed(2)} s)`);
+    for (let i = 0; i < 30; i++) { send(['KeyE'], []); G.simTick(DT); }
+    send([], []); G.simTick(DT);
+    check(lv.jammed && lv.pos === 2, `${tag}: keeping E down and letting go afterwards does nothing more`);
+    tickN(G, 5);
+    check(/^E: nothing .*hold E: pull the wrench out/.test(c.prompt?.text || ''), `${tag}: jammed, the prompt offers pulling the wrench ("${c.prompt?.text}")`);
+    send(['KeyE'], ['KeyE']); G.simTick(DT); for (let i = 0; i < 5; i++) { send(['KeyE'], []); G.simTick(DT); }
+    send([], []); G.simTick(DT);
+    check(lv.jammed && lv.pos === 2, `${tag}: a tap while the wrench is in doesn't move the lever`);
+    tickN(G, 5);
+    send(['KeyE'], ['KeyE']); G.simTick(DT); for (let i = 0; i < 40; i++) { send(['KeyE'], []); G.simTick(DT); }
+    send([], []); G.simTick(DT);
+    check(!lv.jammed && lv.pos === 2, `${tag}: holding E again pulls the wrench out`);
+  };
+  { const G = loadGame(NAMES); G.mission.active = false; const me = G.me;
+    const send = (keys, pressed) => { const k = me.input.keys, p = me.input.pressed; k.clear(); keys.forEach(x => k.add(x)); p.clear(); pressed.forEach(x => p.add(x)); };
+    send.tag = 'solo'; leverE(G, me, send); }
+  { const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false; G.netServer.addCrew(1, 'A');
+    const A = G.crew[0], send = (keys, pressed) => G.netServer.input(1, { keys, pressed, mouse: { wx: A.x - 8, wy: A.y } });
+    send.tag = 'multiplayer'; leverE(G, A, send); }
+  { const G = loadGame(NAMES); G.mission.active = false; const me = G.me, lv = G.power.lever; lv.pos = 1; lv.jammed = false;
+    me.x = G.LEVER.x; me.y = G.LEVER.y + 0.75; G.simTick(DT);
+    clickAt(G, G.LEVER.x, G.LEVER.y); check(lv.jammed, 'a click on the hub still wedges the wrench straight away');
+    clickAt(G, G.LEVER.x, G.LEVER.y); lv.jammed || clickAt(G, G.LEVER.x + 0.35, G.LEVER.y - 0.3);
+    check(!lv.jammed && lv.pos === 2, 'click the hub again and the handle: wrench out, lever steps'); }
 }
 process.exitCode = failed ? 1 : 0;
 // --- the treadmill

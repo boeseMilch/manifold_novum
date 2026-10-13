@@ -81,7 +81,7 @@ this should feel close to playing solo.
 | WASD | move |
 | Arrow keys | aim (8 directions) while held; otherwise you face the way you walk |
 | Left click | interact with whatever you point at: airlocks, ladders, hatches, shield buttons, consoles, items, manual override. Hold to repair (with the repair kit) or to treat someone |
-| E | the same as a click on what's highlighted: under the mouse, or else the nearest thing in reach (hold E for repairs and treating) |
+| E | the same as a click on what's highlighted: under the mouse, or else the nearest thing in reach (hold E for repairs and treating). On the power lever: tap E steps it, hold E (0.5 s) wedges the wrench in or pulls it out |
 | Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), thrown wrench, hold to spray the extinguisher |
 | In a cannon | mouse to aim, left click / Space to fire, hold right click / Shift to raise cover, R or the button to reload (1 energy), the CLIMB DOWN button to leave |
 | Tab | hold for a ship overview |

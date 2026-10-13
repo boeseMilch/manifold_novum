@@ -60,15 +60,15 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
   let t = 0; while (g.reload > 0 && t < 5) { cmd(G, ['mini', 'crank', 1.2]); tickN(G, 6); t += 0.1; }
   check(g.shots === 3 && t < 1.5, `cranking the breech reloads much faster than 3 s (${t.toFixed(1)} s)`);
 }
-// --- held shields
+// --- shields: up 15 s for 1 energy (holding the button doesn't extend it), then 5 s recharge
 {
   const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
   const b = G.SHIELD_BUTTONS.find(b => b.side === 'port'), me = G.me; G.CAPACITORS[0].charge = 3;
   me.x = b.x; me.y = b.y + 0.8; tickN(G, 2);
   const m = me.input.mouse; m.wx = b.x; m.wy = b.y; m.click = true; m.down = true;
-  let up = 0; tickN(G, 60 * 6, () => { if (G.combat.shields.port.up > 0) up += DT; });
+  let up = 0, down = 0; tickN(G, 60 * 22, () => { const s = G.combat.shields.port; if (s.up > 0) up += DT; else if (s.cd > 0) down += DT; });
   m.down = false;
-  check(up > 3.8 && G.CAPACITORS[0].charge === 1, `holding the button keeps the shield up 2 s longer for 1 more energy (${up.toFixed(1)} s)`);
+  check(Math.abs(up - 15) < 0.2 && Math.abs(down - 5) < 0.2 && G.CAPACITORS[0].charge === 2, `shield up 15 s, recharging 5 s, 1 energy (${up.toFixed(1)} s / ${down.toFixed(1)} s)`);
 }
 // --- jump handle (harder missions)
 {

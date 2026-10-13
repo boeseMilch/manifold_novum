@@ -129,7 +129,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 {
   const G = loadGame(NAMES);
   G.startMission('c1', { ship: { cannons: true, caps: true, shields: true, inserter: true, spareCell: true } });
-  check(G.SHOTS_PER_ENERGY === 4 && G.CAP_MAX === 4 && G.SHIELD_UP_TIME === 3, 'upgrades: 4 shots per energy, capacitors hold 4, shields last 3 s');
+  check(G.SHOTS_PER_ENERGY === 4 && G.CAP_MAX === 4 && G.SHIELD_UP_TIME === 18, 'upgrades: 4 shots per energy, capacitors hold 4, shields last 18 s');
   check(G.power.reserve === 4, 'a spare fuel cell');
   G.mission.active = false; G.power.reactor.fuel = 0; tickN(G, 60 * 2.2);
   check(G.power.reactor.fuel === 5 && G.power.reserve === 3, 'the inserter loads the next fuel cell by itself');

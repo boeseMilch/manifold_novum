@@ -120,7 +120,8 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   room wall, under the bridge; middle capacitor). The front shield is a hex arc around the
   nose that eats asteroids.
   Each button: E raises that side's shield
-  for 2 s, then it recharges for 10 s (later it will cost 1 energy). The shield is a
+  for 15 s (18 s with the shield capacitors upgrade), then it recharges for 5 s. It costs
+  1 energy. (Was 2 s up / 10 s down with a hold-to-extend; too weak, so no extension now.) The shield is a
   curved band of hexagon cells a little outside the hull. Any shot that crosses it while
   it's up (heavy shots included) is consumed right there: the cells around the impact
   flare up and ripple, and the shot shrinks away into the shield.
@@ -158,6 +159,17 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   - Click the dial to turn it by hand.
   - Click the hub for manual override: a wrench gets wedged into the dial right in front
     of the handle, so it physically can't move on. Click the hub again to pull it out.
+  - With E (on hub or handle) nothing happens on the press: let go within 0.5 s and the lever
+    steps (or nothing, while the wrench is in); hold E 0.5 s and the wrench goes in (or comes
+    out) right then, with the yellow progress ring. The prompt says both ("E: turn lever to
+    MID · hold E: wedge the wrench in"). `target.eHold` in clickTarget, run by updateInteraction.
+  - Classic 2D look: the wedged wrench stands upright right next to the handle, on the side
+    it would step to (matching the sprite).
+  - Sprite (`systems/lever_wrench_f<pos>`, tools/blender/models/systems/lever.py): a spanner with a
+    yellow grip stands upright in the track, ring end rammed into the groove, open jaw up, 0.42 rad past
+    the handle on the side it moves next (pos 0 → towards MID, pos 1 → towards RIGHT, pos 2 → back
+    towards MID, since RIGHT → LEFT swings back through it), leaning 10° over the handle; the yellow
+    hub cap stays. Was a spanner lying flat in the track, which didn't read as blocking anything.
   - Energy sent to a full or broken capacitor is wasted (you see a puff and a banner).
     Each energy visibly flies from the reactor to its capacitor.
 - **Lights:** a zone column's rooms go dark when its capacitor is empty or broken.
@@ -1005,6 +1017,16 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   LICK THE REACTOR fits between the engine cables, WC clears the stall door, the lever's LEFT/MID/RIGHT
   and AUTO stand as billboards over the lever, the donut box is on the map table, and the two wall signs
   draw nothing in the sprite view until their sprites load (the 2D fallback went over the crew).
+- Engine plume (playtest: "the flame is boring, flat and looks drawn underneath"): a blue exhaust plume
+  rendered in Blender (`hull/engine_flame_cruise` / `_spool`, 8 frames each, tools/blender/models/hull/engine.py
+  render_flame): an emissive volume coming out of the bell's mouth, white-hot core → cyan/blue → violet edge,
+  shock diamonds, noise turbulence; the jump drive's spool plume is longer, brighter and whiter. Rendered on
+  black with the bell and hull as black occluders, then alpha = brightness (glowify), so it's drawn unlit
+  right after the bell ('decal' layer) and only adds light; bloom picks up its core. The frame is picked at
+  random ~14×/s (engineFlame, js/art.js), and a blue strip light along the plume (LIGHT_TUNING.engine,
+  js/lights.js) flickers with the frame's brightness: it lights the bell, the stern hull and spacewalkers
+  (no shadows: right behind the bell the screen-space shadows blacked it out). The cruise bell's inner rings
+  glow blue-white now (its rim stays hot orange). The 2D gradient plume is blue too (classic / fallback).
 
 ### 9d. The crew's animation (playtest: choppy walk, mid-stride stops, shooting with your back)
 - The astronaut (`tools/blender/models/crew/crew.py`) has 16 facings (22.5°) and gait cycles relative to
@@ -1032,6 +1054,34 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   Space fires the way you face, so right after moving the mouse that's towards the mouse.
 - `tools/sprites/pack.py`: the delta crop also tries the same frame of earlier variants with as many frames
   (`crew/run_visor` frame k on `crew/run` frame k: only the helmet differs).
+
+### 9e. Room names (unofficial) and a weight rack in the gym
+- What the rooms are, for theming decor (not UI labels for now; the plaques still say the game names):
+  kitchen = Left Cannon (upper deck, left of the bridge; counter, fridge, table), bedroom = Right Cannon
+  (right of the bridge; bunks, lockers), gym = Right Airlock (lower deck right, below the bedroom;
+  treadmill), reactor room = Reactor (lower deck middle), bathroom = Left Airlock (left of the reactor room;
+  toilet stall).
+- The rooms already read as what they are, so only one thing was added (no going over the top): a dumbbell
+  rack in the gym's top right corner, against the back wall between the wall beacon (x 40.6) and the right
+  cannon's power line (x 42.6): `props/weight_rack` (`tools/blender/models/props/gym.py`; origin = its
+  footprint's centre on the floor, (41.5, 15.36), 1.5 × 0.62, 0.8 high so it stays under the room plaque),
+  coloured small dumbbells up top, big black ones below with one slot empty and one duct-taped, a towel
+  over a post, a "RE-RACK IT" label. Decoration only: not in SOLIDS (gameplay unchanged), sprite view only
+  (the classic 2D view skips it). Drawn in `drawPropDecor()` (js/decor.js), y-sorted with the crew.
+
+### 9f. Helm and security consoles with depth
+- The old desks (`systems/helm*`, `systems/security*`) read flat: a dark box whose screen bank sloped at
+  ~60°, almost square to the 50° camera, so it showed as one flat dark rectangle with no sides or tops.
+- Remodelled in `tools/blender/models/systems/consoles.py` (same 1.6 × 0.6 footprint, origin, desk top
+  height 0.72, states f0..f3 / off / broken, so js/art.js drawStation is unchanged; emissive 0.8 only
+  lights the brightest pixels, so it wasn't the cause): two pedestal cabinets with a knee recess, an
+  overhanging top with a rubber bumper, a riser at the back with status lamps, and upright chunky CRT
+  monitors (bezel lip, tube housing behind, vents on top) whose tops and sides show in the tilted view.
+  Helm (blue-grey): a big nav screen on a neck, two wing monitors on arms turned to the pilot, a flight
+  yoke, a throttle quadrant, cables, tape. Security (olive): a stacked bank of six beige CCTV sets (the
+  camera grid; feeds drop out per frame, REC dot blinks), a door-lock panel (door list screen, keypad,
+  door lamps), PA gooseneck mic, camera joystick, a LOCKDOWN button under a flip cover. The mug and
+  sticky notes still land on the desk top.
 
 ## Balance
 

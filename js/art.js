@@ -141,8 +141,8 @@ function drawEngines(t, throttle, ys, flameOnly = false) {
       const flick = 1 + 0.12 * Math.sin(t * 31 + ey) + 0.08 * Math.sin(t * 17);
       const len = T * (0.3 + 1.9 * throttle) * flick;
       const g = ctx.createRadialGradient(x - T * 0.4, y, 2, x - T * 0.4, y, len);
-      g.addColorStop(0, `rgba(255,240,200,${0.95 * Math.min(1, throttle * 2)})`); g.addColorStop(0.25, 'rgba(255,170,70,0.75)');
-      g.addColorStop(0.6, 'rgba(230,80,40,0.25)'); g.addColorStop(1, 'rgba(200,40,40,0)');
+      g.addColorStop(0, `rgba(235,248,255,${0.95 * Math.min(1, throttle * 2)})`); g.addColorStop(0.25, 'rgba(90,190,255,0.75)');   // a blue plume
+      g.addColorStop(0.6, 'rgba(60,80,240,0.3)'); g.addColorStop(1, 'rgba(110,40,200,0)');
       ctx.globalAlpha = Math.min(1, throttle * 1.5); ctx.fillStyle = g;
       ctx.beginPath(); ctx.ellipse(x - T * 0.4 - len * 0.45, y, len * 0.6, T * (0.12 + 0.3 * throttle), 0, 0, TAU); ctx.fill();
       ctx.globalAlpha = 1;
@@ -617,10 +617,24 @@ function drawReactor(R, t) {
 
 // One big engine: housing in the reactor room, bell sticking out of the stern (+y).
 // Sprites: hull/engine_bell_cruise_f0..3 / _spool_f0..3 (the jump drive spooling up) at the stern's middle,
-// over the hull; the flame plume stays 2D, under it (the back layer).
+// over the hull; the blue exhaust plume hull/engine_flame_cruise / _spool (8 frames, Blender volume, alpha =
+// brightness, unlit) right over the bell, so it comes out of the nozzle. Its frame is picked at random ~14
+// times a second (engineFlame: also drives the flickering light at the nozzle, js/lights.js). The 2D
+// gradient plume is only the classic look (and the fallback while the sprite loads).
+const FLAME_FRAMES = {                                 // brightness per plume frame (tools/blender/models/hull/engine.py FLAME_STATES)
+  cruise: [1.0, 1.08, 0.92, 1.04, 0.97, 1.12, 0.95, 1.02],
+  spool: [1.25, 1.45, 1.65, 1.5, 1.3, 1.55, 1.7, 1.4],
+};
+function engineFlame(t) {
+  const spool = typeof mission !== 'undefined' && !!mission.jump && !mission.over, F = FLAME_FRAMES[spool ? 'spool' : 'cruise'];
+  const n = Math.floor(t * 14), r = Math.sin(n * 91.7 + 13.1) * 43758.5453, f = Math.floor((r - Math.floor(r)) * F.length);
+  return { spool, f, k: F[f] };
+}
 function drawEngineBell(t, E) {
-  const spool = typeof mission !== 'undefined' && !!mission.jump && !mission.over;
-  const bell = GFX.on && GFX.sprite(`hull/engine_bell_${spool ? 'spool' : 'cruise'}_f${Math.floor(t * 8) % 4}`, 0, E.x, SHIP_H, 0, { layer: 'decal', emissive: 0.8 });
+  const fl = engineFlame(t), state = fl.spool ? 'spool' : 'cruise';
+  const bell = GFX.on && GFX.sprite(`hull/engine_bell_${state}_f${Math.floor(t * 8) % 4}`, 0, E.x, SHIP_H, 0, { layer: 'decal', emissive: 0.8 });
+  const flame = bell && GFX.sprite(`hull/engine_flame_${state}`, fl.f, E.x, SHIP_H, 0, { layer: 'decal', unlit: true });
+  if (flame) return;
   ctx.save(); ctx.translate(E.x * T, (SHIP_H - 0.5) * T); ctx.rotate(-Math.PI / 2); ctx.scale(3.4, 3.4);
   drawEngines(t, 0.45 + 0.04 * Math.sin(t * 1.3), [0], bell);
   ctx.restore();

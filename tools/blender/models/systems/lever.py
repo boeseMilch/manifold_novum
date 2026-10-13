@@ -9,8 +9,12 @@ lever sprite, so they stack: base, handle, wrench.
   lever_handle_f0..f12   the handle at game angle a_k = leverAngle(0) + k * 0.15 (k = 0..12, covers
                          leverAngle(0..2) = -pi/2 - 0.9 .. -pi/2 + 0.9; f0 = LEFT, f6 = MID, f12 = RIGHT).
                          Pick k = round((power.lever.angle - leverAngle(0)) / 0.15): the game lerps the angle.
-  lever_wrench_f0..f2    power.lever.jammed with pos = 0..2: the wrench wedged in the track ahead of the
-                         handle (angle leverAngle(pos) +- 0.42 at r 0.3, as drawLever) plus the yellow hub cap
+  lever_wrench_f0..f2    power.lever.jammed with pos = 0..2: a spanner (yellow grip) standing upright in the
+                         track, ring end rammed into the groove at r 0.38, jaw up (~0.55 tall), at
+                         leverAngle(pos) + WRENCH_OFF towards the next output (pos 2: back towards MID, the way
+                         RIGHT -> LEFT swings), face to the hub / camera, leaning WRENCH_LEAN over the handle;
+                         plus the yellow hub cap. Drawn after the handle (sortY LEVER.y + 0.32); the per-pixel
+                         depth sorts out which of knob / wrench is in front.
 Labels (LEFT/MID/RIGHT, AUTO / MANUAL) stay procedural text.
 
 Patch board: a floor junction box 0.67 x 0.5 at PATCH_BOARD with three sockets and patch cords.
@@ -26,6 +30,7 @@ def gdir(a, r):                                    # game angle, radius -> Blend
     return (math.cos(a) * r, -math.sin(a) * r)
 TOP = 0.26                                         # dial top height
 HUB = 0.22
+WRENCH_OFF, WRENCH_LEAN, WRENCH_SINK = 0.42, math.radians(10), 0.08   # angle past the handle, lean, depth in the groove
 
 def lever():
     s = mn.reset(); M = stdmats(); P = Parts()
@@ -65,12 +70,24 @@ def lever():
           mn.box('grip_tape', (0.08, 0.075, 0.035), loc=(0.15, 0, TOP + 0.075), m=M['tape'], bevel=0.01)]
     for o in hp: P(o)
     hroot = mn.group('handle', hp)
-    # wrench: a flat spanner, built along +x, rotated into the track per frame
-    wp = [mn.box('w_shaft', (0.34, 0.07, 0.035), loc=(0, 0, 0), m=M['steel'], bevel=0.01),
-          ring('w_jaw', 0.075, 0.04, 0.04, loc=(0.2, 0, -0.002), m=M['steel'], verts=16),
-          ring('w_eye', 0.055, 0.03, 0.04, loc=(-0.19, 0, -0.002), m=M['steel'], verts=16)]
+    # wrench: an open-end / ring spanner standing upright in the track, ring end rammed into the groove,
+    # jaw up. Built flat along +x (jaw at +x), stood up by w_up (x -> +z), then turned per frame so its
+    # broad face looks at the hub (and the camera) and leaned a little towards the handle it blocks.
+    WL, WT = 0.62, 0.045
+    M['wsteel'] = pmat('wsteel', '#c4ccd8', 0.35, 0.45, grime=0.3)   # less mirror-like than 'steel': it stands upright
+    wp = [mn.box('w_shaft', (WL * 0.62, WL * 0.14, WT * 0.85), loc=(0, 0, WT * 0.075), m=M['wsteel'], bevel=WT * 0.3),
+          mn.box('w_grip', (WL * 0.3, WL * 0.14 + 0.012, WT + 0.012), loc=(-WL * 0.14, 0, -0.006), m=M['yellow'], bevel=0.012),
+          mn.box('w_tape', (WL * 0.07, WL * 0.14 + 0.016, WT + 0.016), loc=(WL * 0.09, 0, -0.008), m=M['tape'], bevel=0.004),
+          ring('w_ring', WL * 0.105, WL * 0.05, WT, loc=(-WL * 0.36, 0, 0), m=M['wsteel'], verts=32)]
+    hd = mn.cyl('w_head', WL * 0.14, WT, loc=(WL * 0.36, 0, 0), m=M['wsteel'], verts=32, bevel=WT * 0.3)
+    notch = mn.box('w_notch', (WL * 0.2, WL * 0.11, WT * 4), loc=(WL * 0.46, 0, -WT), bevel=0, rot=(0, 0, 0.35))
+    md = hd.modifiers.new('cut', 'BOOLEAN'); md.object = notch; md.operation = 'DIFFERENCE'; md.solver = 'EXACT'
+    hd.modifiers.move(len(hd.modifiers) - 1, 0); notch.hide_render = True
+    wp.append(hd)
+    for o in wp: o.location.z -= WT / 2                 # centre the thickness on the plane
     for o in wp: P(o)
-    wroot = mn.group('wrench', wp)
+    wup = mn.group('w_up', wp + [notch]); wup.rotation_euler = (0, -math.pi / 2, 0)   # (the hidden cutter turns with the head)
+    wroot = mn.group('wrench', [wup])
     cap = P(mn.cyl('hub_cap', HUB * 0.62, 0.03, loc=(0, 0, TOP + 0.13), m=M['yellow'], bevel=0.01, verts=32))
     outline(P, 0.012)
 
@@ -94,10 +111,11 @@ def lever():
     only(wp + [cap])
     for p in range(3):
         f = p + 1; s.frame_set(f)
-        nxt = (p + 1) % 3
-        a = lever_angle(p) + math.copysign(1, lever_angle(nxt) - lever_angle(p)) * 0.42
-        x, y = gdir(a, 0.3)
-        wroot.location = (x, y, TOP + 0.06); wroot.rotation_euler = (0, math.radians(-12), -a)
+        side = math.copysign(1, lever_angle((p + 1) % 3) - lever_angle(p))   # the way the handle moves next
+        a = lever_angle(p) + side * WRENCH_OFF
+        x, y = gdir(a, 0.38)
+        wroot.location = (x, y, TOP + WL * 0.465 - WRENCH_SINK)   # ring end in the groove
+        wroot.rotation_euler = (-side * WRENCH_LEAN, 0, -a)         # top leans over towards the handle
         wroot.keyframe_insert('location', frame=f); wroot.keyframe_insert('rotation_euler', frame=f)
     mn.render('systems/lever_wrench', objs=wp + [cap], frames=[1, 2, 3])
 

@@ -1,21 +1,27 @@
 """The ship's engine (js/art.js drawEngineBell / drawEngines / drawEngineHousing; ENGINE in js/ship.js).
 
 Sprites (build/renders/hull/):
-  engine_bell_cruise_f<0..3>   the big flattened nozzle sticking out of the stern, exhaust plate glowing orange
+  engine_bell_cruise_f<0..3>   the big flattened nozzle sticking out of the stern: hot orange rim, blue-white exhaust plate
                                (flicker loop; the game's throttle sits at ~0.45 all the time)
   engine_bell_spool_f<0..3>    jump drive spooling up (mission.jump set, until the jump): blue-white, pulsing
   engine_bell_off              cold (no flame: throttle 0)
       origin = game (ENGINE.x, SHIP_H) = (22.2, 26.1) on the deck plane (the middle of the stern edge).
       Rendered with the hull slab as a holdout, so the part inside the hull is cut away: draw it AFTER the
-      hull tiles (it sits in front of the stern face). The flame/plume stays procedural (drawEngines'
-      gradient, drawn under the bell from about game y 27.4 on).
+      hull tiles (it sits in front of the stern face).
+  engine_flame_cruise_f<0..7>  the blue exhaust plume coming out of the bell (flicker: the game picks frames at random)
+  engine_flame_spool_f<0..7>   the same while the jump drive spools: longer, brighter, whiter, pulsing
+      origin = the bell's. An emissive volume (white-hot core, cyan/blue body, violet edge, shock diamonds,
+      noise turbulence; flame_mat) rendered on black with the bell and the hull as black occluders, then
+      glowify: alpha = brightness, colour = rgb / alpha, beauty only. Draw it unlit right after the bell: it
+      only adds light. Per-frame length and brightness: FLAME_STATES (mirrored in js/art.js FLAME_FRAMES,
+      which also drives the flickering light at the nozzle in js/lights.js).
   engine_housing_f<0..5>       the engine block inside the reactor room (19.4..25.0 x 23.9..25.5): turbine
                                intake turning (6 frames = 60 deg, the blades repeat), warm glow
   engine_housing_spool_f<0..5> the same while the jump drive spools: blue glow
       origin = game (ENGINE.x, ENGINE.y) = (22.2, 23.9): the middle of the housing's north edge, on the floor.
       Draw it where drawEngineHousing is drawn now (after the floors).
 
-    blender -b --factory-startup --python tools/blender/models/hull/engine.py [-- quick] [-- only=bell,housing]
+    blender -b --factory-startup --python tools/blender/models/hull/engine.py [-- quick] [-- only=bell,housing,flame]
 """
 import sys, os, math, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -142,7 +148,7 @@ def render_bell():
         mn.assign(inner, emit_mat(f'in{col_out}{k:.2f}', col_out, 0.45 * k, base='#2b2a2e'))
     frames = [1, 2, 3, 4]
     t0 = time.time()
-    for state, (co, ci, ks) in {'cruise': ('#ff7a2a', '#ffcf7a', (1.0, 1.15, 0.9, 1.1)),
+    for state, (co, ci, ks) in {'cruise': ('#ff7a2a', '#bfe6ff', (1.0, 1.15, 0.9, 1.1)),
                                 'spool': ('#4aa8ff', '#d8f0ff', (0.8, 1.05, 1.3, 1.05))}.items():
         for i, k in enumerate(ks):
             set_state(co, ci, k)
@@ -155,6 +161,139 @@ def render_bell():
     mn.render('hull/engine_bell_off', objs=parts)
     manifest_patch('hull/engine_bell_off', {'origin': 'game (22.2, 26.1) on the deck: middle of the stern edge'})
     print(f'[engine] bell: {time.time() - t0:.1f}s')
+
+
+# ---------------------------------------------------------------------------------------------------------
+# The exhaust plume: an emissive volume coming out of the bell's mouth (rendered on black, the bell and the
+# hull as black occluders; turned into "light" sprites afterwards: alpha = brightness, see glowify)
+class Nodes:
+    """Tiny expression helper for shader node math (sockets or plain numbers)."""
+    def __init__(self, nt): self.nt = nt; self.N = nt.nodes
+    def _in(self, sock, v):
+        if isinstance(v, (int, float)): sock.default_value = v
+        else: self.nt.links.new(v, sock)
+    def m(self, op, a, b=None, clamp=False):
+        n = self.N.new('ShaderNodeMath'); n.operation = op; n.use_clamp = clamp
+        self._in(n.inputs[0], a)
+        if b is not None: self._in(n.inputs[1], b)
+        return n.outputs[0]
+    def add(self, a, b): return self.m('ADD', a, b)
+    def sub(self, a, b): return self.m('SUBTRACT', a, b)
+    def mul(self, a, b): return self.m('MULTIPLY', a, b)
+    def div(self, a, b): return self.m('DIVIDE', a, b)
+    def pow(self, a, b): return self.m('POWER', a, b)
+    def clamp(self, a): return self.m('ADD', a, 0.0, clamp=True)
+    def exp(self, a): return self.m('EXPONENT', a)
+    def value(self, name, v):
+        n = self.N.new('ShaderNodeValue'); n.name = name; n.outputs[0].default_value = v; return n
+    def noise(self, vec, w, scale, detail=3.0, rough=0.55):
+        n = self.N.new('ShaderNodeTexNoise'); n.noise_dimensions = '4D'
+        self.nt.links.new(vec, n.inputs['Vector']); self._in(n.inputs['W'], w)
+        n.inputs['Scale'].default_value = scale; n.inputs['Detail'].default_value = detail; n.inputs['Roughness'].default_value = rough
+        return n.outputs['Fac']
+
+FLAME_PLATE = 1.26                             # where the plume starts (bell-local game y: the exhaust plate)
+
+def flame_mat(ramp):
+    """Volume emission in the flame object's space (origin on the plate, local -Y = downstream).
+    Value nodes 'len' (plume length), 'gain' (brightness) and 'seed' (noise) are keyframed per frame."""
+    m = bpy.data.materials.new('flame'); m.use_nodes = True; nt = m.node_tree; N = nt.nodes; N.clear(); E = Nodes(nt)
+    out = N.new('ShaderNodeOutputMaterial'); em = N.new('ShaderNodeEmission')
+    nt.links.new(em.outputs[0], out.inputs['Volume'])
+    tc = N.new('ShaderNodeTexCoord'); sp = N.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Object'], sp.inputs[0])
+    X, Y, Z = sp.outputs['X'], sp.outputs['Y'], sp.outputs['Z']
+    Ln, gain, seed = (E.value(k, v).outputs[0] for k, v in (('len', 3.4), ('gain', 1.0), ('seed', 0.0)))
+    a = E.mul(Y, -1.0)                                            # distance downstream from the plate
+    t = E.clamp(E.div(a, Ln))
+    cv = N.new('ShaderNodeCombineXYZ'); E._in(cv.inputs[0], E.mul(X, 0.8)); E._in(cv.inputs[1], E.mul(a, 0.45)); E._in(cv.inputs[2], Z)
+    n1 = E.noise(cv.outputs[0], seed, 1.6); n2 = E.noise(cv.outputs[0], E.add(seed, 7.3), 1.6)
+    n3 = E.noise(cv.outputs[0], E.add(seed, 13.1), 4.5, detail=5.0)
+    wob = E.mul(t, 1.0)                                           # wobble grows downstream
+    xs = E.add(X, E.mul(E.sub(n1, 0.5), E.mul(wob, 0.55)))
+    zs = E.add(Z, E.mul(E.sub(n2, 0.5), E.mul(wob, 0.35)))
+    wx = E.sub(1.42, E.mul(t, 0.85))                              # flattened like the nozzle, narrowing and rounding off
+    hz = E.sub(0.6, E.mul(t, 0.2))
+    rn2 = E.add(E.pow(E.div(xs, wx), 2.0), E.pow(E.div(zs, hz), 2.0))
+    start = E.clamp(E.div(E.add(a, 0.04), 0.14))
+    fend = E.pow(E.sub(1.0, t), 1.5)
+    body = E.mul(E.exp(E.mul(rn2, -2.4)), fend)
+    core = E.mul(E.exp(E.mul(rn2, -18.0)), E.pow(E.clamp(E.sub(1.0, E.mul(t, 1.25))), 1.1))
+    # shock diamonds: bright knots along the axis
+    ph = E.mul(E.sub(a, 0.35), math.tau / 0.78)
+    dia = E.pow(E.add(0.5, E.mul(E.m('COSINE', ph), 0.5)), 10.0)
+    dia = E.mul(E.mul(dia, E.exp(E.mul(rn2, -9.0))), E.mul(E.clamp(E.sub(1.0, E.mul(t, 1.35))), E.clamp(E.div(a, 0.35))))
+    turb = E.add(0.3, E.mul(n3, 1.4))
+    I = E.mul(E.add(E.add(E.mul(E.mul(body, turb), 0.55), E.mul(core, 1.6)), E.mul(dia, 2.0)), start)
+    cr = N.new('ShaderNodeValToRGB'); E._in(cr.inputs[0], E.mul(I, 0.9))
+    el = cr.color_ramp.elements
+    el[0].position, el[0].color = ramp[0]
+    el[1].position, el[1].color = ramp[-1]
+    for pos, col in ramp[1:-1]:
+        e = el.new(pos); e.color = col
+    nt.links.new(cr.outputs[0], em.inputs['Color'])
+    E._in(em.inputs['Strength'], E.mul(I, gain))
+    return m
+
+def glowify(path):
+    """Rendered on black → a sprite to draw over the scene: alpha = brightness, colour = rgb / alpha
+    (alpha-blended, this adds about the rendered light: the plume never darkens what's under it)."""
+    from PIL import Image
+    import numpy as np
+    a = np.asarray(Image.open(path).convert('RGB')).astype(np.float32)
+    al = a.max(axis=2)
+    al = np.clip((al - 3.0) * 255.0 / 252.0, 0, 255)               # cut the denoiser's floor
+    col = np.where(al[..., None] > 0, np.clip(a * 255.0 / np.maximum(a.max(axis=2), 1)[..., None], 0, 255), 0)
+    Image.fromarray(np.dstack([col, al]).astype(np.uint8), 'RGBA').save(path)
+
+FLAME_STATES = {
+    # ramp: (position, rgba linear) on the brightness; frames: (length, gain) per frame of the loop
+    'cruise': dict(ramp=[(0.0, (0.16, 0.02, 0.45, 1)), (0.18, (0.08, 0.12, 1.0, 1)), (0.45, (0.05, 0.55, 1.0, 1)),
+                         (0.75, (0.55, 0.88, 1.0, 1)), (1.0, (1.0, 1.0, 1.0, 1))],
+                   frames=[(3.8, 1.0), (4.1, 1.08), (3.65, 0.92), (4.0, 1.04), (3.9, 0.97), (4.25, 1.12), (3.7, 0.95), (4.05, 1.02)]),
+    'spool':  dict(ramp=[(0.0, (0.3, 0.05, 0.6, 1)), (0.15, (0.2, 0.25, 1.0, 1)), (0.4, (0.25, 0.75, 1.0, 1)),
+                         (0.65, (0.75, 0.95, 1.0, 1)), (1.0, (1.0, 1.0, 1.0, 1))],
+                   frames=[(4.0, 1.25), (4.5, 1.45), (5.0, 1.65), (4.6, 1.5), (4.2, 1.3), (4.7, 1.55), (5.1, 1.7), (4.4, 1.4)]),
+}
+# (the game's light at the nozzle follows these per frame: FLAME_FRAMES in js/art.js)
+
+def render_flame():
+    t0 = time.time()
+    for state, S in FLAME_STATES.items():
+        parts, glows, M, inner, hold = build_bell()
+        s = bpy.context.scene
+        s.render.film_transparent = False
+        s.world.node_tree.nodes['Background'].inputs[1].default_value = 0.0
+        s.cycles.volume_bounces = 0; s.cycles.volume_step_rate = 0.3; s.cycles.max_bounces = 0
+        black = bpy.data.materials.new('black'); black.use_nodes = True; nt = black.node_tree; nt.nodes.clear()
+        e = nt.nodes.new('ShaderNodeEmission'); e.inputs['Color'].default_value = (0, 0, 0, 1)
+        nt.links.new(e.outputs[0], nt.nodes.new('ShaderNodeOutputMaterial').inputs['Surface'])
+        for o in list(s.objects):
+            if o.type == 'LIGHT': bpy.data.objects.remove(o); continue
+            if o.type != 'MESH': continue
+            for md in list(o.modifiers):
+                if md.name == 'outline': o.modifiers.remove(md)
+            o.is_holdout = False
+            o.data.materials.clear(); o.data.materials.append(black)
+        Lmax = max(f[0] for f in S['frames']) + 0.3
+        me = bpy.data.meshes.new('flame'); bm = bmesh.new()
+        bmesh.ops.create_cube(bm, size=1.0)
+        for v in bm.verts:                                         # local: x ±1.7, downstream (-y) -0.05 .. Lmax, z ±0.85
+            v.co.x *= 3.4; v.co.z *= 1.7; v.co.y = 0.05 if v.co.y > 0 else -Lmax
+        bm.to_mesh(me); bm.free()
+        fl = mn.link(bpy.data.objects.new('flame', me)); fl.location = L(0, FLAME_PLATE, AXZ)
+        mat = flame_mat(S['ramp']); fl.data.materials.append(mat)
+        V = {k: mat.node_tree.nodes[k].outputs[0] for k in ('len', 'gain', 'seed')}
+        frames = list(range(1, len(S['frames']) + 1))
+        for i, (ln, g) in enumerate(S['frames']):
+            s.frame_set(frames[i])
+            for k, v in (('len', ln), ('gain', g * (2.4 if state == 'cruise' else 1.6)), ('seed', 11.7 * i + (40 if state == 'spool' else 0))):
+                V[k].default_value = v; V[k].keyframe_insert('default_value', frame=frames[i])
+        name = f'hull/engine_flame_{state}'
+        mn.render(name, objs=[fl], frames=frames, passes=('beauty',))
+        for i in range(len(frames)): glowify(os.path.join(mn.OUT_DIR, f'{name}_f{i}.png'))
+        manifest_patch(name, {'origin': 'game (22.2, 26.1): same as engine_bell; unlit, alpha = brightness (draw over the bell)',
+                              'loop': True})
+    print(f'[engine] flame: {time.time() - t0:.1f}s')
 
 # ---------------------------------------------------------------------------------------------------------
 def build_housing(spool):
@@ -233,4 +372,5 @@ if __name__ == '__main__':
     T = time.time()
     if want('bell'): render_bell()
     if want('housing'): render_housing()
+    if want('flame'): render_flame()
     print(f'[engine] total {time.time() - T:.1f}s')
