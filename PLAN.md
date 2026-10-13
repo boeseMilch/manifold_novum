@@ -1150,6 +1150,12 @@ dummy canvas):
 - `node tests/asteroids.js`: the front cannon swings exactly ±95°, and 4 body hits split a
   big asteroid.
 
+## Third-party assets
+
+- `assets/fonts/PatrickHand-Regular.ttf`: the Patrick Hand handwriting font (Patrick Wagesreiter,
+  SIL Open Font License 1.1, unmodified, license text next to it, see `assets/fonts/README.md`).
+  Declared as `'Patrick Hand'` in `index.html` for handwritten notes (e.g. the PIN pad's sticky note).
+
 ## Next (after feedback)
 
 - Mission frame: jump in, a mission timer (about 5 min, maybe tied to the length of a
