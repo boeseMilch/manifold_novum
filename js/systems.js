@@ -17,6 +17,10 @@ const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED =
 const BLASTER_COOLDOWN = LASER_COOLDOWN / 0.66, BLASTER_CHARGE = 1.5, BLASTER_SLOW_AFTER = 0.2;
 const BLASTER_CARRY_SPEED = 0.85, BLASTER_CHARGE_SPEED = 0.3;
 const OVERCHARGE_FIRE = 0.1;                      // overcharged reactor: chance per energy that it catches fire
+// How fast the reactor runs: 1/crewPace(n) for n crew (js/mission.js: the encounters come that much
+// faster, so the energy per gap between encounters stays the same), doubled while overcharged.
+// 1 player: an energy every ENERGY_TIME (20 s); 2: 14.1 s; 3: 11.5 s; 4: 10 s; 8: 7.1 s.
+const reactorSpeed = () => (power.overcharge ? 2 : 1) / crewPace(crewSize());
 
 const power = {
   reactor: { fuel: CELL_ENERGY, t: 0 },          // energy left in the loaded cell, progress to the next one
@@ -181,7 +185,7 @@ function updatePower(dt) {
   updateInserter(dt);
   if (power.overcharge && broken(REACTOR)) power.overcharge = false;
   if (R.fuel > 0 && !broken(REACTOR) && !(enc.scram > 0)) {
-    R.t += dt * (power.overcharge ? 2 : 1);
+    R.t += dt * reactorSpeed();
     if (R.t >= ENERGY_TIME) {
       R.t = 0; R.fuel--; deliverEnergy();
       if (power.overcharge && Math.random() < OVERCHARGE_FIRE) igniteSystem(SYSTEMS.find(s => s.ref === REACTOR));
@@ -286,7 +290,7 @@ function clickTarget(mx, my) {
   const R = REACTOR;
   if (Math.abs(mx - R.x) < R.w / 2 && Math.abs(my - R.y) < R.h / 2) {
     const t = { x: R.x, y: R.y, r: 1.9 };
-    const status = power.reactor.fuel ? `${power.reactor.fuel} energy left in the cell, next in ${Math.ceil((ENERGY_TIME - power.reactor.t) / (power.overcharge ? 2 : 1))} s` : 'out of fuel';
+    const status = power.reactor.fuel ? `${power.reactor.fuel} energy left in the cell, next in ${Math.ceil((ENERGY_TIME - power.reactor.t) / reactorSpeed())} s` : 'out of fuel';
     const close = near(R.x, R.y, REACH + 1.4);
     if (inv.item === 'fuel' && !power.reactor.fuel) {
       if (!close) return { ...t, text: 'Reactor — get closer', ok: false };
@@ -703,7 +707,7 @@ function drawSystemsHUD(top) {
   // power panel
   const px = x0 + 156, R = power.reactor;
   const lines = [
-    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil((ENERGY_TIME - R.t) / (power.overcharge ? 2 : 1))} s${power.overcharge ? ' · OVERCHARGED' : ''}` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : power.overcharge ? '#ffd28a' : '#c8ffe6'],
+    [`Reactor: ${broken(REACTOR) ? 'BROKEN' : R.fuel ? `${R.fuel}/${CELL_ENERGY} energy in cell · next in ${Math.ceil((ENERGY_TIME - R.t) / reactorSpeed())} s${power.overcharge ? ' · OVERCHARGED' : ''}` : 'OUT OF FUEL'}`, broken(REACTOR) || !R.fuel ? '#ff9a8a' : power.overcharge ? '#ffd28a' : '#c8ffe6'],
     [`Lever → ${LEVER_NAMES[power.lever.pos]} (${power.lever.jammed ? 'manual override' : 'auto'})${broken(LEVER) ? ' · BROKEN' : ''} · spare fuel cells: ${power.reserve} · duct tape: ${hz.tape} · hull plates: ${hz.plates}`, '#c9ced8'],
     [`Capacitors  left ${CAPACITORS[0].charge}/${CAP_MAX}${capBroken(0) ? '✖' : ''}   mid ${CAPACITORS[1].charge}/${CAP_MAX}${capBroken(1) ? '✖' : ''}   right ${CAPACITORS[2].charge}/${CAP_MAX}${capBroken(2) ? '✖' : ''}`, '#9cd8ff'],
   ];

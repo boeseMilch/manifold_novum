@@ -615,7 +615,13 @@ function drawJunk() {
 // Crate of spare fuel cells for the reactor.
 function fuelCrate(x, y, a) {
   const cells = typeof power !== 'undefined' ? power.reserve : 3;
-  if (spr(`systems/fuel_crate_c${clamp(cells, 0, 4)}`, 0, x / T, y / T, 0, { emissive: 0.5, pick: [0.7, 0.8] })) return;
+  if (spr(`systems/fuel_crate_c${clamp(cells, 0, 4)}`, 0, x / T, y / T, 0, { emissive: 0.5, pick: [0.7, 0.8] })) {
+    if (cells > 4) {                                 // a bigger crew gets more spare cells than the crate shows
+      ctx.fillStyle = 'rgba(200,255,216,0.9)'; ctx.font = `800 ${T * 0.16}px system-ui, sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(`×${cells}`, x, y + T * 0.5); ctx.textAlign = 'left';
+    }
+    return;
+  }
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
   const w = T * 1.3, h = T * 0.9;
   shadowEllipse(4, 6, w * 0.55, h * 0.55, 0.3);
@@ -630,6 +636,6 @@ function fuelCrate(x, y, a) {
     ctx.fillStyle = g; ctx.fill(); stroke(1.5);
   }
   ctx.fillStyle = 'rgba(232,236,244,0.7)'; ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('FUEL CELLS', 0, h / 2 + 3); ctx.textAlign = 'left';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(left > 3 ? `FUEL CELLS ×${left}` : 'FUEL CELLS', 0, h / 2 + 3); ctx.textAlign = 'left';
   ctx.restore();
 }

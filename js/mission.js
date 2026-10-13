@@ -124,6 +124,37 @@ function makeEvent(kind, t, target) {
   return ev;
 }
 const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
+
+// ---------------------------------------------------------------------------
+// Crew size: the timelines above are paced for one player. With n players the time between
+// encounters shrinks to crewPace(n) of that (n players could in theory work n times as fast, but
+// co-ordination isn't perfect: 1/sqrt(n) gives 100%, 71%, 58%, 50% for 1-4 players, 35% for 8).
+// What scales: every gap after the first event. What doesn't: the lead-in before the first event,
+// JUMP_DELAY (the finale fight), and the encounters themselves (fights, timers). The reactor runs
+// 1/crewPace(n) times as fast (js/systems.js), so the energy made between two encounters stays the same.
+// ---------------------------------------------------------------------------
+const crewPace = (n) => 1 / Math.sqrt(Math.max(1, n));
+const crewSize = () => Math.max(1, crew.length);
+// Re-time the events that haven't started yet for a crew of n (at mission start and whenever someone
+// joins or leaves). Events already running are untouched; the remaining gaps are scaled by the ratio of
+// the paces, measured from now (or from the first event, while still in the lead-in).
+function retimeMission(n) {
+  const ratio = crewPace(n) / crewPace(mission.paceN || 1);
+  mission.paceN = n;
+  if (ratio === 1 || !mission.events.length) return;
+  const anchor = Math.max(mission.t, mission.lead ?? 0);
+  const pending = mission.events.filter(e => !e.done);
+  const lastBefore = Math.max(-Infinity, ...pending.map(e => e.t));
+  for (const e of pending) if (e.t > anchor) e.t = anchor + (e.t - anchor) * ratio;
+  const lastAfter = Math.max(-Infinity, ...pending.map(e => e.t));
+  if (pending.length && !mission.jump && Number.isFinite(mission.jumpAt)) mission.jumpAt += lastAfter - lastBefore;   // the jump keeps its distance to the finale
+}
+// One more spare fuel cell for every extra crew member (the most there have been aboard this mission;
+// someone leaving doesn't take cells away, rejoining doesn't add more).
+function crewFuel(n) {
+  const extra = Math.max(0, n - 1), had = mission.crewCells || 0;
+  if (extra > had) { power.reserve += extra - had; mission.crewCells = extra; }
+}
 function startMission(id = 'intro', opts = {}) {
   applyShipUpgrades(opts.ship || {});
   const candidates = SYSTEMS.filter(s => !s.broken);
@@ -147,6 +178,11 @@ function startMission(id = 'intro', opts = {}) {
     if (fight) [fight.t, last.t] = [last.t, fight.t];
   }
   mission.jumpAt = MISSIONS[id]?.practice ? Infinity : Math.max(0, ...evs2.map(e => e.t)) + JUMP_DELAY;
+  // paced for one player; then re-timed for the crew aboard (the server adds its crew right after this,
+  // so updateMission re-times again on its first tick)
+  mission.lead = Math.min(Infinity, ...evs2.map(e => e.t)); mission.paceN = 1; mission.crewCells = 0;
+  for (const e of evs2) e.t1 = e.t;                    // the solo time (for tools and tests)
+  retimeMission(crewSize()); crewFuel(crewSize());
   combatBanner('Jumped into the hot zone. Survive until the jump drive is ready!');
 }
 
@@ -168,6 +204,8 @@ function runEvent(ev) {
 function updateMission(dt) {
   if (!mission.active || mission.over) return;
   mission.t += dt;
+  if (crewSize() !== mission.paceN) retimeMission(crewSize());          // someone joined or left
+  crewFuel(crewSize());
   for (const ev of mission.events) if (!ev.done && mission.t >= ev.t) runEvent(ev);
   // jump: after the last encounter the drive tries for JUMP_WINDOW seconds; it needs energy in the engine room
   if (mission.t >= mission.jumpAt && !mission.jump && !mission.coilsChecked) {          // misaligned jump coils: the drive takes longer
