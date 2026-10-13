@@ -8,7 +8,7 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; font-family: system-ui, sans-serif; }
   canvas { display: block; cursor: crosshair; }
-  #lobby { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  #lobby { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
            background: radial-gradient(ellipse at center, rgba(20,26,40,0.75), rgba(4,6,12,0.95)); color: #e8ecf4; }
   #lobby[hidden] { display: none; }
   .plate { width: min(640px, calc(100vw - 32px)); padding: 26px 28px; border-radius: 12px; position: relative;
