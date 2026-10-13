@@ -732,9 +732,9 @@ function drawSaboteur(a, t) {
   if (GFX.on) {
     const [name, f] = sabSprite(a, t);
     sprited = GFX.sprite(name, GFX.frameIndex(name, a.face, f), a.x, a.y, 0, { tint: light, emissive: 0.5, alpha, pick: [0.32, 1.2], depthWrite: alpha > 0.9 });
-    if (!sprited) {                                    // stand-in until its own sprites are packed: a ghostly grey suit, visor down
-      const sn = name === 'chars/saboteur/walk' ? 'crew/walk_visor' : 'crew/idle_visor';
-      sprited = GFX.sprite(sn, GFX.frameIndex(sn, a.face, sn === 'crew/walk_visor' ? f : 0), a.x, a.y, 0, { tint: '#3a4048', desat: 1, alpha: alpha * 0.6, pick: [0.32, 1.2], depthWrite: false });
+    if (!sprited) {                                    // stand-in until its own sprites are packed: a ghostly grey suit, crew suit sprite
+      const sn = name === 'chars/saboteur/walk' ? 'crew/run' : 'crew/idle';
+      sprited = GFX.sprite(sn, GFX.frameIndex(sn, a.face, sn === 'crew/run' ? f : 0), a.x, a.y, 0, { tint: '#3a4048', desat: 1, alpha: alpha * 0.6, pick: [0.32, 1.2], depthWrite: false });
       if (sprited && alpha > 0.3) {                    // its visor slit glowing through
         const [vx, vy] = [L(a.x + Math.cos(a.face) * 0.12), L(a.y + Math.sin(a.face) * 0.05 - GFX.lift(1.05))];
         ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = alpha;
