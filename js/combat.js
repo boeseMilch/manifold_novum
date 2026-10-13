@@ -27,17 +27,20 @@ const SLIME_COLS = ['#9cff5a', '#6ad13a', '#c8ff6e'];   // (slimeBurst, organic 
 function combatFx(x, y, vx, vy, life, col, size) {
   combat.fx.push({ x, y, vx, vy, life, max: life, col, size });
 }
+// The same burst at height z (the raised front cannon's muzzle, a shot hitting its gunner up there):
+// only drawn lifted (GFX.lift), it moves in the ground plane like every other particle.
+function combatFxAt(z, ...a) { combatFx(...a); if (z) combat.fx[combat.fx.length - 1].z = z; }
 // A flipbook effect sprite (fx/explosion_l/s, fx/hit_spark[_blue]) played once at (x, y), on top of the
 // particle burst. It rides along in combat.fx (so it reaches every client in the snapshots); only the
 // sprite renderer draws it (drawFlips), the classic view keeps just the particles.
 const FLIP_TIME = { 'fx/explosion_l': 12 / 16, 'fx/explosion_s': 8 / 16, 'fx/hit_spark': 6 / 20, 'fx/hit_spark_blue': 6 / 20 };
-function combatFlip(name, x, y, scale = 1) {
+function combatFlip(name, x, y, scale = 1, z = 0) {
   const life = FLIP_TIME[name] || 0.5;
-  combat.fx.push({ x, y, vx: 0, vy: 0, life, max: life, flip: name, size: scale });
+  combat.fx.push({ x, y, vx: 0, vy: 0, life, max: life, flip: name, size: scale, ...(z ? { z } : {}) });
 }
 function drawFlip(p) {
   const S = GFX.info(p.flip), n = (S && S.frames) || 1;
-  GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, 0, { layer: 'top', unlit: true, scale: p.size || 1 });
+  GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, p.z || 0, { layer: 'top', unlit: true, scale: p.size || 1 });
 }
 function combatBanner(text) { combat.banner = { text, t: 3 }; }
 
@@ -115,11 +118,26 @@ function fireCannon(g) {
   g.shots--;
   g.cd = CANNON_COOLDOWN; g.flash = 1;
   const dx = Math.cos(g.aim), dy = Math.sin(g.aim);
-  const x = g.x + dx * 1.15, y = g.y + dy * 1.15;
-  combat.shells.push({ x, y, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE });
-  for (let i = 0; i < 6; i++) combatFx(x, y, dx * 4 + (Math.random() - 0.5) * 3, dy * 4 + (Math.random() - 0.5) * 3, 0.25, '#ffd28a', 0.1);
+  const x = g.x + dx * 1.15, y = g.y + dy * 1.15, z = muzzleZ(g);
+  combat.shells.push({ x, y, z, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE });
+  for (let i = 0; i < 6; i++) combatFxAt(z, x, y, dx * 4 + (Math.random() - 0.5) * 3, dy * 4 + (Math.random() - 0.5) * 3, 0.25, '#ffd28a', 0.1);
   sfx.shoot();
 }
+
+// Shells keep to the ground plane for every hit test; z is only for drawing. A shell leaves the muzzle
+// (MUZZLE_Z above its cannon's pivot, which is up on the nose's roof for the front cannon: GUN_Z in
+// js/sprites.js) and sinks to the ground plane, where the enemies and asteroids are drawn, over its first
+// SHELL_DROP units. shellZ(s, back): its height `back` units behind its head (for the tail).
+const MUZZLE_Z = 0.4, SHELL_DROP = 7;
+function muzzleZ(g) { return MUZZLE_Z + ((typeof GUN_Z !== 'undefined' && GUN_Z[g.id]) || 0); }
+function shellZ(s, back = 0) {
+  if (!s.z) return 0;
+  const k = clamp(((SHELL_LIFE - s.life) * SHELL_SPEED - back) / SHELL_DROP, 0, 1);
+  return s.z * (1 - k * k * (3 - 2 * k));
+}
+// Enemy shots at a gunner up on the roof climb to his body (tz) along their way (d0 = launch distance).
+function gunnerZ(c) { const r = c && c.mode === 'gun' ? muzzleZ(c.gun) - MUZZLE_Z : 0; return r ? r + 0.5 : 0; }
+function shotZ(s) { return s.tz ? s.tz * clamp(1 - Math.hypot(s.tx - s.x, s.ty - s.y) / (s.d0 || 1), 0, 1) : 0; }
 
 // ---------------------------------------------------------------------------
 // Enemy fire and damage to us
@@ -134,8 +152,9 @@ function pickEnemyTarget(e) {
 function enemyFire(e, mx, my, heavy, target) {
   const { atCrew, tx, ty } = target;
   const d = Math.hypot(tx - mx, ty - my) || 1, sp = heavy ? 30 : e.D.shotSpeed;
+  const tc = atCrew && crew.find(c => c.id === target.crewId), tz = gunnerZ(tc);
   combat.shots.push({ x: mx, y: my, vx: (tx - mx) / d * sp, vy: (ty - my) / d * sp, heavy, side: e.side,
-                      atCrew, crewId: target.crewId, tx, ty, life: d / sp + 1.5 });
+                      atCrew, crewId: target.crewId, tx, ty, life: d / sp + 1.5, ...(tz ? { tz, d0: d } : {}) });
   if (heavy) { sfx.heavyLaunch(); for (let i = 0; i < 16; i++) combatFx(mx, my, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0.5, '#ff8ac0', 0.2); }
   else sfx.enemyShot();
 }
@@ -169,8 +188,9 @@ function shipHit(side, x, y, large) {
 }
 function crewHit(side, c) {
   combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c);
-  for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, '#e2574c', 0.12);
-  combatFlip('fx/hit_spark', c.x, c.y);
+  const z = gunnerZ(c);                            // the front gunner is up on the roof
+  for (let i = 0; i < 10; i++) combatFxAt(z, c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, '#e2574c', 0.12);
+  combatFlip('fx/hit_spark', c.x, c.y, 1, z);
 }
 
 // Costs one energy from that side's capacitor; with none, nothing happens (no cooldown either).
@@ -264,15 +284,16 @@ function updateCombat(dt) {
       if (before < 0 && after >= 0) { s.dead = true; shieldAbsorb(s, s.side, shieldX(s.side, s.y), s.y); continue; }
     }
     // raised cover plates in front of manned cannons
-    const covered = crew.some(c => {
+    const covered = crew.find(c => {
       if (c.mode !== 'gun' || c.cover <= 0.8) return false;
       const g = c.gun, facing = s.vx * Math.cos(g.aim) + s.vy * Math.sin(g.aim) < 0;
       return facing && segCircle(x0, y0, s.x, s.y, g.x + Math.cos(g.aim) * 0.6, g.y + Math.sin(g.aim) * 0.6, 1.0);
     });
     if (covered) {
       s.dead = true; sfx.clank();
-      for (let i = 0; i < 10; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.4, '#ffd28a', 0.09);
-      combatFlip('fx/hit_spark', s.x, s.y);
+      const z = muzzleZ(covered.gun);                  // the plate is up with the front cannon on the roof
+      for (let i = 0; i < 10; i++) combatFxAt(z, s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.4, '#ffd28a', 0.09);
+      combatFlip('fx/hit_spark', s.x, s.y, 1, z);
       continue;
     }
     const tc = s.atCrew && crew.find(c => c.id === s.crewId);
@@ -399,24 +420,24 @@ function drawShields(t) {
 function drawCombatFront(t) {
   if (GFX.on) { drawAsteroidOverlays(t); drawEnemyOverlays(t); drawOutsideOverlays(t); }   // over the sprite enemies (js/enemies.js, js/organic.js)
   drawShields(t);
-  for (const s of combat.shells) {
+  for (const s of combat.shells) {                 // lifted while they sink from the muzzle (shellZ; 0 in ?classic)
     const dx = s.vx / SHELL_SPEED, dy = s.vy / SHELL_SPEED;
-    ctx.beginPath(); ctx.moveTo(L(s.x), L(s.y)); ctx.lineTo(L(s.x - dx * 0.9), L(s.y - dy * 0.9));
+    ctx.beginPath(); ctx.moveTo(L(s.x), L(s.y - GFX.lift(shellZ(s)))); ctx.lineTo(L(s.x - dx * 0.9), L(s.y - dy * 0.9 - GFX.lift(shellZ(s, 0.9))));
     ctx.strokeStyle = 'rgba(255,210,120,0.5)'; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.stroke();
     ctx.strokeStyle = '#fff2c0'; ctx.lineWidth = 2.5; ctx.stroke();
   }
   for (const s of combat.shots) {
-    const r = s.heavy ? 0.45 : 0.18;
-    const g = ctx.createRadialGradient(L(s.x), L(s.y), 0, L(s.x), L(s.y), L(r) * 2.2);
+    const r = s.heavy ? 0.45 : 0.18, y = s.y - GFX.lift(shotZ(s));
+    const g = ctx.createRadialGradient(L(s.x), L(y), 0, L(s.x), L(y), L(r) * 2.2);
     g.addColorStop(0, '#fff'); g.addColorStop(0.3, s.acid ? '#9cff5a' : s.heavy ? '#ff8ac0' : '#ff6a4a'); g.addColorStop(1, s.acid ? 'rgba(120,255,60,0)' : 'rgba(255,60,60,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(s.x), L(s.y), L(r) * 2.2, 0, TAU); ctx.fill();
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(s.x), L(y), L(r) * 2.2, 0, TAU); ctx.fill();
   }
   for (const p of combat.fx) {
     if (p.flip) { if (GFX.on) drawFlip(p); continue; }
     const slime = GFX.on ? SLIME_COLS.indexOf(p.col) : -1;   // organic slime: the drop sprites (organic/slime_drop_*, ~0.12 across)
     if (slime >= 0 && GFX.sprite(`organic/slime_drop_${slime}`, 0, p.x, p.y, 0, { layer: 'top', scale: p.size / 0.12, alpha: clamp(p.life / p.max, 0, 1), emissive: 0.4 })) continue;
     ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
-    ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(p.size), 0, TAU); ctx.fill();
+    ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(L(p.x), L(p.y - GFX.lift(p.z || 0)), L(p.size), 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
 }

@@ -800,6 +800,11 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   pickup halos, click rings, job markers and the pirates' halos (all readable in the dark, under the crew).
 - The front cannon stands on the nose's roof (z 1.6) with its gunner up in the hatch, instead of being
   drawn through the nose wall and the helm (depth bias). Crew who are out: suit and gear greyed.
+  Shells leave the raised muzzle: each carries a height z (muzzleZ: 0.4 above its cannon's pivot,
+  +1.6 for the front one) and is drawn lifted while it sinks to the ground plane over its first 7 units
+  (shellZ; the enemies and asteroids are drawn there). Enemy shots aimed at the front gunner climb to
+  his body on the roof (shotZ), and his hit splash and the cover plate's sparks are drawn up there too.
+  Only the drawing is lifted: every hit test stays in the flat ground plane; nothing changes in ?classic.
 - 2D leftovers converted: the ore asteroid (`enemy/ore_rock` + pulsing glow), slime drops
   (`organic/slime_drop_*`), the derelict's fires (the fire sprites). The alien corpse no longer gets a
   second goo puddle under its own. The storm darkness and flare glare go under the prompts. The spine

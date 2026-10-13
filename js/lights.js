@@ -289,8 +289,8 @@ function gameLighting(t) {
     add({ x: c.x + Math.cos(c.face) * 0.45, y: c.y + Math.sin(c.face) * 0.45, z: 0.9, color: k >= 1 ? [0.6, 0.85, 1.0] : [1.0, 0.7, 0.45], radius: 1.5 + 1.5 * k, intensity: 0.4 + 1.2 * k });
   }
   if (typeof combat !== 'undefined') {
-    for (const s of combat.shells) add({ x: s.x, y: s.y, z: 0.8, color: [1.0, 0.85, 0.5], radius: 2.6, intensity: 1.1 });
-    for (const s of combat.shots) add({ x: s.x, y: s.y, z: 0.8, color: s.heavy ? [1.0, 0.45, 0.78] : [1.0, 0.35, 0.25], radius: s.heavy ? 4.5 : 2.4, intensity: s.heavy ? 2.4 : 1.1 });
+    for (const s of combat.shells) add({ x: s.x, y: s.y, z: Math.max(0.8, 0.3 + shellZ(s)), color: [1.0, 0.85, 0.5], radius: 2.6, intensity: 1.1 });
+    for (const s of combat.shots) add({ x: s.x, y: s.y, z: 0.8 + shotZ(s), color: s.heavy ? [1.0, 0.45, 0.78] : [1.0, 0.35, 0.25], radius: s.heavy ? 4.5 : 2.4, intensity: s.heavy ? 2.4 : 1.1 });
     for (const h of combat.shieldHits) { const q = clamp(1 - h.t / 0.8, 0, 1); if (q > 0) add({ x: h.x, y: h.y, z: 0.8, color: [0.7, 0.88, 1.0], radius: h.heavy ? 5 : 3.5, intensity: 2.2 * q }); }
     // explosions and debris: the particles, clustered on a coarse grid
     const cells = new Map();
