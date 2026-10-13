@@ -261,18 +261,17 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   the door.
 - **Locks and the intruder:** it's stopped by locked inner doors (it waits, then picks
   another route), and has to bash a locked outer airlock for 8 s.
-- **Small hits:**
-  - Half the time nothing happens.
-  - The other half starts a fire on a part on that side, near the hit. If that side is
-    already burning, it damages a part instead of starting a new fire.
-  - A fire sitting on a part burns it out, spreads to another part nearby, or (20%) just
-    keeps burning when its 15 s are up.
-  - Large hits break 1 part (30%: 2).
+- **Hits** (odds changed 2026-10-13; luck used to be much stronger):
+  - Small hit: 20% a fire on one of the 3 parts nearest to the hit on that side, 10% a
+    broken part on that side, 70% nothing. Never both.
+  - Large hit: always breaks 1 part (30%: 2) and always starts a fire near the hit.
 - **Fires:**
   - Every fire sits on a ship part.
-  - Left alone, every 15 s it either burns out exactly that part, or spreads to a
+  - Left alone, every ~15 s (11-19 s, random per fire) it rolls: 1/3 it spreads to a
     different part in the same room or an adjacent room (same deck next door, or the room
-    across the deck). A ring shows the timer.
+    across the deck); 1/6 it burns out its part and keeps burning; 1/6 it burns out its part
+    and goes out with it (scorch mark); 1/3 nothing. A ring shows the timer.
+  - Plasma fires (every 6 s): half burn out their part, half spread.
   - Fire extinguishers (weapon slot) are on the bridge and in the right cannon room.
     Hold right click to spray; a fire goes out in about 1.3 s.
 - **Intruder:**
@@ -291,9 +290,10 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
     it's doing.
 - **Cat:** you can pet the cat (reactor room corner): hearts and a purr. It secretly gives
   60 s of luck. The game never says so (no text, no sidebar plate).
-  - Small hits do nothing 75% of the time instead of 50%.
-  - A fire just keeps burning when its timer runs out 50% of the time (normally 20%).
-  - A large hit breaks a second part 10% of the time instead of 30%.
+  - Every bad fire outcome gets 10% (relative) less likely, nothing else changes:
+    small hits start a fire 18% instead of 20%, large hits 90% instead of always; a fire
+    spreads 30% instead of 33%, burns out its part and keeps burning 15% instead of 16.7%
+    (burning out and going out stays 16.7%, the rest is "nothing").
 - **Manual override animation:** the extinguisher winds up and slams the handle. Each hit
   brings a clang word, sparks, a screen shake and a new dent; the handle bends, the plate
   cracks, and on the third hit the handle snaps off.

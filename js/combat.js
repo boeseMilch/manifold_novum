@@ -185,7 +185,7 @@ function shieldAbsorb(s, side, x, y) {
 
 function shipHit(side, x, y, large) {
   combat.hits[large ? 'large' : 'small']++;
-  if (large) { damageColumn(side, true); onBigHit(side, x, y); }   // small hits: see smallHit (fire / damage)
+  if (large) { damageColumn(side, true); bigHitFire(side, x, y); onBigHit(side, x, y); }   // small hits: see smallHit (fire / damage)
   combat.decals.push({ x, y, r: large ? 1.1 : 0.5, seed: Math.random() * 1000 });
   if (large) { combat.bigFlashes[side] = 1; combat.shake = 1; sfx.explosion(); }
   else { combat.flashes[side] = 1; sfx.hit(false); smallHit(side, x, y); }

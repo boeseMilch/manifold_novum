@@ -101,39 +101,42 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
 }
 
 function fireAndJumpTests() {
-  // --- fires: small hits = half nothing, half fire (or damage if that side already burns);
+  // --- fires: small hits = 20% fire, 10% a broken part, 70% nothing (never both);
+  //     big hits: a broken part and a fire, always;
   //     fires sit on a part, burn it out or spread to another part nearby; spray puts them out
   {
-    const G = loadGame(NAMES); let n = 0, broke = 0;
-    for (let i = 0; i < 400; i++) { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.shipHit('port', -0.2, 8, false); if (G.fires.length) n++; if (G.SYSTEMS.some(s => s.broken)) broke++; }
-    check(n > 160 && n < 240 && broke === 0, `with no fire around, a small hit starts a fire about half the time and breaks nothing (${n}/400 fires)`);
-    const f0 = G.fires[0] || (G.shipHit('port', -0.2, 8, false), G.fires[0]);
+    const G = loadGame(NAMES); let n = 0, broke = 0, both = 0;
+    for (let i = 0; i < 1000; i++) {
+      G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.shipHit('port', -0.2, 8, false);
+      const f = G.fires.length > 0, b = G.SYSTEMS.some(s => s.broken); if (f) n++; if (b) broke++; if (f && b) both++;
+    }
+    check(n > 160 && n < 240 && broke > 65 && broke < 135 && both === 0, `a small hit starts a fire 20% of the time (${n}/1000), breaks a part 10% (${broke}/1000), never both`);
+    let bigFire = 0, bigBroke = 0;
+    for (let i = 0; i < 50; i++) {
+      G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; s.taped = false; }); G.shipHit('port', -0.2, 8, true);
+      if (G.fires.length) bigFire++; if (G.SYSTEMS.some(s => s.broken)) bigBroke++;
+    }
+    check(bigFire === 50 && bigBroke === 50, `a big hit always breaks a part and starts a fire (${bigBroke}/50, ${bigFire}/50)`);
     G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; });
     G.spawnFire(5, 8);
     const burningPart = G.fires[0].sys;
     check(burningPart && Math.hypot(G.fires[0].x - burningPart.x, G.fires[0].y - burningPart.y) < 0.8, `a fire sits right on a ship part (${burningPart?.name})`);
-    let dmg = 0, newFires = 0;
-    for (let i = 0; i < 200; i++) {
-      G.SYSTEMS.forEach(s => { s.broken = false; }); G.fires.length = 1;
-      G.shipHit('port', -0.2, 8, false);
-      if (G.SYSTEMS.some(s => s.broken)) dmg++; if (G.fires.length > 1) newFires++;
-    }
-    check(dmg > 70 && dmg < 130 && newFires === 0, `on a side that is already burning: half the small hits damage a part instead of a new fire (${dmg}/200)`);
-    void f0;
-    // left alone: after its time (~15 s) it burns out exactly its own part, or spreads to a different part nearby
-    let burnedOwn = 0, spread = 0, kept = 0, other = 0;
-    for (let k = 0; k < 40; k++) {
+    // left alone: after its time (~15 s) it spreads to a different part nearby (1/3), burns out exactly its
+    // own part (1/3; half of those it goes out with it) or keeps burning (1/3)
+    let burnedOwn = 0, spread = 0, kept = 0, wentOut = 0, other = 0;
+    for (let k = 0; k < 120; k++) {
       G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; });
       G.spawnFire(5, 8); const f = G.fires[0], part = f.sys;
       const until = f.period + 0.2;                       // (each fire has its own, slightly random time)
       for (let i = 0; i < 60 * until; i++) { G.combat.shots.length = 0; G.tick(DT); }
       const brokenNow = G.SYSTEMS.filter(s => s.broken);
-      if (brokenNow.length === 1 && brokenNow[0] === part) burnedOwn++;
+      if (brokenNow.length === 1 && brokenNow[0] === part && G.fires.length === 0) wentOut++;
+      else if (brokenNow.length === 1 && brokenNow[0] === part) burnedOwn++;
       else if (brokenNow.length === 0 && G.fires.length === 2 && G.fires[1].sys !== part) spread++;
       else if (brokenNow.length === 0 && G.fires.length === 1) kept++;
       else other++;
     }
-    check(burnedOwn > 6 && spread > 6 && kept > 1 && other === 0, `an ignored fire burns out its own part (${burnedOwn}×), spreads to another part (${spread}×) or just keeps burning (${kept}×), nothing else (${other})`);
+    check(spread > 25 && kept > 25 && burnedOwn > 8 && wentOut > 8 && other === 0, `an ignored fire spreads (${spread}×), keeps burning (${kept}×), burns out its own part (${burnedOwn}×) or burns it out and goes out (${wentOut}×), nothing else (${other})`);
     G.fires.length = 0; G.spawnFire(22.2, 9.5); const fx = G.fires[0];
     G.player.x = fx.x - 1.6; G.player.y = fx.y; G.inv.weapon = 'extinguisher';
     let t = 0; while (G.fires.length && t < 5) { G.spray(fx.x, fx.y, DT); G.tick(DT); t += DT; }

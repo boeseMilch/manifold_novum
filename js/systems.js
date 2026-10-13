@@ -70,7 +70,7 @@ function damageColumn(side, large) {
   const intact = SYSTEMS.filter(s => s.col === col && !s.broken);
   const taped = intact.filter(s => s.taped);              // quick tape jobs give first
   if (large && taped.length) { breakSystem(taped[0]); taped[0].taped = false; return; }
-  const n = large ? (Math.random() < (lucky() ? 0.1 : 0.3) ? 2 : 1) : 0;
+  const n = large ? (Math.random() < 0.3 ? 2 : 1) : 0;   // (luck only cuts the fire chance)
   for (let i = 0; i < n && intact.length; i++) breakSystem(intact.splice(Math.floor(Math.random() * intact.length), 1)[0]);
 }
 

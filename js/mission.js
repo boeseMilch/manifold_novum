@@ -321,10 +321,12 @@ function serviceTarget() {
 }
 
 // ---------------------------------------------------------------------------
-// Fires: every fire sits on a ship part. Small hits: half the time nothing, half the time a
-// fire, or (if that side is already burning) damage to a part instead. Left alone
-// for FIRE_TIME a fire either burns out its part or spreads to another part in the same or an
-// adjacent room.
+// Fires: every fire sits on a ship part. Small hits: 20% a fire, 10% a broken part, else nothing.
+// Big hits: always a broken part (systems.js damageColumn) and a fire. Luck (the cat) makes the
+// fire chance 10% smaller (relative), nothing else. Every FIRE_TIME (roughly) an ignored fire
+// spreads to a part in the same or an adjacent room (1/3), burns out its part (1/3; half of those
+// it goes out with it) or just keeps burning (1/3). Luck makes spreading and burning-out-but-
+// still-burning 10% less likely.
 // ---------------------------------------------------------------------------
 const colOfSide = (side) => side === 'port' ? 0 : side === 'star' ? 2 : 1;
 // Rooms a part belongs to (parts between the decks belong to the rooms above and below).
@@ -350,17 +352,25 @@ function igniteSystem(s, plasma = false) {
   else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
   return true;
 }
+const HIT_FIRE = 0.2, HIT_BREAK = 0.1, LUCK_CUT = 0.9;   // small hits: fire / broken part (exclusive); luck: x0.9 on the fire chance
+// A fire on one of the 3 parts on that side nearest to the hit (intact ones first).
+function fireNear(side, x, y) {
+  const col = colOfSide(side), free = SYSTEMS.filter(s => s.col === col && !burning(s));
+  const near = (l) => l.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)).slice(0, 3);
+  const intact = free.filter(s => !s.broken), pool = near(intact.length ? intact : free);
+  return igniteSystem(pool[Math.floor(Math.random() * pool.length)]);
+}
 function smallHit(side, x, y) {
-  const col = colOfSide(side);
-  const inCol = SYSTEMS.filter(s => s.col === col);
-  if (Math.random() < (lucky() ? 0.75 : 0.5)) return;   // half the time nothing (with luck: three quarters)
-  if (fires.some(f => f.sys.col === col)) {        // that side is already burning: damage instead of a new fire
-    const intact = inCol.filter(s => !s.broken);
+  const r = Math.random(), pFire = HIT_FIRE * (lucky() ? LUCK_CUT : 1);
+  if (r < pFire) fireNear(side, x, y);
+  else if (r < pFire + HIT_BREAK) {
+    const intact = SYSTEMS.filter(s => s.col === colOfSide(side) && !s.broken);
     if (intact.length) breakSystem(intact[Math.floor(Math.random() * intact.length)]);
-  } else {                                          // a fire on a part on that side, near the hit
-    const pool = inCol.filter(s => !s.broken && !burning(s)).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)).slice(0, 3);
-    igniteSystem(pool[Math.floor(Math.random() * pool.length)]);
   }
+}
+// Big hits: the broken parts come from damageColumn; this adds the fire.
+function bigHitFire(side, x, y) {
+  if (Math.random() < (lucky() ? LUCK_CUT : 1)) fireNear(side, x, y);
 }
 // Debug: start a fire on the part nearest to (x, y).
 function spawnFire(x, y) {
@@ -372,8 +382,13 @@ function updateFires(dt) {
     f.t += dt;
     if (fireLeft(f) > 0) continue;
     f.t = 0; f.period = firePeriod(f.plasma);
-    if (!f.plasma && Math.random() < (lucky() ? 0.5 : 0.2)) continue;            // sometimes it just keeps burning
-    if (!f.sys.broken && Math.random() < 0.5) { breakSystem(f.sys); continue; }   // burns out its part
+    if (!f.plasma) {                               // 1/3 spread, 1/6 burn out the part and keep burning, 1/6 burn it out and go out, 1/3 nothing
+      const r = Math.random(), k = lucky() ? LUCK_CUT : 1, pSpread = k / 3, pBurn = k / 6;
+      if (r < pSpread) { /* spreads: below */ }
+      else if (r < pSpread + pBurn) { if (!f.sys.broken) breakSystem(f.sys); continue; }
+      else if (r < pSpread + pBurn + 1 / 6) { if (!f.sys.broken) breakSystem(f.sys); scorch(f.x, f.y); fires.splice(fires.indexOf(f), 1); continue; }
+      else continue;
+    } else if (!f.sys.broken && Math.random() < 0.5) { breakSystem(f.sys); continue; }   // plasma: burns out its part or spreads
     const rooms = sysRooms(f.sys), near = new Set([...rooms, ...rooms.flatMap(adjacentRooms)]);
     const pool = SYSTEMS.filter(s => s !== f.sys && !burning(s) && sysRooms(s).some(r => near.has(r)));
     const intact = pool.filter(s => !s.broken);
