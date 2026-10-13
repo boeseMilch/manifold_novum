@@ -301,11 +301,10 @@ function drawRewards(cx, y) {
 // Browser side: lobby, locker, shipyard (DOM)
 // ---------------------------------------------------------------------------
 const lobbyUI = {
-  tab: 'campaign', union: null, onPick: null, onProfile: null,
+  union: null, onPick: null, onProfile: null,
   el: (id) => document.getElementById(id),
   init(onPick, onProfile) {
     this.onPick = onPick; this.onProfile = onProfile;
-    for (const b of document.querySelectorAll('#lobby-tabs button')) b.onclick = () => { this.tab = b.dataset.tab; this.render(); };
     this.el('lobby-locker').onclick = () => this.shop('locker');
     this.el('lobby-shipyard').onclick = () => this.shop('shipyard');
     this.el('shop-close').onclick = () => { this.el('shop').hidden = true; };
@@ -322,22 +321,28 @@ const lobbyUI = {
       paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}" title="Suit color"></button>`).join('');
       paint.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => { p.paint = p.paint === b.dataset.paint ? null : b.dataset.paint; saveProfile(p); this.render(); this.onProfile?.(); });
     }
-    for (const b of document.querySelectorAll('#lobby-tabs button')) b.classList.toggle('chosen', b.dataset.tab === this.tab);
-    const ids = this.tab === 'campaign' ? CAMPAIGN : this.tab === 'skirmish' ? SKIRMISH : ['practice'];
-    const avail = this.available(), list = this.el('lobby-missions');
+    // One list: only what's unlocked (for you or anyone in the game), so future chapters don't spoil the story.
+    const avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
     list.innerHTML = '';
-    for (const id of ids) {
-      const m = MISSIONS[id]; if (!m) continue;
-      const open = avail.has(id), b = document.createElement('button');
-      b.className = 'mission' + (id === this.chosen ? ' chosen' : '') + (open ? '' : ' locked'); b.dataset.id = id;
-      b.innerHTML = `<b>${open ? '' : '🔒 '}${m.name}${m.tier ? ` <em>${'★'.repeat(m.tier)}</em>` : ''}${p.done[id] ? ' <em class="done">✔</em>' : ''}</b><span>${m.blurb}</span>`;
-      b.onclick = () => { if (!open) return; this.chosen = id; this.onPick(id); this.render(); };
-      list.appendChild(b);
+    for (const [title, ids] of [['Campaign', CAMPAIGN], ['Skirmish', SKIRMISH], ['Practice', ['practice']]]) {
+      const open = ids.filter(id => MISSIONS[id] && avail.has(id));
+      if (!open.length) continue;
+      const h = document.createElement('div'); h.className = 'mission-group'; h.textContent = title; list.appendChild(h);
+      for (const id of open) {
+        const m = MISSIONS[id], b = document.createElement('button');
+        b.className = 'mission' + (id === this.chosen ? ' chosen' : ''); b.dataset.id = id;
+        b.innerHTML = `<b>${m.name}${m.tier ? ` <em>${'★'.repeat(m.tier)}</em>` : ''}${p.done[id] ? ' <em class="done">✔</em>' : ''}</b><span>${m.blurb}</span>`;
+        b.onclick = () => { this.chosen = id; this.onPick(id); this.render(); };
+        list.appendChild(b);
+      }
+      if (open.length < ids.length) { const n = document.createElement('div'); n.className = 'mission-more'; n.textContent = title === 'Campaign' ? 'More chapters unlock as you go.' : 'More unlock as you go.'; list.appendChild(n); }
     }
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
       const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'intruder' ? 'Kill the intruder.' : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
+    list.scrollTop = scroll;
+    list.querySelector('.mission.chosen')?.scrollIntoView?.({ block: 'nearest' });
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
         ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep} · ${R.xp} XP (if you make it back aboard on your feet)` : ''}</p>`}`;

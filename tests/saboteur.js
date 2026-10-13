@@ -2,6 +2,10 @@
 // (slowly solo, quickly with a crew), is weak in a fight, and security locks decide where it can go.
 // The timers are checked against real walking times (tools/travel.js). Run: node tests/saboteur.js
 const { loadGame } = require('./harness');
+// Seeded randomness (the game shares this Math), so every run plays out the same: shot timings,
+// strafing and pop-up rooms are random in the game.
+let seed = 20261013;
+Math.random = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 const { travel } = require('../tools/travel');
 const NAMES = ['tick', 'player', 'crew', 'makeCrew', 'boarding', 'spawnSaboteur', 'hurtInvader', 'SYSTEMS', 'ROOMS', 'roomAt', 'adjacentRooms',
   'HATCHES', 'DOORWAYS', 'DECK_LOCKS', 'SAB_FADE', 'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'SAB_SHOT_SPEED', 'SAB_AIM', 'SAB_HP', 'WALK_SPEED', 'combat'];

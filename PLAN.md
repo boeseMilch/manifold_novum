@@ -786,8 +786,10 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   "‹host›'s game", mission, in lobby / in mission, players n/8, JOIN or FULL at 8/8). Without a server
   the list says so (and how to start server.js) and solo works as before. Side by side on wide
   screens, stacked in a narrow window.
-- The **game lobby** is its own screen: missions on the left; briefing, crew (HOST badge), Locker /
-  Shipyard and START on the right; "‹ LEAVE GAME" (or "‹ MENU" solo).
+- The **game lobby** is its own screen: one scrolling mission list on the left (Campaign, Skirmish,
+  Practice sections; **only unlocked missions**, for you or anyone in the game, so later chapters
+  don't spoil the story: a quiet "More chapters unlock as you go." instead); briefing, crew (HOST
+  badge), Locker / Shipyard and START on the right; "‹ LEAVE GAME" (or "‹ MENU" solo).
 - **server.js** keeps a `games` map; each game has its members (join order), phase, mission, own
   simulation and 60 Hz timer, capped at MAX_PLAYERS = 8. Messages in: `open {mission}`,
   `join {game, ticket?}`, `leave`; out: `games`, `joined {game, ticket}`, `full`, `gone`; `lobby`

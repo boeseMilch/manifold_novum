@@ -193,7 +193,7 @@ function netClientMain() {
   lobbyUI.init(pick, hello);
   $('room-locker').onclick = () => lobbyUI.shop('locker');
   $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
-  const markChosen = () => { lobbyUI.tab = CAMPAIGN.includes(chosen) ? 'campaign' : chosen === 'practice' ? 'practice' : 'skirmish'; lobbyUI.render(chosen); };
+  const markChosen = () => lobbyUI.render(chosen);
   chosen = CAMPAIGN.find(id => unlockedMissions().has(id) && !profile.done[id]) || 'c1';
   const q = new URLSearchParams(location.search);    // dev: ?mission=rush&autostart
   if (q.get('mission') && MISSIONS[q.get('mission')]) chosen = q.get('mission');

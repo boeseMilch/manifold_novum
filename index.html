@@ -34,11 +34,12 @@
   #lobby-profile { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: #dfe4ec; margin-top: 6px; }
   #lobby-profile .bar { width: 120px; height: 8px; border-radius: 4px; background: #1c2028; border: 1px solid #14161b; overflow: hidden; }
   #lobby-profile .bar i { display: block; height: 100%; background: #5fd6a0; }
-  #lobby-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
-  #lobby-tabs button, .row button { flex: 1; padding: 8px; font: 700 13px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
-  #lobby-tabs button.chosen { background: #1d4a36; border-color: #5fd6a0; }
+  .row button { flex: 1; padding: 8px; font: 700 13px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
   .row { display: flex; gap: 8px; margin-top: 12px; }
-  #lobby-missions { grid-template-columns: 1fr 1fr; }
+  #lobby-missions { grid-template-columns: 1fr; gap: 8px; max-height: calc(100vh - 230px); min-height: 220px; overflow-y: auto; padding-right: 6px; scrollbar-color: #4a5262 transparent; }
+  .mission-group { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #9ca6b8; text-transform: uppercase; margin: 8px 0 -2px; }
+  .mission-group:first-child { margin-top: 0; }
+  .mission-more { font-size: 12px; color: #8b94a6; font-style: italic; padding: 0 4px 4px; }
   .mission em { font-style: normal; color: #ffd38a; font-size: 12px; } .mission em.done { color: #5fd6a0; }
   .mission.locked { opacity: 0.45; cursor: not-allowed; }
   #lobby-brief { margin-top: 10px; padding: 10px 14px; border-radius: 8px; background: #1c2028; border: 2px solid #14161b; font-size: 13px; line-height: 1.45; color: #dfe4ec; }
@@ -118,14 +119,14 @@
   #lobby-players .crown { font-size: 10px; letter-spacing: 1px; padding: 1px 5px; border-radius: 4px; background: #ffd38a; color: #14161b; vertical-align: 1px; }
   #lobby-players li.away { opacity: 0.55; }
   #lobby-players small { color: #c9ced8; font-weight: 600; }
-  #room.guest #lobby-tabs, #room.guest #lobby-missions { pointer-events: none; }
+  #room.guest #lobby-missions .mission { pointer-events: none; }
   #room.guest #lobby-missions .mission:not(.chosen) { opacity: 0.55; }
   @media (max-width: 760px) {
     .menu-cols { grid-template-columns: minmax(0, 1fr); }
     .title { margin-bottom: 18px; }
   }
   @media (max-width: 520px) {
-    #lobby-missions { grid-template-columns: 1fr; }
+    #lobby-missions { max-height: 50vh; }
     .row { flex-wrap: wrap; } .row button { flex: 1 1 40%; }
     .plate { padding: 20px 18px; }
     .room-head { flex-direction: column; gap: 10px; } .room-head h1 { font-size: 21px; }
@@ -169,7 +170,6 @@
       <div class="room-cols">
         <div>
           <label>MISSION</label>
-          <div id="lobby-tabs"><button data-tab="campaign">CAMPAIGN</button><button data-tab="skirmish">SKIRMISH</button><button data-tab="practice">PRACTICE</button></div>
           <div id="lobby-missions"></div>
         </div>
         <div class="room-side">
