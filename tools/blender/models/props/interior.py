@@ -12,6 +12,7 @@ so their windows, displays and notes are on top, where the tilted camera sees th
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import propslib
+from mathutils import Vector
 from propslib import *
 import clutter
 from clutter import tape_mat, tape_strip, mug, pizza_model, U, INK
@@ -37,9 +38,17 @@ def counter_job():
     k = Kit(); f = FURN['counter']; w, h, H = f['w'], f['h'], 0.8
     top = worn('ctop', '#a3abb8', 0.4, 0.5, grime=0.8, scratch=0.6, gain=1.3)
     cab = worn('cab', '#6a7384', 0.5, 0.3, grime=1.0, scratch=0.5, gain=1.35)
-    k(mn.box('cab', (w - 0.04, h - 0.06, H - 0.06), loc=(0, 0, 0), m=cab, bevel=0.025))
+    # the sink is set into the counter: one cutter punches the hole through the top, the rim and the cabinet
+    sx = L('counter', 6.85, 0)[0]; HX, HY0, HY1, D = 0.8, -0.24, 0.31, 0.32     # hole: x width, Blender y range, depth
+    hy = (HY0 + HY1) / 2; HD = HY1 - HY0
+    cut = mn.box('sinkcut', (HX, HD, 0.5), loc=(sx, hy, H - D - 0.05), bevel=0); cut.hide_render = True; cut.display_type = 'WIRE'
+    def holed(o, w_=0.02):
+        bo = o.modifiers.new('hole', 'BOOLEAN'); bo.operation = 'DIFFERENCE'; bo.object = cut
+        if w_: mn.bev(o, w_)
+        return o
+    k(holed(mn.box('cab', (w - 0.04, h - 0.06, H - 0.06), loc=(0, 0, 0), m=cab, bevel=0), 0.025))
     k(mn.box('kick', (w - 0.1, h - 0.1, 0.08), loc=(0, 0.02, 0), m=plain('kick', '#262a33', 0.6)))
-    k(mn.box('top', (w, h, 0.06), loc=(0, 0, H - 0.06), m=top, bevel=0.02))
+    k(holed(mn.box('top', (w, h, 0.06), loc=(0, 0, H - 0.06), m=top, bevel=0), 0.02))
     k(mn.box('splash', (w - 0.04, 0.05, 0.1), loc=(0, -(h / 2 - 0.05), H), m=worn('splash', '#7d8593', 0.45, 0.4, gain=1.3), bevel=0.012))
     for i in range(6):                                      # cupboard doors on the face we see
         x = -w / 2 + 0.06 + (i + 0.5) * (w - 0.12) / 6
@@ -47,16 +56,61 @@ def counter_job():
         k(mn.box('knob', (0.1, 0.03, 0.025), loc=(x + (0.13 if i % 2 else -0.13), -h / 2 - 0.0, H - 0.22), m=steelm('knob')), outline=False)
     k(mn.box('dtape', (0.09, 0.012, 0.3), loc=(-w / 2 + 0.06 + 1.0 * (w - 0.12) / 6, -h / 2 + 0.005, 0.3), m=tape_mat(), bevel=0.002, rot=(0, 0.15, 0)), outline=False)   # (a door that won't stay shut)
     Z = H
-    # sink with dirty dishes
-    sx, sy = L('counter', 6.85, 0)[0], -0.04
-    k(mn.box('sinkrim', (0.9, 0.5, 0.02), loc=(sx, -sy, Z), m=steelm('srim'), bevel=0.02))
-    k(mn.box('basin', (0.78, 0.38, 0.012), loc=(sx, -sy, Z + 0.012), m=plain('basin', '#3e4552', 0.35, metal=0.6)), outline=False)
+    # steel flange around the hole
+    k(holed(mn.box('sinkrim', (HX + 0.1, HD + 0.08, 0.016), loc=(sx, hy, Z), m=steelm('srim'), bevel=0), 0.008))
+    # the basin: sloped walls down to a floor D below the top (the back wall and the side slopes face the camera)
+    FX, FY0, FY1, Zf = HX - 0.12, HY0 + 0.05, HY1 - 0.06, Z - D
+    me = bpy.data.meshes.new('basin'); bm = bmesh.new()
+    tv = [bm.verts.new(c) for c in ((sx - HX / 2, HY0, Z + 0.004), (sx + HX / 2, HY0, Z + 0.004), (sx + HX / 2, HY1, Z + 0.004), (sx - HX / 2, HY1, Z + 0.004))]
+    fv = [bm.verts.new(c) for c in ((sx - FX / 2, FY0, Zf), (sx + FX / 2, FY0, Zf), (sx + FX / 2, FY1, Zf), (sx - FX / 2, FY1, Zf))]
+    for i in range(4):
+        j = (i + 1) % 4; bm.faces.new((tv[i], tv[j], fv[j], fv[i]))
+    bm.faces.new(fv)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    for f in bm.faces:                                       # normals into the basin (up / inwards)
+        c = f.calc_center_median()
+        if f.normal.dot(Vector((sx, hy, Z + 0.2)) - c) < 0: f.normal_flip()
+    bm.to_mesh(me); bm.free()
+    basin = k(mn._obj('basin', me), outline=False)
+    mn.assign(basin, worn('basin', '#8a93a3', 0.3, 0.75, grime=1.4, scratch=0.25, gain=1.05))
+    sd = basin.modifiers.new('wall', 'SOLIDIFY'); sd.thickness = 0.015; sd.offset = -1
+    mn.bev(basin, 0.035, 4); mn.smooth(basin)
+    # drain (towards the back, where the camera sees the floor) with a puddle and a crust of old food
+    dx_, dy_ = sx - 0.075, 0.21
+    k(mn.cyl('puddle', 0.15, 0.002, loc=(dx_ - 0.03, dy_ - 0.01, Zf), m=plain('puddle', '#7d93a8', 0.04, coat=1.0, gain=1.0), bevel=0, verts=40), outline=False)
+    k(ring('drainring', 0.065, 0.02, 0.008, loc=(dx_, dy_, Zf), m=steelm('drainr')), outline=False)
+    k(mn.cyl('drainhole', 0.047, 0.004, loc=(dx_, dy_, Zf), m=plain('drainh', '#101216', 0.6), bevel=0), outline=False)
+    for r_ in (0, 1):
+        k(mn.box('drainbar', (0.09, 0.008, 0.006), loc=(dx_, dy_, Zf + 0.002), m=steelm('drainb'), bevel=0, rot=(0, 0, r_ * math.pi / 2 + 0.3)), outline=False)
+    k(mn.sphere('gunk', 0.02, loc=(dx_ - 0.09, dy_ + 0.03, Zf + 0.004), m=plain('gunk', '#7a8a3a', 0.4, coat=0.4), scale=(1.4, 1, 0.4), segs=10), outline=False)
+    # dirty dishes, sunk in: a stack on the floor, one plate leaning on the back wall with its top above the rim
     plate = plain('plate', '#e8e4dc', 0.3, coat=0.5, gain=1.1); smear = plain('smear', '#a06e3c', 0.6)
-    for i, (dx, dy, r) in enumerate(((-7, -2, 8), (-3, 1, 8), (8, 0, 6))):
-        p = k(mn.cyl('dish', r * U * 1.1, 0.018, loc=(sx + dx * U, -(sy + dy * U), Z + 0.03 + i * 0.022), m=plate, bevel=0.006))
-        p.rotation_euler = (0.12 * (i - 1), 0.1, 0)
-        k(ring('food', r * U * 0.6, 0.02, 0.004, loc=(sx + dx * U, -(sy + dy * U), Z + 0.049 + i * 0.022), m=smear, rot=p.rotation_euler), outline=False)
-    k(tube('tap', [(sx, 0.36, Z), (sx, 0.36, Z + 0.28), (sx, 0.24, Z + 0.3), (sx, 0.2, Z + 0.22)], 0.025, steelm('tap'), corner=0.06))
+    px_, py_ = sx - 0.16, 0.0
+    for i in range(4):
+        p = k(mn.cyl('dish', 0.14 - i * 0.004, 0.018, loc=(px_ + i * 0.006, py_ - i * 0.004, Zf + 0.004 + i * 0.022), m=plate, bevel=0.007, verts=40))
+        p.rotation_euler = (0.04 * (i % 2), -0.05, 0)
+    k(ring('food', 0.08, 0.025, 0.004, loc=(px_ + 0.018, py_ - 0.012, Zf + 0.094), m=smear), outline=False)
+    lean = mn.link(bpy.data.objects.new('lean', None)); lean.location = (sx - 0.25, HY1 - 0.14, Zf + 0.06); lean.rotation_euler = (math.radians(66), 0, 0.0); k.parts.append(lean)
+    for o in (k(mn.cyl('dishL', 0.15, 0.018, loc=(0, 0.15, 0), m=plate, bevel=0.007, verts=40)),
+              k(ring('foodL', 0.1, 0.03, 0.004, loc=(0.02, 0.13, 0.018), m=smear), outline=False),
+              k(mn.sphere('peaL', 0.012, loc=(-0.05, 0.18, 0.022), m=plain('pea', '#6aa04a', 0.5), segs=8), outline=False)):
+        o.parent = lean
+    # a frying pan on its side with the handle sticking up over the right edge
+    pan = mn.link(bpy.data.objects.new('pan', None)); pan.location = (sx + 0.17, 0.03, Zf + 0.14); pan.rotation_euler = (0.12, math.radians(-50), 0.15); k.parts.append(pan)
+    panm = plain('pan', '#2b303a', 0.35, coat=0.3)
+    for o in (k(mn.cyl('panb', 0.15, 0.05, loc=(0, 0, 0), m=panm, bevel=0.015, verts=40)),
+              k(mn.cyl('panin', 0.13, 0.004, loc=(0, 0, 0.05), m=plain('panin', '#3e3528', 0.4), bevel=0), outline=False),
+              k(mn.box('panh', (0.36, 0.045, 0.03), loc=(0.32, 0, 0.025), m=plain('panhm', '#14161b', 0.5), bevel=0.012))):
+        o.parent = pan
+    # tall gooseneck faucet on the counter's edge, two taps
+    fy = 0.36
+    k(mn.cyl('fbase', 0.05, 0.04, loc=(sx, -fy, Z), m=steelm('fbase'), bevel=0.012))
+    k(tube('tap', [(sx, fy, Z), (sx, fy, Z + 0.42), (sx, fy - 0.2, Z + 0.46), (sx, fy - 0.26, Z + 0.32)], 0.024, steelm('tap'), corner=0.09))
+    k(mn.cyl('nozzle', 0.03, 0.04, loc=(sx, -(fy - 0.26), Z + 0.29), m=steelm('noz'), bevel=0.01))
+    for tx_, col in ((-0.14, '#e2574c'), (0.14, '#2e7dc9')):
+        k(mn.cyl('tapstem', 0.022, 0.06, loc=(sx + tx_, -fy, Z), m=steelm('tstem'), bevel=0.006))
+        k(mn.box('taph', (0.1, 0.03, 0.025), loc=(sx + tx_, -fy, Z + 0.06), m=steelm('taph'), bevel=0.01, rot=(0, 0, 0.5 if tx_ < 0 else -0.5)))
+        k(mn.cyl('tapdot', 0.014, 0.005, loc=(sx + tx_, -fy, Z + 0.085), m=plain('tdot' + col, col, 0.4), bevel=0), outline=False)
     # stove: two rings, the right one glowing on low, a pot of mystery stew on the left
     kx = L('counter', 8.3, 0)[0]
     k(mn.box('hob', (1.1, 0.56, 0.03), loc=(kx, 0.04, Z), m=plain('hob', '#2b303a', 0.3, coat=0.5)))

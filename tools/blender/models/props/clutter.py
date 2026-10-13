@@ -307,26 +307,116 @@ def plant_job():
             pv.rotation_euler.z = -math.sin(tt * 0.8 + i) * 0.06; pv.keyframe_insert('rotation_euler', frame=f)
     place(k, 'plant', frames=F)
 
+def flute_mat(name, axis):
+    """The cut edge of corrugated cardboard: light liner with darker flutes across it."""
+    m = bpy.data.materials.get(name)
+    return m or stripes_mat(name, '#e6cc98', '#9a7444', k=36.0, rough=0.9, axis=axis)
+
+def blob(name, r, seed, z, m, cx=0.0, cy=0.0, n=40, th=0.003):
+    """An irregular flat splotch (grease, stains), game-local centre (cx, cy)."""
+    rr = rng(seed); ph = [rr() * math.tau for _ in range(3)]; pts = []
+    for i in range(n):
+        a = i / n * math.tau
+        q = r * (1 + 0.2 * math.sin(2 * a + ph[0]) + 0.12 * math.sin(3 * a + ph[1]) + 0.06 * math.sin(5 * a + ph[2]))
+        pts.append((cx + math.cos(a) * q, cy + math.sin(a) * q))
+    return prism(name, pts, z, z + th, m, bevel=0)
+
 def pizza_model(k, s=1.0, z=0.0):
-    T_ = s
-    box = plain('pbox', '#c9a46a', 0.85, gain=1.15); boxd = plain('pboxd', '#b08850', 0.85, gain=1.15)
-    k(mn.box('tray', (0.9 * s, 0.9 * s, 0.05 * s), loc=(0, 0, z), m=box, bevel=0.01 * s))
-    lid = hinged_lid(k, 0.9 * s, 0.9 * s, 0.03 * s, boxd, -0.45 * s, z + 0.045 * s, 108)
-    sp = plain('grease', '#b08a50', 0.5)            # the lid's inside, facing the camera: grease spots, a doodle
-    for gx, gy, gr in ((0.15, 0.3, 0.07), (-0.22, 0.55, 0.05), (0.05, 0.68, 0.04)):
-        on_lid(lid, k(mn.cyl('spot', gr * s, 0.004, m=sp, bevel=0), outline=False), gx * s, gy * s, -0.004)
-    on_lid(lid, k(text('ptxt', 'PIZZA', 0.13 * s, (0, 0, 0), plain('ptxtm', '#c0392b', 0.5), rot=(math.pi, 0, 0)), outline=False), -0.08 * s, 0.45 * s, -0.003)
-    # pizza: two slices gone (canvas arc 0.6 .. TAU - 1.0)
-    a0, a1 = 0.6, math.tau - 1.0; R = 0.36 * s
+    """Open corrugated pizza box (~4.5 cm walls at pizza scale) with the pizza sitting inside, two slices gone.
+    Game-local: the box spans +-0.45 s, the lid is hinged at the back (game -y) and leans back, its
+    printed, grease-stained inside facing the camera; its front tuck flap sticks out towards the camera."""
+    from mathutils import Vector, noise, Matrix
+    W, T, HB, BOT, TH = 0.9 * s, 0.032 * s, 0.12 * s, 0.014 * s, 0.018 * s
+    kraft = worn('pbox', '#c9a46a', 0.88, 0.0, grime=0.55, scratch=0, scale=3.0, gain=1.12)
+    kraftd = worn('pboxin', '#b89058', 0.88, 0.0, grime=0.7, scratch=0, scale=3.0, gain=1.12)
+    red = plain('pprint', '#c0392b', 0.6, gain=1.15); cream = plain('pcream', '#efe2c2', 0.75, gain=1.05)
+    grease = plain('grease', '#9a6c34', 0.3, coat=0.5, gain=1.1); grease2 = plain('grease2', '#7e5426', 0.25, coat=0.6, gain=1.1)
+    # tray: bottom and four double-thick walls; their cut tops show the corrugation
+    k(mn.box('pbot', (W, W, BOT), loc=(0, 0, z), m=kraftd, bevel=0.004 * s))
+    walls = ((0, W / 2 - T / 2, W, T, 'x'), (0, -(W / 2 - T / 2), W, T, 'x'),
+             (W / 2 - T / 2, 0, T, W - 2 * T, 'y'), (-(W / 2 - T / 2), 0, T, W - 2 * T, 'y'))
+    for i, (x, y, sx, sy, ax) in enumerate(walls):
+        k(mn.box('pwall', (sx, sy, HB), loc=(x, -y, z), m=kraft, bevel=0.005 * s))
+        k(mn.box('pflute', (sx - 0.006 * s, sy - 0.01 * s, 0.003 * s), loc=(x, -y, z + HB), m=flute_mat('pflute' + ax, ax), bevel=0), outline=False)
+    # print on the front wall (towards the camera): a red band and the name
+    k(mn.box('pband', (W * 0.96, 0.002, HB * 0.28), loc=(0, -(W / 2 + 0.0005), z + HB * 0.58), m=red, bevel=0), outline=False)
+    k(text('pfront', 'NOVA PIZZA', 0.05 * s, (0, -(W / 2 + 0.002), z + HB * 0.3), red, rot=R90), outline=False)
+    # the inside: grease soaked into the bottom where the missing slices were, a few crumbs
+    k(blob('pgr', 0.11 * s, 7, z + BOT, grease, 0.2 * s, -0.04 * s), outline=False)
+    k(blob('pgr2', 0.05 * s, 9, z + BOT + 0.0008, grease2, 0.24 * s, -0.06 * s), outline=False)
+    for i in range(5):
+        r = rng(40 + i); k(mn.sphere('crumb', 0.009 * s, loc=((0.12 + r() * 0.2) * s, (r() - 0.6) * 0.25 * s, z + BOT + 0.004), m=plain('crust', '#d8984a', 0.6), segs=6), outline=False)
+    # lid: a slightly crumpled corrugated sheet hinged on the back wall, open past upright
+    piv = k(mn.link(bpy.data.objects.new('lidpivot', None)))
+    piv.location = (0, W / 2, z + HB); piv.rotation_euler.x = math.radians(-101)
+    def dent(x, y):                                # lid-local (y runs 0 at the hinge to -W at the free edge)
+        u, v = x / W, -y / W
+        d = 0.012 * s * noise.noise(Vector((u * 3.1, v * 3.1, 0.7))) + 0.004 * s * noise.noise(Vector((u * 9, v * 9, 2.3)))
+        d += 0.02 * s * max(0.0, 1 - abs((u - 0.62) - (v - 0.3) * 0.55) / 0.07) * min(1, v * 3)   # a crease from a fist
+        d += 0.01 * s * (u * u * 4) * v                 # the free corners curl a little
+        return d
+    me = bpy.data.meshes.new('lid'); bm = bmesh.new()
+    NX = 26; vs = {}
+    for i in range(NX + 1):
+        for j in range(NX + 1):
+            x = -W / 2 + W * i / NX; y = -W * j / NX
+            vs[i, j] = bm.verts.new((x, y, dent(x, y)))
+    for i in range(NX):
+        for j in range(NX):
+            f = bm.faces.new((vs[i, j], vs[i + 1, j], vs[i + 1, j + 1], vs[i, j + 1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    for f in bm.faces:
+        if f.normal.z < 0: f.normal_flip()
+    bm.to_mesh(me); bm.free()
+    lid = k(mn._obj('lid', me)); mn.assign(lid, kraftd); mn.smooth(lid)
+    sd = lid.modifiers.new('thick', 'SOLIDIFY'); sd.thickness = TH; sd.offset = 1      # inside face at z = dent (faces the pizza when shut), the outside above it
+    lid.parent = piv
+    def stick(o, lift=0.0012 * s):
+        """Put a decal (child of the lid pivot) onto the crumpled inside of the lid."""
+        o.parent = piv; M = o.matrix_basis.copy(); Mi = M.inverted()
+        for v in o.data.vertices:
+            p = M @ v.co; p.z += dent(p.x, p.y) - lift; v.co = Mi @ p
+        return o
+    def decal(o): return stick(k(o, outline=False))
+    # the inside print: a round logo (a slice in a red ring) above the name
+    lx, ly = -0.04 * s, -0.68 * W
+    decal(mn.cyl('plogo', 0.15 * s, 0.002, loc=(lx, ly, -0.002), m=red, bevel=0, verts=40))
+    decal(mn.cyl('plogo2', 0.12 * s, 0.002, loc=(lx, ly, -0.003), m=cream, bevel=0, verts=40))
+    # a slice, tip down: cheese, crust along the top, two pepperoni
+    for nm, pts, m, dz in (('pslice', [(0, 0.085 * s), (0.07 * s, -0.06 * s), (-0.07 * s, -0.06 * s)], plain('pyel', '#e8b04a', 0.6), -0.0045),
+                           ('pcrust', [(0.075 * s, -0.055 * s), (0.075 * s, -0.08 * s), (-0.075 * s, -0.08 * s), (-0.075 * s, -0.055 * s)], plain('pbrn', '#a8682a', 0.6), -0.0055)):
+        o = k(prism(nm, pts, 0, 0.002, m, bevel=0), outline=False); o.location = (lx, ly, dz); o.rotation_euler = (math.pi, 0, 0); stick(o)
+    for px, py in ((-0.018, -0.025), (0.022, 0.0)):
+        decal(mn.cyl('ppep', 0.014 * s, 0.002, loc=(lx + px * s, ly + py * s, -0.0065), m=red, bevel=0, verts=16))
+    decal(text('ptxt', 'PIZZA', 0.13 * s, (lx, -0.42 * W, -0.003), red, rot=(math.pi, 0, 0)))
+    decal(text('ptxt2', 'HOT & FRESH', 0.05 * s, (lx, -0.28 * W, -0.003), red, rot=(math.pi, 0, 0)))
+    # grease soaked through where the pizza touched the lid, a darker core, a drip
+    for nm, r, sd_, cx, cy, m, dz in (('lgr', 0.13, 3, 0.27, -0.5, grease, -0.0035), ('lgr2', 0.06, 5, 0.3, -0.53, grease2, -0.0045),
+                                      ('lgr3', 0.05, 11, -0.24, -0.82, grease, -0.0035)):
+        b_ = k(blob(nm, r * s, sd_, 0, m, 0, 0), outline=False); b_.location = (cx * s, cy * s, dz); b_.rotation_euler = (math.pi, 0, 0); stick(b_)
+    # front tuck flap at the free edge, sagging towards the camera; its cut edge shows the flutes
+    fp = k(mn.link(bpy.data.objects.new('flappivot', None))); fp.parent = piv; fp.location = (0, -W, dent(0, -W)); fp.rotation_euler.x = math.radians(18)
+    FL = 0.13 * s
+    flap = k(mn.box('pflap', (W - 0.05 * s, TH, FL), loc=(0, TH / 2, -FL), m=kraft, bevel=0.003 * s)); flap.parent = fp
+    fe = k(mn.box('pflapcut', (W - 0.056 * s, TH * 0.8, 0.003 * s), loc=(0, TH / 2, -FL - 0.0015 * s), m=flute_mat('pflutex', 'x'), bevel=0), outline=False); fe.parent = fp
+    # side ears folded in along the lid's sides
+    for sx in (-1, 1):                             # trapezoids in the lid's y-z plane, TH thick in x
+        ear = k(prism('pear', [(-0.08 * W, 0.0), (-0.84 * W, 0.0), (-0.76 * W, 0.1 * s), (-0.17 * W, 0.1 * s)], 0, TH, kraft, bevel=0.002 * s))
+        for v in ear.data.vertices:
+            v.co = Vector((sx * (W / 2 - 0.02 * s) + v.co.z - TH / 2, v.co.x, v.co.y))
+        ear.parent = piv
+    # pizza: two slices gone (canvas arc 0.6 .. TAU - 1.0), a clear gap to the walls
+    a0, a1 = 0.6, math.tau - 1.0; R = 0.33 * s; zb = z + BOT
     pts = [(0, 0)] + [(math.cos(a0 + (a1 - a0) * i / 40) * R, math.sin(a0 + (a1 - a0) * i / 40) * R) for i in range(41)]
-    k(prism('cheese', pts, z + 0.05 * s, z + 0.075 * s, plain('cheese', '#e8b04a', 0.45, coat=0.3), bevel=0.006 * s))
-    k(tube('crust', [(math.cos(a0 + (a1 - a0) * i / 40) * R, math.sin(a0 + (a1 - a0) * i / 40) * R, z + 0.075 * s) for i in range(41)], 0.03 * s,
+    k(prism('dough', pts, zb, zb + 0.014 * s, plain('dough', '#d8a25a', 0.6), bevel=0.004 * s))
+    k(prism('cheese', pts, zb + 0.012 * s, zb + 0.03 * s, plain('cheese', '#e8b04a', 0.45, coat=0.3), bevel=0.006 * s))
+    k(tube('crust', [(math.cos(a0 + (a1 - a0) * i / 40) * R, math.sin(a0 + (a1 - a0) * i / 40) * R, zb + 0.026 * s) for i in range(41)], 0.028 * s,
            plain('crust', '#d8984a', 0.6), corner=0.0))
     pep = plain('pep', '#c0392b', 0.4, coat=0.3)
     for px, py in ((-8, -6), (6, -10), (-4, 8), (-12, 4), (2, 2)):
-        k(mn.cyl('pep', 3 * U * s * 1.2, 0.012 * s, loc=(px * U * s, -py * U * s, z + 0.074 * s), m=pep, bevel=0.003 * s, verts=16), outline=False)
+        k(mn.cyl('pep', 3 * U * s * 1.2, 0.012 * s, loc=(px * U * s, -py * U * s, zb + 0.026 * s), m=pep, bevel=0.003 * s, verts=16), outline=False)
     for bx, by in ((-0.12, 0.1), (0.1, 0.18), (-0.02, -0.2)):   # basil
-        k(mn.sphere('basil', 1, loc=(bx * s, -by * s, z + 0.08 * s), m=plain('basil', '#3f8a3a', 0.5), scale=(0.025 * s, 0.015 * s, 0.006 * s), segs=8), outline=False)
+        k(mn.sphere('basil', 1, loc=(bx * s, -by * s, zb + 0.034 * s), m=plain('basil', '#3f8a3a', 0.5), scale=(0.025 * s, 0.015 * s, 0.006 * s), segs=8), outline=False)
 
 @job('pizza')
 def pizza_job():
