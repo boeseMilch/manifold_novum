@@ -151,6 +151,7 @@ function updateBreaches(dt) {
 const inPlasmaRoom = (s) => sysRooms(s).some(r => PLASMA_ROOMS.has(r.id));
 const plasmaPart = (s) => inPlasmaRoom(s) && s.kind === 'capacitor' && s.ref.charge >= 3;   // a well charged capacitor in a lower side room
 const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));
+const fireIn = (roomId) => fires.some(f => f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));   // any fire: venting works on normal fires too
 // operator: whoever typed the override code — their visor is already down, so they're not hurt.
 // Everyone else in the room takes one hit the moment it opens (the vacuum afterwards only slows you).
 function startVent(roomId, operator = null) {
@@ -250,14 +251,14 @@ function hazardClickTarget(mx, my) {
     return holdTarget('grav' + id, GRAV_TIME, `Hold click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
                       () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); });
   }
-  // plasma fire in a lower side room: the panel next to its outer airlock vents the room (manual override:
+  // a fire (plasma or normal) in a lower side room: the panel next to its outer airlock vents the room (manual override:
   // a PIN pad, with the admin password on a sticky note right next to it — js/minigames.js)
   for (const [id, [x, y]] of Object.entries(VENT_PANELS)) {
     if (!at(x, y, 0.5)) continue;
     if (!near(x, y)) return { text: 'Airlock vent panel — get closer', ok: false, x, y, r: 0.5 };
-    if (!plasmaIn(id)) return { text: 'Airlock vent panel (only for plasma fires in this room)', ok: false, x, y, r: 0.5 };
+    if (!fireIn(id)) return { text: 'Airlock vent panel (only when this room is on fire)', ok: false, x, y, r: 0.5 };
     if (hz.vent) return { text: 'The room is already being vented', ok: false, x, y, r: 0.5 };
-    return { text: 'Click: type the override code to open BOTH airlock doors and vent the plasma fire — everyone else still inside gets hurt (your visor goes down)', ok: true, x, y, r: 0.5,
+    return { text: 'Click: type the override code to open BOTH airlock doors and vent the fire — everyone else still inside gets hurt (your visor goes down)', ok: true, x, y, r: 0.5,
              run: () => openPinPad(id) };
   }
   // snack machine: free, one snack per minute each, and only worth it when you're hurt (ends it 10 s sooner)
@@ -319,7 +320,7 @@ function hazardSpots() {
     ...hz.breaches.filter(b => !b.tarp).map(b => ({ x: BREACH_SPOTS[b.room].x, y: BREACH_SPOTS[b.room].y, r: 0.6 })),
     ...hz.surges.map(id => { const [x, y] = linePoint(LINE[id], 0.5); return { x, y, r: 0.5 }; }),
     ...hz.noGrav.map(id => ({ x: GRAV_PANELS[id][0], y: GRAV_PANELS[id][1], r: 0.5 })),
-    ...Object.entries(VENT_PANELS).filter(([id]) => plasmaIn(id)).map(([, [x, y]]) => ({ x, y, r: 0.4 })),
+    ...Object.entries(VENT_PANELS).filter(([id]) => fireIn(id)).map(([, [x, y]]) => ({ x, y, r: 0.4 })),
     { x: SNACK.x, y: SNACK.y, r: 0.6 }, { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.3 },
     ...PLATE_CRATES.filter(() => hz.plates > 0).map(p => ({ x: p.x, y: p.y, r: 0.6 })),
   ];
@@ -434,9 +435,9 @@ function combatFxLocal(x, y, t) {                      // a puff of escaping air
   ctx.fillStyle = `rgba(220,235,250,${0.35 * (1 - k)})`; ctx.fill();
 }
 function drawHazardProps(t) {
-  // the vent panels next to the outer airlocks: dark until a plasma fire burns in that room
+  // the vent panels next to the outer airlocks: dark until a fire burns in that room
   for (const [id, [vx, vy]] of Object.entries(VENT_PANELS)) {
-    const x = L(vx), y = L(vy), live = plasmaIn(id), on = hz.vent?.room === id;
+    const x = L(vx), y = L(vy), live = fireIn(id), on = hz.vent?.room === id;
     const side = id === 'portLock' ? 'port' : 'star';
     if (spr(`systems/vent_${side}_${on ? 'venting' : live ? `alarm_f${Math.sin(t * 8) > 0 ? 0 : 1}` : 'idle'}`, 0, vx, vy, 0, { emissive: 0.9, pick: [0.25, 0.8] })) {
       if (live) worldText(vx, vy + 0.27, 0, 'VENT', `800 ${T * 0.1}px system-ui, sans-serif`, 'rgba(255,170,150,0.9)', { base: 'top' });

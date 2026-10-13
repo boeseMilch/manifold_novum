@@ -36,6 +36,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(!G.ITEMS.some(i => i.kind === 'drill') && G.hz.floating.some(f => f.kind === 'drill'), 'loose items get sucked out through the hole within ~8 s');
   tickN(G, 60 * 12);
   check(G.CAPACITORS[0].charge === 0, 'the room\'s capacitor leaks its charge (1 every 20 s)');
+  G.fires.length = 0;                               // (big hits start fires too)
   G.igniteSystem(G.SYSTEMS.find(s => s.kind === 'capacitor' && s.ref === G.CAPACITORS[0]));
   check(!G.fires.length, 'no fire can start in vacuum');
   // tarp from inside
@@ -73,6 +74,23 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const G = fresh({ breach: true }); G.breachRoom('portGun'); tickN(G, 30);
   const me = G.me, d = G.DOORWAYS[0]; me.x = d.x + d.w + 0.5; me.y = d.y + d.h / 2; G.simTick(DT);
   check(/force it up/.test(me.prompt?.text || ''), `next to a blast door (not to the reactor room) you can force it ("${me.prompt?.text}")`);
+}
+// --- a normal fire can be vented too; a burning broken part can't be repaired until the fire is out
+{
+  const G = fresh({});
+  G.CAPACITORS[0].charge = 0;
+  const s = G.SYSTEMS.find(s => s.ref === G.CAPACITORS[0]);
+  G.igniteSystem(s);
+  check(G.fires[0] && !G.fires[0].plasma, 'a fire on an empty capacitor is a normal fire');
+  const me = G.me, [px, py] = G.VENT_PANELS.portLock; me.x = px + 0.9; me.y = py; G.simTick(DT);
+  const v = G.withCrew(me, () => G.clickTarget(px, py));
+  check(v?.ok && /vent/i.test(v.text), 'the vent panel works on a normal fire as well');
+  s.broken = true; me.x = s.x + 0.8; me.y = s.y; G.simTick(DT);
+  const r = G.withCrew(me, () => { G.inv.weapon = 'repair'; return G.clickTarget(s.x, s.y); });
+  check(r && !r.ok && !r.repair && /fire/i.test(r.text), `a burning broken part can't be repaired ("${r?.text}")`);
+  G.fires.length = 0;
+  const r2 = G.withCrew(me, () => G.clickTarget(s.x, s.y));
+  check(r2?.ok && r2.repair === s, 'with the fire out, it can be repaired');
 }
 // --- plasma fire and venting (only in the lower side rooms)
 {

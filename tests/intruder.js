@@ -74,9 +74,9 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   t.run();
   check(G.lucky() && Math.abs(G.luck.t - 60) < 0.1, 'petting it secretly makes you lucky for 60 s');
   let nothing = 0;
-  let lit = 0;
-  for (let i = 0; i < 2000; i++) { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.smallHit('port', -0.2, 8); if (G.fires.length) lit++; else if (!G.SYSTEMS.some(s => s.broken)) nothing++; }
-  check(lit > 300 && lit < 420 && nothing > 1340, `while lucky, small hits start a fire 18% of the time instead of 20% (${lit}/2000); ${nothing}/2000 do nothing`);
+  let lit = 0, brk = 0;
+  for (let i = 0; i < 2000; i++) { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.smallHit('port', -0.2, 8); if (G.fires.length) lit++; else if (G.SYSTEMS.some(s => s.broken)) brk++; else nothing++; }
+  check(lit > 300 && lit < 420 && brk > 130 && brk < 230, `while lucky, small hits start a fire 18% of the time instead of 20% (${lit}/2000) and break a part 9% instead of 10% (${brk}/2000)`);
   for (let i = 0; i < 60 * 61; i++) G.tick(DT);
   check(!G.lucky(), 'luck wears off after a minute');
 }

@@ -111,12 +111,12 @@ function fireAndJumpTests() {
       const f = G.fires.length > 0, b = G.SYSTEMS.some(s => s.broken); if (f) n++; if (b) broke++; if (f && b) both++;
     }
     check(n > 160 && n < 240 && broke > 65 && broke < 135 && both === 0, `a small hit starts a fire 20% of the time (${n}/1000), breaks a part 10% (${broke}/1000), never both`);
-    let bigFire = 0, bigBroke = 0;
+    let bigFire = 0, bigBroke = 0, bigTwo = 0;
     for (let i = 0; i < 50; i++) {
       G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; s.taped = false; }); G.shipHit('port', -0.2, 8, true);
-      if (G.fires.length) bigFire++; if (G.SYSTEMS.some(s => s.broken)) bigBroke++;
+      if (G.fires.length) bigFire++; const nb = G.SYSTEMS.filter(s => s.broken).length; if (nb) bigBroke++; if (nb > 1) bigTwo++;
     }
-    check(bigFire === 50 && bigBroke === 50, `a big hit always breaks a part and starts a fire (${bigBroke}/50, ${bigFire}/50)`);
+    check(bigFire === 50 && bigBroke === 50 && bigTwo === 0, `a big hit always breaks exactly one part and starts a fire (${bigBroke}/50, ${bigFire}/50, two parts: ${bigTwo})`);
     G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; });
     G.spawnFire(5, 8);
     const burningPart = G.fires[0].sys;

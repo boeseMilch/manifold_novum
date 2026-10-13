@@ -70,7 +70,7 @@ function damageColumn(side, large) {
   const intact = SYSTEMS.filter(s => s.col === col && !s.broken);
   const taped = intact.filter(s => s.taped);              // quick tape jobs give first
   if (large && taped.length) { breakSystem(taped[0]); taped[0].taped = false; return; }
-  const n = large ? (Math.random() < 0.3 ? 2 : 1) : 0;   // (luck only cuts the fire chance)
+  const n = large ? 1 : 0;                       // big hits: exactly one part (plus a fire: mission.js bigHitFire)
   for (let i = 0; i < n && intact.length; i++) breakSystem(intact.splice(Math.floor(Math.random() * intact.length), 1)[0]);
 }
 
@@ -251,6 +251,7 @@ function clickTarget(mx, my) {
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
+    if (burning(s)) return { text: `${s.name} is on fire — put the fire out before you can repair it`, ok: false, ...s };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
     return { text: `Hold click: repair ${s.name.toLowerCase()} (${REPAIR_TIME} s) · quick click: tape job`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
   }

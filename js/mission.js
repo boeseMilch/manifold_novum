@@ -322,8 +322,8 @@ function serviceTarget() {
 
 // ---------------------------------------------------------------------------
 // Fires: every fire sits on a ship part. Small hits: 20% a fire, 10% a broken part, else nothing.
-// Big hits: always a broken part (systems.js damageColumn) and a fire. Luck (the cat) makes the
-// fire chance 10% smaller (relative), nothing else. Every FIRE_TIME (roughly) an ignored fire
+// Big hits: always exactly one broken part (systems.js damageColumn) and a fire. Luck (the cat)
+// makes the fire chances and the small-hit break chance 10% smaller (relative). Every FIRE_TIME (roughly) an ignored fire
 // spreads to a part in the same or an adjacent room (1/3), burns out its part (1/3; half of those
 // it goes out with it) or just keeps burning (1/3). Luck makes spreading and burning-out-but-
 // still-burning 10% less likely.
@@ -352,7 +352,7 @@ function igniteSystem(s, plasma = false) {
   else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
   return true;
 }
-const HIT_FIRE = 0.2, HIT_BREAK = 0.1, LUCK_CUT = 0.9;   // small hits: fire / broken part (exclusive); luck: x0.9 on the fire chance
+const HIT_FIRE = 0.2, HIT_BREAK = 0.1, LUCK_CUT = 0.9;   // small hits: fire / broken part (exclusive); luck: x0.9 on both
 // A fire on one of the 3 parts on that side nearest to the hit (intact ones first).
 function fireNear(side, x, y) {
   const col = colOfSide(side), free = SYSTEMS.filter(s => s.col === col && !burning(s));
@@ -361,9 +361,9 @@ function fireNear(side, x, y) {
   return igniteSystem(pool[Math.floor(Math.random() * pool.length)]);
 }
 function smallHit(side, x, y) {
-  const r = Math.random(), pFire = HIT_FIRE * (lucky() ? LUCK_CUT : 1);
+  const k = lucky() ? LUCK_CUT : 1, r = Math.random(), pFire = HIT_FIRE * k;
   if (r < pFire) fireNear(side, x, y);
-  else if (r < pFire + HIT_BREAK) {
+  else if (r < pFire + HIT_BREAK * k) {
     const intact = SYSTEMS.filter(s => s.col === colOfSide(side) && !s.broken);
     if (intact.length) breakSystem(intact[Math.floor(Math.random() * intact.length)]);
   }

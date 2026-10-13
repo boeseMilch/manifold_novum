@@ -264,7 +264,7 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
 - **Hits** (odds changed 2026-10-13; luck used to be much stronger):
   - Small hit: 20% a fire on one of the 3 parts nearest to the hit on that side, 10% a
     broken part on that side, 70% nothing. Never both.
-  - Large hit: always breaks 1 part (30%: 2) and always starts a fire near the hit.
+  - Large hit: always breaks exactly 1 part and always starts a fire near the hit.
 - **Fires:**
   - Every fire sits on a ship part.
   - Left alone, every ~15 s (11-19 s, random per fire) it rolls: 1/3 it spreads to a
@@ -272,6 +272,10 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
     across the deck); 1/6 it burns out its part and keeps burning; 1/6 it burns out its part
     and goes out with it (scorch mark); 1/3 nothing. A ring shows the timer.
   - Plasma fires (every 6 s): half burn out their part, half spread.
+  - A broken part that is burning can't be repaired (or taped) until its fire is out.
+  - The vent panels next to the outer airlocks (bathroom, gym) also vent normal fires, not
+    only plasma ones (same PIN-pad override, same hurt for anyone left inside).
+  - Big hits start their fire after a possible breach, so never in a room that just lost its air.
   - Fire extinguishers (weapon slot) are on the bridge and in the right cannon room.
     Hold right click to spray; a fire goes out in about 1.3 s.
 - **Intruder:**
@@ -291,7 +295,8 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
 - **Cat:** you can pet the cat (reactor room corner): hearts and a purr. It secretly gives
   60 s of luck. The game never says so (no text, no sidebar plate).
   - Every bad fire outcome gets 10% (relative) less likely, nothing else changes:
-    small hits start a fire 18% instead of 20%, large hits 90% instead of always; a fire
+    small hits start a fire 18% instead of 20% and break a part 9% instead of 10%, large hits
+    start a fire 90% instead of always (they still always break one part); a fire
     spreads 30% instead of 33%, burns out its part and keeps burning 15% instead of 16.7%
     (burning out and going out stays 16.7%, the rest is "nothing").
 - **Manual override animation:** the extinguisher winds up and slams the handle. Each hit

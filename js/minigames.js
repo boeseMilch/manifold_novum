@@ -120,7 +120,7 @@ function updateMinigames(dt) {
       else {                                             // ACCESS GRANTED: the operator closes their visor, both doors open
         c.ui.panel = null; c.ui.mini = null;
         if (hz.vent) continue;                           // (someone else got there first)
-        if (plasmaIn(m.room)) startVent(m.room, c); else combatBanner('The plasma fire is already out — vent cancelled');
+        if (fireIn(m.room)) startVent(m.room, c); else combatBanner('The fire is already out — vent cancelled');
         continue;
       }
     }
