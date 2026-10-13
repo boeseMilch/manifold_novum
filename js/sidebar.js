@@ -41,7 +41,7 @@ function encounterPlates() {
   dockPlates(add);
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
-  for (const s of SYSTEMS) if (s.broken) add('broken' + s.name, { icon: 'wrench', title: 'BROKEN', sub: s.name, stripe: '#e2574c', red: true });
+  for (const s of SYSTEMS) if (s.broken) add('broken' + s.name, { icon: 'wrench', title: 'BROKEN', sub: s.outside ? `${s.name} · no shield · fix it outside` : s.name, stripe: '#e2574c', red: true });
   if (mission.active && !mission.over) {
     const { known, mocks } = radarList();
     for (const e of known) if (!e.done) add('ev' + e.id, { icon: e.kind === 'swarm' ? 'asteroid' : e.kind === 'intruder' ? 'alien' : e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });

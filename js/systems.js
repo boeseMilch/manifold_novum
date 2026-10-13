@@ -54,6 +54,8 @@ const SYSTEMS = [
   { kind: 'lever', ref: LEVER, col: 1, x: LEVER.x, y: LEVER.y, name: 'Power lever' },
   ...DECK_LOCKS.map(L => ({ kind: 'lock', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} deck airlock`, r: 2.4 })),
   ...HATCHES.map(h => ({ kind: 'hatch', ref: h, col: h.side === 'port' ? 0 : 2, x: h.inside[0] - h.dir * 0.4, y: h.inside[1], name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock` })),
+  // outside on the hull (outside: no fires in vacuum, no inside repair or tape job, no saboteur; fixed on a spacewalk)
+  ...SHIELD_EMITTERS.map(e => ({ kind: 'emitter', ref: e, col: SIDE_CAP[e.side], x: e.x, y: e.y, name: `${SIDE_LABEL[e.side]} shield emitter`, r: 0.7, outside: true })),
 ].map(s => ({ ...s, broken: false, r: s.r || 1.0 }));
 const broken = (ref) => !!SYSTEMS.find(s => s.ref === ref)?.broken;
 
@@ -250,6 +252,7 @@ function clickTarget(mx, my) {
   if (m) return m;
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
+    if (s.outside) return { text: `${s.name} is broken — it's outside on the hull: repair it on a spacewalk`, ok: false, ...s };
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
     if (burning(s)) return { text: `${s.name} is on fire — put the fire out before you can repair it`, ok: false, ...s };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
@@ -322,9 +325,22 @@ function hurtCrew(c) {
   c.health = h === 'ok' ? 'hurt' : h === 'hurt' ? 'down' : 'out';
   c.hurtT = HURT_TIME; c.treat = null;
   if (c.health === 'down' || c.health === 'out') {
-    if (c.mode === 'gun') { c.cover = 0; c.mode = 'inside'; [c.x, c.y] = c.gun.hatch; c.gun = null; }   // falls back down the ladder
-    combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT — someone has to treat them!' : 'down!'}`);
+    if (c.mode === 'gun') {                       // slumps in the seat, below the rim: shots can't reach them (js/combat.js)
+      c.cover = 0; c.gunReady = false;
+      combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT' : 'down'} in the ${c.gun.name.toLowerCase()} — pull them out at its ladder`);
+    } else combatBanner(`${c.name} is ${c.health === 'out' ? 'OUT — someone has to treat them!' : 'down!'}`);
   }
+}
+// A crew member at a cannon's ladder pulls the one slumped in it (down or out) back inside, next to the
+// hatch, still down: there they can be treated as usual, and the cannon is free again.
+function pullOutOfCannon(c, g) {
+  if (c.mode !== 'gun' || c.gun !== g || standing(c)) return;
+  c.mode = 'inside'; c.gun = null; c.cover = 0; c.vx = c.vy = 0; c.treat = null;
+  const rects = walkRects(), [hx, hy] = g.hatch;
+  const spots = [[0, 0.75], [0.75, 0], [-0.75, 0], [0, -0.75]].map(([dx, dy]) => [hx + dx, hy + dy]).filter(([x, y]) => canStand(x, y, rects));
+  spots.sort((a, b) => Math.hypot(b[0] - player.x, b[1] - player.y) - Math.hypot(a[0] - player.x, a[1] - player.y));   // not on the puller's feet
+  [c.x, c.y] = spots[0] || g.hatch;
+  sfx.clank(); combatBanner(`${player.name} pulled ${c.name} out of the ${g.name.toLowerCase()}`);
 }
 function updateInjury(c, dt) {
   if (c.health === 'hurt' && (c.hurtT -= dt) <= 0) { c.health = 'ok'; c.hurtT = 0; }
@@ -384,9 +400,20 @@ function updateHold(dt, target, holding) {
   if (!h.exact && Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.hold.t >= h.time - 1e-6) { player.hold = null; h.done(); }
 }
-// What a click does on a spacewalk (hazards, EVA jobs).
+// What a click does on a spacewalk (hazards, EVA jobs, broken parts outside on the hull).
 function evaClickTarget(mx, my) {
-  return hazardEvaTarget(mx, my) || evaJobTarget(mx, my) || organicEvaTarget(mx, my) || dockEvaTarget(mx, my);
+  return hazardEvaTarget(mx, my) || evaJobTarget(mx, my) || organicEvaTarget(mx, my) || dockEvaTarget(mx, my) || outsideRepairTarget(mx, my);
+}
+// Broken parts on the outside of the hull (the shield emitters): hold click with the repair kit, as inside.
+function outsideRepairTarget(mx, my) {
+  for (const s of SYSTEMS) {
+    if (!s.outside || !s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
+    if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, x: s.x, y: s.y, r: s.r };
+    if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, x: s.x, y: s.y, r: s.r };
+    return holdTarget('fix' + s.kind + s.ref.side, REPAIR_TIME, `Hold click: repair the ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, s.x, s.y, s.r,
+                      () => { s.broken = false; hz.stats.repairs++; combatBanner(`${s.name} repaired — the shield works again`); sfx.win(); });
+  }
+  return null;
 }
 
 // Repairing: hold the mouse on a broken system with the repair kit.
@@ -553,7 +580,7 @@ function drawEnergyBolts() {
 // floor round it, the loose cover panel (systems/broken_panel) lying on the floor in front of the machine,
 // where it can be seen; while the reactor's / a ladder's broken sprite is still loading they get a burn mark
 // on their front (fx/scorch_*, upright) instead; fx/smoke_* puffs rising; sparks 2D (glow layer), the BROKEN label on top.
-const BROKEN_FRONT = { reactor: 1.3, cannon: 0.36, shield: 0.32, capacitor: 0.42, lever: 0.45, lock: 0.3, hatch: 0.4 };
+const BROKEN_FRONT = { reactor: 1.3, cannon: 0.36, shield: 0.32, capacitor: 0.42, lever: 0.45, lock: 0.3, hatch: 0.4, emitter: 0.1 };
 function drawBrokenSprites(s, t) {
   const rad = Math.min(s.r, 1.1), panel = GFX.has('systems/broken_panel') ? 'systems/broken_panel' : 'fx/loose_panel';
   if (!GFX.ready('systems/broken_scorch') || !GFX.ready(panel) || !GFX.ready('fx/smoke_0')) return false;
@@ -573,7 +600,8 @@ function drawBrokenSprites(s, t) {
 }
 function drawBroken(s, t) {
   const x = L(s.x), y = L(s.y), r = L(Math.min(s.r, 1.1));
-  if (!(GFX.on && drawBrokenSprites(s, t))) {
+  if (s.outside) { /* on the hull, in vacuum: its own broken look (drawShieldEmitters), no smoke or floor scorch; just the sparks */ }
+  else if (!(GFX.on && drawBrokenSprites(s, t))) {
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
     g.addColorStop(0, 'rgba(15,12,10,0.55)'); g.addColorStop(1, 'rgba(15,12,10,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();

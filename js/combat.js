@@ -186,11 +186,12 @@ function shieldAbsorb(s, side, x, y) {
 function shipHit(side, x, y, large) {
   combat.hits[large ? 'large' : 'small']++;
   if (large) { damageColumn(side, true); onBigHit(side, x, y); bigHitFire(side, x, y); }   // (the fire after a breach: no fire in vacuum)   // small hits: see smallHit (fire / damage)
-  combat.decals.push({ x, y, r: large ? 1.1 : 0.5, seed: Math.random() * 1000 });
+  // hot: when it hit (sim time), side: from where. js/hitfx.js plays the impact (sparks, smoke, debris,
+  // flash) on every client when it first sees this decal, and lets the spot glow and cool from `hot`.
+  combat.decals.push({ x, y, r: large ? 1.1 : 0.5, seed: Math.random() * 1000, hot: time, side });
   if (large) { combat.bigFlashes[side] = 1; combat.shake = 1; sfx.explosion(); }
   else { combat.flashes[side] = 1; sfx.hit(false); smallHit(side, x, y); }
-  for (let i = 0; i < (large ? 30 : 12); i++) combatFx(x, y, (Math.random() - 0.5) * 8, (Math.random() - 0.5) * 8, 0.7, i % 2 ? '#ffb347' : '#e2574c', large ? 0.25 : 0.14);
-  combatFlip(large ? 'fx/explosion_l' : 'fx/explosion_s', x, y);
+  combatFlip(large ? 'fx/explosion_l' : 'fx/explosion_s', x, y, large ? 0.8 : 0.7, hitSurface(x, y).z);
 }
 function crewHit(side, c) {
   combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c);
@@ -199,10 +200,13 @@ function crewHit(side, c) {
   combatFlip('fx/hit_spark', c.x, c.y, 1, z);
 }
 
+const emitterOf = (side) => SHIELD_EMITTERS.find(e => e.side === side);
 // Costs one energy from that side's capacitor; with none, nothing happens (no cooldown either).
+// The button only switches the emitter outside on: a broken emitter means no shield on that side.
 function pressShield(side) {
   const s = combat.shields[side];
   if (broken(SHIELD_BUTTONS.find(b => b.side === side))) return 'broken';
+  if (broken(emitterOf(side))) { sfx.empty(); combatBanner(`The ${SIDE_LABEL[side].toLowerCase()} shield emitter outside is broken — repair it on a spacewalk`); return 'emitter'; }
   if (grabbed(side)) { sfx.empty(); combatBanner('A tentacle is wrapped around that side — the shield can\'t go up'); return 'grabbed'; }
   if (s.up > 0 || s.cd > 0) return false;
   if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
@@ -218,6 +222,10 @@ function updateCombat(dt) {
   for (const g of GUNS) {
     g.cd = Math.max(0, (g.cd || 0) - dt); g.flash = Math.max(0, g.flash - dt * 6);
     if (g.reload > 0 && (g.reload -= dt) <= 0) { g.reload = 0; g.shots = SHOTS_PER_ENERGY; sfx.clank(); }
+  }
+  for (const side in combat.shields) {             // its emitter got knocked out: the shield collapses (and recharges as usual)
+    const s = combat.shields[side];
+    if (s.up > 0 && broken(emitterOf(side))) { s.up = 0; s.cd = Math.min(s.cd, SHIELD_COOLDOWN); }
   }
   for (const s of Object.values(combat.shields)) { s.up = Math.max(0, s.up - dt); s.cd = Math.max(0, s.cd - dt); s.age = s.up > 0 ? (s.age || 0) + dt : 0; }
   for (const h of combat.shieldHits) h.t += dt;
@@ -303,7 +311,8 @@ function updateCombat(dt) {
       continue;
     }
     const tc = s.atCrew && crew.find(c => c.id === s.crewId);
-    if (tc && isOutside(tc) && segCircle(x0, y0, s.x, s.y, tc.x, tc.y, 0.5)) { s.dead = true; crewHit(s.side, tc); continue; }
+    const slumped = tc && tc.mode === 'gun' && !standing(tc);         // down in a cannon's seat: below the rim, the shot flies over
+    if (tc && isOutside(tc) && !slumped && segCircle(x0, y0, s.x, s.y, tc.x, tc.y, 0.5)) { s.dead = true; crewHit(s.side, tc); continue; }
     // shots at the crew fly past the hull edge until they pass their target (the gunner sits on it)
     const passed = (s.tx - s.x) * s.vx + (s.ty - s.y) * s.vy < 0;
     const reached = !s.atCrew && Math.hypot(s.tx - s.x, s.ty - s.y) <= Math.hypot(s.vx, s.vy) * dt + 0.05;
@@ -339,18 +348,42 @@ function drawCombatBack(t) {
   for (const a of combat.asteroids) drawAsteroidBody(a, t);
 }
 
-// Hits on the hull: hull/decal_small_v0..2 (r 0.5) / decal_large_v0..1 (r 1.1) when GFX.on, variant by seed.
+// Hits on the hull: hull/decal_small_v0..2 (r 0.5) / decal_large_v0..1 (r 1.1) when GFX.on, variant by seed,
+// over a wider soot stain (fx/scorch_*) and under the cooling glow (drawHitHeat, js/hitfx.js). Most hits land
+// where the hull is a room's outer wall: those marks are drawn on the wall's top (hitSurface), clipped to it.
 function drawShipDecals() {
   for (const d of combat.decals) {
     if (d.goo || d.scorch || d.body) continue;
+    const S = hitSurface(d.x, d.y);
+    const o = S.z ? { layer: 'main', sortY: S.y + 0.7, depthBias: 0.08, depthWrite: false, clip: S.clip } : { layer: 'decal' };
+    const heat = () => { if (typeof drawHitHeat === 'function') drawHitHeat(d, S, o); };   // glowing hot, cooling down
     if (GFX.on) {
       const big = d.r > 0.8, n = `hull/decal_${big ? 'large' : 'small'}_v${Math.floor(d.seed || 0) % (big ? 2 : 3)}`;
-      if (GFX.sprite(n, 0, d.x, d.y, 0, { layer: 'decal', scale: d.r / (big ? 1.1 : 0.5) })) continue;
+      if (GFX.ready(n)) {                            // soot blown round the hole (lasting), the hole, its heat
+        GFX.sprite(`fx/scorch_${Math.floor(d.seed || 0) % 3}`, 0, S.x, S.y, S.z, { ...o, scale: d.r * (big ? 2.0 : 2.4) / 0.75, alpha: 0.9 });
+        GFX.sprite(n, 0, S.x, S.y, S.z, { ...o, scale: d.r / (big ? 1.1 : 0.5) });
+        heat(); continue;
+      }
     }
     const g = ctx.createRadialGradient(L(d.x), L(d.y), 0, L(d.x), L(d.y), L(d.r));
     g.addColorStop(0, 'rgba(15,12,10,0.85)'); g.addColorStop(0.6, 'rgba(40,28,20,0.5)'); g.addColorStop(1, 'rgba(40,28,20,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(d.x), L(d.y), L(d.r), 0, TAU); ctx.fill();
+    heat();
   }
+}
+// Where a hull hit at (x, y) shows in the tilted view: on open hull plating (blisters, the nose's corners)
+// it lies on the ground (z 0); where the hull is a room's (or the spine's) outer wall, on that wall's top
+// (z HIT_WALL_Z), moved into the wall's band and clipped to it: { x, y, z, clip }. Drawing only.
+const HIT_WALL_T = 0.6, HIT_WALL_Z = 1.6;
+function hitSurface(x, y) {
+  const rects = [...ROOM_RECTS, { x: 0.6, y: SPINE_Y0, w: SHIP_W - 1.2, h: SPINE_Y1 - SPINE_Y0 }], e = HIT_WALL_T, tol = 0.3;
+  for (const r of rects) {
+    const inY = y >= r.y - e - tol && y <= r.y + r.h + e, inX = x >= r.x - e - tol && x <= r.x + r.w + e + tol;
+    if (inY && x < r.x && x >= r.x - e - tol) return { x: clamp(x, r.x - e + 0.05, r.x - 0.05), y, z: HIT_WALL_Z, clip: [r.x - e, r.y - e, r.x, r.y + r.h + e, HIT_WALL_Z] };
+    if (inY && x > r.x + r.w && x <= r.x + r.w + e + tol) return { x: clamp(x, r.x + r.w + 0.05, r.x + r.w + e - 0.05), y, z: HIT_WALL_Z, clip: [r.x + r.w, r.y - e, r.x + r.w + e, r.y + r.h + e, HIT_WALL_Z] };
+    if (inX && y < r.y && y >= r.y - e - tol) return { x, y: clamp(y, r.y - e + 0.05, r.y - 0.05), z: HIT_WALL_Z, clip: [r.x - e, r.y - e, r.x + r.w + e, r.y, HIT_WALL_Z] };
+  }
+  return { x, y, z: 0, clip: null };
 }
 
 // Alien goo where an intruder died (drawn on the floor).
@@ -378,8 +411,8 @@ function drawShields(t) {
   for (const side of ['port', 'front', 'star']) {
     const s = combat.shields[side], hits = combat.shieldHits.filter(h => h.side === side);
     if (s.up <= 0 && !hits.length) continue;
-    // reveal: a growing (then shrinking) circle around the shield generator (its button)
-    const gen = SHIELD_BUTTONS.find(b => b.side === side);
+    // reveal: a growing (then shrinking) circle around the shield generator (its emitter on the hull)
+    const gen = emitterOf(side);
     const grow = s.up > 0 ? Math.min(1, (s.age || 0) / SHIELD_GROW, s.up / SHIELD_GROW) : 0;
     const R = 24 * grow;
     const near = (x, y) => clamp((R - Math.hypot(x - gen.x, y - gen.y)) / 2.5, 0, 1);
@@ -446,6 +479,7 @@ function drawCombatFront(t) {
     ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(L(p.x), L(p.y - GFX.lift(p.z || 0)), L(p.size), 0, TAU); ctx.fill();
   }
   ctx.globalAlpha = 1;
+  if (typeof drawHitFx === 'function') drawHitFx();   // hull hits, breaking parts: sparks, smoke, debris (js/hitfx.js)
 }
 
 // Screen-space overlays: hit bars on the screen edges, heavy-shot warning, tallies.
@@ -495,8 +529,8 @@ function drawCombatHUD(view, top) {
   lines.push({ text: `Hits taken — small ${combat.hits.small} · large ${combat.hits.large} · crew ${combat.hits.crew}`, col: '#e8ecf4' });
   for (const side of ['port', 'front', 'star']) {
     const s = combat.shields[side];
-    const st = s.up > 0 ? 'UP' : s.cd > 0 ? `recharging ${s.cd.toFixed(1)}s` : 'ready';
-    lines.push({ text: `${SIDE_LABEL[side]} shield: ${st}`, col: s.up > 0 ? '#9cd8ff' : s.cd > 0 ? '#9aa3b5' : '#5fd6a0' });
+    const dead = broken(emitterOf(side)), st = dead ? 'EMITTER BROKEN' : s.up > 0 ? 'UP' : s.cd > 0 ? `recharging ${s.cd.toFixed(1)}s` : 'ready';
+    lines.push({ text: `${SIDE_LABEL[side]} shield: ${st}`, col: dead ? '#ff8a7a' : s.up > 0 ? '#9cd8ff' : s.cd > 0 ? '#9aa3b5' : '#5fd6a0' });
   }
   for (const e of combat.enemies) {
     if (e.phase !== 'fighting') continue;

@@ -2,7 +2,7 @@
 // switches the harder rules on, and has handy tools (fill energy, repair all, clear, give items,
 // teleport). The panel is the browser's; each button sends ['practice', index], run by the simulation.
 
-const nearestSys = () => SYSTEMS.slice().sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0];
+const nearestSys = () => SYSTEMS.filter(s => !s.outside).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0];
 const roomHere = () => roomAt(player.x, player.y) || ROOMS[0];
 const toRoom = (id) => { player.mode = 'inside'; player.gun = null; [player.x, player.y] = NAV_SPOTS[id]; };
 const give = (kind) => { grab(kind); };
@@ -28,6 +28,7 @@ const PRACTICE = [
   ['Spacewalk jobs', 'Knock the radar antenna crooked', () => knockAntenna()],
   ['Spacewalk jobs', 'Fuel canister drifting past (left)', () => spawnCanister('port')],
   ['Spacewalk jobs', 'Misalign the jump coils', () => { evs.coils = COIL_SPOTS.map(c => ({ ...c, ok: false, a: 1 })); }],
+  ['Spacewalk jobs', 'Break the left shield emitter (outside)', () => breakSystem(SYSTEMS.find(s => s.ref === SHIELD_EMITTERS[0]))],
   // damage
   ['Damage', 'Hull breach (this room, or the nearest)', () => { mission.rules.breach = true; const r = roomHere(); breachRoom(BREACH_SPOTS[r.id] ? r.id : 'portLock'); }],
   ['Damage', 'Fire at the nearest part', () => igniteSystem(nearestSys())],
@@ -47,8 +48,8 @@ const PRACTICE = [
   ['Other ships', 'Cast off the docked ship', () => undock()],
   ['Other ships', 'Ore asteroid + drill', () => { EVENT_RUNNERS.rock(); give('drill'); }],
   // mini-games
-  ['Mini-games', 'Radar dish', () => openRadar()],
-  ['Mini-games', 'Oscilloscope (helm)', () => openScope()],
+  ['Stations', 'Radar scan', () => radarScan()],
+  ['Stations', 'Helm diagnosis', () => openDiagnosis()],
   ['Mini-games', 'Patch board (arcs the left feed line)', () => { if (!surging('feed0')) hz.surges.push('feed0'); openPatch(); }],
   ['Mini-games', 'Tape job (breaks the nearest part)', () => { const s = nearestSys(); s.broken = true; inv.weapon = 'repair'; openTape(s); }],
   ['Mini-games', 'Crank a reload (front cannon, empty)', () => { const g = GUNS.find(g => g.id === 'front'); g.shots = 0; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); player.mode = 'gun'; player.gun = g; reloadCannon(g); }],

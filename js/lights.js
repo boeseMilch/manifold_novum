@@ -282,6 +282,8 @@ function gameLighting(t) {
   });
   if (typeof combat !== 'undefined') for (const b of SHIELD_BUTTONS) if (combat.shields[b.side].up > 0)
     add({ x: b.x, y: b.y + 0.3, z: 0.8, color: [0.5, 0.8, 1.0], radius: 2.4, intensity: 0.9 });
+  if (typeof combat !== 'undefined' && typeof SHIELD_EMITTERS !== 'undefined') for (const e of SHIELD_EMITTERS) if (combat.shields[e.side].up > 0)   // the emitter outside, projecting
+    add({ x: e.x + Math.cos(e.face) * 0.3, y: e.y + Math.sin(e.face) * 0.3, z: 0.5, color: [0.5, 0.82, 1.0], radius: 3.2, intensity: 1.3 + 0.2 * Math.sin(t * 9) });
 
   // --- muzzle flashes, bolts and blasts in flight ------------------------------------------------------
   for (const g of GUNS) if (g.flash > 0)
@@ -299,6 +301,7 @@ function gameLighting(t) {
     for (const s of combat.shells) add({ x: s.x, y: s.y, z: Math.max(0.8, 0.3 + shellZ(s)), color: [1.0, 0.85, 0.5], radius: 2.6, intensity: 1.1 });
     for (const s of combat.shots) add({ x: s.x, y: s.y, z: 0.8 + shotZ(s), color: s.heavy ? [1.0, 0.45, 0.78] : [1.0, 0.35, 0.25], radius: s.heavy ? 4.5 : 2.4, intensity: s.heavy ? 2.4 : 1.1 });
     for (const h of combat.shieldHits) { const q = clamp(1 - h.t / 0.8, 0, 1); if (q > 0) add({ x: h.x, y: h.y, z: 0.8, color: [0.7, 0.88, 1.0], radius: h.heavy ? 5 : 3.5, intensity: 2.2 * q }); }
+    if (typeof hitFxLights === 'function') hitFxLights(add);   // hull hits: flash, hot spots, spark clouds (js/hitfx.js)
     // explosions and debris: the particles, clustered on a coarse grid
     const cells = new Map();
     for (const p of combat.fx) {

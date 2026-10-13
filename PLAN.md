@@ -188,7 +188,7 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   - Bolts stop at walls.
 - **Breakage:**
   - Breakable parts: cannons (at their ladder), shield buttons, capacitors, reactor,
-    lever, deck airlocks, outer airlocks.
+    lever, deck airlocks, outer airlocks, and outside the three shield emitters (9i).
   - Hull hits damage parts in the zone column that was hit: a large hit breaks 1 (30%: 2),
     a small hit breaks one 20% of the time.
   - A broken part is scorched and smoking with a loose panel and a "BROKEN" tag, and it
@@ -365,6 +365,7 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   - Hit while down: out. Someone else holds click on you for 2 s. Alone, you can still
     crawl back in 20 s (no softlock).
   - Treating anyone takes 2 s. Enemies and the intruder ignore downed crew.
+  - Down in a cannon: you slump in the seat (see 9g).
 - **Shields** grow out of their generator in 0.1 s and shrink back into it in 0.1 s.
 - **Power lines:** real cables run from the reactor to the three capacitors and from each
   capacitor to its shield button and cannon. They glow amber while the capacitor has
@@ -471,12 +472,11 @@ get the rest.
 
 ### 8e. Station mini-games (`js/minigames.js`)
 Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (same solo and online).
-- **Radar dish:** drag to turn the dish, PING (2 s cooldown). Only the sector it points at (front,
-  left, right, ±60°) echoes; blips land closer the sooner the contact arrives. Flares and storms
-  echo everywhere. Pinging also lights up stealth fighters on that side. Crooked antenna: junk
-  echoes; ion storm: static.
-- **Oscilloscope** (helm): match two dials (frequency, amplitude) to the reference wave before
-  the diagnosis readings show.
+- **Radar and helm: no mini-games any more** (removed 2026-10-13, the user found them tedious).
+  One click on the map table scans every direction (`radarScan`, mission.js: reveals what comes in
+  the next RADAR_RANGE s, lights up stealth fighters; crooked antenna or ion storm: no result).
+  One click on the helm shows the diagnosis readings (`openDiagnosis`). (Before: a radar dish you
+  dragged to one sector and pinged, and an oscilloscope to calibrate first.)
 - **Patch board** (next to the lever): reroute which capacitor each lever output feeds (e.g.
   around an arcing feed line).
 - **Tape job:** a quick click with the repair kit on a broken part (instead of holding): drag along
@@ -1121,6 +1121,64 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   door lamps), PA gooseneck mic, camera joystick, a LOCKDOWN button under a flip cover. The mug and
   sticky notes still land on the desk top.
 
+### 9g. Going down in a cannon (playtest: "might be difficult to get out")
+- **Before:** a gunner who went down was dropped onto the ladder hatch inside, so in-flight shots and
+  the cannon were fine, but: anyone could climb into a cannon someone was already manning (two gunners
+  stacked in one seat); the downed one lay right on the ladder spot, where E climbed into the cannon
+  instead of treating them; and you never got to stay at your post.
+- **Now** (`hurtCrew`, `pullOutOfCannon` in `js/systems.js`; `updatePlayer` / `updateInteraction` in
+  `js/game.js`): a gunner who goes down (or out) slumps prone in the seat, drawn with the lying-down
+  sprite and the red cross at the seat (`crewDrawAt`). Below the rim, enemy shots aimed at them fly over
+  (they hit the hull behind) and enemies don't pick them; no aiming, no firing, no reload / crank /
+  CLIMB DOWN (the cannon HUD is hidden). They patch themselves up the usual way (hold click anywhere, or
+  E; 10 s, 20 s out and alone) and are back in the seat, hurt; the held click doesn't fire.
+- A crewmate at that cannon's ladder hatch gets "Click: pull X out of the cannon" (click / E): the
+  downed one is placed next to the hatch inside (a free spot, not on the puller), still down, to be
+  treated as usual; the cannon is free again. While a downed crewmate lies right there, E treats them
+  (the prompt says "Hold E: treat X"); clicking the ladder still climbs in.
+- A manned cannon is taken: the ladder says "X is manning the cannon" (one gunner per cannon).
+- No softlocks: alone, down or out in a cannon, you still patch yourself up; a disconnect removes the
+  crew member, so the cannon is free. Being down, the bottom prompt is now drawn above the dark injury
+  vignette, so it stays readable.
+- `tests/gunner.js` covers all of this, solo and multiplayer (via `netServer.input`), for all three cannons.
+
+### 9h. Hits look violent and hot (`js/hitfx.js`; playtest: "the shots mostly look cute")
+- Drawn only, local on every client: hit decals now carry `hot` (sim time) and `side` (shipHit); the
+  first time a client sees a fresh one it plays the impact: a white flash + point lights, 60 / 160
+  sparks (streaks that arc, bounce and cool white → yellow → orange → red), embers, smoke puffs
+  (fx/smoke_*), tumbling plating (fx/junk_shard), a shock ring; big hits also blow 70 sparks, smoke
+  and debris into the room behind the wall. The old synced orange/red dots are gone (less snapshot
+  traffic); the cartoon explosion flipbook stays, a bit smaller.
+- The spot glows white-orange and cools to dull red over 12 s (small) / 20 s (big), by `time` so every
+  client agrees (dyn/hitfx_heat_* canvas sprites, unlit, + a light on the hull), over a lasting soot
+  stain (fx/scorch_*) and the hole decal. Most hits land on a room's outer wall: `hitSurface()` (combat.js)
+  puts those marks on the wall top (z 1.6, clipped to the wall; the glow may spill outwards into space).
+- A part that breaks or catches fire bursts sparks (plus a jet of sparks racing from the hit that did
+  it), then arcs for 4 s, then spurts now and then while broken. Particles capped at 1400. ?classic: 2D.
+- Gameplay, saves and snapshots unchanged otherwise (two more fields per hit decal).
+
+### 9i. Shield emitters outside (playtest: "the shield gets generated by a button, which seems weird")
+- Each shield now has a device that makes it: a shield emitter on the outside of the hull (`SHIELD_EMITTERS`
+  in js/ship.js): left and right on the side walls level with the airlock rooms (y 15.7), the front one on
+  the nose's left shoulder. A projector pylon on a bracket: drum with fins, copper coils with energy rings,
+  a tilted hexagonal lens array (`tools/blender/models/hull/emitter.py`, sprites `hull/emitter_<side>_<idle |
+  cd | up (4-frame loop) | broken>`, drawn in eva.js `drawShieldEmitters`, a 2D version for ?classic). The
+  shield bubble grows out of the emitter now (combat.js `drawShields`), and it lights the hull while up.
+- The button inside stays the control ("Click: raise the left shield"). Its label reads EMITTER DOWN
+  (blinking red) and its prompt says so while the emitter outside is broken.
+- The emitters are breakable parts (SYSTEMS kind `emitter`, `outside: true`, in their side's damage
+  column; appended at the end, so the other parts keep their indices): hits on that side break them like
+  any part (big hits, small hits' 10%, barnacles, leeches). Never fires (vacuum: `igniteSystem` refuses,
+  `fireNear` skips them), never the maintenance failure, no room (`sysRooms` = []: the saboteur and fire
+  spread leave them alone), no inside repair or tape job. A broken emitter blocks its shield (no energy
+  spent) and drops it if it was up (then the usual 5 s recharge).
+- Repair: on a spacewalk, hold click on it with the repair kit for 5 s (`outsideRepairTarget`, the generic
+  hold job). Listed on the sidebar ("no shield · fix it outside"), the helm diagnosis and the combat HUD.
+  Practice panel: "Break the left shield emitter (outside)". Saves unchanged; its broken state goes out
+  in the snapshot's `systems` like every part. `tests/emitter.js`.
+- Balance note: each side column has one more breakable part, so a hit there sometimes takes out the
+  emitter instead of something inside (harder to fix: a spacewalk).
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
@@ -1173,6 +1231,8 @@ dummy canvas):
 - `node tests/sidebar.js`: plates for radar contacts (countdown, no red light) and for
   active problems (red light, listed first). New plates slide up from the bottom, and
   dealt-with ones leave. Fires and broken parts get plates.
+- `node tests/emitter.js`: shield emitters break on hits on their side (never by fire), block / drop their
+  shield, can't be fixed from inside, are repaired on a spacewalk (all three reachable), and sync to browsers.
 - `node tests/intruder.js`: 14 checks.
   - The routine: adjacent rooms only, sabotage after 10 s.
   - Engaging and strafing, the spit windup (0.7 s), pounce damage, the opening after a

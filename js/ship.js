@@ -85,6 +85,14 @@ const SHIELD_BUTTONS = [
   { side: 'star', x: 37.2, y: SPINE_Y1 + 0.35 },
   { side: 'front', x: 22.2, y: SPINE_Y1 + 0.35 },   // reactor room wall, right below the bridge
 ];
+// Shield emitters: the devices on the outside of the hull that actually project each shield (the button
+// inside only switches its emitter on). (x, y): where it sits, just off the hull; face: the way its lens
+// points (straight out from the hull). A broken one can only be repaired on a spacewalk.
+const SHIELD_EMITTERS = [
+  { side: 'port', x: -0.75, y: 15.7, face: Math.PI },
+  { side: 'star', x: SHIP_W + 0.75, y: 15.7, face: 0 },
+  { side: 'front', x: 15.1, y: -2.05, face: Math.atan2(-3.8, -3.2) },   // on the nose's left shoulder
+];
 const SIDE_CAP = { port: 0, front: 1, star: 2 };    // which capacitor powers that side's shield / cannon
 const SIDE_LABEL = { port: 'Left', front: 'Front', star: 'Right' };
 

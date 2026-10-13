@@ -1,37 +1,28 @@
-// Station mini-games: radar dish, oscilloscope, patch board, tape job, cannon crank,
+// Station mini-games: radar and helm (just a click now), patch board, tape job, cannon crank,
 // held shields, the jump handle, heartbeat treatment. Run: node tests/minigames.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'openRadar', 'openScope',
-  'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'hurtCrew', 'netServer', 'evs', 'enc'];
+const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'clickTarget',
+  'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'hurtCrew', 'netServer', 'evs', 'enc', 'STATIONS'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
 const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 
-// --- radar dish: only the sector it points at
+// --- radar and helm: one click, no mini-game
 {
   const G = loadGame(NAMES); G.startMission('intro');
   const ev = G.mission.events.find(e => e.kind === 'interceptor');
   G.mission.t = ev.t - 20;
-  G.withCrew(G.me, () => G.openRadar());
-  const away = ev.side === 'port' ? 0 : Math.PI;            // point it the wrong way first
-  cmd(G, ['mini', 'dish', away]); cmd(G, ['mini', 'ping']);
-  check(!G.mission.revealed.has(ev.id), 'pinging the wrong direction finds nothing there');
-  cmd(G, ['mini', 'ping']);
-  check(G.me.ui.mini.cd > 1.9, 'pings have a 2 s cooldown');
-  tickN(G, 130);
-  cmd(G, ['mini', 'dish', ev.side === 'port' ? Math.PI : 0]); cmd(G, ['mini', 'ping']);
-  check(G.mission.revealed.has(ev.id) && G.me.ui.mini.blips.some(b => b.kind === 'interceptor'), `pointing ${ev.side === 'port' ? 'left' : 'right'} finds the interceptor (an echo blip)`);
-}
-// --- oscilloscope
-{
-  const G = loadGame(NAMES); G.startMission('intro');
-  G.withCrew(G.me, () => G.openScope());
-  const m = G.me.ui.mini;
-  check(!m.ok && !G.mission.diagRun, 'the diagnosis needs the scope calibrated first');
-  for (let k = 0; k < 2; k++) while (m.dial[k] !== m.ref[k]) cmd(G, ['mini', 'dial', k, Math.sign(m.ref[k] - m.dial[k])]);
-  check(m.ok && G.mission.diagRun, 'matching both dials calibrates it and shows the readings');
+  const me = G.me; me.x = 22.2; me.y = 7.4; G.simTick(DT);
+  const r = G.withCrew(me, () => G.clickTarget(22.2, 6.4));
+  check(r?.ok && /radar/i.test(r.text), `the radar is a plain click ("${r?.text}")`);
+  G.withCrew(me, () => r.run());
+  check(G.mission.revealed.has(ev.id) && !me.ui.panel && !me.ui.mini, 'one click scans every direction (the interceptor shows up), no panel opens');
+  const H = G.STATIONS.find(s => s.name === 'Helm'); me.x = H.x; me.y = H.y + 1.3; G.simTick(DT);
+  const h = G.withCrew(me, () => G.clickTarget(H.x, H.y + 0.5));
+  G.withCrew(me, () => h.run());
+  check(me.ui.panel === 'diagnosis' && !me.ui.mini && G.mission.diagRun, 'one click on the helm shows the diagnosis readings right away');
 }
 // --- patch board
 {

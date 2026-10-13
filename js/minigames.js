@@ -1,7 +1,5 @@
 // Hands-on station mini-games. Each player's open mini-game lives in their ui.mini (sent to their
 // browser); actions arrive as commands ['mini', action, ...args], so solo and multiplayer work the same.
-//   radar dish      turn the dish by hand, ping, echoes come back from that direction only
-//   oscilloscope    the helm diagnosis: match two dials to the reference wave first
 //   patch board     next to the power lever: reroute which capacitor each lever output feeds
 //   tape            a quick (sloppy) repair: drag along the cracks; it breaks first at the next big hit
 //   crank           cannon reload: crank the breech (or hold R) to speed it up
@@ -10,35 +8,17 @@
 //   held shields    keep holding the button for +2 s of shield (1 more energy)
 //   PIN pad         the airlock vent panel: type the admin password (it's on a sticky note right next to it)
 
-const PING_CD = 2, SECTOR = Math.PI / 3;
 const CRANK_K = 0.3, RELOAD_HOLD_RATE = 2.5, JUMP_PULL = 6, JUMP_PULL_TWO = 1.8;
 const PATCH_BOARD = { x: 20.0, y: 23.0 };
 const JUMP_HANDLE = { x: 20.6, y: -2.0 };
 const BEAT = 0.8;
 const PIN_MAX = 8, PIN_DENIED_T = 0.7, PIN_GRANTED_T = 0.8;
 
-// Which way an event comes from, for the radar dish: 'front' | 'left' | 'right' | 'all' | null (not on radar).
-function eventDir(ev) {
-  if (!ev.radar) return null;
-  if (ev.kind === 'swarm' || ev.kind === 'leviathan') return 'front';
-  if (ev.kind === 'flare' || ev.kind === 'storm') return 'all';
-  if (ev.side === 'port') return 'left';
-  if (ev.side === 'star') return 'right';
-  if (ev.kind === 'debris') return ev.gun === 'port' ? 'left' : ev.gun === 'star' ? 'right' : 'front';
-  return 'front';
-}
-const DIR_ANGLE = { front: -Math.PI / 2, left: Math.PI, right: 0 };
-const angleDir = (a) => Object.keys(DIR_ANGLE).find(k => Math.abs(wrapAngle(a - DIR_ANGLE[k])) <= SECTOR) || null;
-
 // ---------------------------------------------------------------------------
 // Opening
 // ---------------------------------------------------------------------------
-function openRadar() { ui.panel = 'mini'; ui.mini = { kind: 'radar', angle: -Math.PI / 2, cd: 0, blips: [], static: 0 }; }
-function openScope() {
-  const r = () => 1 + Math.floor(Math.random() * 7);
-  const ref = [r(), r()]; let dial = [r(), r()]; while (dial[0] === ref[0] && dial[1] === ref[1]) dial = [r(), r()];
-  ui.panel = 'diagnosis'; ui.mini = { kind: 'scope', ref, dial, ok: false };
-}
+// The helm diagnosis: just the readings (the oscilloscope calibration is gone).
+function openDiagnosis() { ui.panel = 'diagnosis'; ui.mini = null; mission.diagRun = true; }
 function openPatch() { ui.panel = 'mini'; ui.mini = { kind: 'patch', pick: null }; }
 // The airlock vent's PIN pad: a fresh random 4–6 digit admin password each time it opens.
 function openPinPad(roomId) {
@@ -52,12 +32,7 @@ function openTape(sys) { ui.panel = 'mini'; ui.mini = { kind: 'tape', sys: SYSTE
 // ---------------------------------------------------------------------------
 function miniCommand(action, a, b) {
   const m = ui.mini;
-  if (action === 'dish' && m?.kind === 'radar') m.angle = +a || 0;
-  else if (action === 'ping' && m?.kind === 'radar') radarPing(m);
-  else if (action === 'dial' && m?.kind === 'scope' && !m.ok) {
-    m.dial[a] = clamp(m.dial[a] + Math.sign(b), 1, 7); sfx.clank();
-    if (m.dial[0] === m.ref[0] && m.dial[1] === m.ref[1]) { m.ok = true; mission.diagRun = true; sfx.poi(); }
-  } else if (action === 'patch' && m?.kind === 'patch') {
+  if (action === 'patch' && m?.kind === 'patch') {
     if (a === 'out') m.pick = clamp(b | 0, 0, 2);
     else if (a === 'cap' && m.pick !== null) { power.patch[m.pick] = clamp(b | 0, 0, 2); m.pick = null; sfx.clank(); }
     else if (a === 'reset') { power.patch = [0, 1, 2]; sfx.clank(); }
@@ -77,35 +52,10 @@ function miniCommand(action, a, b) {
       m.flash = right ? 'granted' : 'denied'; m.flashT = right ? PIN_GRANTED_T : PIN_DENIED_T;
       if (right) sfx.poi(); else sfx.hit(false);
     }
-  } else if (action === 'crank' && player.mode === 'gun') {
+  } else if (action === 'crank' && player.mode === 'gun' && standing(player)) {
     const g = player.gun;
     if (g.reload > 0) g.reload = Math.max(0.01, g.reload - Math.min(Math.abs(+a || 0), 3) * CRANK_K * (player.health === 'hurt' ? 0.6 : 1) * (perk(player, 'weapons') ? 1.5 : 1));
   }
-}
-
-// Radar dish: echoes from the sector it points at.
-function radarPing(m) {
-  if (m.cd > 0) return;
-  m.cd = PING_CD; mission.scanT = mission.t; mission.lastScan = mission.t; sfx.poi();
-  if (enc.storm) { m.static = 1.5; combatBanner('Radar: nothing but static — ion storm'); return; }
-  if (!evs.antenna) {                                    // crooked antenna: junk echoes
-    m.static = 1; m.blips = Array.from({ length: 4 }, () => ({ a: Math.random() * TAU, d: Math.random(), t: -Math.random(), junk: true }));
-    combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return;
-  }
-  const dir = angleDir(m.angle);
-  m.blips = m.blips.filter(b => b.t < 4);
-  let n = 0;
-  for (const ev of mission.events) {
-    const d = eventDir(ev);
-    if (!d || ev.done || ev.t - mission.t > RADAR_RANGE || (d !== 'all' && d !== dir)) continue;
-    const k = (ev.t - mission.t) / RADAR_RANGE;
-    m.blips.push({ a: (d === 'all' ? m.angle : DIR_ANGLE[d]) + (Math.random() - 0.5) * 0.6, d: k, t: -(0.2 + k * 1.2), kind: ev.kind });
-    if (!mission.revealed.has(ev.id)) { mission.revealed.add(ev.id); n++; }
-  }
-  for (const e of combat.enemies) if (e.D.stealth && (e.side === 'port' ? 'left' : 'right') === dir) {
-    e.reveal = 3; m.blips.push({ a: DIR_ANGLE[dir], d: 0.1, t: -0.1, kind: 'stealth' });
-  }
-  combatBanner(dir ? `Radar (${dir}): ${n ? `${n} new contact${n > 1 ? 's' : ''}` : 'nothing new'} in the next ${RADAR_RANGE} s` : 'Radar: point the dish front, left or right');
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +64,6 @@ function radarPing(m) {
 function updateMinigames(dt) {
   for (const c of crew) {
     const m = c.ui.mini;
-    if (m?.kind === 'radar') { m.cd = Math.max(0, m.cd - dt); m.static = Math.max(0, m.static - dt); for (const b of m.blips) b.t += dt; }
     if (m?.kind === 'pin' && m.flash && c.ui.panel && (m.flashT -= dt) <= 0) {
       if (m.flash === 'denied') { m.flash = null; m.typed = ''; }
       else {                                             // ACCESS GRANTED: the operator closes their visor, both doors open
@@ -160,20 +109,12 @@ function minigameSpots() {
 }
 
 // ---------------------------------------------------------------------------
-// Browser side: drags that turn into commands (dish, crank, tape), rate-limited
+// Browser side: drags that turn into commands (crank, tape), rate-limited
 // ---------------------------------------------------------------------------
 const miniDrag = { last: 0, prevA: null, tapeCov: null, tapeSys: -1 };
 function miniClient(dt) {
   const m = me.ui.mini, mo = localInput.mouse;
   miniDrag.last += dt;
-  if (m?.kind === 'radar' && me.ui.panel === 'mini') {
-    const L0 = radarLayout(), d = Math.hypot(mo.x - L0.cx, mo.y - L0.cy);
-    if (mo.down && d < L0.r && d > 12) {
-      const a = Math.atan2(mo.y - L0.cy, mo.x - L0.cx);
-      m.angle = a;                                         // show it right away
-      if (miniDrag.last > 0.08) { miniDrag.last = 0; sendCommand(['mini', 'dish', a]); }
-    }
-  }
   if (m?.kind === 'tape' && me.ui.panel === 'mini') {
     if (miniDrag.tapeSys !== m.sys) { miniDrag.tapeSys = m.sys; miniDrag.tapeCov = TAPE_CRACKS.map(c => new Array(c.length).fill(false)); }
     if (mo.down) {
@@ -195,7 +136,7 @@ function miniClient(dt) {
     }
   }
   // the cannon's crank: circle the mouse around it while holding the button
-  if (me.mode === 'gun' && me.gun?.reload > 0) {
+  if (me.mode === 'gun' && standing(me) && me.gun?.reload > 0) {
     const c = crankLayout(), d = Math.hypot(mo.x - c.x, mo.y - c.y);
     if (mo.down && d < c.r * 1.6) {
       mo.suppress = true; mo.moved = 0;                  // cranking isn't aiming or firing
@@ -212,12 +153,10 @@ function miniClient(dt) {
 // ---------------------------------------------------------------------------
 // Drawing (screen space)
 // ---------------------------------------------------------------------------
-const radarLayout = () => ({ cx: VW / 2, cy: VH / 2 + 10, r: Math.min(170, VH / 2 - 90) });
 function drawMiniPanel(t) {
   const m = ui.mini;
   if (!m) return;
-  if (m.kind === 'radar') drawRadarPanel(m, t);
-  else if (m.kind === 'patch') drawPatchPanel(m, t);
+  if (m.kind === 'patch') drawPatchPanel(m, t);
   else if (m.kind === 'tape') drawTapePanel(m, t);
   else if (m.kind === 'pin') drawPinPanel(m, t);
 }
@@ -227,35 +166,6 @@ function miniButton(x, y, w, h, label, cmd, active = true) {
   ctx.fillStyle = active ? '#fff' : '#6b7486'; ctx.font = '800 14px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(label, x + w / 2, y + h / 2); ctx.textAlign = 'left';
   if (active) ui.hits.push({ x: x + w / 2, y: y + h / 2, w, h, cmd });
-}
-function drawRadarPanel(m, t) {
-  const L0 = radarLayout(), w = L0.r * 2 + 120, h = L0.r * 2 + 150;
-  const [x, y] = panelFrame(w, h, 'RADAR — drag to turn the dish, then PING');
-  const { cx, cy, r } = L0;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fillStyle = '#06140e'; ctx.fill(); stroke(3, '#2f8a5f');
-  ctx.strokeStyle = 'rgba(95,214,160,0.25)'; ctx.lineWidth = 1;
-  for (const k of [0.33, 0.66]) { ctx.beginPath(); ctx.arc(cx, cy, r * k, 0, TAU); ctx.stroke(); }
-  for (const [d, a] of Object.entries(DIR_ANGLE)) {      // sector labels
-    ctx.fillStyle = 'rgba(95,214,160,0.6)'; ctx.font = '700 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(d.toUpperCase(), cx + Math.cos(a) * (r + 22), cy + Math.sin(a) * (r + 22));
-  }
-  ctx.textAlign = 'left';
-  // our ship in the middle, the dish wedge
-  ctx.fillStyle = '#5fd6a0'; poly([[cx, cy - 8], [cx + 6, cy + 6], [cx - 6, cy + 6]]); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, m.angle - SECTOR, m.angle + SECTOR); ctx.closePath();
-  ctx.fillStyle = `rgba(95,214,160,${0.1 + (m.cd > PING_CD - 0.5 ? 0.25 : 0)})`; ctx.fill();
-  if (m.cd > 0) {                                        // the ping sweeping out
-    const k = 1 - m.cd / PING_CD;
-    ctx.beginPath(); ctx.arc(cx, cy, r * Math.min(1, k * 2), m.angle - SECTOR, m.angle + SECTOR); ctx.strokeStyle = 'rgba(160,255,200,0.7)'; ctx.lineWidth = 2; ctx.stroke();
-  }
-  for (const b of m.blips) {                             // echoes (closer = arriving sooner)
-    if (b.t < 0) continue;
-    const a = Math.max(0, 1 - b.t / 6), px = cx + Math.cos(b.a) * r * (0.12 + 0.85 * b.d), py = cy + Math.sin(b.a) * r * (0.12 + 0.85 * b.d);
-    ctx.beginPath(); ctx.arc(px, py, b.junk ? 3 : 6, 0, TAU); ctx.fillStyle = `rgba(${b.junk ? '160,200,160' : '255,220,120'},${a})`; ctx.fill();
-    if (!b.junk && b.kind) { ctx.fillStyle = `rgba(255,236,190,${a})`; ctx.font = '10px system-ui, sans-serif'; ctx.fillText(b.kind, px + 8, py + 3); }
-  }
-  if (m.static > 0) for (let i = 0; i < 300; i++) { ctx.fillStyle = `rgba(200,230,210,${Math.random() * 0.4 * m.static})`; ctx.fillRect(cx - r + Math.random() * 2 * r, cy - r + Math.random() * 2 * r, 2, 2); }
-  miniButton(x + w / 2 - 80, y + h - 56, 160, 40, m.cd > 0 ? `PING (${m.cd.toFixed(1)} s)` : 'PING', ['mini', 'ping'], m.cd <= 0);
 }
 function drawPatchPanel(m, t) {
   const w = 460, h = 320, [x, y] = panelFrame(w, h, 'PATCH BOARD — which capacitor each lever output feeds');
@@ -281,7 +191,7 @@ function drawPatchPanel(m, t) {
 }
 // The airlock vent's PIN pad, and the sticky note with the admin password next to it.
 const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'OK'];
-const PIN_HAND = "'Segoe Print', 'Bradley Hand', 'Comic Sans MS', 'Comic Neue', 'Marker Felt', 'Chalkboard SE', cursive";
+const PIN_HAND = "'Patrick Hand', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', 'Comic Neue', 'Marker Felt', 'Chalkboard SE', cursive";
 function drawPinPanel(m, t) {
   const w = 560, h = 466, [x, y] = panelFrame(w, h, `AIRLOCK VENT — ${roomById(m.room)?.name || ''}`);
   // the keypad housing: a brushed metal plate with screws
@@ -382,28 +292,6 @@ function drawTapePanel(m, t) {
   ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillText('Hold the mouse and drag along every crack. Quick, but it gives first at the next big hit.', VW / 2, y + 384); ctx.textAlign = 'left';
 }
-// The oscilloscope on top of the helm diagnosis. Returns the height it used.
-function drawScope(m, x, y, w) {
-  const h = 150, sx = x + 20, sw = w - 200, sy = y + 10;
-  rr(sx, sy, sw, h - 20, 8); ctx.fillStyle = '#06140e'; ctx.fill(); stroke(2, '#2f8a5f');
-  const wave = (f, a, col, wob) => {
-    ctx.beginPath();
-    for (let i = 0; i <= 120; i++) { const u = i / 120, yy = sy + (h - 20) / 2 + Math.sin(u * TAU * f * 0.5 + time * 3) * a * 7 + (wob ? Math.sin(u * 40 + time * 9) * 3 : 0); (i ? ctx.lineTo : ctx.moveTo).call(ctx, sx + u * sw, yy); }
-    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
-  };
-  wave(m.ref[0], m.ref[1], 'rgba(255,224,138,0.8)');
-  wave(m.dial[0], m.dial[1], m.ok ? '#5fd6a0' : 'rgba(95,214,160,0.9)');
-  const bx = sx + sw + 20;
-  ['FREQ', 'AMP'].forEach((name, k) => {
-    const by = sy + k * 60;
-    ctx.fillStyle = '#c9ced8'; ctx.font = '700 11px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText(`${name} ${m.dial[k]}`, bx, by + 14);
-    miniButton(bx + 70, by, 34, 28, '−', ['mini', 'dial', k, -1], !m.ok); miniButton(bx + 110, by, 34, 28, '+', ['mini', 'dial', k, 1], !m.ok);
-  });
-  ctx.fillStyle = m.ok ? '#5fd6a0' : '#ffe08a'; ctx.font = '12px system-ui, sans-serif';
-  ctx.fillText(m.ok ? 'Calibrated — readings below.' : 'Match the green wave to the yellow one to calibrate.', sx, sy + h - 2);
-  return h + 10;
-}
-// The cannon's crank (next to the reload button).
 const crankLayout = () => ({ x: VW - 220, y: VH - 42, r: 26 });
 function drawCrank(g) {
   if (!(g.reload > 0)) return;

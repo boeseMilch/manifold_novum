@@ -685,9 +685,12 @@ function drawHatch(h) {
 function drawShieldButton(b, state, k, t) {
   const x = b.x * T, y = b.y * T;
   const name = broken(b) ? 'systems/shield_broken' : state === 'up' ? 'systems/shield_up' : state === 'ready' ? 'systems/shield_ready' : `systems/shield_cd${clamp(Math.floor(k * 8), 0, 7)}`;
+  // its emitter outside is broken: the label says so (blinking red)
+  const dead = typeof emitterOf === 'function' && broken(emitterOf(b.side)), label = dead ? 'EMITTER DOWN' : 'SHIELD';
+  const labelCol = dead ? (Math.sin(t * 6) > 0 ? 'rgba(255,110,90,0.95)' : 'rgba(150,60,50,0.8)') : 'rgba(232,236,244,0.75)';
   if (spr(name, 0, b.x, b.y, 0, { emissive: 0.8, pick: [0.42, 1.0] })) {   // (shield up: its glow is a real light, js/lights.js)
-    ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('SHIELD', x, y + T * 0.42); ctx.textAlign = 'left';
+    ctx.fillStyle = labelCol; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(label, x, y + T * 0.42); ctx.textAlign = 'left';
     return;
   }
   shadowEllipse(x + 3, y + 6, T * 0.42, T * 0.36, 0.3);
@@ -706,8 +709,8 @@ function drawShieldButton(b, state, k, t) {
     ctx.beginPath(); ctx.arc(x, y - T * 0.05, T * 0.3, -Math.PI / 2, -Math.PI / 2 + k * TAU);
     ctx.strokeStyle = '#9cd8ff'; ctx.lineWidth = 3; ctx.stroke();
   }
-  ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('SHIELD', x, y + T * 0.38); ctx.textAlign = 'left';
+  ctx.fillStyle = labelCol; ctx.font = `800 ${T * 0.15}px system-ui, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(label, x, y + T * 0.38); ctx.textAlign = 'left';
 }
 
 // Floor hatch inside the ship with the ladder down the crawlway to a cannon.

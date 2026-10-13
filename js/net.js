@@ -69,8 +69,7 @@ function netApply(s, myId) {
     c.repair = repair ? { sys: SYSTEMS[repair.sys], t: repair.t } : null;
     Object.assign(c.inv, dInv);
     c.ui.panel = dUi.panel; c.ui.override = dUi.override;
-    if (!(mineNow && dUi.mini && c.ui.mini && dUi.mini.kind === c.ui.mini.kind && dUi.mini.kind === 'radar')) c.ui.mini = dUi.mini;   // your own dish angle stays local while you drag
-    else Object.assign(c.ui.mini, { ...dUi.mini, angle: localInput.mouse.down ? c.ui.mini.angle : dUi.mini.angle });
+    c.ui.mini = dUi.mini;
     return c;
   });
   crew.length = 0; crew.push(...next);
@@ -88,7 +87,7 @@ function netApply(s, myId) {
   s.guns.forEach((d, i) => {
     const { aim, ...rest } = d;
     Object.assign(GUNS[i], rest);
-    if (!(me.mode === 'gun' && me.gun === GUNS[i])) GUNS[i].aim = aim;   // the cannon you're on aims locally
+    if (!(me.mode === 'gun' && me.gun === GUNS[i] && standing(me))) GUNS[i].aim = aim;   // the cannon you're on aims locally
   });
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
@@ -349,7 +348,7 @@ function netPredict(dt) {
       const kc = 1 - Math.exp(-8 * dt); c.x = lerp(c.x, c.nx, kc); c.y = lerp(c.y, c.ny, kc);
     }
   }
-  if (me.mode === 'gun' && me.gun && !debugOpen && !me.ui.panel) {   // aim the cannon you're on locally, same rule as the server
+  if (me.mode === 'gun' && me.gun && standing(me) && !debugOpen && !me.ui.panel) {   // aim the cannon you're on locally, same rule as the server
     const g = me.gun, m = localInput.mouse, arc = gunArc(g), ik = localInput.keys;
     if (m.moved) g.aim = Math.atan2(m.wy - g.y, m.wx - g.x);
     g.aim += ((ik.has('KeyD') || ik.has('ArrowRight') ? 1 : 0) - (ik.has('KeyA') || ik.has('ArrowLeft') ? 1 : 0)) * GUN_TURN * dt;

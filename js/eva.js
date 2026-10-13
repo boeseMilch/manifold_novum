@@ -209,8 +209,30 @@ function coilDelay() {
 // ---------------------------------------------------------------------------
 // Drawing (outside the hull)
 // ---------------------------------------------------------------------------
+// The shield emitters on the hull (SHIELD_EMITTERS; hull/emitter_<side>_<state>, tools/blender/models/hull/emitter.py):
+// ready, recharging, projecting (a 4-frame loop) or broken (a spacewalk job: a red ring round it).
+function drawShieldEmitters(t, reach) {
+  for (const e of SHIELD_EMITTERS) {
+    const s = combat.shields[e.side], dead = broken(e), st = dead ? 'broken' : s.up > 0 ? 'up' : s.cd > 0 ? 'cd' : 'idle';
+    const drawn = GFX.on && GFX.sprite(`hull/emitter_${e.side}_${st}`, st === 'up' ? Math.floor(t * 10) % 4 : 0, e.x, e.y, 0,
+                                       { layer: 'main', sortY: e.y, emissive: st === 'up' ? 0.9 : 0.5 });
+    if (!drawn) {                                        // 2D: a bracket from the hull, the coil drum, the hex lens
+      ctx.save(); ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.face);
+      if (st === 'up') { const g = ctx.createRadialGradient(L(0.1), 0, 0, L(0.1), 0, L(0.8)); g.addColorStop(0, 'rgba(160,230,255,0.55)'); g.addColorStop(1, 'rgba(160,230,255,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(0.1), 0, L(0.8), 0, TAU); ctx.fill(); }
+      rr(-L(0.8), -L(0.18), L(0.6), L(0.36), 3); ctx.fillStyle = '#3f5f8a'; ctx.fill(); stroke(1.5);
+      ctx.beginPath(); ctx.arc(0, 0, L(0.3), 0, TAU); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(2);
+      ctx.beginPath(); ctx.arc(0, 0, L(0.22), 0, TAU); ctx.strokeStyle = '#b87a3e'; ctx.lineWidth = 4; ctx.stroke();
+      poly(Array.from({ length: 6 }, (_, i) => [L(0.06) + Math.cos(i * Math.PI / 3) * L(0.2), Math.sin(i * Math.PI / 3) * L(0.2)]));
+      ctx.fillStyle = { idle: '#4aa0e8', cd: '#2a4a70', up: '#c8f4ff', broken: '#1a1d24' }[st]; ctx.fill(); stroke(1.5);
+      if (dead) { ctx.strokeStyle = '#b9bcc2'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-L(0.12), -L(0.14)); ctx.lineTo(L(0.24), L(0.14)); ctx.stroke(); }
+      ctx.restore();
+    }
+    if (dead) jobMarker(e.x, e.y, t, reach(e.x, e.y), '#ff6a5a');
+  }
+}
 function drawEvaJobs(t) {
   const reach = (x, y) => me.mode === 'eva' && Math.hypot(me.x - x, me.y - y) <= REACH + 1;
+  drawShieldEmitters(t, reach);
   // the antenna: a dish on a mast at the top of the hull
   {
     const x = L(ANTENNA.x), y = L(ANTENNA.y + 0.35), a = evs.antenna ? -Math.PI / 2 + Math.sin(t * 0.4) * 0.5 : 0.7;

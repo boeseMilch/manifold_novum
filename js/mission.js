@@ -214,7 +214,7 @@ function crewChanged(n) {
 }
 function startMission(id = 'intro', opts = {}) {
   applyShipUpgrades(opts.ship || {});
-  const candidates = SYSTEMS.filter(s => !s.broken);
+  const candidates = SYSTEMS.filter(s => !s.broken && !s.outside);   // (the maintenance failure is fixed inside: no hull parts)
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const target = pick(), decoy = pick();
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
@@ -305,7 +305,7 @@ function radarScan() {
 
 // Helm diagnosis: two systems look shaky from the start; one really fails.
 function diagState(s) {
-  if (s.broken) return { col: '#ff5a4a', text: 'BROKEN' };
+  if (s.broken) return { col: '#ff5a4a', text: s.outside ? 'BROKEN — outside, fix it on a spacewalk' : 'BROKEN' };
   const m = mission.maint;
   if (!mission.active || !m || m.serviced) return null;
   const ev = mission.events.find(e => e.kind === 'maintenance');
@@ -331,6 +331,7 @@ function serviceTarget() {
 const colOfSide = (side) => side === 'port' ? 0 : side === 'star' ? 2 : 1;
 // Rooms a part belongs to (parts between the decks belong to the rooms above and below).
 function sysRooms(s) {
+  if (s.outside) return [];                        // outside on the hull: in no room
   const r = roomAt(s.x, s.y);
   if (r) return [r];
   return [roomAt(s.x, SPINE_Y0 - 1), roomAt(s.x, SPINE_Y1 + 1)].filter(Boolean);
@@ -343,7 +344,7 @@ const burning = (s) => fires.some(f => f.sys === s && f.hp > 0);
 const firePeriod = (plasma) => (plasma ? PLASMA_TIME : FIRE_TIME) * (0.75 + Math.random() * 0.5);
 const fireLeft = (f) => (f.period || (f.plasma ? PLASMA_TIME : FIRE_TIME)) - f.t;
 function igniteSystem(s, plasma = false) {
-  if (!s || burning(s)) return false;
+  if (!s || burning(s) || s.outside) return false;                       // (vacuum outside: nothing burns there)
   if (sysRooms(s).some(r => vacuumRoom(r.id))) return false;            // no air, no fire
   plasma = (plasma || (!!mission.rules?.plasma && plasmaPart(s))) && inPlasmaRoom(s);   // plasma fires only in the lower side rooms
   fires.push({ uid: newUid(), sys: s, x: s.x + 0.35, y: s.y + 0.45, hp: 1, t: 0, seed: Math.random() * 100, plasma, period: firePeriod(plasma) });
@@ -355,7 +356,7 @@ function igniteSystem(s, plasma = false) {
 const HIT_FIRE = 0.2, HIT_BREAK = 0.1, LUCK_CUT = 0.9;   // small hits: fire / broken part (exclusive); luck: x0.9 on both
 // A fire on one of the 3 parts on that side nearest to the hit (intact ones first).
 function fireNear(side, x, y) {
-  const col = colOfSide(side), free = SYSTEMS.filter(s => s.col === col && !burning(s));
+  const col = colOfSide(side), free = SYSTEMS.filter(s => s.col === col && !s.outside && !burning(s));
   const near = (l) => l.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)).slice(0, 3);
   const intact = free.filter(s => !s.broken), pool = near(intact.length ? intact : free);
   return igniteSystem(pool[Math.floor(Math.random() * pool.length)]);
@@ -374,7 +375,7 @@ function bigHitFire(side, x, y) {
 }
 // Debug: start a fire on the part nearest to (x, y).
 function spawnFire(x, y) {
-  const s = SYSTEMS.filter(s => !burning(s)).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
+  const s = SYSTEMS.filter(s => !burning(s) && !s.outside).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y))[0];
   igniteSystem(s);
 }
 function updateFires(dt) {
@@ -460,8 +461,8 @@ const HELM = STATIONS.find(s => s.name === 'Helm');
 function stationSpots() {
   return [
     { x: CAT.x, y: CAT.y, r: 0.55, name: 'The cat', text: 'Click: pet the cat', run: petCat },
-    { x: 22.2, y: 6.4, r: 1.2, name: 'Radar', text: 'Click: use the radar dish (point it, ping, see what comes in the next 45 s)', run: openRadar },
-    { x: HELM.x, y: HELM.y + 0.5, r: 0.9, name: 'Helm', text: 'Click: run systems diagnosis (calibrate the scope first)', run: openScope },
+    { x: 22.2, y: 6.4, r: 1.2, name: 'Radar', text: `Click: radar scan (shows what comes in the next ${RADAR_RANGE} s)`, run: radarScan },
+    { x: HELM.x, y: HELM.y + 0.5, r: 0.9, name: 'Helm', text: 'Click: run systems diagnosis', run: openDiagnosis },
     { x: SECURITY.x, y: SECURITY.y + 0.5, r: 0.9, name: 'Security console', text: 'Click: open the security console (lock doors)', run: () => { ui.panel = 'security'; } },
   ];
 }
@@ -637,9 +638,8 @@ function drawRebootPanel() {
   ctx.textAlign = 'left';
 }
 function drawDiagnosisPanel() {
-  const scope = ui.mini?.kind === 'scope', w = 560, rows = SYSTEMS.length, h = scope && !ui.mini.ok ? 230 : Math.min(VH - 40, 80 + rows * 19 + (scope ? 160 : 0)), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — systems diagnosis');
-  let top = 50;
-  if (ui.mini?.kind === 'scope') { top += drawScope(ui.mini, x, y + 40, w); if (!ui.mini.ok) return; }
+  const w = 560, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — systems diagnosis');
+  const top = 50;
   ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'top';
   SYSTEMS.forEach((s, i) => {
     const st = diagState(s), yy = y + top + i * 19;

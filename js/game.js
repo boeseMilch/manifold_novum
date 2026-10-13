@@ -243,8 +243,13 @@ function updatePlayer(dt) {
 
   if (player.mode === 'hatch') { updateHatch(dt); prompt = { text: 'Cycling outer airlock…' }; return; }
   if (player.health === 'down' || player.health === 'out') {     // can't do anything but get patched up
-    updateCrew(player, dt, 0, 0);
     const self = treatInfo(player);
+    if (player.mode === 'gun') {                                // slumped in the cannon's seat: no aiming, no firing (updateInteraction: patching)
+      const where = player.gun.name.toLowerCase();
+      prompt = { text: self ? `Down in the ${where} — hold click to ${self.label.replace(' — ', ': ')} (${self.time} s)` : `Out cold in the ${where} — a crewmate has to pull you out at its ladder`, screen: true };
+      return;
+    }
+    updateCrew(player, dt, 0, 0);
     prompt = { text: self ? `You're down — hold click on yourself to ${self.label.replace(' — ', ': ')} (${self.time} s)` : 'You are out cold — a crewmate has to treat you (hold click on you, 2 s)', screen: true };
     return;
   }
@@ -297,11 +302,15 @@ function updatePlayer(dt) {
   const ladder = GUNS.find(g => Math.hypot(player.x - g.hatch[0], player.y - g.hatch[1]) < 0.9);
   const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
   if (ladder) {
-    act({ text: `Click: climb into the ${ladder.name.toLowerCase()}`, at: { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 },
-          run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; player.gunReady = false; } });
+    const at = { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 }, inIt = crew.find(c => c !== player && c.mode === 'gun' && c.gun === ladder);
+    if (inIt && !standing(inIt)) act({ text: `Click: pull ${inIt.name} out of the ${ladder.name.toLowerCase()}`, at, run: () => pullOutOfCannon(inIt, ladder) });
+    else if (inIt) act({ text: `${inIt.name} is manning the ${ladder.name.toLowerCase()}`, at });
+    else act({ text: `Click: climb into the ${ladder.name.toLowerCase()}`, at, noE: crew.some(c => c !== player && c.mode === 'inside' && !standing(c) && near(c.x, c.y)),   // (someone down right here, e.g. just pulled out: E treats them first)
+               run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; player.gunReady = false; } });
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
+    else if (broken(emitterOf(button.side))) act({ text: `The ${SIDE_LABEL[button.side].toLowerCase()} shield emitter outside is broken — repair it on a spacewalk (repair kit)`, at });
     else if (s.up > 0) act({ text: `Shield is up! (${Math.ceil(s.up)} s)`, at, ok: true });
     else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
     else if (cap.charge <= 0 || broken(cap)) act({ text: 'No energy for the shield (capacitor empty)', at });
@@ -356,7 +365,7 @@ function act(p) {
   if (!p.run) return;
   if ((debugOpen && player === me) || ui.panel || mission.over) return;
   const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r && !clickTarget(m[0], m[1])?.ok;   // something more specific under the mouse wins
-  const eForMe = pressed.has('KeyE') && !ui.panel && !hover?.ok;   // (E on something highlighted under the mouse goes there)
+  const eForMe = pressed.has('KeyE') && !ui.panel && !hover?.ok && !p.noE;   // (E on something highlighted under the mouse goes there; noE: E goes to something more urgent nearby)
   if ((mouse.click && onIt) || eForMe) { mouse.click = false; if (eForMe) player.eUsed = true; pressed.delete('KeyE'); p.run(); }
 }
 
@@ -366,6 +375,12 @@ function act(p) {
 function updateInteraction(dt) {
   hover = null;
   if (mission.over || ui.panel) { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
+  if (player.mode === 'gun' && !standing(player)) {               // down in a cannon: hold click (or E) to patch yourself up
+    const info = treatInfo(player);
+    player.repair = null; player.hold = null; player.charge = null;
+    updateTreat(dt, info && { treat: player, time: info.time }, mouse.down || keys.has('KeyE'));
+    return;
+  }
   if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
   const [mx, my] = mouseWorld();
   hover = pickHover(player, mx, my);
@@ -373,7 +388,7 @@ function updateInteraction(dt) {
   const eDown = keys.has('KeyE') && !player.eUsed, eTap = pressed.has('KeyE') && !player.eUsed;
   if (!mouse.down) {
     const e = hover?.ok ? hover : nearbyTarget(eDown || eTap);
-    if (e && !hover?.ok && !prompt?.run && !prompt?.screen)            // show what E would do
+    if (e && !hover?.ok && (!prompt?.run || prompt.noE) && !prompt?.screen)            // show what E would do
       prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r } };
     const eLetGo = player.eHeld && !keys.has('KeyE');
     if (eDown || eTap || eLetGo) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
@@ -410,7 +425,7 @@ function nearbyTarget(now) {
 }
 
 function climbDown() {
-  if (player.mode !== 'gun') return;
+  if (player.mode !== 'gun' || !standing(player)) return;        // (down in the seat: someone has to pull you out)
   const g = player.gun;
   player.cover = 0; player.vx = player.vy = 0;
   player.mode = 'inside'; [player.x, player.y] = g.hatch;
@@ -425,7 +440,7 @@ function runCommand(cmd) {
   else if (kind === 'bonk') { if (ui.override) overrideHit(); }
   else if (kind === 'closePanel') { ui.panel = null; ui.override = null; ui.mini = null; }
   else if (kind === 'mini') miniCommand(arg, cmd[2], cmd[3]);
-  else if (kind === 'reload') { if (player.mode === 'gun') reloadCannon(player.gun); }
+  else if (kind === 'reload') { if (player.mode === 'gun' && standing(player)) reloadCannon(player.gun); }
   else if (kind === 'climbDown') climbDown();
   else if (kind === 'reboot') rebootSwitch(arg);
   else if (kind === 'practice') runPractice(arg);
@@ -490,10 +505,10 @@ const DEBUG_ITEMS = [
   { key: 'Z', label: '', hidden: true, run: () => { combatSpawn('stealth', 'port', true); combat.enemies.forEach(e => { e.reveal = 3; }); } },
   { key: 'O', label: '', hidden: true, run: () => { const h = HATCHES[0]; player.mode = 'eva'; player.gun = null; [player.x, player.y] = h.outside; } },   // debug only: step outside (screenshots)
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
-  { key: 'y', label: '', hidden: true, run: () => { openRadar(); ui.mini.angle = Math.PI; radarPing(ui.mini); } },
+  { key: 'y', label: '', hidden: true, run: () => radarScan() },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
   { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; DECK_LOCKS[1].locked = true; } },
-  { key: 'g', label: '', hidden: true, run: () => openScope() },
+  { key: 'g', label: '', hidden: true, run: () => openDiagnosis() },
   { key: 'v', label: '', hidden: true, run: () => { startOverride(DOORWAYS[0], 'Door'); ui.override.hits = 2; } },
   { key: 'q', label: '', hidden: true, run: () => pressShield('star') },          // debug only
   { key: 'x', label: '', hidden: true, run: () => {            // debug only: shoot the windshield crack
@@ -598,8 +613,14 @@ function drawCrewDown(c, t) {
   ctx.restore();
   drawDownCross(c, t);
 }
+// Where a crew member is drawn on the ground plane (a gunner: in the cannon's seat, up on the roof for the front one).
+function crewDrawAt(c) {
+  if (c.mode !== 'gun' || !c.gun) return [c.x, c.y];
+  const [gx, gy] = gunnerAt(c);
+  return [gx, gy - GFX.lift(gunZ(c.gun))];
+}
 function drawDownCross(c, t) {
-  const k = 0.6 + 0.4 * Math.sin(t * 5), x = c.x * T, y = (c.y - 0.6 - GFX.lift(0.4)) * T;
+  const [cx, cy] = crewDrawAt(c), k = 0.6 + 0.4 * Math.sin(t * 5), x = cx * T, y = (cy - 0.6 - GFX.lift(0.4)) * T;
   ctx.fillStyle = `rgba(226,60,50,${k})`; ctx.fillRect(x - 3, y - 9, 6, 18); ctx.fillRect(x - 9, y - 3, 18, 6);
   ctx.strokeStyle = 'rgba(20,22,27,0.8)'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 9, 6, 18); ctx.strokeRect(x - 9, y - 3, 18, 6);
 }
@@ -748,10 +769,11 @@ function render(t) {
     const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: progress ring
     if (tr) {
       const info = withCrew(tr, () => treatInfo(c));
+      const [rx, ry] = crewDrawAt(c);
       if (info) {
-        ctx.beginPath(); ctx.arc(c.x * T, c.y * T, T * 0.55, -Math.PI / 2, -Math.PI / 2 + Math.min(1, tr.treat.t / info.time) * TAU); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 5; ctx.stroke();
+        ctx.beginPath(); ctx.arc(rx * T, ry * T, T * 0.55, -Math.PI / 2, -Math.PI / 2 + Math.min(1, tr.treat.t / info.time) * TAU); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 5; ctx.stroke();
         const beat = 1 - (((tr.treat.t + BEAT / 2) % BEAT) - BEAT / 2) ** 2 * 40;   // the heartbeat: click when the ring pulses
-        if (beat > 0) { ctx.beginPath(); ctx.arc(c.x * T, c.y * T, T * (0.7 + 0.15 * beat), 0, TAU); ctx.strokeStyle = `rgba(255,120,140,${beat})`; ctx.lineWidth = 3; ctx.stroke(); }
+        if (beat > 0) { ctx.beginPath(); ctx.arc(rx * T, ry * T, T * (0.7 + 0.15 * beat), 0, TAU); ctx.strokeStyle = `rgba(255,120,140,${beat})`; ctx.lineWidth = 3; ctx.stroke(); }
       }
     }
     if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
@@ -779,16 +801,16 @@ function render(t) {
     ctx.textAlign = 'left';
   });
   ctx.restore();
+  drawInjuryOverlay(t);                              // (under the screen prompt: being down, you still read what to do)
   if (prompt && prompt.screen) {
     ctx.font = '600 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(prompt.text).width + 30;
     rr(VW / 2 - w / 2, VH - 54, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, '#5fd6a0');
     ctx.fillStyle = '#c8ffe6'; ctx.fillText(prompt.text, VW / 2, VH - 37); ctx.textAlign = 'left';
   }
-  drawInjuryOverlay(t);
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);
-  if (me.mode === 'gun') drawCannonHUD(me.gun);
+  if (me.mode === 'gun' && standing(me)) drawCannonHUD(me.gun);
   drawSidebar(HUD_H);
   if (hover && !debugOpen) {                        // tooltip next to the mouse
     ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';
@@ -932,8 +954,8 @@ function clientUpdate(dt) {
   miniClient(dt);
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
-  if (me.mode === 'gun' && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
-  if (me.mode === 'gun' && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
+  if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
+  if (me.mode === 'gun' && standing(me) && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
   if (mission.over) creditMission();                 // rewards for this browser's player (once per run)
   if (mission.over && localInput.pressed.has('KeyR')) backToLobby();
