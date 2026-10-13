@@ -804,6 +804,40 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Note: tests/encounters.js fails about 1 run in 10 ("doors lock themselves"): it's random (the AI
   glitch), not new; worth making deterministic.
 
+### 8z4. Menus in the ship's metal (`js/menugl.js`, `assets/ui/`, `tools/blender/models/ui/ui.py`)
+- **Pieces** modelled in Blender in the ship's materials (worn blue-grey paint, grime, scratches, dark
+  steel lips, hex bolts, rivets), rendered at 70° (slightly from above) so side walls, bevels and the
+  plate's thickness show: a chunky 9-slice plate with a chamfered rim and raised worn lip, a panel fill
+  tile, brushed-silver raised buttons (big / small, each with a pushed-in `_down` render), the red START
+  button with a hazard-striped collar, deep recessed wells (lists, briefing, inputs, XP bar), suit-colour
+  swatches (tint mask), LEDs, a strip of duct tape and brass name plates (CREW 07, FLIGHT OPS, BRIEFING,
+  STORES). Files: `<name>.png` (beauty), `.nh.png` (normal x/y, height, coverage), `.m.png` masks and
+  `ui.json` (sizes, slices, heights); 1.1 MB. Re-render: `blender -b --factory-startup --python
+  tools/blender/models/ui/ui.py [-- quick] [-- piece …]` (~15 s on the CPU); Blender's numpy writes the
+  game files straight into `assets/ui/` (no pack.py step).
+- **Renderer:** a small WebGL2 renderer per menu layer (lobby, shop), separate from js/gfx.js (flat
+  screen-space pieces that only redraw on change). Pieces are drawn from the DOM's bounding boxes (the
+  DOM stays the source of truth: real buttons, inputs, crisp text, keyboard focus), clipped to scrolling
+  ancestors; a G-buffer pass, then lighting: ambient with contact shading, a key light with soft cast
+  shadows marched through the height buffer, ambient occlusion, up to 8 point lights and specular.
+- **Lighting and states:** a warm hand lamp follows the mouse (dim over the plate, bright on a hovered
+  button, moving highlights on bevels and bolts); pressing (pointer or Space / Enter) sinks the button
+  (lower, darker, shadow gone, label 1 px down); chosen missions / gear are latched in with a lit LED and
+  a small green glow; disabled buttons are dimmed metal with greyed labels; the chosen suit colour is
+  pushed in with a ring. **Colour only where it means something:** every button face is silver except
+  START MISSION (red); status colours stay (server dot, LEDs, HOST badge, swatches, warnings).
+- **Layout:** an 8 px grid; plates with a 28 px frame + 18 px padding; primary buttons 68 px, secondary
+  56 px, START 64 px; the crew plate's stats on three lines; panelling fitted per plate (at most 540 px
+  per panel, so the menu plates are seamless at 1280 px); the briefing scrolls in its own well so START
+  stays on screen at 1280×800; narrow (400 px): one column, two buttons per row.
+- **When it draws:** on DOM changes, resize, scroll, hover / press easing and mouse moves, coalesced and
+  throttled by measured cost; nothing while a mission runs.
+- **Fallback:** `html.metal-css` (no WebGL2, `?classic`, `file://`, while loading, `?nometal`): the same
+  textures as CSS border-images / backgrounds with :hover / :active states.
+- The page's server-connection timeout is 4 s now (was 2 s): a busy headless page missed it.
+- Nits left: shadow dither on the LEDs' bezels; one seam behind the game list on tall Play plates; the
+  lobby's two columns end at different heights; scrolled shop text can touch the plate frame.
+
 ### 8z3. Fixed-length missions: the crew size sets the encounters; energy in spec; prerequisites
 - History: first the gaps between encounters scaled with 1/√players (and the reactor with them); the
   model then showed busy time falling 68 % → 25 % from 1 to 4 players, and calibrating gaps alone to

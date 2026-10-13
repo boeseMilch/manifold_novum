@@ -1,0 +1,119 @@
+{
+ "_": "Menu UI kit (tools/blender/models/ui/ui.py, drawn by js/menugl.js). size (x h) / slice / fillAt: texture px (texPerCss per CSS px). zmin / zmax: the heights in CSS px above the plate surface that nh.png blue 0..1 spans. repeat: edges and centre tile instead of stretching.",
+ "pieces": {
+  "btn": {
+   "size": 128,
+   "slice": 32,
+   "zmax": 14.72,
+   "zmin": -7.04
+  },
+  "btn_down": {
+   "size": 128,
+   "slice": 32,
+   "zmax": 14.72,
+   "zmin": -7.04
+  },
+  "btn_red": {
+   "repeat": true,
+   "size": 128,
+   "slice": 32,
+   "zmax": 14.72,
+   "zmin": -7.04
+  },
+  "btn_red_down": {
+   "repeat": true,
+   "size": 128,
+   "slice": 32,
+   "zmax": 14.72,
+   "zmin": -7.04
+  },
+  "btns": {
+   "size": 70,
+   "slice": 18,
+   "zmax": 8.096,
+   "zmin": -3.872
+  },
+  "btns_down": {
+   "size": 70,
+   "slice": 18,
+   "zmax": 8.096,
+   "zmin": -3.872
+  },
+  "inset": {
+   "size": 128,
+   "slice": 32,
+   "zmax": 1.92,
+   "zmin": -16.64
+  },
+  "led_off": {
+   "emissive": 0.0,
+   "size": 32,
+   "zmax": 5.12,
+   "zmin": -0.64
+  },
+  "led_on": {
+   "emissive": 1.0,
+   "size": 32,
+   "zmax": 5.12,
+   "zmin": -0.64
+  },
+  "plate": {
+   "fillAt": 56,
+   "size": 256,
+   "slice": 56,
+   "zmax": 11.2,
+   "zmin": -9.6
+  },
+  "plate_fill": {
+   "size": 512,
+   "tile": true,
+   "zmax": 2.56,
+   "zmin": -9.6
+  },
+  "swatch": {
+   "mask": true,
+   "size": 64,
+   "slice": 32,
+   "zmax": 16.0,
+   "zmin": -3.2
+  },
+  "swatch_down": {
+   "mask": true,
+   "size": 64,
+   "slice": 32,
+   "zmax": 16.0,
+   "zmin": -3.2
+  },
+  "tag_brief": {
+   "h": 36,
+   "size": 166,
+   "zmax": 3.2,
+   "zmin": 0.0
+  },
+  "tag_crew": {
+   "h": 36,
+   "size": 166,
+   "zmax": 3.2,
+   "zmin": 0.0
+  },
+  "tag_ops": {
+   "h": 36,
+   "size": 166,
+   "zmax": 3.2,
+   "zmin": 0.0
+  },
+  "tag_stores": {
+   "h": 36,
+   "size": 166,
+   "zmax": 3.2,
+   "zmin": 0.0
+  },
+  "tape": {
+   "h": 205,
+   "size": 250,
+   "zmax": 9.6,
+   "zmin": 4.8
+  }
+ },
+ "texPerCss": 2.0
+}

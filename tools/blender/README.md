@@ -12,6 +12,10 @@ delta-crops and packs them into WebP atlas pages in `assets/sprites/<group>/` pl
 
 (The `cattrs` / `EXTENSIONS_OT_repo_sync` tracebacks at startup are harmless Blender noise.)
 
+Exception: the menu UI kit (`models/ui/ui.py`: plates, buttons, insets, swatches, LEDs) is seen straight
+on, renders with its own camera and writes its small textures straight into `assets/ui/` (no pack step):
+`blender -b --factory-startup --python tools/blender/models/ui/ui.py [-- quick] [-- <piece> ...]`.
+
 ## View
 
 Orthographic, tilted top-down: the camera looks down at 50° above the horizon, towards game "up"

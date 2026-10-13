@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="metal-css">
 <head>
 <meta charset="utf-8">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2307090f'/%3E%3Cpath d='M7 24V9l9 9 9-9v15' fill='none' stroke='%235fd6a0' stroke-width='3.2' stroke-linejoin='round'/%3E%3C/svg%3E">
@@ -134,6 +134,122 @@
     .room-head { flex-direction: column; gap: 10px; } .room-head h1 { font-size: 21px; }
     .game { gap: 7px; padding-left: 9px; } .game .tag { padding: 3px 5px; letter-spacing: 0; }
   }
+  /* --- the metal kit (assets/ui, tools/blender/models/ui/ui.py) ----------------------------------------
+     html.metal-gl: js/menugl.js draws the lit metal on a canvas under each layer, so the DOM's own
+     backgrounds go; html.metal-css (no WebGL2, ?classic, file://, or while loading): the same baked
+     textures as border-images. Layout is the same in both. Spacing on an 8 px grid; the plates' frame is
+     28 px (+ 18 px of air inside it), insets have a 16 px rim. Buttons are silver; START is the one red. */
+  .metal-layer { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; cursor: default; }
+  #lobby > .screen { position: relative; padding: 40px 24px 32px; }
+  .plate::before, .plate::after { display: none; }
+  .plate { border-radius: 13px; padding: 46px 48px; }
+  .title { margin-bottom: 36px; }
+  .title .sub { margin-top: 12px; }
+  .menu-cols { width: min(1120px, 100%); grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 28px; align-items: stretch; }
+  .plate h2 { font-size: 14px; letter-spacing: 3px; margin: 0 0 20px; }
+  .plate h2 + label { margin-top: 0; }
+  #lobby label { margin: 22px 0 10px; font-size: 12px; letter-spacing: 1.5px; }
+  #lobby input { padding: 14px 18px; font-size: 17px; border-radius: 8px; }
+  #lobby-profile { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; margin-top: 18px; font-size: 14px; }
+  #lobby-profile > b { grid-area: 1 / 1; } #lobby-profile > span:nth-of-type(2) { grid-area: 1 / 2; text-align: right; }
+  #lobby-profile .bar { grid-area: 2 / 1 / 3 / 3; width: auto; height: 12px; border-radius: 6px; padding: 2px; box-sizing: border-box; }
+  #lobby-profile .bar i { border-radius: 4px; box-shadow: 0 0 6px rgba(95, 214, 160, 0.6); }
+  #lobby-profile > span:nth-of-type(3) { grid-area: 3 / 1; } #lobby-profile > span:nth-of-type(4) { grid-area: 3 / 2; text-align: right; }
+  .paints { gap: 10px; } .paint { width: 30px; height: 30px; }
+  #lobby .row { gap: 14px; margin-top: 28px; }
+  #lobby .row button, #shop-close { min-height: 56px; padding: 10px 12px; font-size: 13px; letter-spacing: 1.5px; border-radius: 8px; }
+  #lobby .row.big { margin-top: 0; }
+  #lobby .row.big button { min-height: 68px; font-size: 17px; letter-spacing: 2.5px; }
+  .list-head { margin: 28px 0 10px; } #lobby .list-head label { margin: 0; }
+  #menu-games { padding: 16px; gap: 8px; min-height: 150px; border-radius: 10px; }
+  #menu-games li.empty { padding: 8px 6px; font-size: 14px; }
+  .game { gap: 14px; padding: 10px 12px 10px 16px; border-radius: 8px; background: rgba(255,255,255,0.05); }
+  .game .tag { background: rgba(0,0,0,0.35); padding: 4px 9px; }
+  .game button.join { min-height: 36px; padding: 6px 18px; }
+  #menu-msg { margin-top: 16px; }
+  #room .plate { width: min(1180px, 100%); }
+  .room-head { gap: 20px; margin-bottom: 8px; align-items: center; }
+  #room-back { min-height: 40px; padding: 8px 16px; margin-top: 0; }
+  .room-cols { gap: 36px; }
+  .room-side #lobby-brief { margin-top: 40px; }
+  #lobby-missions { padding: 16px; gap: 12px; max-height: calc(100vh - 360px); min-height: 260px; border-radius: 10px; }
+  .mission-group { margin: 10px 4px 0; } .mission-group:first-child { margin-top: 0; }
+  .mission-more { padding: 0 6px 2px; }
+  .mission, #shop .item { position: relative; padding: 16px 50px 16px 20px !important; border-radius: 10px; }
+  .mission b { margin-bottom: 4px; }
+  #lobby-brief { padding: 22px 26px; border-radius: 10px; font-size: 14px; line-height: 1.5; max-height: max(180px, calc(100vh - 560px)); overflow-y: auto; scrollbar-color: #4a5262 transparent; }
+  #lobby-brief h3 { margin: 0 0 10px; font-size: 16px; }
+  #lobby-players { gap: 8px 18px; min-height: 24px; }
+  #lobby-start { margin-top: 28px; min-height: 64px; font-size: 18px; letter-spacing: 3px; border-radius: 10px; }
+  #shop .plate { width: min(840px, calc(100vw - 32px)); max-height: calc(100vh - 40px); }
+  #shop h1 { margin-bottom: 8px; }
+  #shop h4 { margin: 26px 0 12px; font-size: 12px; letter-spacing: 1.5px; }
+  #shop .grid { gap: 14px; }
+  #shop .note { margin: 22px 0 0; }
+  #shop-close { margin-top: 28px; font-size: 15px; letter-spacing: 2.5px; }
+  @media (max-width: 960px) { .room-cols { gap: 0; } .room-side #lobby-brief { margin-top: 24px; } }
+  @media (max-width: 760px) { .menu-cols { grid-template-columns: minmax(0, 1fr); gap: 24px; } }
+  @media (max-width: 520px) {
+    #lobby > .screen { padding: 32px 12px 24px; }
+    .plate { padding: 42px 38px; }
+    #lobby .row { gap: 12px; } #lobby .row button { flex: 1 1 40%; }
+    #shop .grid { grid-template-columns: 1fr; }
+    #menu-games { padding: 10px; } .game { gap: 8px; padding: 8px 8px 8px 10px; } .game .tag { display: none; }
+    .room-head { align-items: flex-start; }
+  }
+  /* silver buttons: dark, embossed labels; the red START keeps white. Disabled / not yours to pick:
+     the metal is dimmed (menugl.js) and the label greyed, but no see-through opacity */
+  :is(#lobby, #shop) :is(button:disabled:not(#lobby-start), #room.guest .mission:not(.chosen), .mission.locked) { opacity: 1 !important; color: #2c3038 !important; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) !important; }
+  :is(#lobby, #shop) :is(button:disabled:not(#lobby-start), #room.guest .mission:not(.chosen), .mission.locked) :is(span, small) { color: #383d45 !important; }
+  :is(#lobby, #shop) :is(.row button, #shop-close, .mission, .item, #room-back, button.join) {
+    color: #161a21; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); }
+  :is(#lobby, #shop) :is(.row button small, .mission span, .item span) { color: #353c49; }
+  :is(#lobby, #shop) .mission em { color: #8a5600; } :is(#lobby, #shop) .mission em.done { color: #17663f; }
+  #lobby-start { color: #fff; text-shadow: 0 1px 1px rgba(8, 10, 14, 0.9), 0 0 6px rgba(8, 10, 14, 0.5); }
+  #lobby-start:disabled { color: #f0dcd8; }
+  :is(#lobby, #shop) button:active:not(:disabled) { transform: translateY(1px); }
+  :is(#lobby, #shop) button:focus-visible { outline: 2px solid rgba(255, 236, 200, 0.8); outline-offset: 3px; }
+  :is(#lobby, #shop) :is(.row button, #shop-close, .mission, .item) { --up: url(assets/ui/btn.png); --dn: url(assets/ui/btn_down.png); }
+  :is(#lobby, #shop) :is(#room-back, button.join) { --up: url(assets/ui/btns.png); --dn: url(assets/ui/btns_down.png); }
+  #lobby-start { --up: url(assets/ui/btn_red.png); --dn: url(assets/ui/btn_red_down.png); }
+  /* CSS look */
+  html.metal-css :is(#lobby, #shop) .plate { border: 3px solid transparent; box-shadow: 0 16px 44px rgba(0,0,0,0.6);
+    background: #5d6880 url(assets/ui/plate_fill.png) 25px 25px / 256px 256px;   /* (size per plate: sizePanelsCss() in js/menugl.js) */
+    background-clip: padding-box; border-image: url(assets/ui/plate.png) 56 / 28px / 0 stretch; }
+  html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, #shop-close, .mission, .item, #room-back, button.join) {
+    background: none; border-color: transparent; border-image-source: var(--up); border-image-slice: 32 fill; border-image-width: 16px; }
+  html.metal-css :is(#lobby, #shop) :is(#room-back, button.join) { border-image-slice: 18 fill; border-image-width: 9px; }
+  html.metal-css #lobby-start { border-image-repeat: round; }
+  html.metal-css :is(#lobby, #shop) :is(.mission.chosen, .item.chosen) { border-image-source: var(--dn); box-shadow: none; }
+  html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, #shop-close, .mission, .item, #room-back, button.join):hover:not(:disabled) {
+    background: none; filter: brightness(1.15) drop-shadow(0 0 8px rgba(255, 236, 200, 0.3)); }
+  html.metal-css #lobby-start:hover:not(:disabled) { filter: brightness(1.08) drop-shadow(0 0 8px rgba(255, 236, 200, 0.22)); }
+  html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, #shop-close, .mission, .item, #room-back, button.join):active:not(:disabled) {
+    border-image-source: var(--dn); filter: brightness(0.92); }
+  html.metal-css :is(#lobby, #shop) :is(#menu-games, #lobby-brief, #lobby-missions) { background: none; border-color: transparent;
+    border-image: url(assets/ui/inset.png) 32 fill / 16px stretch; }
+  html.metal-css #lobby input { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 9px stretch; }
+  html.metal-css #lobby-profile .bar { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 5px stretch; }
+  html.metal-css .paint { border: none; background-image: url(assets/ui/swatch.png) !important; background-size: 100% 100% !important; background-blend-mode: multiply; }
+  html.metal-css .paint.chosen { background-image: url(assets/ui/swatch_down.png) !important; box-shadow: 0 0 0 2px #fff, 0 0 10px rgba(255,255,255,0.5); }
+  html.metal-css :is(.mission, #shop .item)::after { content: ''; position: absolute; right: 15px; top: 50%; width: 16px; height: 16px; margin-top: -8px;
+    background: url(assets/ui/led_off.png) center / 100% 100%; }
+  html.metal-css :is(.mission.chosen, #shop .item.chosen)::after { background-image: url(assets/ui/led_on.png); filter: drop-shadow(0 0 4px rgba(95, 214, 160, 0.8)); }
+  html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, .item):disabled { opacity: 1; filter: brightness(0.6) saturate(0.5); }
+  html.metal-css :is(#menu-you, #menu-play, #room .plate)::before { display: block; content: ''; position: absolute; pointer-events: none;
+    inset: auto auto 2px calc(50% - 41.5px); width: 83px; height: 18px; background: center / 100% 100% no-repeat; }
+  html.metal-css #menu-you::before { background-image: url(assets/ui/tag_crew.png); }
+  html.metal-css #menu-play::before { background-image: url(assets/ui/tag_ops.png); }
+  html.metal-css #room .plate::before { background-image: url(assets/ui/tag_brief.png); }
+  html.metal-css :is(#menu-you, #room .plate)::after { display: block; content: ''; position: absolute; pointer-events: none; width: 124.8px; height: 102.4px;
+    background: url(assets/ui/tape.png) center / 100% 100% no-repeat; }
+  html.metal-css #menu-you::after { right: -31.4px; top: -24.2px; }
+  html.metal-css #room .plate::after { left: -25.4px; bottom: -20.2px; }
+  /* lit look: the canvas draws all of it */
+  html.metal-gl :is(#lobby, #shop) .plate { background: none; border-color: transparent; box-shadow: 0 16px 44px rgba(0,0,0,0.55); }
+  html.metal-gl :is(#lobby, #shop) :is(button, input, #menu-games, #lobby-brief, #lobby-missions, .bar) {
+    background: transparent !important; border-color: transparent !important; box-shadow: none !important; filter: none !important; }
+  html.metal-gl .paint.chosen { box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 0 8px rgba(255,255,255,0.4) !important; }
 </style>
 </head>
 <body>
@@ -217,5 +333,6 @@
 <script src="js/sprites.js"></script>
 <script src="js/game.js"></script>
 <script src="js/net.js"></script>
+<script src="js/menugl.js"></script>
 </body>
 </html>

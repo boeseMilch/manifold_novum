@@ -267,7 +267,7 @@ function netClientMain() {
     ws.onclose = null; ws.close(); ws = null; netState = 'none';
     if (q.has('autostart')) return startSolo();
     lastLobby = null; show(phase === 'room' && solo ? 'room' : 'menu');
-  }, 2000);
+  }, 4000);                                                           // (generous: a busy page — software WebGL — handles the open event late)
   let autostart = q.has('autostart');
   ws.onopen = () => {
     clearTimeout(fail); netState = 'online'; hello();
