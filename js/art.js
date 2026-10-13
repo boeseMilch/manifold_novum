@@ -720,7 +720,7 @@ function drawGunLadder(g) {
 function drawCover(g, k) {
   if (GFX.on) {                                     // hull/cover_k1..3 by progress, fading in below 1/3 (in front of the gun: same depth bias)
     const n = `hull/cover_k${k <= 1 / 3 ? 1 : k <= 2 / 3 ? 2 : 3}`;
-    if (GFX.ready(n) && GFX.sprite(n, GFX.frameIndex(n, g.aim), g.x, g.y, gunZ(g), { layer: 'wall', sortY: g.y + 0.02, alpha: Math.min(1, k * 3), depthBias: gunBias(g) })) return;
+    if (GFX.ready(n) && GFX.sprite(n, GFX.frameIndex(n, g.aim), g.x, g.y + gunDY(g), gunZ(g), { layer: 'wall', sortY: g.y + gunDY(g) + 0.02, alpha: Math.min(1, k * 3), depthBias: gunBias(g) })) return;
   }
   const r = T * 1.35, a = g.aim, half = 0.95 * k;
   ctx.save(); ctx.translate(g.x * T, g.y * T);

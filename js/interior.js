@@ -158,7 +158,7 @@ function toiletStall(t) {
     spr('props/toilet', 0, ...fc(FURNITURE.toilet));
     spr('props/plunger', 0, 13.25, 16.6);
     spr('props/magazine', 0, 12.05, 16.4, 0, { layer: 'decal' });
-    stencil(U(12.75), U(17.4), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');
+    stencil(U(12.95), U(17.8), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');   // (clear of the open door's swing)
     return;
   }
   const w1 = FURNITURE.stallWall, w2 = FURNITURE.stallFront;
@@ -193,7 +193,8 @@ function toiletStall(t) {
 }
 // The sign on the wall above it (drawn with the spine, on the wall itself).
 function toiletSign() {
-  if (wallSign('props/plaque_toilet', 12.45, SPINE_Y1, 1.35)) return;   // above the toilet's tank
+  if (wallSign('props/plaque_toilet', 12.45, SPINE_Y1, 1.35) || GFX.on) return;   // above the toilet's tank (sprite view: nothing until it's loaded;
+                                                                                   // the 2D plaque goes on top of everything, crew included)
   plaque(U(12.45), U(14.55), U(2.05), U(0.72),
     [['PLEASE CLOSE THE LID', 0.14], ['OR THE AIR RUNS OUT', 0.12], ['— the management', 0.085, 600]]);
 }
@@ -229,7 +230,7 @@ function exerciseBike(t) {                             // the treadmill (it work
   stencil(U(40.6), U(22.6), 'JOG FOR BONE DENSITY', 0, 0.17, 'rgba(232,236,244,0.3)');
 }
 function incidentBoard() {
-  if (wallSign('props/plaque_incident', 16.1, 0.6)) return;
+  if (wallSign('props/plaque_incident', 16.1, 0.6) || GFX.on) return;
   plaque(U(16.1), U(0.32), U(2.6), U(0.5), [['DAYS SINCE LAST INCIDENT:  0', 0.13]], '#2b303a', '#ffcf6b');
 }
 

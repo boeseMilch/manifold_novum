@@ -19,8 +19,9 @@ Needs python3 with Pillow (WebP), numpy and scipy. A full run takes ~2.5 min on 
    premultiplied alpha. Normal and height maps are stored at half that resolution, masks at full.
 2. **Trim** every image to its alpha bounding box; the origin moves with it.
 3. **Delta crop**: frames of one entry, and entries that share a canvas, origin and name stem (the name
-   without its last `_token`, e.g. `interior/door_v_frame_blast_f0..f3`), are compared with the frames
-   stored whole before them. When the pixels that differ (beyond the tolerances in `pack.py`) fit in a box
+   without its last `_token`, e.g. `interior/door_v_frame_blast_f0..f3`), are compared with the last 24
+   frames stored whole before them, and with the same frame of earlier variants that have as many frames
+   (`crew/run_visor` frame k with `crew/run` frame k). When the pixels that differ (beyond the tolerances in `pack.py`) fit in a box
    at most 60% of the frame's own area, the frame is stored as that box only: a *patch* on a *base*.
    Exact duplicates are stored once. Rotating things differ everywhere and stay whole.
 4. **Pack** each group into its own pages (MaxRects, ≤ 4096²; one roughly square page when it fits), with

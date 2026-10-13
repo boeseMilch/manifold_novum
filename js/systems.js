@@ -478,10 +478,15 @@ function drawLeverSprite(lv) {
 function drawLever(t) {
   const x = L(LEVER.x), y = L(LEVER.y), lv = power.lever;
   if (drawLeverSprite(lv)) {
-    ctx.font = `800 ${T * 0.13}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = 'rgba(232,236,244,0.75)';
-    for (let i = 0; i < 3; i++) ctx.fillText(LEVER_NAMES[i], x + Math.cos(leverAngle(i)) * T * 0.72, y + Math.sin(leverAngle(i)) * T * 0.72);
-    ctx.font = `800 ${T * 0.11}px system-ui, sans-serif`; ctx.textBaseline = 'top';
-    ctx.fillText(lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', x, y + T * 0.55); ctx.textAlign = 'left';
+    // the labels stand up as billboards round the lever's top (flat on the floor the base and the engine
+    // housing hid them), the mode (AUTO / MANUAL) over MID; depth-tested, so the crew still cover them
+    const o = { layer: 'main', depthBias: 0.4, outline: 'rgba(10,12,18,0.7)' }, f1 = `800 ${T * 0.13}px system-ui, sans-serif`;
+    for (let i = 0; i < 3; i++) {
+      const a = leverAngle(i), lx = LEVER.x + Math.cos(a) * 0.78, ly = LEVER.y + Math.sin(a) * 0.62;
+      worldText(lx, ly, 0.35, LEVER_NAMES[i], f1, 'rgba(232,236,244,0.8)', { ...o, sortY: ly });
+    }
+    const my = LEVER.y + Math.sin(leverAngle(1)) * 0.62;
+    worldText(LEVER.x, my, 0.62, lv.jammed ? 'MANUAL (WRENCH)' : 'AUTO', `800 ${T * 0.11}px system-ui, sans-serif`, lv.jammed ? '#ffcf6b' : 'rgba(232,236,244,0.65)', { ...o, sortY: my });
     return;
   }
   shadowEllipse(x + 3, y + 5, T * 0.55, T * 0.45, 0.3);

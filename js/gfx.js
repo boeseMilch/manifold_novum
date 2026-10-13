@@ -49,10 +49,16 @@
 //   edges) + the sun × the area's sun factor + point lights (N·L from the normal map, smooth
 //   falloff to `radius`). A light: { x, y, z, color, radius, intensity, wrap (0.22: how far light
 //   wraps round the terminator), dir + cone (a spot: direction, half-angle in rad), x2, y2, z2 (a
-//   strip from (x, y, z) to there), shadow (true: screen-space shadows) }. Up to MAX_LIGHTS on
+//   strip from (x, y, z) to there), shadow (true: screen-space shadows), size (the light's radius for
+//   the shadows' penumbra; default 0.08, spots 0.04) }. Up to MAX_LIGHTS on
 //   screen, binned per screen tile (TILE_SLOTS - 1 strongest per tile); up to MAX_AREAS areas.
-//   Shadows march through LAST frame's depth buffer (reprojected), so they cost no extra pass;
-//   only solid, lit pixels below 1.75 above their origin cast them. ?noshadows / GFX.setShadows(false).
+//   Shadows march through LAST frame's depth buffer (reprojected); only solid, lit pixels below 1.75
+//   above their origin cast them. They are soft: before the scene, a half-resolution pass marches one
+//   ray per pixel and light (to a random point of the light's disc: penumbra) into a visibility
+//   channel per light (overlapping lights get different ones; up to 28), a depth-aware blur turns the
+//   noise into smooth edges, and the lighting reads it back depth-aware (marching per pixel only
+//   where that buffer doesn't show the surface, e.g. something that just moved). ?noshadows /
+//   GFX.setShadows(false).
 //   grade multiplies the final picture (unless GFX.end(post) passes its own).
 
 // 2D layers: GFX.layer2d('back') is drawn first and unlit (space, things behind the ship);
@@ -95,12 +101,17 @@ const GFX = (() => {
   const gl = glc.getContext('webgl2', { antialias: false, alpha: false, depth: true, premultipliedAlpha: false, preserveDrawingBuffer: false });
   if (!gl) return off('WebGL2 context failed');
   const hdr = !!gl.getExtension('EXT_color_buffer_float');
+  const floatBlend = !!gl.getExtension('EXT_float_blend');   // the depth buffer for the shadows can be 32-bit (it is drawn with blending)
   const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
   // Lights are binned per screen tile (tiled forward shading): MAX_LIGHTS on screen in all, up to
   // TILE_SLOTS - 1 per tile (the strongest win). Light data lives in a float texture (4 texels per
   // light), the per-tile index lists in an R8UI texture (slot 0 = count).
   const MAX_LIGHTS = 255, TILE_SLOTS = 32, MAX_AREAS = 24, DEPTH_SCALE = 1 / 200;
-  const SHADOW_STEPS = 10;
+  // Shadows: one ray per pixel per light, SHADOW_STEPS samples, aimed at a random point of the light's
+  // disc (size): computed at 1/SH_DIV resolution into SH_CH visibility channels (the RGBA of SH_LAYERS layers of an array texture),
+  // blurred depth-aware, then read back depth-aware by the lighting (see shadowPass()).
+  const SHADOW_STEPS = 12, SHADOW_STEPS_MARCH = 7, SH_DIV = 2, SH_BLUR = 4, LIGHT_TEXELS = 5;
+  const SH_LAYERS = Math.max(1, Math.min(7, (gl.getParameter(gl.MAX_DRAW_BUFFERS) || 4) - 1)), SH_CH = 4 * SH_LAYERS;   // + their depth: ≤ 8 draw buffers
 
   // --- shaders ------------------------------------------------------------------------------------
   const LIGHTING = `
@@ -110,33 +121,74 @@ uniform vec3 uSunDir, uSunCol;
 uniform vec4 uAreaRect[${MAX_AREAS}];   // x0, y0, x1, y1
 uniform vec4 uAreaCol[${MAX_AREAS}];    // rgb ambient, sun factor
 uniform int uNumAreas;
-uniform highp sampler2D uLights;        // per light (row): pos+radius, rgb*intensity+wrap, spot dir+cos, segment end+flags
+uniform highp sampler2D uLights;        // per light (row): pos+radius, rgb*intensity+wrap, spot dir+cos, segment end+flags, size+shadow channel
 uniform highp usampler2D uTiles;        // per tile: count, light indices
 uniform ivec4 uTileInfo;                // tile size (device px), screen height (device px), shadows on, -
-uniform highp sampler2D uDepthBuf;      // LAST frame's depth (y·cos + z·sin) of the front-most opaque surface per pixel
+uniform highp sampler2D uDepthBuf;      // LAST frame's depth (y·cos + z·sin) of the front-most opaque lit surface per pixel, and whether it casts shadows
 uniform vec4 uPrevCam;                  // last frame's device px of world (0, 0), device px per unit, 1 / its width
 uniform vec2 uPrevInvH;                 // 1 / last frame's height, -
-// Screen-space shadow: march from P towards the light through last frame's depth buffer (reprojected
-// with last frame's camera, so panning doesn't smear). A sample is blocked when the surface seen
-// at its pixel lies in front of it (towards the camera) by a little, but not by more than an
-// object is thick. 1 = lit, 0 = in shadow.
-float shadowRay(vec3 P, vec3 S) {
+uniform highp sampler2DArray uShadowV;  // this frame's soft shadows (see shadowPass): visibility channel c in layer c / 4, component c % 4
+uniform highp sampler2D uShadowD;       // and their depth
+float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }   // interleaved gradient noise
+// Screen-space shadow: march from P towards a random point of the light's disc (radius: its size, so
+// shadows get a penumbra that widens away from the caster) through last frame's depth buffer
+// (reprojected with last frame's camera, so panning doesn't smear). A sample is blocked when the
+// surface seen at its pixel lies in front of it (towards the camera) by a little, but not by more
+// than an object is thick. n: two noise values in 0..1. 1 = lit, 0 = in shadow.
+float shadowRay(vec3 P, vec3 S, float size, vec2 n, float steps) {
   float vis = 1.0;
   vec3 D = S - P;
-  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));   // per-pixel jitter
-  float s1 = max(0.0, 1.0 - 0.45 / max(length(D), 1e-3));   // stop short of the light (its own lamp housing)
+  float len = max(length(D), 1e-3);
+  vec3 dn = D / len, t1 = normalize(cross(dn, abs(dn.z) < 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0))), t2 = cross(dn, t1);
+  float ang = n.y * 6.2831853, rad = size * sqrt(fract(n.x * 1.618034 + n.y * 0.5));
+  D += (t1 * cos(ang) + t2 * sin(ang)) * rad;
+  float s1 = max(0.0, 1.0 - 0.45 / len);   // stop short of the light (its own lamp housing)
   for (int i = 0; i < ${SHADOW_STEPS}; i++) {
-    float s = 0.02 + (float(i) + j) / ${SHADOW_STEPS}.0 * (s1 - 0.02);
+    if (float(i) >= steps) break;
+    float s = 0.02 + (float(i) + n.x) / steps * (s1 - 0.02);
     vec3 Q = P + D * s;
     vec2 uv = vec2((uPrevCam.x + Q.x * uPrevCam.z) * uPrevCam.w,
                    1.0 - (uPrevCam.y + (Q.y * ${SIN.toFixed(6)} - Q.z * ${COS.toFixed(6)}) * uPrevCam.z) * uPrevInvH.x);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
-    float front = texture(uDepthBuf, uv).r - (Q.y * ${COS.toFixed(6)} + Q.z * ${SIN.toFixed(6)});
-    vis *= 1.0 - smoothstep(0.04, 0.14, front) * (1.0 - smoothstep(1.3, 2.2, front));
+    vec2 dz = texture(uDepthBuf, uv).rg;           // depth, casts shadows (0 / 1)
+    float front = dz.r - (Q.y * ${COS.toFixed(6)} + Q.z * ${SIN.toFixed(6)});
+    vis *= 1.0 - dz.g * smoothstep(0.04, 0.14, front) * (1.0 - smoothstep(1.3, 2.2, front));
     if (vis < 0.02) break;
   }
   return vis;
 }
+// The soft shadows at this pixel: where to read them (shUV). Bilinear between the 4 nearest low-res
+// texels where they all show this surface (about P's depth); at a silhouette the nearest texel
+// of the 3×3 around it that does (so a shadow doesn't bleed over a sprite's edge). false: none
+// shows this surface (it moved, or it isn't in the depth buffer): march here instead.
+vec2 shUV;
+bool softShadows(vec3 P) {
+  float dp = P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)};
+  ivec2 sz = textureSize(uShadowD, 0);
+  vec2 h = gl_FragCoord.xy / ${SH_DIV}.0 - 0.5;
+  ivec2 b0 = ivec2(floor(h));
+  float worst = 1.0, behind = 1e9;
+  for (int k = 0; k < 4; k++) {
+    ivec2 t = clamp(b0 + ivec2(k & 1, k >> 1), ivec2(0), sz - 1);
+    float dd = texelFetch(uShadowD, t, 0).r - dp;
+    worst = min(worst, exp(-dd * dd / 0.0144));
+    behind = min(behind, dd);
+  }
+  // all of them show this surface, or something in front of it (it's drawn over later, most likely:
+  // no need to march for it)
+  shUV = (h + 0.5) / vec2(sz);
+  if (worst >= 0.5 || behind > 0.3) return true;
+  float best = 0.25;
+  ivec2 c = ivec2(floor(h + 0.5)), bt = ivec2(-1);
+  for (int k = 0; k < 9; k++) {
+    ivec2 t = clamp(c + ivec2(k % 3 - 1, k / 3 - 1), ivec2(0), sz - 1);
+    float dd = (texelFetch(uShadowD, t, 0).r - dp) / 0.12, dw = exp(-dd * dd);
+    if (dw > best) { best = dw; bt = t; }
+  }
+  shUV = (vec2(bt) + 0.5) / vec2(sz);
+  return bt.x >= 0;
+}
+float softVis(int c) { return texture(uShadowV, vec3(shUV, float(c >> 2)))[c & 3]; }
 vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   vec3 amb = uAmbient; float sk = uSunK;
   for (int i = 0; i < ${MAX_AREAS}; i++) {
@@ -153,6 +205,7 @@ vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   ivec2 tile = ivec2(fc.x / uTileInfo.x, (uTileInfo.y - 1 - fc.y) / uTileInfo.x);
   int c0 = tile.x * ${TILE_SLOTS};
   int n = int(texelFetch(uTiles, ivec2(c0, tile.y), 0).r);
+  int soft = 0;                                    // 0: not looked up yet, 1: soft shadows here, -1: none (march)
   for (int k = 0; k < ${TILE_SLOTS - 1}; k++) {
     if (k >= n) break;
     int li = int(texelFetch(uTiles, ivec2(c0 + 1 + k, tile.y), 0).r);
@@ -173,7 +226,13 @@ vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
     if (l2.w > -1.5) a *= smoothstep(l2.w, mix(l2.w, 1.0, 0.45), dot(-l, l2.xyz));   // spot cone
     float ndl = max((dot(N, l) + l1.w) / (1.0 + l1.w), 0.0);
     if (a * ndl <= 0.0) continue;
-    if (uTileInfo.z > 0 && flags > 1.5) a *= shadowRay(P + N * 0.03, S);
+    if (uTileInfo.z > 0 && flags > 1.5) {
+      vec4 l4 = texelFetch(uLights, ivec2(4, li), 0);
+      int ch = int(l4.y);
+      if (ch >= 0 && soft == 0) soft = softShadows(P) ? 1 : -1;
+      if (ch >= 0 && soft > 0) a *= softVis(ch);
+      else a *= shadowRay(P + N * 0.03, S, l4.x, vec2(ign(gl_FragCoord.xy), ign(gl_FragCoord.yx + 17.0)), ${SHADOW_STEPS_MARCH}.0);   // no channel left, or no soft value here (moved, see-through)
+    }
     acc += l1.rgb * a * ndl;
     spec += l1.rgb * a * pow(max(dot(N, normalize(l + V)), 0.0), 28.0);
   }
@@ -260,8 +319,9 @@ void main() {
   }
   gl_FragDepth = clamp(0.5 - depth * uDepthScale, 0.0, 1.0);
   outColor = vec4(col, alpha);
-  // only solid, lit pixels below the ceiling cast shadows (not the hanging lamps and their cables)
-  outDepth = vec4(depth - vOrigin.w, 0.0, 0.0, alpha > 0.6 && mod(vMisc.w, 2.0) < 0.5 && P.z - vGround.z < 1.75 ? 1.0 : 0.0);
+  // solid, lit pixels: their depth (where the soft shadows are computed); only those below the
+  // ceiling cast shadows (not the hanging lamps and their cables)
+  outDepth = vec4(depth - vOrigin.w, P.z - vGround.z < 1.75 ? 1.0 : 0.0, 0.0, alpha > 0.6 && mod(vMisc.w, 2.0) < 0.5 ? 1.0 : 0.0);
 }`;
 
   // A 2D canvas as a full-screen layer: 'back' unlit, 'mid' lit as a flat floor at z = 0.
@@ -291,6 +351,81 @@ void main() {
     col = mix(col * acc + spec * 0.1, col, e);
   }
   outColor = vec4(col, c.a);
+}`;
+  // Soft shadows, pass 1 (at 1/SH_DIV resolution, before the scene): every pixel takes the surface
+  // last frame's depth buffer shows there (reprojected; P from its screen position and depth: the
+  // view is orthographic) and marches one jittered ray to each shadow-casting light of its tile that
+  // has a channel (cullLights() gives overlapping lights different ones). Out: visibility channels
+  // (layers of RGBA8) and the depth (-1000: no surface), for the depth-aware blur and lookup.
+  const FS_SHPASS = `#version 300 es
+precision highp float;
+uniform vec4 uCam;        // this frame: device px of world (0, 0), device px per unit, height (device px)
+${Array.from({ length: SH_LAYERS }, (_, i) => `layout(location = ${i}) out vec4 outV${i};`).join('\n')}
+layout(location = ${SH_LAYERS}) out vec4 outD;
+${LIGHTING}
+vec4 v[${SH_LAYERS}];
+void main() {
+  for (int i = 0; i < ${SH_LAYERS}; i++) v[i] = vec4(1.0);
+  ${Array.from({ length: SH_LAYERS }, (_, i) => `outV${i} = v[${i}];`).join(' ')}
+  vec2 fc = gl_FragCoord.xy * ${SH_DIV}.0;
+  float x = (fc.x - uCam.x) / uCam.z, sy = (uCam.w - fc.y - uCam.y) / uCam.z;   // world x, y·sin − z·cos
+  vec2 uv = vec2((uPrevCam.x + x * uPrevCam.z) * uPrevCam.w, 1.0 - (uPrevCam.y + sy * uPrevCam.z) * uPrevInvH.x);
+  float d = -1000.0;
+  if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) d = texture(uDepthBuf, uv).r;
+  outD = vec4(d, 0.0, 0.0, 1.0);
+  if (d < -500.0) return;
+  vec3 P = vec3(x, sy * ${SIN.toFixed(6)} + d * ${COS.toFixed(6)}, d * ${SIN.toFixed(6)} - sy * ${COS.toFixed(6)});
+  vec3 V = vec3(0.0, ${COS.toFixed(6)}, ${SIN.toFixed(6)});
+  vec2 nz = vec2(ign(gl_FragCoord.xy), ign(gl_FragCoord.yx + 17.0));
+  ivec2 ic = ivec2(fc);
+  ivec2 tile = ivec2(ic.x / uTileInfo.x, (uTileInfo.y - 1 - ic.y) / uTileInfo.x);
+  int c0 = tile.x * ${TILE_SLOTS};
+  int n = int(texelFetch(uTiles, ivec2(c0, tile.y), 0).r);
+  for (int k = 0; k < ${TILE_SLOTS - 1}; k++) {
+    if (k >= n) break;
+    int li = int(texelFetch(uTiles, ivec2(c0 + 1 + k, tile.y), 0).r);
+    vec4 l4 = texelFetch(uLights, ivec2(4, li), 0);
+    int ch = int(l4.y);
+    if (ch < 0) continue;
+    vec4 l0 = texelFetch(uLights, ivec2(0, li), 0), l3 = texelFetch(uLights, ivec2(3, li), 0);
+    vec3 S = l0.xyz;
+    if (mod(l3.w, 2.0) > 0.5) { vec3 ab = l3.xyz - l0.xyz; S += ab * clamp(dot(P - l0.xyz, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0); }
+    vec3 L = S - P;
+    float dl = length(L);
+    if (dl >= l0.w) continue;
+    vec3 l = L / max(dl, 1e-3);
+    vec4 l2 = texelFetch(uLights, ivec2(2, li), 0);
+    if (l2.w > -1.5 && dot(-l, l2.xyz) <= l2.w) continue;   // outside the spot cone
+    v[ch >> 2][ch & 3] = shadowRay(P + V * 0.02 + l * 0.03, S, l4.x, nz, ${SHADOW_STEPS}.0);
+  }
+  ${Array.from({ length: SH_LAYERS }, (_, i) => `outV${i} = v[${i}];`).join(' ')}
+}`;
+  // pass 2 and 3: a separable blur of the channels that only mixes texels of about the same depth
+  // (no shadow bleeding over sprite edges and walls); the noise of the jittered rays becomes penumbra.
+  const FS_SHBLUR = `#version 300 es
+precision highp float;
+uniform highp sampler2DArray uV;
+uniform highp sampler2D uD;
+uniform ivec2 uDir;
+${Array.from({ length: SH_LAYERS }, (_, i) => `layout(location = ${i}) out vec4 outV${i};`).join('\n')}
+layout(location = ${SH_LAYERS}) out vec4 outD;
+vec4 v[${SH_LAYERS}];
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy), sz = textureSize(uD, 0);
+  float d0 = texelFetch(uD, p, 0).r;
+  outD = vec4(d0, 0.0, 0.0, 1.0);
+  for (int j = 0; j < ${SH_LAYERS}; j++) v[j] = vec4(0.0);
+  float ws = 0.0;
+  if (d0 > -500.0) for (int i = -${SH_BLUR}; i <= ${SH_BLUR}; i++) {
+    ivec2 q = clamp(p + uDir * i, ivec2(0), sz - 1);
+    float fi = float(i), dd = (texelFetch(uD, q, 0).r - d0) / (0.08 + 0.04 * abs(fi));
+    float w = exp(-fi * fi / 8.0 - dd * dd);
+    if (w < 0.004) continue;
+    for (int j = 0; j < ${SH_LAYERS}; j++) v[j] += texelFetch(uV, ivec3(q, j), 0) * w;
+    ws += w;
+  }
+  for (int j = 0; j < ${SH_LAYERS}; j++) v[j] = ws > 0.0 ? v[j] / ws : vec4(1.0);
+  ${Array.from({ length: SH_LAYERS }, (_, i) => `outV${i} = v[${i}];`).join(' ')}
 }`;
   const FS_BRIGHT = `#version 300 es
 precision highp float;
@@ -338,10 +473,11 @@ void main() {
   let P;
   try {
     P = { sprite: program(VS_SPRITE, FS_SPRITE), layer: program(VS_FULL, FS_LAYER), bright: program(VS_FULL, FS_BRIGHT),
-          blur: program(VS_FULL, FS_BLUR), comp: program(VS_FULL, FS_COMPOSITE) };
+          blur: program(VS_FULL, FS_BLUR), comp: program(VS_FULL, FS_COMPOSITE), shPass: program(VS_FULL, FS_SHPASS), shBlur: program(VS_FULL, FS_SHBLUR) };
   } catch (e) { console.warn('[gfx]', e); return off('shader error'); }
-  for (const prog of [P.sprite, P.layer]) {          // the lighting's samplers live on units 4..6 (no clash with unit 0)
+  for (const prog of [P.sprite, P.layer, P.shPass]) {   // the lighting's samplers live on units 4..8 (no clash with units 0..3)
     gl.useProgram(prog.p); gl.uniform1i(prog.u.uLights, 4); gl.uniform1i(prog.u.uTiles, 5); gl.uniform1i(prog.u.uDepthBuf, 6);
+    gl.uniform1i(prog.u.uShadowV, 7); gl.uniform1i(prog.u.uShadowD, 8);
   }
 
   // geometry: a unit quad (location 0) and the instance buffer (locations 1..10, 10 vec4 per instance)
@@ -384,6 +520,16 @@ void main() {
     return t;
   }
   const flatNormal = texture(new Uint8Array([128, 128, 255, 255])), zero = texture(new Uint8Array([0, 0, 0, 255]));
+  function arrayTex(w, h, layers, data) {             // RGBA8 layers, linear filtering
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
+    gl.texImage3D(gl.TEXTURE_2D_ARRAY, 0, gl.RGBA8, w, h, layers, 0, gl.RGBA, gl.UNSIGNED_BYTE, data || null);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D_ARRAY, k, v);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, null);
+    return t;
+  }
+  const litArr = arrayTex(1, 1, 1, new Uint8Array([255, 255, 255, 255]));   // the soft shadows' unit when there are none
+  function bindArr(unit, t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D_ARRAY, t); }
 
   function target(w, h, withDepth, useHdr) {
     const t = gl.createTexture();
@@ -407,18 +553,36 @@ void main() {
   }
   let RT = null, useHdr = hdr;
   function freeT(x) { if (!x) return; gl.deleteFramebuffer(x.fb); gl.deleteTexture(x.t); if (x.rb) gl.deleteRenderbuffer(x.rb); }
-  // Two R16F screen buffers, ping-ponged: this frame writes the depth of its solid pixels into one
-  // (second colour attachment of the scene) while the lighting reads last frame's from the other.
-  function depthTex(w, h) {
+  // Two RG32F (RG16F without EXT_float_blend) screen buffers, ping-ponged: this frame writes the depth
+  // of its solid lit pixels and whether they cast shadows into one (second colour attachment of the
+  // scene) while the lighting reads last frame's from the other.
+  function depthTex(w, h, fmt) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, w, h, 0, gl.RED, gl.HALF_FLOAT, null);
+    if (fmt === 'r16') gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, w, h, 0, gl.RED, gl.HALF_FLOAT, null);
+    else if (!floatBlend) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG16F, w, h, 0, gl.RG, gl.HALF_FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, w, h, 0, gl.RG, gl.FLOAT, null);
     for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.NEAREST], [gl.TEXTURE_MAG_FILTER, gl.NEAREST], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     return t;
   }
+  // The soft shadow buffers (1/SH_DIV resolution): the visibility channels (SH_LAYERS RGBA8 layers)
+  // and their depth (R16F), as one framebuffer; two of them, for the blur's ping-pong.
+  function shadowTarget(w, h) {
+    const T = { w, h, v: arrayTex(w, h, SH_LAYERS), d: depthTex(w, h, 'r16'), fb: gl.createFramebuffer() };
+    gl.bindFramebuffer(gl.FRAMEBUFFER, T.fb);
+    const bufs = [];
+    for (let i = 0; i < SH_LAYERS; i++) { gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, T.v, 0, i); bufs.push(gl.COLOR_ATTACHMENT0 + i); }
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + SH_LAYERS, gl.TEXTURE_2D, T.d, 0); bufs.push(gl.COLOR_ATTACHMENT0 + SH_LAYERS);
+    gl.drawBuffers(bufs);
+    const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    if (!ok) { freeShadowTarget(T); return null; }
+    return T;
+  }
+  function freeShadowTarget(T) { if (!T) return; gl.deleteFramebuffer(T.fb); for (const t of [T.v, T.d]) gl.deleteTexture(t); }
   function ensureTargets(w, h) {
     if (RT && RT.w === w && RT.h === h) return;
-    if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); for (const t of RT.depth || []) gl.deleteTexture(t); }
+    if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); for (const t of RT.depth || []) gl.deleteTexture(t); freeShadowTarget(RT.sh0); freeShadowTarget(RT.sh1); }
     let scene = useHdr && target(w, h, true, true);
     if (!scene) { useHdr = false; scene = target(w, h, true, false); }
     const w1 = Math.max(1, w >> 1), h1 = Math.max(1, h >> 1), w2 = Math.max(1, w >> 3), h2 = Math.max(1, h >> 3);
@@ -434,6 +598,11 @@ void main() {
         RT.depth = null;
       }
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      if (RT.depth) {                                  // the soft shadow buffers (without them: the old per-pixel march)
+        const sw = Math.max(1, Math.ceil(w / SH_DIV)), sh = Math.max(1, Math.ceil(h / SH_DIV));
+        RT.sh0 = shadowTarget(sw, sh); RT.sh1 = RT.sh0 && shadowTarget(sw, sh);
+        if (!RT.sh1) { freeShadowTarget(RT.sh0); RT.sh0 = null; }
+      }
     }
   }
   // Light data and the per-tile light lists (see LIGHTING)
@@ -444,11 +613,11 @@ void main() {
     return t;
   }
   const lightTex = dataTex(), tileTex = dataTex();
-  const lightData = new Float32Array(4 * 4 * MAX_LIGHTS);
+  const lightData = new Float32Array(LIGHT_TEXELS * 4 * MAX_LIGHTS);
   gl.bindTexture(gl.TEXTURE_2D, lightTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 4, MAX_LIGHTS, 0, gl.RGBA, gl.FLOAT, lightData);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, LIGHT_TEXELS, MAX_LIGHTS, 0, gl.RGBA, gl.FLOAT, lightData);
   let tileData = new Uint8Array(0), tileW = 0, tileH = 0, tileSize = 64;
-  let prevCam = null, shadowsWanted = true;
+  let prevCam = null, shadowsWanted = true, softReady = false;
   try { if (/[?&]noshadows\b/.test(search) || localStorage.getItem('mn-gfx-shadows') === '0') shadowsWanted = false; } catch (e) { /* no storage */ }
 
   // --- the sprite atlas: sprites.json + pages, loaded lazily per page --------------------------------
@@ -674,14 +843,22 @@ void main() {
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, lightTex); gl.uniform1i(u.uLights, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, tileTex); gl.uniform1i(u.uTiles, 5);
     gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, shadows ? RT.depth[1 - RT.cur] : zero); gl.uniform1i(u.uDepthBuf, 6);
+    const soft = shadows && softReady ? RT.sh0 : null;  // (no channel is used without them: cullLights)
+    bindArr(7, soft ? soft.v : litArr);
+    gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, soft ? soft.d : zero);
     if (shadows) { gl.uniform4f(u.uPrevCam, prevCam[0], prevCam[1], prevCam[2], 1 / prevCam[3]); gl.uniform2f(u.uPrevInvH, 1 / prevCam[4], 0); }
     gl.activeTexture(gl.TEXTURE0);
   }
   // This frame's lights: drop the ones off screen, keep the MAX_LIGHTS strongest, write them into the
   // light texture and bin them into screen tiles (each tile keeps its TILE_SLOTS - 1 strongest).
   // A light: { x, y, z, color, radius, intensity, wrap (0.22), dir + cone (spot: direction it points,
-  // half-angle in rad), x2, y2, z2 (a strip from (x, y, z) to there), shadow (true: casts shadows) }.
-  function cullLights() {
+  // half-angle in rad), x2, y2, z2 (a strip from (x, y, z) to there), shadow (true: casts shadows),
+  // size (radius of the light's disc for the shadows' penumbra; default 0.08, spots 0.04) }.
+  // Shadow-casting lights get a soft-shadow channel (0..SH_CH-1): greedily, strongest first, one that
+  // no other light whose screen box (plus the blur's reach) overlaps uses; the rest (-1) march per pixel.
+  const SH_MARGIN = (SH_BLUR + 2) * SH_DIV;
+  const chBoxes = Array.from({ length: SH_CH }, () => []);
+  function cullLights(softOn) {
     const vis = [];
     for (const l of light.lights || []) {
       const r = l.radius || 4, i = l.intensity == null ? 1 : l.intensity, c = l.color || [1, 1, 1];
@@ -694,18 +871,30 @@ void main() {
     }
     vis.sort((a, b) => b.w - a.w);
     if (vis.length > MAX_LIGHTS) vis.length = MAX_LIGHTS;
+    for (const B of chBoxes) B.length = 0;
+    let marched = 0;
+    for (const v of vis) {
+      v.ch = -1;
+      if (!v.l.shadow) continue;
+      if (softOn) for (let c = 0; c < SH_CH; c++) {
+        if (chBoxes[c].some(o => v.x0 - SH_MARGIN < o.x1 && v.x1 + SH_MARGIN > o.x0 && v.y0 - SH_MARGIN < o.y1 && v.y1 + SH_MARGIN > o.y0)) continue;
+        chBoxes[c].push(v); v.ch = c; break;
+      }
+      if (v.ch < 0 && RT && RT.depth) marched++;
+    }
     tileSize = Math.max(32, Math.ceil(W / 40), Math.ceil(H / 40));
     const tx = Math.ceil(W / tileSize), ty = Math.ceil(H / tileSize);
     if (tx * TILE_SLOTS !== tileW || ty !== tileH) { tileW = tx * TILE_SLOTS; tileH = ty; tileData = new Uint8Array(tileW * tileH); }
     else tileData.fill(0);
     vis.forEach((v, k) => {
-      const l = v.l, o = k * 16, d = l.dir;
+      const l = v.l, o = k * LIGHT_TEXELS * 4, d = l.dir;
       lightData[o] = l.x; lightData[o + 1] = l.y; lightData[o + 2] = l.z || 0; lightData[o + 3] = v.r;
       lightData[o + 4] = v.c[0] * v.i; lightData[o + 5] = v.c[1] * v.i; lightData[o + 6] = v.c[2] * v.i; lightData[o + 7] = l.wrap == null ? 0.22 : l.wrap;
       if (d && l.cone) { const n = Math.hypot(d[0], d[1], d[2]) || 1; lightData[o + 8] = d[0] / n; lightData[o + 9] = d[1] / n; lightData[o + 10] = d[2] / n; lightData[o + 11] = Math.cos(l.cone); }
       else { lightData[o + 8] = 0; lightData[o + 9] = 0; lightData[o + 10] = -1; lightData[o + 11] = -2; }
       lightData[o + 12] = v.strip ? l.x2 : l.x; lightData[o + 13] = v.strip ? l.y2 : l.y; lightData[o + 14] = v.strip ? (l.z2 == null ? l.z || 0 : l.z2) : l.z || 0;
       lightData[o + 15] = (v.strip ? 1 : 0) + (l.shadow ? 2 : 0);
+      lightData[o + 16] = l.size != null ? l.size : d && l.cone ? 0.04 : 0.08; lightData[o + 17] = v.ch;
       const i0 = Math.max(0, Math.floor(v.x0 / tileSize)), i1 = Math.min(tx - 1, Math.floor(v.x1 / tileSize));
       const j0 = Math.max(0, Math.floor(v.y0 / tileSize)), j1 = Math.min(ty - 1, Math.floor(v.y1 / tileSize));
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
@@ -714,12 +903,41 @@ void main() {
       }
     });
     gl.bindTexture(gl.TEXTURE_2D, lightTex);
-    if (vis.length) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, vis.length, gl.RGBA, gl.FLOAT, lightData, 0);
+    if (vis.length) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, LIGHT_TEXELS, vis.length, gl.RGBA, gl.FLOAT, lightData, 0);
     gl.bindTexture(gl.TEXTURE_2D, tileTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, tileW, tileH, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, tileData);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     api.stats.lights = vis.length;
+    api.stats.shadow = { soft: chBoxes.reduce((n, B) => n + B.length, 0), channels: chBoxes.filter(B => B.length).length, marched };
+  }
+
+  // The soft shadows for this frame (FS_SHPASS, then FS_SHBLUR across and down) into RT.sh0, before
+  // the scene is drawn: it reads last frame's depth (RT.depth[RT.cur] until end() flips it).
+  function shadowPass() {
+    const A = RT.sh0, B = RT.sh1;
+    gl.bindVertexArray(vaoFull);
+    gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.depthMask(false);
+    bindArr(7, litArr); bindTex(8, zero);              // no feedback loop: the lighting's soft-shadow units stay unbound here
+    gl.bindFramebuffer(gl.FRAMEBUFFER, A.fb); gl.viewport(0, 0, A.w, A.h);
+    const u = P.shPass.u;
+    gl.useProgram(P.shPass.p);
+    gl.uniform4f(u.uCam, camOX, camOY, Sdev, H);
+    gl.uniform4i(u.uTileInfo, tileSize, H, 1, 0);
+    bindTex(4, lightTex); bindTex(5, tileTex); bindTex(6, RT.depth[RT.cur]);
+    gl.uniform4f(u.uPrevCam, prevCam[0], prevCam[1], prevCam[2], 1 / prevCam[3]); gl.uniform2f(u.uPrevInvH, 1 / prevCam[4], 0);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.useProgram(P.shBlur.p);
+    const ub = P.shBlur.u;
+    gl.uniform1i(ub.uV, 0); gl.uniform1i(ub.uD, 1);
+    for (const [src, dst, dx, dy] of [[A, B, 1, 0], [B, A, 0, 1]]) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
+      bindArr(0, src.v); bindTex(1, src.d);
+      gl.uniform2i(ub.uDir, dx, dy);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+    bindArr(0, null); bindTex(1, null);
+    gl.activeTexture(gl.TEXTURE0);
   }
 
   function drawLayer2d(name, lit) {
@@ -784,6 +1002,9 @@ void main() {
     api.stats = { sprites: queue.length, batches: 0, lights: 0 };
     lastPicks = picks;
     ensureTargets(W, H);
+    softReady = !!(RT.depth && RT.sh0 && prevCam);
+    cullLights(softReady);
+    if (softReady) shadowPass();
     gl.bindVertexArray(vao);
     gl.bindFramebuffer(gl.FRAMEBUFFER, RT.scene.fb);
     gl.viewport(0, 0, W, H);
@@ -800,7 +1021,6 @@ void main() {
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    cullLights();
     const u = P.sprite.u;
     gl.useProgram(P.sprite.p);
     gl.uniform2f(u.uView, W, H); gl.uniform1f(u.uHR, HR); gl.uniform1f(u.uDepthScale, DEPTH_SCALE);

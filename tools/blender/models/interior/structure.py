@@ -25,6 +25,8 @@ Step
 Spine (SPINE_Y0 = 11.5 .. SPINE_Y1 = 15 in js/ship.js; drawSpine in js/art.js)
   interior/spine_a, spine_b   tileable along x, 2 units per tile (192 px). Origin = left end, on the
                               floor at y = SPINE_Y1 (the bottom deck's back wall front-face line).
+  interior/spine_label        the DECK 2 stencil on the spine top, placed by the game (no baked text in
+                              the tiles: the deck airlocks clip them).
   The spine is the top deck's near wall and the bottom deck's back wall in one block: a full-height
   block from y = 12.55 to 15 with a cut-down (0.35) lip from 11.5 to 12.55. 12.55 is where a 1.6
   high top hides exactly as much of the top rooms as a 0.35 near wall does (0.29 units), so the
@@ -76,7 +78,6 @@ def junction(arms, H):
         for sx in (-1, 1):
             for sy in (-1, 1): objs.append(rivet(sx * 0.15, ty + sy * 0.15, H + 0.16, M, r=0.022))
         objs.append(gbox('jhz', -0.12, ty + 0.05, 0.12, ty + 0.11, H + 0.16, H + 0.165, M['hazard'], 0.003))
-        if len(arms) >= 3: objs.append(tape_strip(0.05, ty - 0.05, H + 0.163, 0.36, 35, M))
     else:
         for sx in (-1, 1):                                 # cut-down corner: two bolts on the cut
             objs.append(rivet(sx * 0.17, -0.3, H, M, r=0.025))
@@ -144,11 +145,10 @@ def spine(variant):
             for j in range(4): objs.append(gbox('slat', gx - 0.2, -0.43 + j * 0.06, gx + 0.2, -0.41 + j * 0.06, H_FULL + 0.05, H_FULL + 0.065, M['rim'], 0.004))
             objs.append(mn.cyl('tape', 0.083, 0.14, loc=(gx - 0.6, -(base_y - 0.5), H_FULL + 0.02 + 0.075), m=M['tape'], rot=RY90, bevel=0.01, verts=24))
     else:
-        for k in (-2, 0, 2):                              # a hazard-edged access plate and a DECK 2 stencil
+        for k in (-2, 0, 2):                              # a hazard-edged access plate (the DECK 2 stencil: spine_label)
             gx = 0.8 + k
             objs.append(gbox('acc', gx - 0.3, -2.35, gx + 0.3, -2.12, H_FULL + 0.02, H_FULL + 0.04, M['hazard'], 0.006))
             for sx in (-1, 1): objs.append(rivet(gx + sx * 0.25, -2.24, H_FULL + 0.04, M, r=0.02))
-            objs.append(label('stencil', 'DECK 2', 0.13, G(gx + 0.98, -0.28, H_FULL + 0.021), m=M['paint_w']))
     mn.outline(objs, thickness=0.012)
     top = -yh0 * SIN + H_FULL * COS + 0.3                 # screen units above the origin
     return top
@@ -162,6 +162,16 @@ def render_spine(variant):
                         'note': 'spine (hull block between the decks); repeat every w px along x (2 units); origin = left end, '
                                 'on the floor at y = SPINE_Y1 (15). Variants a/b mix freely.'})
 
+def render_spine_label():
+    # the DECK 2 stencil on the spine's top, near its front edge (it used to be baked into spine_b, where the
+    # tiles clipped at the deck airlocks cut it): the game places it mid-segment. Origin = the label's
+    # centre x, on the floor at y = SPINE_Y1 (like the spine tiles).
+    mn.reset(); M = mats()
+    objs = [label('stencil', 'DECK 2', 0.13, G(0.0, -0.28, H_FULL + 0.021), m=M['paint_w'])]
+    mn.outline(objs, thickness=0.012)
+    win('interior/spine_label', -0.45, 0.45, -0.42, -0.14, H_FULL + 0.04, origin=(0.0, 0.0), zmin=H_FULL,
+        extra={'note': 'DECK 2 stencil for the spine top; origin = label centre x, on the floor at y = SPINE_Y1 (15)'})
+
 JUNCTIONS = ['es', 'sw', 'ne', 'nw', 'esw', 'nes', 'nsw', 'new', 'nesw', 'ew', 'ns', 'e', 's', 'w', 'n']
 
 if __name__ == '__main__':
@@ -174,3 +184,4 @@ if __name__ == '__main__':
     if not only or 'step' in only: render_step()
     for v in ('a', 'b'):
         if not only or f'spine_{v}' in only: render_spine(v)
+    if not only or 'spine_label' in only: render_spine_label()

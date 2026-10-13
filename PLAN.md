@@ -928,6 +928,16 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Renderer: tiled forward lighting (up to 255 lights on screen, 31 per 64-px tile; point, spot and strip
   lights) and screen-space shadows marched through last frame's depth buffer (2nd colour attachment,
   reprojected). Overview at 2560×1600 with ~55 lights, red alert, fires: ~130 fps (shadows off ~140).
+- Soft shadows (the hard, dithered edges looked rough): the shadows are computed before the scene in a
+  half-resolution pass (the surface each pixel showed last frame, rebuilt from its depth: the view is
+  orthographic), one ray per pixel and light aimed at a random point of the light's disc (a penumbra
+  that widens away from the caster; `size` on a light, default 0.08), each shadow-casting light in its
+  own channel (28 channels in 7 RGBA8 layers; lights whose screen boxes overlap get different ones).
+  A depth-aware separable blur turns the noise into smooth edges without bleeding over sprite edges or
+  walls, and the lighting reads it back bilinearly where the 4 nearest texels show the same surface
+  (else the nearest one that does; only surfaces missing from last frame's buffer still march per
+  pixel). The depth buffer is RG32F now (depth + "casts shadows"), so every lit surface gets soft
+  shadows, not just the casters. About the same GPU cost as the old per-pixel march (±0.5 ms).
 
 ### 9c. Coherence pass: one look inside the ship
 - Lamps: the pendant ceiling lamps read as floor lamps in the tilted view; they're gone. The ceiling lights
@@ -969,6 +979,56 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   (`organic/slime_drop_*`), the derelict's fires (the fire sprites). The alien corpse no longer gets a
   second goo puddle under its own. The storm darkness and flare glare go under the prompts. The spine
   never goes pitch black without power. Favicon (no more 404 on every page load).
+- Hull outside: HULL (js/ship.js, copied in tools/blender/models/hull/hulllib.py) now contains every wall:
+  the corner chamfers start at the walls' outer corners (NW (0, 2.8), NE (44.4, 2.0), SW (0, 23.8),
+  SE (44.4, 24.2)), the bridge's shoulder edge moved to x 13.6, and each outer airlock hatch has a doorstep
+  (a 0.45-deep bump in HULL, 2.9 long). Nothing else used those points (spacewalk area, hit tests and
+  hatches keep working; the EVA spots, coils and jam spots stay outside it). The outer hatch
+  (`hull/hatch_<side>*`) is a door frame standing on the side wall's outer face (jamb posts and lintel up
+  to the wall top, flush with the inner frame `interior/hatch_*`; light spills onto the doorstep as it
+  opens), drawn in the wall layer. The hull body only puts decor where the game shows it (`visible()` in
+  body.py warns otherwise): blister hazard stripes along the diagonal edges, grille and sensor box in the
+  nose triangles, duct tape on the blisters, the nose and the stern faces; the top-side name/registration
+  stencils, the CANNON ARC stencils and the bridge's nose windows (all under or behind walls) are gone.
+- Placement fixes: the front cannon (pivot y -3.6, gameplay) is drawn 0.8 further south on the nose wall's
+  top (GUN_DY, js/sprites.js), its gunner closer in (GUN_SEAT 0.5, in the turret's hatch); cover plate,
+  flash and light follow, and muzzleZ (js/combat.js) lowers the shells' start height by what that shift
+  lifts on screen, so shells and sparks leave the drawn muzzle. Cannon-track debris (JAM_SPOTS) lies on the
+  blisters behind the side cannons ((-0.8, 8.35), (45.2, 8.2)); the front one is drawn on the nose wall's
+  top beside the turret (JAM_ROOF), its spot (24.0, -4.1) is where that shows on screen (tests/eva.js walks
+  a spacewalker to all three). The spine tiles have no baked DECK 2 any more (the deck airlock gaps cut it
+  into an orphan "2"): `interior/spine_label` goes mid-segment, clear of the lamps. No more diagonal tape
+  strip on 3+-way wall junctions. The EVA stencils sit by the hatches clear of the power lines, DO NOT
+  LICK THE REACTOR fits between the engine cables, WC clears the stall door, the lever's LEFT/MID/RIGHT
+  and AUTO stand as billboards over the lever, the donut box is on the map table, and the two wall signs
+  draw nothing in the sprite view until their sprites load (the 2D fallback went over the crew).
+
+### 9d. The crew's animation (playtest: choppy walk, mid-stride stops, shooting with your back)
+- The astronaut (`tools/blender/models/crew/crew.py`) has 16 facings (22.5°) and gait cycles relative to
+  the facing: `crew/run` (forward jog, 12 frames: weight shift, pelvis/shoulder counter-twist, arms
+  pumping, bob with a short flight phase), `crew/back` (backpedal, 8), `crew/strafe` (sidestep to the left,
+  8; played backwards it's the strafe to the right), `crew/settle` (passing pose → feet together, 2 + 2
+  frames), `crew/idle`; every gear overlay (`crew/gear_<id>_<set>`, with `depth`) for all of them. The visor
+  (vacuum) is one overlay per facing (`crew/visor`), drawn at each frame's `head` offset: the head keeps its
+  orientation in every standing pose, so the standing sets need no `_visor` copies (`crew/down_visor` stays).
+  Packed crew: 1.1 MB → 6.9 MB (body ~45%, gear overlays ~55%; 16 facings × 29 standing frames).
+  The legs are IK-solved from foot paths on the floor (ankle pivots added, boots stay flat, toe-off / heel
+  strike), so a planted foot moves back under the body at exactly the body's speed; each gait entry
+  carries its `stride` (units per cycle) and the game plays the cycle at walked distance / stride — no
+  foot sliding, at any speed (hurt, boots, the treadmill, slowing down).
+- `js/sprites.js` crewPose(): per crew member, from what every client has (c.walk's rate, smoothed so
+  remote crew at the 30 Hz snapshot rate animate smoothly; the drawn position's change for the
+  direction). The gait is picked from the angle between the walking direction and c.face (nearest of
+  forward / back / left / right, with hysteresis). Stopping: as soon as the walk rate falls well below its
+  recent peak (the old code kept showing a mid-stride frame through the long tail of slowing down), the
+  cycle runs on to the next passing pose and plays `settle` into idle. The old `crew/walk` sets are gone.
+- Mouse look (`js/game.js` updateCrew/updatePlayer, `js/net.js`): moving the mouse (mouse.look, new in the
+  input messages) or firing with the right button makes you face the mouse for 1.75 s (LOOK_TIME); arrow
+  keys still win, otherwise you face the way you walk. Server-authoritative; your own client predicts the
+  same (netPredict), and your own c.walk now stays local too (no stride jitter from snapshots).
+  Space fires the way you face, so right after moving the mouse that's towards the mouse.
+- `tools/sprites/pack.py`: the delta crop also tries the same frame of earlier variants with as many frames
+  (`crew/run_visor` frame k on `crew/run` frame k: only the helmet differs).
 
 ## Balance
 

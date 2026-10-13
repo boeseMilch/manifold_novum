@@ -232,6 +232,9 @@ def process_family(job):
     t1 = time.time()
     items, specs, maxerr = [], [None] * len(frames), 0.0
     standalone = []          # frame indices stored whole (candidates for bases)
+    whole = set()
+    first = [0]              # index of each entry's first frame
+    for e in entries: first.append(first[-1] + len(e['files']))
     hashes = {}
     delta_n = 0
     for i, f in enumerate(frames):
@@ -242,7 +245,12 @@ def process_family(job):
             specs[i] = specs[hashes[hsh]]; continue
         own = area(f.bbox); best = None
         if len(frames) > 1:
-            for j in standalone[-24:]:
+            # the recent whole frames, and the same frame of earlier variants with as many frames
+            # (crew/run_visor frame k on crew/run frame k: only the helmet differs)
+            ni, fi = owner[i]
+            sib = [first[nj] + fi for nj in range(ni) if first[nj + 1] - first[nj] == first[ni + 1] - first[ni]]
+            recent = standalone[-24:]
+            for j in recent + [j for j in sib if j in whole and j not in recent]:
                 bb = bbox_of(diff_mask(f, frames[j]), DELTA_GROW)
                 if area(bb) <= DELTA_MAX_FRACTION * own and (best is None or area(bb) < area(best[1])):
                     best = (j, bb)
@@ -254,7 +262,7 @@ def process_family(job):
                 items.append(crop(f, bb, maps)); specs[i] = ('patch', j, (len(items) - 1, bb), over_ok(frames[j], bb, f))
             delta_n += 1
         else:
-            items.append(crop(f, f.bbox, maps)); specs[i] = ('whole', (len(items) - 1, f.bbox)); standalone.append(i)
+            items.append(crop(f, f.bbox, maps)); specs[i] = ('whole', (len(items) - 1, f.bbox)); standalone.append(i); whole.add(i)
         hashes[hsh] = i
     raw_px = sum(area(f.bbox) for f in frames if f.bbox)
     return {'names': names, 'ppu': ppu, 'scale': s, 'W': W, 'H': H, 'specs': specs, 'owner': owner, 'items': items,

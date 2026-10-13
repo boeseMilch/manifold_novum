@@ -3,7 +3,7 @@
 // server's simulation sandbox.
 //
 //   snapshot = netSerialize()      (server)  →  netApply(snapshot, myId)   (browser)
-//   browser input: { keys, pressed, mouse{wx,wy,down,click,right,rightClick,moved} }
+//   browser input: { keys, pressed, mouse{wx,wy,down,click,right,rightClick,moved,look} }
 //   browser commands (panels, buttons, debug menu): ['lock', i] / ['bonk'] / ['reload'] / ['debug', key] …
 
 // ---------------------------------------------------------------------------
@@ -59,10 +59,10 @@ function netApply(s, myId) {
     let c = byId.get(d.id);
     const fresh = !c;
     if (fresh) { c = makeCrew(d.name); c.id = d.id; }
-    const { gun, hatch, repair, inv: dInv, ui: dUi, x, y, face, ...rest } = d;
+    const { gun, hatch, repair, inv: dInv, ui: dUi, x, y, face, walk, ...rest } = d;
     const mineNow = d.id === myId, predicted = mineNow && !fresh && canPredict(c) && rest.mode === c.mode;
     Object.assign(c, rest);
-    if (!predicted) c.face = face;                    // your own facing comes from your own input
+    if (!predicted) { c.face = face; c.walk = walk; } // your own facing and stride come from your own input
     if (fresh || Math.hypot(c.x - x, c.y - y) > 2.5) { c.x = x; c.y = y; }   // snap on big jumps
     c.nx = x; c.ny = y;                               // where the server has them (others glide there, you get corrected towards it)
     c.gun = GUNS.find(g => g.id === gun) || null; c.hatch = HATCHES[hatch] || null;
@@ -157,7 +157,7 @@ const netServer = {
     for (const k of m.pressed || []) inp.pressed.add(k);
     const mm = m.mouse || {};
     Object.assign(inp.mouse, { wx: mm.wx, wy: mm.wy, down: !!mm.down, right: !!mm.right });
-    inp.mouse.click ||= !!mm.click; inp.mouse.rightClick ||= !!mm.rightClick; inp.mouse.moved ||= mm.moved;
+    inp.mouse.click ||= !!mm.click; inp.mouse.rightClick ||= !!mm.rightClick; inp.mouse.moved ||= mm.moved; inp.mouse.look ||= mm.look;
   },
   command(id, cmd) { const c = crew.find(c => c.id === id); if (c && Array.isArray(cmd)) withCrew(c, () => runCommand(cmd)); },
   step(dt) { simTick(dt); },
@@ -317,9 +317,9 @@ function netClientMain() {
     const m = localInput.mouse;
     if (ws.readyState === 1) ws.send(JSON.stringify({
       t: 'input', keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed],
-      mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: m.click, rightClick: m.rightClick, moved: m.moved },
+      mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: m.click, rightClick: m.rightClick, moved: m.moved, look: m.look },
     }));
-    localInput.pressed.clear(); m.click = false; m.rightClick = false; m.moved = 0;
+    localInput.pressed.clear(); m.click = false; m.rightClick = false; m.moved = 0; m.look = 0;
   }
 }
 // ---------------------------------------------------------------------------
@@ -340,6 +340,8 @@ function netPredict(dt) {
     const ix = (has('KeyD') ? 1 : 0) - (has('KeyA') ? 1 : 0), iy = (has('KeyS') ? 1 : 0) - (has('KeyW') ? 1 : 0);
     const ax = (has('ArrowRight') ? 1 : 0) - (has('ArrowLeft') ? 1 : 0), ay = (has('ArrowDown') ? 1 : 0) - (has('ArrowUp') ? 1 : 0);
     c.aim = ax || ay ? Math.atan2(ay, ax) : null;
+    const m = localInput.mouse;                       // look at the mouse after moving it / firing with it (as updatePlayer)
+    if (!blocked && (m.look || ((m.right || m.rightClick) && me.inv.weapon))) me.lookT = LOOK_TIME;
     updateCrew(me, dt, ix, iy);                        // move now, don't wait for the server
     const err = Math.hypot(c.nx - c.x, c.ny - c.y);
     if (err > PREDICT_SNAP) { c.x = c.nx; c.y = c.ny; }                       // way off (pushed, teleported): snap

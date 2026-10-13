@@ -115,7 +115,7 @@ function drawWallSprites() {
 }
 
 // The spine between the decks (interior/spine_a/b, 2 units per tile, origin at y = SPINE_Y1), with
-// the deck airlocks cut out (their sprites bring the spine ends next to the shaft).
+// the deck airlocks cut out (their sprites bring the spine ends next to the shaft); the deck stencils on top.
 function drawSpineSprites() {
   const gaps = DECK_LOCKS.map(L => [L.x - 0.6, L.x + L.w + 0.6]).sort((a, b) => a[0] - b[0]);
   let x = 0;
@@ -127,6 +127,12 @@ function drawSpineSprites() {
       const name = hash2(t, 7) < 0.5 ? 'interior/spine_a' : 'interior/spine_b';
       GFX.sprite(name, 0, t, SPINE_Y1, 0, { layer: 'wall', clip: [Math.max(a, t), null, Math.min(b, t + 2), null], sortY: SPINE_Y1 - 0.3 });
     }
+    // one DECK 2 stencil on the top per segment (interior/spine_label), mid-segment and clear of the wall
+    // lamps and the toilet sign below its front edge (never cut by an airlock gap)
+    if (b - a < 3) continue;
+    const busy = [...WALL_LAMPS.filter(([, wy]) => wy === SPINE_Y1).map(([lx]) => [lx, 0.8]), [12.45, 1.5]];
+    const mid = (a + b) / 2, lx = [0, -1, 1, -2, 2, -3, 3].map(d => mid + d).find(x => x > a + 0.8 && x < b - 0.8 && busy.every(([bx, r]) => Math.abs(x - bx) >= r));
+    if (lx != null) GFX.sprite('interior/spine_label', 0, lx, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.3 + 0.001, depthBias: 0.02 });
   }
 }
 
@@ -209,36 +215,102 @@ function drawShipSprites(t) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Crew: crew/idle, crew/walk (8 frames), *_visor; 8 directions from c.face; the suit colour through
-// the tint mask. Walking is detected from c.walk advancing (it's in every snapshot), so it works
-// for everyone in multiplayer. Down / out: crew/down(_visor) (out = greyed and faded), else the old
-// 2D drawing. Worn gear (crew/gear_<id>_idle|walk|down, from c.kit via perk(); the vest only while
-// c.armor > 0) goes over the body with the same frame, far pieces first (the entries' `depth`).
+// Crew (tools/blender/models/crew/crew.py): 16 facings from c.face; the suit colour through the tint
+// mask. Visor down (vacuum): crew/visor (the gold visor alone, per facing) over the frame at its
+// `head` offset (the head keeps its orientation in every standing pose); lying down: crew/down_visor.
+//   crew/idle                 standing, feet together
+//   crew/run, back, strafe    gait cycles relative to the facing: forward, backwards, sideways to the
+//                             left (played in reverse: to the right). Each entry's `stride` is how far
+//                             one cycle carries you, so the legs keep pace with the ground.
+//   crew/settle               stopping: from the passing pose (phase 0 / 0.5) to idle, `per` frames each
+//   crew/visor                the visor overlay (see above)
+//   crew/down                 down / out (out = greyed and faded)
+// The animation is worked out here, per crew member, from what every client has: c.walk advancing
+// (it's in every snapshot; on the treadmill it advances while you stay put) says whether the legs go
+// and how fast, the drawn position's change says which way. When they stop, the cycle runs on to the
+// next passing pose and settles into idle, so no mid-stride frame sticks. Worn gear
+// (crew/gear_<id>_<set>, from c.kit via perk(); the vest only while c.armor > 0) goes over the body
+// with the same frame, far pieces first (`depth`).
 // ---------------------------------------------------------------------------------------------
 const crewAnim = new Map();
 const CREW_GEAR = ['boots', 'thrusters', 'armor', 'toolbelt', 'firstAid', 'stim'];
+const WALK_PER_UNIT = 3.2;                          // c.walk per unit walked (js/game.js updateCrew)
+const GAIT_REL = { run: 0, back: Math.PI, strafeL: -Math.PI / 2, strafeR: Math.PI / 2 };   // walking direction - facing
+const SETTLE_STEP = 0.05;                           // s per settle frame
+function crewGait(cur, rel) {
+  const off = (g) => Math.abs(wrapAngle(rel - GAIT_REL[g]));
+  if (cur && off(cur) < Math.PI / 4 + 0.2) return cur;     // (hysteresis: no flicker on the diagonals)
+  return Object.keys(GAIT_REL).reduce((b, g) => (off(g) < off(b) ? g : b), 'run');
+}
+// What to draw for crew member c this frame: { set: 'idle' | 'run' | 'back' | 'strafe' | 'settle', f }.
+function crewPose(c, t) {
+  let a = crewAnim.get(c.id);
+  if (!a) crewAnim.set(c.id, a = { t, src: c.walk, srcT: t, rate: 0, peak: 0, x: c.x, y: c.y, vx: 0, vy: 0, rx: 0, ry: 0, p: 0, prate: 0, gait: 'run', mode: 'idle', settle: 0, side: 0 });
+  const dt = clamp(t - a.t, 0, 0.1); a.t = t;
+  if (c.walk !== a.src) {                           // walk rate (smoothed: remote crew update at the snapshot rate)
+    const gap = t - a.srcT, r = gap > 1e-3 && gap < 0.3 ? Math.max(0, c.walk - a.src) / gap : a.rate;
+    a.rate = lerp(a.rate, r, 0.5); a.src = c.walk; a.srcT = t;
+  } else if (t - a.srcT > 0.12) a.rate = 0;
+  if (dt > 0) {                                     // which way the drawn crew member moves
+    const k = 1 - Math.exp(-15 * dt), jump = Math.hypot(c.x - a.x, c.y - a.y) > 1.5;
+    if (!jump) { a.rx = (c.x - a.x) / dt; a.ry = (c.y - a.y) / dt; a.vx = lerp(a.vx, a.rx, k); a.vy = lerp(a.vy, a.ry, k); }
+    a.x = c.x; a.y = c.y;
+  }
+  const info = (g) => GFX.info('crew/' + (g.startsWith('strafe') ? 'strafe' : g));
+  a.peak = Math.max(a.rate, a.peak * Math.exp(-dt));                // stopping: the rate falls well below its recent peak
+  const moving = a.rate > (a.mode === 'move' ? Math.max(0.9, 0.35 * a.peak) : Math.max(1.3, 0.6 * a.peak));   // walk/s (not the long tail of slowing down)
+  if (moving) {
+    if (a.mode !== 'move') { a.p = a.mode === 'stop' ? a.p : a.mode === 'settle' ? a.side * 0.5 : 0; a.mode = 'move'; }
+    const [vx, vy] = Math.hypot(a.vx, a.vy) > 0.3 ? [a.vx, a.vy] : [a.rx, a.ry];   // (just starting: the raw velocity)
+    if (Math.hypot(vx, vy) > 0.05) a.gait = crewGait(a.gait, wrapAngle(Math.atan2(vy, vx) - c.face));
+    a.prate = a.rate / WALK_PER_UNIT / (info(a.gait)?.stride || 1.2);  // cycles per second: the feet keep pace with the floor
+    a.p = (a.p + a.prate * dt) % 1;
+  } else if (a.mode === 'move' || a.mode === 'stop') {                  // run on to the next passing pose, then settle
+    const next = a.p < 0.5 ? 0.5 : 1, np = a.p + Math.max(a.prate, 2.2) * dt;
+    if (a.mode === 'move' && a.p % 0.5 < 0.1) { a.side = a.p < 0.5 ? 0 : 1; a.p = a.side * 0.5; a.mode = 'settle'; a.settle = 0; }   // just past one: settle from there
+    else if (np >= next) { a.side = next === 0.5 ? 1 : 0; a.p = next % 1; a.mode = 'settle'; a.settle = 0; }
+    else { a.p = np; a.mode = 'stop'; }
+  } else if (a.mode === 'settle') {
+    a.settle += dt;
+    if (a.settle >= SETTLE_STEP * (GFX.info('crew/settle')?.per || 3)) a.mode = 'idle';
+  }
+  if (a.mode === 'move' || a.mode === 'stop') {
+    const set = a.gait.startsWith('strafe') ? 'strafe' : a.gait, n = info(a.gait)?.frames || 1;
+    const p = a.gait === 'strafeR' ? 1 - a.p : a.p;              // strafe right: the left cycle backwards
+    return { set, f: Math.round(p * n) % n };
+  }
+  if (a.mode === 'settle') {
+    const per = GFX.info('crew/settle')?.per || 3;
+    return { set: 'settle', f: a.side * per + Math.min(per - 1, Math.floor(a.settle / SETTLE_STEP)) };
+  }
+  return { set: 'idle', f: 0 };
+}
 function drawCrewSprite(c, visor, t) {
   const down = c.health === 'down' || c.health === 'out';
   if (down && !GFX.has('crew/down')) return false;
   if (!GFX.ready('crew/idle')) return false;
-  let a = crewAnim.get(c.id);
-  if (!a) crewAnim.set(c.id, a = { walk: c.walk, moving: 0 });
-  a.moving = Math.abs(c.walk - a.walk) > 1e-4 ? 0.12 : Math.max(0, a.moving - 1 / 60);   // (bridges frames where walk didn't change)
-  a.walk = c.walk;
-  const tint = down && c.health === 'out' ? '#7a7f8a' : c.color;
-  let name, f = 0, pose;
-  if (down) { name = visor && GFX.has('crew/down_visor') ? 'crew/down_visor' : 'crew/down'; pose = 'down'; }
-  else if (a.moving > 0) { name = visor ? 'crew/walk_visor' : 'crew/walk'; f = Math.floor((c.walk / TAU) * 8); pose = 'walk'; }
-  else { name = visor ? 'crew/idle_visor' : 'crew/idle'; pose = 'idle'; }
-  if (!GFX.has(name)) { name = visor ? 'crew/idle_visor' : 'crew/idle'; pose = 'idle'; }
-  const out = c.health === 'out', k = GFX.frameIndex(name, c.face, f), gz = c.mode === 'gun' ? gunZ(c.gun) : 0, bias = c.mode === 'gun' ? gunBias(c.gun) : 0, alpha = out ? 0.85 : 1;
+  const tint = down && c.health === 'out' ? '#7a7f8a' : c.color, V = visor ? '_visor' : '';
+  let pose, f = 0;
+  if (down) pose = 'down';
+  else ({ set: pose, f } = crewPose(c, t));
+  let name = `crew/${pose}${V}`;
+  if (!GFX.has(name)) name = `crew/${pose}`;
+  if (!GFX.has(name)) { name = `crew/idle${V}`; pose = 'idle'; f = 0; }
+  const out = c.health === 'out', k = GFX.frameIndex(name, c.face, f), gz = c.mode === 'gun' ? gunZ(c.gun) : 0, [gx, gy] = c.mode === 'gun' ? gunnerAt(c) : [c.x, c.y], bias = c.mode === 'gun' ? gunBias(c.gun) : 0, alpha = out ? 0.85 : 1;
   const desat = out ? 0.75 : 0;                     // out cold: suit, visor and worn gear all greyed
-  if (!GFX.sprite(name, k, c.x, c.y, gz, { tint, emissive: out ? 0.15 : 0.4, pick: down ? [0.6, 0.7] : [0.32, 1.25], alpha, depthBias: bias, desat })) return false;
+  if (!GFX.sprite(name, k, gx, gy, gz, { tint, emissive: out ? 0.15 : 0.4, pick: down ? [0.6, 0.7] : [0.32, 1.25], alpha, depthBias: bias, desat })) return false;
+  const head = visor && !down && name === `crew/${pose}` && GFX.info(name).head;
+  if (head && GFX.has('crew/visor')) {               // the gold visor where this frame's head is
+    const S = GFX.info(name), dirs = S.dirs || 1, n = S.frames || 1, a = Math.round(c.face / (TAU / dirs)) * (TAU / dirs);
+    const [mx, my, mz] = head[((Math.floor(f) % n) + n) % n] || [0, 0, 0];
+    const dx = mx * Math.cos(a) + my * Math.sin(a), dy = mx * Math.sin(a) - my * Math.cos(a);   // (model y = the character's left)
+    GFX.sprite('crew/visor', GFX.frameIndex('crew/visor', c.face, 0), gx + dx, gy + dy, gz + mz, { sortY: gy, emissive: 0.4, alpha, depthBias: bias + 0.01, desat });
+  }
   const gear = CREW_GEAR.filter(id => (id === 'armor' ? c.armor > 0 : perk(c, id)) && GFX.has(`crew/gear_${id}_${pose}`)).map(id => {
     const g = `crew/gear_${id}_${pose}`, gk = GFX.frameIndex(g, c.face, f);
     return { g, gk, d: GFX.info(g).depth?.[gk] ?? 0 };
   }).sort((p, q) => q.d - p.d);
-  for (const { g, gk } of gear) GFX.sprite(g, gk, c.x, c.y, gz, { tint: out ? '#7a7f8a' : undefined, emissive: out ? 0.1 : 0.3, alpha, depthBias: bias + 0.02, desat });
+  for (const { g, gk } of gear) GFX.sprite(g, gk, gx, gy, gz, { tint: out ? '#7a7f8a' : undefined, emissive: out ? 0.1 : 0.3, alpha, depthBias: bias + 0.02, desat });
   return true;
 }
 
@@ -248,22 +320,31 @@ function drawCrewSprite(c, visor, t) {
 // ---------------------------------------------------------------------------------------------
 // The front cannon stands on the nose's roof (z = GUN_Z, the walls' height): at floor level just north of
 // the 1.6 high nose wall it would hide behind it (and behind the helm) in the tilted view; up there it
-// reads as a roof turret, its gunner up in the hatch with it. The side cannons stand beside the hull and
-// are drawn in front of what's next to them (depth bias). The gunner, the cover plate and the muzzle
-// flash follow their cannon (gunZ / gunBias).
-const GUN_Z = { front: 1.6 }, GUN_DEPTH_BIAS = 3;
+// reads as a roof turret, its gunner up in the hatch with it. Its pivot (g.x, g.y = -3.6, gameplay: aim,
+// shells, hits) is north of the wall, where there is no roof: it is *drawn* GUN_DY further south, on the
+// wall top (y -2.8, the wall spans -3.0..-2.4; drawing only, like GUN_Z). The side cannons stand beside the hull and are drawn in
+// front of what's next to them (depth bias). The gunner, the cover plate and the muzzle flash follow their
+// cannon (gunZ / gunDY / gunBias; the shells' start height: muzzleZ in js/combat.js).
+const GUN_Z = { front: 1.6 }, GUN_DY = { front: 0.8 }, GUN_SEAT = { front: 0.5 }, GUN_DEPTH_BIAS = 3;
 const gunZ = (g) => (GFX.on && g && GUN_Z[g.id]) || 0, gunBias = (g) => (g && GUN_Z[g.id] ? 0.3 : GUN_DEPTH_BIAS);
+const gunDY = (g) => (GFX.on && g && GUN_DY[g.id]) || 0;
+// Where a gunner (c.mode 'gun', GUNNER_OFFSET behind the pivot) is drawn: up on the roof the front gunner
+// sits closer in (GUN_SEAT), in the turret's hatch, so he stays on the wall top.
+function gunnerAt(c) {
+  const g = c.gun, k = GFX.on && GUN_SEAT[g.id] ? GUN_SEAT[g.id] / GUNNER_OFFSET : 1;
+  return [g.x + (c.x - g.x) * k, g.y + gunDY(g) + (c.y - g.y) * k];
+}
 function drawGunSprite(g) {
   const name = broken(g) ? 'hull/gun_broken' : 'hull/gun';
   if (!GFX.ready(name)) return false;
   const rec = g.flash * 6 / T;                      // the barrel kicks back like drawGun's
-  // depthBias: the front cannon sits on a sponson just behind the bridge's 1.6 high nose wall, which would
-  // hide it in the tilted view; drawn in front of the wall it reads as mounted on top of it
-  return GFX.sprite(name, GFX.frameIndex(name, g.aim), g.x - Math.cos(g.aim) * rec, g.y - Math.sin(g.aim) * rec, gunZ(g), { layer: 'wall', sortY: g.y, emissive: 0.3, depthBias: gunBias(g) });
+  // depthBias: the front cannon stands on the bridge's 1.6 high nose wall; drawn a little in front of it
+  const y = g.y + gunDY(g);
+  return GFX.sprite(name, GFX.frameIndex(name, g.aim), g.x - Math.cos(g.aim) * rec, y - Math.sin(g.aim) * rec, gunZ(g), { layer: 'wall', sortY: y, emissive: 0.3, depthBias: gunBias(g) });
 }
 function drawMuzzleFlash(g) {
   if (!(g.flash > 0)) return;
-  const x = (g.x + Math.cos(g.aim) * 1.15) * T, y = (g.y + Math.sin(g.aim) * 1.15 - GFX.lift(0.4 + gunZ(g))) * T, r = T * 0.5;
+  const x = (g.x + Math.cos(g.aim) * 1.15) * T, y = (g.y + gunDY(g) + Math.sin(g.aim) * 1.15 - GFX.lift(0.4 + gunZ(g))) * T, r = T * 0.5;
   const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
   gr.addColorStop(0, '#fff6d0'); gr.addColorStop(0.4, 'rgba(255,190,80,0.8)'); gr.addColorStop(1, 'rgba(255,120,40,0)');
   ctx.globalAlpha = g.flash; ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); ctx.globalAlpha = 1;

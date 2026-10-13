@@ -1,27 +1,40 @@
 """Crew member (player character): bulky white spacesuit, life-support pack, big round helmet.
 
-Sprites (8 facing directions each; dir i faces game angle i*45deg = c.face):
-  crew/idle, crew/idle_visor     standing, visor up (face visible) / down (gold visor)
-  crew/walk, crew/walk_visor     8-frame walk cycle (loops: frame 7 -> frame 0)
-  crew/down, crew/down_visor     health 'down' / 'out': flat on the back, head towards the facing
-                                 direction, limbs sprawled; the body's centre on the ground origin
-                                 (own canvas). 'out' = the same sprite, greyed and faded by the game.
-idle/walk share one canvas and ground origin (c.x, c.y); down has its own.
+Sprites (16 facing directions each; dir i faces game angle i*22.5deg = c.face; drawn by js/sprites.js):
+  crew/idle                standing, feet together, visor up (face visible)
+  crew/run                 forward jog, 12-frame cycle             } relative to the facing; each entry's
+  crew/back                backpedal, 8 frames                      } `stride` = units one cycle covers (no
+  crew/strafe              sidestep to the LEFT, 8 frames           } foot sliding); `side`: 'left'
+                           (played backwards: to the right)
+  crew/settle              stopping: passing pose -> idle, `per` (2) frames from phase 0, then 2 from 0.5
+  crew/visor               the gold visor (down) alone, rest pose: drawn over any standing frame at that
+                           frame's `head` offset (every standing entry has one [x fwd, y left, z] per frame;
+                           the head keeps its orientation in all standing poses, so it always fits)
+  crew/down, crew/down_visor   health 'down' / 'out' (8 directions): flat on the back, head towards the
+                           facing direction, limbs sprawled; the body's centre on the ground origin
+                           (own canvas). 'out' = the same sprite, greyed and faded by the game.
+All standing sets share one canvas and ground origin (c.x, c.y); down has its own. Gait phase 0 = the left
+foot mid-stance under the body and the right one passing it (0.5: mirrored); the legs are IK-solved from
+foot paths on the floor (see Poses).
 Suit-colour parts (shoulder caps, backpack stripe, chest stripe) are neutral grey and marked
 with mn.tint, so the .m.png mask says where the game recolours them per player.
 
 Worn gear (js/progress.js GEAR, c.kit.gear), one overlay set per piece, drawn over the crew sprite
 with the same canvas, origin, direction and frame (rendered with the body as a holdout, so the
 parts the body hides are already cut away; no tint mask):
-  crew/gear_<id>_idle, crew/gear_<id>_walk, crew/gear_<id>_down
+  crew/gear_<id>_<set>   set = idle | run | back | strafe | settle | down
   id = boots | thrusters | armor | toolbelt | firstAid | stim
   (armor: only while c.armor > 0, and no _down: the vest is always used up before its wearer goes down)
 Several pieces at once: each gear entry has `depth` (one number per frame, k = dir * frames + frame:
 the piece's mean distance from the camera); draw the worn pieces of a frame sorted far to near.
 
     blender -b --factory-startup --python tools/blender/models/crew/crew.py
-    MN_PREVIEW=1 ...      16 samples, beauty + mask only, into /tmp/crew_preview (=idle: one walk frame; =1dir)
-    MN_ONLY=down,gear ... only these sprites (names, their first token, or gear_<id>)
+    MN_PREVIEW=1 ...      16 samples, beauty + mask only, into /tmp/crew_preview (=1dir: only facing right)
+    MN_ONLY=down,gear ... only these sprites (names, their first token, gear_<id> or gear_<id>_<set>)
+    MN_VISOR=0|1          only the visor-up sprites / visor-down ones (crew/visor, down_visor)
+    MN_PASSES=beauty      only these passes (one kind: persistent data, ~3x faster)
+(the full set is ~5000 frames x passes, ~30 min on one GPU; split it over several processes with MN_ONLY /
+MN_VISOR, they share the manifest safely.)
 """
 import sys, os, math
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -207,8 +220,10 @@ for s in (-1, 1):
     keep(attach(mn.sphere(f'glove{s}', 0.068, loc=(0.01, y + s * 0.012, HIP_Z + 0.01), m=GLOVE, scale=(1.05, 0.85, 1.0), segs=20), el))
     arms[s], elbows[s] = sh, el
 
-# Legs: hip pivot, thigh, knee pivot, shin + boot
-legs, knees = {}, {}
+# Legs: hip pivot, thigh, knee pivot, shin, ankle pivot, boot
+legs, knees, ankles = {}, {}, {}
+HIP_P = HIP_Z - 0.04; KNEE_Z = 0.21; ANKLE_Z = 0.075     # pivots (rest heights); the sole's bottom is at z = 0
+L1, L2 = HIP_P - KNEE_Z, KNEE_Z - ANKLE_Z                # thigh, shin (pivot to pivot)
 for s in (-1, 1):
     y = s * 0.085
     hp = empty(f'hip{s}', (0.0, y, HIP_Z - 0.04), hips)
@@ -216,9 +231,10 @@ for s in (-1, 1):
     kn = empty(f'knee{s}', (0.0, y, 0.21), hp)
     keep(attach(mn.sphere(f'kneePad{s}', 0.07, loc=(0.035, y, 0.21), m=SUIT_SH, segs=20, scale=(0.8, 1, 1)), kn))
     keep(attach(capsule(f'shin{s}', 0.074, 0.22, 0.07, y=y), kn))
-    keep(attach(mn.box(f'boot{s}', (0.21, 0.14, 0.10), loc=(0.03, y, 0.025), m=GLOVE, bevel=0.04), kn))
-    keep(attach(mn.box(f'sole{s}', (0.22, 0.15, 0.035), loc=(0.03, y, 0.0), m=RUBBER, bevel=0.012), kn))
-    legs[s], knees[s] = hp, kn
+    an = empty(f'ankle{s}', (0.0, y, ANKLE_Z), kn)      # the boot pivots here (flat on the floor, toe-off, heel strike)
+    keep(attach(mn.box(f'boot{s}', (0.21, 0.14, 0.10), loc=(0.03, y, 0.025), m=GLOVE, bevel=0.04), an))
+    keep(attach(mn.box(f'sole{s}', (0.22, 0.15, 0.035), loc=(0.03, y, 0.0), m=RUBBER, bevel=0.012), an))
+    legs[s], knees[s], ankles[s] = hp, kn, an
 
 mn.outline(parts, thickness=0.012)
 
@@ -259,12 +275,12 @@ def on_normal(o, d, roll=0.0):
 
 # Gravity boots: white shells over the boots, orange cuffs, glowing blue soles
 for s in (-1, 1):
-    y = s * 0.085; kn = knees[s]
-    wear('boots', mn.box(f'gbGlow{s}', (0.262, 0.192, 0.05), loc=(0.03, y, -0.016), m=G_BLUE, bevel=0.012), kn)
-    wear('boots', mn.box(f'gbSole{s}', (0.256, 0.186, 0.03), loc=(0.03, y, 0.03), m=G_SOLE, bevel=0.01), kn)
-    wear('boots', mn.box(f'gbBoot{s}', (0.25, 0.18, 0.105), loc=(0.03, y, 0.05), m=G_WHITE, bevel=0.045), kn)
+    y = s * 0.085; kn = knees[s]; an = ankles[s]
+    wear('boots', mn.box(f'gbGlow{s}', (0.262, 0.192, 0.05), loc=(0.03, y, -0.016), m=G_BLUE, bevel=0.012), an)
+    wear('boots', mn.box(f'gbSole{s}', (0.256, 0.186, 0.03), loc=(0.03, y, 0.03), m=G_SOLE, bevel=0.01), an)
+    wear('boots', mn.box(f'gbBoot{s}', (0.25, 0.18, 0.105), loc=(0.03, y, 0.05), m=G_WHITE, bevel=0.045), an)
     wear('boots', mn.cyl(f'gbCuff{s}', 0.098, 0.05, loc=(0.0, y, 0.13), m=G_ORANGE, bevel=0.016), kn)
-    wear('boots', mn.box(f'gbCoil{s}', (0.09, 0.012, 0.022), loc=(0.02, y + s * 0.093, 0.075), m=G_BLUE, bevel=0.005), kn)
+    wear('boots', mn.box(f'gbCoil{s}', (0.09, 0.012, 0.022), loc=(0.02, y + s * 0.093, 0.075), m=G_BLUE, bevel=0.005), an)
 
 # Suit thrusters: two tanks beside the life-support pack with orange caps, a cross bar, two nozzles
 for s in (-1, 1):
@@ -326,73 +342,184 @@ for kind, objs in gear.items():
 all_gear = [o for v in gear.values() for o in v]
 
 # ---------------------------------------------------------------------------
-# Poses
+# Poses. A pose is a dict {rig object: (location, rotation_euler)}; the legs are solved by IK from foot
+# targets on the floor, so planted feet don't slide: during a stance the foot moves back under the body
+# at exactly the speed the body moves forward (stride = units per cycle, written to the manifest so
+# the game plays the cycle at the matching rate).
+#
+# Gait cycles (phase t in [0, 1), frame i = t * frames): t = 0 the left foot is mid-stance under the
+# body and the right one passes it in the air; t = 0.5 the same mirrored. Those two moments are the
+# closest to standing, so the game ends a walk there and plays 'settle' (passing pose -> idle).
+#   run     forward: a light jog with a short flight phase, arms pumping, shoulders counter-twisting
+#   back    backwards (backpedal): shorter steps, lands on the toes, upright
+#   strafe  sideways to the character's LEFT (+Y): step out / close, never crossing; played in
+#           reverse it's the strafe to the right
 # ---------------------------------------------------------------------------
 LIE_SHIFT = 0.55       # lying down: the body's centre (not the feet) sits on the ground origin
+FOOT_Y = 0.085
 
-def pose(t=None, down=False):
-    """t = walk phase in [0, 1) or None for idle; down: flat on the back, head towards +X (the
-    facing direction), limbs sprawled (charlib.pose_human 'down'). Sets the rig's transforms."""
+GAITS = {
+    #         frames  A: foot reach  D: stance share  H: foot lift  hip height  bob
+    'run':    dict(frames=12, A=0.15, D=0.25, H=0.11, H0=0.35, bob=0.02, axis='x', lean=0.17, pyaw=0.12, tyaw=0.26,
+                   arm=0.6, elbow=-0.95, elbowAmp=0.15, armOut=0.07, shift=0.012, roll=0.035),
+    'back':   dict(frames=8,  A=0.13, D=0.27, H=0.075, H0=0.36, bob=0.014, axis='-x', lean=-0.03, pyaw=0.07, tyaw=0.13,
+                   arm=0.35, elbow=-0.6, elbowAmp=0.08, armOut=0.09, shift=0.012, roll=0.03),
+    'strafe': dict(frames=8,  A=0.10, D=0.20, H=0.07, H0=0.345, bob=0.018, axis='y', lean=0.05, pyaw=0.0, tyaw=0.0,
+                   arm=0.0, elbow=-0.55, elbowAmp=0.0, armOut=0.2, shift=0.0, roll=0.0, sideLean=-0.07),
+}
+def stride(g):
+    G = GAITS[g]
+    return round(2 * G['A'] / G['D'], 4)          # one stance moves the foot 2A back under the body in D of the cycle
+SETTLE = (0.45, 0.85)                              # settle frames: share of the way from the passing pose to idle
+
+def smoothstep(w): return w * w * (3 - 2 * w)
+
+def foot(G, s, t):
+    """Foot s (+1 left, -1 right) at phase t: offset (dx, dy) from its rest spot under the hip, ankle lift, pitch."""
+    D, A = G['D'], G['A']
+    u = (t - (0.0 if s > 0 else 0.5) + D / 2) % 1.0
+    if G['axis'] == 'y':                            # strafe left: the left foot steps out, the right one closes
+        start, end = (A * 1.6, -A * 0.4) if s > 0 else (A * 0.4, -A * 1.6)
+    else:
+        start, end = (A, -A) if G['axis'] == 'x' else (-A, A)
+    run, back = G['axis'] == 'x', G['axis'] == '-x'
+    if u < D:                                       # stance: planted, the body moves over it
+        k = u / D; pos = start + (end - start) * k; lift = 0.0
+        if run: beta = -0.22 * max(0.0, 1 - k / 0.2) + 0.5 * max(0.0, (k - 0.6) / 0.4) ** 2    # heel strike flattens, heel rises
+        elif back: beta = 0.3 * max(0.0, 1 - k / 0.3) - 0.12 * max(0.0, (k - 0.75) / 0.25)    # lands on the toes
+        else: beta = 0.0
+    else:                                           # swing: back to the front, lifted
+        w = (u - D) / (1 - D); pos = end + (start - end) * smoothstep(w)
+        if run:
+            lift = G['H'] * math.sin(math.pi * w ** 0.75)                                    # heel kicks up early
+            beta = 0.5 * (1 - w) ** 2 - 0.22 * w ** 3
+        elif back:
+            lift = G['H'] * math.sin(math.pi * w); beta = -0.12 * (1 - w) + 0.3 * smoothstep(w)
+        else:
+            lift = G['H'] * math.sin(math.pi * w); beta = 0.0
+    dz = lift + (0.12 * math.sin(beta) if beta > 0 else 0.075 * math.sin(-beta))          # pivoting on toe / heel
+    dx, dy = (pos, 0.0) if G['axis'] != 'y' else (0.0, pos)
+    return dx, dy, dz, beta
+
+def rot(e): return Matrix.Rotation(e[2], 4, 'Z') @ Matrix.Rotation(e[1], 4, 'Y') @ Matrix.Rotation(e[0], 4, 'X')   # = Euler XYZ
+
+def leg_ik(s, hips_m, target, beta):
+    """Hip (pitch, roll), knee and ankle rotations that put leg s's ankle at `target` (world, root space) with
+    the boot pitched by beta (0 = flat). hips_m: the hips' matrix relative to their rest."""
+    inv = hips_m.inverted()
+    F = inv @ Vector(target) - Vector((0, s * FOOT_Y, HIP_P))          # ankle target from the hip pivot, hips' rest frame
+    d = min(F.length, L1 + L2 - 1e-4)
+    if F.length > d: F = F * (d / F.length)
+    kappa = math.acos(max(-1.0, min(1.0, (d * d - L1 * L1 - L2 * L2) / (2 * L1 * L2))))
+    px, pz = -L2 * math.sin(kappa), -L1 - L2 * math.cos(kappa)
+    phi = math.asin(max(-1.0, min(1.0, F.y / -pz)))
+    a, b = px, pz * math.cos(phi)
+    theta = math.atan2(b, a) - math.atan2(F.z, F.x)
+    chain = rot((phi, theta, 0)) @ Matrix.Rotation(kappa, 4, 'Y')
+    want = inv.to_3x3().to_4x4() @ Matrix.Rotation(beta, 4, 'Y')          # boot: level (pitched by beta) in the world
+    ank = (chain.inverted() @ want).to_euler('XYZ')
+    return (phi, theta, 0.0), (0.0, kappa, 0.0), tuple(ank)
+
+def idle_pose():
+    P = {}
     for s in (-1, 1):
-        arms[s].rotation_euler = (s * math.radians(-6), 0, 0)     # arms slightly out from the body
-        elbows[s].rotation_euler = (0, math.radians(-12), 0)
-        legs[s].rotation_euler = (0, 0, 0); knees[s].rotation_euler = (0, 0, 0)
-    lie.location = (0, 0, 0); lie.rotation_euler = (0, 0, 0)
-    hips.location.z = HIP_Z; torso.rotation_euler = (0, 0, 0); head.rotation_euler = (0, 0, 0)
-    if down:
-        lie.rotation_euler = (0, math.radians(-90), math.radians(180))
-        lie.location = (-LIE_SHIFT, 0, 0)
-        # (rotation about X by s * angle swings a limb outwards; about Y by -angle forwards = up when lying)
-        arms[-1].rotation_euler = (math.radians(-75), math.radians(-10), 0)               # right arm flung out
-        arms[1].rotation_euler = (math.radians(55), math.radians(-50), 0)                 # left arm up by the head
-        elbows[-1].rotation_euler = (0, math.radians(-25), 0); elbows[1].rotation_euler = (0, math.radians(-60), 0)
-        legs[-1].rotation_euler = (math.radians(-14), math.radians(-30), 0); knees[-1].rotation_euler = (0, math.radians(60), 0)
-        legs[1].rotation_euler = (math.radians(12), 0, 0)                                  # legs apart, one knee up
-        head.rotation_euler = (math.radians(-18), math.radians(10), 0)
+        P[arms[s]] = ((0, 0, 0), (s * math.radians(-6), 0, 0))     # arms slightly in at the hands
+        P[elbows[s]] = ((0, 0, 0), (0, math.radians(-12), 0))
+        P[legs[s]] = ((0, 0, 0), (0, 0, 0)); P[knees[s]] = ((0, 0, 0), (0, 0, 0)); P[ankles[s]] = ((0, 0, 0), (0, 0, 0))
+    P[lie] = ((0, 0, 0), (0, 0, 0)); P[hips] = ((0, 0, HIP_Z), (0, 0, 0))
+    P[torso] = ((0, 0, 0), (0, 0, 0)); P[head] = ((0, 0, 0), (0, 0, 0))
+    return P
+
+def gait_pose(g, t):
+    G = GAITS[g]; P = idle_pose(); c2 = math.cos(2 * math.pi * t)
+    fwdL = -math.sin(2 * math.pi * t)               # ~ +1 while the left leg is forward
+    if G['axis'] == '-x': fwdL = -fwdL
+    hz = G['H0'] - G['bob'] * math.cos(4 * math.pi * t)          # low mid-stance, high in the air
+    hy = G['shift'] * c2                                         # weight over the planted foot
+    if G['axis'] == 'y': hy = 0.012 * math.sin(4 * math.pi * t) # strafe: the hips lead a little
+    hroll = G['roll'] * c2                                       # the swing side's hip drops
+    hyaw = -G['pyaw'] * fwdL                                     # pelvis turns with the forward leg
+    hips_rot = (hroll, 0.0, hyaw)
+    P[hips] = ((0, hy, hz), hips_rot)
+    hips_m = Matrix.Translation((0, hy, hz - HIP_Z)) @ rot(hips_rot)
+    hips_m = Matrix.Translation((0, 0, HIP_Z)) @ hips_m @ Matrix.Translation((0, 0, -HIP_Z))   # rotate about the hip centre
+    side = G.get('sideLean', 0.0)
+    P[torso] = ((0, 0, 0), (-hroll * 0.8 + side, G['lean'] + 0.02 * math.cos(4 * math.pi * t), G['tyaw'] * fwdL))
+    for s in (-1, 1):
+        dx, dy, dz, beta = foot(G, s, t)
+        P[legs[s]], P[knees[s]], P[ankles[s]] = [((0, 0, 0), r) for r in leg_ik(s, hips_m, (dx, s * FOOT_Y + dy, ANKLE_Z + dz), beta)]
+        fwd = fwdL * s                                           # +1: leg s forward -> arm s back
+        if G['axis'] == 'y':
+            out = G['armOut'] + 0.1 * math.cos(4 * math.pi * t)  # arms out, flapping up in the air
+            P[arms[s]] = ((0, 0, 0), (s * out, 0.12, 0))
+        else:
+            P[arms[s]] = ((0, 0, 0), (s * G['armOut'], G['arm'] * fwd, 0))
+        P[elbows[s]] = ((0, 0, 0), (0, G['elbow'] - G['elbowAmp'] * max(0.0, -fwd), 0))
+    return P
+
+def blend(P, Q, k):
+    return {o: (tuple(a + (b - a) * k for a, b in zip(P[o][0], Q[o][0])), tuple(a + (b - a) * k for a, b in zip(P[o][1], Q[o][1]))) for o in P}
+
+def steady_head(P):
+    """The head keeps its rest orientation in every standing pose (it only moves: bob, lean, sway), so one
+    visor overlay per facing (crew/visor) fits every frame, placed at the frame's head offset."""
+    chain = rot(P[hips][1]) @ rot(P[torso][1])
+    P[head] = ((0, 0, 0), tuple(chain.inverted().to_euler('XYZ')))
+    return P
+
+def down_pose():
+    """Flat on the back, head towards +X (the facing direction), limbs sprawled."""
+    P = idle_pose()
+    P[lie] = ((-LIE_SHIFT, 0, 0), (0, math.radians(-90), math.radians(180)))
+    # (rotation about X by s * angle swings a limb outwards; about Y by -angle forwards = up when lying)
+    P[arms[-1]] = ((0, 0, 0), (math.radians(-75), math.radians(-10), 0))              # right arm flung out
+    P[arms[1]] = ((0, 0, 0), (math.radians(55), math.radians(-50), 0))                # left arm up by the head
+    P[elbows[-1]] = ((0, 0, 0), (0, math.radians(-25), 0)); P[elbows[1]] = ((0, 0, 0), (0, math.radians(-60), 0))
+    P[legs[-1]] = ((0, 0, 0), (math.radians(-14), math.radians(-30), 0)); P[knees[-1]] = ((0, 0, 0), (0, math.radians(60), 0))
+    P[legs[1]] = ((0, 0, 0), (math.radians(12), 0, 0))                                 # legs apart, one knee up
+    P[head] = ((0, 0, 0), (math.radians(-18), math.radians(10), 0))
+    return P
+
+movers = [lie, hips, torso, head] + [d[s] for d in (arms, elbows, legs, knees, ankles) for s in (-1, 1)]
+rest_loc = {o: Vector(o.location) for o in movers}
+rest_loc[hips] = Vector((0, 0, 0))                  # (the hips' location in a pose is absolute)
+def apply(P):
+    for o, (loc, r) in P.items():
+        o.location = rest_loc[o] + Vector(loc); o.rotation_euler = r
+def key(frame, P, down=False):
+    bpy.context.scene.frame_set(frame)        # first: frame_set re-applies existing keys
+    apply(P)
+    if down:                                  # lift the lowest point of the body onto the floor
         bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get(); zmin = 1e9
-        for o in parts:                              # lift the lowest point of the body onto the floor
+        for o in parts:
             if o.type != 'MESH': continue
             ev = o.evaluated_get(dg); me = ev.to_mesh()
             for v in me.vertices: zmin = min(zmin, (ev.matrix_world @ v.co).z)
             ev.to_mesh_clear()
         lie.location.z = -zmin
-        return
-    if t is None: return
-    p = 2 * math.pi * t
-    for s in (-1, 1):
-        sw = math.sin(p) * s                                   # +1: this leg forward
-        legs[s].rotation_euler = (0, -0.50 * sw, 0)            # -y rotation swings the foot to +X
-        # knee bends while the leg swings forward (recovery), stays straight while it carries weight
-        knees[s].rotation_euler = (0, 0.75 * max(0.0, math.cos(p) * s) ** 1.2, 0)
-        arms[s].rotation_euler = (s * math.radians(-6), 0.55 * sw, 0)   # arms opposite the legs
-        elbows[s].rotation_euler = (0, math.radians(-15) - 0.25 * max(0.0, -sw), 0)
-    hips.location.z = HIP_Z - 0.035 + 0.035 * abs(math.cos(p))     # low at full stride, high when passing
-    torso.rotation_euler = (0, 0.06, -0.10 * math.sin(p))           # lean in, twist with the stride
-    head.rotation_euler = (0, -0.04, 0.06 * math.sin(p))            # head counters the twist a bit
-
-WALK = 8
-movers = [lie, hips, torso, head] + list(arms.values()) + list(elbows.values()) + list(legs.values()) + list(knees.values())
-def key(frame, t, down=False):
-    bpy.context.scene.frame_set(frame)        # first: frame_set re-applies existing keys
-    pose(t, down)
     for o in movers:
         o.keyframe_insert('location', frame=frame); o.keyframe_insert('rotation_euler', frame=frame)
 
 IDLE_F, DOWN_F = 100, 101
-key(IDLE_F, None)
-for i in range(WALK):
-    key(1 + i, i / WALK)
-key(DOWN_F, None, down=True)
+GAIT_F0 = {'run': 1, 'back': 21, 'strafe': 41}
+SETTLE_F0 = 61                                   # left-passing settle 61.., then right-passing
+key(IDLE_F, steady_head(idle_pose()))
+gait_frames = {}
+for g, G in GAITS.items():
+    gait_frames[g] = [GAIT_F0[g] + i for i in range(G['frames'])]
+    for i, f in enumerate(gait_frames[g]): key(f, steady_head(gait_pose(g, i / G['frames'])))
+settle_frames = []
+for j, t in enumerate((0.0, 0.5)):
+    for i, k in enumerate(SETTLE):
+        f = SETTLE_F0 + j * len(SETTLE) + i; settle_frames.append(f)
+        key(f, steady_head(blend(gait_pose('run', t), idle_pose(), smoothstep(k))))
+key(DOWN_F, down_pose(), down=True)
 
 # ---------------------------------------------------------------------------
 # Shared canvases: invisible proxies covering everything any variant (and any gear) can reach, so
-# idle/walk, visor up/down and the gear overlays all get the same canvas size and origin; the
+# idle/gaits/settle, visor up/down and the gear overlays all get the same canvas size and origin; the
 # lying-down sprites get their own (proxyDown, sized from the down pose with all gear).
 # ---------------------------------------------------------------------------
-proxy = mn.cyl('canvasProxy', 0.46, 1.27, verts=32, bevel=0)
-proxy.hide_render = True
-frame_objs = parts + [proxy]
-
 def reach(objs):
     bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get(); r = z = 0.0
     for o in objs:
@@ -402,14 +529,18 @@ def reach(objs):
             w = ev.matrix_world @ v.co; r = max(r, math.hypot(w.x, w.y)); z = max(z, w.z)
         ev.to_mesh_clear()
     return r, z
+# the standing proxy holds every standing frame with all gear on (at least the old 0.46 x 1.27)
+_r, _z = 0.455, 1.25
+for f in [IDLE_F] + [f for v in gait_frames.values() for f in v] + settle_frames:
+    bpy.context.scene.frame_set(f); r, z = reach(parts + all_gear); _r, _z = max(_r, r), max(_z, z)
+proxy = mn.cyl('canvasProxy', round(_r + 0.01, 2), round(_z + 0.02, 2), verts=32, bevel=0)
+proxy.hide_render = True
+frame_objs = parts + [proxy]
 bpy.context.scene.frame_set(DOWN_F)
 _r, _z = reach(parts + all_gear)
 proxy_down = mn.cyl('canvasProxyDown', round(_r + 0.02, 2), round(_z + 0.02, 2), verts=48, bevel=0)
 proxy_down.hide_render = True
 down_objs = parts + [proxy_down]
-for f in [IDLE_F] + list(range(1, 1 + WALK)):            # the standing proxy must hold the gear too
-    bpy.context.scene.frame_set(f); _r, _z = reach(all_gear)
-    assert _r < 0.455 and _z < 1.27, f'gear sticks out of the canvas proxy at frame {f}: r={_r:.3f} z={_z:.3f} ' + str(sorted((round(reach([o])[0], 3), o.name) for o in all_gear)[-4:])
 
 def set_visor(down):
     """Down: gold visor over the window (vacuum). Up: the visor slides up *inside* the shell (like a
@@ -419,27 +550,67 @@ def set_visor(down):
     for o in face_parts:
         o.hide_render = down                          # hidden behind the visor anyway
 
-import time
+import time, json
 ONLY = os.environ.get('MN_ONLY', '').split(',') if os.environ.get('MN_ONLY') else None
 want = lambda n: not ONLY or n in ONLY or n.split('_')[0] in ONLY
 passes = ('beauty', 'mask') if PREVIEW else ('beauty', 'normal', 'height', 'mask')
-walk_frames = list(range(1, 1 + WALK))
-dirs = 8 if PREVIEW != '1dir' else 1
-if PREVIEW == 'idle': walk_frames = walk_frames[:1]
+ONLY_PASSES = os.environ.get('MN_PASSES', '').split(',') if os.environ.get('MN_PASSES') else None
+if ONLY_PASSES:                                       # one kind of pass per process: then Cycles can keep the scene
+    passes = tuple(p for p in passes if p in ONLY_PASSES)   # between renders (persistent data, ~3x faster); with
+    if len(ONLY_PASSES) == 1: bpy.context.scene.render.use_persistent_data = True   # mixed passes it misses the switches
+DIRS, DOWN_DIRS = 16, 8                               # standing: 16 facings (22.5 deg); lying down: 8
+dirs_of = lambda nm: DOWN_DIRS if nm == 'down' else DIRS
+if PREVIEW == '1dir': dirs_of = lambda nm: 1
+SETS = [('idle', [IDLE_F]), ('run', gait_frames['run']), ('back', gait_frames['back']), ('strafe', gait_frames['strafe']),
+        ('settle', settle_frames), ('down', [DOWN_F])]
+def head_offsets(frames):
+    """Per frame: where the head's centre is relative to its rest place, in the model's frame (x forward,
+    y to the left, z up; the game turns it by the facing). crew/visor goes there."""
+    bpy.context.scene.frame_set(IDLE_F); bpy.context.view_layer.update(); rest = head.matrix_world.translation.copy(); out = []
+    for f in frames:
+        bpy.context.scene.frame_set(f); bpy.context.view_layer.update()
+        out.append([round(v, 4) for v in head.matrix_world.translation - rest])
+    return out
+def extra(nm, frames):
+    """Manifest fields the game reads: how far a cycle carries you (no foot sliding), strafe direction,
+    settle frames per side, the head's offset per frame (for the visor overlay)."""
+    out = {}
+    if nm in GAITS: out = {'stride': stride(nm), **({'side': 'left'} if nm == 'strafe' else {})}
+    if nm == 'settle': out = {'per': len(SETTLE)}
+    if nm != 'down': out['head'] = head_offsets(frames)
+    return out
+def add_fields(name, fields):
+    if not fields: return
+    with open(mn.MANIFEST) as fh: ent = json.load(fh)[name]
+    ent.update(fields); mn._manifest_put(name, ent)
 times = {}
 canvas = {}
-for down in (False, True):
+# Standing sets: visor up only; the visor down is the crew/visor overlay on top (16 frames instead of a
+# second copy of every frame). Lying down: both (crew/down, crew/down_visor).
+VISORS = {'0': (False,), '1': (True,)}.get(os.environ.get('MN_VISOR', ''), (False, True))   # MN_VISOR=0/1: only visor up/down
+for down in VISORS:
     set_visor(down); suf = '_visor' if down else ''
-    for nm, objs, frames in (('idle', frame_objs, [IDLE_F]), ('walk', frame_objs, walk_frames), ('down', down_objs, [DOWN_F])):
-        if not want(nm + suf): continue
+    for nm, frames in SETS:
+        if down and nm != 'down' or not want(nm + suf): continue
         t0 = time.time()
-        canvas[nm] = mn.render(f'crew/{nm}{suf}', objs=objs, root=root, dirs=dirs, frames=frames, passes=passes)
+        canvas[nm] = mn.render(f'crew/{nm}{suf}', objs=down_objs if nm == 'down' else frame_objs, root=root, dirs=dirs_of(nm), frames=frames, passes=passes)
+        add_fields(f'crew/{nm}{suf}', extra(nm, frames))
         times[nm + suf] = round(time.time() - t0, 1)
+
+# crew/visor: the gold visor (down), alone, the rest of the body a holdout; rest pose, 16 facings. The game
+# draws it over any standing frame at that frame's `head` offset (the head never turns in those poses).
+if want('visor') and True in VISORS:
+    set_visor(True)
+    for o in parts: o.is_holdout = o is not visor
+    t0 = time.time()
+    mn.render('crew/visor', objs=frame_objs, root=root, dirs=dirs_of('idle'), frames=[IDLE_F], passes=tuple(p for p in passes if p != 'mask'))
+    times['visor'] = round(time.time() - t0, 1)
+    for o in parts: o.is_holdout = False
 
 # Gear overlays: one gear piece visible, the body a holdout (it cuts away what it hides), the same
 # canvas as the body's sprites. Not tinted (no mask). The visor doesn't matter (the face is inside).
 # The armor vest has no 'down' overlay: it is always used up (c.armor) before its wearer goes down.
-def gear_depth(objs, frames):
+def gear_depth(objs, frames, dirs):
     """Per sprite frame (k = dir * frames + frame, like the files): the gear's mean distance from the
     camera in units (bigger = further back). Worn gear overlaps (vest and belt, thrusters and boots):
     the game draws the worn pieces sorted by this, far ones first."""
@@ -458,25 +629,21 @@ def gear_depth(objs, frames):
     root.rotation_euler.z = 0
     return out
 
-def add_depth(name, depth):
-    import json
-    with open(mn.MANIFEST) as fh: ent = json.load(fh)[name]
-    ent['depth'] = depth; mn._manifest_put(name, ent)
-
 DEPTH_ONLY = os.environ.get('MN_DEPTH_ONLY')         # only (re)compute the gear entries' depth lists
 set_visor(True)
 gpasses = ('beauty',) if PREVIEW else ('beauty', 'normal', 'height')
+if ONLY_PASSES: gpasses = tuple(p for p in gpasses if p in ONLY_PASSES)
 for o in parts: o.is_holdout = True
 for kind, objs in gear.items():
     for o in all_gear: o.hide_render = o not in objs
-    for nm, fobjs, frames in (('idle', frame_objs, [IDLE_F]), ('walk', frame_objs, walk_frames), ('down', down_objs, [DOWN_F])):
+    for nm, frames in SETS:
         name = f'gear_{kind}_{nm}'
         if (kind == 'armor' and nm == 'down') or not want(name) and not want('gear') and not want('gear_' + kind): continue
-        t0 = time.time()
+        t0 = time.time(); fobjs = down_objs if nm == 'down' else frame_objs
         if not DEPTH_ONLY:
-            got = mn.render('crew/' + name, objs=fobjs + objs, root=root, dirs=dirs, frames=frames, passes=gpasses)
+            got = mn.render('crew/' + name, objs=fobjs + objs, root=root, dirs=dirs_of(nm), frames=frames, passes=gpasses)
             if nm in canvas: assert got == canvas[nm], f'{name}: canvas {got} != body {canvas[nm]}'
-        add_depth('crew/' + name, gear_depth(objs, frames))
+        add_fields('crew/' + name, {'depth': gear_depth(objs, frames, dirs_of(nm)), **{k: v for k, v in extra(nm, frames).items() if k != 'head'}})
         times[name] = round(time.time() - t0, 1)
 for o in parts: o.is_holdout = False
 for o in all_gear: o.hide_render = True

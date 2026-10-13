@@ -17,7 +17,11 @@ const HULL_SPOTS = {
 };
 const ANTENNA = { x: 34.6, y: -0.15 };
 const COIL_SPOTS = [{ x: -0.6, y: 13.4, name: 'left' }, { x: 45.0, y: 13.2, name: 'right' }, { x: 16.2, y: 26.75, name: 'stern' }];
-const JAM_SPOTS = { port: [-1.7, 9.4], star: [46.1, 9.2], front: [24.0, -4.1] };
+// Debris jamming a cannon's track: on the gun blister behind the side cannons. The front one lies up on the
+// nose wall's top (y -2.75, z 1.6) beside the turret (drawn there with depth); its spot is where that roof
+// point shows on screen (y -2.75 - lift(1.6)), out in front of the nose where a spacewalker can reach it.
+const JAM_SPOTS = { port: [-0.8, 8.35], star: [45.2, 8.2], front: [24.0, -4.1] };
+const JAM_ROOF = { front: [-2.75, 1.6] };            // [drawn y, z] of a jam on the roof
 const roomNearHull = (side, y, x) => side === 'front' ? 'bridge' : side === 'port' ? (y < SPINE_Y0 ? 'portGun' : 'portLock') : (y < SPINE_Y0 ? 'starGun' : 'starLock');
 const sideCol = (side) => side === 'port' ? 0 : side === 'star' ? 2 : 1;
 
@@ -220,11 +224,12 @@ function drawEvaJobs(t) {
     }
     if (!evs.antenna) jobMarker(ANTENNA.x, ANTENNA.y, t, reach(ANTENNA.x, ANTENNA.y), '#ffd84a');
   }
-  // the outer airlock hatches seen from outside (hull/hatch_<side>: coaming and leaves on the hull's edge; the
-  // inside view is interior/hatch_*, js/sprites.js): under the walls, so only the part outside the wall shows
+  // the outer airlock hatches seen from outside (hull/hatch_<side>: a door frame standing on the side wall's
+  // outer face, as tall as the wall, on the hull's doorstep; the inside view is interior/hatch_*, js/sprites.js,
+  // and their tops line up): in the wall layer, depth-sorted at its south jamb
   if (GFX.on) for (const h of HATCHES) {
     const s = `hull/hatch_${h.side}`, n = broken(h) ? s + '_broken' : h.locked && h.open < 0.05 ? s + '_locked' : s;
-    GFX.sprite(n, n === s ? Math.round(clamp(h.open, 0, 1) * 5) : 0, h.x, h.y, 0, { layer: 'decal', emissive: 0.5 });
+    GFX.sprite(n, n === s ? Math.round(clamp(h.open, 0, 1) * 5) : 0, h.x, h.y, 0, { layer: 'wall', sortY: h.y + 1.16, emissive: 0.5 });
   }
   // jump coils: a ring with a dial, red until aligned
   for (const c of evs.coils) {
@@ -245,7 +250,8 @@ function drawEvaJobs(t) {
   for (const [id, on] of Object.entries(evs.jams)) {
     if (!on) continue;
     const [jx, jy] = JAM_SPOTS[id], x = L(jx), y = L(jy);
-    if (GFX.on && GFX.sprite(`hull/jam_${id}`, 0, jx, jy, 0, { layer: 'decal' })) { jobMarker(jx, jy, t, reach(jx, jy), '#ffd84a'); continue; }
+    const roof = JAM_ROOF[id], jo = roof ? { layer: 'wall', sortY: roof[0], depthBias: 0.05 } : { layer: 'decal' };
+    if (GFX.on && GFX.sprite(`hull/jam_${id}`, 0, jx, roof ? roof[0] : jy, roof ? roof[1] : 0, jo)) { jobMarker(jx, jy, t, reach(jx, jy), '#ffd84a'); continue; }
     poly([[x - 10, y - 4], [x - 2, y - 11], [x + 9, y - 6], [x + 11, y + 5], [x, y + 9], [x - 9, y + 6]]);
     ctx.fillStyle = '#6e6359'; ctx.fill(); stroke(2);
     ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 12, y - 9); ctx.stroke();

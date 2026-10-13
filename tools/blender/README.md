@@ -59,7 +59,8 @@ overwrite the pose you just set.
 
 ## Prototypes so far
 
-- `models/crew/crew.py`: the crew member (8 dirs, idle + 8-frame walk, visor up/down, tint mask).
+- `models/crew/crew.py`: the crew member (16 dirs; idle, forward / backward / sideways gait cycles with IK
+  legs and a `stride` for the game, a settle into idle; visor up/down, tint mask, worn-gear overlays).
 - `models/ship/`: reactor (6-frame pulse + off), floor tiles, wall kit (`shiplib.py`: pipes, labels,
   exact-window renders for tiles).
 - `models/enemy/interceptor.py`: hull per side and paint job, 32-direction turret, weak spots per

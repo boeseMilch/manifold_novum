@@ -16,7 +16,8 @@ window.addEventListener('resize', resize); resize();
 // Input. Every crew member has an input object { keys, pressed, mouse }; this browser's
 // keyboard and mouse fill `localInput`, which belongs to the local crew member (`me`).
 // mouse.x/y are screen pixels (local only); mouse.wx/wy is the world point under it.
-const makeInput = () => ({ keys: new Set(), pressed: new Set(), mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0 } });
+// mouse.look: the mouse moved since the last tick (the crew member turns to look at it for a while).
+const makeInput = () => ({ keys: new Set(), pressed: new Set(), mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0, look: 0 } });
 const localInput = makeInput();
 window.addEventListener('keydown', e => {
   if (e.target?.tagName === 'INPUT') return;                 // typing in the lobby
@@ -25,7 +26,7 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => localInput.keys.delete(e.code));
 window.addEventListener('blur', () => { localInput.keys.clear(); localInput.mouse.down = false; });
-canvas.addEventListener('mousemove', e => { localInput.mouse.x = e.clientX; localInput.mouse.y = e.clientY; localInput.mouse.moved = 1; });
+canvas.addEventListener('mousemove', e => { localInput.mouse.x = e.clientX; localInput.mouse.y = e.clientY; localInput.mouse.moved = 1; localInput.mouse.look = 1; });
 const MUTE_BTN = { x: 8, y: 6, w: 26, h: 24 };
 const inMuteBtn = (x, y) => x >= MUTE_BTN.x && x <= MUTE_BTN.x + MUTE_BTN.w && y >= MUTE_BTN.y && y <= MUTE_BTN.y + MUTE_BTN.h;
 canvas.addEventListener('mousedown', e => {
@@ -45,6 +46,7 @@ const CREW_R = 0.2;                          // half-size of the crew collision 
 const LOCK_DOOR_TIME = 0.55;
 let LOCK_CYCLE = 1.3;                        // deck airlock: per door, and pressure cycle (upgradeable)
 const HURT_SPEED = 0.6;                       // walking speed while hurt
+const LOOK_TIME = 1.75;                      // s a crew member keeps looking at the mouse after it moved or they fired with it
 const HATCH_TIME = 1.6;                      // going through an outer airlock
 const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
@@ -127,9 +129,12 @@ function updateCrew(c, dt, ix, iy) {
     if (ok(c.x, by)) c.y = by;
     if (len) c.walk += belt * dt * 3.2;                       // (and your legs keep going)
   }
-  const sp = Math.hypot(c.vx, c.vy);
+  const sp = Math.hypot(c.vx, c.vy), m = c.input && c.input.mouse;
+  const look = c.lookT > 0 && m && Number.isFinite(m.wx) && Number.isFinite(m.wy) && Math.hypot(m.wx - c.x, m.wy - c.y) > 0.25;
   if (c.aim != null && standing(c)) c.face = c.aim;               // arrow keys: point that way
+  else if (look && standing(c)) c.face = Math.atan2(m.wy - c.y, m.wx - c.x);   // the mouse moved / you fired at it: look there
   else if (len && sp > 0.3) c.face = Math.atan2(c.vy, c.vx);       // otherwise: the way you walk
+  if (c.lookT > 0) c.lookT = Math.max(0, c.lookT - dt);
   c.walk += sp * dt * (eva ? 1.2 : 3.2);
 }
 
@@ -232,6 +237,7 @@ function updatePlayer(dt) {
   const iy = block ? 0 : (held('KeyS') ? 1 : 0) - (held('KeyW') ? 1 : 0);
   const ax = block ? 0 : (held('ArrowRight') ? 1 : 0) - (held('ArrowLeft') ? 1 : 0), ay = block ? 0 : (held('ArrowDown') ? 1 : 0) - (held('ArrowUp') ? 1 : 0);
   player.aim = ax || ay ? Math.atan2(ay, ax) : null;
+  if (!block && (mouse.look || ((mouse.right || mouse.rightClick) && inv.weapon))) player.lookT = LOOK_TIME;   // (js/net.js netPredict: the same)
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
 
@@ -879,7 +885,7 @@ function simTick(dt) {
     updateOverride(dt);
     updateInjury(player, dt);
     inv.cd = Math.max(0, inv.cd - dt);
-    pressed.clear(); mouse.click = false; mouse.rightClick = false;
+    pressed.clear(); mouse.click = false; mouse.rightClick = false; mouse.look = 0;
   });
   updateHatches(dt);
   for (const L of DECK_LOCKS) updateDeckLock(L, dt);

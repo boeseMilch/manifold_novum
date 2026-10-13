@@ -78,6 +78,24 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
   check(!G.evs.jams.port && G.gunArc(g) === full, 'pulling the debris out on a spacewalk frees it');
 }
 {
+  // every track's debris can be reached on a real spacewalk: steer (WASD) from outside the hull up to it
+  const starts = { port: [-1.1, 19.2], star: [46.1, 19.4], front: [24.0, -7.0] };
+  for (const id of ['port', 'star', 'front']) {
+    const G = fresh(); G.jamCannon(id);
+    const [jx, jy] = G.JAM_SPOTS[id], keys = G.me.input.keys;
+    outside(G, ...starts[id]);
+    for (let i = 0; i < 60 * 20 && Math.hypot(G.me.x - jx, G.me.y - jy) > 0.4; i++) {
+      keys.clear();
+      if (G.me.x < jx - 0.1) keys.add('KeyD'); else if (G.me.x > jx + 0.1) keys.add('KeyA');
+      if (G.me.y < jy - 0.1) keys.add('KeyS'); else if (G.me.y > jy + 0.1) keys.add('KeyW');
+      G.simTick(DT);
+    }
+    keys.clear(); tickN(G, 30);
+    holdOn(G, jx, jy, () => !G.evs.jams[id]);
+    check(G.me.mode === 'eva' && !G.evs.jams[id], `the ${id} track's debris can be reached and pulled out on a spacewalk (from ${G.me.x.toFixed(1)}, ${G.me.y.toFixed(1)})`);
+  }
+}
+{
   const G = fresh(); G.mission.active = true;
   G.knockAntenna(); G.radarScan();
   check(!G.mission.revealed.size, 'with the antenna crooked, radar scans come back garbled');

@@ -1,13 +1,14 @@
 """Things on the outside of the hull: the outer airlock hatches, the radar antenna, the jump coils.
 
 Sprites (build/renders/hull/):
-  hatch_<side>_f<0..5>   outer airlock hatch (js/art.js drawHatch; HATCHES), side = port | star, frame i = h.open
-                         i/5 (0 closed .. 5 fully open): two leaves sliding apart under a hazard-striped
-                         coaming, the airlock shaft below. Origin = (h.x, h.y) on the deck plane (the hull's
-                         side edge at the hatch). Footprint = the 2D rect: u (outwards) -0.5 .. 0.4, y +-0.9.
-  hatch_<side>_locked    closed, locked by security (h.locked): red lamps, a locking bar across the leaves
-  hatch_<side>_broken    broken (SYSTEMS 'hatch' broken): leaves jammed a crack open, one buckled, scorched,
-                         lamps dead, a sparking wire
+  hatch_<side>_f<0..5>   outer airlock hatch seen from outside (HATCHES), side = port | star, frame i = h.open
+                         i/5 (0 closed .. 5 fully open): a door frame standing on the side wall's outer face
+                         (jamb posts + lintel, z 0 .. 1.72, flush with the inner frame interior/hatch_*), on
+                         the doorstep (HULL's landing bump); open: light spills onto the doorstep. Origin =
+                         (h.x, h.y) on the deck plane (the wall's outer face). Footprint: u (outwards) 0 .. 0.29,
+                         y +-1.2. Draw in the wall layer (it stands up to wall height).
+  hatch_<side>_locked    closed, locked by security (h.locked): red lamp, a locking bar across the opening
+  hatch_<side>_broken    broken (SYSTEMS 'hatch' broken): lamp dead, scorched lintel, sparking wire, tape
   antenna_f<0..8>        the radar dish sweeping (js/eva.js: a = -90 deg + sin(t * 0.4) * 0.5): frame i = dish
                          yaw -90 deg + (i - 4) * 0.125 rad. Origin = ANTENNA (34.6, -0.15) on the deck plane;
                          the mast stands at game y 1.1 on the hull (the dish projects onto the origin).
@@ -69,93 +70,81 @@ def holdout_slab(dx, dy):
 # ---------------------------------------------------------------------------------------------------------
 # Outer airlock hatch
 # ---------------------------------------------------------------------------------------------------------
+# The inside view (models/interior/doors.py, interior/hatch_*) is the whole pocket door in the 0.6 thick side
+# wall: red collars ly -1.16 .. -0.9 and 0.9 .. 1.16 (relative to h.y), 1.72 high, opening 1.8. The outer
+# wall face (h.x) is seen edge-on in the tilted view, so the outside view is a door frame that stands proud
+# of it: the two collars continued out by OD as jamb posts, a lintel across the top (tops flush with the
+# inner collars, so they read as one frame), a status lamp on the north jamb's camera-facing side, and the
+# interior light spilling onto the doorstep (HULL's landing bump, 0.45 deep) when the door opens.
+OD, OL, CD, CH = 0.24, 0.9, 0.26, 1.72          # frame depth (outwards), half opening, collar depth, height
+
 def render_hatch(side):
     hdef = HATCHES[side]; d = hdef['dir']
-    def U(u, ly, z=0.0): return G(d * u, ly, z)                      # u = outwards
     def ubox(name, u0, y0, u1, y1, z0, z1, m, bevel=0.02):
         a, b = sorted((d * u0, d * u1))
         return gbox(name, a, y0, b, y1, z0, z1, m, bevel)
+    collar = None
     for state in ('anim', 'locked', 'broken'):
         mn.reset(); M = mats(); parts = []; P = lambda o: parts.append(o) or o
-        U0, U1, Y = -0.5, 0.4, 0.9                                    # footprint (the 2D rect)
-        OU0, OU1, OY = -0.31, 0.21, 0.65                              # opening
-        ZT = 0.1
-        # coaming: four strips around the opening, hazard tops, a skirt down into the hull
-        P(ubox('coam_n', U0, -Y, U1, -OY, -0.35, ZT, M['frame'], 0.03))
-        P(ubox('coam_s', U0, OY, U1, Y, -0.35, ZT, M['frame'], 0.03))
-        P(ubox('coam_w', U0, -OY, OU0, OY, -0.35, ZT, M['frame'], 0.03))
-        P(ubox('coam_e', OU1, -OY, U1, OY, -0.35, ZT, M['frame'], 0.03))
-        for (a0, b0, a1, b1) in ((U0 + 0.05, -Y + 0.05, U1 - 0.05, -OY - 0.05), (U0 + 0.05, OY + 0.05, U1 - 0.05, Y - 0.05)):
-            P(ubox('haz', a0, b0, a1, b1, ZT - 0.005, ZT + 0.006, M['hazard'], 0.003))
-        for (a0, a1) in ((U0 + 0.04, OU0 - 0.04), (OU1 + 0.04, U1 - 0.04)):
-            P(ubox('haz', a0, -OY + 0.02, a1, OY - 0.02, ZT - 0.005, ZT + 0.006, M['hazard'], 0.003))
-        for su in (U0 + 0.08, U1 - 0.08):                               # corner bolts
-            for sy in (-Y + 0.08, Y - 0.08):
-                P(gsphere('bolt', d * su, sy, ZT + 0.005, 0.025, M['steel'], scale=(1, 1, 0.5), segs=8))
-        # the shaft below (seen when open): dark walls, a lit strip, ladder rungs
-        P(ubox('shaft_floor', OU0, -OY, OU1, OY, -0.6, -0.55, M['void'], 0.0))
-        P(ubox('shaft_light', OU0 + 0.03, -0.5, OU0 + 0.07, 0.5, -0.56, -0.54, M['shaft_light'], 0.0))
-        for k in range(4):
-            P(ubox('rung', OU0 + 0.12, -0.45 + k * 0.3, OU1 - 0.06, -0.42 + k * 0.3, -0.42, -0.39, M['steel'], 0.005))
-        # leaves
-        leaves = []
-        for sgn in (-1, 1):                                            # -1: north leaf, +1: south leaf
-            y0, y1 = (-OY - 0.03, 0.0) if sgn < 0 else (0.0, OY + 0.03)
-            lv = [ubox('leaf', OU0 - 0.03, y0, OU1 + 0.03, y1, -0.09, -0.03, M['leaf'], 0.012)]
-            for k in range(3):                                         # ribs
-                yy = (y0 + y1) / 2 + (k - 1) * 0.17
-                lv.append(ubox('rib', OU0 + 0.03, yy - 0.025, OU1 - 0.03, yy + 0.025, -0.035, -0.008, M['leaf2'], 0.01))
-            ye = y1 - 0.06 if sgn < 0 else y0                          # chevron edge on the meeting side
-            lv.append(ubox('edge', OU0, ye, OU1, ye + 0.06, -0.035, -0.025, M['hazard'], 0.0))
-            grp = mn.link(bpy.data.objects.new(f'leafgrp{sgn}', None))
-            edge = sgn * (OY + 0.03); grp.location = (0, -edge, 0)          # pivot at the leaf's outer edge (Blender y = -game y)
-            for o in lv:
-                o.parent = grp; o.data.transform(Matrix.Translation((0, edge, 0)))
-            leaves.append((grp, sgn, lv)); parts += lv
-        # lamps on the coaming (inner end)
-        lamps = []
-        for sy in (-Y + 0.13, Y - 0.13):
-            P(gcyl('lamp_base', d * (U0 + 0.16), sy, 0.07, ZT, ZT + 0.03, M['dark'], verts=16, bevel=0.01))
-            lamps.append(P(gsphere('lamp', d * (U0 + 0.16), sy, ZT + 0.04, 0.05,
-                                   M['red'] if state == 'locked' else M['deadlamp'] if state == 'broken' else M['amber'], segs=14)))
-        P(text('eva_txt', 'EVA', d * 0.05, -Y + 0.17, ZT + 0.008, 0.11, M['dark']))
+        collar = worn('collar_red', '#9a4438', 0.5, 0.3, wear=0.9, grime=1.2)
+        # jamb posts (the inner collars continued out through the wall face) and the lintel
+        for (y0, y1) in ((-OL - CD, -OL), (OL, OL + CD)):
+            P(ubox('post', -0.02, y0, OD, y1, -0.08, CH, collar, 0.025))
+            P(ubox('post_hz', 0.03, y0 + 0.04, OD - 0.04, y1 - 0.04, CH - 0.004, CH + 0.008, M['hazard'], 0.003))
+            P(gsphere('bolt', d * (OD - 0.06), (y0 + y1) / 2, CH + 0.004, 0.024, M['steel'], scale=(1, 1, 0.5), segs=8))
+            P(ubox('post_foot', -0.02, y0 - 0.04, OD + 0.05, y1 + 0.04, -0.08, 0.1, M['frame'], 0.02))
+        P(ubox('lintel', -0.02, -OL - 0.01, OD - 0.02, OL + 0.01, CH - 0.24, CH - 0.01, collar, 0.025))
+        P(ubox('lintel_lip', OD - 0.07, -OL, OD, OL, CH - 0.3, CH - 0.2, M['frame'], 0.015))
+        P(text('eva_txt', 'EVA', d * OD * 0.5, 0.25, CH - 0.004, 0.1, M['yellow'], rot=math.pi / 2 * d))
+        for ly in (-0.55, 0.55):
+            P(gsphere('lbolt', d * OD * 0.5, ly, CH - 0.01, 0.022, M['steel'], scale=(1, 1, 0.5), segs=8))
+        # the door leaf in the opening (edge-on, only its threshold shows) and the sill on the doorstep
+        P(ubox('leaf', 0.03, -OL, 0.11, OL, -0.02, CH - 0.24, M['leaf'], 0.012))
+        P(ubox('sill', 0.0, -OL, OD, OL, -0.06, 0.05, M['frame'], 0.015))
+        P(ubox('sill_hz', 0.12, -OL + 0.04, OD - 0.03, OL - 0.04, 0.05, 0.056, M['hazard'], 0.002))
+        # status lamp on the north jamb's south face (faces the camera), keypad under it
+        lamp = M['red'] if state == 'locked' else M['deadlamp'] if state == 'broken' else M['amber']
+        P(ubox('lamp_box', OD * 0.5 - 0.07, -OL - 0.01, OD * 0.5 + 0.07, -OL + 0.04, 1.08, 1.32, M['dark'], 0.015))
+        P(mn.sphere('lamp', 0.05, loc=G(d * OD * 0.5, -OL + 0.05, 1.2), m=lamp, scale=(1, 0.7, 1), segs=14))
+        P(ubox('keypad', OD * 0.5 - 0.055, -OL - 0.01, OD * 0.5 + 0.055, -OL + 0.03, 0.72, 0.92, M['dark'], 0.01))
+        for i in range(3):
+            P(ubox('key', OD * 0.5 - 0.03, -OL + 0.03, OD * 0.5 + 0.03, -OL + 0.04, 0.75 + i * 0.055, 0.78 + i * 0.055, M['steel'], 0.003))
+        P(ubox('face_hz', 0.02, OL + CD - 0.01, OD - 0.02, OL + CD + 0.012, 0.12, 0.3, M['hazard'], 0.004))   # south jamb face
         if state == 'locked':
-            P(ubox('lockbar', OU0 - 0.12, -0.07, OU1 + 0.12, 0.07, 0.08, 0.16, M['steel'], 0.02))
-            for su in (OU0 - 0.06, OU1 + 0.06):
-                P(gcyl('lockpin', d * su, 0, 0.06, 0.15, 0.2, M['red'], verts=12, bevel=0.01))
-            P(gcyl('lockhub', d * (OU0 + OU1) / 2, 0, 0.09, 0.15, 0.22, M['dark'], verts=16, bevel=0.015))
+            P(ubox('lockbar', OD - 0.02, -OL - 0.12, OD + 0.06, OL + 0.12, 0.7, 0.86, M['steel'], 0.02))
+            P(ubox('lockbar_hz', OD + 0.0, -OL + 0.1, OD + 0.065, OL - 0.1, 0.86, 0.866, M['hazard'], 0.002))
+            for ly in (-OL - 0.05, OL + 0.05):
+                P(gcyl('lockpin', d * (OD + 0.02), ly, 0.045, 0.86, 0.92, M['red'], verts=12, bevel=0.01))
         if state == 'broken':
-            P(disc('scorch', d * (-0.05), 0.15, ZT + 0.02, 0.55, M['scorch'], sy=1.1))
-            P(tube('wire', [(d * (U0 + 0.1), 0.5, ZT), (d * (U0 + 0.05), 0.75, ZT + 0.1), (d * (U0 - 0.1), 0.95, ZT + 0.03)], 0.015, M['copper']))
-            P(gsphere('spark', d * (U0 - 0.1), 0.95, ZT + 0.04, 0.035, M['ember'], segs=10))
-            P(mn.box('tape', (0.5, 0.12, 0.012), loc=G(d * (-0.05), -0.35, 0.09), m=M['tape'], bevel=0.003, rot=(0, 0, 0.6)))
-        mn.outline([o for o in parts if o.name.startswith(('coam', 'leaf', 'lockbar', 'lamp_base'))], thickness=0.012)
-        # the hull around the hatch hides the leaves when they slide under the deck (and the coaming's skirt)
-        hold = holdout_slab(hdef['x'], hdef['y'])
-        cut = ubox('cut', OU0, -OY, OU1, OY, -2, 1, None, 0.0)
-        md = hold.modifiers.new('hole', 'BOOLEAN'); md.operation = 'DIFFERENCE'; md.object = cut; md.solver = 'EXACT'
-        bpy.context.view_layer.objects.active = hold; bpy.ops.object.modifier_apply(modifier='hole'); bpy.data.objects.remove(cut)
-        frame_objs = [o for o in parts if o.name.startswith(('coam', 'lamp', 'lock', 'wire', 'spark', 'scorch'))]
+            P(disc('scorch', d * OD * 0.5, -0.2, CH + 0.012, 0.5, M['scorch'], sy=1.3))
+            P(tube('wire', [(d * OD * 0.5, -OL + 0.04, 1.05), (d * (OD + 0.12), -OL + 0.25, 0.7), (d * (OD + 0.08), -OL + 0.45, 0.35)], 0.015, M['copper']))
+            P(gsphere('spark', d * (OD + 0.08), -OL + 0.45, 0.35, 0.035, M['ember'], segs=10))
+            P(mn.box('tape', (0.55, 0.12, 0.012), loc=G(d * OD * 0.5, 0.1, CH + 0.01), m=M['tape'], bevel=0.003, rot=(0, 0, 1.2)))
+            P(ubox('leaf_bent', 0.08, -0.15, 0.2, 0.25, 0.05, CH - 0.3, M['leaf2'], 0.012))     # a buckled leaf edge
+        mn.outline([o for o in parts if o.name.startswith(('post', 'lintel', 'sill', 'lockbar', 'lamp_box'))], thickness=0.012)
+        hold = holdout_slab(hdef['x'], hdef['y'])                     # the hull cuts the posts' feet
+        frame_objs = [o for o in parts]
         s = bpy.context.scene
-        def pose(k, buckle=False):
-            for grp, sgn, lv in leaves:                                # leaves retract into the coaming (2D: they shrink)
-                grp.scale = (1, max(0.001, 1 - k), 1)
-                grp.rotation_euler = (0.0, 0.0, 0.0)
-            if buckle:                                                 # south leaf buckled up at its edge
-                grp, sgn, lv = leaves[1]; grp.rotation_euler = (math.radians(-8), math.radians(5), 0)
         base = f'hull/hatch_{side}'
-        org = {'origin': f'hatch (h.x, h.y) = ({hdef["x"]}, {hdef["y"]}) on the deck plane'}
+        org = {'origin': f'hatch (h.x, h.y) = ({hdef["x"]}, {hdef["y"]}) on the deck plane (the wall\'s outer face); '
+                         f'a door frame on the wall face, up to z {CH}: draw in the wall layer'}
         if state == 'anim':
-            frames = list(range(1, 7))
+            # the door leaf slides open (edge-on: only its top shows under the lintel); interior light spills
+            # out onto the doorstep, as wide as the opening
+            frames = list(range(1, 7)); spills = []
+            for i in range(1, 6):
+                k = i / 5
+                sp = ubox(f'spill{i}', OD + 0.005, -OL * k, 0.44, OL * k, 0.0, 0.004,
+                          halo_mat(f'spillm{i}', '#ffd8a0', 1.2, 0.35 + 0.25 * k), 0.0)
+                spills.append((i, sp)); parts.append(sp)
+            leaf = next(o for o in parts if o.name.startswith('leaf'))
             for i, f in enumerate(frames):
-                s.frame_set(f); pose(i / 5)
-                for grp, _, lv in leaves:
-                    grp.keyframe_insert('scale', frame=f)
-                    for o in lv: o.hide_render = i == 5; o.keyframe_insert('hide_render', frame=f)
-            mn.render(base, objs=frame_objs, frames=frames)
+                s.frame_set(f)
+                for j, sp in spills: sp.hide_render = j != i; sp.keyframe_insert('hide_render', frame=f)
+                leaf.hide_render = i == 5; leaf.keyframe_insert('hide_render', frame=f)
+            mn.render(base, objs=parts, frames=frames)
             manifest_patch(base, {**org, 'note': 'frame i = h.open i/5 (f0 closed, f5 open)'})
         else:
-            pose(0.12 if state == 'broken' else 0.0, buckle=state == 'broken')
             mn.render(f'{base}_{state}', objs=frame_objs)
             manifest_patch(f'{base}_{state}', org)
 

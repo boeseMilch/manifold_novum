@@ -88,13 +88,17 @@ const SHIELD_BUTTONS = [
 const SIDE_CAP = { port: 0, front: 1, star: 2 };    // which capacitor powers that side's shield / cannon
 const SIDE_LABEL = { port: 'Left', front: 'Front', star: 'Right' };
 
-// Hull outline: a nose for the bridge, blisters for the side guns, a skirt for the engine.
+// Hull outline: a nose for the bridge, blisters for the side guns, a skirt for the engine, a doorstep
+// at each outer airlock hatch. It contains every wall (the outer walls are flush with it; the corner
+// chamfers start at the walls' corners), so no wall hangs over space.
 const HULL = [
-  [17.4, -3.2], [27, -3.2], [30.8, 0], [43.4, 1.6], [44.4, 2.6],
+  [17.4, -3.2], [27, -3.2], [30.8, 0], [43.4, 1.6], [44.4, 2.0],
   [44.4, 4.6], [46, 5.5], [46, 8.5], [44.4, 9.4],
-  [44.4, 23.4], [43.4, 24.6], [31.2, 24.6], [30.8, 26.1], [13.6, 26.1], [13.2, 24.1],
-  [1.2, 24.1], [0, 22.9], [0, 9.6], [-1.6, 8.6], [-1.6, 5.6], [0, 4.6], [0, 3.4],
-  [1.4, 2.4], [13.8, 2.4], [13.8, 0],
+  [44.4, 17.95], [44.85, 18.25], [44.85, 20.55], [44.4, 20.85],
+  [44.4, 24.2], [44.0, 24.6], [31.2, 24.6], [30.8, 26.1], [13.6, 26.1], [13.2, 24.1],
+  [0.3, 24.1], [0, 23.8], [0, 20.65], [-0.45, 20.35], [-0.45, 18.05], [0, 17.75],
+  [0, 9.6], [-1.6, 8.6], [-1.6, 5.6], [0, 4.6], [0, 2.8],
+  [0.4, 2.4], [13.6, 2.4], [13.6, 0],
 ];
 // Cannons on the outside of the hull, manned from inside: hatch is the ladder that leads up
 // into the cannon; view: what the camera frames while manning it (center, visible width).

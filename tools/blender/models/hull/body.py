@@ -6,10 +6,11 @@ thickness hangs below: vertical sides down to z = -0.55, then a tucked-in, darke
 In the tilted view that shows as a lit edge band plus the belly under every south-facing edge (the stern,
 the bottom corners, the undersides of the gun blisters); north-facing edges show no thickness at all.
 
-What is visible of it in the game: the rim around the rooms (0.6 .. 1 units), the nose around the bridge
-(with the two bridge windows, the right one cracked and taped), the gun blisters, the spine between the
-decks (under the game's conduits), the stern skirt around the engine, and the edge band/belly below the
-south edges (zone stripes red/white/blue, the ship's name, vents). Inside the room rectangles it is plain
+What is visible of it in the game (see visible()): the two triangles beside the bridge's nose (north of the
+bridge's back wall line), the gun blisters, the doorsteps at the outer airlock hatches, thin strips south of
+the bottom rooms, the stern skirt around the engine, and the edge band/belly below the south edges (zone
+stripes red/white/blue, the ship's name, vents). The rest of the top skin is under the walls (the outer walls
+are flush with HULL) or hidden behind the back walls. Inside the room rectangles it is plain
 plating that the floors cover. Baked in: an armoured trim along the outline, mismatched plates with
 rivets (a few rusty replacements), the three gun mounts (pedestal + bolt ring; the front one on a sponson
 off the nose), nav lights (red port, green starboard, white stern), stencils, duct tape, exhaust soot.
@@ -37,7 +38,19 @@ TRIM = 0.24                              # armoured trim along the outline
 TW, TH = 8.125, 6.0                      # tile size (units): 780 x 576 px
 TX0, TY1 = -2.25, 3.4                    # left edge (game x), top edge (screen units, up)
 COLS, ROWS = 6, 4
-TEXTS = [(7.2, 23.53, 1.8), (37.3, 23.98, 1.2), (16.1, -0.2, 0.6), (7.4, 2.92, 1.4), (37.3, 2.0, 1.4)]   # stencil spots (x, y, half width)
+WALL_T, WALL_H = 0.6, 1.6               # the rooms' walls (js/sprites.js): back walls hide the deck behind them
+
+def visible(x, y, m=0.0):
+    """Is deck point (x, y) on the hull and seen in the game, m units clear of anything that hides it: not
+    under a wall (WALL_T around every room) and not behind a back wall (WALL_H tall, so it hides the deck
+    up to WALL_H * COT north of itself)."""
+    if not point_in_poly(x, y) or dist_to_poly(x, y) < m: return False
+    for x0, y0, x1, y1 in ROOM_RECTS:
+        if x0 - WALL_T - m <= x <= x1 + WALL_T + m and y0 - WALL_T - WALL_H * COT - m <= y <= y1 + WALL_T + m: return False
+    return True
+HIDDEN = []                              # decor placed where it can't be seen (printed by build())
+def seen(name, x, y, m=0.0):
+    if not visible(x, y, m): HIDDEN.append((name, round(x, 2), round(y, 2)))
 
 def offset_poly(pts, d):
     """Polygon pulled inwards by d (bmesh inset), same vertex order."""
@@ -178,22 +191,7 @@ def build():
                        0.03, M['dark'], scale=(1, 1, 0.6)))
         O(gcyl(f'well_{gid}', gx, gy, 0.38, 0.06, 0.1, M['dark'], verts=40, bevel=0.01))
 
-    # -- bridge windows (drawHullDecor), the right one cracked and taped -------------------------------------
-    for wx in WINDOWS:
-        fr = [(wx - 0.52, -3.1), (wx + 0.52, -3.1), (wx + 0.52, -2.5), (wx - 0.52, -2.5)]
-        O(prism(f'win_frame{wx}', fr, -0.04, 0.05, M['trim'], bevel=0.04), True)
-        O(prism(f'win_glass{wx}', [(wx - 0.43, -3.04), (wx + 0.43, -3.04), (wx + 0.43, -2.56), (wx - 0.43, -2.56)], -0.04, 0.055, M['glass'], bevel=0.03))
-        for bx in (-0.15, 0.15):
-            O(gbox('win_bar', wx + bx - 0.02, -3.06, wx + bx + 0.02, -2.54, 0.04, 0.07, M['trim'], bevel=0.008))
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                O(gsphere('win_bolt', wx + sx * 0.47, -2.8 + sy * 0.25, 0.05, 0.025, M['steel'], scale=(1, 1, 0.5), segs=8))
-    for k, (a, L) in enumerate(((0.4, 0.42), (2.2, 0.3), (-1.4, 0.25), (1.2, 0.2))):     # crack (js/decor.js crack at 25.5)
-        cx, cy = 25.62, -2.82
-        O(gbox('crack', cx, cy - 0.006, cx + L, cy + 0.006, 0.056, 0.058, M['crack'], bevel=0))
-        objs[-1].rotation_euler = (0, 0, 0); objs[-1].data.transform(__import__('mathutils').Matrix.Translation(G(cx, cy, 0)) @ __import__('mathutils').Matrix.Rotation(-a, 4, 'Z') @ __import__('mathutils').Matrix.Translation(-G(cx, cy, 0)))
-    t = O(mn.box('win_tape', (0.62, 0.13, 0.01), loc=G(25.55, -2.8, 0.06), m=M['tape'], bevel=0.003, rot=(0, 0, 1.1)))
-    O(mn.box('win_tape2', (0.5, 0.12, 0.01), loc=G(25.7, -2.85, 0.068), m=M['tape'], bevel=0.003, rot=(0, 0, -0.5)))
+    # (the bridge's nose windows are gone: the nose's back wall stands on them in the tilted view)
 
     # -- nav lights (steady), on little stalks off the edge ---------------------------------------------------
     for (lx, ly, col) in NAV_LIGHTS:
@@ -212,50 +210,58 @@ def build():
         h = disc('nav_halo', lx, ly, 0.08, 0.4, halo_mat('navhalo' + col, col, 1.2, 0.5)); halos.append(h); O(h)
 
     # -- stencils and markings on the rim ----------------------------------------------------------------------
-    O(text('name_top', 'MANIFOLD NOVUM', 7.2, 23.53, 0.0, 0.3, M['stencil']))
-    O(text('reg_top', 'MNV-0451', 37.3, 23.98, 0.0, 0.26, M['stencil']))
-    O(text('nostep', 'NO STEP', 16.1, -0.2, 0.004, 0.2, M['stencil'], rot=0.0))
-    O(text('cannon_warn', 'CANNON ARC - KEEP CLEAR', 7.4, 2.92, 0.008, 0.17, M['yellow']))
-    O(text('cannon_warn2', 'CANNON ARC - KEEP CLEAR', 37.3, 2.0, 0.008, 0.17, M['yellow'], rot=-math.atan2(1.6, 12.6)))
-    # hazard chevrons around the blisters (where the gunners climb out)
-    for gx, gy in ((-0.95, 5.0), (-0.95, 9.15), (45.35, 5.05), (45.35, 8.95)):
-        O(gbox('blister_haz', gx - 0.42, gy - 0.08, gx + 0.42, gy + 0.08, -0.01, 0.006, M['hazard'], bevel=0.003))
-    # nose triangles: an intake grille (left) and a sensor box (right)
-    O(gbox('grille_frame', 15.2, -1.25, 16.9, -0.35, -0.03, 0.05, M['trim'], bevel=0.02), True)
-    O(gbox('grille_hole', 15.32, -1.15, 16.78, -0.45, -0.02, 0.055, M['black'], bevel=0.0))
-    for k in range(7):
-        O(gbox('grille_slat', 15.35, -1.12 + k * 0.1, 16.75, -1.08 + k * 0.1, 0.0, 0.06, M['gun'], bevel=0.008))
-    O(gbox('sensor_box', 27.6, -1.6, 28.8, -0.7, -0.02, 0.16, M['gun'], bevel=0.03), True)
-    O(gbox('sensor_lid', 27.7, -1.5, 28.7, -0.8, 0.16, 0.19, M['trim'], bevel=0.015), True)
-    O(gsphere('sensor_eye', 28.45, -1.15, 0.2, 0.08, emit_mat('sensor', '#ffb84a', 1.0), segs=16))
-    O(gsphere('sensor_eye2', 28.0, -1.15, 0.2, 0.045, emit_mat('sensor2', '#5fd6a0', 1.0), segs=12))
-    O(mn.box('sensor_tape', (0.6, 0.12, 0.01), loc=G(28.0, -1.4, 0.19), m=M['tape'], bevel=0.003, rot=(0, 0, 0.25)))
-    # duct tape on the rim: the ship's running joke (strips across seams and an X over a dent)
-    for (tx, ty, tl, ta) in ((5.0, 2.9, 0.7, 0.6), (11.6, 2.7, 0.55, -0.4), (0.3, 16.2, 0.6, 1.3), (44.1, 12.0, 0.55, 1.7),
-                             (34.0, 24.15, 0.6, 0.3), (2.8, 23.7, 0.5, -0.5), (29.2, -1.6, 0.5, 0.9)):
+    # What of the top skin shows in the game (see visible()): the nose triangles beside the bridge's nose (north
+    # of the bridge's back wall line), the gun blisters, the doorsteps at the hatches and the thin strips south of
+    # the bottom rooms. The rest of the rim is under the walls or hidden behind the back walls, so the ship's
+    # name and registration are on the stern faces (side_text below), not on top.
+    # hazard stripes on the blisters (where the gunners climb out): along both diagonal edges, inside the trim
+    for gid in ('port', 'star'):
+        gx, gy, _ = GUNS[gid]
+        for (a, b) in (((0, 4.6), (-1.6, 5.6)), ((-1.6, 8.6), (0, 9.6))) if gid == 'port' else (((44.4, 4.6), (46, 5.5)), ((46, 8.5), (44.4, 9.4))):
+            mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2; dx, dy = b[0] - a[0], b[1] - a[1]; L = math.hypot(dx, dy)
+            nx, ny = -dy / L, dx / L
+            if nx * (gx - mx) + ny * (gy - my) < 0: nx, ny = -nx, -ny             # inwards, towards the gun
+            cx, cy = mx + nx * 0.42, my + ny * 0.42
+            O(mn.box('blister_haz', (0.95, 0.17, 0.016), loc=G(cx, cy, 0.0), m=M['hazard'], bevel=0.003, rot=(0, 0, -math.atan2(dy, dx))))
+            for k in (-1, 1): seen('blister_haz', cx + dx / L * 0.475 * k, cy + dy / L * 0.475 * k, 0.1)
+    # nose triangles: an intake grille (left) and a sensor box (right), north of the bridge's back wall line
+    O(gbox('grille_frame', 16.4, -2.0, 17.35, -1.45, -0.03, 0.05, M['trim'], bevel=0.02), True)
+    O(gbox('grille_hole', 16.5, -1.92, 17.25, -1.53, -0.02, 0.055, M['black'], bevel=0.0))
+    for k in range(4):
+        O(gbox('grille_slat', 16.52, -1.9 + k * 0.1, 17.23, -1.86 + k * 0.1, 0.0, 0.06, M['gun'], bevel=0.008))
+    for (x, y) in ((16.4, -2.0), (17.35, -1.45), (16.4, -1.45)): seen('grille', x, y, 0.05)
+    O(gbox('sensor_box', 27.0, -2.0, 27.9, -1.42, -0.02, 0.16, M['gun'], bevel=0.03), True)
+    O(gbox('sensor_lid', 27.08, -1.92, 27.82, -1.5, 0.16, 0.19, M['trim'], bevel=0.015), True)
+    O(gsphere('sensor_eye', 27.6, -1.71, 0.2, 0.07, emit_mat('sensor', '#ffb84a', 1.0), segs=16))
+    O(gsphere('sensor_eye2', 27.25, -1.71, 0.2, 0.04, emit_mat('sensor2', '#5fd6a0', 1.0), segs=12))
+    O(mn.box('sensor_tape', (0.5, 0.11, 0.01), loc=G(27.45, -1.55, 0.19), m=M['tape'], bevel=0.003, rot=(0, 0, 0.25)))
+    for (x, y) in ((27.0, -2.0), (27.9, -2.0), (27.9, -1.42)): seen('sensor', x, y, 0.05)
+    # duct tape: the ship's running joke. On top (blisters, nose) and across the stern faces (the edge band)
+    for (tx, ty, tl, ta) in ((-0.35, 6.1, 0.55, 1.3), (44.75, 8.1, 0.5, -1.2), (27.2, -2.45, 0.45, 0.3)):
         O(mn.box('tape', (tl, 0.12, 0.012), loc=G(tx, ty, 0.01), m=M['tape'], bevel=0.003, rot=(0, 0, -ta)))
-    for a in (0.7, -0.7):
-        O(mn.box('tapex', (0.5, 0.12, 0.012), loc=G(40.2, 24.05, 0.014), m=M['tape'], bevel=0.003, rot=(0, 0, a)))
-    # a riveted repair patch on the right shoulder and one at the stern
-    for (px, py, pw, ph, pa) in ((39.0, 1.75, 1.0, 0.55, -0.12), (17.2, 25.75, 1.1, 0.45, 0.05)):
-        o = O(mn.box('patch', (pw, ph, 0.03), loc=G(px, py, 0.0), m=patchm, bevel=0.01, rot=(0, 0, pa)), True)
-        pts = [(px + math.cos(-pa) * sx * (pw / 2 - 0.07) - math.sin(-pa) * sy * (ph / 2 - 0.07),
-                py + math.sin(-pa) * sx * (pw / 2 - 0.07) + math.cos(-pa) * sy * (ph / 2 - 0.07), 0.03) for sx in (-1, 0, 1) for sy in (-1, 1)]
-        O(many_spheres('patch_rivets', pts, 0.026, M['steel'], scale=(1, 1, 0.5)))
-    # scuffs and old scorch marks on the rim
-    for (sx, sy, sr) in ((3.2, 2.75, 0.4), (42.6, 10.2, 0.3), (0.3, 21.8, 0.3), (31.0, 24.2, 0.35)):
+        seen('tape', tx, ty, 0.12)
+    def face_tape(name, x, y, z, tl, ta):                                     # on a south (stern) face, tilted by ta
+        return O(mn.box(name, (tl, 0.12, 0.012), loc=G(x, y + 0.008, z), m=M['tape'], bevel=0.003, rot=(math.radians(90), ta, 0)))
+    for (tx, ty, ta) in ((2.8, 24.1, -0.5), (11.0, 24.1, 0.4), (34.0, 24.6, 0.3), (42.2, 24.6, -0.6)):
+        face_tape('tape_side', tx, ty, -0.35, 0.5, ta)
+    for a in (0.7, -0.7):                                                      # an X over a dent
+        face_tape('tapex', 40.2, 24.6 + 0.004, -0.33, 0.45, a)
+    # old scorch marks next to the side guns
+    for (sx, sy, sr) in ((-1.25, 6.0, 0.3), (45.65, 6.0, 0.28)):
         O(disc('old_scorch', sx, sy, 0.012, sr, M['soot'], sy=0.8))
+        seen('scorch', sx, sy, 0.0)
 
     # -- greebles on the rim (where no floor covers the hull): access panels, vent slots, arrows ----------------
     rnd = random.Random(5); spots = []
     for _ in range(6000):
         x, y = rnd.uniform(-1.5, 46), rnd.uniform(-3.2, 26.1)
-        if not point_in_poly(x, y) or in_room(x, y, 0.32) or dist_to_poly(x, y) < TRIM + 0.3: continue
+        if not visible(x, y, 0.3) or dist_to_poly(x, y) < TRIM + 0.3: continue
         if any(math.hypot(x - a, y - b) < 2.2 for a, b in spots): continue
         if any(math.hypot(x - gx, y - gy) < 1.0 for gx, gy, _ in GUNS.values()): continue
-        if any(abs(x - wx) < 0.8 and y < -2.3 for wx in WINDOWS) or (14.9 < x < 17.2 and -1.5 < y < -0.1) or (27.3 < x < 29.1 and -1.9 < y < -0.4): continue
-        if abs(y - 19.3) < 1.3 and (x < 1 or x > 43.4): continue                   # the outer airlock hatches
-        if any(abs(x - tx) < hw and abs(y - ty) < 0.35 for tx, ty, hw in TEXTS): continue  # stencils
+        if (16.1 < x < 17.7 and -2.3 < y < -1.1) or (26.7 < x < 28.2 and -2.8 < y < -1.1): continue   # grille, sensor, tape
+        if abs(y - 19.3) < 1.6 and (x < 1 or x > 43.4): continue                   # the outer airlock hatches
+        if any(math.hypot(x - a, y - b) < 0.6 for a, b in ((-0.35, 6.1), (44.75, 8.1), (-1.25, 6.0), (45.65, 6.0))): continue
+        if any(abs(x - gx) < 1.0 and (abs(y - (gy - 1.9)) < 0.6 or abs(y - (gy + 1.9)) < 0.6) for gx, gy, _ in GUNS.values()): continue  # blister stripes
         if math.hypot(x - ANTENNA[0], y - (ANTENNA[1] + 1.25)) < 0.8: continue
         spots.append((x, y))
     for i, (x, y) in enumerate(spots):
@@ -300,6 +306,7 @@ def build():
         O(gsphere('collar_bolt', bx, 26.21, -0.6, 0.04, M['steel'], segs=10))
 
     mn.outline(outl, thickness=0.02)
+    for h in HIDDEN: print('[body] WARNING not visible in the game:', *h)
     return objs, halos
 
 def tile_window(r, c):

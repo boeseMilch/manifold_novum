@@ -510,17 +510,17 @@ function drawFloorDecor(t) {
   if (!solid('props/toolbox', 37.0, 6.4)) toolbox(U(37.0), U(6.4), -0.3);
   if (!flat('props/crack_stargun', 34.0, 8.4)) { crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62); }
   // --- Left airlock room
-  stencil(U(2.2), U(19.2), 'EVA', -Math.PI / 2, 0.45);
+  stencil(U(1.45), U(19.2), 'EVA', -Math.PI / 2, 0.45);                 // (by the hatch, clear of the power line to the cannon)
   // --- Reactor
   ctx.save(); ctx.setLineDash([12, 8]);
   ctx.strokeStyle = 'rgba(210,166,46,0.55)'; ctx.lineWidth = 5;
   ctx.strokeRect(U(REACTOR.x - REACTOR.w / 2 - 0.6), U(REACTOR.y - REACTOR.h / 2 - 0.5), U(REACTOR.w + 1.2), U(REACTOR.h + 1.3));
   ctx.restore();
-  stencil(U(22.2), U(21.2), 'DO NOT LICK THE REACTOR', 0, 0.2);
+  stencil(U(22.3), U(21.1), 'DO NOT LICK THE REACTOR', 0, 0.15);       // (between the engine cables)
   if (!solid('props/cable_engine_l', 20.8, 20.6, { sortY: 21 })) cable([[U(20.8), U(20.6)], [U(19.9), U(22.3)], [U(20.3), U(23.8)]], '#c9662e', 5, 82);      // to the engine
   if (!solid('props/cable_engine_r', 23.6, 20.6, { sortY: 21 })) cable([[U(23.6), U(20.6)], [U(24.5), U(22.3)], [U(24.2), U(23.8)]], '#d2a62e', 4, 83);
   // --- Right airlock room
-  stencil(U(42.2), U(19.4), 'EVA', Math.PI / 2, 0.45);
+  stencil(U(42.95), U(19.4), 'EVA', Math.PI / 2, 0.45);
   if (!flat('props/crack_starlock', 39.2, 17.6)) { crack(U(39.2), U(17.6), U(1.4), 0.2, 91); tapeX(U(39.2), U(17.6), U(0.6), 92); }
 }
 
@@ -530,7 +530,7 @@ function drawPropDecor(t) {
   const onTop = (z, sortY) => ({ sortY, depthBias: 0.03 });           // things on a desk / table: lifted by its height
   const plates = typeof hz === 'undefined' || hz.plates > 0 ? 'full' : 'empty';
   mapTable(U(22.2), U(6.4), t);
-  if (!S('props/donut_box', 23.0, 6.9, TABLE_Z, onTop(TABLE_Z, 6.45))) donutBox(U(23.0), U(6.9), 0.3);
+  if (!S('props/donut_box', 22.6, 6.65, TABLE_Z, onTop(TABLE_Z, 6.45))) donutBox(U(23.0), U(6.9), 0.3);   // (sprite: on the table top, not over its edge)
   if (!S('props/papers_maptable', 21.6, 6.0, TABLE_Z, onTop(TABLE_Z, 6.41))) papers(U(21.6), U(6.0), 57);
   // Bridge: the helm runs on coffee (the mug: systems/mug_*, origin on the floor, lands on the desk)
   const full = typeof hz === 'undefined' || hz.coffee >= 1;

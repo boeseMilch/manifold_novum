@@ -128,8 +128,14 @@ function fireCannon(g) {
 // (MUZZLE_Z above its cannon's pivot, which is up on the nose's roof for the front cannon: GUN_Z in
 // js/sprites.js) and sinks to the ground plane, where the enemies and asteroids are drawn, over its first
 // SHELL_DROP units. shellZ(s, back): its height `back` units behind its head (for the tail).
-const MUZZLE_Z = 0.4, SHELL_DROP = 7;
-function muzzleZ(g) { return MUZZLE_Z + ((typeof GUN_Z !== 'undefined' && GUN_Z[g.id]) || 0); }
+// The front cannon is also drawn GUN_DY south of its pivot (on the nose wall's top): muzzleZ lowers the
+// height by what that shift lifts on screen (lift = z cos50 / sin50), so a shell or spark drawn at the
+// gameplay point lands on the drawn muzzle and its gunner.
+const MUZZLE_Z = 0.4, SHELL_DROP = 7, LIFT_PER_Z = 1 / Math.tan(50 * Math.PI / 180);
+function muzzleZ(g) {
+  const z = (typeof GUN_Z !== 'undefined' && GUN_Z[g.id]) || 0, dy = (typeof GUN_DY !== 'undefined' && GUN_DY[g.id]) || 0;
+  return MUZZLE_Z + z - dy / LIFT_PER_Z;
+}
 function shellZ(s, back = 0) {
   if (!s.z) return 0;
   const k = clamp(((SHELL_LIFE - s.life) * SHELL_SPEED - back) / SHELL_DROP, 0, 1);

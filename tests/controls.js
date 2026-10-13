@@ -160,4 +160,29 @@ process.exitCode = failed ? 1 : 0;
   tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
   check(!s.broken, 'holding E on a broken part repairs it');
 }
+// --- mouse look: after the mouse moved (or you fired at it) you face it for a while; arrows still win
+{
+  const G = loadGame(NAMES); G.startMission('practice'); const me = G.me, k = me.input.keys, m = me.input.mouse;
+  me.x = 22.2; me.y = 4.5; tickN(G, 2);
+  const toMouse = () => Math.atan2(m.wy - me.y, m.wx - me.x), near = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))) < 0.05;
+  m.wx = me.x + 3; m.wy = me.y + 1; m.look = 1; k.add('KeyA'); tickN(G, 20);
+  check(near(me.face, toMouse()), 'walking left after moving the mouse to the right: you look at the mouse (strafing / backing up)');
+  check(m.look === 0, 'the mouse movement is used up by the tick');
+  tickN(G, 60 * 2.2);
+  check(Math.abs(Math.abs(me.face) - Math.PI) < 0.1, 'a couple of seconds after the mouse last moved you face the way you walk again');
+  m.look = 1; k.add('ArrowUp'); tickN(G, 5);
+  check(Math.abs(me.face + Math.PI / 2) < 1e-6, 'arrow keys still win over the mouse');
+  k.delete('ArrowUp'); tickN(G, 5);
+  check(near(me.face, toMouse()), '…and when you let go of them you look at the mouse you just moved');
+  tickN(G, 60 * 2.2);
+  me.inv.weapon = 'laser'; me.inv.cd = 0; G.boarding.bolts.length = 0;
+  m.wx = me.x + 4; m.wy = me.y; m.rightClick = true; G.simTick(DT); tickN(G, 30);
+  check(G.boarding.bolts.some(b => b.owner === 'crew' && b.vx > 0) && near(me.face, toMouse()), 'firing at the mouse while walking away keeps you facing it, no shooting with your back');
+  k.delete('KeyA');
+  // multiplayer: the server turns you to your mouse from the input messages
+  const S = loadGame(NAMES); S.netServer.init('intro'); S.mission.active = false; S.netServer.addCrew(1, 'A'); const [A] = S.crew;
+  const mx = A.x - 3, my = A.y - 3;
+  S.netServer.input(1, { keys: ['KeyD'], pressed: [], mouse: { wx: mx, wy: my, look: 1 } }); for (let i = 0; i < 20; i++) S.simTick(DT);
+  check(A.x > mx + 3.5 && near(A.face, Math.atan2(my - A.y, mx - A.x)), 'multiplayer: the server turns you towards your mouse after it moved (walking away from it)');
+}
 process.exitCode = failed ? 1 : 0;

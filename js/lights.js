@@ -278,7 +278,7 @@ function gameLighting(t) {
 
   // --- muzzle flashes, bolts and blasts in flight ------------------------------------------------------
   for (const g of GUNS) if (g.flash > 0)
-    add({ x: g.x + Math.cos(g.aim) * 1.2, y: g.y + Math.sin(g.aim) * 1.2, z: 0.6 + gunZ(g), color: [1.0, 0.75, 0.45], radius: 5, intensity: 2.6 * g.flash });
+    add({ x: g.x + Math.cos(g.aim) * 1.2, y: g.y + gunDY(g) + Math.sin(g.aim) * 1.2, z: 0.6 + gunZ(g), color: [1.0, 0.75, 0.45], radius: 5, intensity: 2.6 * g.flash });
   if (typeof boarding !== 'undefined') for (const b of boarding.bolts) {
     if (b.wrench) continue;
     const col = b.owner === 'alien' ? [0.6, 1.0, 0.35] : b.owner === 'saboteur' ? [0.35, 0.88, 1.0] : b.heavy ? [0.6, 0.85, 1.0] : [1.0, 0.32, 0.22];
