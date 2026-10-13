@@ -14,7 +14,7 @@ function netSerialize() {
   return {
     time,
     crew: crew.map(c => ({
-      id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, face: c.face, walk: c.walk, mode: c.mode,
+      id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, face: c.face, walk: c.walk, mode: c.mode, lamp: !!c.lamp,
       gun: c.gun?.id || null,
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
       repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen, e: c.prompt.e },
@@ -146,7 +146,7 @@ const netServer = {
   },
   removeCrew(id) {
     const i = crew.findIndex(c => c.id === id);
-    if (i >= 0) { const c = crew[i]; if (c.inv.weapon) ITEMS.push({ kind: c.inv.weapon, x: c.x, y: c.y }); if (c.inv.item) ITEMS.push({ kind: c.inv.item, x: c.x + 0.3, y: c.y }); crew.splice(i, 1); }
+    if (i >= 0) { const c = crew[i]; if (c.inv.weapon) ITEMS.push({ kind: c.inv.weapon, ...dropSpot(c.x, c.y) }); if (c.inv.item) ITEMS.push({ kind: c.inv.item, ...dropSpot(c.x + 0.3, c.y) }); crew.splice(i, 1); }
   },
   input(id, m) {
     const c = crew.find(c => c.id === id);

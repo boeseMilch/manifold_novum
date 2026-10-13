@@ -63,7 +63,7 @@ const CREW_COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a
 let crewIdCounter = 1;
 function makeCrew(name = 'Crew', x = 22.2, y = 4.5) {
   const id = crewIdCounter++;
-  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside', cover: 0, health: 'ok', hurtT: 0, treat: null,
+  return { id, name, color: CREW_COLORS[(id - 1) % CREW_COLORS.length], x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside', cover: 0, health: 'ok', hurtT: 0, treat: null, lamp: false,
            input: makeInput(), inv: { weapon: null, item: null, cd: 0 }, ui: { panel: null, override: null, hits: [] }, prompt: null, hover: null };
 }
 const crew = [makeCrew('You')];
@@ -84,7 +84,7 @@ const DEBUG_OVERVIEW = location.hash === '#overview' || /[&#]ov(&|$)/.test(locat
 let prompt = null, time = 0, debugOpen = false, hover = null;
 // Debug: index.html#do=3,6 runs debug-menu entries 3 and 6 on start (see DEBUG_ITEMS);
 // adding &w=4 fast-forwards the simulation by 4 seconds first (handy for screenshots).
-const DEBUG_DO = (location.hash.match(/^#do=([\da-zA-Z,]+)/) || [])[1]?.split(',') || [];
+const DEBUG_DO = (location.hash.match(/^#do=([\da-zA-Z,-]+)/) || [])[1]?.split(',') || [];
 const DEBUG_WARP = +(location.hash.match(/&w=([\d.]+)/) || [])[1] || 0;
 const playerOutside = () => isOutside(player);
 
@@ -445,6 +445,7 @@ function runCommand(cmd) {
   else if (kind === 'reboot') rebootSwitch(arg);
   else if (kind === 'practice') runPractice(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
+  else if (kind === 'lamp') player.lamp = !player.lamp;   // the helmet lamp (L): drawing only, see js/lights.js
 }
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
 
@@ -488,6 +489,7 @@ const DEBUG_ITEMS = [
   { key: 'h', label: 'Hull breach in this room (or the nearest)', run: () => { const r = roomAt(player.x, player.y); breachRoom(r && BREACH_SPOTS[r.id] ? r.id : 'portLock'); } },
   { key: 'j', label: 'Surge, no gravity, plasma fire (here)', run: () => { const r = roomAt(player.x, player.y) || ROOMS[0]; surgeColumn(r.col); failGravity(r.id); const s = SYSTEMS.filter(s => !burning(s)).sort((a, b) => Math.hypot(a.x - player.x, a.y - player.y) - Math.hypot(b.x - player.x, b.y - player.y))[0]; igniteSystem(s, true); } },
   { key: 'k', label: 'Spacewalk jobs: mines, spores, debris, antenna, canister', run: () => { spawnMineDrone('port'); spawnSpores('star'); jamCannon('port'); knockAntenna(); spawnCanister('port'); } },
+  { key: '-', code: 'Minus', label: 'Helmet lamp on / off (also L)', run: () => { player.lamp = !player.lamp; } },
   { key: 'l', label: 'Ship-wide: flare, storm, coolant leak, AI glitch', run: () => { startFlare(); startStorm(); startCoolantLeak(); startGlitch(); } },
   { key: 'z', label: 'Stealth fighter left, tractor tug right', run: () => { combatSpawn('stealth', 'port', true); combatSpawn('tractor', 'star', true); } },
   { key: 'c', label: 'Organic: grappler left, leeches + spore mother right, leviathan', run: () => { combatSpawn('grappler', 'port', true); combatSpawn('mother', 'star', true); spawnLeeches('star'); startLeviathan(); } },
@@ -527,7 +529,7 @@ function updateDebug() {
   const m = menuLayout();
   for (const [i, it] of DEBUG_ITEMS.filter(it => !it.hidden).entries()) {
     const hitRow = mouse.click && mouse.x > m.x && mouse.x < m.x + m.w && mouse.y > m.y + 44 + i * m.rowH && mouse.y < m.y + 44 + (i + 1) * m.rowH;
-    if (pressed.has(/\d/.test(it.key) ? 'Digit' + it.key : 'Key' + it.key.toUpperCase()) || hitRow) { sendCommand(['debug', it.key]); debugOpen = false; mouse.click = false; mouse.down = false; return; }
+    if (pressed.has(it.code || (/\d/.test(it.key) ? 'Digit' + it.key : 'Key' + it.key.toUpperCase())) || hitRow) { sendCommand(['debug', it.key]); debugOpen = false; mouse.click = false; mouse.down = false; return; }
   }
 }
 function drawDebugMenu() {
@@ -648,6 +650,17 @@ function drawBlasterCharge(c, t) {
   g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, full ? '#9cd8ff' : '#ffb07a'); g.addColorStop(1, 'rgba(120,200,255,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2, 0, TAU); ctx.fill();
 }
+// The helmet lamp's glow (the beam itself is a light, js/lights.js): a small cool-white dot at the
+// front of the helmet, only when it faces the camera (else the head hides it).
+function drawHelmetGlow(c, sprited) {
+  const s = Math.sin(c.face);
+  if (s < -0.25) return;
+  const [cx, cy] = crewDrawAt(c), z = sprited ? GFX.lift(1.22) : 0;   // (the brim of the helmet)
+  const x = (cx + Math.cos(c.face) * 0.2) * T, y = (cy + s * 0.12 - z) * T, r = T * 0.24, k = clamp((s + 0.25) / 0.6, 0, 1);
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);   // (a pale blue halo, so it reads on the white helmet)
+  g.addColorStop(0, `rgba(255,255,255,${k})`); g.addColorStop(0.18, `rgba(225,240,255,${0.9 * k})`); g.addColorStop(0.45, `rgba(140,190,255,${0.45 * k})`); g.addColorStop(1, 'rgba(120,180,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+}
 function drawSafetyLine(c) {                  // spacewalk: safety line back to the nearest hatch
   const h = HATCHES.reduce((a, b) => Math.hypot(c.x - a.outside[0], c.y - a.outside[1]) < Math.hypot(c.x - b.outside[0], c.y - b.outside[1]) ? a : b);
   const [hx, hy] = [h.x * T, h.y * T], [px, py] = [c.x * T, c.y * T];
@@ -711,7 +724,6 @@ function render(t) {
   if (!parts.walls) drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
   if (!G) { drawSpineDecor(t); drawInteriorWalls(); }
   if (!parts.floors) drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
-  for (const r of ROOMS) drawRoomLabel(r);
   if (!G) drawLightPools();
   drawLeviathanWarning(t);
   drawFloorDecor(t);
@@ -778,6 +790,7 @@ function render(t) {
     }
     if (c.mode === 'gun' && c.cover > 0) drawCover(c.gun, c.cover);
     if (c.charge != null) drawBlasterCharge(c, t);
+    if (c.lamp && standing(c) && c.mode !== 'gun') drawHelmetGlow(c, sprited.has(c));
     if (c !== me && crew.length > 1) upright(view, c.x, c.y, sprited.has(c) ? 1.35 : 0.45, () => {   // name tags for the others
       ctx.font = `700 ${T * 0.26}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, 0, 0);
@@ -837,7 +850,7 @@ function drawHUD() {
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText('WASD move · Arrows aim · E / left click: interact · Space / right click: weapon · Tab: overview · M: mute · `: debug', 200, 18);
+  ctx.fillText('WASD move · Arrows aim · E / left click: interact · Space / right click: weapon · Tab: overview · L: lamp · M: mute · `: debug', 200, 18);
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
     : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
@@ -944,6 +957,7 @@ function clientUpdate(dt) {
   const m = localInput.mouse;
   [m.wx, m.wy] = screenToWorld(m.x, m.y);
   if (GFX.on) { const p = GFX.pickAt(m.x, m.y); if (p) [m.wx, m.wy] = p; }   // pointing at a raised sprite (crew): its ground point
+  if (!debugOpen && localInput.pressed.has('KeyL')) sendCommand(['lamp']);   // helmet lamp (before the debug menu, whose 'l' is something else)
   updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
   music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0);

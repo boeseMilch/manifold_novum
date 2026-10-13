@@ -378,17 +378,6 @@ function drawFloors(rects, tintOf) {
   ctx.restore();
 }
 
-function drawRoomLabel(r) {
-  if (GFX.on && drawRoomPlaque(r)) return;          // a plaque on the back wall (js/interior.js)
-  const q = r.rects[0];
-  ctx.save();
-  ctx.font = `700 ${T * 0.36}px system-ui, sans-serif`; ctx.textBaseline = 'top';
-  ctx.letterSpacing = '3px';
-  ctx.fillStyle = r.zone.label; ctx.globalAlpha = 0.4;
-  ctx.fillText(r.name.toUpperCase(), (q.x + 0.4) * T, (q.y + 0.35) * T);
-  ctx.restore();
-}
-
 // Status lamp: green = open/ready, red = closed, amber blink = busy.
 function lamp(x, y, state, t) {
   const col = state === 'open' ? '#47e07a' : state === 'busy' ? (Math.sin(t * 14) > 0 ? '#ffb347' : '#6b4a20') : '#e2574c';

@@ -85,6 +85,7 @@ this should feel close to playing solo.
 | Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), thrown wrench, hold to spray the extinguisher |
 | In a cannon | mouse to aim, left click / Space to fire, hold right click / Shift to raise cover, R or the button to reload (1 energy), the CLIMB DOWN button to leave |
 | Tab | hold for a ship overview |
+| L | helmet lamp on / off: a spot from your helmet where you face (follows the mouse); others see it too. Just a light, for looking around (and checking the sprites' normals) |
 | M | mute (or the speaker button, top left) |
 | P | practice panel (in practice mode) |
 | ` | debug menu (spawn threats, teleport, …) |

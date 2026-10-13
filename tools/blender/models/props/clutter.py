@@ -53,12 +53,12 @@ def on_lid(lid, o, x, y, dz=-0.002):
 # ---------------------------------------------------------------------------
 # Crates
 # ---------------------------------------------------------------------------
-CRATES = [   # name, game x, y, w, h, angle, colour, label   (decor.js drawPropDecor; dock.js for cargo/loot)
-    ('crate_ammo_port', 11.6, 4.5, 1.0, 0.9, 0.05, '#8a7a4a', 'AMMO'),
-    ('crate_blank_port', 12.8, 4.4, 0.8, 0.8, -0.1, '#8a7a4a', None),
+CRATES = [   # name, game x, y, w, h, angle, colour, label   (CLUTTER in js/ship.js, drawn in decor.js; dock.js for cargo/loot)
+    ('crate_ammo_port', 11.6, 3.88, 1.0, 0.9, 0.05, '#8a7a4a', 'AMMO'),
+    ('crate_blank_port', 12.8, 3.83, 0.8, 0.8, -0.1, '#8a7a4a', None),
     ('crate_snax', 12.3, 5.6, 0.9, 0.8, 0.25, '#7a8a5a', 'SNAX'),
-    ('crate_ammo_star', 42.4, 3.6, 1.0, 0.9, -0.05, '#8a7a4a', 'AMMO'),
-    ('crate_misc', 41.7, 10.4, 0.9, 0.9, 0.15, '#6a6f7a', 'MISC'),
+    ('crate_ammo_star', 43.25, 3.12, 1.0, 0.9, -0.05, '#8a7a4a', 'AMMO'),
+    ('crate_misc', 41.6, 10.97, 0.9, 0.9, 0.15, '#6a6f7a', 'MISC'),
     ('crate_plates_port', 12.6, 22.4, 1.0, 0.9, 0.1, '#6a6f7a', 'PLATES'),
     ('crate_coolant', 11.4, 22.6, 0.8, 0.7, -0.2, '#4a8aa0', 'COOLANT'),
     ('crate_tape', 32.0, 22.6, 1.0, 0.9, 0.2, '#6a6f7a', 'TAPE'),
@@ -494,7 +494,7 @@ def bag_job():
 
 @job('socks')
 def socks_job():
-    """Washing line in the reactor room (decor.js socks(15.0, 19.0, 24.6)): origin (17.0, 24.6)."""
+    """Washing line in the reactor room (CLUTTER.sockPoleL / R in js/ship.js, stands 4 apart): origin between them."""
     k = Kit(); cols = ['#e2574c', '#e8e4dc', '#5f9ad6', '#e8c34f', '#e2574c']
     Z = 1.05; pole = worn('pole', '#8a8f99', 0.4, 0.7, grime=0.5)
     for sx in (-2, 2):                            # two mop handles taped to floor stands

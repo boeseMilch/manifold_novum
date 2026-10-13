@@ -27,6 +27,7 @@
 // - Dynamic lights from the game state: fires, the reactor, screens, muzzle flashes, bolts and
 //   blasts, explosions (combat.fx clustered), sparks of broken systems, power surges, energy on the
 //   power lines, the engine's flickering blue plume, shields, enemy weak spots and engines, the leviathan, the jump drive spooling up.
+//   The crew's helmet lamps (L, per crew member: c.lamp): spot beams where they face, with shadows.
 
 const LIGHT_TUNING = {
   outside: [0.36, 0.4, 0.5],                       // hull and space: low, cold
@@ -45,6 +46,12 @@ const LIGHT_TUNING = {
   // screen-space shadows took the bell and the hull's own edge for occluders and blacked it all out
   engine: { out: 1.8, len: 1.6, z: 0.6, radius: 9, intensity: 1.4, color: [0.35, 0.62, 1.0], spool: 1.3, spoolColor: [0.55, 0.8, 1.0], shadow: false },
   fire: { z: 0.55, radius: 4.2, intensity: 2.0, color: [1.0, 0.5, 0.16], plasma: [0.72, 0.38, 1.0] },
+  // the helmet lamp (L, per crew member; drawing only): a cool white spot from the helmet where they
+  // face, tilted down a little, plus a faint glow on the helmet itself
+  helmet: { z: 1.32, fwd: 0.28, tilt: -0.4, cone: 0.72, radius: 8.5, intensity: 2.0, color: [0.86, 0.93, 1.0], glow: 0.5,
+            // outside there's no floor under you: what the beam can hit is the hull beside and below you (the
+            // airlock housings, blisters, cannons), close and low, so it points down more and wraps further
+            out: { tilt: -0.6, wrap: 0.3 } },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -230,8 +237,15 @@ function gameLighting(t) {
     const k = 1 - lamp[colAtX(c.x)];
     if (k > 0.05) add({ x: c.x, y: c.y + 0.15, z: 1.45, color: [0.75, 0.85, 1.0], radius: 2.6, intensity: 0.4 * k, wrap: 0.3 });
   }
-  // flashlights in an ion storm: a spot from each crew member inside, where they face
-  if (storm && typeof crew !== 'undefined') for (const c of crew) if (c.mode === 'inside' && standing(c))
+  // helmet lamps (toggled with L): inside, on spacewalks, in the hatch; the shadows keep the beam
+  // off what's behind a wall (or under the hull, from outside)
+  if (typeof crew !== 'undefined') for (const c of crew) if (c.lamp && standing(c) && c.mode !== 'gun') {
+    const H = Lt.helmet, cx = Math.cos(c.face), cy = Math.sin(c.face), out = c.mode === 'eva';
+    add({ x: c.x + cx * H.fwd, y: c.y + cy * H.fwd, z: H.z, dir: [cx, cy, out ? H.out.tilt : H.tilt], cone: H.cone, color: H.color, radius: H.radius, intensity: H.intensity, wrap: out ? H.out.wrap : 0.08, shadow: true });
+    add({ x: c.x + cx * 0.45, y: c.y + cy * 0.45, z: H.z, color: H.color, radius: 0.9, intensity: H.glow, wrap: 0.4 });
+  }
+  // flashlights in an ion storm: a spot from each crew member inside, where they face (unless their helmet lamp is on)
+  if (storm && typeof crew !== 'undefined') for (const c of crew) if (c.mode === 'inside' && standing(c) && !c.lamp)
     add({ x: c.x + Math.cos(c.face) * 0.3, y: c.y + Math.sin(c.face) * 0.3, z: 1.1, dir: [Math.cos(c.face), Math.sin(c.face), -0.28], cone: 0.42, color: [0.85, 0.92, 1.0], radius: 7, intensity: 1.6, wrap: 0.1, shadow: true });
 
   // --- alarm beacons: two opposite beams turning on each room's back wall ----------------------------

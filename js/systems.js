@@ -91,35 +91,85 @@ function useEnergy(i, line) {
 
 // ---------------------------------------------------------------------------
 // Power lines: the cables actually carry the energy. Reactor → each capacitor (feed), and each
-// capacitor → its shield button and its cannon ladder. A line glows while its capacitor holds
-// charge; energy runs along it as a pulse when it's delivered or used.
+// capacitor → its shield button and its cannon. A line glows while its capacitor holds charge;
+// energy runs along it as a pulse when it's delivered or used.
+// Each line's route starts and ends in a fitting (POWER_FITTINGS; sprites power/*, drawn in js/cables.js):
+//   plug  a socket on a machine's face (capacitor cabinets, the reactor, the shield buttons)
+//   box   a conduit box on a wall where the cable goes in;  riser: one on a lower-deck back wall whose
+//         conduit climbs into the spine (the line comes out of a box on the upper deck's near wall)
+// (x, y): the point on the face / wall at floor level, a: the way the cable leaves it. The cable starts
+// REACH from it. 'hide' in a route: the next stretch runs inside the walls (not drawn, and no length: a
+// pulse jumps through it, so linePoint(l, 0.5), the splice spot for surges, is always on the floor).
+// The cannon lines end in a box on the room wall next to their cannon; outside, a jack (power/jack_*)
+// carries them on to the cannon's mount.
 // ---------------------------------------------------------------------------
-const POWER_LINES = [
-  { id: 'feed0', cap: 0, feed: true, pts: [[20.3, 20.2], [18.6, 21.2], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.6], [7.0, 22.1]] },
-  { id: 'feed1', cap: 1, feed: true, pts: [[24.1, 20.2], [25.4, 21.6], [26.2, 23.0], [27.0, 24.4]] },
-  { id: 'feed2', cap: 2, feed: true, pts: [[24.1, 19.8], [27.5, 20.4], [29.6, 19.8], [30.5, 19.6], [33.5, 20.6], [36.0, 21.6], [37.4, 22.4]] },
-  { id: 'shield_port', cap: 0, pts: [[6.4, 22.1], [6.6, 20.0], [7.0, 17.4], [7.0, 15.8]] },
-  { id: 'shield_front', cap: 1, pts: [[27.4, 24.4], [28.9, 22.8], [29.0, 18.5], [26.0, 16.6], [22.6, 15.9]] },
-  { id: 'shield_star', cap: 2, pts: [[37.6, 22.4], [37.4, 20.0], [37.2, 17.4], [37.2, 15.8]] },
-  { id: 'gun_port', cap: 0, pts: [[5.8, 22.4], [3.0, 21.2], [2.2, 18.0], [2.0, 15.0], [2.0, 11.4], [1.6, 9.4]] },
-  { id: 'gun_front', cap: 1, pts: [[27.4, 24.6], [29.6, 23.0], [29.8, 18.0], [29.6, 11.4], [28.6, 6.0], [27.2, 1.5], [25.6, -1.2]] },
-  { id: 'gun_star', cap: 2, pts: [[38.4, 22.6], [41.8, 21.0], [42.6, 18.0], [42.6, 15.0], [42.6, 11.4], [43.0, 9.2]] },
-].map(l => {
+const FIT_REACH = { plug: 0.40, box: 0.48, riser: 0.48 };
+const powerFit = (kind, x, y, dir) => ({ kind, x, y, a: { E: 0, S: 0.5, W: 1, N: -0.5 }[dir] * Math.PI });   // dir: compass on screen (N = up)
+const POWER_ROUTES = [
+  { id: 'feed0', cap: 0, feed: true, route: [powerFit('plug', 20.3, 20.0, 'W'), [18.6, 21.1], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.5], powerFit('plug', 7.48, 22.6, 'E')] },
+  { id: 'feed1', cap: 1, feed: true, route: [powerFit('plug', 24.1, 20.25, 'E'), [25.3, 21.4], [25.45, 24.2], powerFit('plug', 26.12, 24.9, 'W')] },
+  { id: 'feed2', cap: 2, feed: true, route: [powerFit('plug', 24.1, 19.6, 'E'), [27.5, 20.2], [29.6, 19.8], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
+  { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, 16.4], powerFit('plug', 6.6, 15.4, 'W')] },
+  { id: 'shield_front', cap: 1, route: [powerFit('plug', 27.88, 24.7, 'E'), [28.45, 23.8], [28.4, 17.8], [27.4, 16.6], [23.6, 16.2], powerFit('plug', 22.6, 15.4, 'E')] },
+  { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, 16.4], powerFit('plug', 36.8, 15.4, 'W')] },
+  { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.4, 21.8], [2.5, 18.6], powerFit('riser', 2.5, 15.0, 'S'), 'hide',
+                                    powerFit('box', 2.5, 11.5, 'N'), [2.4, 7.2], [1.6, 5.95], powerFit('box', 0.6, 5.95, 'E')] },
+  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 25.1, 'E'), [28.95, 24.4], powerFit('riser', 28.95, 15.0, 'S'), 'hide',
+                                     powerFit('box', 28.4, 11.5, 'N'), [28.4, 6.0], [27.2, 1.6], [25.6, 0.3], [24.2, -0.9], powerFit('box', 24.2, -2.4, 'S')] },
+  { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [41.6, 21.6], [42.6, 18.2], [43.35, 16.4], powerFit('riser', 43.35, 15.0, 'S'), 'hide',
+                                    powerFit('box', 42.35, 11.5, 'N'), [42.35, 7.0], [42.8, 5.75], powerFit('box', 43.8, 5.75, 'W')] },
+];
+const POWER_FITTINGS = [];
+// Rounded corners (radius r) on a polyline, so the cable bends instead of kinking.
+function filletPath(P, r = 0.35, steps = 5) {
+  if (P.length < 3) return P.slice();
+  const out = [P[0]];
+  for (let i = 1; i < P.length - 1; i++) {
+    const [a, b, c] = [P[i - 1], P[i], P[i + 1]];
+    const l1 = Math.hypot(a[0] - b[0], a[1] - b[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+    const k = Math.min(r, l1 * 0.45, l2 * 0.45);
+    if (k < 0.01) { out.push(b); continue; }
+    const p1 = [b[0] + (a[0] - b[0]) / l1 * k, b[1] + (a[1] - b[1]) / l1 * k], p2 = [b[0] + (c[0] - b[0]) / l2 * k, b[1] + (c[1] - b[1]) / l2 * k];
+    for (let j = 0; j <= steps; j++) {
+      const t = j / steps, u = 1 - t;
+      out.push([p1[0] * u * u + b[0] * 2 * t * u + p2[0] * t * t, p1[1] * u * u + b[1] * 2 * t * u + p2[1] * t * t]);
+    }
+  }
+  out.push(P[P.length - 1]);
+  return out;
+}
+const POWER_LINES = POWER_ROUTES.map(l => {
+  // runs: the visible stretches between 'hide's; each starts and ends REACH out of its fittings, with a short
+  // straight lead out of the fitting before the first bend
+  const runs = [[]], fits = [];
+  for (const it of l.route) {
+    if (it === 'hide') { runs.push([]); continue; }
+    const run = runs[runs.length - 1];
+    if (Array.isArray(it)) { run.push(it); continue; }
+    const r = FIT_REACH[it.kind], dx = Math.cos(it.a), dy = Math.sin(it.a);
+    const exit = [it.x + dx * r, it.y + dy * r], lead = [it.x + dx * (r + 0.15), it.y + dy * (r + 0.15)];
+    if (run.length) run.push(lead, exit); else run.push(exit, lead);
+    fits.push({ ...it, line: l.id, cap: l.cap, feed: !!l.feed });
+  }
+  const smooth = runs.map(r => filletPath(r));
+  const pts = [], hidden = [];                        // hidden[i]: the segment pts[i-1] → pts[i] runs inside a wall
+  smooth.forEach((r, j) => r.forEach((p, i) => { pts.push(p); hidden.push(j > 0 && i === 0); }));
   let len = 0; const seg = [0];
-  for (let i = 1; i < l.pts.length; i++) { len += Math.hypot(l.pts[i][0] - l.pts[i - 1][0], l.pts[i][1] - l.pts[i - 1][1]); seg.push(len); }
-  return { ...l, len, seg };
+  for (let i = 1; i < pts.length; i++) { if (!hidden[i]) len += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(len); }
+  POWER_FITTINGS.push(...fits);
+  return { id: l.id, cap: l.cap, feed: l.feed, pts, runs: smooth, hidden, len, seg };
 });
 const LINE = Object.fromEntries(POWER_LINES.map(l => [l.id, l]));
-function linePoint(l, k) {                          // point at fraction k (0..1) along a power line
+// Point at fraction k (0..1) along a power line, by the length of its visible stretches (the bits inside the
+// walls take no time).
+function linePoint(l, k) {
   const d = clamp(k, 0, 1) * l.len;
-  let i = 1; while (i < l.seg.length - 1 && l.seg[i] < d) i++;
+  let i = 1; while (i < l.seg.length - 1 && (l.seg[i] < d || l.hidden[i])) i++;
   const q = (d - l.seg[i - 1]) / ((l.seg[i] - l.seg[i - 1]) || 1);
   return [lerp(l.pts[i - 1][0], l.pts[i][0], q), lerp(l.pts[i - 1][1], l.pts[i][1], q)];
 }
-// With sprites (GFX on) the cables lie on the floor in the 2D 'mid' layer (lit like the floor), clipped to
-// the floors so they run under the walls and the spine instead of over them; the energy running along a
-// live cable glows in the unlit 'glow' layer (still under the crew), and clamp sprites hold the cable
-// down along the way and where it disappears under a machine.
+// With sprites (GFX on) the energy running along a live cable glows in the unlit 'glow' layer (still under
+// the crew), clipped to the floors so it doesn't show over the walls and the spine.
 function floorClip(g) {                               // clip g (world transform set) to the floors, minus the strip the near walls' tops cover
   if (!(GFX.on && typeof WALLS !== 'undefined' && WALLS)) return;
   g.beginPath(); for (const r of [...ROOM_RECTS, ...DOORWAYS]) g.rect(L(r.x), L(r.y), L(r.w), L(r.h)); g.clip();
@@ -131,47 +181,48 @@ function floorClip(g) {                               // clip g (world transform
 function powerLineLive(l) {
   return !capBroken(l.cap) && (l.feed ? power.reactor.fuel > 0 && !broken(REACTOR) : CAPACITORS[l.cap].charge > 0);
 }
+// GFX on: js/cables.js (lit 3D cables, Blender fittings). Classic: flat strokes along the visible stretches,
+// a small box for each fitting, clamps along the way.
 function drawPowerLines(t) {
-  ctx.save(); floorClip(ctx);
+  if (GFX.on && typeof drawCables3d === 'function' && drawCables3d(t)) return;
   for (const l of POWER_LINES) {
     const dead = capBroken(l.cap), live = powerLineLive(l);
-    const path = () => { ctx.beginPath(); l.pts.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y)))); };
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    path(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 11; ctx.save(); ctx.translate(2, 3); ctx.stroke(); ctx.restore();
-    path(); ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.stroke();
-    path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? (GFX.on ? '#a8832c' : '#b8902e') : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
-    if (live && !GFX.on) {                            // energy flowing (slowly) towards the far end (GFX: drawPowerGlow)
-      ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
-      path(); ctx.strokeStyle = 'rgba(255,236,160,0.85)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
+    for (const run of l.runs) {
+      const path = () => { ctx.beginPath(); run.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y)))); };
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      path(); ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 11; ctx.save(); ctx.translate(2, 3); ctx.stroke(); ctx.restore();
+      path(); ctx.strokeStyle = OUT; ctx.lineWidth = 9; ctx.stroke();
+      path(); ctx.strokeStyle = dead ? '#5a2a26' : live ? '#b8902e' : '#4a4a44'; ctx.lineWidth = 6; ctx.stroke();
+      if (live) {                                     // energy flowing (slowly) towards the far end
+        ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
+        path(); ctx.strokeStyle = 'rgba(255,236,160,0.85)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
+      }
     }
-  }
-  ctx.restore();
-  for (const l of POWER_LINES) {
-    const at = (d) => {                               // a clamp d along the line, turned with it
-      const [x, y] = linePoint(l, d / l.len), [ax, ay] = linePoint(l, Math.max(0, d - 0.1) / l.len), [bx, by] = linePoint(l, Math.min(l.len, d + 0.1) / l.len);
-      return [x, y, Math.atan2(by - ay, bx - ax)];
-    };
-    const spots = [];
-    for (let d = 2.5; d < l.len - 1; d += 3.5) spots.push(at(d));
-    if (GFX.on) for (const d of [0.55, l.len - 0.55]) {   // where it goes under a machine (or into a wall): one more clamp, so it reads as plugged in
-      const [x, y, a] = at(d);
-      if (GFX.on && typeof WALLS !== 'undefined' && WALLS && [...ROOM_RECTS, ...DOORWAYS].some(r => inRect(x, y, r))) spots.push([x, y, a]);
-    }
-    for (const [x, y, a] of spots) {
-      if (spr('systems/power_clamp', GFX.frameIndex('systems/power_clamp', a), x, y, 0, { sortY: y - 0.3 })) continue;
+    for (let d = 2.5; d < l.len - 1; d += 3.5) {        // clamps
+      const [x, y] = linePoint(l, d / l.len);
       rr(L(x) - 4, L(y) - 4, 8, 8, 2); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(1.2);
     }
   }
+  for (const f of POWER_FITTINGS) {                     // where it plugs in / goes into the wall
+    const live = powerLineLive(LINE[f.line]), r = FIT_REACH[f.kind];
+    ctx.save(); ctx.translate(L(f.x), L(f.y)); ctx.rotate(f.a);
+    rr(0, -8, r * T * 0.6, 16, 3); ctx.fillStyle = f.kind === 'plug' ? '#3a3f4a' : '#4a8090'; ctx.fill(); stroke(1.5);
+    ctx.beginPath(); ctx.arc(5, -3, 2.5, 0, TAU); ctx.fillStyle = live ? '#ffd27a' : '#2b303a'; ctx.fill();
+    ctx.restore();
+  }
 }
-// GFX on: the energy on the live cables, glowing (in the 'glow' layer: unlit, under the crew).
+// GFX on: the energy on the live cables, glowing (in the 'glow' layer: unlit, under the crew) on the cable's
+// indicator window.
 function drawPowerGlow(t) {
   ctx.save(); floorClip(ctx);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (const l of POWER_LINES) {
     if (!powerLineLive(l)) continue;
-    ctx.beginPath(); l.pts.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y))));
-    ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
-    ctx.strokeStyle = 'rgba(255,226,140,0.75)'; ctx.lineWidth = 2.5; ctx.stroke(); ctx.setLineDash([]);
+    for (const run of l.runs) {
+      ctx.beginPath(); run.forEach(([x, y], i) => (i ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y))));
+      ctx.setLineDash([3, 14]); ctx.lineDashOffset = -t * 18;
+      ctx.strokeStyle = 'rgba(255,240,190,0.85)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+    }
   }
   ctx.restore();
 }
@@ -221,16 +272,18 @@ function grab(kind) {
   inv[slot] = kind; sfx.clank();
 }
 // Somewhere on a fixed floor (a room or an airlock chamber), so a dropped item never ends
-// up somewhere unreachable like a doorway.
+// up somewhere unreachable like a doorway, and never inside a crate or furniture (SOLIDS).
 function dropSpot(x, y) {
   const floors = [...ROOM_RECTS, ...DECK_LOCKS.map(Lk => Lk.chamber), ...(typeof dockRects === 'function' ? dockRects() : [])];
-  if (floors.some(q => inRect(x, y, q, -0.3))) return { x, y };
+  const free = (px, py) => floors.some(q => inRect(px, py, q, -0.3)) && !SOLIDS.some(S => inRect(px, py, S, CREW_R + 0.05));
   let best = null, bd = Infinity;
-  for (const q of floors) {
+  if (floors.some(q => inRect(x, y, q, -0.3))) best = { x, y };
+  else for (const q of floors) {
     const px = clamp(x, q.x + 0.5, q.x + q.w - 0.5), py = clamp(y, q.y + 0.5, q.y + q.h - 0.5), d = Math.hypot(px - x, py - y);
     if (d < bd) { bd = d; best = { x: px, y: py }; }
   }
-  return best;
+  const p = nearestFree(best.x, best.y, free);       // (null: already free)
+  return p ? { x: p[0], y: p[1] } : best;
 }
 const near = (x, y, r = REACH) => Math.hypot(player.x - x, player.y - y) <= r;
 

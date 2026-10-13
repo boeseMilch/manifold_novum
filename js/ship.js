@@ -143,6 +143,38 @@ const FURNITURE = {
 // The treadmill's belt: walkable, and it carries you towards the back (+y).
 const TREADMILL = R(39.51, 21.15, 40.09, 22.0), BELT_K = 0.5;   // the belt runs at half your walking speed
 
+// Clutter standing on the floor (crates, the toolbox, the snack machine...; drawn in js/decor.js and
+// friends at (x, y)): footprint w × h, turned by a (radians, as drawn). Solid too: the box around the
+// turned footprint, trimmed halfway back to the unturned one (the corners of a turned crate's bounding
+// box are empty floor). Flat or tiny things (papers, cracks, nuts, ducks, the cat, the kitchen stools)
+// stay walk-through; tests/clutter.js checks that every floor sprite is one or the other.
+const CLUTTER = {
+  ammoPort: { x: 11.6, y: 3.88, w: 1.0, h: 0.9, a: 0.05 },    // kitchen (left cannon room): crates by the snack machine,
+  blankPort: { x: 12.8, y: 3.83, w: 0.8, h: 0.8, a: -0.1 },   //   pushed back against the wall (no gap to get stuck in)
+  snax: { x: 12.3, y: 5.6, w: 0.9, h: 0.8, a: 0.25 },
+  snack: { x: 10.5, y: 3.85, w: 1.1, h: 0.8, a: 0 },          // the snack machine (SNACK, js/hazards.js)
+  plant: { x: 14.95, y: 10.75, w: 0.5, h: 0.5, a: 0 },        // bridge: Steve, in his pot
+  ammoStar: { x: 43.25, y: 3.12, w: 1.0, h: 0.9, a: -0.05 },  // bedroom (right cannon room): along the back wall,
+  toolbox: { x: 42.1, y: 2.97, w: 0.84, h: 0.48, a: -0.3 },  //   right of the lockers, into the corner
+  sleepingBag: { x: 35.0, y: 3.06, w: 1.8, h: 0.7, a: 0.12 }, //   bunk five, left of the bunks
+  misc: { x: 41.6, y: 10.97, w: 0.9, h: 0.9, a: 0.15 },       //   against the front wall, clear of the cannon's power line
+  platesA: { x: 12.6, y: 22.4, w: 1.0, h: 0.9, a: 0.1 },      // bathroom (left airlock): hull plates (PLATE_CRATES[0])
+  coolant: { x: 11.4, y: 22.6, w: 0.8, h: 0.7, a: -0.2 },     //   coolant canisters (COOLANT_CRATE)
+  fuel: { x: 17.4, y: 19.6, w: 1.3, h: 0.9, a: 0.08 },        // reactor room: spare fuel cells (FUEL_CRATE)
+  patch: { x: 20.0, y: 23.0, w: 0.67, h: 0.5, a: 0 },         //   the patch board (PATCH_BOARD, js/minigames.js)
+  sockPoleL: { x: 15.15, y: 24.6, w: 0.28, h: 0.28, a: 0 },   //   the washing line's two stands (props/socks, drawn between them;
+  sockPoleR: { x: 19.15, y: 24.6, w: 0.28, h: 0.28, a: 0 },   //   the right one close to the wall: no gap to get stuck in)
+  tape: { x: 32.0, y: 22.6, w: 1.0, h: 0.9, a: 0.2 },         // gym (right airlock): supply crates, bottom left
+  platesB: { x: 33.1, y: 22.8, w: 0.9, h: 0.8, a: -0.1 },     //   hull plates (PLATE_CRATES[1])
+  blankStar: { x: 32.4, y: 21.6, w: 0.7, h: 0.7, a: 0.5 },
+  weightRack: { x: 41.5, y: 15.36, w: 1.5, h: 0.62, a: 0 },   //   the dumbbell rack against the back wall
+};
+function clutterRect(c) {
+  const C = Math.abs(Math.cos(c.a)), S = Math.abs(Math.sin(c.a));
+  const hw = ((c.w * C + c.h * S) / 2 + c.w / 2) / 2, hh = ((c.w * S + c.h * C) / 2 + c.h / 2) / 2;
+  return R(c.x - hw, c.y - hh, c.x + hw, c.y + hh);
+}
+
 // Things you can't walk through.
 const SOLIDS = [
   R(REACTOR.x - REACTOR.w / 2, REACTOR.y - REACTOR.h / 2, REACTOR.x + REACTOR.w / 2, REACTOR.y + REACTOR.h / 2),
@@ -152,6 +184,7 @@ const SOLIDS = [
   ...CAPACITORS.map(c => R(c.x - 0.8, c.y - 0.45, c.x + 0.8, c.y + 0.45)),
   ...SHIELD_BUTTONS.map(b => R(b.x - 0.4, b.y - 0.35, b.x + 0.4, b.y + 0.35)),
   ...Object.values(FURNITURE),
+  ...Object.values(CLUTTER).map(clutterRect),
 ];
 
 // Hull polygon geometry (used for spacewalks and for hits).

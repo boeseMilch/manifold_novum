@@ -1,9 +1,9 @@
 """The gym's dumbbell rack (js/decor.js, right airlock room = the gym, top right corner).
 
-Purely decorative (not in SOLIDS: walking into it changes nothing), so it sits in a corner that no
-walkway, power line or interaction uses: against the back wall (y 15.0) between the wall beacon (x 40.6)
-and the right cannon's power line (x 42.6). Origin: the footprint's centre on the floor, game (41.5, 15.36).
-Kept low (0.8) so it never covers the room plaque or the wall lamp above it.
+Solid (CLUTTER.weightRack in js/ship.js, its footprint), in a corner that no walkway, power line or
+interaction uses: against the back wall (y 15.0) between the wall beacon (x 40.6) and the right cannon's
+power line (x 42.6). Origin: the footprint's centre on the floor, game (41.5, 15.36).
+Kept low (0.8) so it never covers the wall lamp above it.
 
     blender -b --factory-startup --python tools/blender/models/props/gym.py [-- quick]
 """

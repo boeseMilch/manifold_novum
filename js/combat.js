@@ -407,6 +407,31 @@ function drawGoo() {
 // Impacts flare up the cells around them and ripple outward; the shot itself is
 // shown being drained into the shield.
 const SHIELD_GROW = 0.1;                             // shields grow out of / shrink back into their generator
+// With the sprites (GFX.on) each shield is a 3D dome instead (GFX.dome, js/gfx.js): the upper half of an
+// ellipsoid standing off that side of the hull, its base on the deck plane along the curtain the shots
+// stop at (shieldX / shieldYFront: the hit tests don't look at the dome), its crown leaning over the
+// rooms on that side and fading out there. Faint where you look onto it, bright where it's seen edge-on.
+// c: centre, r: radii (x, y, z), out: the side it stands on; fade: from q·out = fade[0] (gone, over the
+// crown) to fade[1] (full).
+const SHIELD_DOMES = {
+  port: { c: [8, 12.5, 0], r: [11.8, 24, 6.5], out: [-1, 0], fade: [-0.1, 0.5] },
+  star: { c: [SHIP_W - 8, 12.5, 0], r: [11.8, 24, 6.5], out: [1, 0], fade: [-0.1, 0.5] },
+  front: { c: [22.2, 6.2, 0], r: [12.7, 12, 6.5], out: [0, -1], fade: [-0.1, 0.5] },
+};
+const SHIELD_WARN = 2.5;                             // its last seconds: it flickers (about to drop)
+function domePoint(D, x, y, z) {                     // (x, y, z) pushed out (or in) onto the dome's surface
+  const q = [(x - D.c[0]) / D.r[0], (y - D.c[1]) / D.r[1], (z - D.c[2]) / D.r[2]], n = Math.hypot(...q) || 1;
+  return { x: D.c[0] + D.r[0] * q[0] / n, y: D.c[1] + D.r[1] * q[1] / n, z: D.c[2] + D.r[2] * q[2] / n };
+}
+function drawShieldDome(side, s, gen, grow, hits, t) {
+  const D = SHIELD_DOMES[side];
+  const warn = s.up < SHIELD_WARN ? 0.55 + 0.45 * (Math.sin(t * 38) > -0.3 ? 1 : 0) * (0.6 + 0.4 * Math.sin(t * 9)) : 1;
+  GFX.dome({
+    ...D, color: s.up < SHIELD_WARN ? [0.62, 0.78, 1.0] : [0.5, 0.8, 1.0], strength: warn, time: t, cell: 0.95,
+    grow: [gen.x, gen.y, 0.6, grow < 1 ? 40 * grow : 1e4],
+    hits: hits.map(h => ({ ...domePoint(D, h.x, h.y, 0.7), age: h.t / 0.8, heavy: h.heavy })),
+  });
+}
 function drawShields(t) {
   for (const side of ['port', 'front', 'star']) {
     const s = combat.shields[side], hits = combat.shieldHits.filter(h => h.side === side);
@@ -414,6 +439,7 @@ function drawShields(t) {
     // reveal: a growing (then shrinking) circle around the shield generator (its emitter on the hull)
     const gen = emitterOf(side);
     const grow = s.up > 0 ? Math.min(1, (s.age || 0) / SHIELD_GROW, s.up / SHIELD_GROW) : 0;
+    if (GFX.on) { if (grow > 0) drawShieldDome(side, s, gen, grow, hits, t); continue; }
     const R = 24 * grow;
     const near = (x, y) => clamp((R - Math.hypot(x - gen.x, y - gen.y)) / 2.5, 0, 1);
     if (side === 'front') {

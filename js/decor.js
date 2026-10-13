@@ -1,5 +1,6 @@
 // Clutter: the ship is old, overloaded and held together by duct tape.
-// Purely visual for now (nothing here blocks movement). Coordinates in layout units.
+// The crates and other clutter standing on the floor are solid (CLUTTER in js/ship.js); the rest is
+// purely visual. Coordinates in layout units.
 
 // ---------------------------------------------------------------------------
 // Sprites (js/gfx.js) for the ship's machinery, furniture and clutter. Every old 2D drawing of a
@@ -10,7 +11,7 @@
 function spr(name, frame, x, y, z = 0, o) { return GFX.on && GFX.sprite(name, frame, x, y, z, o); }
 const sprReady = (...names) => GFX.on && names.every(n => GFX.ready(n));
 // Labels in the world. With GFX on there are two kinds:
-// - worldText(): text that belongs to the world (room plaques, capacitor readouts, a VENT tag, the cat's
+// - worldText(): text that belongs to the world (capacitor readouts, a VENT tag, the cat's
 //   z z z): a small upright sprite (GFX.text, billboard), depth-tested, so whoever walks in front hides it.
 // - labelAt() / later(): text that must stay readable over everything (CLICK TO TAKE, OVERCHARGED,
 //   BROKEN): drawn later on the top canvas (render() flushes it via drawInteriorWalls), upright and lifted
@@ -293,10 +294,13 @@ function duck(x, y, a) {
 }
 
 // Ship cat, asleep on the warm floor. Breathes.
+const catScared = () => typeof combat !== 'undefined' && typeof time === 'number' && combat.decals.some(d => d.r > 0.8 && d.hot != null && time - d.hot >= 0 && time - d.hot < 4);
 function catSprite(x, y, t) {                       // props/cat_*: origin CAT on the floor
   if (!sprReady('props/cat_sleep', 'props/cat_hide', 'props/cat_stare', 'props/cat_pet', 'props/cat_flick')) return false;
   const o = { pick: [0.45, 0.6] };
-  if (typeof hz !== 'undefined' && hz.breaches.some(b => !b.tarp)) { spr('props/cat_hide', 0, CAT.x, CAT.y + 0.125, 0, o); return true; }
+  // a big hit on the ship (the bang): it flattens into a fur pancake for ~4 s. combat.decals and time are
+  // synced to every client; large hits are the r 1.1 decals, `hot` = when they hit (js/combat.js shipHit)
+  if (catScared()) { spr('props/cat_hide', 0, CAT.x, CAT.y + 0.125, 0, o); return true; }
   if (typeof fires !== 'undefined' && fires.some(f => Math.hypot(f.x - CAT.x, f.y - CAT.y) < 7)) { spr('props/cat_stare', 0, CAT.x, CAT.y, 0, o); return true; }
   const petted = typeof luck !== 'undefined' && luck.pet > 0, fl = (t % 9) / 0.9;   // now and then a tail flick (0.9 s every 9 s)
   if (petted) spr('props/cat_pet', Math.floor(t * 8) % 6, CAT.x, CAT.y, 0, o);
@@ -314,7 +318,7 @@ function catSprite(x, y, t) {                       // props/cat_*: origin CAT o
 function cat(x, y, t) {
   if (catSprite(x, y, t)) return;
   // hull breach somewhere: it hides (only a pair of eyes under a blanket of fur)
-  if (typeof hz !== 'undefined' && hz.breaches.some(b => !b.tarp)) {
+  if (catScared()) {                                // (a big hit just now: see catSprite)
     ctx.save(); ctx.translate(x, y + 6);
     ctx.beginPath(); ctx.ellipse(0, 0, T * 0.26, T * 0.14, 0, 0, TAU); ctx.fillStyle = '#c98a3c'; ctx.fill(); stroke(2);
     for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(s * 5, -2, 3, 0, TAU); ctx.fillStyle = '#ffe08a'; ctx.fill(); ctx.beginPath(); ctx.arc(s * 5, -2, 1.2, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }
@@ -506,8 +510,9 @@ function drawFloorDecor(t) {
   if (!flat('props/crack_bridge', 25.0, 8.0)) { crack(U(25.0), U(8.0), U(2.0), -0.5, 54); tapeStrip(U(25.0), U(8.0), U(0.6), 1.0, 55); tapeStrip(U(25.6), U(7.7), U(0.6), 1.2, 56); }
   stencil(U(22.2), U(10.4), 'NO RUNNING ON THE BRIDGE', 0, 0.26, 'rgba(232,236,244,0.25)');
   // --- Right cannon room
-  if (!solid('props/sleeping_bag', 35.0, 4.5)) sleepingBag(U(35.0), U(4.5), 0.12);                 // bunk five
-  if (!solid('props/toolbox', 37.0, 6.4)) toolbox(U(37.0), U(6.4), -0.3);
+  const K = CLUTTER;                                                    // (crates and co.: positions and footprints in js/ship.js)
+  if (!solid('props/sleeping_bag', K.sleepingBag.x, K.sleepingBag.y)) sleepingBag(U(K.sleepingBag.x), U(K.sleepingBag.y), K.sleepingBag.a);   // bunk five
+  if (!solid('props/toolbox', K.toolbox.x, K.toolbox.y)) toolbox(U(K.toolbox.x), U(K.toolbox.y), K.toolbox.a);
   if (!flat('props/crack_stargun', 34.0, 8.4)) { crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62); }
   // --- Left airlock room
   stencil(U(1.45), U(19.2), 'EVA', -Math.PI / 2, 0.45);                 // (by the hatch, clear of the power line to the cannon)
@@ -540,28 +545,30 @@ function drawPropDecor(t) {
   if (!S('props/sticky_yellow', 21.65, -2.1, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.65), U(-2.1), 0.2);
   if (!S('props/sticky_pink', 21.95, -1.95, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.95), U(-1.95), -0.3, '#f29bc4');
   if (!S('props/duck_star', 42.6, 6.4)) duck(U(42.6), U(6.4), Math.PI);
-  // Left cannon room: ammo crates
-  if (!S('props/crate_ammo_port', 11.6, 4.5)) crate(U(11.6), U(4.5), U(1.0), U(0.9), 0.05, '#8a7a4a', 'AMMO');
-  if (!S('props/crate_blank_port', 12.8, 4.4)) crate(U(12.8), U(4.4), U(0.8), U(0.8), -0.1, '#8a7a4a');
-  if (!S('props/crate_snax', 12.3, 5.6)) crate(U(12.3), U(5.6), U(0.9), U(0.8), 0.25, '#7a8a5a', 'SNAX');
-  // Right cannon room
-  if (!S('props/crate_ammo_star', 42.4, 3.6)) crate(U(42.4), U(3.6), U(1.0), U(0.9), -0.05, '#8a7a4a', 'AMMO');
-  if (!S('props/crate_misc', 41.7, 10.4)) crate(U(41.7), U(10.4), U(0.9), U(0.9), 0.15, '#6a6f7a', 'MISC');
+  // Left cannon room: ammo crates (positions and footprints: CLUTTER in js/ship.js, solid like furniture)
+  const K = CLUTTER, box = (name, k, col, label) => { const c = K[k]; if (!S(name, c.x, c.y)) crate(U(c.x), U(c.y), U(c.w), U(c.h), c.a, col, label); };
+  box('props/crate_ammo_port', 'ammoPort', '#8a7a4a', 'AMMO');
+  box('props/crate_blank_port', 'blankPort', '#8a7a4a');
+  box('props/crate_snax', 'snax', '#7a8a5a', 'SNAX');
+  // Right cannon room (along the walls, out of the way)
+  box('props/crate_ammo_star', 'ammoStar', '#8a7a4a', 'AMMO');
+  box('props/crate_misc', 'misc', '#6a6f7a', 'MISC');
   // Left airlock room: supply crates (the hull plates: PLATE_CRATES, the coolant: COOLANT_CRATE)
-  if (!S(`systems/plates_a_${plates}`, 12.6, 22.4, 0, { pick: [0.5, 0.8] })) crate(U(12.6), U(22.4), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
-  if (!S('systems/coolant', 11.4, 22.6, 0, { pick: [0.4, 0.7] })) crate(U(11.4), U(22.6), U(0.8), U(0.7), -0.2, '#4a8aa0', 'COOLANT');
+  if (!S(`systems/plates_a_${plates}`, K.platesA.x, K.platesA.y, 0, { pick: [0.5, 0.8] })) crate(U(K.platesA.x), U(K.platesA.y), U(1.0), U(0.9), 0.1, '#6a6f7a', 'PLATES');
+  if (!S('systems/coolant', K.coolant.x, K.coolant.y, 0, { pick: [0.4, 0.7] })) crate(U(K.coolant.x), U(K.coolant.y), U(0.8), U(0.7), -0.2, '#4a8aa0', 'COOLANT');
   // Reactor
   if (!S('props/duck_reactor', 18.4, 23.1)) duck(U(18.4), U(23.1), 0.5);
   cat(U(CAT.x), U(CAT.y), t);
-  if (!S('props/socks', 17.0, 24.6, 0, { f: Math.floor(t * 4) % 6 })) socks(U(15.0), U(19.0), U(24.6), t);
+  const pl = K.sockPoleL, pr = K.sockPoleR;            // (the washing line: solid stands, CLUTTER in js/ship.js)
+  if (!S('props/socks', (pl.x + pr.x) / 2, pl.y, 0, { f: Math.floor(t * 4) % 6 })) socks(U(pl.x), U(pr.x), U(pl.y), t);
   fuelCrate(U(17.4), U(19.6), 0.08);
   // Right airlock room
-  if (!S('props/crate_tape', 32.0, 22.6)) crate(U(32.0), U(22.6), U(1.0), U(0.9), 0.2, '#6a6f7a', 'TAPE');
-  if (!S(`systems/plates_b_${plates}`, 33.1, 22.8, 0, { pick: [0.45, 0.8] })) crate(U(33.1), U(22.8), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
-  if (!S('props/crate_blank_star', 32.4, 21.6)) crate(U(32.4), U(21.6), U(0.7), U(0.7), 0.5, '#7a8a5a');
+  box('props/crate_tape', 'tape', '#6a6f7a', 'TAPE');
+  if (!S(`systems/plates_b_${plates}`, K.platesB.x, K.platesB.y, 0, { pick: [0.45, 0.8] })) crate(U(K.platesB.x), U(K.platesB.y), U(0.9), U(0.8), -0.1, '#6a6f7a', 'PLATES');
+  box('props/crate_blank_star', 'blankStar', '#7a8a5a');
   // (the gym: a dumbbell rack against the back wall, top right corner, between the wall beacon and the
-  // cannon's power line; decoration only, not solid; models/props/gym.py. The classic view skips it.)
-  S('props/weight_rack', 41.5, 15.36);
+  // cannon's power line; solid (CLUTTER.weightRack); models/props/gym.py. The classic view skips it.)
+  S('props/weight_rack', K.weightRack.x, K.weightRack.y);
 }
 
 // Small junk scattered on every floor: nuts, soda cans, wrappers, tape scraps.

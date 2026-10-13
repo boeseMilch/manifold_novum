@@ -265,25 +265,6 @@ function drawLampSprites() {
     spr(on ? 'interior/lamp_wall_on' : 'interior/lamp_wall_off', 0, lx, wy, 0, { layer: 'wall', sortY: wy + 0.02, depthBias: 0.05, emissive: on ? 1 : 0.2 });
   }
 }
-// Where a room's plaque starts on its back wall (default: 0.4 in from the left; the lower rooms' back
-// wall is the spine, where the deck airlock's shaft takes the left part)
-const PLAQUE_X = { portLock: 7.65, starLock: 37.95 };
-// The room-name plaques (interior/plaque_<zone>_l, m..., r) on the back wall, the name as text on top.
-function drawRoomPlaque(r) {
-  const q = r.rects[0], z = r.zone.name, l = `interior/plaque_${z}_l`, m = `interior/plaque_${z}_m`, rr_ = `interior/plaque_${z}_r`;
-  if (!sprReady(l, m, rr_)) return false;
-  const font = `800 ${T * 0.2}px system-ui, sans-serif`;
-  ctx.save(); ctx.font = font; ctx.letterSpacing = '2px'; const tw = ctx.measureText(r.name.toUpperCase()).width / T; ctx.restore();
-  const n = Math.max(1, Math.ceil((tw + 0.05) / 0.25)), x0 = PLAQUE_X[r.id] ?? q.x + 0.4, o = { layer: 'wall', sortY: q.y + 0.02, depthBias: 0.05 };
-  spr(l, 0, x0, q.y, 0, o);
-  for (let i = 0; i < n; i++) spr(m, 0, x0 + 0.1875 + i * 0.25, q.y, 0, o);
-  spr(rr_, 0, x0 + 0.1875 + n * 0.25, q.y, 0, o);
-  const cx = x0 + 0.1875 + n * 0.125;               // the name, on the plaque (lit like a backlit sign: readable in the dark too)
-  const dy = 0.1;                                   // (just in front of the plaque's face; z raised so it lands at 0.52 on screen)
-  worldText(cx, q.y + dy, 0.52 + dy * GFX.SIN / GFX.COS, r.name.toUpperCase(), font, r.zone.label, { spacing: 2, layer: 'wall', sortY: q.y + 0.03, depthBias: 0.12, outline: 'rgba(8,10,14,0.55)' });   // (bias: over the pipe brackets, still behind anyone standing at the wall)
-  return true;
-}
-
 function drawInteriorWalls() { toiletSign(); incidentBoard(); flushLater(); }
 function drawInterior(t) {
   kitchen(t); kitchenSteam(t); bunkRoom(t); toiletStall(t); couch(); exerciseBike(t);

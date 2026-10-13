@@ -406,7 +406,14 @@ get the rest.
 - **Rattling panels:** every big hit on a side loosens wall panels there (a warning: the next
   big hit on that side breaches, on missions with breaches).
 - **Duct tape** (3 rolls) and **hull plates** (4, crates in both airlock rooms) are counted.
-- The **cat** hides during breaches and stares at nearby fires. **Emergency lighting** is
+- The **cat** flattens into a fur pancake for ~4 s after every big hit on the ship (the bang
+  scares it; read from the synced `combat.decals` large-hit `hot` time, so it works on every client;
+  it used to hide during breaches, but the reactor room never breaches) and stares at nearby fires.
+  Its sprites (`tools/blender/models/props/cat.py`) were redone as a believable curled-up orange
+  tabby: swept body along the curled spine with a haunch, tabby bands driven by mesh attributes so
+  they curve with the body (spine stripe, tapering flank bands, ringed tail with a dark tip), a proper
+  head (cheek ruffs, cream muzzle, nose, M on the forehead, pink ears with tufts), cream paws under
+  the chin; same states, frame counts and origins as before. **Emergency lighting** is
   dim red. **Scorch marks** stay where fires burned. The end screen has a **mission report**
   (fires, breaches, repairs, medic of the day, cat pets).
 
@@ -976,8 +983,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   leviathan's spots and eye, the jump drive spool, nav lights. Docked derelict: dark with dying strips;
   pirate ship: warm lamps (the old 2D derelict darkening and fire floor glow are classic-only now).
 - Renderer: tiled forward lighting (up to 255 lights on screen, 31 per 64-px tile; point, spot and strip
-  lights) and screen-space shadows marched through last frame's depth buffer (2nd colour attachment,
-  reprojected). Overview at 2560×1600 with ~55 lights, red alert, fires: ~130 fps (shadows off ~140).
+  lights) and screen-space shadows marched through a depth buffer (first last frame's, reprojected; now
+  this frame's, see below). Overview at 2560×1600 with ~55 lights, red alert, fires: ~130 fps (shadows off ~140).
 - Soft shadows (the hard, dithered edges looked rough): the shadows are computed before the scene in a
   half-resolution pass (the surface each pixel showed last frame, rebuilt from its depth: the view is
   orthographic), one ray per pixel and light aimed at a random point of the light's disc (a penumbra
@@ -985,9 +992,18 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   own channel (28 channels in 7 RGBA8 layers; lights whose screen boxes overlap get different ones).
   A depth-aware separable blur turns the noise into smooth edges without bleeding over sprite edges or
   walls, and the lighting reads it back bilinearly where the 4 nearest texels show the same surface
-  (else the nearest one that does; only surfaces missing from last frame's buffer still march per
-  pixel). The depth buffer is RG32F now (depth + "casts shadows"), so every lit surface gets soft
+  (else the nearest one that does; only surfaces missing from that buffer still march per pixel). The depth buffer is RG32F now (depth + "casts shadows"), so every lit surface gets soft
   shadows, not just the casters. About the same GPU cost as the old per-pixel march (±0.5 ms).
+- Shadows stick to whoever moves (playtest: "the shadow is still rendered at the old position while the
+  character is already at the new one"): the shadows read last frame's depth, reprojected only for the
+  camera, so every moving caster (the walking player, crew, intruders, enemies) dragged its shadow one
+  frame behind, worse at low fps. Now a depth pre-pass draws this frame's sprites first (same order,
+  depth test and blending; a cheap shader variant without lighting) into the shadow depth buffer, then
+  the soft-shadow pass and the lighting use it. No ping-pong or reprojection any more; the instance
+  buffer is uploaded once for both passes. Measured by stepping the game by hand and comparing each
+  frame with a re-render of the same state: before, 35-8300 wrong pixels around a walking player or an
+  intruder (worst at 20 fps); after, 0. GPU time per frame unchanged within the noise (~3.5-5 ms at
+  2048×1280, timer queries).
 - Alarm beacons: their spot beams now start `ALARM_TUNING.out` (0.45) out from the back wall instead
   of 0.15. Right at the wall, the screen-space shadows took the wall (and what hangs on it) for an
   occluder of the beacon's own light and cut the beams into big straight-edged wedges, or hid them.
@@ -999,7 +1015,6 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   chunky caged lamps ~1 unit wide (readable at room zoom), a glowing lens when on, a dark one when off;
   the bridge's nose lamp moved left, clear of the front cannon's ladder.
 - Labels: text that belongs to the world is a sprite now (GFX.text, an upright billboard, depth-tested):
-  room names on their plaques (backlit, outlined; the lower rooms' plaques moved clear of the deck airlocks),
   capacitor readouts, the VENT tag, the cat's z z z / hearts, the limpet mines' countdown; whoever walks in
   front hides them. Labels that must stay readable (CLICK TO TAKE, BROKEN, OVERCHARGED) stay on top but
   fade while a crew member stands in front of them. Steam (helm mug, kitchen stove) and the map table's
@@ -1094,7 +1109,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   (`crew/run_visor` frame k on `crew/run` frame k: only the helmet differs).
 
 ### 9e. Room names (unofficial) and a weight rack in the gym
-- What the rooms are, for theming decor (not UI labels for now; the plaques still say the game names):
+- What the rooms are, for theming decor (not UI labels for now; the room-name plaques are gone, see 9k):
   kitchen = Left Cannon (upper deck, left of the bridge; counter, fridge, table), bedroom = Right Cannon
   (right of the bridge; bunks, lockers), gym = Right Airlock (lower deck right, below the bedroom;
   treadmill), reactor room = Reactor (lower deck middle), bathroom = Left Airlock (left of the reactor room;
@@ -1102,9 +1117,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - The rooms already read as what they are, so only one thing was added (no going over the top): a dumbbell
   rack in the gym's top right corner, against the back wall between the wall beacon (x 40.6) and the right
   cannon's power line (x 42.6): `props/weight_rack` (`tools/blender/models/props/gym.py`; origin = its
-  footprint's centre on the floor, (41.5, 15.36), 1.5 × 0.62, 0.8 high so it stays under the room plaque),
+  footprint's centre on the floor, (41.5, 15.36), 1.5 × 0.62, 0.8 high),
   coloured small dumbbells up top, big black ones below with one slot empty and one duct-taped, a towel
-  over a post, a "RE-RACK IT" label. Decoration only: not in SOLIDS (gameplay unchanged), sprite view only
+  over a post, a "RE-RACK IT" label. Solid since 9k (CLUTTER.weightRack); sprite view only
   (the classic 2D view skips it). Drawn in `drawPropDecor()` (js/decor.js), y-sorted with the crew.
 
 ### 9f. Helm and security consoles with depth
@@ -1179,6 +1194,99 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Balance note: each side column has one more breakable part, so a hit there sometimes takes out the
   emitter instead of something inside (harder to fix: a spacewalk).
 
+### 9j. Shield domes in 3D (playtest: "a nice 3D render of a sphere with hexagons instead of planar hexagons")
+- With the sprites on, each raised shield is a hexagon-tiled energy dome instead of the flat hex band:
+  the upper half of an ellipsoid standing off that side (`SHIELD_DOMES` in js/combat.js: port / star
+  centred 8 units inside the hull, radii 11.8 × 24 × 6.5; front centred over the bridge, 12.7 × 12 × 6.5).
+  Its base on the deck plane follows the curtain the shots stop at (`shieldX` / `shieldYFront`, within
+  ~0.7 units at the ends); its crown leans over the rooms on that side (kitchen and bathroom, bedroom and
+  gym, the bridge) and fades out there, so it shows faintly over the outer part of those rooms.
+- Drawn by `GFX.dome()` (js/gfx.js, FS_DOME): no mesh, each pixel of the dome's screen box casts its
+  (orthographic) view ray against the ellipsoid; two draws, the near and the far wall (the far one at
+  45 %), each depth-tested against the walls and the crew; unlit and additive, after all sprites and
+  before the bloom. Cells: around the dome's long axis (from the rim up over the crown) × world units along
+  it, ~0.95 units across, a slow shimmer per cell. Faint where you look onto it (lines ~7 %), bright
+  where it's seen edge-on (fresnel) and along its base line.
+- Kept: the build-up (the dome appears within a sphere growing out of the emitter in SHIELD_GROW, with a
+  bright front, and shrinks back into it), impacts (whole cells flare around the hit, measured from each
+  cell's centre, and a ring ripples outward; the shot's draining orb is still the 2D one), the front
+  dome's asteroid role. New: in its last 2.5 s (`SHIELD_WARN`) the dome flickers (about to drop). Hit tests
+  are unchanged (drawing only; the state was already synced). `?classic` keeps the flat hexes.
+- Cost: the box is clipped to the dome's outer half; no measurable change in the overview at 2560×1600.
+
+### 9k. No room-name plaques; the clutter is solid (playtest: "the labels don't add up with what we call the rooms")
+- The room names on the walls are gone: the plaques with LEFT CANNON / BRIDGE / RIGHT AIRLOCK ... in the
+  sprite view (`drawRoomPlaque`, js/interior.js) and the faint names on the floor in `?classic`
+  (`drawRoomLabel`, js/art.js). Functional labels stay (CANNON, SHIELD, EVA, console names, signs), and so
+  do room names in UI text (sidebar, banners, the security panel's map). The `interior/plaque_*` sprites
+  are unused now (still in the atlas).
+- Everything standing on the floor blocks you now, like the furniture: `CLUTTER` in js/ship.js lists each
+  crate / box with its footprint (w × h turned by a, as drawn) and SOLIDS gets the box around it (trimmed
+  halfway back to the unturned footprint). js/decor.js draws the crates at those positions. Newly solid:
+  the kitchen crates (AMMO, blank, SNAX) and the snack machine, Steve the plant (bridge), the bedroom's
+  AMMO and MISC crates, toolbox and sleeping bag, the bathroom's hull plate and coolant crates, the fuel
+  cell crate, the patch board and the washing line's two stands (reactor room), the gym's TAPE, plate
+  and blank crates and the weight rack. Still walk-through on purpose: flat things (papers, cracks, nuts,
+  the magazine), the ducks, the cat (you pet it), the kitchen stools (the intruder's route past the table
+  runs between them), the plunger, the floor cables, the power lever and the jump handle.
+- Moved out of the way first: the bedroom's AMMO crate and the toolbox now sit along the back wall right
+  of the lockers (into the corner), the sleeping bag along the back wall left of the bunks, the MISC crate
+  against the front wall (clear of the cannon's power line); the kitchen's AMMO and blank crates are pushed
+  back against the wall and the washing line 0.15 to the right, so no gap is left to get stuck in. The
+  sprites are position-independent, so nothing was re-rendered (the Blender scripts' position notes updated).
+- Interactive crates (plates, coolant, fuel cells, snack machine, patch board) keep their click spots and
+  stay in reach. Dropped items (`dropSpot`, also a leaving player's gear) never land inside a solid: they go
+  to the nearest free floor. Saves unchanged.
+- `tests/clutter.js`: every sprite standing on a room's floor is solid or on the walk-through list; the
+  clutter boxes stay inside their rooms and clear of doors and deck airlocks; a flood fill from the bridge
+  reaches all free floor (no closed-off pockets) and every click target is in reach; no intruder / pirate
+  route (NAV edges) runs through a solid; items dropped on a crate land next to it.
+
+### 9l. Helmet lamp (L; request: "a helmet light (directional), mostly so I can test where the normals work")
+- L toggles your helmet lamp (also the debug menu's `-` entry, `#do=-`; L inside the open debug menu stays
+  that menu's own `l` entry). Per crew member (`c.lamp`, default off), sent as the command `['lamp']` and
+  carried in every snapshot's crew entry, so everyone sees everyone's lamp. Drawing only, no gameplay.
+- `LIGHT_TUNING.helmet` (js/lights.js): a cool white spot from the helmet (z 1.32, 0.28 ahead) where you
+  face (with mouse-look it follows the cursor), tilted 22° down, half-angle 0.72 rad with the renderer's soft
+  cone edge (full brightness within ~31°, gone at ~41°), reach 8.5, intensity 2, with shadows; plus a small
+  point light on the helmet and a pale blue glow dot on the brim when you face the camera (drawHelmetGlow).
+  Inside, on spacewalks and in the hatch; not in a cannon. It replaces the ion storm flashlight while on.
+- Outside the beam points further down (tilt -0.6, more wrap): there's no floor out there, what it can hit
+  is the hull beside and below you (airlock housings, blisters). The screen-space shadows keep it off the
+  rooms behind the hull walls (without shadows it does light the interior floor through the wall).
+- Budget: 2 lights per lamp (16 for 8 crew), one shadow channel each (of 28).
+- `tests/multiplayer.js`: the toggle runs for whoever sent it, travels in the snapshot, another browser
+  applies it and lights exactly one helmet beam.
+
+### 9m. Power lines in 3D, with real fittings (request: "the energy system is still looking 2D ... the cables to the cannon should go through some thing in the wall, then connect to it")
+- Cables (`js/cables.js`, sprite view only): thick armoured cables lying on the floor, drawn by the game since the
+  routes are free polylines. Each visible stretch is rasterized once (in ~3-unit pieces, a few per frame) into
+  canvas sprites with a normal and a height map: a tube profile, steel ribs, a dark outline and a soft contact
+  shadow, so the room lights shade them and they cast small shadows ('decal' layer: walls, machines and crew
+  cover them). `GFX.canvasSprite(..., { maps: true })` (js/gfx.js) gives a canvas sprite its own normal/height
+  maps for this. Readability kept: an indicator window along the cable's top is amber and self-lit while the
+  line is live, dark when it has no charge, dark red when its capacitor is broken (only the window is recoloured
+  when the state changes); the flowing dashes, pulses and surge arcs stay in the 2D glow layer on top of it.
+  Steel strap clamps (`power/clamp`) every ~3 units.
+- Fittings (`tools/blender/models/power/fittings.py`, group `power`, each `_on` / `_off` with an amber LED):
+  `plug` (a socket bolted to a machine's face, heavy plug with a yellow latch and a ribbed boot, PWR tag; on the
+  capacitors' side faces, the reactor's sides and the shield buttons' sides), `box` (a teal conduit box on a wall
+  where the cable goes in, 4 facings), `riser` (the same on a lower-deck back wall with an armoured conduit
+  climbing into the spine), `jack_port/star/front` (outside: an outlet on the hull wall, a short armoured cable
+  and a connector clamped onto the cannon's mount; the front one on the nose wall's top to the roof turret).
+- Routes (`POWER_ROUTES` in js/systems.js) start and end in a fitting (`POWER_FITTINGS`; the cable starts its
+  REACH out of it, with a short straight lead and rounded bends). The cannon lines no longer end at the ladder
+  hatches: they climb into the spine through a riser on the lower deck's back wall, come out of a box on the
+  upper deck's near wall, run to a box on the room wall next to their cannon, and the jack outside carries them
+  to the cannon (the front one: a box under the nose's wall lamp, then along the wall top). The capacitors'
+  plugs moved to the cabinets' side faces (on the back they were hidden behind the cells); routes were adjusted
+  so cables don't cross where they can avoid it (feed 2 still crosses the two lines that climb out of the
+  reactor room, as before).
+- 'hide' stretches (inside the walls / spine) have no length: `linePoint(l, k)` runs over the visible
+  stretches only, so a pulse jumps through the wall and `linePoint(l, 0.5)` (the surge splice spot) is always on
+  the floor. Gameplay, saves and snapshots unchanged (the lines' ids, capacitors and timings are the same).
+- ?classic: the same routes as flat strokes, with a small box at each fitting.
+
 ## Balance
 
 `node tools/balance.js` reads the game's constants and prints, for each encounter, the
@@ -1231,6 +1339,8 @@ dummy canvas):
 - `node tests/sidebar.js`: plates for radar contacts (countdown, no red light) and for
   active problems (red light, listed first). New plates slide up from the bottom, and
   dealt-with ones leave. Fires and broken parts get plates.
+- `node tests/clutter.js`: floor clutter is solid (or listed as walk-through), leaves no closed-off
+  pockets, keeps click targets in reach and the intruder's routes free; dropped items land on free floor.
 - `node tests/emitter.js`: shield emitters break on hits on their side (never by fire), block / drop their
   shield, can't be fixed from inside, are repaired on a spacewalk (all three reachable), and sync to browsers.
 - `node tests/intruder.js`: 14 checks.

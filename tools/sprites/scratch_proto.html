@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Floor Scratches</title>
+<!--
+Prototype (not in the game): procedural floor scratches, computed per pixel in the fragment shader
+from the floor cell's place on the ship grid (hash -> a set of scratches), over the real clean floor
+tile from the sprite atlas (assets/sprites/interior/page0*). No textures for the scratches: every
+1 x 1 plate cell gets its own set, at full screen resolution (the atlas normal maps are half-res).
+
+  fine hairlines   normal only: a V-groove, box-filtered over the pixel footprint (so a 0.4-px
+                   scratch is a faint light/dark dipole, not aliasing), plus an anisotropic glint:
+                   a groove reflects a light when the half vector is perpendicular to it, so
+                   scratches light up and go dark as a light moves
+  scuff clusters   3-7 parallel lines (a dragged crate's corner)
+  swirls           concentric arcs (a chair turning)
+  deep gouges      wider and deeper: bare metal in the groove, a dark burr/grime rim
+  drags            long lines that cross the seams (evaluated from the 3 x 3 neighbouring cells)
+Wear: more of everything near the doorway / console markers (in the game: a per-tile wear value).
+
+Serve with `node server.js 8079` and open http://localhost:8079/tools/sprites/scratch_proto.html
+URL params (for screenshots): ppu, cx, cy (view centre, units), lx, ly, lz (light), orbit=0|1,
+mode=new|old|split, view=lit|normals|scratch, fine, gouge, nrm, glint, tape.
+Columns of tiles: x < 6 red zone (port), < 10 white, the rest blue (starboard), like the ship's zones.
+-->
+<style>
+  :root { --bg: #101216; --panel: #1b1e24; --fg: #d6dae2; --dim: #8a909c; --acc: #e0a040; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #101216; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px system-ui, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
+  #ui { position: fixed; top: 8px; left: 8px; background: color-mix(in srgb, var(--panel) 88%, transparent); padding: 8px 10px; border-radius: 6px; width: 250px; }
+  #ui.hide > :not(.head) { display: none; }
+  #ui label { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin: 3px 0; }
+  #ui input[type=range] { width: 120px; }
+  #ui .head { display: flex; justify-content: space-between; font-weight: 600; margin-bottom: 4px; }
+  #ui .head button { background: none; border: 0; color: var(--dim); cursor: pointer; }
+  #ui select { background: var(--bg); color: var(--fg); border: 1px solid #333; }
+  #ui small { color: var(--dim); display: block; margin-top: 6px; line-height: 1.35; }
+  #ms { color: var(--acc); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="head"><span>Floor scratches <span id="ms"></span></span><button id="hide">hide</button></div>
+  <label>Compare <select id="mode"><option value="new">new (procedural)</option><option value="old">old (baked scuffs)</option><option value="split">split: old above, new below</option></select></label>
+  <label>View <select id="view"><option value="lit">lit</option><option value="normals">normals only</option><option value="scratch">scratch layer only</option></select></label>
+  <label>Zoom (px/unit) <input id="ppu" type="range" min="32" max="480" step="1"></label>
+  <label>Fine scratches <input id="fine" type="range" min="0" max="3" step="0.05"></label>
+  <label>Deep gouges <input id="gouge" type="range" min="0" max="1" step="0.01"></label>
+  <label>Tape (per tile) <input id="tape" type="range" min="0" max="1" step="0.01"></label>
+  <label>Normal strength <input id="nrm" type="range" min="0" max="3" step="0.05"></label>
+  <label>Glint <input id="glint" type="range" min="0" max="3" step="0.05"></label>
+  <label>Light height <input id="lz" type="range" min="0.1" max="2.5" step="0.05"></label>
+  <label>Orbit light <input id="orbit" type="checkbox"></label>
+  <label>Wear spots <input id="spots" type="checkbox"></label>
+  <small>Drag: move the light. Shift-drag / right-drag: pan. Wheel: zoom. Orange rings: doorway and console (more wear).</small>
+</div>
+<script>
+'use strict';
+const SIN = Math.sin(50 * Math.PI / 180), COS = Math.cos(50 * Math.PI / 180);
+const Q = new URLSearchParams(location.search);
+const S = {
+  ppu: +(Q.get('ppu') || 48), cx: +(Q.get('cx') || 8), cy: +(Q.get('cy') || 6),
+  lx: +(Q.get('lx') || 6), ly: +(Q.get('ly') || 5), lz: +(Q.get('lz') || 0.6), orbit: Q.get('orbit') !== '0',
+  mode: Q.get('mode') || 'new', view: Q.get('view') || 'lit',
+  fine: +(Q.get('fine') ?? 1), gouge: +(Q.get('gouge') ?? 0.12), nrm: +(Q.get('nrm') ?? 1), glint: +(Q.get('glint') ?? 1), tape: +(Q.get('tape') ?? 0.22),
+  spots: Q.get('spots') !== '0',
+};
+const SPOTS = [[0.4, 6.0], [11.0, 2.4]];          // doorway (left wall), console (back wall)
+
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl2', { antialias: false });
+
+const VS = `#version 300 es
+layout(location = 0) in vec2 a; void main() { gl_Position = vec4(a, 0.0, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+precision highp int;
+uniform sampler2D uB, uN, uM;
+uniform vec2 uPage, uView;
+uniform vec4 uCam;            // view centre (units), device px per unit, -
+uniform vec3 uLight;          // the moving light
+uniform vec4 uP;              // fine density, gouge chance, normal strength, glint
+uniform int uMode, uView2;    // 0 new, 1 old, 2 split; 0 lit, 1 normals, 2 scratch layer
+uniform vec4 uSpots;          // two wear spots (x, y)
+uniform float uSpotsOn, uTime, uTape;
+out vec4 o;
+const float SINE = ${SIN.toFixed(6)}, COSE = ${COS.toFixed(6)};
+// atlas rects (beauty px) of the tiles
+const vec2 A_WHITE = vec2(1612.0, 4.0), A_WHITE_B = vec2(1412.0, 160.0), A_BLUE_A = vec2(1012.0, 4.0), A_BLUE_B = vec2(1012.0, 160.0),
+           A_RED_A = vec2(1212.0, 4.0), A_RED_B = vec2(1212.0, 160.0);
+const vec3 TINT_BLUE = vec3(95.0 / 108.0, 106.0 / 114.0, 128.0 / 130.0), TINT_RED = vec3(122.0 / 108.0, 95.0 / 114.0, 98.0 / 130.0);   // zone tint / white zone's
+
+uint hsh(uint x) { x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16; return x; }
+uint hsh2(ivec2 c, uint s) { return hsh(uint(c.x) * 1597334677u ^ hsh(uint(c.y) * 3812015801u ^ s)); }
+uint st;
+float rnd() { st = hsh(st + 0x9e3779b9u); return float(st >> 8) / 16777216.0; }
+
+// --- the scratch accumulator -------------------------------------------------------------------
+vec2 gTilt;      // sum of normal tilts (world xy)
+float gCov;      // strongest unresolved coverage (for the glint), and its tangent
+vec2 gTan;
+float gBare, gRim;   // gouges: bare metal in the groove, dark burr rim
+vec2 dPx, dPy;   // world units per pixel (screen x, y)
+
+// One groove at signed distance d across (unit vector p), s along of total length L.
+// w half width, h depth (units), kind 1 = gouge (albedo too).
+void groove(float s, float d, float L, vec2 p, vec2 t, float w, float h, float kind) {
+  float pw = abs(dot(p, dPx)) + abs(dot(p, dPy));          // pixel footprint across the groove
+  float pl = abs(dot(t, dPx)) + abs(dot(t, dPy));
+  if (abs(d) > w + pw || s < -pl || s > L + pl) return;
+  float u = clamp(s / L, 0.0, 1.0);
+  float tap = sqrt(clamp(4.0 * u * (1.0 - u) * 1.6, 0.0, 1.0));   // tapered ends
+  float we = w * max(tap, 0.15), he = h * tap;
+  float endA = smoothstep(-pl, pl, s) * smoothstep(-pl, pl, L - s);
+  // box-filtered slope of the V profile H(x) = -he * max(0, 1 - |x| / we) over [d - r, d + r]
+  float r = max(pw * 0.5, we * 0.2);
+  #define HV(x) (-he * max(0.0, 1.0 - abs(x) / we))
+  float slope = (HV(d + r) - HV(d - r)) / (2.0 * r);
+  gTilt += p * (-slope) * endA;
+  // how much of the pixel the groove covers; unresolved grooves glint (resolved ones tilt the normal)
+  float cov = clamp((min(d + r, we) - max(d - r, -we)) / (2.0 * r), 0.0, 1.0) * endA;
+  float unres = 1.0 - smoothstep(1.0, 4.0, we / pw);
+  float g = cov * (0.35 + 0.65 * unres) * (h / (h + 0.0015));
+  if (g > gCov) { gCov = g; gTan = t; }
+  if (kind > 0.5) {
+    gBare = max(gBare, cov * tap);
+    float rim = clamp((min(d + r, we * 2.2) - max(d - r, -we * 2.2)) / (2.0 * r), 0.0, 1.0) - cov;
+    gRim = max(gRim, rim * tap * endA);
+  }
+}
+void seg(vec2 q, vec2 a, vec2 b, float w, float h, float kind) {
+  vec2 ab = b - a; float L = max(length(ab), 1e-4); vec2 t = ab / L, p = vec2(-t.y, t.x);
+  vec2 rel = q - a;
+  groove(dot(rel, t), dot(rel, p), L, p, t, w, h, kind);
+}
+void arc(vec2 q, vec2 c, float R, float a0, float span, float w, float h, float kind) {
+  vec2 rel = q - c; float rr = length(rel);
+  if (abs(rr - R) > w + 0.05) return;
+  float th = atan(rel.y, rel.x) - a0; th = mod(th + 3.14159265, 6.2831853) - 3.14159265;
+  vec2 p = rel / max(rr, 1e-4), t = vec2(-p.y, p.x);
+  groove(th * R, rr - R, span * R, p, t, w, h, kind);
+}
+vec2 dirv(float a) { return vec2(cos(a), sin(a)); }
+
+// All scratches touching world point P. kind: 0 plain plate cell, 1 tread, 2 grille (none).
+void scratches(vec2 P, ivec2 cell, float kind, float wear) {
+  vec2 q = P - vec2(cell);                       // 0..1 in the plate cell
+  float onPlate = kind < 0.5 ? 1.0 : kind < 1.5 ? 0.35 : 0.0;
+  if (onPlate > 0.0) {
+    st = hsh2(cell, 17u);
+    float dir0 = rnd() * 3.14159265;             // the cell's main traffic direction
+    float cellWear = wear * mix(0.35, 1.6, rnd() * rnd());
+    // fine hairlines (normal + glint only)
+    int nf = int(uP.x * cellWear * (5.0 + 12.0 * rnd()) * onPlate);
+    for (int i = 0; i < 32; i++) {
+      if (i >= nf) break;
+      vec2 c = vec2(0.08) + vec2(rnd(), rnd()) * 0.84;
+      float ang = rnd() < 0.65 ? dir0 + (rnd() - 0.5) * 0.7 : rnd() * 3.14159265;
+      float L = 0.04 + 0.30 * rnd() * rnd();
+      vec2 hd = dirv(ang) * L * 0.5;
+      seg(q, clamp(c - hd, 0.05, 0.95), clamp(c + hd, 0.05, 0.95), 0.0025 + 0.003 * rnd(), 0.0008 + 0.0012 * rnd(), 0.0);
+    }
+    // a cluster of parallel scuffs (a crate's corner dragged)
+    if (rnd() < 0.28 * cellWear * onPlate) {
+      vec2 c = vec2(0.2) + vec2(rnd(), rnd()) * 0.6;
+      float ang = dir0 + (rnd() - 0.5) * 0.5, L = 0.15 + 0.3 * rnd();
+      vec2 t = dirv(ang), p = vec2(-t.y, t.x);
+      int n = 3 + int(rnd() * 5.0);
+      float gap = 0.008 + 0.014 * rnd();
+      for (int k = 0; k < 7; k++) {
+        if (k >= n) break;
+        vec2 o = p * (float(k) * gap + (rnd() - 0.5) * 0.004) + t * (rnd() - 0.5) * 0.05;
+        float Lk = L * (0.6 + 0.4 * rnd());
+        seg(q, clamp(c + o - t * Lk * 0.5, 0.05, 0.95), clamp(c + o + t * Lk * 0.5, 0.05, 0.95), 0.003 + 0.002 * rnd(), 0.0012 + 0.001 * rnd(), 0.0);
+      }
+    }
+    // a swirl (a chair turning on its casters)
+    if (rnd() < 0.14 * cellWear * onPlate) {
+      vec2 c = vec2(0.3) + vec2(rnd(), rnd()) * 0.4;
+      float R = 0.12 + 0.2 * rnd(), a0 = rnd() * 6.2831853;
+      int n = 2 + int(rnd() * 4.0);
+      for (int k = 0; k < 5; k++) {
+        if (k >= n) break;
+        float Rk = R + (rnd() - 0.5) * 0.06;
+        arc(q, c, min(Rk, 0.45), a0 + rnd() * 1.5, 0.6 + 1.8 * rnd(), 0.0025 + 0.002 * rnd(), 0.001 + 0.001 * rnd(), 0.0);
+      }
+    }
+    // a deep gouge (something heavy dropped and dragged): bare metal, dark rim
+    if (rnd() < uP.y * mix(0.6, 1.4, cellWear / 1.6) * onPlate) {
+      // one slightly curved stroke: an arc of a big circle, tapering over its whole length
+      vec2 c = vec2(0.25) + vec2(rnd(), rnd()) * 0.5;
+      float R = 0.6 + 2.0 * rnd(), a0 = rnd() * 6.2831853, L = 0.1 + 0.3 * rnd();
+      float w = 0.004 + 0.005 * rnd(), h = 0.003 + 0.003 * rnd();
+      arc(q, c - dirv(a0) * R, R, a0 - 0.5 * L / R, L / R, w, h, 1.0);
+    }
+  }
+  // drags: long lines that cross plate seams; each cell may start one, so look at the neighbours
+  for (int k = 0; k < 9; k++) {
+    ivec2 nc = cell + ivec2(k % 3 - 1, k / 3 - 1);
+    st = hsh2(nc, 91u);
+    if (rnd() > 0.10 * wear) continue;
+    vec2 a = vec2(nc) + vec2(rnd(), rnd());
+    float ang = rnd() * 3.14159265, L = 0.8 + 1.0 * rnd();
+    vec2 t = dirv(ang), p = vec2(-t.y, t.x);
+    int n = 1 + int(rnd() * 3.0);
+    float gap = 0.01 + 0.02 * rnd();
+    for (int j = 0; j < 3; j++) {
+      if (j >= n) break;
+      seg(P, a + p * float(j) * gap, a + p * float(j) * gap + t * L * (0.7 + 0.3 * rnd()), 0.003 + 0.002 * rnd(), 0.001 + 0.0012 * rnd(), 0.0);
+    }
+  }
+}
+
+// --- tape -------------------------------------------------------------------------------------
+// Per 2 x 2 tile (hash): most none; else one of: a strip across a seam, a strip along a seam, an X,
+// a corner patch (L), overlapping strips. Silver duct tape mostly, sometimes hazard or black gaffer.
+// Each strip: torn ends (zigzag), wavy edges, dirt along the edges and in blotches, maybe a peeled
+// corner (the floor shows with adhesive grime, a bright rolled lip). Raised: edge normals, weave.
+float gTape;          // coverage
+vec3 gTapeCol;        // albedo
+vec2 gTapeTilt;
+float gTapeSpec;      // extra shine (duct tape)
+float vnoise(vec2 x) {
+  vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  uint s = 7u;
+  float a = float(hsh2(ivec2(i), s) >> 8) / 16777216.0, b = float(hsh2(ivec2(i) + ivec2(1, 0), s) >> 8) / 16777216.0;
+  float c = float(hsh2(ivec2(i) + ivec2(0, 1), s) >> 8) / 16777216.0, d = float(hsh2(ivec2(i) + ivec2(1, 1), s) >> 8) / 16777216.0;
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float fbm(vec2 x) { return 0.55 * vnoise(x) + 0.3 * vnoise(mat2(0.8, -0.6, 0.6, 0.8) * x * 2.1 + 3.7) + 0.15 * vnoise(mat2(0.8, 0.6, -0.6, 0.8) * x * 4.3 + 9.1); }
+void strip(vec2 P, vec2 c, float ang, float hl, float hw, int col, float age, float peel, float sd) {
+  vec2 t = dirv(ang), p = vec2(-t.y, t.x), rel = P - c;
+  float s = dot(rel, t), d = dot(rel, p);
+  if (abs(s) > hl + 0.05 || abs(d) > hw + 0.05) return;
+  float pw = abs(dot(p, dPx)) + abs(dot(p, dPy)), pl = abs(dot(t, dPx)) + abs(dot(t, dPy));
+  float rw = max(pw * 0.5, 0.0015), rl = max(pl * 0.5, 0.0015);
+  // wavy edges, torn zigzag ends (each end its own tear)
+  float hwE = hw * (1.0 + 0.05 * (vnoise(vec2(s * 22.0, sd)) - 0.5));
+  float tear = 0.012 * abs(fract(d * 38.0 + sd * 3.0) - 0.5) * 2.0 + 0.006 * vnoise(vec2(d * 90.0, sd + 5.0));
+  float hlE = hl - tear;
+  float cw = clamp((hwE - abs(d)) / (2.0 * rw) + 0.5, 0.0, 1.0), cl = clamp((hlE - abs(s)) / (2.0 * rl) + 0.5, 0.0, 1.0);
+  float a = cw * cl;
+  // peeled corner: a triangle at one end lifted off (curling up)
+  float pk = peel * hw * 1.6;
+  float cut = 0.0, lip = 0.0;
+  if (pk > 0.0) {
+    float e = (s * sign(sd - 0.5 + 1e-3) - hl) + (hw - d);      // > -pk inside the peeled triangle
+    float rr = max(rl, rw);
+    cut = clamp((e + pk) / (2.0 * rr) + 0.5, 0.0, 1.0) * cl * cw;
+    lip = exp(-pow((e + pk) / max(0.006, rr * 2.0), 2.0)) * cw * cl;
+    a *= 1.0 - cut;
+  }
+  if (a <= 0.0 && lip <= 0.0 && cut <= 0.0) return;
+  vec3 tc = col == 0 ? vec3(0.5, 0.51, 0.53) * mix(vec3(1.0), vec3(1.05, 1.0, 0.88), age) : col == 1 ? vec3(0.7, 0.56, 0.16) : vec3(0.2, 0.2, 0.21);
+  if (col == 1 && fract((s + d) * 9.0) < 0.5) tc = vec3(0.12, 0.11, 0.1);      // hazard stripes
+  // dirt: along the edges, in blotches, more with age; scuffed bright where boots wore the top
+  float edge = min(hwE - abs(d), hlE - abs(s));
+  float dirt = (0.25 + 0.5 * age) * exp(-max(edge, 0.0) / 0.014) + age * 0.35 * smoothstep(0.4, 0.75, fbm(rel * 22.0 + sd * 13.0));
+  tc *= 1.0 - 0.6 * clamp(dirt, 0.0, 1.0);
+  tc = mix(tc, tc * 1.12 + 0.03, age * 0.5 * smoothstep(0.5, 0.8, fbm(vec2(s * 9.0, d * 14.0) + sd * 7.0)));
+  // the floor under the peeled corner: adhesive grime (darkens what's below; folded into gTapeCol)
+  float under = cut * 0.6;
+  // normals: the tape's edge is a step up (box-filtered), plus a faint weave close up
+  float th = 0.012;
+  float gw = (abs(abs(d) - hwE) < rw ? -sign(d) / (2.0 * rw) : 0.0) * cl;
+  float glE = (abs(abs(s) - hlE) < rl ? -sign(s) / (2.0 * rl) : 0.0) * cw;
+  vec2 tilt = -(p * gw + t * glE) * th * (1.0 - cut);
+  float wv = 1.0 - smoothstep(0.002, 0.006, max(pw, pl));
+  tilt += (p * sin(d * 1400.0) + t * sin(s * 1100.0)) * 0.05 * wv * a;
+  // duct tape crinkles: creases mostly across the strip (fade out when they get smaller than a pixel)
+  float wr = 1.0 - smoothstep(0.004, 0.012, max(pw, pl));
+  float n1 = fbm(vec2(s * 30.0, d * 6.0) + sd * 31.0), n2 = fbm(vec2(s * 30.0 + 0.2, d * 6.0) + sd * 31.0);
+  tilt += t * (n2 - n1) * 0.8 * wr * a;
+  vec2 pd = normalize(t * sign(sd - 0.5 + 1e-3) - p);                  // the lip faces away from the tape
+  tilt += pd * lip * 0.6;
+  // composite over what's there (later strips on top)
+  gTapeCol = mix(gTapeCol * (1.0 - under), tc, a) + vec3(lip * 0.35);
+  gTapeTilt = mix(gTapeTilt, vec2(0.0), a) + tilt;
+  gTapeSpec = mix(gTapeSpec, col == 0 ? 0.55 : col == 2 ? 0.25 : 0.3, a);
+  gTape = max(gTape, max(a, under * 0.7));
+}
+// the kind of plate cell sub (0..1, 0..1) of a tile: 0 plain, 1 tread, 2 grille (layouts a / b in floors.py;
+// in the game: a per-instance 4-cell kind mask)
+float cellKind(ivec2 tile, ivec2 sub) {
+  bool a = (hsh2(tile, 5u) & 1023u) < 480u;
+  return a ? ((sub.x == 1 && sub.y == 0) ? 1.0 : 0.0) : (sub.y == 0 ? 0.0 : sub.x == 0 ? 1.0 : 2.0);
+}
+void tapes(vec2 P, ivec2 tile0, float chance) {
+  for (int k = 0; k < 9; k++) {
+    ivec2 tl = tile0 + ivec2(k % 3 - 1, k / 3 - 1);
+    st = hsh2(tl, 333u);
+    if (rnd() > chance) continue;
+    vec2 o = vec2(tl) * 2.0;                       // the tile's corner (units)
+    int type = int(rnd() * 5.0);
+    int col = rnd() < 0.8 ? 0 : rnd() < 0.6 ? 1 : 2;
+    float age = rnd(), hw = (col == 1 ? 0.04 : 0.045) + 0.02 * rnd(), sd = rnd();
+    // a seam point on the 1-unit grid inside the tile
+    vec2 sp = o + vec2(float(int(rnd() * 2.0)), float(int(rnd() * 2.0)));
+    bool vert = rnd() < 0.5;                       // which seam line
+    float base = vert ? 1.5707963 : 0.0;
+    if (type == 0) {           // across a seam
+      vec2 c = sp + (vert ? vec2(0.0, 0.15 + 0.7 * rnd()) : vec2(0.15 + 0.7 * rnd(), 0.0));
+      strip(P, c, base + 1.5707963 + (rnd() - 0.5) * 0.45, 0.14 + 0.25 * rnd(), hw, col, age, rnd() < 0.45 ? 0.5 + 0.5 * rnd() : 0.0, sd);
+    } else if (type == 1) {    // along a seam, over a long crack
+      vec2 c = sp + (vert ? vec2(0.0, 0.5) : vec2(0.5, 0.0)) + (vert ? vec2(0.0, (rnd() - 0.5) * 0.4) : vec2((rnd() - 0.5) * 0.4, 0.0));
+      strip(P, c, base + (rnd() - 0.5) * 0.08, 0.25 + 0.45 * rnd(), hw, col, age, rnd() < 0.35 ? 0.4 + 0.5 * rnd() : 0.0, sd);
+    } else if (type == 2) {    // an X over a crack in a plate
+      ivec2 sb = ivec2(rnd() * 2.0, rnd() * 2.0);
+      if (cellKind(tl, sb) > 1.5) sb.y = 0;        // not over the vent
+      vec2 c = o + vec2(sb) + vec2(0.3 + 0.4 * rnd(), 0.3 + 0.4 * rnd());
+      float a0 = rnd() * 3.14159265, L = 0.12 + 0.12 * rnd();
+      strip(P, c, a0, L, hw, col, age, 0.0, sd);
+      strip(P, c, a0 + 1.2 + 0.7 * rnd(), L * (0.85 + 0.3 * rnd()), hw, col, age, rnd() < 0.5 ? 0.6 : 0.0, fract(sd + 0.37));
+    } else if (type == 3) {    // a corner patch: an L around a plate corner
+      vec2 sx = vec2(rnd() < 0.5 ? 1.0 : -1.0, rnd() < 0.5 ? 1.0 : -1.0);
+      vec2 c = sp + sx * 0.08;
+      float L = 0.12 + 0.12 * rnd(), j = (rnd() - 0.5) * 0.15;
+      strip(P, c + vec2(sx.x * L * 0.8, 0.0), j, L, hw, col, age, rnd() < 0.4 ? 0.7 : 0.0, sd);
+      strip(P, c + vec2(0.0, sx.y * L * 0.8), 1.5707963 + j, L, hw, col, age, 0.0, fract(sd + 0.61));
+    } else {                   // overlapping strips side by side (a patched plate)
+      vec2 c = sp + (vert ? vec2(0.0, 0.2 + 0.6 * rnd()) : vec2(0.2 + 0.6 * rnd(), 0.0));
+      float a0 = base + 1.5707963 + (rnd() - 0.5) * 0.25, L = 0.15 + 0.2 * rnd();
+      vec2 pp = vec2(-sin(a0), cos(a0));
+      int n = 2 + int(rnd() * 2.0);
+      for (int m = 0; m < 3; m++) {
+        if (m >= n) break;
+        strip(P, c + pp * float(m) * hw * 1.4 + dirv(a0) * (rnd() - 0.5) * 0.1, a0 + (rnd() - 0.5) * 0.12, L * (0.75 + 0.4 * rnd()), hw, col, age, rnd() < 0.3 ? 0.6 : 0.0, fract(sd + float(m) * 0.29));
+      }
+    }
+  }
+}
+
+void main() {
+  vec2 fc = vec2(gl_FragCoord.x, uView.y - gl_FragCoord.y);
+  // canvas px of the floor (96 per unit across, 96 sin(50) per unit down)
+  vec2 C = (fc - uView * 0.5) / uCam.z * 96.0 + vec2(uCam.x * 96.0, uCam.y * 96.0 * SINE);
+  vec2 P = vec2(C.x / 96.0, C.y / (96.0 * SINE));          // world (units) on the floor, z = 0
+  dPx = dFdx(P); dPy = dFdy(P);
+  ivec2 tile = ivec2(floor(C / vec2(192.0, 147.0)));
+  if (tile.x < 0 || tile.y < 0 || tile.x > 7 || tile.y > 5) { o = vec4(0.06, 0.065, 0.08, 1.0); return; }   // the 8 x 6 tile grid
+  vec2 tp = C - vec2(tile) * vec2(192.0, 147.0);           // px inside the tile
+  ivec2 sub = ivec2(tp.x >= 96.0 ? 1 : 0, tp.y >= 73.5 ? 1 : 0);
+  ivec2 cell = tile * 2 + sub;
+  bool newT = uMode == 0 || (uMode == 2 && fc.y > uView.y * 0.5);
+  uint th = hsh2(tile, 5u);
+  bool varA = (th & 1023u) < 480u;                         // like the game: about half a, half b (as in cellKind)
+  int zone = tile.x < 3 ? 0 : tile.x < 5 ? 1 : 2;          // red (port), white, blue (starboard) columns
+  // which atlas tile (old: the zone's baked tiles; new: the clean white ones, recoloured), and the
+  // kind of the plate cell (layouts a / b in floors.py)
+  vec2 at; float kind;
+  if (varA) {
+    at = newT ? A_WHITE : zone == 0 ? A_RED_A : zone == 1 ? A_WHITE : A_BLUE_A;
+    kind = (sub.x == 1 && sub.y == 0) ? 1.0 : 0.0;
+  } else {
+    at = newT ? A_WHITE_B : zone == 0 ? A_RED_B : zone == 1 ? A_WHITE_B : A_BLUE_B;
+    kind = sub.y == 0 ? 0.0 : sub.x == 0 ? 1.0 : 2.0;
+  }
+  vec2 uv = (at + tp) / uPage;
+  vec2 gx = dFdx(C) / uPage, gy = dFdy(C) / uPage;
+  vec3 base = textureGrad(uB, uv, gx, gy).rgb;
+  float msk = textureGrad(uM, uv, gx, gy).r;
+  if (newT && zone != 1) base = mix(base, base * (zone == 0 ? TINT_RED : TINT_BLUE), msk);
+  vec3 nb = textureGrad(uN, uv, gx, gy).rgb * 2.0 - 1.0;
+  vec3 N = normalize(vec3(nb.x, -nb.y, nb.z));
+
+  gTilt = vec2(0.0); gCov = 0.0; gTan = vec2(1.0, 0.0); gBare = 0.0; gRim = 0.0;
+  gTape = 0.0; gTapeCol = vec3(1.0); gTapeTilt = vec2(0.0); gTapeSpec = 0.0;
+  float specK = 0.22;
+  if (newT) {
+    float wear = 1.0;
+    if (uSpotsOn > 0.5) {
+      vec2 d1 = P - uSpots.xy, d2 = P - uSpots.zw;
+      wear += 1.6 * exp(-dot(d1, d1) / 5.0) + 1.2 * exp(-dot(d2, d2) / 3.0);
+    }
+    scratches(P, cell, kind, wear);
+    float flat_ = smoothstep(0.5, 0.9, msk) * smoothstep(0.96, 0.995, N.z);   // only on the plate tops, not the seams, bevels, rivets
+    gTilt *= flat_; gCov *= flat_; gBare *= flat_; gRim *= flat_;
+    float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    base = mix(base, vec3(lum * 1.35 + 0.05) * vec3(0.97, 0.99, 1.03), gBare * 0.75);   // bare steel
+    base *= 1.0 - 0.45 * gRim;                                                         // burr + grime
+    // tape on top (a gentle tendency to more on the port side, where the old tape was)
+    tapes(P, tile, uTape * (zone == 0 ? 1.4 : zone == 1 ? 1.0 : 0.75));
+    if (gTape > 0.0) {
+      vec3 tb = gTapeCol;                       // tape albedo where covered, a darkening factor elsewhere
+      float cov = clamp(gTape, 0.0, 1.0);
+      base = mix(base * min(tb, vec3(1.0)), tb, cov);
+      gTilt = mix(gTilt, vec2(0.0), cov); gCov *= 1.0 - cov;
+      specK = mix(specK, gTapeSpec, cov);
+    }
+    gTilt += gTapeTilt;
+    N = normalize(N + vec3(gTilt * uP.z, 0.0));
+  }
+
+  if (uView2 == 1) { o = vec4(N.x * 0.5 + 0.5, -N.y * 0.5 + 0.5, N.z * 0.5 + 0.5, 1.0); return; }
+  if (uView2 == 2) {
+    float v = 0.5 + 4.0 * dot(gTilt * uP.z, normalize(vec2(1.0, -0.6)));
+    o = vec4(vec3(v) + vec3(gCov * 0.6, gCov * 0.4, 0.0) + vec3(gBare, 0.0, gRim * -0.5), 1.0); return;
+  }
+
+  // lighting: like gfx.js (ambient, ceiling lamps, a point light; Blinn spec 28 * 0.22) + the scratch glint
+  vec3 V = vec3(0.0, COSE, SINE);
+  vec3 acc = vec3(0.5, 0.49, 0.5), spec = vec3(0.0), glint = vec3(0.0);
+  vec3 Pw = vec3(P, 0.0);
+  vec3 t3 = vec3(gTan, 0.0);
+  for (int i = 0; i < 5; i++) {
+    vec3 S; vec3 col; float rad;
+    if (i == 0) { S = uLight; col = vec3(1.0, 0.9, 0.75) * 1.4; rad = 6.0; }
+    else { S = vec3(4.0 + 8.0 * float((i - 1) % 2), 3.0 + 6.0 * float((i - 1) / 2), 1.82); col = vec3(1.0, 0.86, 0.68) * 0.95; rad = 7.4; }
+    vec3 L = S - Pw; float d = length(L);
+    float a = clamp(1.0 - d / rad, 0.0, 1.0); if (a <= 0.0) continue;
+    a = a * a * (1.0 + 0.6 / (1.0 + 3.0 * d * d));
+    vec3 l = L / d;
+    float ndl = max(dot(N, l), 0.0);
+    acc += col * a * ndl;
+    vec3 H = normalize(l + V);
+    spec += col * a * pow(max(dot(N, H), 0.0), 28.0);
+    // anisotropic glint: a groove along t reflects when H is perpendicular to it (and not too far from up)
+    float ht = dot(H, t3);
+    glint += col * a * exp(-ht * ht / 0.008) * smoothstep(0.35, 0.8, H.z);
+  }
+  vec3 c = base * acc + spec * specK + glint * gCov * 0.5 * uP.w;
+  vec3 over = max(c - 0.85, 0.0);
+  c = min(c, 0.85) + 0.15 * (1.0 - exp(-over / 0.15));
+  // markers: the light, the wear spots
+  vec2 lsp = vec2(uLight.x, uLight.y) - P;
+  float lr = length(vec2(lsp.x, lsp.y * SINE)) * uCam.z;
+  if (lr < 5.0) c = mix(c, vec3(1.0, 0.95, 0.7), 1.0 - smoothstep(3.0, 5.0, lr));
+  if (uSpotsOn > 0.5 && newT) for (int k = 0; k < 2; k++) {
+    vec2 sp = (k == 0 ? uSpots.xy : uSpots.zw) - P;
+    float sr = abs(length(vec2(sp.x, sp.y * SINE)) * uCam.z - 9.0);
+    c = mix(c, vec3(0.95, 0.6, 0.2), (1.0 - smoothstep(0.5, 1.5, sr)) * 0.8);
+  }
+  if (uMode == 2 && abs(fc.y - uView.y * 0.5) < 1.0) c = vec3(0.9, 0.6, 0.2);
+  o = vec4(c, 1.0);
+}`;
+
+function sh(type, src) { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; }
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+const U = n => gl.getUniformLocation(prog, n);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function tex(url, unit) {
+  return new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => {
+      const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      res(im);
+    };
+    im.onerror = () => rej(new Error('load ' + url)); im.src = url;
+  });
+}
+
+// --- UI ---------------------------------------------------------------------------------------
+const el = id => document.getElementById(id);
+for (const k of ['ppu', 'fine', 'gouge', 'nrm', 'glint', 'lz', 'tape']) { el(k).value = S[k]; el(k).oninput = () => { S[k] = +el(k).value; }; }
+for (const k of ['mode', 'view']) { el(k).value = S[k]; el(k).onchange = () => { S[k] = el(k).value; }; }
+for (const k of ['orbit', 'spots']) { el(k).checked = S[k]; el(k).onchange = () => { S[k] = el(k).checked; }; }
+el('hide').onclick = () => { el('ui').classList.toggle('hide'); el('hide').textContent = el('ui').classList.contains('hide') ? 'show' : 'hide'; };
+if (Q.get('ui') === '0') el('ui').style.display = 'none';
+const toWorld = (ex, ey) => {
+  const r = cv.getBoundingClientRect(), dpr = devicePixelRatio;
+  return [S.cx + ((ex - r.left) * dpr - cv.width / 2) / S.ppu, S.cy + ((ey - r.top) * dpr - cv.height / 2) / (S.ppu * SIN)];
+};
+let drag = null;
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId);
+  drag = e.shiftKey || e.button === 2 ? { pan: true, x: e.clientX, y: e.clientY } : { pan: false };
+  if (!drag.pan) { S.orbit = false; el('orbit').checked = false; [S.lx, S.ly] = toWorld(e.clientX, e.clientY); }
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (drag.pan) { const dpr = devicePixelRatio; S.cx -= (e.clientX - drag.x) * dpr / S.ppu; S.cy -= (e.clientY - drag.y) * dpr / (S.ppu * SIN); drag.x = e.clientX; drag.y = e.clientY; }
+  else [S.lx, S.ly] = toWorld(e.clientX, e.clientY);
+});
+cv.addEventListener('pointerup', () => { drag = null; });
+cv.addEventListener('wheel', e => { e.preventDefault(); S.ppu = Math.max(32, Math.min(480, S.ppu * Math.exp(-e.deltaY * 0.001))); el('ppu').value = S.ppu; }, { passive: false });
+
+// --- frame ------------------------------------------------------------------------------------
+let t0 = performance.now(), ftimes = [];
+function frame(now) {
+  const dpr = devicePixelRatio, W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const t = (now - t0) / 1000;
+  if (S.orbit) { S.lx = 8 + 5.5 * Math.cos(t * 0.35); S.ly = 6 + 4 * Math.sin(t * 0.35); }
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(prog);
+  gl.uniform1i(U('uB'), 0); gl.uniform1i(U('uN'), 1); gl.uniform1i(U('uM'), 2);
+  gl.uniform2f(U('uPage'), 1826, 1826); gl.uniform2f(U('uView'), W, H);
+  gl.uniform4f(U('uCam'), S.cx, S.cy, S.ppu, 0);
+  gl.uniform3f(U('uLight'), S.lx, S.ly, S.lz);
+  gl.uniform4f(U('uP'), S.fine, S.gouge, S.nrm, S.glint);
+  gl.uniform1i(U('uMode'), { new: 0, old: 1, split: 2 }[S.mode]);
+  gl.uniform1i(U('uView2'), { lit: 0, normals: 1, scratch: 2 }[S.view]);
+  gl.uniform4f(U('uSpots'), SPOTS[0][0], SPOTS[0][1], SPOTS[1][0], SPOTS[1][1]);
+  gl.uniform1f(U('uSpotsOn'), S.spots ? 1 : 0); gl.uniform1f(U('uTape'), S.tape); gl.uniform1f(U('uTime'), t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  ftimes.push(now); while (ftimes.length > 30) ftimes.shift();
+  if (ftimes.length > 1) el('ms').textContent = ((ftimes.at(-1) - ftimes[0]) / (ftimes.length - 1)).toFixed(1) + ' ms';
+  window.__frames = (window.__frames || 0) + 1;
+  requestAnimationFrame(frame);
+}
+const base = '../../assets/sprites/interior/page0';
+Promise.all([tex(base + '.webp', 0), tex(base + '.n.webp', 1), tex(base + '.m.webp', 2)])
+  .then(() => requestAnimationFrame(frame))
+  .catch(e => { document.body.insertAdjacentHTML('beforeend', `<pre style="position:fixed;bottom:0;color:#f66">${e.message}</pre>`); console.error(e); });
+window.S = S;
+</script>
+</body>
+</html>

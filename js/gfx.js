@@ -52,12 +52,14 @@
 //   strip from (x, y, z) to there), shadow (true: screen-space shadows), size (the light's radius for
 //   the shadows' penumbra; default 0.08, spots 0.04) }. Up to MAX_LIGHTS on
 //   screen, binned per screen tile (TILE_SLOTS - 1 strongest per tile); up to MAX_AREAS areas.
-//   Shadows march through LAST frame's depth buffer (reprojected); only solid, lit pixels below 1.75
-//   above their origin cast them. They are soft: before the scene, a half-resolution pass marches one
+//   Shadows march through THIS frame's depth buffer: a depth pre-pass (depthPass) draws every sprite
+//   once with a cheap shader (alpha + height map, no lighting) before anything is lit, so a moving
+//   caster's shadow never lags a frame behind it. Only solid, lit pixels below 1.75 above their origin
+//   cast them. They are soft: then a half-resolution pass marches one
 //   ray per pixel and light (to a random point of the light's disc: penumbra) into a visibility
 //   channel per light (overlapping lights get different ones; up to 28), a depth-aware blur turns the
 //   noise into smooth edges, and the lighting reads it back depth-aware (marching per pixel only
-//   where that buffer doesn't show the surface, e.g. something that just moved). ?noshadows /
+//   where the half-res buffer doesn't show the surface: see-through or thin slivers). ?noshadows /
 //   GFX.setShadows(false).
 //   grade multiplies the final picture (unless GFX.end(post) passes its own).
 
@@ -69,10 +71,20 @@
 //
 // Sprites drawn by the game: GFX.canvasSprite(key, w, h, { ppu, ox, oy }) → { name, ctx, w, h, commit() }
 // (draw into ctx, commit() uploads it, then GFX.sprite(name, ...) like any sprite; flat normal, no height
-// map: it lies at z, or stands up with { billboard: true }). GFX.text(text, font, fill, { outline, base,
-// spacing, ppu }) → the name of a text label sprite (rasterized once per distinct label; font in world
+// map: it lies at z, or stands up with { billboard: true }). With { maps: true } it also gets a normal and a
+// height map: D.nmap / D.hmap (RGBA bytes, w × h, encoded like the Blender passes: rgb = n·0.5 + 0.5 with
+// x right, y up the screen, z up; height r = z / heightRange (GFX.heightRange) · 255), uploaded by commit()
+// while D.mapsDirty (set it again after changing them).
+// GFX.text(text, font, fill, { outline, base, spacing, ppu }) → the name of a text label sprite (rasterized once per distinct label; font in world
 // px, T = 48). Both return null when GFX is off.
 //
+// Shield domes: GFX.dome({ c: [x, y, z], r: [rx, ry, rz], out: [ox, oy], fade: [s0, s1], grow: [x, y, z, R],
+// color: [r, g, b], strength, time, cell, hits: [{ x, y, z, age (0..1), heavy }] }) queues a hexagon-tiled
+// energy shell for this frame: the upper half (z ≥ 0) of the ellipsoid (centre c, radii r) on the side
+// `out` points to (q·out from s0 (gone) to s1 (full), q the point in the unit sphere's coordinates),
+// shown within R of the emitter at grow. Drawn after all sprites (before the bloom), additive, unlit,
+// depth-tested against the walls and the crew; up to 8 impacts flare the cells around them and ripple.
+
 // Internal resolution: min(1, 2048 / physical width) of the screen, upscaled with linear filtering;
 // change it with ?gfxscale=0.75 (remembered) or GFX.setScale(k) (null = default).
 // Other helpers: GFX.has(name), GFX.ready(name), GFX.info(name) (the sprites.json entry),
@@ -84,7 +96,7 @@ const GFX = (() => {
   const noop = () => {};
   const api = {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
-    begin: noop, end: noop, sprite: () => false, lighting: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
+    begin: noop, end: noop, sprite: () => false, lighting: noop, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
     setScale: noop, setShadows: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
   };
@@ -124,15 +136,16 @@ uniform int uNumAreas;
 uniform highp sampler2D uLights;        // per light (row): pos+radius, rgb*intensity+wrap, spot dir+cos, segment end+flags, size+shadow channel
 uniform highp usampler2D uTiles;        // per tile: count, light indices
 uniform ivec4 uTileInfo;                // tile size (device px), screen height (device px), shadows on, -
-uniform highp sampler2D uDepthBuf;      // LAST frame's depth (y·cos + z·sin) of the front-most opaque lit surface per pixel, and whether it casts shadows
-uniform vec4 uPrevCam;                  // last frame's device px of world (0, 0), device px per unit, 1 / its width
-uniform vec2 uPrevInvH;                 // 1 / last frame's height, -
+uniform highp sampler2D uDepthBuf;      // this frame's depth (y·cos + z·sin) of the front-most opaque lit surface per pixel, and whether it casts shadows (depthPass)
+uniform vec4 uDCam;                     // device px of world (0, 0), device px per unit, 1 / width
+uniform float uDInvH;                   // 1 / height (device px)
 uniform highp sampler2DArray uShadowV;  // this frame's soft shadows (see shadowPass): visibility channel c in layer c / 4, component c % 4
 uniform highp sampler2D uShadowD;       // and their depth
 float ign(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }   // interleaved gradient noise
 // Screen-space shadow: march from P towards a random point of the light's disc (radius: its size, so
-// shadows get a penumbra that widens away from the caster) through last frame's depth buffer
-// (reprojected with last frame's camera, so panning doesn't smear). A sample is blocked when the
+// shadows get a penumbra that widens away from the caster) through this frame's depth buffer
+// (drawn by depthPass() before anything is lit, so moving casters don't drag their shadows a frame
+// behind). A sample is blocked when the
 // surface seen at its pixel lies in front of it (towards the camera) by a little, but not by more
 // than an object is thick. n: two noise values in 0..1. 1 = lit, 0 = in shadow.
 float shadowRay(vec3 P, vec3 S, float size, vec2 n, float steps) {
@@ -147,8 +160,8 @@ float shadowRay(vec3 P, vec3 S, float size, vec2 n, float steps) {
     if (float(i) >= steps) break;
     float s = 0.02 + (float(i) + n.x) / steps * (s1 - 0.02);
     vec3 Q = P + D * s;
-    vec2 uv = vec2((uPrevCam.x + Q.x * uPrevCam.z) * uPrevCam.w,
-                   1.0 - (uPrevCam.y + (Q.y * ${SIN.toFixed(6)} - Q.z * ${COS.toFixed(6)}) * uPrevCam.z) * uPrevInvH.x);
+    vec2 uv = vec2((uDCam.x + Q.x * uDCam.z) * uDCam.w,
+                   1.0 - (uDCam.y + (Q.y * ${SIN.toFixed(6)} - Q.z * ${COS.toFixed(6)}) * uDCam.z) * uDInvH);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) continue;
     vec2 dz = texture(uDepthBuf, uv).rg;           // depth, casts shadows (0 / 1)
     float front = dz.r - (Q.y * ${COS.toFixed(6)} + Q.z * ${SIN.toFixed(6)});
@@ -160,7 +173,7 @@ float shadowRay(vec3 P, vec3 S, float size, vec2 n, float steps) {
 // The soft shadows at this pixel: where to read them (shUV). Bilinear between the 4 nearest low-res
 // texels where they all show this surface (about P's depth); at a silhouette the nearest texel
 // of the 3×3 around it that does (so a shadow doesn't bleed over a sprite's edge). false: none
-// shows this surface (it moved, or it isn't in the depth buffer): march here instead.
+// shows this surface (see-through, or a thin sliver the half-res pass missed): march here instead.
 vec2 shUV;
 bool softShadows(vec3 P) {
   float dp = P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)};
@@ -274,9 +287,12 @@ flat in float vFlip, vRot, vDesat;
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies with the same uv
 uniform float uHasMask, uHR, uDepthScale;
+#ifdef DEPTH_ONLY
+layout(location = 0) out vec4 outDepth;   // the depth pre-pass (depthPass): this frame's depth for the screen-space shadows
+#else
 layout(location = 0) out vec4 outColor;
-layout(location = 1) out vec4 outDepth;   // for next frame's screen-space shadows (see shadowRay)
 ${LIGHTING}
+#endif
 void main() {
   vec2 lp = vLp;
   vec2 gdx = dFdx(lp) / uPage, gdy = dFdy(lp) / uPage;      // gradients from the continuous canvas position (no seams at patch edges)
@@ -296,6 +312,12 @@ void main() {
   if (mod(floor(vMisc.w * 0.5), 2.0) > 0.5) hz = -o.y / ${COS.toFixed(6)};   // billboard: an upright plane through the origin
   vec3 P = vec3(vGround.x + o.x, vGround.y + (o.y + hz * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, vGround.z + hz);
   float depth = P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)} + vOrigin.w;   // larger = closer to the camera
+  gl_FragDepth = clamp(0.5 - depth * uDepthScale, 0.0, 1.0);
+#ifdef DEPTH_ONLY
+  // solid, lit pixels: their depth (where the soft shadows are computed); only those below the
+  // ceiling cast shadows (not the hanging lamps and their cables)
+  outDepth = vec4(depth - vOrigin.w, P.z - vGround.z < 1.75 ? 1.0 : 0.0, 0.0, alpha > 0.6 && mod(vMisc.w, 2.0) < 0.5 ? 1.0 : 0.0);
+#else
   vec3 base = b.rgb;
   if (vTint.a > 0.0 && uHasMask > 0.5) {
     float m = textureGrad(uMask, uv, gdx, gdy).r * vTint.a;
@@ -317,11 +339,8 @@ void main() {
     col = base * acc + spec * 0.22;
     col = mix(col, base * 1.15, e);
   }
-  gl_FragDepth = clamp(0.5 - depth * uDepthScale, 0.0, 1.0);
   outColor = vec4(col, alpha);
-  // solid, lit pixels: their depth (where the soft shadows are computed); only those below the
-  // ceiling cast shadows (not the hanging lamps and their cables)
-  outDepth = vec4(depth - vOrigin.w, P.z - vGround.z < 1.75 ? 1.0 : 0.0, 0.0, alpha > 0.6 && mod(vMisc.w, 2.0) < 0.5 ? 1.0 : 0.0);
+#endif
 }`;
 
   // A 2D canvas as a full-screen layer: 'back' unlit, 'mid' lit as a flat floor at z = 0.
@@ -352,8 +371,8 @@ void main() {
   }
   outColor = vec4(col, c.a);
 }`;
-  // Soft shadows, pass 1 (at 1/SH_DIV resolution, before the scene): every pixel takes the surface
-  // last frame's depth buffer shows there (reprojected; P from its screen position and depth: the
+  // Soft shadows, pass 1 (at 1/SH_DIV resolution, after depthPass, before the scene): every pixel takes
+  // the surface this frame's depth buffer shows there (P from its screen position and depth: the
   // view is orthographic) and marches one jittered ray to each shadow-casting light of its tile that
   // has a channel (cullLights() gives overlapping lights different ones). Out: visibility channels
   // (layers of RGBA8) and the depth (-1000: no surface), for the depth-aware blur and lookup.
@@ -369,9 +388,7 @@ void main() {
   ${Array.from({ length: SH_LAYERS }, (_, i) => `outV${i} = v[${i}];`).join(' ')}
   vec2 fc = gl_FragCoord.xy * ${SH_DIV}.0;
   float x = (fc.x - uCam.x) / uCam.z, sy = (uCam.w - fc.y - uCam.y) / uCam.z;   // world x, y·sin − z·cos
-  vec2 uv = vec2((uPrevCam.x + x * uPrevCam.z) * uPrevCam.w, 1.0 - (uPrevCam.y + sy * uPrevCam.z) * uPrevInvH.x);
-  float d = -1000.0;
-  if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) d = texture(uDepthBuf, uv).r;
+  float d = texelFetch(uDepthBuf, min(ivec2(fc), textureSize(uDepthBuf, 0) - 1), 0).r;
   outD = vec4(d, 0.0, 0.0, 1.0);
   if (d < -500.0) return;
   vec3 P = vec3(x, sy * ${SIN.toFixed(6)} + d * ${COS.toFixed(6)}, d * ${SIN.toFixed(6)} - sy * ${COS.toFixed(6)});
@@ -456,6 +473,87 @@ void main() {
   outColor = vec4(c, 1.0);
 }`;
 
+  // Shield domes (GFX.dome): a quad over the dome's screen box; every pixel casts its view ray (the
+  // view is orthographic) against the ellipsoid and shades one of the two hits (uMisc.y: 0 the front
+  // one, 1 the back one; two draws so each is depth-tested against the walls and the crew on its own).
+  // Unlit and additive: hexagon cells over the surface, a fresnel rim where it's seen edge-on, a bright
+  // base ring, the reveal sphere growing out of the emitter, impacts flaring the cells and rippling.
+  const VS_RECT = `#version 300 es
+layout(location = 0) in vec2 aPos;
+uniform vec4 uRect;       // device px x0, y0, x1, y1 (y down)
+uniform vec2 uView;
+void main() { vec2 p = mix(uRect.xy, uRect.zw, aPos); gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0); }`;
+  const FS_DOME = `#version 300 es
+precision highp float;
+uniform vec4 uCam;        // device px of world (0, 0), device px per unit, height (device px)
+uniform vec3 uC, uR;      // the ellipsoid: centre, radii (world axes)
+uniform vec4 uOut;        // outward (horizontal unit vector), fade start, fade end (in q·out)
+uniform vec4 uGrow;       // the emitter (x, y, z), reveal radius
+uniform vec4 uCol;        // rgb, strength
+uniform vec4 uMisc;       // time, back hit (0 / 1), cell size (units), -
+uniform vec4 uHit[8];     // impact x, y, z (on the surface), age 0..1
+uniform vec4 uHitK[8];    // heavy (0 / 1)
+uniform int uNumHits;
+uniform float uDepthScale;
+out vec4 outColor;
+const vec2 HS = vec2(1.0, 1.7320508);
+vec4 hexCell(vec2 p) {     // offset from the nearest cell centre, cell id
+  vec4 hc = floor(vec4(p, p - vec2(0.5, 1.0)) / HS.xyxy) + 0.5;
+  vec4 h = vec4(p - hc.xy * HS, p - (hc.zw + 0.5) * HS);
+  return dot(h.xy, h.xy) < dot(h.zw, h.zw) ? vec4(h.xy, hc.xy) : vec4(h.zw, hc.zw + 0.5);
+}
+void main() {
+  float x = (gl_FragCoord.x - uCam.x) / uCam.z, sy = (uCam.w - gl_FragCoord.y - uCam.y) / uCam.z;
+  vec3 V = vec3(0.0, ${COS.toFixed(6)}, ${SIN.toFixed(6)});
+  vec3 A = vec3(x, sy * ${SIN.toFixed(6)}, -sy * ${COS.toFixed(6)});   // the ray: A + t·V, t = depth
+  vec3 q0 = (A - uC) / uR, qv = V / uR;
+  float a = dot(qv, qv), b = dot(q0, qv), c = dot(q0, q0) - 1.0, disc = b * b - a * c;
+  if (disc <= 0.0) discard;
+  float t = (-b + (uMisc.y > 0.5 ? -1.0 : 1.0) * sqrt(disc)) / a;
+  vec3 P = A + V * t;
+  if (P.z < 0.0) discard;
+  vec3 q = (P - uC) / uR;
+  float s = dot(q.xy, uOut.xy);                    // 1: the outer rim on the ground, 0: over the crown
+  float fade = smoothstep(uOut.z, uOut.w, s);
+  float dg = length(P - uGrow.xyz);
+  float reveal = 1.0 - smoothstep(uGrow.w - 2.0, uGrow.w, dg);
+  if (fade * reveal <= 0.0 && uNumHits == 0) discard;
+  vec3 N = normalize(q / uR);
+  float fres = pow(1.0 - abs(dot(N, V)), 2.5);
+  // the cells: around the along axis (from the outer rim up over the crown) × world units along it
+  vec2 al = vec2(-uOut.y, uOut.x);
+  float rm = sqrt(abs(dot(uR.xy, uOut.xy)) * uR.z), ra = abs(dot(uR.xy, al));
+  vec2 uv = vec2(atan(q.z, s) * rm, dot(P.xy - uC.xy, al)) / uMisc.z;
+  vec4 hx = hexCell(uv);
+  // impacts light up whole cells (by their centre's distance) and ripple outward
+  vec2 cc = (uv - hx.xy) * uMisc.z;                // the cell's centre: lon · rm, along
+  float qa = clamp(cc.y / ra, -1.0, 1.0), lon = cc.x / rm, rr = sqrt(1.0 - qa * qa);
+  vec3 PC = uC + uR * vec3(uOut.xy * cos(lon) * rr + al * qa, sin(lon) * rr);
+  float boost = 0.0;
+  for (int i = 0; i < 8; i++) {
+    if (i >= uNumHits) break;
+    vec4 h = uHit[i];
+    float k = 1.0 - h.w, d = length(PC - h.xyz), big = 1.0 + 0.6 * uHitK[i].x, ring = abs(d - h.w * 3.2 * big);
+    boost += (max(0.0, 1.0 - d / (2.2 * big)) * 1.6 + max(0.0, 1.0 - ring / 0.6) * 0.8) * k;
+  }
+  if (fade * (reveal + boost) <= 0.0) discard;
+  vec2 ap = abs(hx.xy);
+  float e = 0.5 - max(dot(ap, HS * 0.5), ap.x);   // 0 on a cell's edge, 0.5 in its middle
+  float w = fwidth(e);
+  float line = 1.0 - smoothstep(0.015, 0.015 + 1.5 * w + 0.025, e);
+  float cn = fract(sin(dot(hx.zw, vec2(12.9898, 78.233))) * 43758.5453);
+  float shim = 0.75 + 0.25 * sin(uMisc.x * 1.7 + cn * 6.2832);
+  float rim = exp(-P.z / 0.12);                    // where it meets the deck plane: the curtain's base line
+  float front = uGrow.w < 80.0 ? exp(-pow((dg - uGrow.w + 0.6) / 0.7, 2.0)) : 0.0;   // the growing edge
+  float k = uCol.w * reveal * fade;
+  float I = k * (line * (0.07 + 1.0 * fres) * shim + 0.006 + 0.22 * fres + 0.5 * rim) + front * fade * 0.8;
+  I += boost * fade * (0.3 + line * 1.2 + 0.3 * (1.0 - smoothstep(0.0, 0.3, e)));
+  if (uMisc.y > 0.5) I *= 0.45;                    // the far wall, seen through the near one
+  vec3 col = uCol.rgb * I + vec3(0.8, 0.9, 1.0) * boost * fade * line * 0.25;
+  gl_FragDepth = clamp(0.5 - (P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)}) * uDepthScale, 0.0, 1.0);
+  outColor = vec4(col, 1.0);
+}`;
+
   function program(vs, fs) {
     const mk = (type, src) => {
       const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh);
@@ -472,8 +570,9 @@ void main() {
   }
   let P;
   try {
-    P = { sprite: program(VS_SPRITE, FS_SPRITE), layer: program(VS_FULL, FS_LAYER), bright: program(VS_FULL, FS_BRIGHT),
-          blur: program(VS_FULL, FS_BLUR), comp: program(VS_FULL, FS_COMPOSITE), shPass: program(VS_FULL, FS_SHPASS), shBlur: program(VS_FULL, FS_SHBLUR) };
+    P = { sprite: program(VS_SPRITE, FS_SPRITE), spriteDepth: program(VS_SPRITE, FS_SPRITE.replace('precision highp float;', '#define DEPTH_ONLY\nprecision highp float;')), layer: program(VS_FULL, FS_LAYER), bright: program(VS_FULL, FS_BRIGHT),
+          blur: program(VS_FULL, FS_BLUR), comp: program(VS_FULL, FS_COMPOSITE), shPass: program(VS_FULL, FS_SHPASS), shBlur: program(VS_FULL, FS_SHBLUR),
+          dome: program(VS_RECT, FS_DOME) };
   } catch (e) { console.warn('[gfx]', e); return off('shader error'); }
   for (const prog of [P.sprite, P.layer, P.shPass]) {   // the lighting's samplers live on units 4..8 (no clash with units 0..3)
     gl.useProgram(prog.p); gl.uniform1i(prog.u.uLights, 4); gl.uniform1i(prog.u.uTiles, 5); gl.uniform1i(prog.u.uDepthBuf, 6);
@@ -553,9 +652,9 @@ void main() {
   }
   let RT = null, useHdr = hdr;
   function freeT(x) { if (!x) return; gl.deleteFramebuffer(x.fb); gl.deleteTexture(x.t); if (x.rb) gl.deleteRenderbuffer(x.rb); }
-  // Two RG32F (RG16F without EXT_float_blend) screen buffers, ping-ponged: this frame writes the depth
-  // of its solid lit pixels and whether they cast shadows into one (second colour attachment of the
-  // scene) while the lighting reads last frame's from the other.
+  // The shadows' depth buffer, RG32F (RG16F without EXT_float_blend): the depth of the front-most
+  // solid lit pixel and whether it casts shadows. depthPass() draws it first every frame, into its own
+  // framebuffer that shares the scene's depth renderbuffer; the shadows and the lighting then read it.
   function depthTex(w, h, fmt) {
     const t = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, t);
@@ -582,21 +681,18 @@ void main() {
   function freeShadowTarget(T) { if (!T) return; gl.deleteFramebuffer(T.fb); for (const t of [T.v, T.d]) gl.deleteTexture(t); }
   function ensureTargets(w, h) {
     if (RT && RT.w === w && RT.h === h) return;
-    if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); for (const t of RT.depth || []) gl.deleteTexture(t); freeShadowTarget(RT.sh0); freeShadowTarget(RT.sh1); }
+    if (RT) { for (const k of ['scene', 'a1', 'b1', 'a2', 'b2']) freeT(RT[k]); freeT(RT.depth); freeShadowTarget(RT.sh0); freeShadowTarget(RT.sh1); }
     let scene = useHdr && target(w, h, true, true);
     if (!scene) { useHdr = false; scene = target(w, h, true, false); }
     const w1 = Math.max(1, w >> 1), h1 = Math.max(1, h >> 1), w2 = Math.max(1, w >> 3), h2 = Math.max(1, h >> 3);
-    RT = { w, h, scene, a1: target(w1, h1, false, useHdr), b1: target(w1, h1, false, useHdr), a2: target(w2, h2, false, useHdr), b2: target(w2, h2, false, useHdr), depth: null, cur: 0 };
-    prevCam = null;
+    RT = { w, h, scene, a1: target(w1, h1, false, useHdr), b1: target(w1, h1, false, useHdr), a2: target(w2, h2, false, useHdr), b2: target(w2, h2, false, useHdr), depth: null };
     if (useHdr && shadowsWanted) {                     // shadows need a float colour attachment
-      RT.depth = [depthTex(w, h), depthTex(w, h)];
-      gl.bindFramebuffer(gl.FRAMEBUFFER, scene.fb);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, RT.depth[0], 0);
-      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, null, 0);
-        for (const t of RT.depth) gl.deleteTexture(t);
-        RT.depth = null;
-      }
+      const D = { t: depthTex(w, h), fb: gl.createFramebuffer(), rb: null, w, h };
+      gl.bindFramebuffer(gl.FRAMEBUFFER, D.fb);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, D.t, 0);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, scene.rb);   // shared: not freed with D
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) RT.depth = D;
+      else freeT(D);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       if (RT.depth) {                                  // the soft shadow buffers (without them: the old per-pixel march)
         const sw = Math.max(1, Math.ceil(w / SH_DIV)), sh = Math.max(1, Math.ceil(h / SH_DIV));
@@ -617,7 +713,7 @@ void main() {
   gl.bindTexture(gl.TEXTURE_2D, lightTex);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, LIGHT_TEXELS, MAX_LIGHTS, 0, gl.RGBA, gl.FLOAT, lightData);
   let tileData = new Uint8Array(0), tileW = 0, tileH = 0, tileSize = 64;
-  let prevCam = null, shadowsWanted = true, softReady = false;
+  let shadowsWanted = true, softReady = false;
   try { if (/[?&]noshadows\b/.test(search) || localStorage.getItem('mn-gfx-shadows') === '0') shadowsWanted = false; } catch (e) { /* no storage */ }
 
   // --- the sprite atlas: sprites.json + pages, loaded lazily per page --------------------------------
@@ -690,7 +786,7 @@ void main() {
   function canvasSprite(key, w, h, o = {}) {
     w = Math.max(1, Math.ceil(w)); h = Math.max(1, Math.ceil(h));
     let D = DYN[key];
-    if (D && (D.w !== w || D.h !== h)) { if (D.pg.tex.b) gl.deleteTexture(D.pg.tex.b); D = null; }
+    if (D && (D.w !== w || D.h !== h || !!o.maps !== !!D.nmap)) { for (const t of Object.values(D.pg.tex)) gl.deleteTexture(t); D = null; }
     if (!D) {
       const c = document.createElement('canvas'); c.width = w; c.height = h;
       const pg = { state: 'ready', w, h, maps: '', tex: {}, img: {} }, ox = o.ox != null ? o.ox : w / 2, oy = o.oy != null ? o.oy : h / 2;
@@ -704,7 +800,15 @@ void main() {
           gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c); gl.generateMipmap(gl.TEXTURE_2D);
         }
+        if (D.nmap && D.mapsDirty) for (const [k, px] of [['n', D.nmap], ['h', D.hmap]]) {   // { maps: true }: the normal and height maps too (when D.mapsDirty)
+          if (!pg.tex[k]) pg.tex[k] = texture(new Uint8Array(4), false);
+          gl.bindTexture(gl.TEXTURE_2D, pg.tex[k]);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          D.mapsDirty = false;
+        }
       } };
+      if (o.maps) { D.nmap = new Uint8Array(w * h * 4); D.hmap = new Uint8Array(w * h * 4); D.mapsDirty = true; }
     }
     return D;
   }
@@ -733,6 +837,7 @@ void main() {
   const LAYERS = { under: -1, ground: 0, decal: 1, wall: 2, main: 3, top: 4 };
   let view = null, W = 1, H = 1, K = 1, Sdev = 1, camOX = 0, camOY = 0, frameNo = 0, active = false;
   let queue = [], seq = 0, picks = [], lastPicks = [];
+  const domes = [];
   let light = { ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
   let userScale = null;
   try { const q = search.match(/[?&]gfxscale=([\d.]+)/); if (q) { userScale = +q[1]; localStorage.setItem('mn-gfx-scale', q[1]); } else { const s = localStorage.getItem('mn-gfx-scale'); if (s) userScale = +s; } } catch (e) { /* no storage */ }
@@ -771,8 +876,8 @@ void main() {
     K = W / vw; api.layer2dScale = K;
     Sdev = 48 * v.zoom * K;                               // device px per layout unit (T = 48)
     camOX = v.ox * K; camOY = v.oy * K;
-    queue.length = 0; seq = 0; picks = [];
-    light = { ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
+    queue.length = 0; seq = 0; picks = []; domes.length = 0;
+    light ={ ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
   }
   function lighting(L) { if (api.on) light = Object.assign({ ambient: [1, 1, 1], sun: null, areas: [], lights: [] }, L); }
   function setShadows(on) {                          // screen-space shadows (default on; ?noshadows or GFX.setShadows(false) turns them off)
@@ -824,6 +929,8 @@ void main() {
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
           t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, 0],
       depthWrite: o.depthWrite !== false,
+      // anything for depthPass(): it writes the depth buffer, or can be a solid lit pixel
+      inDepth: ((LAYERS[o.layer] ?? 3) === 2 || (LAYERS[o.layer] ?? 3) === 3) && o.depthWrite !== false || !o.unlit && !(o.alpha <= 0.6),
     });
     return true;
   }
@@ -838,15 +945,15 @@ void main() {
     const areas = (L.areas || []).slice(0, MAX_AREAS), ar = new Float32Array(MAX_AREAS * 4), ac = new Float32Array(MAX_AREAS * 4);
     areas.forEach((a, i) => { ar.set([a.x, a.y, a.x + a.w, a.y + a.h], i * 4); ac.set([a.color[0], a.color[1], a.color[2], a.sun || 0], i * 4); });
     gl.uniform4fv(u.uAreaRect, ar); gl.uniform4fv(u.uAreaCol, ac); gl.uniform1i(u.uNumAreas, areas.length);
-    const shadows = !!(RT && RT.depth && prevCam);
+    const shadows = !!(RT && RT.depth);
     gl.uniform4i(u.uTileInfo, tileSize, H, shadows ? 1 : 0, 0);
     gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, lightTex); gl.uniform1i(u.uLights, 4);
     gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, tileTex); gl.uniform1i(u.uTiles, 5);
-    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, shadows ? RT.depth[1 - RT.cur] : zero); gl.uniform1i(u.uDepthBuf, 6);
+    gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_2D, shadows ? RT.depth.t : zero); gl.uniform1i(u.uDepthBuf, 6);
     const soft = shadows && softReady ? RT.sh0 : null;  // (no channel is used without them: cullLights)
     bindArr(7, soft ? soft.v : litArr);
     gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, soft ? soft.d : zero);
-    if (shadows) { gl.uniform4f(u.uPrevCam, prevCam[0], prevCam[1], prevCam[2], 1 / prevCam[3]); gl.uniform2f(u.uPrevInvH, 1 / prevCam[4], 0); }
+    gl.uniform4f(u.uDCam, camOX, camOY, Sdev, 1 / W); gl.uniform1f(u.uDInvH, 1 / H);
     gl.activeTexture(gl.TEXTURE0);
   }
   // This frame's lights: drop the ones off screen, keep the MAX_LIGHTS strongest, write them into the
@@ -912,8 +1019,25 @@ void main() {
     api.stats.shadow = { soft: chBoxes.reduce((n, B) => n + B.length, 0), channels: chBoxes.filter(B => B.length).length, marched };
   }
 
-  // The soft shadows for this frame (FS_SHPASS, then FS_SHBLUR across and down) into RT.sh0, before
-  // the scene is drawn: it reads last frame's depth (RT.depth[RT.cur] until end() flips it).
+  // This frame's depth for the shadows, before anything is lit (FS_SPRITE built with DEPTH_ONLY: the
+  // beauty's alpha and the height map, no lighting): the same sprites in the same order, with the same
+  // depth test and blending as the scene pass, so it holds what the scene will show. (The shadows used
+  // to march through LAST frame's depth, so whatever moved dragged its shadow a frame behind.)
+  function depthPass(groups) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, RT.depth.fb);
+    gl.viewport(0, 0, W, H);
+    gl.clearBufferfv(gl.COLOR, 0, [-1000, 0, 0, 0]);
+    gl.clearDepth(1); gl.depthMask(true); gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    const prog = P.spriteDepth, u = prog.u;
+    gl.useProgram(prog.p);
+    gl.uniform2f(u.uView, W, H); gl.uniform1f(u.uHR, HR); gl.uniform1f(u.uDepthScale, DEPTH_SCALE);
+    gl.uniform1i(u.uBeauty, 0); gl.uniform1i(u.uHeight, 2);
+    for (const items of groups) drawQueue(items.filter(it => it.inDepth), prog);
+  }
+
+  // The soft shadows for this frame (FS_SHPASS, then FS_SHBLUR across and down) into RT.sh0, after
+  // depthPass() and before the scene is drawn.
   function shadowPass() {
     const A = RT.sh0, B = RT.sh1;
     gl.bindVertexArray(vaoFull);
@@ -924,8 +1048,8 @@ void main() {
     gl.useProgram(P.shPass.p);
     gl.uniform4f(u.uCam, camOX, camOY, Sdev, H);
     gl.uniform4i(u.uTileInfo, tileSize, H, 1, 0);
-    bindTex(4, lightTex); bindTex(5, tileTex); bindTex(6, RT.depth[RT.cur]);
-    gl.uniform4f(u.uPrevCam, prevCam[0], prevCam[1], prevCam[2], 1 / prevCam[3]); gl.uniform2f(u.uPrevInvH, 1 / prevCam[4], 0);
+    bindTex(4, lightTex); bindTex(5, tileTex); bindTex(6, RT.depth.t);
+    gl.uniform4f(u.uDCam, camOX, camOY, Sdev, 1 / W); gl.uniform1f(u.uDInvH, 1 / H);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.useProgram(P.shBlur.p);
     const ub = P.shBlur.u;
@@ -953,24 +1077,29 @@ void main() {
     gl.uniform1f(u.uLit, lit ? 1 : 0); gl.uniform1f(u.uEmissive, 0.45);
     gl.uniform4f(u.uCam, camOX, camOY, Sdev, Sdev * SIN); gl.uniform2f(u.uView, W, H);
     if (lit) setLightUniforms(u);
-    if (RT.depth) gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.NONE]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    if (RT.depth) gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
   }
 
-  function drawQueue(items) {
+  // All of this frame's sprites into the instance buffer, once (it.ii: where each one went), for
+  // depthPass() and the scene pass.
+  function uploadInstances(groups) {
+    let n = 0;
+    for (const g of groups) n += g.length;
+    if (instCap < n) { instCap = Math.max(n, instCap * 2, 256); inst = new Float32Array(INST * instCap); }
+    n = 0;
+    for (const g of groups) for (const it of g) { inst.set(it.d, n * INST); it.ii = n++; }
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, inst.subarray(0, Math.max(1, n) * INST), gl.STREAM_DRAW);
+  }
+  function drawQueue(items, prog = P.sprite) {
     if (!items.length) return;
     gl.bindVertexArray(vao);
-    if (instCap < items.length) { instCap = Math.max(items.length, instCap * 2, 256); inst = new Float32Array(INST * instCap); }
-    items.forEach((it, i) => inst.set(it.d, i * INST));
-    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, inst.subarray(0, items.length * INST), gl.STREAM_DRAW);
-    const u = P.sprite.u;
+    const u = prog.u;
     let i = 0;
     while (i < items.length) {
       const a = items[i];
       let j = i + 1;
-      while (j < items.length && items[j].page === a.page && items[j].layer === a.layer && items[j].depthWrite === a.depthWrite) j++;
+      while (j < items.length && items[j].ii === a.ii + j - i && items[j].page === a.page && items[j].layer === a.layer && items[j].depthWrite === a.depthWrite) j++;
       const depth = a.layer === 2 || a.layer === 3;
       if (depth) { gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(a.depthWrite); }
       else { gl.disable(gl.DEPTH_TEST); gl.depthMask(false); }
@@ -980,11 +1109,51 @@ void main() {
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, p.tex.h || zero);
       gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, p.tex.m || zero);
       gl.uniform2f(u.uPage, p.w, p.h); gl.uniform1f(u.uHasMask, p.tex.m ? 1 : 0);
-      pointInstances(i);
+      pointInstances(a.ii);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, j - i);
       api.stats.batches++;
       i = j;
     }
+  }
+
+  // GFX.dome(d): queue a shield dome for this frame (see FS_DOME and the header).
+  function dome(d) { if (api.on && active) domes.push(d); }
+  function drawDomes() {
+    if (!domes.length) return;
+    gl.bindVertexArray(vaoFull);
+    gl.useProgram(P.dome.p);
+    const u = P.dome.u;
+    gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+    gl.uniform2f(u.uView, W, H); gl.uniform4f(u.uCam, camOX, camOY, Sdev, H); gl.uniform1f(u.uDepthScale, DEPTH_SCALE);
+    const hit = new Float32Array(32), hitK = new Float32Array(32);
+    for (const d of domes) {
+      const [cx, cy, cz] = d.c, [rx, ry, rz] = d.r;
+      const f0 = d.fade ? d.fade[0] : -0.05;
+      const span = (c, r, o) => (o ? [c + o * r * f0, c + o * r] : [c - r, c + r]);   // only the side it stands on
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;   // screen box of that part of the ellipsoid's upper half
+      for (const X of span(cx, rx, d.out[0])) for (const Y of span(cy, ry, d.out[1])) for (const Z of [Math.max(0, cz - rz), cz + rz]) {
+        const [sx, sy] = toDev(X, Y, Z);
+        x0 = Math.min(x0, sx); x1 = Math.max(x1, sx); y0 = Math.min(y0, sy); y1 = Math.max(y1, sy);
+      }
+      x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0)); x1 = Math.min(W, Math.ceil(x1)); y1 = Math.min(H, Math.ceil(y1));
+      if (x1 <= x0 || y1 <= y0) continue;
+      const hits = (d.hits || []).slice(0, 8);
+      hit.fill(0); hitK.fill(0);
+      hits.forEach((h, i) => { hit.set([h.x, h.y, h.z, h.age], i * 4); hitK[i * 4] = h.heavy ? 1 : 0; });
+      gl.uniform4f(u.uRect, x0, y0, x1, y1);
+      gl.uniform3f(u.uC, cx, cy, cz); gl.uniform3f(u.uR, rx, ry, rz);
+      gl.uniform4f(u.uOut, d.out[0], d.out[1], d.fade ? d.fade[0] : -0.05, d.fade ? d.fade[1] : 0.45);
+      const g = d.grow || [cx, cy, cz, 1e4];
+      gl.uniform4f(u.uGrow, g[0], g[1], g[2], g[3]);
+      gl.uniform4f(u.uCol, d.color[0], d.color[1], d.color[2], d.strength == null ? 1 : d.strength);
+      gl.uniform4fv(u.uHit, hit); gl.uniform4fv(u.uHitK, hitK); gl.uniform1i(u.uNumHits, hits.length);
+      for (const back of [1, 0]) {
+        gl.uniform4f(u.uMisc, d.time || 0, back, d.cell || 0.9, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      }
+    }
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
 
   function fullPass(prog, dst, setup) {
@@ -1002,40 +1171,35 @@ void main() {
     api.stats = { sprites: queue.length, batches: 0, lights: 0 };
     lastPicks = picks;
     ensureTargets(W, H);
-    softReady = !!(RT.depth && RT.sh0 && prevCam);
+    const by = (l) => queue.filter(q => q.layer === l);
+    const ground = [...by(-1), ...by(0), ...by(1)];
+    const sorted = (l) => by(l).sort((a, b) => a.sortY - b.sortY || a.seq - b.seq);
+    const walls = sorted(2), mains = sorted(3), tops = by(4);
+    uploadInstances([ground, walls, mains, tops]);
+    if (RT.depth) depthPass([ground, walls, mains, tops]);   // (the 2D layers write no depth)
+    softReady = !!(RT.depth && RT.sh0);
     cullLights(softReady);
     if (softReady) shadowPass();
     gl.bindVertexArray(vao);
     gl.bindFramebuffer(gl.FRAMEBUFFER, RT.scene.fb);
     gl.viewport(0, 0, W, H);
     gl.clearDepth(1); gl.depthMask(true);
-    if (RT.depth) {
-      RT.cur = 1 - RT.cur;                              // write into one, read last frame's from the other
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, RT.depth[RT.cur], 0);
-      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
-      gl.clearBufferfv(gl.COLOR, 0, [0.02, 0.025, 0.04, 1]);
-      gl.clearBufferfv(gl.COLOR, 1, [-1000, 0, 0, 0]);
-      gl.clear(gl.DEPTH_BUFFER_BIT);
-    } else {
-      gl.clearColor(0.02, 0.025, 0.04, 1);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    }
+    gl.clearColor(0.02, 0.025, 0.04, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     const u = P.sprite.u;
     gl.useProgram(P.sprite.p);
     gl.uniform2f(u.uView, W, H); gl.uniform1f(u.uHR, HR); gl.uniform1f(u.uDepthScale, DEPTH_SCALE);
     gl.uniform1i(u.uBeauty, 0); gl.uniform1i(u.uNormal, 1); gl.uniform1i(u.uHeight, 2); gl.uniform1i(u.uMask, 3);
     setLightUniforms(u);
-    const by = (l) => queue.filter(q => q.layer === l);
-    const ground = [...by(-1), ...by(0), ...by(1)];
-    const sorted = (l) => by(l).sort((a, b) => a.sortY - b.sortY || a.seq - b.seq);
     drawLayer2d('back', false);
     gl.useProgram(P.sprite.p); drawQueue(ground);
-    gl.useProgram(P.sprite.p); drawQueue(sorted(2));
+    gl.useProgram(P.sprite.p); drawQueue(walls);
     drawLayer2d('mid', true);
     drawLayer2d('glow', false);
-    gl.useProgram(P.sprite.p); drawQueue(sorted(3));
-    gl.useProgram(P.sprite.p); drawQueue(by(4));
+    gl.useProgram(P.sprite.p); drawQueue(mains);
+    gl.useProgram(P.sprite.p); drawQueue(tops);
+    drawDomes();
     // bloom + composite
     gl.bindVertexArray(vaoFull);
     gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.depthMask(true);
@@ -1053,7 +1217,6 @@ void main() {
       gl.uniform1i(u.uScene, 0); gl.uniform1i(u.uBloom1, 1); gl.uniform1i(u.uBloom2, 2);
       gl.uniform1f(u.uBloom, post.bloom == null ? 0.55 : post.bloom); gl.uniform3fv(u.uGrade, post.grade || light.grade || [1, 1, 1]);
     });
-    prevCam = RT.depth ? [camOX, camOY, Sdev, W, H] : null;
     api.stats.ms = +(performance.now() - t0).toFixed(2);
   }
 
@@ -1072,7 +1235,7 @@ void main() {
   }
 
   Object.assign(api, {
-    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text,
+    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome,
     has: (name) => !!(DYNS[name] || (MAN && MAN[name] && MAN[name].f && MAN[name].f.length)),
     ready: (name) => !!(DYNS[name] ? spriteReady(DYNS[name]) : MAN && MAN[name] && spriteReady(MAN[name])),
     info: (name) => DYNS[name] || (MAN && MAN[name]) || null,
@@ -1090,7 +1253,7 @@ void main() {
   glc.addEventListener('webglcontextlost', (e) => { e.preventDefault(); disable('WebGL context lost'); });
 
   fetch(BASE_URL + 'sprites.json').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(d => {
-    MAN = d.sprites; META = d.meta; HR = META.heightRange || 4;
+    MAN = d.sprites; META = d.meta; HR = META.heightRange || 4; api.heightRange = HR;
     for (const k in MAN) MAN[k].name = k;
     api.preload(['hull', 'interior', 'ship', 'crew']);
   }).catch(e => disable('sprites.json: ' + e.message));
