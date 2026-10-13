@@ -2,9 +2,11 @@
 // Manifold Novum LAN server: serves the game over HTTP and runs the shared simulation.
 // No dependencies.  Usage:  node server.js [port]   →  open http://<this-machine>:<port>
 //
-// Everyone who opens the page lands in the lobby. Anyone can pick the mission and start it;
-// everyone in the lobby joins that game, and people who connect mid-game drop straight in.
-// When the mission is over, anyone can press R to send everybody back to the lobby.
+// Everyone who opens the page lands in the main menu, which lists the open games. Anyone can
+// open a game (and is its host) or join one with room (8 players each), also mid-mission. Only
+// the host picks the mission and starts it; when the host leaves, the next player takes over.
+// When the mission is over, anyone can press R to send that game back to its lobby. A game
+// closes when its last player leaves.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), vm = require('vm'), os = require('os');
 
 const PORT = +process.argv[2] || +process.env.PORT || 8080;
@@ -40,7 +42,7 @@ server.on('upgrade', (req, socket) => {
   socket.on('data', (chunk) => { client.buf = Buffer.concat([client.buf, chunk]); readFrames(client); });
   socket.on('close', () => drop(client));
   socket.on('error', () => drop(client));
-  join(client);
+  connect(client);
 });
 function readFrames(c) {
   for (;;) {
@@ -72,53 +74,132 @@ function sendFrame(c, payload, op = 0x1) {
 const send = (c, obj) => sendFrame(c, JSON.stringify(obj));
 
 // ---------------------------------------------------------------------------
-// Lobby + game
+// Games: every connection starts in the main menu (it gets the live list of open games).
+// Anyone can open a game (they become its host) or join one; each game has its own lobby,
+// its own mission choice and its own running simulation, with up to 8 players.
 // ---------------------------------------------------------------------------
-let nextId = 1;
-const MAX_PLAYERS = 8;                                 // (8 spawn spots and 8 crew colours)
-const clients = new Set();
-let phase = 'lobby', missionId = 'intro', game = null;
+let nextId = 1, nextGameId = 1;
+const MAX_PLAYERS = 8;                                 // per game (8 spawn spots and 8 crew colours)
+const RETURN_GRACE = 15000;                            // after a mission, a page reload keeps your seat this long (ms)
+const clients = new Set();                             // every connection (in the menu or in a game)
+const games = new Map();                               // id → { id, members[], phase, missionId, run }
 const COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#c43a3a'];
+const colorOf = (c) => (/^#[0-9a-f]{6}$/i.test(c.kit?.paint) ? c.kit.paint : COLORS[(c.id - 1) % COLORS.length]);
+const live = (g) => g.members.filter(c => c.alive);
+const hostOf = (g) => g.members[0] || null;           // the earliest joined player still in the game
 
-function lobbyState() {
-  const unlocked = [...new Set([...clients].flatMap(c => c.unlocked || []))];
-  return { t: 'lobby', phase, mission: missionId, unlocked, players: [...clients].map(c => ({ id: c.id, name: c.name, color: /^#[0-9a-f]{6}$/i.test(c.kit?.paint) ? c.kit.paint : COLORS[(c.id - 1) % COLORS.length], level: c.level || 1 })) };
+function lobbyState(g) {
+  const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
+  const host = hostOf(g);
+  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, unlocked, host: host && host.id, max: MAX_PLAYERS,
+    players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), level: c.level || 1, host: c === host, away: !c.alive || undefined })) };
 }
-const broadcast = (obj) => { const s = JSON.stringify(obj); for (const c of clients) sendFrame(c, s); };
+function gameList() {
+  return { t: 'games', max: MAX_PLAYERS, games: [...games.values()].map(g => {
+    const h = hostOf(g);
+    return { id: g.id, host: h ? h.name : '?', color: h ? colorOf(h) : '#888', mission: g.missionId, players: g.members.length, phase: g.phase, full: g.members.length >= MAX_PLAYERS };
+  }) };
+}
+const sendAll = (list, obj) => { const s = JSON.stringify(obj); for (const c of list) sendFrame(c, s); };
+// Changes are collected and sent once per turn: the game's lobby to its players, the list to everyone in the menu.
+const dirty = new Set(); let listDirty = false, flushQueued = false;
+function changed(g) {
+  if (g) dirty.add(g);
+  listDirty = true;
+  if (!flushQueued) { flushQueued = true; setImmediate(flush); }
+}
+function flush() {
+  flushQueued = false;
+  for (const g of dirty) if (games.has(g.id)) sendAll(live(g), lobbyState(g));
+  dirty.clear();
+  if (listDirty) { listDirty = false; sendAll([...clients].filter(c => !c.game), gameList()); }
+}
 
-function join(c) {
-  if (clients.size >= MAX_PLAYERS) {                   // full: say so, and the browser plays solo instead
-    send(c, { t: 'full', max: MAX_PLAYERS }); c.alive = false; setTimeout(() => c.socket.end(), 200);
-    return;
-  }
+function connect(c) {
   clients.add(c);
-  send(c, { t: 'welcome', id: c.id });
-  if (phase === 'game') { game.sim.netServer.addCrew(c.id, c.name, c.kit); send(c, { t: 'start', mission: missionId }); }
-  broadcast(lobbyState());
+  send(c, { t: 'welcome', id: c.id, max: MAX_PLAYERS });
+  send(c, gameList());
 }
 function drop(c) {
   if (!c.alive) return;
   c.alive = false; clients.delete(c);
-  if (game) game.sim.netServer.removeCrew(c.id);
-  if (!clients.size && game) endGame();
-  else broadcast(lobbyState());
+  const g = c.game;
+  if (!g) return;
+  if (g.phase === 'lobby' && c.returning && Date.now() - c.returning < RETURN_GRACE) {
+    // back from a mission: the page reloads and comes back with its ticket; keep the seat a moment
+    c.away = setTimeout(() => removeMember(g, c), RETURN_GRACE);
+    changed(g);
+  } else removeMember(g, c);
 }
+function removeMember(g, c) {
+  const i = g.members.indexOf(c);
+  if (i < 0) return;
+  g.members.splice(i, 1); c.game = null; clearTimeout(c.away);
+  if (g.run) g.run.sim.netServer.removeCrew(c.id);
+  if (!live(g).length) closeGame(g);                   // nobody left (seats kept for reloads don't count)
+  else changed(g);
+}
+function closeGame(g) {
+  if (g.run) clearInterval(g.run.timer);
+  for (const c of g.members) { clearTimeout(c.away); c.game = null; }
+  g.members.length = 0; games.delete(g.id); changed(null);
+  console.log(`[game ${g.id}] closed`);
+}
+function enter(c, g) {                                 // c joins g (there is room)
+  c.game = g; c.ticket = crypto.randomBytes(9).toString('hex'); c.returning = 0;
+  send(c, { t: 'joined', game: g.id, ticket: c.ticket });
+  if (g.run) { g.run.sim.netServer.addCrew(c.id, c.name, c.kit); send(c, { t: 'start', mission: g.missionId, game: g.id }); }
+  changed(g);
+}
+function openGame(c, mission) {
+  const g = { id: nextGameId++, members: [c], phase: 'lobby', missionId: mission ? String(mission).slice(0, 40) : 'intro', run: null };
+  games.set(g.id, g);
+  enter(c, g);
+  console.log(`[game ${g.id}] opened by ${c.name}`);
+}
+function joinGame(c, id, ticket) {
+  const g = games.get(+id);
+  if (!g) return send(c, { t: 'gone', game: +id || null });
+  const seat = ticket && g.members.find(m => !m.alive && m.ticket === String(ticket));
+  if (seat) {                                          // coming back after the reload: take your old seat (and host role)
+    clearTimeout(seat.away);
+    g.members[g.members.indexOf(seat)] = c;
+    return enter(c, g);
+  }
+  if (g.members.length >= MAX_PLAYERS) return send(c, { t: 'full', max: MAX_PLAYERS, game: g.id });
+  g.members.push(c);
+  enter(c, g);
+}
+function leaveGame(c) {
+  if (!c.game) return;
+  removeMember(c.game, c);
+  send(c, gameList());
+}
+
 function onMessage(c, m) {
-  if (!clients.has(c)) return;                       // (turned away: the server was full)
+  const g = c.game, isHost = g && hostOf(g) === c;
   if (m.t === 'hello') {
     c.name = String(m.name || 'Crew').slice(0, 20);
     if (m.kit && typeof m.kit === 'object') c.kit = m.kit;                  // the player's gear and profession (from their own saved profile)
     if (m.ship && typeof m.ship === 'object') c.ship = m.ship;              // ship upgrades they bought
     if (Array.isArray(m.unlocked)) c.unlocked = m.unlocked.map(String).slice(0, 50);
-    c.level = +m.level || 1; if (game) { const cr = game.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; } broadcast(lobbyState()); }
-  else if (m.t === 'mission' && phase === 'lobby' && game === null) { missionId = String(m.id); broadcast(lobbyState()); }
-  else if (m.t === 'start' && phase === 'lobby') startGame();
-  else if (m.t === 'input' && game) game.sim.netServer.input(c.id, m);
-  else if (m.t === 'cmd' && game) game.sim.netServer.command(c.id, m.cmd);
-  else if (m.t === 'lobby' && game && game.sim.mission.over) endGame();
+    c.level = +m.level || 1;
+    if (g?.run) { const cr = g.run.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; }
+    changed(g);
+  }
+  else if (m.t === 'games') send(c, gameList());
+  else if (m.t === 'open') { if (g) removeMember(g, c); openGame(c, m.mission); }
+  else if (m.t === 'join') { if (g && g.id === +m.game) return; if (g) removeMember(g, c); joinGame(c, m.game, m.ticket); }
+  else if (m.t === 'leave') leaveGame(c);
+  else if (!g) return;                                 // (everything below is for players in a game)
+  else if (m.t === 'mission' && isHost && g.phase === 'lobby') { g.missionId = String(m.id).slice(0, 40); changed(g); }
+  else if (m.t === 'start' && isHost && g.phase === 'lobby') startGame(g);
+  else if (m.t === 'input' && g.run) g.run.sim.netServer.input(c.id, m);
+  else if (m.t === 'cmd' && g.run) g.run.sim.netServer.command(c.id, m.cmd);
+  else if (m.t === 'lobby' && g.run && g.run.sim.mission.over) endGame(g);
 }
 
-// A fresh simulation sandbox per game (the game scripts keep their state in globals).
+// A fresh simulation sandbox per mission (the game scripts keep their state in globals).
 function makeSim() {
   const noop = new Proxy(function () {}, { get: (t, k) => (k === 'measureText' ? () => ({ width: 10 }) : noop), apply: () => noop, set: () => true });
   const sandbox = {
@@ -133,35 +214,39 @@ function makeSim() {
   vm.runInContext(code, sandbox, { filename: 'manifold-novum-sim.js' });
   return sandbox.__sim;
 }
-function startGame() {
+function startGame(g) {
+  const crewNow = live(g);
   const sim = makeSim();
   const sfx = sim.netCaptureSfx();
-  const ship = Object.assign({}, ...[...clients].map(c => c.ship || {}));       // the crew's ship has every upgrade anyone bought
-  sim.netServer.init(missionId, ship);
-  for (const c of clients) sim.netServer.addCrew(c.id, c.name, c.kit);
-  phase = 'game';
-  game = { sim, sfx, tick: 0, last: Date.now(), acc: 0 };
-  broadcast({ t: 'start', mission: missionId });
-  game.timer = setInterval(stepGame, 1000 / 120);
-  console.log(`[game] started "${missionId}" with ${clients.size} crew`);
+  const ship = Object.assign({}, ...crewNow.map(c => c.ship || {}));      // the crew's ship has every upgrade anyone bought
+  sim.netServer.init(g.missionId, ship);
+  for (const c of crewNow) sim.netServer.addCrew(c.id, c.name, c.kit);
+  g.phase = 'game';
+  g.run = { sim, sfx, tick: 0, last: Date.now(), acc: 0 };
+  sendAll(crewNow, { t: 'start', mission: g.missionId, game: g.id });
+  g.run.timer = setInterval(() => stepGame(g), 1000 / 120);
+  changed(g);
+  console.log(`[game ${g.id}] started "${g.missionId}" with ${crewNow.length} crew`);
 }
-function stepGame() {
-  const now = Date.now();
-  game.acc += Math.min(0.25, (now - game.last) / 1000); game.last = now;
-  while (game.acc >= TICK) {
-    game.acc -= TICK;
-    try { game.sim.netServer.step(TICK); } catch (e) { console.error('[game] sim error', e); }
-    if (++game.tick % SEND_EVERY === 0) {
-      const snap = JSON.stringify(game.sim.netSerialize()), fx = JSON.stringify(game.sfx.splice(0));
-      for (const c of clients) sendFrame(c, `{"t":"state","you":${c.id},"sfx":${fx},"s":${snap}}`);
+function stepGame(g) {
+  const run = g.run, now = Date.now();
+  run.acc += Math.min(0.25, (now - run.last) / 1000); run.last = now;
+  while (run.acc >= TICK) {
+    run.acc -= TICK;
+    try { run.sim.netServer.step(TICK); } catch (e) { console.error(`[game ${g.id}] sim error`, e); }
+    if (++run.tick % SEND_EVERY === 0) {
+      const snap = JSON.stringify(run.sim.netSerialize()), fx = JSON.stringify(run.sfx.splice(0));
+      for (const c of live(g)) sendFrame(c, `{"t":"state","you":${c.id},"sfx":${fx},"s":${snap}}`);
     }
   }
 }
-function endGame() {
-  if (game) clearInterval(game.timer);
-  game = null; phase = 'lobby';
-  broadcast(lobbyState());
-  console.log('[game] back to the lobby');
+function endGame(g) {                                  // mission over: everyone back to this game's lobby
+  clearInterval(g.run.timer);
+  g.run = null; g.phase = 'lobby';
+  const now = Date.now();
+  for (const c of g.members) c.returning = now;        // (their pages reload; see drop)
+  changed(g);
+  console.log(`[game ${g.id}] back to the lobby`);
 }
 
 server.listen(PORT, '0.0.0.0', () => {

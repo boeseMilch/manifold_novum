@@ -164,63 +164,141 @@ const netServer = {
 };
 
 // ---------------------------------------------------------------------------
-// Browser side: lobby + connection
+// Browser side: main menu, game lobby, connection
+//   menu  → PLAY SOLO (the solo lobby), OPEN A GAME (you host it) or JOIN one from the live list
+//   lobby → the host picks the mission and starts; everyone else watches the choice
+//   game  → snapshots in, input out; when the mission is over the page reloads straight back
+//           into the same game's lobby (sessionStorage 'mn-return' carries the game and seat ticket)
 // ---------------------------------------------------------------------------
 if (typeof window !== 'undefined' && window.document && document.getElementById('lobby')) netClientMain();
 
 function netClientMain() {
   const $ = (id) => document.getElementById(id);
   const lobby = $('lobby');
-  if (lobby.hidden) return;                          // a debug URL skipped the lobby
-  let ws = null, myId = null, chosen = 'intro', phase = 'lobby';
+  if (lobby.hidden) return;                          // a debug URL skipped the menu
+  let ws = null, myId = null, chosen = 'intro', phase = 'menu', solo = false, myGame = null, ticket = null, isHost = false;
+  let netState = 'none', games = [], lastLobby = null, maxPlayers = 8;
+  const store = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { return null; } };
   const nameBox = $('lobby-name');
   try { nameBox.value = localStorage.getItem('mn-name') || ''; } catch (e) { /* no storage */ }
   if (!nameBox.value) nameBox.value = ['Ripley', 'Spock', 'Zoe', 'Bender', 'Kaylee', 'Chewie', 'Marvin', 'Data'][Math.floor(Math.random() * 8)];
   const saveName = () => { try { localStorage.setItem('mn-name', nameBox.value); } catch (e) { /* no storage */ } };
+  const online = () => ws && ws.readyState === 1;
+  const sendWs = (o) => online() && ws.send(JSON.stringify(o));
+  const missionName = (id) => MISSIONS[id]?.name || id;
 
-  // mission cards, briefing, profile, locker and shipyard (progress.js)
-  const hello = () => ws && ws.readyState === 1 && ws.send(JSON.stringify({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()], level: levelOf(profile.xp) }));
-  const pick = (id) => { chosen = id; if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'mission', id })); };
+  // profile, mission cards, briefing, locker and shipyard (progress.js)
+  const hello = () => sendWs({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()], level: levelOf(profile.xp) });
+  const pick = (id) => { if (!solo && !isHost) return; chosen = id; if (!solo) sendWs({ t: 'mission', id }); };
   lobbyUI.init(pick, hello);
+  $('room-locker').onclick = () => lobbyUI.shop('locker');
+  $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
   const markChosen = () => { lobbyUI.tab = CAMPAIGN.includes(chosen) ? 'campaign' : chosen === 'practice' ? 'practice' : 'skirmish'; lobbyUI.render(chosen); };
   chosen = CAMPAIGN.find(id => unlockedMissions().has(id) && !profile.done[id]) || 'c1';
+  const q = new URLSearchParams(location.search);    // dev: ?mission=rush&autostart
+  if (q.get('mission') && MISSIONS[q.get('mission')]) chosen = q.get('mission');
   markChosen();
 
-  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship }); };
-  $('lobby-start').onclick = () => {
-    saveName();
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'start' }));
-    else startSolo();
-  };
-  nameBox.onchange = () => { saveName(); hello(); };
-
-  const q = new URLSearchParams(location.search);    // dev: ?mission=rush&autostart
-  if (q.get('mission') && MISSIONS[q.get('mission')]) { chosen = q.get('mission'); markChosen(); }
-  if (!location.protocol.startsWith('http')) {
-    $('lobby-status').textContent = 'Solo (open via server.js to play together)';
-    if (q.has('autostart')) startSolo();
-    return;
+  // ----- screens
+  function show(view) {
+    phase = view;
+    $('menu').hidden = view !== 'menu'; $('room').hidden = view !== 'room';
+    if (view === 'menu') { solo = false; myGame = null; isHost = false; lobbyUI.union = null; renderMenu(); }
+    else renderRoom();
   }
+  function renderMenu() {
+    const box = $('menu-games'), status = $('menu-net');
+    $('menu-open').disabled = netState !== 'online';
+    status.className = 'net ' + netState;
+    status.textContent = { none: 'offline', connecting: 'connecting…', online: 'server online', lost: 'connection lost' }[netState];
+    if (netState !== 'online') {
+      box.innerHTML = `<li class="empty">${netState === 'connecting' ? 'Looking for the server…'
+        : 'No server here, so there is no multiplayer. To play together, run <code>node server.js</code> and open its <code>http://…</code> address. Solo works as always.'}</li>`;
+      return;
+    }
+    if (!games.length) { box.innerHTML = '<li class="empty">No open games yet. Open one, and everyone on this server sees it here.</li>'; return; }
+    box.innerHTML = games.map(g => `<li class="game${g.full ? ' full' : ''}">
+        <i class="dot" style="background:${g.color}"></i>
+        <span class="who"><b>${escapeHtml(g.host)}'s game</b><small>${escapeHtml(missionName(g.mission))}</small></span>
+        <span class="tag ${g.phase === 'game' ? 'busy' : ''}">${g.phase === 'game' ? 'in mission' : 'in lobby'}</span>
+        <span class="count">${g.players}/${g.max || maxPlayers}</span>
+        ${g.full ? '<span class="join-full">FULL</span>' : `<button class="join" data-game="${g.id}">JOIN</button>`}
+      </li>`).join('');
+    box.querySelectorAll('[data-game]').forEach(b => b.onclick = () => { saveName(); hello(); sendWs({ t: 'join', game: +b.dataset.game }); });
+  }
+  function renderRoom() {
+    const room = $('room'), L = lastLobby;
+    const canPick = solo || isHost;
+    room.classList.toggle('guest', !canPick);
+    const host = L && L.players.find(p => p.host);
+    $('room-title').textContent = solo ? 'SOLO MISSION' : host ? `${host.name.toUpperCase()}'S GAME` : 'GAME';
+    $('room-host').textContent = solo ? 'Just you and the ship.' : !L ? 'Joining…' : isHost ? 'You are the host: you pick the mission and start it.'
+      : `${host ? host.name : 'The host'} is the host: they pick the mission and start it.`;
+    $('lobby-players').innerHTML = solo || !L ? `<li style="color:${profile.paint || '#c4683a'}">${escapeHtml(nameBox.value || 'You')} <small>(you)</small></li>`
+      : L.players.map(p => `<li style="color:${p.color}"${p.away ? ' class="away"' : ''}>${p.host ? '<span class="crown" title="host">HOST</span> ' : ''}${escapeHtml(p.name)} <small>lv ${p.level || 1}${p.id === myId ? ' · you' : ''}${p.away ? ' · coming back…' : ''}</small></li>`).join('');
+    $('room-count').textContent = solo ? '' : L ? `${L.players.length}/${L.max || maxPlayers}` : '';
+    const start = $('lobby-start');
+    start.disabled = !canPick || (!solo && L?.phase === 'game');
+    start.textContent = solo ? 'START MISSION' : L?.phase === 'game' ? 'MISSION RUNNING…' : isHost ? 'START MISSION' : `WAITING FOR ${host ? host.name.toUpperCase() : 'THE HOST'}…`;
+    $('room-back').textContent = solo ? '‹ MENU' : '‹ LEAVE GAME';
+  }
+
+  // ----- buttons
+  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship }); };
+  $('menu-solo').onclick = () => { saveName(); solo = true; lastLobby = null; show('room'); markChosen(); };
+  $('menu-open').onclick = () => { saveName(); hello(); sendWs({ t: 'open', mission: chosen }); };
+  $('room-back').onclick = () => { if (!solo) sendWs({ t: 'leave' }); lastLobby = null; show('menu'); };
+  $('lobby-start').onclick = () => { saveName(); if (solo) startSolo(); else if (isHost) sendWs({ t: 'start' }); };
+  nameBox.onchange = () => { saveName(); hello(); };
+  backToLobby = () => { store('mn-return', 'solo'); location.reload(); };   // solo: after a mission, back to the solo lobby
+
+  const ret = store('mn-return'); store('mn-return', null);              // coming back from a mission?
+  let rejoin = null;
+  try { rejoin = ret && ret !== 'solo' ? JSON.parse(ret) : null; } catch (e) { rejoin = null; }
+  if (ret === 'solo' && !q.has('autostart')) { solo = true; show('room'); } else show('menu');
+
+  if (!location.protocol.startsWith('http')) { if (q.has('autostart')) startSolo(); return; }
   try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`); } catch (e) { ws = null; }
-  if (!ws) return;
-  $('lobby-status').textContent = 'Connecting…';
-  const fail = setTimeout(() => { if (ws.readyState !== 1) { ws.close(); ws = null; $('lobby-status').textContent = 'No server found — playing solo'; } }, 2000);
+  if (!ws) { if (q.has('autostart')) startSolo(); return; }
+  netState = 'connecting'; if (phase === 'menu') renderMenu();
+  if (rejoin) { $('room-host').textContent = 'Back to the lobby…'; show('room'); }
+  const fail = setTimeout(() => {
+    if (ws.readyState === 1) return;
+    ws.onclose = null; ws.close(); ws = null; netState = 'none';
+    if (q.has('autostart')) return startSolo();
+    lastLobby = null; show(phase === 'room' && solo ? 'room' : 'menu');
+  }, 2000);
+  let autostart = q.has('autostart');
   ws.onopen = () => {
-    clearTimeout(fail); hello(); $('lobby-status').textContent = 'Connected';
-    const q = new URLSearchParams(location.search);                // dev: ?mission=rush&autostart
-    if (q.get('mission')) ws.send(JSON.stringify({ t: 'mission', id: q.get('mission') }));
-    if (q.has('autostart')) ws.send(JSON.stringify({ t: 'start' }));
+    clearTimeout(fail); netState = 'online'; hello();
+    if (rejoin) sendWs({ t: 'join', game: rejoin.game, ticket: rejoin.ticket });
+    else if (autostart) sendWs({ t: 'open', mission: chosen });           // dev: open a game and start it right away
+    if (phase === 'menu') renderMenu();
   };
-  ws.onclose = () => { if (phase === 'game') { $('lobby-status').textContent = 'Lost connection'; setTimeout(() => location.reload(), 1500); } };
+  ws.onclose = () => {
+    netState = netState === 'online' ? 'lost' : 'none';
+    if (phase === 'game') { setTimeout(() => location.reload(), 1500); return; }
+    if (!solo) { lastLobby = null; show('menu'); }
+  };
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
-    if (m.t === 'welcome') myId = m.id;
-    else if (m.t === 'full') { ws.onclose = null; ws.close(); ws = null; $('lobby-status').textContent = `The server is full (${m.max} players) — playing solo`; }
-    else if (m.t === 'lobby') {
-      if (phase === 'game') { if (m.phase === 'lobby') location.reload(); return; }   // mission over: fresh page, rejoin the lobby
+    if (m.t === 'welcome') { myId = m.id; maxPlayers = m.max || 8; }
+    else if (m.t === 'games') { games = m.games; maxPlayers = m.max || maxPlayers; if (phase === 'menu') renderMenu(); }
+    else if (m.t === 'joined') { myGame = m.game; ticket = m.ticket; solo = false; lastLobby = null; if (phase !== 'game') show('room'); }
+    else if (m.t === 'full' || m.t === 'gone') {
+      if (phase === 'room' && !solo) show('menu');
+      $('menu-msg').textContent = m.t === 'full' ? `That game is full (${m.max} players). Open a new one!` : 'That game has closed.';
+      setTimeout(() => { $('menu-msg').textContent = ''; }, 5000);
+    } else if (m.t === 'lobby') {
+      if (m.game !== myGame) return;
+      if (phase === 'game') {                                             // mission over: fresh page, back into this game's lobby
+        if (m.phase === 'lobby') { store('mn-return', JSON.stringify({ game: myGame, ticket })); location.reload(); }
+        return;
+      }
+      lastLobby = m; isHost = m.host === myId;
       chosen = m.mission; lobbyUI.union = m.unlocked || null; markChosen();
-      $('lobby-players').innerHTML = m.players.map(p => `<li style="color:${p.color}">${escapeHtml(p.name)} <small>lv ${p.level || 1}</small>${p.id === myId ? ' (you)' : ''}</li>`).join('');
-      $('lobby-status').textContent = `Connected · ${m.players.length} in the lobby · anyone can start`;
+      renderRoom();
+      if (autostart && isHost && m.phase === 'lobby') { autostart = false; sendWs({ t: 'start' }); }
     } else if (m.t === 'start') {
       phase = 'game'; lobby.hidden = true;
       NET.on = true; NET.frame = netFrame;

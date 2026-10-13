@@ -767,6 +767,29 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - **At most 8 players** (server.js MAX_PLAYERS: 8 spawn spots, 8 crew colours). A 9th browser is told
   the server is full and plays solo; once someone leaves there's room again (tests/network.js).
 
+### 8z2. Main menu and several games per server
+- Opening the page shows a **main menu** over the darkened ship: the MANIFOLD NOVUM title, a "Your crew
+  member" plate (name, level / XP / money / reputation, suit colour, Locker, Shipyard, Music) and a
+  "Play" plate with **PLAY SOLO**, **OPEN A GAME** and a live list of the server's games (colour dot,
+  "‹host›'s game", mission, in lobby / in mission, players n/8, JOIN or FULL at 8/8). Without a server
+  the list says so (and how to start server.js) and solo works as before. Side by side on wide
+  screens, stacked in a narrow window.
+- The **game lobby** is its own screen: missions on the left; briefing, crew (HOST badge), Locker /
+  Shipyard and START on the right; "‹ LEAVE GAME" (or "‹ MENU" solo).
+- **server.js** keeps a `games` map; each game has its members (join order), phase, mission, own
+  simulation and 60 Hz timer, capped at MAX_PLAYERS = 8. Messages in: `open {mission}`,
+  `join {game, ticket?}`, `leave`; out: `games`, `joined {game, ticket}`, `full`, `gone`; `lobby`
+  carries `game`, `host` and per-player `host` / `away`.
+- **Host:** the earliest member still in the game; only the host picks the mission and starts. If the
+  host leaves, the next member takes over. A game closes when its last player leaves. Late join and
+  leaving mid-mission work as before (reloading mid-mission leaves the game).
+- **After a mission** everyone comes back into the same game's lobby: the page reloads for fresh state,
+  with `{game, ticket}` in sessionStorage `mn-return`; the server keeps a reloading player's seat (and
+  host role) for 15 s after a mission ends. `?mission=X&autostart` opens a game with X and starts it
+  (solo without a server). No profile format change.
+- Note: tests/encounters.js fails about 1 run in 10 ("doors lock themselves"): it's random (the AI
+  glitch), not new; worth making deterministic.
+
 ### 9. Prototype: Blender sprites in a tilted top-down view (not in the game yet)
 - Goal: replace the hand-drawn canvas art with pre-rendered Blender models that look finished.
   View: orthographic, 50° above the horizon, not rotated (rooms stay rectangles, WASD stays

@@ -33,15 +33,20 @@ One person hosts. Everyone else only needs a browser on the same network (Wi-Fi 
 
    To use a different port: `node server.js 9000`, or `PORT=9000 node server.js`.
 3. Open that address yourself too (or `http://localhost:8080` on the host machine).
-   Up to 8 players; a 9th browser is told the server is full and plays solo.
+   One server holds any number of games, each with up to 8 players.
 
 **Everyone:**
 
-1. Open the address the host shared.
-2. Type your name and pick a mission (anyone can choose).
-3. Anyone presses **START MISSION**, and everyone in the lobby goes in together. People
-   who join later drop straight into the running game.
-4. When the mission ends, anyone presses **R** to send everybody back to the lobby.
+1. Open the address the host shared. You land in the main menu: your name, suit colour,
+   locker and shipyard, **PLAY SOLO**, **OPEN A GAME**, and the live list of open games
+   (host, mission, players n/8; "in mission" if it's already running).
+2. One of you presses **OPEN A GAME** and becomes that game's host. The others press **JOIN**
+   next to it in the list. A game at 8/8 shows as full: open another one.
+3. Only the host picks the mission and presses **START MISSION**; everyone else sees the
+   choice live. People who join later drop straight into the running mission. If the host
+   leaves, the next player (earliest joined) takes over.
+4. When the mission ends, anyone presses **R** to send everybody back to that game's lobby.
+   **‹ LEAVE GAME** goes back to the main menu. A game closes when its last player leaves.
 
 Stop the server with `Ctrl+C`.
 
@@ -55,7 +60,7 @@ Stop the server with `Ctrl+C`.
   - Linux with ufw: `sudo ufw allow 8080/tcp`
   - Linux with firewalld: `sudo firewall-cmd --add-port=8080/tcp`
 - **"Port in use":** another program has 8080. Pick another port: `node server.js 9000`.
-- **The lobby says "No server found — playing solo":** the page was opened as a file or
+- **The menu says "offline" next to OPEN GAMES:** the page was opened as a file or
   the server isn't reachable. Use the `http://…` address from the server instead.
 
 ### How the networking works
@@ -136,7 +141,8 @@ The prompt above you always says what a click (or E) will do.
   `tests/network.js` starts a real server on a random port and connects WebSocket clients.
 - Balance estimate (shots and energy per encounter): `node tools/balance.js`
 - Dev URLs:
-  - `index.html?mission=rush&autostart` skips the lobby.
+  - `index.html?mission=rush&autostart` skips the menu: solo it starts the mission, over the
+    server it opens a game with that mission and starts it.
   - `index.html#do=4,8&w=5` runs debug-menu entries 4 and 8 and fast-forwards 5 seconds
     (solo, no lobby).
   - `index.html?classic` draws the old top-down 2D look instead of the sprites (also the automatic

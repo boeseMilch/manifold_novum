@@ -8,14 +8,14 @@
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; font-family: system-ui, sans-serif; }
   canvas { display: block; cursor: crosshair; }
-  #lobby { position: fixed; inset: 0; z-index: 3; display: flex; align-items: center; justify-content: center;
-           background: radial-gradient(ellipse at center, rgba(20,26,40,0.75), rgba(4,6,12,0.95)); color: #e8ecf4; }
+  #lobby { position: fixed; inset: 0; z-index: 3; overflow: auto; color: #e8ecf4;
+           background: radial-gradient(ellipse at 50% 40%, rgba(20,26,40,0.55), rgba(4,6,12,0.93) 75%); }
   #lobby[hidden] { display: none; }
   .plate { width: min(640px, calc(100vw - 32px)); padding: 26px 28px; border-radius: 12px; position: relative;
            background: linear-gradient(#6b7486, #3f4757); border: 3px solid #14161b; box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.12); }
-  .plate::before, .plate::after { content: ''; position: absolute; width: 7px; height: 7px; border-radius: 50%; background: #2b303a; top: 10px; left: 10px;
-           box-shadow: calc(min(640px, 100vw - 32px) - 26px) 0 #2b303a; }
-  .plate::after { top: auto; bottom: 10px; }
+  .plate::before { content: ''; position: absolute; inset: 9px; pointer-events: none;      /* four rivets, at any plate size */
+           background: radial-gradient(circle, #2b303a 3px, rgba(43,48,58,0) 3.6px) 0 0 / 8px 8px no-repeat, radial-gradient(circle, #2b303a 3px, rgba(43,48,58,0) 3.6px) 100% 0 / 8px 8px no-repeat,
+                       radial-gradient(circle, #2b303a 3px, rgba(43,48,58,0) 3.6px) 0 100% / 8px 8px no-repeat, radial-gradient(circle, #2b303a 3px, rgba(43,48,58,0) 3.6px) 100% 100% / 8px 8px no-repeat; }
   h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: 4px; text-shadow: 0 2px 0 #14161b; }
   .sub { margin: 0 0 18px; color: #dfe4ec; font-size: 14px; }
   label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #dfe4ec; margin: 14px 0 6px; }
@@ -28,11 +28,9 @@
   #lobby-players { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-weight: 700; min-height: 20px; }
   #lobby-start { margin-top: 20px; width: 100%; padding: 13px; font-size: 18px; font-weight: 800; letter-spacing: 2px; border-radius: 8px; cursor: pointer;
                  border: 2px solid #ff8a7a; background: #8e2f22; color: #fff; }
-  #lobby-start:hover { background: #b8402e; }
-  #lobby-status { margin-top: 10px; font-size: 12px; color: #c9ced8; text-align: center; }
+  #lobby-start:hover:not(:disabled) { background: #b8402e; }
+  #lobby-start:disabled { cursor: default; background: #4a3430; border-color: #7a5a54; color: #d8c6c2; letter-spacing: 1px; font-size: 16px; }
   .plate { max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; }
-  #lobby .plate { width: min(760px, calc(100vw - 32px)); }
-  #lobby .plate::before, #lobby .plate::after { box-shadow: calc(min(760px, 100vw - 32px) - 26px) 0 #2b303a; }
   #lobby-profile { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: #dfe4ec; margin-top: 6px; }
   #lobby-profile .bar { width: 120px; height: 8px; border-radius: 4px; background: #1c2028; border: 1px solid #14161b; overflow: hidden; }
   #lobby-profile .bar i { display: block; height: 100%; background: #5fd6a0; }
@@ -63,28 +61,126 @@
   #practice button { text-align: left; padding: 6px 9px; font: 13px system-ui, sans-serif; border-radius: 5px; border: 1px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
   #practice button:hover { background: #3a4252; }
   #shop-close { margin-top: 14px; width: 100%; padding: 10px; font: 800 14px system-ui, sans-serif; border-radius: 8px; border: 2px solid #5fd6a0; background: #1d4a36; color: #fff; cursor: pointer; }
+  /* main menu and game lobby */
+  .screen { min-height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 16px 24px; }
+  .screen[hidden] { display: none; }
+  #lobby .plate { max-height: none; overflow: visible; }
+  .title { text-align: center; margin: 0 0 26px; }
+  .title h1 { margin: 0; font-size: clamp(30px, 6.4vw, 64px); font-weight: 800; letter-spacing: 0.16em; padding-left: 0.16em; line-height: 1.05; color: #f2f5fa;
+              text-shadow: 0 3px 0 #14161b, 0 0 36px rgba(95,214,160,0.28); }
+  .title .sub { margin: 10px 0 0; font-size: clamp(13px, 1.6vw, 16px); color: #aeb6c6; letter-spacing: 0.04em; }
+  .menu-cols { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 18px; width: min(960px, 100%); align-items: start; }
+  .menu-cols .plate { width: auto; }
+  .plate h2 { margin: 0 0 4px; font-size: 13px; letter-spacing: 2px; color: #f2f5fa; text-shadow: 0 1px 0 #14161b; }
+  .plate h2 + label { margin-top: 10px; }
+  .row button small { display: block; margin-top: 2px; font-weight: 600; font-size: 11px; color: #aeb6c6; letter-spacing: 0.5px; }
+  .row.big { margin-top: 14px; }
+  .row.big button { padding: 14px 10px; font-size: 16px; letter-spacing: 2px; font-weight: 800; }
+  #menu-solo { border-color: #5fd6a0; background: #1d4a36; color: #fff; }
+  #menu-solo:hover { background: #26604a; }
+  #menu-open { border-color: #ff8a7a; background: #8e2f22; color: #fff; }
+  #menu-open:hover:not(:disabled) { background: #b8402e; }
+  .row button:disabled { opacity: 0.45; cursor: not-allowed; }
+  .row button:hover:not(:disabled) { filter: brightness(1.12); }
+  .list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 16px 0 6px; }
+  .list-head label { margin: 0; }
+  .net { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9aa3b5; }
+  .net::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: #6b7486; vertical-align: 1px; }
+  .net.online { color: #8ff0c2; } .net.online::before { background: #5fd6a0; box-shadow: 0 0 6px #5fd6a0; }
+  .net.connecting::before { background: #ffd38a; } .net.lost { color: #ffb0a4; } .net.lost::before { background: #ff8a7a; }
+  #menu-games { list-style: none; margin: 0; padding: 4px; display: grid; gap: 4px; border-radius: 8px; background: #1c2028; border: 2px solid #14161b;
+                min-height: 120px; max-height: min(320px, 42vh); overflow: auto; align-content: start; }
+  #menu-games li.empty { padding: 14px 12px; font-size: 13px; line-height: 1.5; color: #aeb6c6; }
+  #menu-games code { font: 12px ui-monospace, monospace; color: #e8ecf4; background: #2f3542; padding: 1px 5px; border-radius: 4px; white-space: nowrap; }
+  .game { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 6px; background: #2a303c; }
+  .game .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #14161b; }
+  .game .who { min-width: 0; } .game .who b, .game .who small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .game .who b { font-size: 14px; } .game .who small { font-size: 12px; color: #aeb6c6; margin-top: 1px; }
+  .game .tag { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; padding: 3px 7px; border-radius: 10px; background: #1c2028; color: #9aa3b5; white-space: nowrap; }
+  .game .tag.busy { color: #ffd38a; }
+  .game .count { font: 700 14px ui-monospace, monospace; color: #dfe4ec; min-width: 2.6em; text-align: right; }
+  .game button.join { padding: 6px 14px; font: 800 12px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #5fd6a0; background: #1d4a36; color: #fff; cursor: pointer; }
+  .game button.join:hover { background: #26604a; }
+  .game .join-full { padding: 6px 10px; font: 800 12px system-ui, sans-serif; letter-spacing: 1px; color: #ff8a7a; }
+  .game.full { opacity: 0.7; }
+  #menu-msg:empty { display: none; }
+  #menu-msg { margin-top: 10px; font-size: 13px; color: #ffd38a; text-align: center; }
+  #room .plate { width: min(1120px, 100%); }
+  .room-cols { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+  .room-side #lobby-brief { margin-top: 30px; }
+  @media (max-width: 960px) { .room-cols { grid-template-columns: minmax(0, 1fr); gap: 0; } .room-side #lobby-brief { margin-top: 10px; } }
+  .room-head { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 4px; }
+  .room-head h1 { font-size: 24px; letter-spacing: 3px; margin: 2px 0 2px; overflow-wrap: anywhere; }
+  .room-head .sub { margin: 0; }
+  #room-back { flex: none; padding: 7px 12px; font: 800 12px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; margin-top: 2px; }
+  #room-back:hover { background: #3a4252; }
+  #room-count { font: 700 13px ui-monospace, monospace; color: #dfe4ec; }
+  #lobby-players .crown { font-size: 10px; letter-spacing: 1px; padding: 1px 5px; border-radius: 4px; background: #ffd38a; color: #14161b; vertical-align: 1px; }
+  #lobby-players li.away { opacity: 0.55; }
+  #lobby-players small { color: #c9ced8; font-weight: 600; }
+  #room.guest #lobby-tabs, #room.guest #lobby-missions { pointer-events: none; }
+  #room.guest #lobby-missions .mission:not(.chosen) { opacity: 0.55; }
+  @media (max-width: 760px) {
+    .menu-cols { grid-template-columns: minmax(0, 1fr); }
+    .title { margin-bottom: 18px; }
+  }
+  @media (max-width: 520px) {
+    #lobby-missions { grid-template-columns: 1fr; }
+    .row { flex-wrap: wrap; } .row button { flex: 1 1 40%; }
+    .plate { padding: 20px 18px; }
+    .room-head { flex-direction: column; gap: 10px; } .room-head h1 { font-size: 21px; }
+    .game { gap: 7px; padding-left: 9px; } .game .tag { padding: 3px 5px; letter-spacing: 0; }
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
 <div id="lobby">
-  <div class="plate">
-    <h1>MANIFOLD NOVUM</h1>
-    <p class="sub">Jump in, keep the duct tape coming, jump out.</p>
-    <label for="lobby-name">YOUR NAME</label>
-    <input id="lobby-name" maxlength="20" autocomplete="off">
-    <div id="lobby-profile"></div>
-    <label>SUIT COLOR</label>
-    <div id="lobby-paint" class="paints"></div>
-    <label>MISSION</label>
-    <div id="lobby-tabs"><button data-tab="campaign">CAMPAIGN</button><button data-tab="skirmish">SKIRMISH</button><button data-tab="practice">PRACTICE</button></div>
-    <div id="lobby-missions"></div>
-    <div id="lobby-brief"></div>
-    <label>CREW</label>
-    <ul id="lobby-players"><li>just you</li></ul>
-    <div class="row"><button id="lobby-locker">LOCKER (gear)</button><button id="lobby-shipyard">SHIPYARD (upgrades)</button><button id="lobby-music" onclick="window.open('music.html', '_blank')">♪ MUSIC</button></div>
-    <button id="lobby-start">START MISSION</button>
-    <div id="lobby-status">Solo</div>
+  <div id="menu" class="screen">
+    <header class="title">
+      <h1>MANIFOLD NOVUM</h1>
+      <p class="sub">Jump in, keep the duct tape coming, jump out.</p>
+    </header>
+    <div class="menu-cols">
+      <section class="plate" id="menu-you">
+        <h2>YOUR CREW MEMBER</h2>
+        <label for="lobby-name">NAME</label>
+        <input id="lobby-name" maxlength="20" autocomplete="off" spellcheck="false">
+        <div id="lobby-profile"></div>
+        <label>SUIT COLOR</label>
+        <div id="lobby-paint" class="paints"></div>
+        <div class="row"><button id="lobby-locker">LOCKER <small>gear</small></button><button id="lobby-shipyard">SHIPYARD <small>upgrades</small></button><button id="lobby-music" onclick="window.open('music.html', '_blank')">♪ MUSIC</button></div>
+      </section>
+      <section class="plate" id="menu-play">
+        <h2>PLAY</h2>
+        <div class="row big"><button id="menu-solo">PLAY SOLO</button><button id="menu-open" disabled>OPEN A GAME</button></div>
+        <div class="list-head"><label>OPEN GAMES</label><span id="menu-net" class="net none">offline</span></div>
+        <ul id="menu-games"></ul>
+        <div id="menu-msg" role="status"></div>
+      </section>
+    </div>
+  </div>
+  <div id="room" class="screen" hidden>
+    <div class="plate">
+      <div class="room-head">
+        <button id="room-back">‹ MENU</button>
+        <div><h1 id="room-title">SOLO MISSION</h1><p id="room-host" class="sub"></p></div>
+      </div>
+      <div class="room-cols">
+        <div>
+          <label>MISSION</label>
+          <div id="lobby-tabs"><button data-tab="campaign">CAMPAIGN</button><button data-tab="skirmish">SKIRMISH</button><button data-tab="practice">PRACTICE</button></div>
+          <div id="lobby-missions"></div>
+        </div>
+        <div class="room-side">
+          <div id="lobby-brief"></div>
+          <div class="list-head"><label>CREW</label><span id="room-count"></span></div>
+          <ul id="lobby-players"><li>just you</li></ul>
+          <div class="row"><button id="room-locker">LOCKER <small>gear</small></button><button id="room-shipyard">SHIPYARD <small>upgrades</small></button></div>
+          <button id="lobby-start">START MISSION</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 <div id="shop" hidden>
