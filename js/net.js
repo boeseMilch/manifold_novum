@@ -191,6 +191,16 @@ function netClientMain() {
   const pick = (id) => { if (!solo && !isHost) return; chosen = id; if (!solo) sendWs({ t: 'mission', id }); };
   lobbyUI.init(pick, hello);
   $('room-locker').onclick = () => lobbyUI.shop('locker');
+  // Start over (e.g. to play the progression again with friends): a fresh profile, keeping the name and suit
+  // color; the old one is kept in localStorage 'mn-profile-backup' in case it was a misclick.
+  $('lobby-reset').onclick = () => {
+    if (!confirm('Start over at level 1?\n\nThis resets your XP, money, reputation, gear, profession, ship upgrades and finished chapters. Your name and suit color stay.')) return;
+    try { localStorage.setItem('mn-profile-backup', JSON.stringify(profile)); } catch (e) { /* no storage */ }
+    profile = Object.assign(defaultProfile(), { paint: profile.paint });
+    saveProfile(profile);
+    chosen = CAMPAIGN.find(id => unlockedMissions().has(id)) || 'c1';
+    markChosen(); hello();
+  };
   $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
   const markChosen = () => lobbyUI.render(chosen);
   // Difficulty slider (0 normal, 1 easy, 2 very easy; the slider runs very easy → normal): the host's choice,
