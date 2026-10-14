@@ -180,10 +180,13 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   for (const p of e.pois) G.hitPoi(e, p, ...G.enemyToWorld(e, ...p.c));
   check(G.dk.defeated === 1, 'shooting a pirate raider to scrap counts as a pirate defeated');
   const G2 = loadGame(NAMES); G2.startMission('c2');
-  check(G2.mission.events.some(e => e.kind === 'intruder') && G2.mission.objective.kind === 'intruder', 'chapter 2 has the intruder (objective: kill it)');
-  G2.mission.active = false; G2.spawnInvader('port'); const a = G2.boarding.invaders[0]; a.state = 'wander';
+  check(G2.mission.events.some(e => e.kind === 'intruder' && e.count === 2) && G2.mission.objective.kind === 'intruder' && G2.mission.objective.count === 2, 'chapter 2 has two intruders (objective: kill both)');
+  G2.mission.active = false; G2.spawnInvader('port'); G2.spawnInvader('star'); const [a, b] = G2.boarding.invaders; a.state = b.state = 'wander';
   G2.hurtInvader(a, 99); tickN(G2, 2);
-  check(G2.objectiveStatus().done, 'killing it completes the objective');
+  const half = G2.objectiveStatus();
+  check(!half.done && /1\/2/.test(half.text) && /an intruder still alive/.test(half.fail), `one of two dead: not done yet ("${half.text}", "${half.fail}")`);
+  G2.hurtInvader(b, 99); tickN(G2, 2);
+  check(G2.objectiveStatus().done, 'killing both completes the objective');
   for (const id of G.CAMPAIGN) { const M = G.MISSIONS[id]; const G3 = loadGame(NAMES); G3.startMission(id); check(G3.mission.events.length > 0 && M.briefing.length > 80, `${M.name}: briefing and ${G3.mission.events.length} events`); }
 }
 // --- results per crew member

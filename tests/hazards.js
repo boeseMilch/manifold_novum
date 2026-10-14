@@ -136,10 +136,10 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   G.dk.pirates.push(pirate, pirate2);
   G.mission.kills = 0;
   G.startVent('portLock');
-  check(far.hp === 3 && far.stun > 0 && near.hp === 3, `the vent hits every intruder in the room hard and stuns it (hp ${far.hp}/${near.hp} of 6)`);
+  check(far.hp === 1 && far.stun > 0 && near.hp === 1, `the vent hits every intruder in the room hard (3 of its 4 hp) and stuns it (hp ${far.hp}/${near.hp} of 4)`);
   check(sab.dead && G.mission.kills === 1, 'a saboteur in the room goes down at once, and it counts as a kill');
   check(pirate.hp === 1 && pirate2.hp === 3, 'a pirate in the room takes a hit, one in another room doesn\'t');
-  check(other.hp === 6 && !other.stun, 'an intruder in the other airlock room is untouched');
+  check(other.hp === 4 && !other.stun, 'an intruder in the other airlock room is untouched');
   check(G.HATCHES.find(h => h.side === 'port').open === 1, 'both doors of the outer airlock stand open');
   const x0 = far.x;
   tickN(G, 60 * 3);
@@ -147,7 +147,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(G.mission.kills === 2 && G.dk.defeated === 1, `those count: kills ${G.mission.kills}, pirates defeated ${G.dk.defeated}`);
   check(G.ITEMS.some(it => it.kind === 'drill'), 'the pirate drops what it was carrying');
   check(far.x < x0 - 1, `the far one gets pulled towards the hatch (x ${x0} → ${far.x.toFixed(1)})`);
-  check(other.hp === 6, 'the intruder in the other room is still untouched');
+  check(other.hp === 4, 'the intruder in the other room is still untouched');
   const hpNow = far.hp; tickN(G, 60);
   check(far.dead || far.hp === hpNow, 'one hit per vent: no damage every tick');
 }

@@ -6,10 +6,13 @@
 //   just time to run over from the other room; with a crew you need someone in each. Weak in a fight.
 // Also holds the indoor projectiles (laser bolts, thrown wrenches, acid spit, the saboteur's shots).
 
-const ALIEN_HP = 6, ALIEN_SPEED = 2.6;              // footprint is the crew's (CREW_R), so it fits doors and airlocks
+const ALIEN_HP = 4, ALIEN_SPEED = 2.6;              // footprint is the crew's (CREW_R), so it fits doors and airlocks
 const ENGAGE_RANGE = 4.5, HUNT_SIGHT = 8, HUNT_REPLAN = 2.5;
-const SPIT_SPEED = 9, SPIT_COOLDOWN = [1.6, 2.6], SPIT_WINDUP = 0.7, DODGE_SPEED = 9, DODGE_TIME = 0.25, DODGE_COOLDOWN = 2.2;
+const SPIT_SPEED = 11.5, SPIT_RANGE = 14.4, SPIT_COOLDOWN = [1.6, 2.6], SPIT_WINDUP = 0.7, DODGE_SPEED = 9, DODGE_TIME = 0.25, DODGE_COOLDOWN = 2.2;
 const POUNCE_RANGE = 3.4, POUNCE_WINDUP = 0.65, POUNCE_TIME = 0.32, POUNCE_SPEED = 12;
+// Contact hurts: a pounce that connects, or just bumping into it, costs one hit; then nothing more from that
+// alien for ALIEN_TOUCH_COOLDOWN s (so one contact is one hit, a pounce and the touch it ends in included).
+const ALIEN_TOUCH_R = 0.55, ALIEN_TOUCH_COOLDOWN = 1.5;
 
 const boarding = { invaders: [], bolts: [] };
 
@@ -71,15 +74,49 @@ const freeAt = (x, y) => walkRects().some(r => inRect(x, y, r)) || !pointInPoly(
 // ---------------------------------------------------------------------------
 // Invaders
 // ---------------------------------------------------------------------------
-function spawnInvader(side) {
+// zone ('top' | 'bottom'): the deck it keeps to while another alien is still alive (see alienPrey).
+function spawnInvader(side, zone = null, banner = true) {
   const h = HATCHES.find(h => h.side === side);
   boarding.invaders.push({
     uid: newUid(), kind: 'alien', x: h.outside[0], y: h.outside[1], vx: 0, vy: 0, face: h.dir < 0 ? 0 : Math.PI, walk: 0, mode: 'outside',
     state: 'entering', hatch: h, t: 0, hp: ALIEN_HP, path: [], linger: 0, stuck: 0,
-    spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0,
+    spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0, touchCd: 0, zone,
   });
-  combatBanner(`Intruder alert — something is coming in through the ${side === 'port' ? 'left' : 'right'} airlock!`);
+  if (banner) combatBanner(`Intruder alert — something is coming in through the ${side === 'port' ? 'left' : 'right'} airlock!`);
   sfx.hatch();
+}
+// An intruder event: one alien through ev.side's airlock, or (ev.count > 1) several, one per airlock in turn,
+// each keeping to its own deck (the first the upper, the next the lower, ...) so they don't hunt as a pack.
+function spawnIntruders(ev) {
+  const n = Math.max(1, ev.count || 1);
+  if (n === 1) return spawnInvader(ev.side);
+  const other = ev.side === 'port' ? 'star' : 'port';
+  for (let i = 0; i < n; i++) spawnInvader(i % 2 ? other : ev.side, i % 2 ? 'bottom' : 'top', false);
+  combatBanner(`Intruder alert — ${n === 2 ? 'two of them' : `${n} of them`}, coming in through both airlocks!`);
+}
+const deckOf = (y) => (y < (SPINE_Y0 + SPINE_Y1) / 2 ? 'top' : 'bottom');
+// Does it keep to its zone (its own deck) right now? Only while another alien is still about.
+const zoned = (a) => !!a.zone && boarding.invaders.some(b => b !== a && b.kind !== 'saboteur' && !b.dead && b.state !== 'dormant');
+// Who it hunts: the nearest crew member aboard (in its zone, while it keeps to one).
+function alienPrey(a) {
+  const z = zoned(a) ? a.zone : null;
+  return crew.filter(c => c.mode === 'inside' && standing(c) && (!z || deckOf(c.y) === z))
+             .sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
+}
+// Contact: one hit (and a shove away from it) to whoever it touches, then ALIEN_TOUCH_COOLDOWN s of nothing.
+function alienStrike(a, c) {
+  if ((a.touchCd || 0) > 0) return false;
+  a.touchCd = ALIEN_TOUCH_COOLDOWN;
+  combat.hits.crew++; combat.flashes[c.x < a.x ? 'port' : 'star'] = 1; sfx.hit(true); hurtCrew(c);
+  for (let i = 0; i < 12; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.5, '#e2574c', 0.11);
+  const d = Math.hypot(c.x - a.x, c.y - a.y), ux = d > 0.01 ? (c.x - a.x) / d : Math.cos(a.face), uy = d > 0.01 ? (c.y - a.y) / d : Math.sin(a.face);
+  const kx = c.x + ux * 0.9, ky = c.y + uy * 0.9;          // knocked back
+  if (canStand(kx, ky, walkRects())) { c.x = kx; c.y = ky; }
+  return true;
+}
+function alienTouch(a) {
+  const c = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < ALIEN_TOUCH_R);
+  if (c) alienStrike(a, c);
 }
 const invaderMaxHp = (a) => (a.kind === 'saboteur' ? SAB_HP : ALIEN_HP);
 
@@ -130,8 +167,10 @@ function enterHatch(a, dt) {
 function updateInvader(a, dt) {
   a.flash = Math.max(0, a.flash - dt * 4);
   if (a.kind === 'saboteur') return updateSaboteur(a, dt);
+  a.touchCd = Math.max(0, (a.touchCd || 0) - dt);
   if (enterHatch(a, dt)) return;
   if (a.stun > 0) { a.stun -= dt; return; }
+  if (a.state !== 'dormant') alienTouch(a);        // bumping into it hurts (asleep or stunned it does nothing)
   if (a.state === 'dormant') {                     // asleep (on a derelict) until someone comes close
     const c = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < ENGAGE_RANGE && lineOfSight(a.x, a.y, c.x, c.y));
     if (c) { a.state = 'fight'; a.target = c; a.seen = 0; sfx.alienHurt(); }
@@ -160,7 +199,7 @@ function updateInvader(a, dt) {
         a.face = Math.atan2(dy, dx);
         if (act.t >= SPIT_WINDUP && !act.fired) {
           act.fired = true;
-          boarding.bolts.push({ x: a.x + ux * 0.4, y: a.y + uy * 0.4, vx: ux * SPIT_SPEED, vy: uy * SPIT_SPEED, life: 1.6, owner: 'alien' });
+          boarding.bolts.push({ x: a.x + ux * 0.4, y: a.y + uy * 0.4, vx: ux * SPIT_SPEED, vy: uy * SPIT_SPEED, life: SPIT_RANGE / SPIT_SPEED, owner: 'alien' });
           sfx.spit();
         }
         if (act.t >= SPIT_WINDUP + 0.35) a.act = null;
@@ -170,11 +209,8 @@ function updateInvader(a, dt) {
           const [tx, ty] = act.to, td = Math.hypot(tx - a.x, ty - a.y);
           if (!act.leapt) { act.leapt = true; sfx.alienHurt(); }
           if (td > 0.2) alienStep(a, (tx - a.x) / td * POUNCE_SPEED, (ty - a.y) / td * POUNCE_SPEED, dt);
-          if (!act.hit && Math.hypot(player.x - a.x, player.y - a.y) < 0.55) {
-            act.hit = true; combat.hits.crew++; combat.flashes[player.x < a.x ? 'port' : 'star'] = 1; sfx.hit(true); hurtCrew(player);
-            for (let i = 0; i < 12; i++) combatFx(player.x, player.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.5, '#e2574c', 0.11);
-            const kx = player.x + ux * 0.9, ky = player.y + uy * 0.9;                  // knocked back
-            if (canStand(kx, ky, walkRects())) { player.x = kx; player.y = ky; }
+          if (!act.hit && player.mode === 'inside' && standing(player) && Math.hypot(player.x - a.x, player.y - a.y) < ALIEN_TOUCH_R) {
+            act.hit = true; alienStrike(a, player);                                     // (not twice: the touch shares the cooldown)
           }
           if (act.t >= POUNCE_WINDUP + POUNCE_TIME) a.act = { kind: 'recover', t: 0, len: 0.8 };
         }
@@ -216,7 +252,7 @@ function updateInvader(a, dt) {
   if (a.linger > 0) { a.linger -= dt; return; }
   // hunt: head for the room of the nearest crew member aboard (re-planned as they move); with nobody
   // aboard, or while every way to them is locked, it prowls from room to room
-  const prey = crew.filter(c => c.mode === 'inside' && standing(c)).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0];
+  const prey = alienPrey(a);
   a.replanT = (a.replanT || 0) - dt; a.prowl = Math.max(0, (a.prowl || 0) - dt);
   if (prey && !a.prowl && (a.replanT <= 0 || !a.path.length)) {
     a.replanT = HUNT_REPLAN;
@@ -234,8 +270,11 @@ function updateInvader(a, dt) {
   }
   if (!a.path.length) {
     const room = roomAt(a.x, a.y) || NAV.nodes[nearestNav(a.x, a.y)].room && ROOMS.find(r => r.id === NAV.nodes[nearestNav(a.x, a.y)].room) || ROOMS[0];
-    const next = adjacentRooms(room).filter(r => r.id !== a.prevRoom);
-    const to = (next.length ? next : adjacentRooms(room))[Math.floor(Math.random() * (next.length || adjacentRooms(room).length))];
+    // keeping to its zone: off it, head for one of its rooms; on it, prowl its rooms only
+    const zone = zoned(a) ? a.zone : null, adj = adjacentRooms(room).filter(r => !zone || room.deck !== zone || r.deck === zone);
+    const home = zone && room.deck !== zone ? ROOMS.filter(r => r.deck === zone) : null;
+    const next = home || adj.filter(r => r.id !== a.prevRoom);
+    const to = (next.length ? next : adj)[Math.floor(Math.random() * (next.length || adj.length))];
     a.prevRoom = room.id;
     a.path = navPath(nearestNav(a.x, a.y), NAV.roomNode[to.id]);
     if (!a.path.length) { a.linger = 1.5; return; }

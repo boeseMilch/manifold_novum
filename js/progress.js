@@ -78,12 +78,19 @@ Object.assign(MISSIONS, {
   },
   c2: {
     name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 150, rep: 1, xp: 100 },
-    crew: {events: [2, 3, 7, 7, 12, 15, 17, 19], cells: [2, 3, 6, 6, 11, 11, 14, 16], reactor: [1, 1, 0.7, 0.7, 0.6, 0.7, 0.6, 0.5]},   // --calibrate: 70% 74% 65% 74% 66% 66% 68% 68% idle for 1-8 players (aim 69.0% solo, 67.0% for 2-8)
+    // events set by hand (the user's playtest: two aliens + opener + frigate, clearly harder than the model's aim); cells and
+    // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players
+    crew: {events: [3, 4, 7, 7, 12, 15, 17, 19], cells: [3, 5, 5, 5, 17, 15, 15, 15], reactor: [0.25, 0.3, 0.7, 0.7, 0.12, 0.25, 0.25, 0.25]},
     essential: ['intruder'],
-    objective: { kind: 'intruder', count: 1 }, rules: {},
-    blurb: 'Something crawled out of the bonus salvage pod. Kill it.',
-    briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nSomething with too many legs is loose on the ship. It forces its way around, room by room, hunting whoever it can find. Lock it in with the security console, get a weapon, and kill it. The Xenobiology Institute will pay for the remains.',
-    build: () => [evAt('interceptor', 30, { side: randSide() }), evAt('intruder', 75, { side: randSide() }), evAt('frigate', 140, { side: randSide() }), evAt('swarm', 200), evAt('maintenance', 250, { radar: false })],
+    finaleLead: 70,                           // the frigate finale comes 70 s before the jump (not 22): time for its heavy shots to matter
+    objective: { kind: 'intruder', count: 2 }, rules: {},
+    blurb: 'Two somethings crawled out of the bonus salvage pod. Kill them both.',
+    briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nTwo somethings with too many legs are loose on the ship: one prowls the upper deck, the other the lower. They force their way around, room by room, hunting whoever they can find. Lock them in with the security console, get a weapon, and kill them both, one at a time if you can. The Xenobiology Institute will pay for the remains.',
+    // solo: the opener (asteroids or an interceptor, at random), the two aliens (the objective), the frigate (the finale);
+    // bigger crews add the mine drone, the maintenance failure, a jammed cannon and the antenna (DROP_ORDER), then repeats
+    build: () => [Math.random() < 0.5 ? evAt('swarm', 50) : evAt('interceptor', 50, { side: randSide() }), evAt('intruder', 90, { side: randSide(), count: 2 }),
+                  evAt('mines', 130, { side: randSide() }), evAt('debris', 160, { gun: ['port', 'front', 'star'][Math.floor(Math.random() * 3)] }),
+                  evAt('maintenance', 190, { radar: false }), evAt('antenna', 220, { radar: false }), evAt('frigate', 250, { side: randSide() })],
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
@@ -119,7 +126,7 @@ Object.assign(MISSIONS, {
     essential: ['spores', 'leeches'],
     objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
     blurb: 'Drill a sample of the living rock in the Mire Nebula.',
-    briefing: 'Dr. Varga is grateful — and terrified. The intruder\'s DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. One will drift right in front of us: take the mining drill (left airlock room), spacewalk out, drill a sample and bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
+    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. One will drift right in front of us: take the mining drill (left airlock room), spacewalk out, drill a sample and bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
     build: () => [evAt('rock', 8), evAt('spores', 35, { side: randSide() }), evAt('leeches', 80, { side: randSide() }), evAt('mother', 120, { side: randSide() }), evAt('swarm', 170), evAt('coolant', 210, { radar: false }), evAt('grappler', 245, { side: randSide() })],
   },
   c7: {
@@ -377,7 +384,7 @@ const lobbyUI = {
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'intruder' ? 'Kill the intruder.' : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'intruder' ? (obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
         ${missionRequirements(this.chosen).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}

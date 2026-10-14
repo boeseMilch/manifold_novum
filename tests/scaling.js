@@ -6,7 +6,7 @@
 // Run: node tests/scaling.js
 const { loadGame } = require('./harness');
 const NAMES = ['crewSize', 'paceFactor', 'missionCrew', 'selectEvents', 'MISSION_LENGTH', 'DROP_ORDER', 'ESSENTIAL_KINDS', 'crew', 'makeCrew', 'startMission', 'mission', 'simTick', 'power',
-  'MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'JUMP_DELAY', 'ENERGY_TIME', 'CELL_ENERGY', 'reactorSpeed', 'netServer', 'combat', 'missionRequirements', 'SHIP_UPGRADES'];
+  'MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'JUMP_DELAY', 'finaleLead', 'ENERGY_TIME', 'CELL_ENERGY', 'reactorSpeed', 'netServer', 'combat', 'missionRequirements', 'SHIP_UPGRADES'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -39,7 +39,7 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
     const G = withCrew(n, id), ev = G.mission.events, want = G.missionCrew(id, n).events;
     const written = G.mission.written, kept = ev.filter(e => !e.repeat).map(e => written.findIndex(w => w.t === e.t1 && w.kind === e.kind));
     const ess = written.filter(e => essential(id).has(e.kind)).length;
-    const lead = Math.min(...written.map(e => e.t)), gap = ev.length > 1 ? (L - G.JUMP_DELAY - lead) / (ev.length - 1) : null;
+    const lead = Math.min(...written.map(e => e.t)), gap = ev.length > 1 ? (L - G.finaleLead(id) - lead) / (ev.length - 1) : null;
     const even = ev.length < 2 || [...ev].sort((a, b) => a.t - b.t).every((e, i) => near(e.t, lead + i * gap, 1e-6));
     const hasEss = ev.filter(e => essential(id).has(e.kind)).length === ess;
     const subset = !prevKept || prevKept.every(i => kept.includes(i));      // what a smaller crew gets, a bigger one gets too
@@ -56,6 +56,29 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   check(A.mission.events.map(e => e.kind).sort().join() === B.mission.events.map(e => e.kind).sort().join(), `a solo run of a chapter always has the same kinds of events (c3: ${A.mission.events.map(e => e.kind).join(', ')})`);
   const P = withCrew(4, 'practice');
   check(P.mission.jumpAt === Infinity && !P.mission.events.length && near(P.reactorSpeed(), 1), 'practice: no timeline, no jump, the reactor at ENERGY_TIME');
+}
+// --- chapter 2 (the user's playtest: too easy solo): opener (asteroids or an interceptor), the two aliens, the frigate as the
+// finale, 70 s before the jump (finaleLead) so its heavy shots matter; other missions keep the 22 s (JUMP_DELAY)
+{
+  const openers = new Set(); let ok = true, msg = '';
+  for (let seed = 1; seed <= 24; seed++) {
+    const G = withCrew(1, 'c2', seed), ev = [...G.mission.events].sort((a, b) => a.t - b.t), k = ev.map(e => e.kind);
+    openers.add(k[0]);
+    const order = k.length === 3 && ['swarm', 'interceptor'].includes(k[0]) && k[1] === 'intruder' && ev[1].count === 2 && k[2] === 'frigate';
+    const timing = near(ev[2].t, L - 70) && near(G.mission.jumpAt, L) && near(ev[1].t - ev[0].t, ev[2].t - ev[1].t);
+    if (!order || !timing) { ok = false; msg += ` seed ${seed}: ${ev.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(' ')} jump ${G.mission.jumpAt};`; }
+  }
+  check(ok && openers.size === 2, `c2 solo: swarm or interceptor (both seen: ${[...openers].join(', ')}), then the two intruders, then the frigate at ${L - 70} s, evenly spaced, jump at ${L} s${msg}`);
+  for (const easy of [1, 2]) {
+    const G = loadGame(NAMES); const keep = Math.random; Math.random = mulberry(5);
+    try { G.startMission('c2', { easy }); } finally { Math.random = keep; }
+    const k = [...G.mission.events].sort((a, b) => a.t - b.t).map(e => e.kind).join(', ');
+    check(k === 'intruder, frigate', `c2 solo on ${easy === 1 ? 'easy' : 'very easy'}: ${k} (the frigate still the finale)`);
+  }
+  const big = withCrew(4, 'c2', 3), last = [...big.mission.events].sort((a, b) => a.t - b.t).pop();
+  check(near(last.t, L - 70) && last.kind !== 'intruder' && near(big.mission.jumpAt, L), `c2 for 4: the finale (${last.kind}) also 70 s before the jump`);
+  const c1 = withCrew(1, 'c1', 3);
+  check(G0.finaleLead('c1') === G0.JUMP_DELAY && near(Math.max(...c1.mission.events.map(e => e.t)), L - G0.JUMP_DELAY) && near(c1.mission.jumpAt, L), `other missions keep the finale ${G0.JUMP_DELAY} s before the jump (c1)`);
 }
 // --- the model builds the same timelines as the game
 {
@@ -176,7 +199,11 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   // the nearest count lands within ~8 points of its target. SHORT: the essentials (+ the finale fight) alone keep a
   // solo crew busier than the target (two pirate raiders in c1 / c4 / Pirate cove, c6's four).
   const SHORT = ['c1', 'c4', 'c6', 'pirates'];
-  const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => !SHORT.includes(r.id));
+  // HARD: set harder than the model's target on purpose, after a playtest (c2: two aliens + opener + frigate even solo)
+  const HARD = ['c2'];
+  const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => !SHORT.includes(r.id) && !HARD.includes(r.id));
+  const hard = solo.filter(r => HARD.includes(r.id));
+  check(hard.every(r => r.idle < r.aim - 0.1 && r.idle > 0.3 && r.verdict !== 'impossible'), `solo, the deliberately harder missions sit well below their targets but stay doable (> 30% idle): ${hard.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters, ${r.verdict})`).join(', ')}`);
   const off = fit.filter(r => Math.abs(r.idle - r.aim) > 0.08), bias = fit.reduce((s, r) => s + r.idle - r.aim, 0) / fit.length;
   const intro = solo.find(r => r.id === 'intro');
   check(Math.abs(intro.idle - 0.70) <= 0.03, `solo, the first mission (intro) leaves the crew ${pct(intro.idle)}% idle (target 70%)`);

@@ -241,7 +241,8 @@ function jobsFor(ev, ctx) {
           swarm: { per: per * A.AIM_TIME, hitAt } });
   } else if (k === 'intruder') {
     const fight = g.ALIEN_HP / A.LASER_HIT * A.LASER_SHOT;
-    job({ label: 'alien', trip: H('starLock'), work: fight, crewHits: fight * A.ALIEN_HITS, alive: { crew: A.ALIEN_HARASS, from: 2 }, objective: { intruder: 1 } });
+    for (let i = 0; i < (ev.count || 1); i++)            // (several: one per deck, each its own fight)
+      job({ label: 'alien', trip: H(i % 2 ? 'portLock' : 'starLock'), work: fight, crewHits: fight * A.ALIEN_HITS, alive: { crew: A.ALIEN_HARASS, from: 2 }, objective: { intruder: 1 } });
   } else if (k === 'saboteur') {
     const work = n > 1 ? g.SAB_WORK_TEAM : g.SAB_WORK_SOLO, period = (g.SAB_SNEAK[0] + g.SAB_SNEAK[1]) / 2 + 2 * g.SAB_FADE + work + A.SAB_PERIOD_EXTRA;
     const first = calibrate('saboteur').first.broken ?? period;

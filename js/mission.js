@@ -4,6 +4,8 @@
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
 const JUMP_DELAY = 22;                      // the jump comes mid-battle: 22 s after the final fight starts
+// ... or MISSIONS[id].finaleLead s after it, where the finale needs longer to matter (c2's frigate: its heavy shots)
+const finaleLead = (id) => MISSIONS[id]?.finaleLead ?? JUMP_DELAY;
 // No time limit on the jump, but staying gets worse and worse (updatePressure): once the jump is due, an extra
 // encounter PRESS_FIRST s later, then each gap PRESS_SHRINK × the last, down to PRESS_FLOOR s; and a part
 // gives out STRAIN_FIRST s after it's due, then each gap × PRESS_SHRINK, down to STRAIN_FLOOR s.
@@ -45,7 +47,7 @@ function eventLabel(ev) {
   if (ev.kind === 'interceptor') return `Interceptor — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'frigate') return `Frigate — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'swarm') return 'Asteroid swarm — front';
-  if (ev.kind === 'intruder') return `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
+  if (ev.kind === 'intruder') return ev.count > 1 ? `${ev.count} intruders — both airlocks` : `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'saboteur') return `Saboteur — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'mines') return `Mine drone — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'spores') return `Spore cloud — ${SIDE_NAME[ev.side]}`;
@@ -162,7 +164,7 @@ const EVENT_SIDES = {};                                // event kinds with their
 // so a solo run of a chapter always has the same kind of content. More events than written: repeats
 // of the mission's most important optional kinds.
 //   The kept events stay in their written order and are spread evenly from the first event's written
-// time to MISSION_LENGTH - JUMP_DELAY. The reactor follows the gaps: ENERGY_TIME × gap / the written gap
+// time to MISSION_LENGTH - finaleLead(id) (JUMP_DELAY unless the mission says). The reactor follows the gaps: ENERGY_TIME × gap / the written gap
 // (paceFactor), so the energy made per gap is what the mission was written for.
 //   Crew joining / leaving: while nobody has seen an encounter yet (the lead-in), the timeline is rebuilt
 // for the new crew size (that's also how the server's start works: crew are added right after
@@ -202,7 +204,7 @@ function layoutMission(id, n) {
   const evs = selectEvents(id, written, n, mission.maint?.target, mission.easy || 0).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
     sys: e.kind === 'maintenance' ? mission.maint?.target : e.sys }));
   if (!evs.length) { Object.assign(mission, { events: [], lead: Infinity, gap: null, writtenGap: null, paceN: n, jumpAt: M.practice ? Infinity : JUMP_DELAY, overcharge: false }); return; }
-  const lead = Math.min(...written.map(e => e.t)), end = (M.length || MISSION_LENGTH) - JUMP_DELAY;
+  const lead = Math.min(...written.map(e => e.t)), fl = finaleLead(id), end = (M.length || MISSION_LENGTH) - fl;
   const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
   evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = evs.length > 1 ? lead + i * gap : end; });   // (t1: the time as written; a lone event is the finale)
   // the finale: the last event is a fight, and the jump comes while it's still going
@@ -217,7 +219,7 @@ function layoutMission(id, n) {
   const normal = mission.easy ? selectEvents(id, written, n, mission.maint?.target).length : evs.length;   // the reactor's pace: normal's gap
   const paceGap = normal > 1 ? (end - lead) / (normal - 1) : end - lead;
   mission.extraLuck = ((mission.easy || 0) - (normal - evs.length)) / 2;   // easier steps with nothing left to drop: half a cat each
-  Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + JUMP_DELAY });
+  Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + fl });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
 }
 // Fuel: the cells this crew size needs (the reactor's own cell plus the crate), on top of what's been
@@ -260,7 +262,7 @@ function runEvent(ev) {
   ev.done = true;
   if (ev.kind === 'interceptor' || ev.kind === 'frigate') combatSpawn(ev.kind, ev.side);
   else if (ev.kind === 'swarm') combatSpawn('swarm');
-  else if (ev.kind === 'intruder') spawnInvader(ev.side);
+  else if (ev.kind === 'intruder') spawnIntruders(ev);
   else if (ev.kind === 'saboteur') spawnSaboteur(ev.side);
   else if (ev.kind === 'maintenance' && !mission.maint.serviced && !ev.sys.broken) breakSystem(ev.sys);
   else if (ev.kind === 'mines') spawnMineDrone(ev.side);
@@ -348,7 +350,11 @@ function objectiveStatus() {
   if (o.kind === 'blackbox') return { done: objectiveAboard('blackbox'), fail: 'without the black box', text: 'Bring the black box from the derelict aboard' };
   if (o.kind === 'rescue') return { done: dk.npc?.state === 'safe', fail: `without ${npcName()}`, text: `Rescue ${npcName()}` };
   if (o.kind === 'ore') return { done: objectiveAboard('ore'), fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
-  if (o.kind === 'intruder') return { done: (mission.kills || 0) >= o.count, fail: 'with the intruder still alive', text: 'Kill the intruder' };
+  if (o.kind === 'intruder') {
+    const k = Math.min(o.count, mission.kills || 0), left = o.count - k;
+    if (!(o.count > 1)) return { done: k >= 1, fail: 'with the intruder still alive', text: 'Kill the intruder' };
+    return { done: left <= 0, fail: `with ${left === 1 ? 'an intruder' : `${left} intruders`} still alive`, text: `Kill ${o.count === 2 ? 'both' : `all ${o.count}`} intruders (${k}/${o.count} dead)` };
+  }
   if (o.kind === 'pirates') return { done: dk.defeated >= o.count, fail: `with only ${dk.defeated}/${o.count} pirates defeated`, text: `Defeat ${o.count} pirates (${dk.defeated} so far)` };
   return { done: true };
 }

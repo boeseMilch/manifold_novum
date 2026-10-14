@@ -1717,6 +1717,47 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   `PIRATE_LOCK`), the tracking before it unchanged (aim 2 → 1.7 s in all).
 - Tests: tests/mission.js (frozen after the jump; the end screen's keys), tests/dock.js (the aim time).
 
+### Chapter 2 harder: two aliens, a fuller timeline, a finale that matters (2026-10-14 playtest)
+- The playtest: chapter 2 was far too easy. Solo it had two encounters (the intruder at 0:30, the finale
+  interceptor at ~5:38); the alien died in about a minute, uncoordinated, and then nothing happened for minutes.
+  And the finale came 22 s before the jump, so you jumped before its shots or their fires could hurt.
+- **The alien** (js/invader.js): acid spit 9 → 11.5 units/s (`SPIT_SPEED`; its reach stays 14.4 units,
+  `SPIT_RANGE`; windup + 4 units of flight still take over a second, so it's dodgeable). Contact hurts: a pounce
+  that connects, or touching it at any time (`ALIEN_TOUCH_R` 0.55), is one hit and a shove away, then nothing
+  from that alien for `ALIEN_TOUCH_COOLDOWN` (1.5 s; pounce and touch share it, so they never double up). Not while
+  it's asleep, stunned or still coming through the airlock. Health 6 → 4 (`ALIEN_HP`; the vent's 3 now leaves it
+  on 1; every mission's intruder and the derelict's sleeper get this).
+- **Two aliens** (`count: 2` on an intruder event, `spawnIntruders`): one per side airlock, each keeping to its own
+  deck (`zone`: the first the upper, the second the lower). While another alien is alive it only hunts crew on its
+  deck and prowls its deck's rooms otherwise (it still fights anyone it runs into anywhere). The last one left
+  hunts the whole ship. Events without a count (every other mission, the hot zone's extra encounters) stay one
+  alien that hunts anywhere. The objective is `{ kind: 'intruder', count: 2 }`: "Kill both intruders (1/2 dead)"
+  in the sidebar, "Kill both intruders." in the lobby, "2 intruders — both airlocks" on the radar. Briefing and
+  blurb now speak of two.
+- **The timeline** (MISSIONS.c2.build): the opener, at random the asteroid swarm or an interceptor (50 s), the two
+  aliens (90 s, essential), the mine drone, a jammed cannon, the maintenance failure, the antenna, the frigate
+  (250 s). Solo gets opener → aliens → frigate (3 encounters, was 2), 2 players add the mine drone (4, was 3),
+  3-4 players get all seven (7, as before; written out so no repeats put two frigates on one side), 5+ as before.
+  The frigate stays the finale (the aliens are the objective, never the finale), also on easy / very easy.
+- **The finale 70 s before the jump** (`MISSIONS.c2.finaleLead`, `finaleLead(id)` in js/mission.js; every other
+  mission keeps `JUMP_DELAY` 22 s, chapter 1 is unchanged): the events spread evenly from the first to
+  length − finaleLead, the jump stays at the mission length, so the frigate gets its heavy shots off.
+- Cells and reactor for these counts fitted like `--calibrate` does (fewest cells, mildest reactor in spec), the
+  event counts set by hand (the playtest overrides the model's 69% idle aim). tools/balance.js (counts each
+  alien as its own fight), before → after: solo 70% idle / score 24 → 36% / 46, 2 players 74% / 22 → 61% / 33,
+  3 players 65% / 38 → 66% / 31, 4 players 74% / 26 → 74% / 27; all in spec. tests/scaling.js lists c2 as
+  deliberately harder (solo well below the target, above 30% idle).
+- Tests: tests/intruder.js (spit speed and reach, contact damage and its cooldown, pounce + touch = one hit, the
+  two aliens: different airlocks and decks, staying apart, the lower one staying below until it's the last, the
+  objective), tests/scaling.js (c2's solo order and times, easy levels, finaleLead vs. c1), tests/progress.js
+  (objective needs both), tests/hazards.js / tests/systems.js (4 hp).
+
+### Start over
+- "There should be a button to reset it so you can have the progression again with your friends": START OVER in
+  the main menu (under the crew member; asks first). A fresh `defaultProfile()`, keeping the suit color (the name
+  is its own key, `mn-name`); the old profile goes to localStorage `mn-profile-backup` in case of a misclick.
+  Progress stays per browser (the server never stores it), so everyone presses it on their own machine.
+
 ## Sound
 
 - **Soundtrack "Duct Tape Nebula":** original and fully synthesized (`js/music.js`). It's
@@ -1747,7 +1788,7 @@ dummy canvas):
   timing and lever order, wasted energy, the wrench override, fuel crate → reactor,
   dropping items, the 5 s repair, broken capacitors, dimming lights, hull hits breaking
   parts in the right column, turret shots leaving along the barrel, the cable fizzle,
-  and the invader (gets in, roams both decks, fights back, dodges, dies after 6 hits).
+  and the invader (gets in, roams both decks, fights back, dodges, dies after 4 hits).
 - `node tests/mission.js`: 23 checks.
   - The timeline: one of each encounter, about a minute apart, on schedule.
   - The radar: 45 s range, the "????" for unscanned imminent threats, scanning replaces it.

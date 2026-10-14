@@ -90,4 +90,82 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   for (let i = 0; i < 60 * 2; i++) G.tick(DT);
   check(!G.combat.asteroids.includes(a) && G.combat.hits.large === hitsBefore, 'an asteroid running into the raised front shield is absorbed (no hit)');
 }
+// --- the alien's attacks: faster spit (still dodgeable), contact damage with a per-alien cooldown, 4 hp
+{
+  const N2 = [...NAMES, 'hurtInvader', 'SPIT_SPEED', 'SPIT_RANGE', 'SPIT_WINDUP', 'ALIEN_HP', 'ALIEN_TOUCH_COOLDOWN', 'POUNCE_WINDUP', 'mission'];
+  const G = loadGame(N2); G.mission.active = false;
+  check(G.ALIEN_HP === 4, `the alien has ${G.ALIEN_HP} hp`);
+  check(G.SPIT_SPEED >= 11 && G.SPIT_SPEED <= 12, `its acid spit flies at ${G.SPIT_SPEED} units/s (was 9)`);
+  // dodgeable: from its usual 4-6 units away, the windup plus the flight leave over a second to step aside
+  check(G.SPIT_WINDUP + 4 / G.SPIT_SPEED > 1, `still dodgeable: ${(G.SPIT_WINDUP + 4 / G.SPIT_SPEED).toFixed(2)} s from the windup to the spit crossing 4 units`);
+  G.spawnInvader('port'); const a = G.boarding.invaders[0];
+  for (let i = 0; i < 120; i++) G.tick(DT);
+  a.x = 18.5; a.y = 9; a.path = []; G.player.x = 24.5; G.player.y = 9.5; G.player.mode = 'inside';
+  G.hurtInvader(a, 0); a.spitT = 0; a.hp = 100;
+  let bolt = null;
+  for (let i = 0; i < 60 * 3 && !bolt; i++) { G.tick(DT); bolt = G.boarding.bolts.find(b => b.owner === 'alien'); }
+  check(bolt && Math.abs(Math.hypot(bolt.vx, bolt.vy) - G.SPIT_SPEED) < 1e-6, `the spit really flies at SPIT_SPEED (${bolt && Math.hypot(bolt.vx, bolt.vy).toFixed(1)})`);
+  check(bolt && Math.abs(bolt.life * G.SPIT_SPEED - G.SPIT_RANGE) < 0.3, `and reaches as far as before (${G.SPIT_RANGE} units)`);
+}
+{
+  const G = loadGame([...NAMES, 'hurtInvader', 'ALIEN_TOUCH_COOLDOWN', 'POUNCE_WINDUP', 'mission']); G.mission.active = false;
+  G.spawnInvader('port'); const a = G.boarding.invaders[0];
+  for (let i = 0; i < 120; i++) G.tick(DT);
+  // touching it: one hit, then nothing from it for ALIEN_TOUCH_COOLDOWN, then the next
+  Object.assign(a, { x: 20, y: 9, path: [], act: null, spitT: 1e9, state: 'wander', linger: 0 }); G.player.mode = 'inside';
+  const stick = () => { G.player.x = a.x + 0.3; G.player.y = a.y; G.player.health = 'ok'; G.player.armor = 0; a.spitT = 1e9; a.act = null; };
+  const h0 = G.combat.hits.crew; let firstAt = null, secondAt = null;
+  for (let i = 0; i < 60 * 4 && secondAt === null; i++) {
+    stick(); G.tick(DT);
+    const n = G.combat.hits.crew - h0;
+    if (n >= 1 && firstAt === null) firstAt = i * DT;
+    if (n >= 2) secondAt = i * DT;
+  }
+  check(firstAt !== null && firstAt < 0.1, `bumping into the alien hurts at once (${firstAt?.toFixed(2)} s)`);
+  check(secondAt !== null && Math.abs(secondAt - firstAt - G.ALIEN_TOUCH_COOLDOWN) < 0.05, `staying in contact: the next hit only after the ${G.ALIEN_TOUCH_COOLDOWN} s cooldown (${(secondAt - firstAt).toFixed(2)} s)`);
+  // a pounce that lands right on you: one hit, not pounce + touch
+  Object.assign(a, { x: 20, y: 9, touchCd: 0, state: 'fight', spitT: 1e9 }); G.player.x = 21.2; G.player.y = 9; G.player.health = 'ok';
+  a.act = { kind: 'pounce', t: G.POUNCE_WINDUP, to: [21.2, 9] };
+  const h1 = G.combat.hits.crew;
+  for (let i = 0; i < 40; i++) { G.tick(DT); G.player.health = 'ok'; a.spitT = 1e9; }
+  check(G.combat.hits.crew - h1 === 1, `a pounce that connects is one hit, not a pounce plus a touch (${G.combat.hits.crew - h1})`);
+}
+// --- chapter 2: two aliens, one per deck, through both airlocks; the objective needs both dead
+{
+  const N3 = [...NAMES, 'hurtInvader', 'mission', 'startMission', 'runEvent', 'objectiveStatus', 'eventLabel', 'crew'];
+  const G = loadGame(N3); G.startMission('c2');
+  const ev = G.mission.events.find(e => e.kind === 'intruder');
+  check(ev && ev.count === 2 && G.mission.objective.count === 2, 'chapter 2\'s intruder event brings two aliens, and the objective is to kill both');
+  check(G.eventLabel(ev) === '2 intruders — both airlocks', `the radar calls it "${G.eventLabel(ev)}"`);
+  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `the objective reads "${G.objectiveStatus().text}"`);
+  G.mission.active = false; G.boarding.invaders.length = 0; G.runEvent(ev);
+  const [p, q] = G.boarding.invaders;
+  check(G.boarding.invaders.length === 2 && p.hatch !== q.hatch && p.zone !== q.zone, `they come in through different airlocks (${p.hatch.side} / ${q.hatch.side}) and keep to different decks (${p.zone} / ${q.zone})`);
+  // nobody aboard: each prowls its own deck, they don't clump
+  G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;
+  const deck = (a) => (a.y < 11.5 ? 'top' : 'bottom'); let off = 0, apart = 0, n = 0;
+  for (let i = 0; i < 60 * 120; i++) {
+    G.tick(DT); G.player.x = -2.5; G.player.y = 10;
+    if (i > 60 * 40 && i % 30 === 0) { n++; for (const a of [p, q]) if (a.mode === 'inside' && G.roomAt(a.x, a.y) && deck(a) !== a.zone) off++; if (Math.hypot(p.x - q.x, p.y - q.y) > 8) apart++; }
+  }
+  check(off === 0, `after getting there, each stays on its own deck (${off} samples off it)`);
+  check(apart / n > 0.9, `and they stay apart (more than 8 units ${Math.round(apart / n * 100)}% of the time)`);
+  // you on the upper deck: the upper one comes for you, the lower one keeps to its deck ... until it's the last one
+  G.player.mode = 'inside'; G.player.x = 22; G.player.y = 2;
+  const top = p.zone === 'top' ? p : q, bot = top === p ? q : p;
+  let botUp = 0;
+  for (let i = 0; i < 60 * 40 && top.state !== 'fight'; i++) { G.tick(DT); G.player.x = 22; G.player.y = 2; G.player.health = 'ok'; if (G.roomAt(bot.x, bot.y)?.deck === 'top') botUp++; }
+  check(top.state === 'fight' && botUp === 0, `the upper-deck alien hunts you down on the bridge, the lower-deck one stays below (${top.state}, ${botUp} frames up top)`);
+  G.hurtInvader(top, 99); G.tick(DT);
+  check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Kill both intruders (1/2 dead)', `one down: "${G.objectiveStatus().text}"`);
+  let t = 0;
+  for (; t < 60 && bot.state !== 'fight'; t += DT) { G.tick(DT); G.player.x = 22; G.player.y = 2; G.player.health = 'ok'; }
+  check(bot.state === 'fight', `the last one left comes up and hunts you (${t.toFixed(0)} s)`);
+  G.hurtInvader(bot, 99); G.tick(DT);
+  check(G.objectiveStatus().done, 'both down: objective done');
+  // other missions' intruders stay single
+  const H = loadGame(N3); H.startMission('intro'); H.mission.active = false; H.boarding.invaders.length = 0;
+  H.runEvent({ t: 0, kind: 'intruder', side: 'port' });
+  check(H.boarding.invaders.length === 1 && !H.boarding.invaders[0].zone, 'an intruder event without a count is one alien that hunts anywhere');
+}
 process.exitCode = failed ? 1 : 0;

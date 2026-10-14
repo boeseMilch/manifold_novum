@@ -153,7 +153,7 @@ const shotsBefore = G.combat.shots.length; let fizzled = false;
 for (let i = 0; i < 60 * 5 && e2.shotCount < 0; i++) G.tick(DT);
 check(e2.shotCount === 0 && G.combat.shots.length === shotsBefore, 'after hitting the cable the very next shot fizzles');
 
-// --- invader: comes in, roams, uses deck airlocks, fights back and dodges, dies after 6 hits
+// --- invader: comes in, roams, uses deck airlocks, fights back and dodges, dies after 4 hits
 reset(); G.spawnInvader('port');
 const a = G.boarding.invaders[0];
 const seenRooms = new Set();
@@ -167,6 +167,7 @@ G.hurtInvader(a, 1);
 a.hp = 100;                                              // don't let the test's own shots kill it here
 let spat = 0, dodged = 0;
 run(8, () => {
+  G.player.health = 'ok';                         // (its spit and touch hurt: keep the target on its feet)
   if (G.boarding.bolts.some(b => b.owner === 'alien' && !b.counted && (b.counted = true))) spat++;
   if (a.act?.kind === 'lunge' && !a.dodgeCounted) { dodged++; a.dodgeCounted = true; } else if (a.act?.kind !== 'lunge') a.dodgeCounted = false;
   if (Math.random() < 0.03) {                     // shoot at it now and then
@@ -176,9 +177,9 @@ run(8, () => {
 });
 check(a.state === 'fight' && spat > 0, `provoked invader fights back (spat ${spat} times)`);
 check(dodged > 0, `invader dodges incoming shots (${dodged} dodges)`);
-a.hp = 6;
-for (let k = 0; k < 6 && !a.dead; k++) G.hurtInvader(a, 1);
+a.hp = 4;
+for (let k = 0; k < 4 && !a.dead; k++) G.hurtInvader(a, 1);
 G.tick(DT);
-check(a.dead && !G.boarding.invaders.includes(a), 'invader dies after 6 hits');
+check(a.dead && !G.boarding.invaders.includes(a), 'invader dies after 4 hits (ALIEN_HP 4)');
 
 process.exitCode = failed ? 1 : 0;
