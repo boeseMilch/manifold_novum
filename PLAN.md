@@ -706,7 +706,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 
 ### 8t. Pirates aim, loot and leave; enemies on the security map
 - Pirates fight like gunslingers now: they stop and aim, a faint laser sight tracking you, which then
-  locks (bright, flickering) for the last 0.6 s; after 2 s a very fast shot (30 units/s) goes down the
+  locks (bright, flickering) for the last 0.3 s (was 0.6, 2026-10-14: too easy to dodge); after 1.7 s a very fast shot (30 units/s) goes down the
   locked line. Dive behind a wall (or just out of the line) when you see it. If they lose sight of you
   while tracking, they give up the shot. Then a 5 s cooldown — your window to hit them.
 - They loot two things each (or fewer if nothing's left), carry them to their crate, then head home.
@@ -1698,8 +1698,24 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   nothing left to drop. The rest are spread evenly from the first event to the jump as usual; the jump time
   and the reactor's pace stay at normal's (`mission.gap` is normal's gap, `mission.eventGap` the real one), so
   the crew has the same energy for fewer encounters. The hot zone is unchanged. Pay and XP are the same.
+- **Nothing left to drop:** for every easier step that couldn't take an encounter out (solo missions with 1-2
+  encounters), the crew gets half a cat's worth of luck for the whole mission instead: the bad dice (small
+  hits: fire / broken part; big-hit fires; fire spreading / burning a part) are multiplied by
+  `LUCK_CUT ** (cat + mission.extraLuck)` (`luckCut()`; cat = 1 while the petted cat's luck lasts, extraLuck =
+  ½ per such step).
 - The start banner says "(easy)" / "(very easy)". tests/mission.js checks the counts, the essentials, the even
   spacing, the reactor pace and the jump for intro / c3 solo and intro / c4 / pirates with all their encounters.
+
+### After the jump; the end screen; quicker pirate shots (2026-10-14 playtest)
+- "The ship can literally still fall apart after you won": once the ship has jumped (`mission.over.survived`),
+  `simTick` only advances the clock (the jump-out animation runs on it) and clears the crew's key presses;
+  fires, enemies, parts, injuries all stay as they were. A lost mission (the ship blew up) is unchanged.
+- "There is no button that sends you back to the menu": on the end screen any key (except M, mute) or click
+  goes back to the lobby (was R only), from 1 s after the report shows (`END_GRACE`), so a click meant for the
+  fight doesn't skip it.
+- "The pirates are a bit easy": a boarding pirate's laser sight now locks 0.3 s before the shot (was 0.6;
+  `PIRATE_LOCK`), the tracking before it unchanged (aim 2 → 1.7 s in all).
+- Tests: tests/mission.js (frozen after the jump; the end screen's keys), tests/dock.js (the aim time).
 
 ## Sound
 

@@ -13,7 +13,7 @@ const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0 };
 const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9;
 // Pirates stop and aim: a faint laser sight tracks you, then locks (bright) — after PIRATE_AIM s a very fast shot
 // goes down that line, so dive behind a wall when you see it. Then a long cooldown: your window to hit back.
-const PIRATE_AIM = 2, PIRATE_LOCK = 0.6, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, LEAVE_DELAY = 4;
+const PIRATE_AIM = 1.7, PIRATE_LOCK = 0.3, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, LEAVE_DELAY = 4;
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0 }); }

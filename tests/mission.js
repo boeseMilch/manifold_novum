@@ -29,7 +29,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
 
 // --- difficulty: easy / very easy take one / two optional encounters out, the rest evenly spread, the reactor's pace unchanged
 {
-  const G = loadGame([...NAMES, 'paceFactor']);
+  const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT']);
   for (const [id, full] of [['intro', false], ['c3', false], ['intro', true], ['c4', true], ['pirates', true]]) {
     if (!G.MISSIONS[id]) continue;
     if (full) G.MISSIONS[id].crew = null;              // (all written events; solo otherwise)
@@ -40,8 +40,9 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
       G.startMission(id, { easy }); const evs = G.mission.events, gaps = evs.slice(1).map((e, i) => e.t - evs[i].t);
       const ts = evs.map(e => e.t).sort((a, b) => a - b), even = ts.slice(1).every((t, i) => Math.abs(t - ts[i] - (ts[1] - ts[0])) < 1e-6);
       check(evs.length === Math.max(essN, 1, n0 - easy) && evs.filter(e => ess.has(e.kind)).length === essN && (evs.length < 2 || even)
-            && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump,
-            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), evenly spread (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s), same reactor pace and jump`);
+            && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump
+            && G.mission.extraLuck === (easy - (n0 - evs.length)) / 2 && Math.abs(G.luckCut() - G.LUCK_CUT ** G.mission.extraLuck) < 1e-12,
+            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), evenly spread (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s), same reactor pace and jump; ${G.mission.extraLuck * 2} step(s) with nothing to drop → ${G.mission.extraLuck} cat(s) of luck`);
     }
   }
 }
@@ -168,6 +169,24 @@ function fireAndJumpTests() {
     G.CAPACITORS[1].charge = 1; G.mission.t = G.mission.jumpAt - 0.5;
     runTo(G, G.mission.jumpAt + 1, calm(G));
     check(G.mission.over?.won === true, 'with energy in the middle capacitor at jump time, the ship jumps (win)');
+    // after the jump nothing happens to the ship any more: fires don't spread or grow, nothing breaks
+    G.spawnFire(22.2, 9.5); G.spawnFire(22.8, 9.5); const fires = JSON.stringify(G.fires), broken = G.SYSTEMS.filter(s => s.broken).length, t0 = G.mission.t;
+    for (let i = 0; i < 60 * 60; i++) G.tick(DT);
+    check(JSON.stringify(G.fires) === fires && G.SYSTEMS.filter(s => s.broken).length === broken && G.mission.t === t0 && G.mission.over.won,
+          'after the jump the ship is frozen: a minute later the fires are as they were, nothing more broke');
+  }
+  // --- the end screen: any key or click goes back to the lobby (not during the jump-out, not in its first second)
+  {
+    const G = loadGame([...NAMES, 'localInput', 'endScreenReady', 'location']); let back = 0; G.location.reload = () => back++;
+    G.MISSIONS.intro.crew = null; G.startMission(); G.mission.events.forEach(e => { e.done = true; }); G.CAPACITORS[1].charge = 1; G.mission.t = G.mission.jumpAt;
+    const press = (k) => { if (k) G.localInput.pressed.add(k); else G.localInput.mouse.click = true; G.tick(DT); };
+    G.tick(DT); press('KeyQ');
+    const early = back;
+    while (!G.endScreenReady()) G.tick(DT);
+    press('KeyQ'); const grace = back;
+    for (let i = 0; i < 70; i++) G.tick(DT);
+    press('KeyM'); const mute = back; press(null);
+    check(G.mission.over?.won && early === 0 && grace === 0 && mute === 0 && back === 1, 'end screen: keys during the jump-out and its first second do nothing, M only mutes, then a click goes back to the lobby');
   }
   // --- no energy at jump time: no time limit; the drive stalls in a loop and the hot zone gets worse
   const pressed = (G) => G.mission.events.filter(e => e.press);

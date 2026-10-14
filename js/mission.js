@@ -27,6 +27,9 @@ const fires = [];
 const LUCK_TIME = 60;
 const luck = { t: 0, pet: 0 };
 const lucky = () => luck.t > 0;
+// The multiplier on the bad dice (fires, broken parts): LUCK_CUT per cat, to the power of the cat's luck (1 while it
+// lasts) plus half a cat for every easier difficulty step that had no encounter left to drop (mission.extraLuck).
+const luckCut = () => LUCK_CUT ** ((lucky() ? 1 : 0) + (mission.extraLuck || 0));
 function petCat() {
   luck.t = LUCK_TIME; luck.pet = 2.5; sfx.purr();          // what this does is a secret: no hints in the UI
   if (typeof hz !== 'undefined') hz.stats.pets++;
@@ -176,7 +179,8 @@ const missionCrew = (id, n) => { const C = MISSIONS[id]?.crew, i = Math.min(8, M
 // < 1 where the energy needs a faster reactor to be in spec).
 const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
 // Difficulty (the lobby's slider, host's choice): 0 normal, 1 easy, 2 very easy. Each step takes one optional
-// encounter out (never an essential one, and never the last one); the rest spread evenly over the same mission time, and the reactor
+// encounter out (never an essential one, and never the last one; where none is left to drop, half a cat's
+// luck instead: luckCut); the rest spread evenly over the same mission time, and the reactor
 // keeps normal's pace, so the crew has the same energy for fewer encounters.
 const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
@@ -212,6 +216,7 @@ function layoutMission(id, n) {
   const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - lead) / (written.length - 1) : gap;
   const normal = mission.easy ? selectEvents(id, written, n, mission.maint?.target).length : evs.length;   // the reactor's pace: normal's gap
   const paceGap = normal > 1 ? (end - lead) / (normal - 1) : end - lead;
+  mission.extraLuck = ((mission.easy || 0) - (normal - evs.length)) / 2;   // easier steps with nothing left to drop: half a cat each
   Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + JUMP_DELAY });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
 }
@@ -238,7 +243,7 @@ function startMission(id = 'intro', opts = {}) {
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
-    maint: { target, decoy, serviced: false }, crewCells: undefined, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
+    maint: { target, decoy, serviced: false }, crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
   });
   mission.written = (MISSIONS[id] || MISSIONS.intro).build(target).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
   layoutMission(id, crewSize());
@@ -425,7 +430,7 @@ function fireNear(side, x, y) {
   return igniteSystem(pool[Math.floor(Math.random() * pool.length)]);
 }
 function smallHit(side, x, y) {
-  const k = lucky() ? LUCK_CUT : 1, r = Math.random(), pFire = HIT_FIRE * k;
+  const k = luckCut(), r = Math.random(), pFire = HIT_FIRE * k;
   if (r < pFire) fireNear(side, x, y);
   else if (r < pFire + HIT_BREAK * k) {
     const intact = SYSTEMS.filter(s => s.col === colOfSide(side) && !s.broken);
@@ -434,7 +439,7 @@ function smallHit(side, x, y) {
 }
 // Big hits: the broken parts come from damageColumn; this adds the fire.
 function bigHitFire(side, x, y) {
-  if (Math.random() < (lucky() ? LUCK_CUT : 1)) fireNear(side, x, y);
+  if (Math.random() < luckCut()) fireNear(side, x, y);
 }
 // Debug: start a fire on the part nearest to (x, y).
 function spawnFire(x, y) {
@@ -448,7 +453,7 @@ function updateFires(dt) {
     if (fireLeft(f) > 0) continue;
     f.t = 0; f.period = firePeriod(f.plasma);
     if (!f.plasma) {                               // 1/3 spread, 1/6 burn out the part and keep burning, 1/6 burn it out and go out, 1/3 nothing
-      const r = Math.random(), k = lucky() ? LUCK_CUT : 1, pSpread = k / 3, pBurn = k / 6;
+      const r = Math.random(), k = luckCut(), pSpread = k / 3, pBurn = k / 6;
       if (r < pSpread) { /* spreads: below */ }
       else if (r < pSpread + pBurn) { if (!f.sys.broken) breakSystem(f.sys); continue; }
       else if (r < pSpread + pBurn + 1 / 6) { if (!f.sys.broken) breakSystem(f.sys); scorch(f.x, f.y); fires.splice(fires.indexOf(f), 1); continue; }
@@ -979,7 +984,7 @@ function drawEndScreen() {
   ctx.fillText(o.won ? 'JUMP SUCCESSFUL' : o.survived ? 'JUMPED — OBJECTIVE FAILED' : 'MISSION FAILED', VW / 2, VH / 2 - 40);
   ctx.fillStyle = '#e8ecf4'; ctx.font = '18px system-ui, sans-serif'; ctx.fillText(o.reason, VW / 2, VH / 2 + 10);
   ctx.fillStyle = '#9aa3b5'; ctx.font = '14px system-ui, sans-serif';
-  ctx.fillText(`Time ${fmt(o.t)} · hits taken: ${combat.hits.small} small, ${combat.hits.large} large, ${combat.hits.crew} crew · R: back to the lobby`, VW / 2, VH / 2 + 46);
+  ctx.fillText(`Time ${fmt(o.t)} · hits taken: ${combat.hits.small} small, ${combat.hits.large} large, ${combat.hits.crew} crew · any key or click: back to the lobby`, VW / 2, VH / 2 + 46);
   // the mission report
   const S = hz.stats, medics = Object.entries(S.treated).sort((a, b) => b[1] - a[1]);
   const lines = [

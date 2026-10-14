@@ -44,7 +44,7 @@ function walkTo(G, tx, ty, max = 20) {                 // straight-line walking 
     G.simTick(DT); if (p.aim > 0) sawLaser = true;
     const b = G.boarding.bolts.find(b => b.owner === 'pirate'); if (b) { shotAt = t; shotSpeed = Math.hypot(b.vx, b.vy); }
   }
-  check(sawLaser && shotAt > 1.9 && shotAt < 2.2 && shotSpeed >= 25, `a pirate stops and aims (laser sight) for 2 s, then fires a very fast shot (after ${shotAt?.toFixed(2)} s, ${shotSpeed.toFixed(0)} units/s)`);
+  check(sawLaser && shotAt > 1.6 && shotAt < 1.9 && shotSpeed >= 25, `a pirate stops and aims (laser sight) for 1.7 s (locked for the last 0.3), then fires a very fast shot (after ${shotAt?.toFixed(2)} s, ${shotSpeed.toFixed(0)} units/s)`);
   for (let i = 0; i < 20; i++) G.simTick(DT);
   check(me.health === 'hurt', 'standing in the laser line gets you hit');
   let again = false; for (let i = 0; i < 60 * 4.5; i++) { G.simTick(DT); if (p.aim > 0) again = true; me.health = 'ok'; }

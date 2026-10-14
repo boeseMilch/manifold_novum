@@ -932,6 +932,10 @@ function drawMuteButton() {
 // The shared simulation: every crew member (with their own input), then the world.
 function simTick(dt) {
   time += dt;
+  if (mission.over?.survived) {         // jumped: the ship is safe, nothing burns, breaks or bleeds any more (time runs for the jump-out)
+    for (const c of crew) { const i = c.input; i.pressed.clear(); i.mouse.click = false; i.mouse.rightClick = false; i.mouse.look = 0; }
+    return;
+  }
   for (const c of crew) withCrew(c, () => {
     updatePlayer(dt);
     updateInteraction(dt);
@@ -994,11 +998,16 @@ function clientUpdate(dt) {
   if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && standing(me) && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
-  if (endScreenReady() && localInput.pressed.has('KeyR')) backToLobby();   // (not during the jump animation)
+  // end screen: any key (but M, mute) or click goes back to the lobby; not during the jump animation, and only
+  // after END_GRACE s, so a click or key meant for the fight doesn't skip the report
+  endShown = endScreenReady() ? endShown + dt : 0;
+  if (endShown > END_GRACE && ([...localInput.pressed].some(k => k !== 'KeyM') || m.click || m.rightClick)) backToLobby();
   if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? pickHover(me, m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
   updateSidebar(HUD_H, dt);
   updateCamera(dt);
 }
+let endShown = 0;
+const END_GRACE = 1;
 // Solo: one step of everything (also used by tests and the debug warp).
 function tick(dt) { clientUpdate(dt); simTick(dt); }
 
