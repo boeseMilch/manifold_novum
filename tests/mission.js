@@ -4,7 +4,8 @@ const { loadGame } = require('./harness');
 const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
   'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
-  'spawnInvader', 'power', 'JUMP_WINDOW', 'MAX_DAMAGE', 'MAINT_WARNING'];
+  'spawnInvader', 'power', 'MAX_DAMAGE', 'MAINT_WARNING', 'jumpStall', 'PRESS_FIRST', 'PRESS_SHRINK', 'PRESS_FLOOR', 'STRAIN_FIRST',
+  'STRAIN_FLOOR', 'STALL_CYCLE', 'simTick', 'startTutorial', 'netSerialize', 'netApply', 'jumpCharge', 'me', 'radarList'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -149,11 +150,64 @@ function fireAndJumpTests() {
     runTo(G, G.mission.jumpAt + 1, calm(G));
     check(G.mission.over?.won === true, 'with energy in the middle capacitor at jump time, the ship jumps (win)');
   }
+  // --- no energy at jump time: no time limit; the drive stalls in a loop and the hot zone gets worse
+  const pressed = (G) => G.mission.events.filter(e => e.press);
+  const clear = (G) => () => { calm(G)(); G.combat.enemies.length = 0; G.combat.asteroids.length = 0; G.combat.swarm = null; G.boarding.invaders.length = 0; G.CAPACITORS[1].charge = 0; };
   {
     const G = fresh(); G.mission.events.forEach(e => { e.done = true; });
     G.CAPACITORS[1].charge = 0; G.mission.t = G.mission.jumpAt - 0.5;
-    runTo(G, G.mission.jumpAt + G.JUMP_WINDOW + 1, calm(G));
-    check(G.mission.over?.won === false && /energy/.test(G.mission.over.reason), 'no energy for 15 s at jump time: mission lost');
+    const phases = new Set(); let maxK = 0;
+    runTo(G, G.mission.jumpAt + 60, () => { clear(G)(); const s = G.jumpStall(); if (s) { phases.add(s.phase); maxK = Math.max(maxK, s.k); } });
+    const want = Math.floor((60 - 2.6) / G.STALL_CYCLE) + 1;
+    check(!G.mission.over && Math.abs(G.mission.jump.fails - want) <= 1 && phases.size === 3 && maxK > 0.6 && maxK < 0.85,
+          `no energy at jump time: the drive stalls in a loop (charge to ${maxK.toFixed(2)}, sputter, dead; ${G.mission.jump.fails} failed attempts in 60 s), the mission goes on`);
+    G.CAPACITORS[1].charge = 1; G.tick(DT); G.tick(DT);
+    check(G.mission.over?.won === true && G.mission.over.survived && G.CAPACITORS[1].charge === 0, 'energy arriving in MID: the next try jumps (win)');
+  }
+  {
+    const G = fresh(); G.mission.events.forEach(e => { e.done = true; });
+    G.CAPACITORS[1].charge = 0; G.mission.t = G.mission.jumpAt - 0.5;
+    const due = G.mission.jumpAt, ran = [], strains = [];
+    let lastStrain = 0;
+    runTo(G, due + 200, () => {
+      for (const e of pressed(G)) if (e.done && !ran.includes(e)) ran.push(e);
+      if (G.mission.press && G.mission.press.strain > lastStrain) { strains.push(G.mission.t); lastStrain = G.mission.press.strain; }
+      clear(G)();
+    });
+    const at = ran.map(e => e.t), gaps = at.map((t, i) => t - (i ? at[i - 1] : due));
+    const sgaps = strains.map((t, i) => t - (i ? strains[i - 1] : due));
+    const shrinking = (g, first, floor) => Math.abs(g[0] - first) < 0.1 && g.every((x, i) => !i || (x <= g[i - 1] + 1e-6 && x >= floor - 0.1)) && Math.abs(g[g.length - 1] - floor) < 0.1;
+    check(!G.mission.over && shrinking(gaps, G.PRESS_FIRST, G.PRESS_FLOOR) && Math.abs(gaps[1] - G.PRESS_FIRST * G.PRESS_SHRINK) < 0.1,
+          `not jumping: extra encounters at shrinking gaps (${gaps.map(g => g.toFixed(0)).join(', ')} s)`);
+    check(shrinking(sgaps, G.STRAIN_FIRST, G.STRAIN_FLOOR), `... and parts giving out at shrinking gaps (${sgaps.map(g => g.toFixed(0)).join(', ')} s)`);
+    check(ran.every(e => e.radar !== false || ['debris'].includes(e.kind)) && pressed(G).some(e => !e.done) && ran.some(e => ['interceptor', 'frigate', 'swarm'].includes(e.kind)) && ran.some(e => ['intruder', 'saboteur', 'mines'].includes(e.kind)),
+          `... a mix from the pool (${[...new Set(ran.map(e => e.kind))].join(', ')}), the next one already queued for the radar`);
+  }
+  {   // multiplayer: the browsers get the stall, the hot zone and its contacts in the snapshot
+    const G = fresh(); G.mission.events.forEach(e => { e.done = true; });
+    G.CAPACITORS[1].charge = 0; G.mission.t = G.mission.jumpAt - 0.5;
+    runTo(G, G.mission.jumpAt + 45, clear(G));
+    const B = loadGame(NAMES); B.mission.active = false;
+    B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+    const a = G.jumpStall(), b = B.jumpStall();
+    check(b && a.phase === b.phase && Math.abs(a.k - b.k) < 1e-9 && B.mission.press?.n === G.mission.press.n && B.mission.events.filter(e => e.press).length === pressed(G).length,
+          `multiplayer: the browsers see the same stall (${b?.phase}) and hot zone (${B.mission.press?.n} extra encounters)`);
+  }
+  {
+    const G = fresh(); G.mission.events.forEach(e => { e.done = true; });
+    G.CAPACITORS[1].charge = 0; G.mission.t = G.mission.jumpAt - 0.5; const due = G.mission.jumpAt;
+    runTo(G, due + 300, () => { G.CAPACITORS[1].charge = 0; });
+    const after = G.mission.over ? G.mission.over.t - due : Infinity;
+    check(G.mission.over && !G.mission.over.survived && /fell apart/.test(G.mission.over.reason) && after > G.PRESS_FIRST && after < 180,
+          `a crew that ignores the jump loses the ship (${after.toFixed(0)} s after the jump was due)`);
+  }
+  {
+    const G = loadGame(NAMES); G.startMission('practice'); G.mission.t = 5000;
+    for (let i = 0; i < 60 * 30; i++) G.tick(DT);
+    const T = loadGame(NAMES); T.mission.active = false; T.startTutorial('mouse'); T.mission.t = 5000;
+    for (let i = 0; i < 60 * 30; i++) T.simTick(DT);
+    check(!G.mission.jump && !G.mission.press && !G.mission.events.some(e => e.press) && !T.mission.jump && !T.mission.press && !T.mission.events.some(e => e.press),
+          'practice and the tutorial: no jump, no stall, no hot zone');
   }
   {
     const G = fresh();

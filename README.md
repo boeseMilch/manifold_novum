@@ -2,7 +2,9 @@
 
 A cooperative, real-time Space Alert-style game. Your crew jumps a duct-taped ship into a
 dangerous region of space, survives a pile of overlapping threats for about five minutes,
-and jumps out again. It runs in the browser, with no build step.
+and jumps out again. The jump drive needs one energy in the middle capacitor; until it gets
+it, the jump stalls and the trouble keeps coming, faster and faster. It runs in the browser,
+with no build step.
 
 ## Play solo
 

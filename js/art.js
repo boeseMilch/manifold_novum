@@ -46,6 +46,17 @@ function stroke(w = 2.5, col = OUT) {
   ctx.stroke();
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+// Full-screen effects in screen space (CSS px): a radial gradient from r0 to r1 around (cx, cy) with stops
+// [[t, [r, g, b], a], ...] (up to 3), or a flat tint. With the sprites on they're composited in GL
+// (GFX.overlay: under everything on the 2D canvas), else filled on ctx (a full-screen gradient fill on a big
+// software 2D canvas costs ~12 ms a frame).
+function screenGradient(cx, cy, r0, r1, stops) {
+  if (typeof GFX !== 'undefined' && GFX.overlay(cx, cy, r0, r1, stops)) return;
+  const g = ctx.createRadialGradient(cx, cy, r0, cx, cy, r1);
+  for (const [t, c, a] of stops) g.addColorStop(t, `rgba(${c[0]},${c[1]},${c[2]},${a})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+}
+function screenTint(c, a) { screenGradient(0, 0, 0, 1, [[0, c, a]]); }
 function shadowEllipse(x, y, rx, ry, a = 0.35) {
   ctx.fillStyle = `rgba(0,0,0,${a})`;
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, TAU); ctx.fill();
@@ -110,6 +121,7 @@ const NEBULAE = [[0.2, 0.3, 0.45, 'rgba(90,60,140,0.16)'], [0.7, 0.8, 0.4, 'rgba
                  [0.85, 0.15, 0.3, 'rgba(140,70,60,0.08)']];
 
 function drawSpace(t, cam, vw, vh) {
+  if (typeof GFX !== 'undefined' && GFX.on && !cam.rot) return drawSpaceGL(t, cam, vw, vh);
   ctx.fillStyle = '#080b14'; ctx.fillRect(0, 0, vw, vh);
   const D = Math.hypot(vw, vh) + 40;          // wrap box covers the screen at any rotation
   ctx.save(); ctx.translate(vw / 2, vh / 2); ctx.rotate(cam.rot);
@@ -139,6 +151,41 @@ function drawSpace(t, cam, vw, vh) {
   }
   ctx.globalAlpha = 1;
   ctx.restore();
+}
+
+// The same picture, painted by the sprite renderer (GFX.backdrop) instead of the 2D 'back' layer: no
+// full-screen canvas fills (without accelerated 2D canvases, as in Firefox here, the nebulae alone cost ~10 ms a frame).
+const SPACE_GL = { rects: new Float32Array(0) };
+const rgba01 = (s) => {
+  if (s[0] === '#') { const n = parseInt(s.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255, 1]; }
+  const m = s.match(/[\d.]+/g).map(Number); return [m[0] / 255, m[1] / 255, m[2] / 255, m[3] == null ? 1 : m[3]];
+};
+const STREAK_RGB = rgba01('#d8e6ff'), NEBULA_RGBA = NEBULAE.map(nb => rgba01(nb[3]));
+function drawSpaceGL(t, cam, vw, vh) {
+  const D = Math.hypot(vw, vh) + 40, cx = vw / 2, cy = vh / 2;
+  const wrap = (v) => ((v % D) + D) % D - D / 2;
+  const glows = NEBULAE.map(([fx, fy, fr], k) => [cx + wrap(fx * D - cam.x * 0.015), cy + wrap(fy * D - cam.y * 0.015), fr * D, ...NEBULA_RGBA[k]]);
+  let n = 0;
+  for (const L of STAR_LAYERS) n += L.stars.length;
+  if (SPACE_GL.rects.length < n * 8) SPACE_GL.rects = new Float32Array(n * 8);
+  const R = SPACE_GL.rects;
+  let i = 0;
+  for (const L of STAR_LAYERS) {
+    const len = (cam.streak || 0) * L.f / 0.22, lw = (L.size[0] + L.size[1]) / 2;
+    for (const s of L.stars) {
+      const x = cx + wrap(s.x * D - cam.x * L.f), y = cy + wrap(s.y * D - cam.y * L.f);
+      if (len > 1.5) {                                // streaks (the jump drive)
+        R[i] = x - lw / 2; R[i + 1] = y - len - lw / 2; R[i + 2] = lw; R[i + 3] = len + lw;
+        R[i + 4] = STREAK_RGB[0]; R[i + 5] = STREAK_RGB[1]; R[i + 6] = STREAK_RGB[2]; R[i + 7] = L.alpha;
+      } else {
+        const c = s.rgb || (s.rgb = rgba01(s.tint));
+        R[i] = x; R[i + 1] = y; R[i + 2] = s.s; R[i + 3] = s.s;
+        R[i + 4] = c[0]; R[i + 5] = c[1]; R[i + 6] = c[2]; R[i + 7] = L.alpha * (0.75 + 0.25 * Math.sin(t * 2 + s.tw));
+      }
+      i += 8;
+    }
+  }
+  GFX.backdrop({ base: [8 / 255, 11 / 255, 20 / 255], glows, rects: R, n: i / 8 });
 }
 
 // ---------------------------------------------------------------------------

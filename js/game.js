@@ -644,10 +644,8 @@ function drawInjuryOverlay(t) {
   if (h === 'ok') return;
   const cx = VW / 2, cy = VH / 2, r = Math.hypot(VW, VH) / 2;
   const inner = h === 'hurt' ? 0.28 + 0.03 * Math.sin(t * 6) : h === 'down' ? 0.12 : 0.04;   // heartbeat while hurt
-  const g = ctx.createRadialGradient(cx, cy, r * inner, cx, cy, r);
-  const col = h === 'hurt' ? '8,4,6' : '30,0,0';
-  g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(0.55, `rgba(${col},${h === 'hurt' ? 0.75 : 0.85})`); g.addColorStop(1, `rgba(${col},${h === 'out' ? 0.98 : 0.95})`);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  const col = h === 'hurt' ? [8, 4, 6] : [30, 0, 0];
+  screenGradient(cx, cy, r * inner, r, [[0, col, 0], [0.55, col, h === 'hurt' ? 0.75 : 0.85], [1, col, h === 'out' ? 0.98 : 0.95]]);   // (art.js: in GL with the sprites)
   if (h === 'hurt') {
     ctx.fillStyle = 'rgba(255,140,120,0.8)'; ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.fillText(`HURT — ${Math.ceil(me.hurtT)} s (another hit puts you down)`, cx, HUD_H + 12); ctx.textAlign = 'left';
@@ -818,6 +816,7 @@ function render(t) {
   drawDockDarkness();
   drawCombatFront(t);
   if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
+  drawJumpStallMark(view, t);                        // the jump stalled: NO ENERGY over the middle capacitor
 
   ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
   const prompt = me.prompt, hover = me.hover;
@@ -980,7 +979,8 @@ function clientUpdate(dt) {
   }
   if (tutAllows('debug')) updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
-  music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0);
+  music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0
+    || (!!mission.press && !mission.over));              // not jumping yet: the hot zone keeps the threat up
   music.setMission(mission.id || 'intro');                // each mission has its own piece, building up towards the jump
   music.setIntensity(!mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
   music.setJump(!!mission.jump && !mission.over);

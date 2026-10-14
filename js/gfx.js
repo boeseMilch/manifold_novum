@@ -68,11 +68,27 @@
 //   walls: [[x0, y0, x1, y1], ...] (up to MAX_WALLS; height wallHeight, default 1.6): vertical planes that
 //   block every light (wallVis): the walls the camera sees over (cut down) but the light must not get past.
 
+// Backdrop: GFX.backdrop({ base: [r, g, b], glows: [[x, y, radius, r, g, b, a], ...], rects, n }) paints
+// space behind everything, in GL (before the 'back' layer): the base colour, up to 4 soft radial glows
+// (colour, alpha a at the centre, to transparent black at the radius, as a 2D canvas gradient would), then n small rects (rects: x, y, w, h,
+// r, g, b, a per rect; stars, and streaks while jumping). All in CSS px, colours 0..1. (js/art.js drawSpace
+// used to fill the 'back' canvas with them: in a browser without accelerated 2D canvases, Firefox here,
+// those full-screen gradients alone took ~10 ms a frame.)
+//
+// Screen overlays: GFX.overlay(cx, cy, r0, r1, stops) → true when queued (else draw it yourself: GFX off, or
+// more than MAX_OV this frame): a full-screen radial gradient (CSS px; a 2D canvas radialGradient from r0 to
+// r1 around (cx, cy), stops [[t, [r, g, b] 0..255, a], ...], up to 3; one stop: a flat tint), composited over
+// the finished picture in the order queued. It lies UNDER everything on the 2D canvas `c`. For the edge glows
+// and tints (the jump drive, injuries, the flare): a full-screen gradient on a 4K 2D canvas took ~12 ms in Firefox.
+// (art.js screenGradient() / screenTint() use it, or the canvas.)
+//
 // 2D layers: GFX.layer2d('back') is drawn first and unlit (space, things behind the ship);
 // GFX.layer2d('mid') is drawn after the 'ground', 'decal' and 'wall' sprites and before 'main', lit
 // like the floor (flat, at z = 0); GFX.layer2d('glow') right after it, unlit (markers, halos, energy
 // glows: under the crew, but not dimmed by the dark). All are at the internal resolution and cleared on
-// first use per frame; GFX.layer2dScale is their pixels per CSS px.
+// first use per frame; GFX.layer2dScale is their pixels per CSS px. Only what was drawn is cleared, uploaded
+// and composited: each layer's context tracks the box its drawing covers (trackDirty()), so a layer with
+// a few markers costs next to nothing (a full-screen 2D canvas upload took ~3-5 ms a layer in Firefox; see READBACK).
 //
 // Sprites drawn by the game: GFX.canvasSprite(key, w, h, { ppu, ox, oy }) → { name, ctx, w, h, commit() }
 // (draw into ctx, commit() uploads it, then GFX.sprite(name, ...) like any sprite; flat normal, no height
@@ -101,7 +117,7 @@ const GFX = (() => {
   const noop = () => {};
   const api = {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
-    begin: noop, end: noop, sprite: () => false, lighting: noop, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
+    begin: noop, end: noop, sprite: () => false, lighting: noop, backdrop: noop, overlay: () => false, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
     setScale: noop, setShadows: noop, setScratches: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
   };
@@ -729,6 +745,44 @@ void main() {
   }
   outColor = vec4(col, c.a);
 }`;
+  // The backdrop (GFX.backdrop): the base colour and the radial glows, full screen ...
+  const FS_GLOWS = `#version 300 es
+precision highp float;
+uniform vec3 uBase;
+uniform vec4 uGlow[4];      // centre x, y (device px, y down), radius, -
+uniform vec4 uGlowCol[4];   // rgb, alpha at the centre
+uniform int uNumGlows;
+uniform float uH;
+out vec4 outColor;
+void main() {
+  vec2 p = vec2(gl_FragCoord.x, uH - gl_FragCoord.y);
+  vec3 c = uBase;
+  for (int i = 0; i < 4; i++) {
+    if (i >= uNumGlows) break;
+    float t = clamp(length(p - uGlow[i].xy) / uGlow[i].z, 0.0, 1.0);
+    c = mix(c, uGlowCol[i].rgb * (1.0 - t), uGlowCol[i].a * (1.0 - t));   // (a 2D canvas gradient to transparent black: unpremultiplied)
+  }
+  outColor = vec4(c, 1.0);
+}`;
+  // ... then the rects, instanced (CSS px; under a pixel they grow to one and fade by their area, like a 2D canvas's coverage)
+  const VS_RECTS = `#version 300 es
+layout(location = 0) in vec2 aPos;
+layout(location = 1) in vec4 aRect;
+layout(location = 2) in vec4 aCol;
+uniform vec2 uView;
+uniform float uK;
+out vec4 vCol;
+void main() {
+  vec2 sz = aRect.zw * uK, s1 = max(sz, vec2(1.0));
+  vec2 p = aRect.xy * uK + sz * 0.5 + (aPos - 0.5) * s1;
+  vCol = vec4(aCol.rgb, aCol.a * sz.x * sz.y / (s1.x * s1.y));
+  gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0);
+}`;
+  const FS_COLOR = `#version 300 es
+precision highp float;
+in vec4 vCol;
+out vec4 outColor;
+void main() { outColor = vCol; }`;
   // Soft shadows, pass 1 (at 1/SH_DIV resolution, after depthPass, before the scene): every pixel takes
   // the surface this frame's depth buffer shows there (P from its screen position and depth: the
   // view is orthographic) and marches one jittered ray to each shadow-casting light of its tile that
@@ -815,12 +869,18 @@ void main() {
   s += (texture(uTex, vUV + uDir * 3.2307692).rgb + texture(uTex, vUV - uDir * 3.2307692).rgb) * 0.0702703;
   outColor = vec4(s, 1.0);
 }`;
+  const MAX_OV = 6;
   const FS_COMPOSITE = `#version 300 es
 precision highp float;
 in vec2 vUV;
 uniform sampler2D uScene, uBloom1, uBloom2;
 uniform float uBloom;
 uniform vec3 uGrade;
+uniform vec4 uOvGeo[MAX_OV];     // the overlays (GFX.overlay): centre (device px, y down), r0, r1
+uniform vec4 uOvT[MAX_OV];       // stop positions t0, t1, t2, number of stops
+uniform vec4 uOvCol[MAX_OV * 3]; // stop colours (rgb 0..1, a)
+uniform int uNumOv;
+uniform float uH;
 out vec4 outColor;
 void main() {
   vec3 c = texture(uScene, vUV).rgb;
@@ -828,8 +888,20 @@ void main() {
   c *= uGrade;
   vec3 over = max(c - 0.85, 0.0);
   c = min(c, 0.85) + 0.15 * (1.0 - exp(-over / 0.15));   // soft shoulder instead of hard clipping
+  vec2 p = vec2(gl_FragCoord.x, uH - gl_FragCoord.y);
+  for (int i = 0; i < MAX_OV; i++) {
+    if (i >= uNumOv) break;
+    vec4 g = uOvGeo[i], st = uOvT[i];
+    float t = clamp((length(p - g.xy) - g.z) / max(g.w - g.z, 1e-3), 0.0, 1.0);
+    vec4 k = uOvCol[i * 3];
+    if (st.w > 1.5) {
+      if (t > st.y && st.w > 2.5) k = mix(uOvCol[i * 3 + 1], uOvCol[i * 3 + 2], clamp((t - st.y) / max(st.z - st.y, 1e-5), 0.0, 1.0));
+      else k = mix(k, uOvCol[i * 3 + 1], clamp((t - st.x) / max(st.y - st.x, 1e-5), 0.0, 1.0));
+    }
+    c = mix(c, k.rgb, k.a);
+  }
   outColor = vec4(c, 1.0);
-}`;
+}`.replace(/MAX_OV/g, String(MAX_OV));
 
   // Shield domes (GFX.dome): a quad over the dome's screen box; every pixel casts its view ray (the
   // view is orthographic) against the ellipsoid and shades one of the two hits (uMisc.y: 0 the front
@@ -930,7 +1002,7 @@ void main() {
   try {
     P = { sprite: program(VS_SPRITE, FS_SPRITE), spriteDepth: program(VS_SPRITE, FS_SPRITE.replace('precision highp float;', '#define DEPTH_ONLY\nprecision highp float;')), layer: program(VS_FULL, FS_LAYER), bright: program(VS_FULL, FS_BRIGHT),
           blur: program(VS_FULL, FS_BLUR), comp: program(VS_FULL, FS_COMPOSITE), shPass: program(VS_FULL, FS_SHPASS), shBlur: program(VS_FULL, FS_SHBLUR),
-          dome: program(VS_RECT, FS_DOME) };
+          dome: program(VS_RECT, FS_DOME), backGlow: program(VS_FULL, FS_GLOWS), backRects: program(VS_RECTS, FS_COLOR) };
   } catch (e) { console.warn('[gfx]', e); return off('shader error'); }
   for (const prog of [P.sprite, P.layer, P.shPass]) {   // the lighting's samplers live on units 4..8 (no clash with units 0..3)
     gl.useProgram(prog.p); gl.uniform1i(prog.u.uLights, 4); gl.uniform1i(prog.u.uTiles, 5); gl.uniform1i(prog.u.uDepthBuf, 6);
@@ -955,6 +1027,13 @@ void main() {
   gl.bindVertexArray(vaoFull);
   gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
   gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const vaoRects = gl.createVertexArray(), rectBuf = gl.createBuffer();   // the backdrop's rects: the quad + a rect and colour per instance
+  gl.bindVertexArray(vaoRects);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, rectBuf);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 32, 0); gl.vertexAttribDivisor(1, 1);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 32, 16); gl.vertexAttribDivisor(2, 1);
   gl.bindVertexArray(null);
 
   // --- textures ---------------------------------------------------------------------------------------
@@ -1209,23 +1288,179 @@ void main() {
   let view = null, W = 1, H = 1, K = 1, Sdev = 1, camOX = 0, camOY = 0, frameNo = 0, active = false;
   let queue = [], seq = 0, picks = [], lastPicks = [];
   const domes = [];
+  let back = null;                                   // this frame's GFX.backdrop()
+  const ovGeo = new Float32Array(MAX_OV * 4), ovT = new Float32Array(MAX_OV * 4), ovCol = new Float32Array(MAX_OV * 12);
+  let numOv = 0;                                     // this frame's GFX.overlay()s
   let light = { ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
   let userScale = null;
   try { const q = search.match(/[?&]gfxscale=([\d.]+)/); if (q) { userScale = +q[1]; localStorage.setItem('mn-gfx-scale', q[1]); } else { const s = localStorage.getItem('mn-gfx-scale'); if (s) userScale = +s; } } catch (e) { /* no storage */ }
 
-  // 2D layers composited into the GL picture
-  const L2D = {};
+  // 2D layers composited into the GL picture. What each frame's drawing covers is kept per DT x DT tile
+  // (L.tiles: 1 = drawn this frame, 2 = drawn last frame, so cleared now and uploaded again) and as one box,
+  // L.box [x0, y0, x1, y1] (device px; empty: x0 > x1). L.full: unknown, all of it.
+  const L2D = {}, DT = 64;
+  // Firefox (2D canvases in software here) copies the whole canvas for every upload from it, however small:
+  // there the layers are CPU canvases and the changed tiles are read back (getImageData) and uploaded. Elsewhere
+  // (Chrome: GPU canvases, where a read back stalls) one upload from the canvas of the changed tiles' box.
+  const READBACK = typeof navigator !== 'undefined' && /Firefox\//.test(navigator.userAgent || '');
+  const noBox = () => [Infinity, Infinity, -Infinity, -Infinity];
+  // the tiles with any of the bits in `bits` set, as rects (runs along a row, merged down the rows while they
+  // line up) → f(x0, y0, x1, y1) in device px
+  function tileRuns(L, bits, f) {
+    const tw = L.tw0, th = L.th0, T = L.tiles;
+    let open = new Map();                              // 'i0,i1' → first row
+    for (let j = 0; j <= th; j++) {
+      const next = new Map();
+      if (j < th) for (let i = 0; i < tw; i++) {
+        if (!(T[j * tw + i] & bits)) continue;
+        let k = i + 1;
+        while (k < tw && (T[j * tw + k] & bits)) k++;
+        const key = i + ',' + k;
+        next.set(key, open.has(key) ? open.get(key) : j);
+        open.delete(key);
+        i = k;
+      }
+      for (const [key, j0] of open) { const [i0, i1] = key.split(',').map(Number); f(i0 * DT, j0 * DT, Math.min(W, i1 * DT), Math.min(H, j * DT)); }
+      open = next;
+    }
+  }
   function layer2d(name) {
     if (!api.on) return null;
     let L = L2D[name];
     if (!L) {
       const c = document.createElement('canvas');
-      L = L2D[name] = { c, g: c.getContext('2d'), tex: null, tw: 0, th: 0, used: -1 };
+      L = L2D[name] = { c, g: c.getContext('2d', { willReadFrequently: READBACK }), tex: null, tw: 0, th: 0, used: -1, box: noBox(), full: true, reset: null, tiles: null, tw0: 0, th0: 0 };
+      trackDirty(L);
     }
-    if (L.c.width !== W || L.c.height !== H) { L.c.width = W; L.c.height = H; }
-    if (L.used !== frameNo) { L.used = frameNo; L.g.setTransform(1, 0, 0, 1, 0, 0); L.g.clearRect(0, 0, W, H); }
+    if (L.c.width !== W || L.c.height !== H) {         // (resizing clears it and resets its state)
+      L.c.width = W; L.c.height = H; L.reset(); L.full = true;
+      L.tw0 = Math.ceil(W / DT); L.th0 = Math.ceil(H / DT); L.tiles = new Uint8Array(L.tw0 * L.th0);
+    }
+    if (L.used !== frameNo) {
+      L.used = frameNo; L.g.setTransform(1, 0, 0, 1, 0, 0);
+      const T = L.tiles;
+      if (L.full) { L.g.clearRect(0, 0, W, H); T.fill(2); }
+      else {
+        tileRuns(L, 1, (x0, y0, x1, y1) => L.g.clearRect(x0, y0, x1 - x0, y1 - y0));
+        for (let i = 0; i < T.length; i++) T[i] = T[i] & 1 ? 2 : T[i];   // (2s not uploaded yet stay 2)
+      }
+      L.box = noBox(); L.full = false;
+    }
     return L.g;
   }
+  // Wraps the layer context's drawing calls (on the instance) to grow L.box by what each one can touch: the
+  // current path's points (through a copy of the transform), plus the line width, shadow and a pixel of
+  // antialiasing. Anything it can't bound (Path2D, putImageData, arcTo, compositing that clears outside the
+  // shape) sets L.full.
+  function trackDirty(L) {
+    const g = L.g, proto = Object.getPrototypeOf(g);
+    let m = [1, 0, 0, 1, 0, 0], stack = [];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;     // the current path
+    // ... and its pieces (a stroke marks each one: a long thin line doesn't dirty everything in its box):
+    // seg holds x0, y0, x1, y1 per piece, ns pieces; lx, ly: the last point (NaN: none)
+    let seg = new Float32Array(256), ns = 0, lx = NaN, ly = NaN;
+    const piece = (a, b, c, d) => {
+      if (ns * 4 + 4 > seg.length) { if (seg.length >= 1 << 16) { ns = 0; seg[0] = x0; seg[1] = y0; seg[2] = x1; seg[3] = y1; ns = 1; return; } const n = new Float32Array(seg.length * 2); n.set(seg); seg = n; }
+      seg[ns * 4] = a; seg[ns * 4 + 1] = b; seg[ns * 4 + 2] = c; seg[ns * 4 + 3] = d; ns++;
+    };
+    L.reset = () => { m = [1, 0, 0, 1, 0, 0]; stack = []; x0 = y0 = Infinity; x1 = y1 = -Infinity; ns = 0; lx = ly = NaN; };
+    const pt = (x, y, join) => {
+      const X = m[0] * x + m[2] * y + m[4], Y = m[1] * x + m[3] * y + m[5];
+      if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y;
+      if (join && lx === lx) piece(Math.min(lx, X), Math.min(ly, Y), Math.max(lx, X), Math.max(ly, Y));
+      else piece(X, Y, X, Y);
+      lx = X; ly = Y;
+    };
+    const ell = (x, y, r) => {                                         // a circle (or an ellipse's bounding circle)
+      const X = m[0] * x + m[2] * y + m[4], Y = m[1] * x + m[3] * y + m[5], ex = r * (Math.abs(m[0]) + Math.abs(m[2])), ey = r * (Math.abs(m[1]) + Math.abs(m[3]));
+      if (X - ex < x0) x0 = X - ex; if (X + ex > x1) x1 = X + ex; if (Y - ey < y0) y0 = Y - ey; if (Y + ey > y1) y1 = Y + ey;
+      if (lx === lx) piece(Math.min(lx, X - ex), Math.min(ly, Y - ey), Math.max(lx, X + ex), Math.max(ly, Y + ey));   // (the line from the last point to its start)
+      else piece(X - ex, Y - ey, X + ex, Y + ey);
+      lx = X; ly = Y;                                                  // (about where it ends: within its box)
+    };
+    const curve = (pts) => {                                           // a curve: the box of its control points
+      const fx = lx, fy = ly;
+      let a = fx === fx ? fx : Infinity, b = fy === fy ? fy : Infinity, c = fx === fx ? fx : -Infinity, d = fy === fy ? fy : -Infinity;
+      for (let k = 0; k < pts.length; k += 2) {
+        const X = m[0] * pts[k] + m[2] * pts[k + 1] + m[4], Y = m[1] * pts[k] + m[3] * pts[k + 1] + m[5];
+        if (X < a) a = X; if (X > c) c = X; if (Y < b) b = Y; if (Y > d) d = Y; lx = X; ly = Y;
+      }
+      if (a < x0) x0 = a; if (c > x1) x1 = c; if (b < y0) y0 = b; if (d > y1) y1 = d;
+      piece(a, b, c, d);
+    };
+    const GLOBAL_OPS = { copy: 1, 'source-in': 1, 'source-out': 1, 'destination-in': 1, 'destination-atop': 1 };
+    const mark = (bx0, by0, bx1, by1, line) => {                       // device px box, line width (user units)
+      if (!(bx0 <= bx1) || L.full) return;
+      if (GLOBAL_OPS[g.globalCompositeOperation] || g.filter !== 'none' && g.filter) { L.full = true; return; }
+      let e = 2;
+      if (line) e += line * Math.max(Math.hypot(m[0], m[1]), Math.hypot(m[2], m[3])) * (g.lineJoin === 'miter' ? Math.max(1, g.miterLimit) : 1) * 0.5;
+      if (g.shadowBlur > 0 || g.shadowOffsetX || g.shadowOffsetY) e += g.shadowBlur * 2 + Math.abs(g.shadowOffsetX) + Math.abs(g.shadowOffsetY);
+      const b = L.box, X0 = Math.max(0, Math.floor(bx0 - e)), Y0 = Math.max(0, Math.floor(by0 - e)), X1 = Math.min(W, Math.ceil(bx1 + e)), Y1 = Math.min(H, Math.ceil(by1 + e));
+      if (X1 <= X0 || Y1 <= Y0) return;
+      if (X0 < b[0]) b[0] = X0; if (Y0 < b[1]) b[1] = Y0; if (X1 > b[2]) b[2] = X1; if (Y1 > b[3]) b[3] = Y1;
+      const T = L.tiles, tw = L.tw0, i1 = Math.ceil(X1 / DT), j1 = Math.ceil(Y1 / DT);
+      for (let j = Math.floor(Y0 / DT); j < j1; j++) for (let i = Math.floor(X0 / DT); i < i1; i++) T[j * tw + i] |= 1;
+    };
+    const rectBox = (x, y, w, h, line) => {                            // a rect in user units → mark (keeps the path)
+      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
+      for (const [u, v] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
+        const X = m[0] * u + m[2] * v + m[4], Y = m[1] * u + m[3] * v + m[5];
+        if (X < a) a = X; if (X > c) c = X; if (Y < b) b = Y; if (Y > d) d = Y;
+      }
+      mark(a, b, c, d, line);
+    };
+    const rectPath = (x, y, w, h) => { pt(x, y, false); pt(x + w, y, true); pt(x + w, y + h, true); pt(x, y + h, true); pt(x, y, true); };
+    const wrap = (name, before) => {
+      const orig = proto[name];
+      if (typeof orig !== 'function') return;
+      g[name] = function (a, b, c, d, e, f, h, i, j) { before(a, b, c, d, e, f, h, i, j, arguments.length); return orig.apply(g, arguments); };
+    };
+    wrap('save', () => { stack.push(m.slice()); });
+    wrap('restore', () => { if (stack.length) m = stack.pop(); });
+    wrap('setTransform', (a, b, c, d, e, f, h, i, j, n) => {
+      if (n === 0) m = [1, 0, 0, 1, 0, 0];
+      else if (typeof a === 'object') m = [a.a ?? a.m11 ?? 1, a.b ?? a.m12 ?? 0, a.c ?? a.m21 ?? 0, a.d ?? a.m22 ?? 1, a.e ?? a.m41 ?? 0, a.f ?? a.m42 ?? 0];
+      else m = [a, b, c, d, e, f];
+    });
+    wrap('resetTransform', () => { m = [1, 0, 0, 1, 0, 0]; });
+    wrap('transform', (a, b, c, d, e, f) => { m = [m[0] * a + m[2] * b, m[1] * a + m[3] * b, m[0] * c + m[2] * d, m[1] * c + m[3] * d, m[0] * e + m[2] * f + m[4], m[1] * e + m[3] * f + m[5]]; });
+    wrap('translate', (x, y) => { m[4] += m[0] * x + m[2] * y; m[5] += m[1] * x + m[3] * y; });
+    wrap('scale', (sx, sy) => { m[0] *= sx; m[1] *= sx; m[2] *= sy; m[3] *= sy; });
+    wrap('rotate', (r) => { const c = Math.cos(r), s = Math.sin(r); m = [m[0] * c + m[2] * s, m[1] * c + m[3] * s, m[2] * c - m[0] * s, m[3] * c - m[1] * s, m[4], m[5]]; });
+    wrap('beginPath', () => { x0 = y0 = Infinity; x1 = y1 = -Infinity; ns = 0; lx = ly = NaN; });
+    wrap('moveTo', (x, y) => pt(x, y, false));
+    wrap('lineTo', (x, y) => pt(x, y, true));
+    wrap('quadraticCurveTo', (a, b, x, y) => curve([a, b, x, y]));
+    wrap('bezierCurveTo', (a, b, c, d, x, y) => curve([a, b, c, d, x, y]));
+    wrap('arc', (x, y, r) => ell(x, y, r));
+    wrap('ellipse', (x, y, rx, ry) => ell(x, y, Math.max(rx, ry)));
+    wrap('rect', (x, y, w, h) => rectPath(x, y, w, h));
+    wrap('roundRect', (x, y, w, h) => rectPath(x, y, w, h));
+    wrap('arcTo', () => { L.full = true; });
+    wrap('closePath', () => { if (ns && lx === lx) piece(lx, ly, lx, ly); });   // (the closing line lies within the path's box: fills mark that box anyway)
+    wrap('fill', (a) => { if (typeof a === 'object' && a) L.full = true; else mark(x0, y0, x1, y1, 0); });
+    wrap('stroke', (a) => {
+      if (typeof a === 'object' && a) { L.full = true; return; }
+      if (ns > 64) { mark(x0, y0, x1, y1, g.lineWidth); return; }      // (many pieces: the whole box is as good)
+      for (let k = 0; k < ns; k++) mark(seg[k * 4], seg[k * 4 + 1], seg[k * 4 + 2], seg[k * 4 + 3], g.lineWidth);
+    });
+    wrap('fillRect', (x, y, w, h) => rectBox(x, y, w, h, 0));
+    wrap('strokeRect', (x, y, w, h) => rectBox(x, y, w, h, g.lineWidth));
+    const textBox = (t, x, y, mw, line) => {
+      const fs = +((/([\d.]+)px/.exec(g.font) || [])[1] || 48), w = (mw != null ? Math.min(mw, g.measureText(t).width) : g.measureText(t).width) + fs * 0.5;
+      const al = g.textAlign, x0 = al === 'center' ? x - w / 2 : al === 'right' || al === 'end' ? x - w : x;   // (left-to-right text)
+      rectBox(x0 - fs * 0.25, y - fs * 1.3, w + fs * 0.5, fs * 2.6, line);
+    };
+    wrap('fillText', (t, x, y, mw) => textBox(t, x, y, mw, 0));
+    wrap('strokeText', (t, x, y, mw) => textBox(t, x, y, mw, g.lineWidth));
+    wrap('drawImage', (img, a, b, c, d, e, f, h, i, n) => {
+      if (n >= 9) rectBox(e, f, h, i, 0);
+      else if (n >= 5) rectBox(a, b, c, d, 0);
+      else rectBox(a, b, img.width || 0, img.height || 0, 0);
+    });
+    wrap('putImageData', () => { L.full = true; });
+  }
+  // Uploads what changed since the last upload: this frame's drawing and last frame's (now cleared), as one box.
   function uploadLayer(L) {
     gl.bindTexture(gl.TEXTURE_2D, L.tex || (L.tex = gl.createTexture()));
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -1233,7 +1468,26 @@ void main() {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, L.c);
       for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
       L.tw = W; L.th = H;
-    } else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, L.c);
+      return;
+    }
+    const T = L.tiles;
+    if (L.full) T.fill(1);
+    let n = 0;
+    for (let i = 0; i < T.length; i++) if (T[i]) n++;
+    if (n === T.length) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, L.c);
+    else if (n && !READBACK) {
+      let x0 = W, y0 = H, x1 = 0, y1 = 0;
+      tileRuns(L, 3, (a, b, c, d) => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); });
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, x1 - x0, y1 - y0, gl.RGBA, gl.UNSIGNED_BYTE, L.c);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    } else if (n) {
+      tileRuns(L, 3, (x0, y0, x1, y1) => {
+        const d = L.g.getImageData(x0, y0, x1 - x0, y1 - y0);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, x1 - x0, y1 - y0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(d.data.buffer));
+      });
+    }
+    for (let i = 0; i < T.length; i++) T[i] &= 1;     // (the cleared ones are uploaded now)
   }
 
   function begin(v, t) {
@@ -1247,7 +1501,7 @@ void main() {
     K = W / vw; api.layer2dScale = K;
     Sdev = 48 * v.zoom * K;                               // device px per layout unit (T = 48)
     camOX = v.ox * K; camOY = v.oy * K;
-    queue.length = 0; seq = 0; picks = []; domes.length = 0;
+    queue.length = 0; seq = 0; picks = []; domes.length = 0; back = null; numOv = 0;
     light ={ ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
   }
   function lighting(L) { if (api.on) light = Object.assign({ ambient: [1, 1, 1], sun: null, areas: [], lights: [] }, L); }
@@ -1450,6 +1704,8 @@ void main() {
   function drawLayer2d(name, lit) {
     const L = L2D[name];
     if (!L || L.used !== frameNo) return;               // (uploaded at the start of end())
+    const b = L.full ? [0, 0, W, H] : L.box;
+    if (!(b[0] < b[2] && b[1] < b[3])) return;          // nothing drawn: only where something was
     const u = P.layer.u;
     gl.bindVertexArray(vaoFull);
     gl.useProgram(P.layer.p);
@@ -1459,7 +1715,9 @@ void main() {
     gl.uniform1f(u.uLit, lit ? 1 : 0); gl.uniform1f(u.uEmissive, 0.45);
     gl.uniform4f(u.uCam, camOX, camOY, Sdev, Sdev * SIN); gl.uniform2f(u.uView, W, H);
     if (lit) setLightUniforms(u);
+    gl.enable(gl.SCISSOR_TEST); gl.scissor(b[0], H - b[3], b[2] - b[0], b[3] - b[1]);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.disable(gl.SCISSOR_TEST);
   }
 
   // All of this frame's sprites into the instance buffer, once (it.ii: where each one went), for
@@ -1547,6 +1805,40 @@ void main() {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
   }
 
+  // GFX.overlay(cx, cy, r0, r1, stops): a screen-space radial gradient over the picture (see the header)
+  function overlay(cx, cy, r0, r1, stops) {
+    if (!api.on || !active || numOv >= MAX_OV || !stops || !stops.length) return false;
+    const i = numOv++, n = Math.min(3, stops.length);
+    ovGeo.set([cx * K, cy * K, r0 * K, r1 * K], i * 4);
+    ovT.set([stops[0][0], n > 1 ? stops[1][0] : 1, n > 2 ? stops[2][0] : 1, n], i * 4);
+    for (let k = 0; k < 3; k++) { const s = stops[Math.min(k, n - 1)]; ovCol.set([s[1][0] / 255, s[1][1] / 255, s[1][2] / 255, s[2]], (i * 3 + k) * 4); }
+    return true;
+  }
+  // GFX.backdrop(b): space behind everything this frame (see the header)
+  function backdrop(b) { if (api.on && active) back = b; }
+  function drawBackdrop() {
+    if (!back) return;
+    gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.BLEND);
+    gl.bindVertexArray(vaoFull);
+    const u = P.backGlow.u, gs = (back.glows || []).slice(0, 4), g = new Float32Array(16), gc = new Float32Array(16);
+    gs.forEach((q, i) => { g.set([q[0] * K, q[1] * K, Math.max(1e-3, q[2] * K), 0], i * 4); gc.set([q[3], q[4], q[5], q[6]], i * 4); });
+    gl.useProgram(P.backGlow.p);
+    gl.uniform3fv(u.uBase, back.base || [0, 0, 0]); gl.uniform4fv(u.uGlow, g); gl.uniform4fv(u.uGlowCol, gc);
+    gl.uniform1i(u.uNumGlows, gs.length); gl.uniform1f(u.uH, H);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    const n = back.n || 0;
+    if (n > 0 && back.rects) {
+      gl.bindVertexArray(vaoRects);
+      gl.bindBuffer(gl.ARRAY_BUFFER, rectBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, back.rects.subarray ? back.rects.subarray(0, n * 8) : new Float32Array(back.rects.slice(0, n * 8)), gl.STREAM_DRAW);
+      gl.useProgram(P.backRects.p);
+      gl.uniform2f(P.backRects.u.uView, W, H); gl.uniform1f(P.backRects.u.uK, K);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
+    }
+    gl.bindVertexArray(vao);
+  }
+
   function fullPass(prog, dst, setup) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, dst ? dst.fb : null);
     gl.viewport(0, 0, dst ? dst.w : W, dst ? dst.h : H);
@@ -1587,6 +1879,7 @@ void main() {
     gl.uniform1i(u.uBeauty, 0); gl.uniform1i(u.uNormal, 1); gl.uniform1i(u.uHeight, 2); gl.uniform1i(u.uMask, 3);
     gl.uniform4f(u.uWear, scratchOn ? 1 : 0, WEAR.fine, WEAR.gouge, WEAR.tape);
     setLightUniforms(u);
+    drawBackdrop();
     drawLayer2d('back', false);
     gl.useProgram(P.sprite.p); drawQueue(ground);
     gl.useProgram(P.sprite.p); drawQueue(walls);
@@ -1611,6 +1904,7 @@ void main() {
       bindTex(0, RT.scene.t); bindTex(1, RT.a1.t); bindTex(2, RT.a2.t);
       gl.uniform1i(u.uScene, 0); gl.uniform1i(u.uBloom1, 1); gl.uniform1i(u.uBloom2, 2);
       gl.uniform1f(u.uBloom, post.bloom == null ? 0.55 : post.bloom); gl.uniform3fv(u.uGrade, post.grade || light.grade || [1, 1, 1]);
+      gl.uniform4fv(u.uOvGeo, ovGeo); gl.uniform4fv(u.uOvT, ovT); gl.uniform4fv(u.uOvCol, ovCol); gl.uniform1i(u.uNumOv, numOv); gl.uniform1f(u.uH, H);
     });
     api.stats.ms = +(performance.now() - t0).toFixed(2);
   }
@@ -1630,7 +1924,7 @@ void main() {
   }
 
   Object.assign(api, {
-    on: true, gl, begin, end, sprite, lighting, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome, wear: WEAR,
+    on: true, gl, begin, end, sprite, lighting, backdrop, overlay, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome, wear: WEAR,
     get scratches() { return scratchOn; },
     setScratches: (on) => { scratchOn = !!on; try { localStorage.setItem('mn-gfx-scratch', on ? '1' : '0'); } catch (e) { /* no storage */ } },
     has: (name) => !!(DYNS[name] || (MAN && MAN[name] && MAN[name].f && MAN[name].f.length)),

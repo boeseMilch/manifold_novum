@@ -11,8 +11,12 @@ const uid = (o) => o.uid || (o.uid = newUid());
 function encounterPlates() {
   const out = [];
   const add = (key, d) => out.push({ key, ...d });
-  if (mission.active && mission.jump)
-    add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: `${mission.rules?.handle ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s) + ` : 'needs '}1 energy in MID · ${fmt(JUMP_WINDOW * (mission.rules?.handle ? 2 : 1) - mission.jump.t)}`, stripe: '#7af0ff', red: true });
+  if (mission.active && mission.jump && !mission.over) {
+    const handle = mission.rules?.handle && (mission.jump.pull || 0) < JUMP_PULL ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s)` : '';
+    const need = broken(CAPACITORS[1]) ? 'fix the middle capacitor, then 1 energy' : CAPACITORS[1].charge > 0 ? '' : handle ? '1 energy in MID' : 'needs 1 energy in the middle capacitor';
+    add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: [handle, need].filter(Boolean).join(' + '), stripe: need ? '#ff5a4a' : '#7af0ff', red: true, wrap: true });
+    if (mission.press?.n > 1 || mission.press?.strain) add('press', { icon: 'surge', title: 'HOT ZONE', sub: 'it only gets worse until you jump', stripe: '#ff8a2e', red: true, wrap: true });
+  }
   for (const e of combat.enemies) if (e.phase === 'fighting') {
     const hit = e.pois.filter(p => p.hit).length;
     add('enemy' + uid(e), { icon: { stealth: 'interceptor', tractor: 'interceptor', grappler: 'spore', mother: 'spore', pirate: 'frigate', derelict: 'frigate' }[e.kind] || e.kind, title: e.D.name.toUpperCase(), sub: `${e.side === 'port' ? 'left' : 'right'} side · ${hit}/${e.pois.length} weak spots hit${e.charge >= 0 ? ' · HEAVY SHOT!' : ''}`, stripe: '#e2574c', red: true });
@@ -104,9 +108,15 @@ function drawPlate(p) {
   ctx.font = '800 14px system-ui, sans-serif'; ctx.fillStyle = d.mock ? '#ff4a3a' : '#f2f4f8';
   ctx.fillText(d.title, x + 62, y + 19);
   ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = d.mock ? '#ffb0a0' : '#dfe4ec';
-  let sub = d.sub; while (ctx.measureText(sub).width > w - 76 && sub.length > 4) sub = sub.slice(0, -2);
-  if (sub !== d.sub) sub = sub.slice(0, -1) + '…';
-  ctx.fillText(sub, x + 62, y + 37);
+  const fits = (s) => ctx.measureText(s).width <= w - 76;
+  const words = d.sub.split(' '), cut = words.findIndex((_, i) => !fits(words.slice(0, i + 1).join(' ')));
+  if (d.wrap && cut > 0 && fits(words.slice(cut).join(' '))) {   // (wrap: two lines instead of cutting it off)
+    ctx.fillText(words.slice(0, cut).join(' '), x + 62, y + 33); ctx.fillText(words.slice(cut).join(' '), x + 62, y + 45);
+  } else {
+    let sub = d.sub; while (!fits(sub) && sub.length > 4) sub = sub.slice(0, -2);
+    if (sub !== d.sub) sub = sub.slice(0, -1) + '…';
+    ctx.fillText(sub, x + 62, y + 37);
+  }
   // red light for problems that are actually happening
   if (d.red) {
     const k = 0.55 + 0.45 * Math.sin(t * 6);
@@ -129,8 +139,9 @@ function drawSidebarHeader(y) {
   ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec';
   ctx.fillText(`MISSION T+${fmt(mission.t)}`, x + 14, y + 15);
   const jumpIn = mission.jumpAt - mission.t;
-  ctx.font = '800 18px system-ui, sans-serif'; ctx.fillStyle = mission.jump ? '#ffe08a' : '#f2f4f8';
-  ctx.fillText(mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE', x + 14, y + 35);
+  const stalled = typeof jumpStall === 'function' && jumpStall();
+  ctx.font = '800 18px system-ui, sans-serif'; ctx.fillStyle = stalled ? (Math.sin(time * 8) > 0 ? '#ff5a4a' : '#ffb0a4') : mission.jump ? '#ffe08a' : '#f2f4f8';
+  ctx.fillText(stalled ? 'JUMP STALLED' : mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE', x + 14, y + 35);
   ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
   ctx.fillText(mission.lastScan === null ? 'radar: not scanned (map table)' : `radar: scanned ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 54);
   // damage lights: one per broken system; more than MAX_DAMAGE loses the ship

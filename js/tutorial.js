@@ -533,7 +533,7 @@ const TUT_STEPS = {
         { text: `Hurt or down crewmates: ${tutC('*hold click* on them', 'stand next to them and *hold E*')} for 2 s. ${tutC('Click', 'Tap E')} in time with the heartbeat to go faster.`, view: 'ship' },
         { text: `Top left: *DAMAGE*. Every broken part counts. At ${MAX_DAMAGE + 1} broken parts at once the ship falls apart, so fix things.`, view: 'ship' },
         { text: '*Hull plates* (crates in the airlock rooms) seal holes in the hull. The *patch board* by the power lever reroutes power when a line breaks. Snacks help when you\'re hurt; the helm\'s coffee makes you quicker.', view: 'ship', mark: () => [...PLATE_CRATES.map(c => pt(c.x, c.y)), pt(SNACK.x, SNACK.y)] },
-        { text: 'And the *jump*: at the end of every mission the jump drive spools up and needs *one energy in the middle capacitor*. Keep some there. No energy, no jump, and you\'re stranded.', view: 'ship', mark: () => pt(CAPACITORS[1].x, CAPACITORS[1].y) },
+        { text: 'And the *jump*: at the end of every mission the jump drive spools up and needs *one energy in the middle capacitor*. Keep some there. No energy, no jump: the drive stalls, and the trouble keeps coming faster until you jump.', view: 'ship', mark: () => pt(CAPACITORS[1].x, CAPACITORS[1].y) },
       ], () => tutGo('end'));
     },
   },

@@ -3,7 +3,16 @@
 
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
-const JUMP_DELAY = 22, JUMP_WINDOW = 15;   // the jump comes mid-battle: 22 s after the final fight starts
+const JUMP_DELAY = 22;                      // the jump comes mid-battle: 22 s after the final fight starts
+// No time limit on the jump, but staying gets worse and worse (updatePressure): once the jump is due, an extra
+// encounter PRESS_FIRST s later, then each gap PRESS_SHRINK × the last, down to PRESS_FLOOR s; and a part
+// gives out STRAIN_FIRST s after it's due, then each gap × PRESS_SHRINK, down to STRAIN_FLOOR s.
+const PRESS_FIRST = 30, PRESS_SHRINK = 0.8, PRESS_FLOOR = 6, STRAIN_FIRST = 40, STRAIN_FLOOR = 10;
+const PRESS_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'debris', 'leeches', 'grappler', 'stealth']);
+const PRESS_BASE = ['interceptor', 'swarm', 'intruder', 'mines'];   // always in the pool (plus the mission's own kinds above)
+// The stalled jump (no energy in MID): the drive charges for STALL_RISE s, sputters out for STALL_SPUTTER s,
+// lies dead until STALL_CYCLE s, and tries again. Every sputter is a failed attempt (a banner and a cough).
+const STALL_RISE = 2.6, STALL_SPUTTER = 0.8, STALL_CYCLE = 4.5, STALL_PEAK = 0.78;
 let MAX_DAMAGE = 5;                         // broken parts at once the ship survives (6 with the reinforced hull: applyShipUpgrades, js/progress.js)
 const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
 let FIRE_TIME = 15;
@@ -51,7 +60,7 @@ const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
   intro: {
     name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
-    crew: {events: [2, 5, 6, 11, 11, 16, 16, 21], cells: [2, 4, 4, 6, 6, 9, 9, 14], reactor: [1, 1, 1, 1, 1, 1, 1, 0.7]},   // --calibrate: 72% 66% 73% 67% 74% 68% 73% 71% idle for 1-8 players
+    crew: {events: [2, 3, 6, 7, 12, 13, 17, 17], cells: [2, 3, 4, 6, 8, 11, 12, 12], reactor: [1, 1, 1, 0.85, 1, 0.7, 0.85, 0.85]},   // --calibrate: 71% 74% 70% 73% 67% 69% 67% 72% idle for 1-8 players (aim 70.0% solo, 68.0% for 2-8)
     build(target) {
       const s1 = randSide();
       return [
@@ -65,7 +74,7 @@ const MISSIONS = {
   },
   rush: {
     name: 'Rush hour', blurb: '7 incidents in random order. More trouble.',
-    crew: {events: [2, 4, 8, 9, 10, 13, 15, 18], cells: [2, 4, 6, 8, 8, 10, 11, 11], reactor: [1, 1, 1, 1, 1, 0.7, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 61% 65% 62% 68% 70% 70% 70% 69% idle for 1-8 players
+    crew: {events: [1, 3, 5, 8, 10, 13, 15, 17], cells: [2, 3, 5, 7, 11, 9, 14, 12], reactor: [1, 1, 1, 1, 0.7, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 76% 70% 65% 67% 68% 67% 67% 68% idle for 1-8 players (aim 69.0% solo, 67.0% for 2-8); OUT OF SPEC: ×2 front cannon waits 26 s at 55 s; ×3 port cannon waits 12 s at 348 s; ×4 front cannon waits 13 s at 323 s
     needs: {ship: [], overcharge: true},
     rules: { breach: true, surge: true },
     build(target) {
@@ -80,7 +89,8 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Breaches, plasma fires, failing gravity, things on the hull, and a fussy jump drive.',
-    crew: {events: [1, 1, 1, 1, 3, 3, 7, 19], cells: [2, 2, 2, 2, 2, 2, 3, 4]},   // --calibrate: 65% 78% 85% 89% 65% 65% 68% 67% idle for 1-8 players
+    crew: {events: [1, 1, 2, 2, 11, 17, 19, 23], cells: [2, 2, 2, 2, 4, 6, 8, 7], reactor: [1, 1, 1, 1, 1, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 66% 63% 65% 64% 65% 65% idle for 1-8 players (aim 66.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 star cannon waits 147 s at 44 s; ×4 port cannon waits 147 s at 44 s
+    needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
       return shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'antenna', 'canister', 'flare', 'storm', 'coolant', 'stealth', 'grappler', 'leeches'], target, 20, 17);
@@ -88,35 +98,35 @@ const MISSIONS = {
   },
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Defeat the pirates. If their raider docks, they come aboard to steal — board them back.',
-    crew: {events: [2, 4, 8, 12, 16, 19, 22, 23], cells: [2, 2, 4, 5, 6, 8, 8, 9]},   // --calibrate: 58% 69% 66% 68% 68% 67% 72% 74% idle for 1-8 players
-    needs: {ship: ['cannons'], overcharge: false},
+    crew: {events: [1, 4, 8, 12, 16, 19, 22, 23], cells: [2, 2, 5, 5, 6, 8, 8, 10]},   // --calibrate: 58% 67% 64% 67% 67% 65% 70% 72% idle for 1-8 players (aim 67.5% solo, 65.5% for 2-8)
+    needs: {ship: ['cannons', 'caps'], overcharge: false},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     rules: { breach: true, surge: true }, objective: { kind: 'pirates', count: 2 },
     build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['interceptor', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
   },
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something is asleep over there.',
-    crew: {events: [2, 5, 8, 11, 15, 18, 22, 23], cells: [2, 2, 2, 5, 5, 7, 8, 8]},   // --calibrate: 62% 71% 71% 68% 69% 68% 68% 69% idle for 1-8 players
+    crew: {events: [2, 6, 8, 12, 15, 18, 21, 22], cells: [2, 2, 2, 5, 7, 7, 9, 9]},   // --calibrate: 62% 64% 69% 66% 67% 66% 67% 69% idle for 1-8 players (aim 68.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons'], overcharge: false},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
   },
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
-    crew: {events: [2, 4, 7, 10, 12, 16, 18, 24], cells: [2, 2, 2, 3, 4, 6, 6, 8], reactor: [1, 1, 1, 0.85, 1, 1, 1, 1]},   // --calibrate: 61% 65% 68% 70% 68% 69% 68% 69% idle for 1-8 players
+    crew: {events: [2, 4, 8, 12, 13, 17, 19, 24], cells: [2, 2, 3, 5, 5, 6, 7, 8]},   // --calibrate: 61% 65% 66% 58% 65% 65% 65% 68% idle for 1-8 players (aim 67.0% solo, 65.0% for 2-8)
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'Spacewalk out and drill a big asteroid while the front cannon holds off the small ones.',
-    crew: {events: [2, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 3, 7, 7, 11, 10, 10], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 69% 70% 68% 67% 68% 72% 75% idle for 1-8 players
+    crew: {events: [2, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 6, 9, 12, 11, 10, 10], reactor: [1, 0.85, 0.85, 0.85, 0.85, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 68% 68% 66% 65% 66% 69% 73% idle for 1-8 players (aim 68.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true }, objective: { kind: 'ore' },
     build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
   },
   nightmare: {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
-    crew: {events: [1, 2, 3, 3, 8, 10, 10, 15], cells: [2, 2, 2, 2, 3, 4, 4, 5], reactor: [1, 1, 1, 0.7, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 73% 74% 84% 76% 68% 70% 68% idle for 1-8 players
+    crew: {events: [1, 2, 3, 4, 4, 4, 9, 13], cells: [2, 2, 2, 2, 2, 2, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 73% 70% 49% 61% 66% 60% 64% idle for 1-8 players (aim 66.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 70 s at 194 s; ×4 star cannon waits 55 s at 36 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
@@ -221,7 +231,7 @@ function startMission(id = 'intro', opts = {}) {
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
-    id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null,
+    id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
     maint: { target, decoy, serviced: false }, crewCells: undefined,
   });
   mission.written = (MISSIONS[id] || MISSIONS.intro).build(target).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
@@ -255,26 +265,70 @@ function updateMission(dt) {
   mission.t += dt;
   if (crewSize() !== mission.paceN) crewChanged(crewSize());            // someone joined or left
   for (const ev of mission.events) if (!ev.done && mission.t >= ev.t) runEvent(ev);
-  // jump: after the last encounter the drive tries for JUMP_WINDOW seconds; it needs energy in the engine room
+  // jump: after the last encounter the drive spools up; it jumps as soon as MID has energy (and the handle is
+  // pulled, rule handle). There's no time limit, but every second it doesn't, things get worse (updatePressure).
   if (mission.t >= mission.jumpAt && !mission.jump && !mission.coilsChecked) {          // misaligned jump coils: the drive takes longer
     mission.coilsChecked = true;
     const extra = coilDelay();
     if (extra) { mission.jumpAt += extra; combatBanner(`Jump coils misaligned — the jump drive needs ${extra} s longer!`); }
   }
-  if (mission.t >= mission.jumpAt && !mission.jump) { mission.jump = { t: 0 }; combatBanner('Jump drive spooling up — needs 1 energy in MID!'); sfx.say?.('Jump drive spooling up.'); }
+  if (mission.t >= mission.jumpAt && !mission.jump) {
+    mission.jump = { t: 0, st: 0, fails: 0 };
+    mission.press = MISSIONS[mission.id]?.practice ? null : { n: 0, strain: 0, strainAt: mission.t + STRAIN_FIRST };   // (practice's jump handle: no hot zone)
+    combatBanner('Jump drive spooling up — needs 1 energy in MID!'); sfx.say?.('Jump drive spooling up.');
+  }
   if (mission.jump) {
-    mission.jump.t += dt;
-    const pulled = !mission.rules?.handle || (mission.jump.pull || 0) >= JUMP_PULL;      // harder missions: someone has to pull the handle
-    if (pulled && !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0) {
+    const j = mission.jump;
+    j.t += dt;
+    const pulled = !mission.rules?.handle || (j.pull || 0) >= JUMP_PULL;      // harder missions: someone has to pull the handle
+    if (pulled && midReady()) {
       CAPACITORS[1].charge--;
+      if (/^Jump failed/.test(combat.banner?.text || '')) combat.banner = null;
       const obj = objectiveStatus();
       if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out ${obj.fail}: objective failed.`, true);
       return;
     }
-    if (mission.jump.t >= JUMP_WINDOW * (mission.rules?.handle ? 2 : 1)) { endMission(false, 'The jump drive never got energy — stranded in the hot zone.'); return; }
+    if (!midReady()) {                                   // stalled: the drive charges, sputters out, tries again (jumpStall)
+      j.st = (j.st || 0) + dt;
+      if (j.st >= STALL_RISE + (j.fails || 0) * STALL_CYCLE) {
+        j.fails = (j.fails || 0) + 1;
+        combat.banner = { text: broken(CAPACITORS[1]) ? 'Jump failed — fix the middle capacitor!' : 'Jump failed — no energy in MID!', t: 2 };
+        sfx.sputter?.();
+        if (j.fails === 1) sfx.say?.('Jump failed. No energy.');
+      }
+    }
+    updatePressure();
   }
   const dmg = SYSTEMS.filter(s => s.broken).length;
-  if (dmg > MAX_DAMAGE) endMission(false, `The ship fell apart (${dmg} parts broken at once).`);
+  if (dmg > MAX_DAMAGE) endMission(false, mission.press ? `The ship fell apart waiting for the jump (${dmg} parts broken).` : `The ship fell apart (${dmg} parts broken at once).`);
+}
+// MID can power the jump: intact, with energy in it.
+const midReady = () => !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0;
+// Not jumping yet (the jump is due): extra encounters at ever shorter gaps (one queued at a time, on the radar
+// like any other contact) and parts giving out more and more often. Runs on the simulation (server / solo).
+const pressGap = (n) => Math.max(PRESS_FLOOR, PRESS_FIRST * PRESS_SHRINK ** n);
+const strainGap = (n) => Math.max(STRAIN_FLOOR, STRAIN_FIRST * PRESS_SHRINK ** n);
+function pressKind() {
+  const own = (mission.written || []).map(e => e.kind).filter(k => PRESS_KINDS.has(k));
+  const pool = [...new Set([...PRESS_BASE, ...own])];
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function updatePressure() {
+  const p = mission.press;
+  if (!p) return;
+  if (!mission.events.some(e => e.press && !e.done)) {   // queue the next extra encounter
+    const last = mission.events.filter(e => e.press).pop();
+    const t = last ? last.t + pressGap(p.n) : mission.t + PRESS_FIRST;
+    const ev = makeEvent(pressKind(), t, null);
+    mission.events.push({ ...ev, id: Math.max(-1, ...mission.events.map(e => e.id)) + 1, done: false, radar: ev.radar !== false, press: true });
+    p.n++;
+  }
+  if (mission.t >= p.strainAt) {                         // a part gives out (not the reactor → lever → MID chain the jump needs)
+    const pool = SYSTEMS.filter(s => !s.broken && !s.outside && s.kind !== 'reactor' && s.kind !== 'lever' && s.ref !== CAPACITORS[1]);
+    const s = pool[Math.floor(Math.random() * pool.length)];
+    if (s) { breakSystem(s); combatBanner(`${s.name} gave out — jump before it all falls apart!`); }
+    p.strain++; p.strainAt += strainGap(p.strain);
+  }
 }
 // The mission's objective (beyond surviving): { done, fail (what's missing), text }.
 function objectiveStatus() {
@@ -770,10 +824,33 @@ function jumpOutT() {
 }
 // The end screen (results) shows: the mission is over and the jump animation (if any) has played.
 const endScreenReady = () => !!mission.over && jumpOutT() >= JUMP_OUT;
+// The stalled jump (due, but MID is empty or broken): null, or { phase: 'charge' | 'sputter' | 'dead', p: 0..1
+// through that phase, k: the charge it shows, n: the attempt }. The loop runs on mission.jump.st (synced), so
+// every browser sees the same attempt; it charges to STALL_PEAK, sputters out, lies dead, and tries again.
+function jumpStall() {
+  const j = mission.jump;
+  if (!mission.active || mission.over || !j || midReady()) return null;
+  const st = j.st || 0, n = Math.floor(st / STALL_CYCLE), u = st - n * STALL_CYCLE, base = n ? 0.4 : 0.6;
+  if (u < STALL_RISE) { const p = u / STALL_RISE; return { phase: 'charge', p, n, k: base + (STALL_PEAK - base) * p * (2 - p) }; }
+  if (u < STALL_RISE + STALL_SPUTTER) { const p = (u - STALL_RISE) / STALL_SPUTTER; return { phase: 'sputter', p, n, k: STALL_PEAK - (STALL_PEAK - 0.15) * Math.sqrt(p) }; }
+  const p = (u - STALL_RISE - STALL_SPUTTER) / (STALL_CYCLE - STALL_RISE - STALL_SPUTTER);
+  return { phase: 'dead', p, n, k: 0.15 + 0.25 * p * p };
+}
+// Sputtering: the charge coughs (drops out for a frame or two at random, the same in every browser).
+function stallCough() {
+  const s = jumpStall();
+  if (s?.phase !== 'sputter') return 1;
+  const r = Math.sin(Math.floor(time * 16) * 127.1 + 3.7) * 43758.5453, h = r - Math.floor(r);
+  return h < 0.35 ? 0.15 : h < 0.6 ? 0.55 : 1;
+}
 function jumpCharge() {
   if (!mission.active) return 0;
   if (mission.over) return jumpOutT() < JUMP_OUT ? 1 : 0;
-  if (mission.jump) return 0.6 + 0.4 * clamp(mission.jump.t / 6, 0, 1);
+  if (mission.jump) {
+    const s = jumpStall();
+    if (s) return s.k * stallCough();
+    return 0.6 + 0.35 * clamp(mission.jump.t / 6, 0, 1);    // (energy there, waiting for the handle)
+  }
   if (!isFinite(mission.jumpAt)) return 0;
   const at = mission.jumpAt + (!mission.coilsChecked && typeof coilDelay === 'function' ? coilDelay() : 0);   // (misaligned coils: later)
   return 0.6 * Math.pow(clamp(1 - (at - mission.t) / JUMP_PRESPOOL, 0, 1), 1.5);
@@ -799,6 +876,7 @@ function jumpCamera(t) {
 function drawJumpCrackle(t) {
   const k = jumpCharge();
   if (k < 0.05 || jumpOutT() >= JUMP_FLASH && mission.over) return;
+  const sputter = jumpStall()?.phase === 'sputter';
   const r = rng(Math.floor(t * 15) * 7 + 3), arcs = Math.round(2 + 24 * k), a = 0.45 + 0.55 * k;
   ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   for (let i = 0; i < arcs; i++) {
@@ -816,9 +894,10 @@ function drawJumpCrackle(t) {
     }
     for (let j = 1; j < pts.length - 1; j++) { pts[j][0] += (r() - 0.5) * 0.45; pts[j][1] += (r() - 0.5) * 0.45; }
     const path = () => { ctx.beginPath(); pts.forEach(([x, y], j) => (j ? ctx.lineTo(x * T, y * T) : ctx.moveTo(x * T, y * T))); };
-    path(); ctx.strokeStyle = `rgba(80,160,255,${0.3 * a})`; ctx.lineWidth = 7; ctx.stroke();
-    ctx.strokeStyle = `rgba(150,215,255,${0.7 * a})`; ctx.lineWidth = 3; ctx.stroke();
-    ctx.strokeStyle = `rgba(240,250,255,${a})`; ctx.lineWidth = 1.2; ctx.stroke();
+    const hot = sputter && r() < 0.6;                                   // sputtering: the arcs die red
+    path(); ctx.strokeStyle = hot ? `rgba(255,70,40,${0.3 * a})` : `rgba(80,160,255,${0.3 * a})`; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = hot ? `rgba(255,140,100,${0.7 * a})` : `rgba(150,215,255,${0.7 * a})`; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = hot ? `rgba(255,225,200,${a})` : `rgba(240,250,255,${a})`; ctx.lineWidth = 1.2; ctx.stroke();
   }
   if (typeof COIL_SPOTS !== 'undefined') for (const c of COIL_SPOTS) {   // the jump coils on the hull glow
     const rr0 = T * (0.5 + 0.5 * k) * (1 + 0.2 * Math.sin(t * (6 + 18 * k))), g = ctx.createRadialGradient(c.x * T, c.y * T, 0, c.x * T, c.y * T, rr0);
@@ -827,25 +906,47 @@ function drawJumpCrackle(t) {
   }
   ctx.restore();
 }
+// World: while the jump is stalled, a pulsing red ring and NO ENERGY over the middle capacitor (where the energy has to go).
+function drawJumpStallMark(view, t) {
+  const st = jumpStall();
+  if (!st) return;
+  const c = CAPACITORS[1], fail = st.phase === 'sputter', q = 0.5 + 0.5 * Math.sin(t * (fail ? 22 : 6)), r = 0.95 + 0.25 * q;
+  ctx.save();
+  ctx.beginPath(); ctx.arc(c.x * T, c.y * T, r * T, 0, TAU); ctx.strokeStyle = `rgba(255,70,50,${0.5 + 0.45 * q})`; ctx.lineWidth = 5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(c.x * T, c.y * T, (r + 0.35) * T, 0, TAU); ctx.strokeStyle = `rgba(255,90,70,${0.25 * q})`; ctx.lineWidth = 3; ctx.stroke();
+  upright(view, c.x, c.y, 1.6 + 0.15 * q, () => {
+    const text = broken(c) ? 'BROKEN — FIX ME' : 'NO ENERGY';
+    ctx.font = `900 ${T * 0.34}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const w = ctx.measureText(text).width + T * 0.4;
+    rr(-w / 2, -T * 0.46, w, T * 0.48, 6); ctx.fillStyle = `rgba(40,6,6,${0.75 + 0.2 * q})`; ctx.fill(); stroke(2, fail && q > 0.5 ? '#ffd0c8' : '#ff5a4a');
+    ctx.fillStyle = fail && q > 0.5 ? '#ffffff' : '#ff6a5a'; ctx.fillText(text, 0, -T * 0.05);
+  });
+  ctx.restore();
+}
 // Screen space: a blue glow pulsing at the screen's edges while the drive charges (the middle stays clear).
 function drawJumpVignette(t) {
-  const k = jumpCharge();
+  const k = jumpCharge(), st = jumpStall();
+  if (st && st.phase !== 'charge') {                  // the attempt failed: a red flicker at the edges and NO ENERGY
+    const f = st.phase === 'sputter' ? (stallCough() < 1 ? 1 : 0.55) : 0.35 * (1 - st.p), R = Math.hypot(VW, VH) / 2;
+    screenGradient(VW / 2, VH / 2, R * 0.6, R, [[0, [255, 40, 30], 0], [1, [255, 50, 35], 0.5 * f]]);
+    if (st.phase === 'sputter' || Math.sin(t * 18) > 0) {
+      ctx.save(); ctx.globalAlpha = Math.min(1, 0.4 + f); ctx.font = '900 26px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(20,6,6,0.9)'; ctx.strokeText('JUMP DRIVE: NO ENERGY', VW / 2, VH - 96);
+      ctx.fillStyle = '#ff5a4a'; ctx.fillText('JUMP DRIVE: NO ENERGY', VW / 2, VH - 96); ctx.restore();
+    }
+  }
   if (k < 0.05 || mission.over) return;
   const w = 0.75 + 0.25 * Math.sin(t * (4 + 14 * k)), R = Math.hypot(VW, VH) / 2;
-  const g = ctx.createRadialGradient(VW / 2, VH / 2, R * 0.55, VW / 2, VH / 2, R);
-  g.addColorStop(0, 'rgba(60,140,255,0)'); g.addColorStop(1, `rgba(70,150,255,${0.45 * k * w})`);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  screenGradient(VW / 2, VH / 2, R * 0.55, R, [[0, [60, 140, 255], 0], [1, [70, 150, 255], 0.45 * k * w]]);   // (art.js: in GL with the sprites)
 }
 // Screen space, the jump itself (u: seconds since it started, < JUMP_FLASH): the edge glow flares, a tunnel
 // of light streaks out of the middle, a white bloom swells into a full flash.
 function drawJumpOut(u) {
   const p = clamp(u / JUMP_FLASH, 0, 1), cx = VW / 2, cy = VH / 2, R = Math.hypot(VW, VH) / 2;
-  const v = ctx.createRadialGradient(cx, cy, R * (0.5 - 0.3 * p), cx, cy, R);
-  v.addColorStop(0, 'rgba(60,140,255,0)'); v.addColorStop(1, `rgba(90,170,255,${0.4 + 0.4 * p})`);
-  ctx.fillStyle = v; ctx.fillRect(0, 0, VW, VH);
+  screenGradient(cx, cy, R * (0.5 - 0.3 * p), R, [[0, [60, 140, 255], 0], [1, [90, 170, 255], 0.4 + 0.4 * p]]);
   const q = clamp((p - 0.3) / 0.7, 0, 1);
   if (q > 0) {                                        // the tunnel
-    ctx.fillStyle = `rgba(4,8,22,${0.55 * q})`; ctx.fillRect(0, 0, VW, VH);
+    screenTint([4, 8, 22], 0.55 * q);
     const r = rng(7); ctx.lineCap = 'round';
     for (let i = 0; i < 180; i++) {
       const a = r() * TAU, sp = 0.4 + r(), d0 = R * (((r() + u * sp * 1.6) % 1) * 1.1), len = 30 + R * 1.2 * q * q * sp;
@@ -858,7 +959,7 @@ function drawJumpOut(u) {
   if (b > 0) {                                        // the bloom, then everything white
     const rb = R * (0.05 + 1.4 * b * b), g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rb);
     g.addColorStop(0, `rgba(255,255,255,${Math.min(1, 0.6 + b)})`); g.addColorStop(0.4, `rgba(200,230,255,${0.8 * b})`); g.addColorStop(1, 'rgba(120,180,255,0)');
-    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    ctx.fillStyle = g; ctx.fillRect(cx - rb, cy - rb, 2 * rb, 2 * rb);   // (transparent beyond rb)
     if (b > 0.75) { ctx.fillStyle = `rgba(255,255,255,${(b - 0.75) * 4})`; ctx.fillRect(0, 0, VW, VH); }
   }
 }

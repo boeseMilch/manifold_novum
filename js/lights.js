@@ -418,6 +418,12 @@ function gameLighting(t) {
     if (typeof COIL_SPOTS !== 'undefined') for (const c of COIL_SPOTS) add({ x: c.x, y: c.y, z: 0.8, color: [0.45, 0.78, 1.0], radius: 3 + 2 * k, intensity: (0.5 + 1.2 * k) * w });
     for (const r of ROOM_RECTS) add({ x: r.x + r.w / 2, y: r.y + r.h / 2, z: 1.6, color: [0.35, 0.6, 1.0], radius: Math.max(r.w, r.h) * 0.7, intensity: 0.6 * k * k * w, shadow: false });
   }
+  // the jump stalled (no energy in MID): a red warning light pulsing at the middle capacitor
+  const st = typeof jumpStall === 'function' ? jumpStall() : null;
+  if (st) {
+    const c = CAPACITORS[1], q = 0.5 + 0.5 * Math.sin(t * (st.phase === 'sputter' ? 22 : 6));
+    add({ x: c.x, y: c.y, z: 1.2, color: [1.0, 0.22, 0.12], radius: 3.2, intensity: 0.8 + 1.2 * q, shadow: false });
+  }
   // the engine's blue plume: a flickering light behind the stern (the plume frame's brightness, js/art.js
   // engineFlame), out in the plume rather than in the bell: it lights the bell, the stern hull and
   // whoever is out there; brighter and longer while the jump drive spools

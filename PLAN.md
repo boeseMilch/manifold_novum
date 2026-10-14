@@ -314,9 +314,10 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   brings a clang word, sparks, a screen shake and a new dent; the handle bends, the plate
   cracks, and on the third hit the handle snaps off.
 - **Win / lose:**
-  - At jump time the drive tries for 15 s and needs 1 energy in the middle capacitor (the
-    engine room). Jumping wins, even with enemies still around.
-  - Running out the 15 s loses, and so does having more than MAX_DAMAGE (5; was 3) systems broken at once.
+  - At jump time the drive needs 1 energy in the middle capacitor (the engine room). Jumping wins,
+    even with enemies still around.
+  - Having more than MAX_DAMAGE (5; was 3) systems broken at once loses. (There used to be a 15 s
+    jump window, "stranded" when it ran out; now there's no time limit, see "Stalled jump, hot zone".)
   - R restarts.
 - **Solo tuning:** the interceptor fires every 2.5–4 s.
 - **Debug menu:** also M (restart the mission), N (free play), F (start a fire next to you).
@@ -520,7 +521,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   R (or RELOAD) only, and a weapons specialist in the seat reloads 50% faster (2 s).
 - **Held shields:** keep holding the shield button for +2 s (1 more energy). Shields grow by age now.
 - **Jump handle** (rule `handle`): when the drive spools up, someone holds the handle at the helm
-  for 6 s (two people: faster); letting go resets it. The jump window doubles.
+  for 6 s (two people: faster); letting go resets it. (It used to double the jump window; there is no
+  window any more.)
 - **Heartbeat:** while treating, a click right on the pulse ring adds 0.5 s.
 - `node tests/minigames.js`.
 
@@ -892,7 +894,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   model then showed busy time falling 68 % → 25 % from 1 to 4 players, and calibrating gaps alone to
   68 % idle made solo missions 18-35 min long. So now the length is fixed and the event count varies.
 - **Length:** every mission jumps at `MISSION_LENGTH` = 360 s (or `MISSIONS[id].length`), for any crew.
-- **Per crew size** `MISSIONS[id].crew` (fitted by `node tools/balance.js --calibrate` for ~68 % idle):
+- **Per crew size** `MISSIONS[id].crew` (fitted by `node tools/balance.js --calibrate`; first for ~68 % idle, now for
+  the ramped targets in the Balance section below):
   `events` (how many encounters), `cells` (fuel cells, counting the one in the reactor), optional
   `reactor` (an ENERGY_TIME multiplier < 1 where the energy needs it) and `overcharge` (the model plans
   with an overcharging engineer; the game never overcharges by itself). Arrays for 1-8 players.
@@ -920,8 +923,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   and overcharge fires. **Energy runs on the game's own code** (reactor, lever, capacitors, reloadCannon,
   pressShield with the 15 s shields, the jump drive, storms, barnacles), checked against a direct game run.
   **In spec** = on every random build: no cannon waits > 2 s for energy before the jump, no shield pressed
-  without energy, MID has the jump's energy; checked with realistic and with perfect routing.
-- **Results** (hit rate 0.6; events / idle for 1/2/3/4/8 players; spec for 1-4):
+  without energy, MID has the jump's energy within 30 s; checked with realistic and with perfect routing.
+- **Results** (as of this calibration, hit rate 0.6, 68 % for every mission: superseded, see the Balance section
+  below for the current targets and numbers; events / idle for 1/2/3/4/8 players; spec for 1-4):
 
   | Mission | Events | Idle % | Spec 1-4 | Prerequisites |
   |---|---|---|---|---|
@@ -1543,19 +1547,143 @@ sound only, the game rules and timing are unchanged):
   game loop (`frame` catches it), and `GFX.end` skips a frame when its render targets can't be made
   (context lost, 0-sized canvas) instead of using a null framebuffer.
 - Test: tests/jumpfx.js (wind-up builds; animation, then the end screen, result unchanged; no shots;
-  no animation when stranded).
+  the stall loop; no animation on a loss).
+
+### Stalled jump, hot zone (request: "play the first part of the jump animation, but making it somehow visibly clear that energy is missing ... I don't want there to be a time-limit to the missions, but instead if you don't jump you'll face more and more enemies and part-failures faster and faster")
+
+- **No time limit.** The 15 s jump window (JUMP_WINDOW, 30 s with the handle) and the "stranded" loss
+  are gone. A mission ends by jumping out or by the ship falling apart (more than MAX_DAMAGE parts broken;
+  the end screen then says "fell apart waiting for the jump" if it was in the hot zone).
+- **The rule** (js/mission.js updateMission): the drive spools at `mission.jumpAt` (after the coils'
+  delay) and jumps on the first tick MID is intact with energy in it (and, rule `handle`, the handle is
+  pulled). Energy arriving mid-stall jumps right away (the normal jump-out sequence).
+- **The stall loop** (no energy in MID, or MID broken): `mission.jump.st` counts the stalled seconds
+  (synced, so every browser sees the same attempt). `jumpStall()` turns it into a 4.5 s cycle: 2.6 s
+  charging (from 0.6 the first time, 0.4 after, up to 0.78), 0.8 s sputtering out (down to 0.15, the
+  charge coughing: random drop-outs, `stallCough`), 1.1 s dead, then the next try. `jumpCharge()` follows
+  it, so the plume, bell, blue lights, crackle, star streaks, screen edge and the hum (pitch and level
+  drop) all charge and die with it. On top: the crackle arcs turn red while it sputters, a red flicker at
+  the screen edges and "JUMP DRIVE: NO ENERGY" above the bottom prompt, a pulsing red ring and a NO
+  ENERGY sign over the middle capacitor (BROKEN — FIX ME if it is broken) with a red warning light
+  (js/lights.js), the sidebar header says JUMP STALLED (flashing red) and the jump plate "needs 1 energy
+  in the middle capacitor" (plates can now wrap a long line onto two). Every sputter is a failed attempt:
+  a 2 s banner "Jump failed — no energy in MID!" and `sfx.sputter` (a dying whine with coughs); the first
+  one also has the ship's voice. With energy there and only the handle missing, the drive holds a steady
+  high charge instead.
+- **Hot zone** (`updatePressure`, simulation only, so the server runs it in multiplayer): from the moment
+  the jump is due and not done:
+  - extra encounters: the first 30 s after, then each gap ×0.8 (30, 24, 19, 15, 12, 10, 8, 6.3) down to a
+    6 s floor. One is queued at a time as a normal timeline event (`press: true`), so the radar and the
+    contact plates show it like any other. Kinds: interceptor, swarm, intruder, mine drone, plus the
+    mission's own repeatable kinds (frigate, saboteur, spores, debris, leeches, grappler, stealth);
+  - parts giving out: the first 40 s after, then ×0.8 (40, 32, 26, 20, 16, 13) down to a 10 s floor; a
+    random intact inside part, never the reactor, the lever or the middle capacitor (the jump's chain);
+  - a HOT ZONE plate ("it only gets worse until you jump") once it has started, and the music's threat
+    stays up.
+  - Tuning: a crew that does nothing at all loses the ship 65-100 s after the jump is due (enemy fire
+    plus failures); one that repairs but doesn't fight lasts ~90-130 s; fighting and repairing buys
+    more, but at a new encounter every 6 s and a failure every 10 s it falls apart within 2-3 min. Getting
+    one energy into MID takes 10-30 s, inside the 30 s before anything new arrives.
+  - Practice (its jump-handle button starts the drive) and the tutorial (no jump) have no hot zone.
+- **Balance model:** the jump is in spec when MID has its energy within PRESS_FIRST (30 s, before the
+  hot zone's first encounter) instead of the old 15 s window.
+- **Texts:** the tutorial tour's jump page ("No energy, no jump: the drive stalls, and the trouble keeps
+  coming faster until you jump"), the README intro, the end screen reason.
+- Tests: tests/mission.js (the stall loops without ending, energy completes the jump, shrinking gaps for
+  encounters and failures, the pool, a passive crew loses, the snapshot carries it all, practice and the
+  tutorial untouched), tests/jumpfx.js (the loop's phases and charge range, the jump-out after a stall).
+
+## Performance
+
+Request: "Can we simplify the shadows and light work? I want it to be fast", then "60 Hz should work smoothly on
+my laptop". The laptop: RTX 3070 Ti, X11, Firefox at devicePixelRatio 1, a 3840×2160 monitor (60 Hz) and the
+2560×1600 panel; Firefox's accelerated 2D canvas is blocklisted there, so every 2D canvas is drawn in software.
+- Measured in Firefox itself (headless, WebDriver BiDi; per-function timers, timer queries): the GPU passes were
+  never the problem (~5 ms, the shadows ~1.2 ms of it). The main thread was: 26-39 ms a frame, all in the 2D
+  canvases. Every frame missed 60 Hz. The fixes, cheapest first, each measured (4K, bridge, ms of main thread a frame):
+  1. Space in GL (`GFX.backdrop`, js/art.js drawSpaceGL): drawSpace filled the 'back' layer with three
+     full-screen radial gradients (the nebulae) and 425 stars every frame: ~10 ms. Now a full-screen shader
+     (the same gradients) and instanced rects (the same stars and jump streaks). 27 → 17.
+  2. The 2D layers ('back', 'mid', 'glow') only clear, upload and composite what was drawn (js/gfx.js
+     trackDirty): each layer context's drawing calls are wrapped on the instance to mark the 64×64 tiles their
+     bounds touch (path pieces through a copy of the transform, line width, shadow blur; Path2D, putImageData,
+     arcTo or a compositing mode that clears outside the shape mark it all). Firefox copies the WHOLE canvas
+     for every upload from it, however small (5 ms at 2048×1152), so there the layers are CPU canvases and the
+     changed tiles are read back with getImageData; other browsers upload the changed box from the canvas.
+     Three full uploads (~9.5 ms) → ~2.5 ms. 17 → 8.5.
+  3. Full-screen gradient effects in GL (`GFX.overlay`, art.js screenGradient / screenTint), composited over
+     the picture and under the 2D canvas: the jump drive's edge glow and stall flicker, the jump-out vignette
+     and tunnel, injury tunnel vision, the flare's glare. Each was ~12 ms on the 4K 2D canvas. Jump wind-up 23 → 9.
+- No visual trade-off (before / after screenshots differ only in HUD state), so no quality setting; the
+  shadows and lights are unchanged. A ghost check (no drawn pixel outside the tiles marked that frame, over
+  10 scenes while walking) is clean.
+- After, Firefox 4K: main thread 7.5-11.8 ms mean (p95 8.3-13.5); GPU 4.6-6.9 ms. Headless Firefox's frame
+  interval is 13-21 ms, but that includes a copy of the GL picture that only headless does (hiding the GL
+  canvas makes interval = main thread). Chrome unchanged: 3.5-5.8 ms at dpr 1, 9-11 ms at dpr 2 (the 4K HUD canvas).
+- Left, if it isn't smooth yet: the vacuum tint (~2 ms on the HUD canvas in a breached room), the 'glow'
+  layer's upload (~1.8 ms), capping the HUD canvas at dpr 1.5 for HiDPI screens, a lower render scale.
 
 ## Balance
 
-`node tools/balance.js` reads the game's constants and prints, for each encounter, the
-shots needed (perfect aim and 50% misses), the reloads and shields that costs in energy,
-and the energy that side can have by then (simulated: auto lever, capacitor limits,
-refuelling right away). Current result: every encounter is feasible even with 50% misses.
-The frigate is the tightest (it needs 5 energy and its side can have 5). The old
-6-asteroid swarm needed 11 energy from a capacitor that held 3, which made it impossible.
-To get there, capacitors held 4 and the frigate's heavy shot comes every 18 s. With capacitors
-back at 3 (8w), the frigate with 50% misses is short again (needs 6, its side can have 4); with
-perfect aim it's fine, and the bigger capacitors upgrade restores 4.
+`node tools/balance.js` (~1 min) rates every mission for 1-4 and 8 players: it builds each timeline through the
+game, turns every encounter into crew jobs (walks measured by tools/travel.js, work from the game's constants),
+schedules them, and runs the energy (reactor, lever, capacitors, reloads, shields, the jump) on the game's own
+code. `--calibrate` (~25 min, or one process per mission: `node tools/balance.js --calibrate c3`) fits each
+mission's `crew` table (encounters, fuel cells, reactor speed, overcharge per crew size) and its prerequisites.
+History and the scheduler's details: 8z3.
+
+- **Targets (2026-10-13):** solo play leaves the crew **70 % idle on the first mission**, and every later step of
+  the progression **0.5 points less** (a difficulty ramp, c8 solo: 66 %); 2-8 players 68 % minus the same ramp.
+  `A.TARGET_IDLE` / `TARGET_IDLE_CREW` / `TARGET_RAMP`, `--target` sets both bases.
+- **The progression** (`PROGRESSION` in tools/balance.js): chapter n is step n; intro (open from the start, "Start
+  here") step 0; Rush hour (open from the start, "more trouble") with chapter 2; every other skirmish with the chapter
+  that comes up when it unlocks (`unlockedMissions()`): Ore run / Black box after c3 → 4, Pirate cove → 5,
+  Stranded engineer → 6, Deep drift → 7, Nightmare → 8.
+- **Accuracy:** 50 % (`A.HIT_RATE` 0.5, was 0.6): half the cannon shots hit the weak spot aimed at, so 2 shots per
+  weak spot, a little less where misses on the hull wear a weak spot out (`HULL_SHARE`).
+- **Current rules in the model:** reload 3 s by R only (`RELOAD_TIME`, read from the game; `A.RELOAD_SPEED` 1.5 would
+  model a weapons specialist on every cannon, the calibration assumes none); MAX_DAMAGE 5 (+1 reinforced hull) from the
+  game; shields 15 s up / 5 s cooldown through `pressShield`; no tape job (repairs are REPAIR_TIME); the jump is in
+  spec when MID has its energy within PRESS_FIRST (30 s, before the hot zone's first encounter); a mission only counts
+  with its objective (verdict "objective out of reach"); walking times from the current layout (middle capacitor).
+- **Method changes:** the calibration now uses the summary's 8 random builds (`CAL_RUNS` 8, was 3: with 3, c1 / c2 at
+  2-3 players were in spec on the fitted builds but not on the others); the encounter count is searched at the base
+  reactor (it used to inherit the old table's `reactor`); a faster reactor is only taken further than the first step
+  that gets in spec when that brings the idle closer to the target.
+- **Results** (`node tools/balance.js`, 8 builds; idle % for 1 / 2 / 3 / 4 players, * = energy out of spec even with
+  the prerequisites; encounters 1/2/3/4):
+
+  | Mission | Step | Aim solo / 2+ | Idle after | Encounters | Before (hit 0.6, old tables) | Prerequisites |
+  |---|---|---|---|---|---|---|
+  | Intro | 0 | 70 / 68 | 71 / 74 / 70 / 73 | 2/3/6/7 | 71 / 65 / 71 / 65 | none |
+  | c1 | 1 | 69.5 / 67.5 | 51 / 66 / 68 / 70 | 3/5/8/11 | 52 / 74 / 68 / 65 | none (reactor ×0.5-0.85) |
+  | c2 | 2 | 69 / 67 | 70 / 74 / 65 / 74 | 2/3/7/7 | 70 / 83 / 66 / 72 | none (reactor ×0.7 from 3 players) |
+  | Rush hour | 2 | 69 / 67 | 76 / 70* / 65* / 67* | 1/3/5/8 | 66* / 64* / 58* / 65* | overcharge |
+  | c3 | 3 | 68.5 / 66.5 | 62 / 73 / 65 / 68 | 2/3/8/10 | 62 / 70 / 66 / 68 | none |
+  | Ore run | 4 | 68 / 66 | 63 / 68 / 68 / 66 | 2/5/8/12 | 63 / 69 / 69 / 67 | cannons + inserter + overcharge |
+  | Black box | 4 | 68 / 66 | 62 / 64 / 69 / 66 | 2/6/8/12 | 62 / 70 / 69 / 67 | cannons |
+  | c4 | 4 | 68 / 66 | 40 / 66 / 64 / 68 | 3/4/8/11 | 40 / 66 / 69 / 67 | cannons + inserter + overcharge (was cannons) |
+  | Pirate cove | 5 | 67.5 / 65.5 | 58 / 67 / 64 / 67 | 2/4/8/12 | 58 / 68 / 65* / 67 | cannons + caps (was cannons) |
+  | c5 | 5 | 67.5 / 65.5 | 63 / 67 / 66 / 66 | 2/4/8/12 | 65 / 64 / 65 / 66 | cannons + inserter + overcharge (no OC before) |
+  | Stranded engineer | 6 | 67 / 65 | 61 / 65 / 66 / 58 | 2/4/8/12 | 61 / 65 / 67* / 68 | none |
+  | c6 | 6 | 67 / 65 | 40 / 72 / 64 / 66 | 4/4/9/12 | 41 / 67* / 66 / 72 | all three + overcharge |
+  | Deep drift | 7 | 66.5 / 64.5 | 63 / 77 / 66* / 63* | 1/1/2/2 | 63 / 78 / 85 / 88 | all three + overcharge (was none) |
+  | c7 | 7 | 66.5 / 64.5 | 63 / 77 / 57* / 63* | 1/1/2/8 | 63 / 72* / 66* / 71* | all three + overcharge |
+  | Nightmare | 8 | 66 / 64 | 65 / 73 / 70* / 49* | 1/2/3/4 | 65 / 73 / 70* / 80* | all three + overcharge |
+  | c8 | 8 | 66 / 64 | 65 / 73 / 70* / 76* | 1/2/3/3 | 65 / 56* / 70* / 60* | all three + overcharge |
+
+- **Solo can't follow a 0.5-point ramp with the encounter count alone:** a solo crew gets 1-4 encounters, and one
+  more or less moves its idle by ~13-15 points (1 vs 2: ~76 % vs ~62 %; a frigate alone costs ~45). The calibration
+  picks the nearest count, so solo missions land within 8 points of their targets (on average 2.4 below). Four can't
+  get near at all: their essentials (+ the finale fight) alone keep a solo crew busier: c1 51 %, Pirate cove 58 %
+  (two pirate raiders, the objective), c4 40 % (two raiders), c6 40 % (rock, spores, leeches + the swarm).
+  A finer solo knob would need a game change, e.g. a per-crew-size mission length, an objective count per crew size
+  (one raider solo), or a lighter finale solo.
+- **Still out of spec** with every prerequisite the player can have by then: Rush hour ×2-4, Deep drift / c7 /
+  Nightmare / c8 ×3-4 (the frigate and the leviathan overrun one side's capacitor).
+- tests/scaling.js checks the targets (intro solo within 3 points of 70 %; other solo missions within 8 of their
+  ramped target and within 4 on average, the four above listed as essentials-only; 2-4 players within 15 points, a
+  mission's mean within 7), the early missions in spec on the base ship, and the out-of-spec list.
 
 ## Sound
 
@@ -1596,7 +1724,8 @@ dummy canvas):
   - Locks: door closing, never on someone, 3 bonks to force; locked airlock; the
     intruder bashing a locked outer airlock for 8 s.
   - Fires: start rate, spreading or breaking, the extinguisher.
-  - Win / lose: jump with energy, lose without, lose with more than MAX_DAMAGE (5) broken.
+  - Win / lose: jump with energy; without, the stall loops and the hot zone escalates until the ship
+    falls apart; lose with more than MAX_DAMAGE (5) broken.
 - `node tests/softlock.js`: you can always get out. Covers being trapped in a broken
   airlock, stranded outside by a broken outer airlock, security locking the door you
   stand in, and multiplayer airlock doors.

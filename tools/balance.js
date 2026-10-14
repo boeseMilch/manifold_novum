@@ -31,10 +31,11 @@ const { travel } = require('./travel');
 // ASSUMPTIONS — every guess the model makes, in one place
 // ===========================================================================
 const A = {
-  HIT_RATE: 0.6,          // cannon shots that hit the weak spot you aimed at (--hit)
+  HIT_RATE: 0.5,          // accuracy: the share of cannon shots that hit the weak spot you aimed at (--hit); 0.5 = half the
+                          // shots hit, 1 / 0.5 = 2 shots per weak spot (plus misses on the hull wearing it, HULL_SHARE)
   HULL_SHARE: 0.5,        // of the misses, the share that still hits the enemy hull (D.wear hull hits break a weak spot)
   AIM_TIME: 1.2,          // s per cannon shot at a swaying target (the cannon itself allows one per CANNON_COOLDOWN)
-  RELOAD: 3,              // s per cannon reload (RELOAD_TIME; nothing speeds it up but the weapons specialist)
+  RELOAD_SPEED: 1,        // cannon reloads take RELOAD_TIME (3 s, by R only) / this; 1.5 = a weapons specialist on every cannon
   CLIMB: 1.0,             // s to climb into a cannon and get the aim on target
   REACT: 4,               // s from an event nobody saw coming to someone heading off (sidebar, ???? plate, shouting);
                           // an event the radar has shown (scan within RADAR_RANGE before it): they set off early and are there when it starts
@@ -80,7 +81,9 @@ const A = {
                           // plus holding E LEVER_E_HOLD (0.5 s) to wedge the wrench in or pull it out, plus the walk there
   SHIELD_GRACE: 1,        // s a shield press may come late (the heavy shot is heard charging) before the shot lands
   ENERGY_DT: 0.1,         // s per tick of the game's energy code in the energy runs
-  TARGET_IDLE: 0.68,      // --calibrate: the share of crew time the event counts aim to leave free
+  TARGET_IDLE: 0.70,      // --calibrate: the share of crew time the event counts aim to leave free, solo, on the first mission …
+  TARGET_IDLE_CREW: 0.68, // … and for 2-8 players (--target sets both)
+  TARGET_RAMP: 0.005,     // … minus this per step in PROGRESSION (a difficulty ramp: c8 solo aims at 66%)
   FUEL_MARGIN: 1,         // --calibrate: fuel cells on top of what the energy runs need
   AMPLE_CELLS: 30,        // --calibrate: 'plenty of fuel' while choosing the event count
   SPEC_IDLE_SLACK: 0.07,  // --calibrate: how far from the idle target a neighbouring event count may be to get the energy in spec
@@ -88,7 +91,7 @@ const A = {
   SPEC_FINALE: 5,         // s before the jump: a wait that starts this late is the finale's, it doesn't count
   REACTOR_STEPS: [0.85, 0.7],          // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites …
   REACTOR_STEPS_EARLY: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3],   // … and for the early missions, which have to be in spec on the base ship           // s a cannon may wait for its next energy and still count as in spec
-  CAL_RUNS: 3,            // --calibrate: random builds per mission and crew size while searching
+  CAL_RUNS: 8,            // --calibrate: random builds per mission and crew size while searching (= RUNS: what the summary rates)
   OPTIONAL_IDLE: 0.6,     // optional jobs (fuel canister) are only done when the crew is below this load
   // verdicts and score
   TIGHT_LOAD: 0.8, MAX_LOAD: 1.15,           // crew-seconds needed / available
@@ -101,12 +104,18 @@ const A = {
 };
 const PLAYERS = [1, 2, 3, 4, 8];
 const SKIRMISH_ORDER = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep', 'nightmare'];
+// The progression for the idle targets: chapter n is step n; intro (unlocked from the start, "Start here") is
+// step 0; rush (unlocked from the start too, but "more trouble") sits with chapter 2; every other skirmish
+// sits with the chapter that comes up when it unlocks (ore / salvage after chapter 3 → step 4, pirate cove
+// after 4 → 5, rescue after 5 → 6, deep drift after 6 → 7, nightmare after 7 → 8). See unlockedMissions().
+const PROGRESSION = { intro: 0, c1: 1, c2: 2, rush: 2, c3: 3, ore: 4, salvage: 4, c4: 4, pirates: 5, c5: 5, rescue: 6, c6: 6, deep: 7, c7: 7, nightmare: 8, c8: 8 };
+const targetIdle = (id, n) => (n > 1 ? A.TARGET_IDLE_CREW : A.TARGET_IDLE) - A.TARGET_RAMP * (PROGRESSION[id] ?? 0);
 
 // ===========================================================================
 // The game: constants and a seeded random (so results repeat)
 // ===========================================================================
 const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
-  'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'JUMP_WINDOW', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
+  'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
   'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'SCRAPE_TIME', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
   'BARNACLE_GROW', 'BARNACLE_DRAIN', 'FLARE_WARN', 'FLARE_TIME', 'STORM_TIME', 'STORM_ARC', 'COOLANT_RISE', 'COOLANT_FIX', 'SCRAM_TIME',
@@ -194,7 +203,8 @@ function shotsFor(pois, wear) {                   // expected shots to knock out
   const p = A.HIT_RATE, viaHull = (1 - p) * A.HULL_SHARE / (wear || 99);
   return pois / (p + viaHull);
 }
-const fightTime = (shots, g) => shots * A.AIM_TIME + Math.max(0, Math.ceil(shots / g.SHOTS_PER_ENERGY) - 1) * A.RELOAD;
+const reloadTime = () => game().RELOAD_TIME / A.RELOAD_SPEED;
+const fightTime = (shots, g) => shots * A.AIM_TIME + Math.max(0, Math.ceil(shots / g.SHOTS_PER_ENERGY) - 1) * reloadTime();
 const rate = (kind) => { const c = calibrate(kind); return { small: c.smallRate, large: c.largeRate, from: c.first.small ?? 3 }; };
 
 function jobsFor(ev, ctx) {
@@ -388,7 +398,7 @@ function schedule(build, waitByKey) {
   if (rules.handle) push({ label: 'jump handle', trip: H('Helm'), work: n > 1 ? g.JUMP_PULL_TWO : g.JUMP_PULL }, jumpAt - H('Helm'), { kind: 'handle', t: jumpAt });
 
   const free = Array(n).fill(0), done = [], open = [], scrams = [], drains = [], storms = [], got = {}, lateList = [], scans = [];
-  const plan = { fights: [], shields: [], jumpAt, window: g.JUMP_WINDOW * (rules.handle ? 2 : 1), scrams, drains, storms, end };
+  const plan = { fights: [], shields: [], jumpAt, window: g.PRESS_FIRST, scrams, drains, storms, end };
   let crewHits = 0, bonusCells = 0, jumpDelay = 0, busy = 0, coilsDone = 0, radarBusy = 0;
   const roomOf = (side) => (side === 'front' ? 'bridge' : side === 'port' ? 'portGun' : 'starGun');
   const sideOf = (j) => j.ev?.side || 'front';
@@ -632,7 +642,7 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
         if (f.waitFrom !== null) { f.waited += t - f.waitFrom; waits.push({ key: f.key, side: id, t: f.waitFrom, wait: t - f.waitFrom }); f.waitFrom = null; }
         if (g.cd > 0) continue;
         G.fireCannon(g); f.left--; f.next = t + f.span / f.shots;
-      } else if (!(cap === 1 && Number.isFinite(jump.t) && !jump.done && t >= jump.t - prepFor && G.CAPACITORS[1].charge <= 1) && G.reloadCannon(g)) { used[cap]++; g.reload = Math.min(g.reload, A.RELOAD); }   // (the last energy in MID is kept for the jump)
+      } else if (!(cap === 1 && Number.isFinite(jump.t) && !jump.done && t >= jump.t - prepFor && G.CAPACITORS[1].charge <= 1) && G.reloadCannon(g)) { used[cap]++; g.reload = Math.min(g.reload, reloadTime()); }   // (the last energy in MID is kept for the jump)
       else if (f.waitFrom === null) f.waitFrom = t;                    // no energy at its capacitor: the fight waits
     }
     for (const s of shields) {
@@ -738,7 +748,7 @@ function summarize(id, n, rs) {
   const worstWait = rs.map(r => r.energy.worst).filter(Boolean).sort((a, b) => b.wait - a.wait)[0] || null;
   const side = (i) => ({ need: mean(r => r.energy.perSide[i].need), have: mean(r => r.energy.perSide[i].have) });
   const specFail = rs.find(r => !r.spec.ok), bestFail = rs.find(r => !r.bestSpec.ok);
-  return { id, n, name: g.MISSIONS[id].name, campaign: g.MISSIONS[id].campaign || 0, tier: g.MISSIONS[id].tier || 0, runs: rs.length, verdict, worst, counts, best,
+  return { id, n, aim: targetIdle(id, n), name: g.MISSIONS[id].name, campaign: g.MISSIONS[id].campaign || 0, tier: g.MISSIONS[id].tier || 0, runs: rs.length, verdict, worst, counts, best,
            score: med(r => r.score), length: med(r => r.end), load: mean(r => r.load), idle: mean(r => r.idle), peak: med(r => r.peak), late: med(r => r.late),
            radar: mean(r => r.radarShare), lever: mean(r => r.leverShare), fuel: mean(r => r.fuelShare),
            energyNeed: med(r => r.energy.demand), energySupply: med(r => r.energy.supply), waited: med(r => r.energy.waited), bestWaited: med(r => r.best.waited),
@@ -758,7 +768,7 @@ function campaignCheck(rows, n, jump = 20) {
 }
 
 // ===========================================================================
-// --calibrate: per mission and crew size, the number of encounters (for A.TARGET_IDLE idle crew time in
+// --calibrate: per mission and crew size, the number of encounters (for targetIdle(id, n) idle crew time in
 // a mission of MISSION_LENGTH) and the fuel cells (exactly what the energy needs, + A.FUEL_MARGIN); then
 // the prerequisites if the energy isn't in spec: energy ship upgrades the player can have by then (the
 // rep the campaign has paid before that mission), and only then reactor overcharge.
@@ -781,15 +791,15 @@ const meanIdle = (rs) => rs.reduce((s, r) => s + r.idle, 0) / rs.length;
 // The event count for ~target idle (idle falls as events are added): binary search between the
 // essential minimum and twice the written list.
 function fitEvents(id, n, ship, oc, runs, minK = 1) {
-  const g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(M.essential || [])]);
+  const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(M.essential || [])]);
   const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind)).length), max = Math.max(2 * wrote, wrote + 16);
-  const at = (k) => meanIdle(evalAt(id, n, { events: k, cells: A.AMPLE_CELLS, overcharge: oc }, ship, runs));
+  const at = (k) => meanIdle(evalAt(id, n, { events: k, cells: A.AMPLE_CELLS, overcharge: oc, reactor: 1 }, ship, runs));
   let lo = min, hi = max, vLo = at(lo);
-  if (vLo <= A.TARGET_IDLE) return { events: lo, idle: vLo, short: true };   // even the essentials keep the crew busier than that
+  if (vLo <= aim) return { events: lo, idle: vLo, short: true };   // even the essentials keep the crew busier than that
   let vHi = at(hi);
-  if (vHi >= A.TARGET_IDLE) return { events: hi, idle: vHi, long: true };
-  while (hi - lo > 1) { const m = (lo + hi) >> 1, v = at(m); if (v >= A.TARGET_IDLE) { lo = m; vLo = v; } else { hi = m; vHi = v; } }
-  return Math.abs(vLo - A.TARGET_IDLE) <= Math.abs(vHi - A.TARGET_IDLE) ? { events: lo, idle: vLo } : { events: hi, idle: vHi };
+  if (vHi >= aim) return { events: hi, idle: vHi, long: true };
+  while (hi - lo > 1) { const m = (lo + hi) >> 1, v = at(m); if (v >= aim) { lo = m; vLo = v; } else { hi = m; vHi = v; } }
+  return Math.abs(vLo - aim) <= Math.abs(vHi - aim) ? { events: lo, idle: vLo } : { events: hi, idle: vHi };
 }
 // Fuel cells: the fewest that do as well as plenty (same waits, shields, jump), plus A.FUEL_MARGIN.
 function fitCells(id, n, ship, oc, events, runs, reactor = 1) {
@@ -809,7 +819,7 @@ function fitMission(id, opts = {}) {
     const per = {};
     for (const n of ns) {
       const minK = per[n - 1]?.events || 1;                       // (a bigger crew never gets fewer events)
-      const ev = fitEvents(id, n, ship, oc, runs, minK);
+      const ev = fitEvents(id, n, ship, oc, runs, minK), aim = targetIdle(id, n);
       // out of spec at that count: a neighbouring count that is in spec (within A.SPEC_IDLE_SLACK idle) is better
       let pick = null;
       const tryIt = (k, reactor) => {
@@ -821,19 +831,19 @@ function fitMission(id, opts = {}) {
         if (k < minK) continue;
         const p = tryIt(k, 1);
         if (!pick) pick = p;
-        if (p.spec && Math.abs(p.idle - A.TARGET_IDLE) <= A.SPEC_IDLE_SLACK) { pick = p; break; }
+        if (p.spec && Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK) { pick = p; break; }
       }
       // still short: a faster reactor (within reason; further, and at the neighbouring counts too, for the early missions)
       if (!pick.spec) {
         const ks = EARLY.includes(id) ? [0, -1, 1, -2, 2].map(d => ev.events + d).filter(k => k >= minK) : [ev.events];
         let best = null;
-        for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {
-          for (const k of ks) { const p = tryIt(k, r); if (p.spec && (!best || Math.abs(p.idle - A.TARGET_IDLE) < Math.abs(best.idle - A.TARGET_IDLE))) best = p; }
-          if (best) break;
+        for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {   // (the mildest step that gets near the aim; else the nearest of all)
+          for (const k of ks) { const p = tryIt(k, r); if (p.spec && (!best || Math.abs(p.idle - aim) < Math.abs(best.idle - aim))) best = p; }
+          if (best && Math.abs(best.idle - aim) <= A.SPEC_IDLE_SLACK) break;
         }
         if (best) pick = best;
       }
-      per[n] = pick;
+      per[n] = { ...pick, aim };
       log(`  ${id} ×${n}: ${per[n].events} events, ${per[n].cells} cells,${per[n].reactor !== 1 ? ` reactor ×${per[n].reactor},` : ''} idle ${Math.round(per[n].idle * 100)}%, ${per[n].spec ? 'in spec' : 'out of spec: ' + per[n].why}${oc ? ' (overcharged)' : ''}${Object.keys(ship).length ? ' [' + Object.keys(ship).join(', ') + ']' : ''}`);
     }
     return per;
@@ -874,7 +884,7 @@ function main() {
     else if (args[i] === '--detail') opts.detail = [args[++i], +args[++i] || 1];
     else if (args[i] === '--calibration') opts.cal = true;
     else if (args[i] === '--calibrate') opts.fit = true;
-    else if (args[i] === '--target') A.TARGET_IDLE = +args[++i];
+    else if (args[i] === '--target') A.TARGET_IDLE = A.TARGET_IDLE_CREW = +args[++i];
     else if (args[i] === '--base') opts.prereq = false;          // ignore the missions' prerequisites (base ship)
     else ids.push(args[i]);
   }
@@ -901,7 +911,7 @@ function main() {
     return;
   }
   if (opts.fit) {
-    console.log(`Calibrating: events and fuel cells per crew size for ${Math.round(A.TARGET_IDLE * 100)}% idle in ${g.MISSION_LENGTH} s, then the energy prerequisites (hit rate ${A.HIT_RATE}, ${A.CAL_RUNS} builds each)...`);
+    console.log(`Calibrating: events and fuel cells per crew size for ${(A.TARGET_IDLE * 100).toFixed(1)}% idle solo / ${(A.TARGET_IDLE_CREW * 100).toFixed(1)}% for 2-8 on the first mission, −${(A.TARGET_RAMP * 100).toFixed(1)} points per step in the progression, in ${g.MISSION_LENGTH} s, then the energy prerequisites (hit rate ${A.HIT_RATE}, ${A.CAL_RUNS} builds each)...`);
     const fits = calibrateAll({ ...opts, log: (s) => console.log(s) });
     console.log('\nPaste into the mission definitions (MISSIONS[id].crew / .needs):');
     for (const f of fits) {
@@ -910,7 +920,7 @@ function main() {
       if (ns.some(n => P[n].reactor !== 1)) crew.reactor = ns.map(n => P[n].reactor);
       if (f.needs.overcharge) crew.overcharge = ns.map(() => true);
       const needs = f.needs.ship.length || f.needs.overcharge ? `, needs: ${JSON.stringify(f.needs).replace(/"(\w+)":/g, '$1: ').replace(/"/g, "'")}` : '';
-      console.log(`  ${f.id}: crew: ${JSON.stringify(crew).replace(/"(\w+)":/g, '$1: ')}${needs}   // ${ns.map(n => `${Math.round(P[n].idle * 100)}%`).join(' ')} idle${[1, 2, 3, 4].some(n => !P[n].spec) ? '; OUT OF SPEC: ' + [1, 2, 3, 4].filter(n => !P[n].spec).map(n => `×${n} ${P[n].why}`).join('; ') : ''}${f.baseWhy ? '; base ship: ' + f.baseWhy : ''}`);
+      console.log(`  ${f.id}: crew: ${JSON.stringify(crew).replace(/"(\w+)":/g, '$1: ')}${needs}   // --calibrate: ${ns.map(n => `${Math.round(P[n].idle * 100)}%`).join(' ')} idle for 1-8 players (aim ${(P[1].aim * 100).toFixed(1)}% solo, ${(P[2].aim * 100).toFixed(1)}% for 2-8)${[1, 2, 3, 4].some(n => !P[n].spec) ? '; OUT OF SPEC: ' + [1, 2, 3, 4].filter(n => !P[n].spec).map(n => `×${n} ${P[n].why}`).join('; ') : ''}${f.baseWhy ? '; base ship: ' + f.baseWhy : ''}`);
     }
     return;
   }
@@ -927,10 +937,10 @@ function main() {
 }
 function printRows(rows) {
   const pad = (s, w) => String(s).padEnd(w), num = (v, w, d = 0) => (typeof v === 'number' ? v.toFixed(d) : v).padStart(w);
-  console.log(pad('mission', 22) + pad('n', 3) + num('ev', 4) + num('jump', 6) + num('e/s', 6) + num('cells', 6) + num('idle', 6) + '  ' + pad('energy L / M / R need/have', 27) + pad('spec (real/perfect)', 21) + num('open', 5) + '  ' + pad('verdict', 11) + num('score', 6) + '  first shortfall / why');
-  for (const r of rows) console.log(pad(r.name, 22) + pad(r.n, 3) + num(r.events, 4) + num(r.length, 6) + num(r.interval, 6, 1) + num(r.cells, 6) + num(`${Math.round(r.idle * 100)}%`, 6) + '  '
+  console.log(pad('mission', 22) + pad('n', 3) + num('ev', 4) + num('jump', 6) + num('e/s', 6) + num('cells', 6) + num('idle', 6) + num('aim', 6) + '  ' + pad('energy L / M / R need/have', 27) + pad('spec (real/perfect)', 21) + num('open', 5) + '  ' + pad('verdict', 11) + num('score', 6) + '  first shortfall / why');
+  for (const r of rows) console.log(pad(r.name, 22) + pad(r.n, 3) + num(r.events, 4) + num(r.length, 6) + num(r.interval, 6, 1) + num(r.cells, 6) + num(`${Math.round(r.idle * 100)}%`, 6) + num(`${(r.aim * 100).toFixed(1)}`, 6) + '  '
     + pad(r.sides.map(s => `${s.need.toFixed(1)}/${s.have.toFixed(1)}`).join('  '), 27) + pad(`${r.inSpec ? 'in' : 'OUT'} / ${r.bestInSpec ? 'in' : 'OUT'}${r.overcharge ? ' OC' : ''}`, 21) + num(r.peak, 5, 1) + '  ' + pad(r.verdict + (r.worst !== r.verdict ? '*' : ''), 11) + num(r.score, 6) + '  ' + [r.specWhy, ...r.why].filter(Boolean).join('; '));
 }
 if (require.main === module) main();
 
-module.exports = { balance, runOne, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, setup, verdictOf, scoreOf, A, PLAYERS, H, T };
+module.exports = { balance, runOne, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, setup, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };

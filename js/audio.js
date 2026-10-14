@@ -82,6 +82,11 @@ const sfx = (() => {
       tone('sawtooth', 110, 1600, 1.55, 0.18, 0, 1.4); tone('sine', 55, 220, 1.55, 0.4, 0, 1.4);
       setTimeout(() => { noise(1.8, 160, 1.0, 0.5); noise(0.9, 2400, 0.35, 0.6); tone('sine', 110, 28, 1.6, 0.9); tone('triangle', 220, 50, 0.8, 0.35); }, 1500);
     },
+    // The jump drive failing for lack of energy: a whine that dies away, with a few dry coughs.
+    sputter() {
+      tone('sawtooth', 300, 45, 0.9, 0.16, 0, 0.02); tone('sine', 110, 30, 0.8, 0.25);
+      for (let i = 0; i < 3; i++) setTimeout(() => noise(0.08, 900 - i * 200, 0.4, 2), 120 + i * 190);
+    },
     // The jump drive's hum while it charges: call every frame with the charge 0..1 (0: silent). Pitch,
     // brightness, loudness and the throb all rise with it.
     hum(k) {

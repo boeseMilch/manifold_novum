@@ -206,11 +206,9 @@ function drawEncounterOverlay(view, t) {
   const f = enc.flare;
   if (f?.phase === 'warn') {
     const k = 0.5 + 0.5 * Math.sin(t * 6);
-    const g = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, VW / 2, VH / 2, Math.hypot(VW, VH) / 2);
-    g.addColorStop(0, 'rgba(255,170,60,0)'); g.addColorStop(1, `rgba(255,170,60,${0.18 + 0.12 * k})`);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    screenGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.35, Math.hypot(VW, VH) / 2, [[0, [255, 170, 60], 0], [1, [255, 170, 60], 0.18 + 0.12 * k]]);   // (art.js: in GL with the sprites)
   } else if (f?.phase === 'rad') {
-    ctx.fillStyle = `rgba(255,236,190,${0.22 + 0.06 * Math.sin(t * 20)})`; ctx.fillRect(0, 0, VW, VH);
+    screenTint([255, 236, 190], 0.22 + 0.06 * Math.sin(t * 20));
   }
   if (enc.storm && me.mode === 'inside') {
     const sx = view.ox + L(me.x) * view.zoom, sy = view.oy + L(me.y - GFX.lift(0.9)) * view.zoom * (view.sy || 1), r = L(5.5) * view.zoom, a = me.face;

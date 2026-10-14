@@ -69,7 +69,7 @@ const CAMPAIGN = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
 Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 100, perPirate: 40, rep: 1, xp: 80 },
-    crew: {events: [2, 4, 8, 12, 15, 18, 21, 21], cells: [3, 3, 7, 8, 11, 13, 11, 11], reactor: [0.5, 0.6, 0.7, 0.85, 0.7, 0.6, 1, 1]},   // --calibrate: 54% 75% 71% 67% 68% 68% 69% 73% idle for 1-8 players
+    crew: {events: [2, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 69.5% solo, 67.5% for 2-8)
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     objective: { kind: 'pirates', count: 2 }, rules: {},
     blurb: 'Clear pirate raiders out of the trade lanes. $40 per pirate.',
@@ -78,7 +78,7 @@ Object.assign(MISSIONS, {
   },
   c2: {
     name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 150, rep: 1, xp: 100 },
-    crew: {events: [2, 2, 7, 8, 13, 15, 19, 20], cells: [2, 2, 6, 5, 12, 9, 14, 15], reactor: [1, 0.85, 0.7, 0.85, 0.5, 1, 0.6, 0.6]},   // --calibrate: 70% 83% 68% 74% 68% 71% 67% 70% idle for 1-8 players
+    crew: {events: [2, 3, 7, 7, 12, 15, 17, 19], cells: [2, 3, 6, 6, 11, 11, 14, 16], reactor: [1, 1, 0.7, 0.7, 0.6, 0.7, 0.6, 0.5]},   // --calibrate: 70% 74% 65% 74% 66% 66% 68% 68% idle for 1-8 players (aim 69.0% solo, 67.0% for 2-8)
     essential: ['intruder'],
     objective: { kind: 'intruder', count: 1 }, rules: {},
     blurb: 'Something crawled out of the bonus salvage pod. Kill it.',
@@ -87,7 +87,7 @@ Object.assign(MISSIONS, {
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
-    crew: {events: [2, 5, 8, 11, 14, 16, 17, 22], cells: [2, 3, 5, 5, 6, 6, 6, 9]},   // --calibrate: 62% 71% 67% 69% 67% 68% 70% 69% idle for 1-8 players
+    crew: {events: [2, 3, 8, 10, 12, 15, 18, 19], cells: [2, 2, 5, 5, 5, 7, 9, 9], reactor: [1, 1, 1, 1, 1, 1, 0.85, 1]},   // --calibrate: 62% 73% 65% 68% 70% 66% 66% 67% idle for 1-8 players (aim 68.5% solo, 66.5% for 2-8)
     objective: { kind: 'blackbox' }, rules: { breach: true },
     blurb: 'Dr. Varga\'s lab went quiet. Bring back its black box.',
     briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something is asleep in there. Don\'t wake it.',
@@ -95,8 +95,8 @@ Object.assign(MISSIONS, {
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 200, perPirate: 50, rep: 2, xp: 160 },
-    crew: {events: [2, 4, 7, 11, 12, 18, 23, 23], cells: [2, 2, 2, 5, 6, 8, 9, 9]},   // --calibrate: 57% 68% 70% 68% 72% 67% 68% 72% idle for 1-8 players
-    needs: {ship: ['cannons'], overcharge: false},
+    crew: {events: [2, 4, 8, 11, 15, 18, 22, 23], cells: [2, 2, 8, 8, 11, 15, 18, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 40% 66% 64% 68% 66% 67% 70% 72% idle for 1-8 players (aim 68.0% solo, 66.0% for 2-8)
+    needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     objective: { kind: 'pirates', count: 3 }, rules: { breach: true, surge: true },
     blurb: 'Pirates took Dr. Varga. Hunt the Red Comet gang.',
@@ -105,8 +105,8 @@ Object.assign(MISSIONS, {
   },
   c5: {
     name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 300, rep: 3, xp: 200 },
-    crew: {events: [2, 5, 9, 13, 17, 20, 20, 22], cells: [2, 2, 5, 7, 7, 9, 9, 10], reactor: [1, 1, 1, 1, 1, 1, 1, 0.85]},   // --calibrate: 65% 66% 68% 68% 68% 69% 74% 78% idle for 1-8 players
-    needs: {ship: ['cannons', 'inserter'], overcharge: false},
+    crew: {events: [2, 4, 8, 12, 15, 18, 22, 23], cells: [2, 2, 8, 8, 12, 15, 15, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 67% 66% 66% 66% 67% 70% 72% idle for 1-8 players (aim 67.5% solo, 65.5% for 2-8)
+    needs: {ship: ['cannons', 'inserter'], overcharge: true},
     objective: { kind: 'rescue', npc: 'Dr. Varga' }, rules: { breach: true, surge: true, gravity: true },
     blurb: 'Dock with the pirates\' prison barge and bring Dr. Varga home.',
     briefing: 'We tracked the Red Comet\'s prison barge. Dr. Varga is aboard — hurt, by the sound of her distress ping.\n\nWhen the barge docks, get past the guards, find her in the cargo hold, patch her up (hold click or E on her) and lead her back. She\'ll follow your footsteps, slowly. Don\'t let the barge cast off with her still on it.',
@@ -114,7 +114,7 @@ Object.assign(MISSIONS, {
   },
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 300, rep: 3, xp: 220 },
-    crew: {events: [3, 5, 9, 11, 16, 17, 23, 23], cells: [2, 4, 8, 9, 16, 14, 23, 20], reactor: [1, 1, 1, 1, 0.7, 1, 0.7, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 51% 69% 67% 73% 67% 71% 70% 74% idle for 1-8 players
+    crew: {events: [3, 4, 9, 12, 15, 16, 23, 23], cells: [3, 3, 11, 12, 17, 13, 22, 22], reactor: [1, 1, 0.7, 0.7, 0.7, 1, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 40% 72% 64% 66% 66% 70% 67% 71% idle for 1-8 players (aim 67.0% solo, 65.0% for 2-8)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores', 'leeches'],
     objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
@@ -124,7 +124,7 @@ Object.assign(MISSIONS, {
   },
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 350, rep: 3, xp: 260 },
-    crew: {events: [1, 2, 3, 4, 10, 14, 17, 19], cells: [2, 2, 2, 3, 4, 6, 5, 6], reactor: [1, 1, 1, 1, 1, 0.7, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 64% 72% 61% 65% 71% 69% 69% 68% idle for 1-8 players
+    crew: {events: [1, 1, 2, 8, 11, 15, 18, 23], cells: [2, 2, 2, 4, 6, 7, 7, 10], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 57% 63% 66% 64% 64% 63% idle for 1-8 players (aim 66.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 136 s at 44 s; ×4 star cannon waits 21 s at 84 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Fly into the deep beyond the Mire and get out alive.',
@@ -133,7 +133,7 @@ Object.assign(MISSIONS, {
   },
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 500, rep: 5, xp: 400 },
-    crew: {events: [1, 3, 3, 4, 4, 9, 9, 21], cells: [2, 2, 2, 2, 2, 4, 4, 7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 68% 69% 61% 62% 70% 68% 68% idle for 1-8 players
+    crew: {events: [1, 2, 3, 3, 4, 9, 9, 14], cells: [2, 2, 2, 2, 2, 4, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 73% 70% 76% 61% 63% 62% 63% idle for 1-8 players (aim 66.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 72 s at 194 s; ×4 port cannon waits 72 s at 194 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Sit next to the leviathan for five minutes. Survive.',
