@@ -1685,6 +1685,22 @@ History and the scheduler's details: 8z3.
   ramped target and within 4 on average, the four above listed as essentials-only; 2-4 players within 15 points, a
   mission's mean within 7), the early missions in spec on the base ship, and the out-of-spec list.
 
+### Difficulty slider
+
+Request: "a difficulty slider, just in case not everything is balanced perfectly … very easy, easy, normal".
+- In the mission lobby, under the crew list: a slider Very easy · Easy · Normal (`#lobby-easy`). Normal is the
+  balance above. Solo: your choice, remembered in this browser (localStorage `mn-difficulty`, not the profile:
+  no save change). Multiplayer: the host's choice (`{t: 'difficulty'}`, kept on the server's game as `g.easy`
+  and sent in the lobby state; guests see it greyed out).
+- `startMission(id, {easy})` → `mission.easy` (0 normal, 1 easy, 2 very easy). `selectEvents` asks for `easy`
+  fewer encounters than the crew table: the ones dropped are optional (DROP_ORDER, repeats first), never an
+  essential one, and at least one is always left (the finale), so solo missions with 1-2 encounters may have
+  nothing left to drop. The rest are spread evenly from the first event to the jump as usual; the jump time
+  and the reactor's pace stay at normal's (`mission.gap` is normal's gap, `mission.eventGap` the real one), so
+  the crew has the same energy for fewer encounters. The hot zone is unchanged. Pay and XP are the same.
+- The start banner says "(easy)" / "(very easy)". tests/mission.js checks the counts, the essentials, the even
+  spacing, the reactor pace and the jump for intro / c3 solo and intro / c4 / pirates with all their encounters.
+
 ## Sound
 
 - **Soundtrack "Duct Tape Nebula":** original and fully synthesized (`js/music.js`). It's

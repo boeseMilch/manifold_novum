@@ -136,7 +136,7 @@ function netPlaySfx(events) {
 // Server side (runs inside the server's simulation sandbox)
 // ---------------------------------------------------------------------------
 const netServer = {
-  init(missionId, ship) { crew.length = 0; startMission(missionId, { ship }); },
+  init(missionId, ship, easy = 0) { crew.length = 0; startMission(missionId, { ship, easy }); },
   addCrew(id, name, kit) {
     const spots = [[22.2, 4.5], [20.2, 8], [24.2, 8], [18.5, 4], [26, 4], [22.2, 9.5], [16.5, 8.5], [28, 8.5]];
     const [x, y] = spots[crew.length % spots.length];
@@ -193,6 +193,19 @@ function netClientMain() {
   $('room-locker').onclick = () => lobbyUI.shop('locker');
   $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
   const markChosen = () => lobbyUI.render(chosen);
+  // Difficulty slider (0 normal, 1 easy, 2 very easy; the slider runs very easy → normal): the host's choice,
+  // remembered in this browser.
+  const storedEasy = () => { try { return Math.min(2, Math.max(0, Math.floor(+localStorage.getItem('mn-difficulty')) || 0)); } catch (e) { return 0; } };
+  let easy = storedEasy();
+  const easyBox = $('lobby-easy'), easyName = $('lobby-easy-name');
+  const showEasy = () => { easyBox.value = 2 - easy; easyName.textContent = DIFFICULTIES[easy].toUpperCase(); easyName.classList.toggle('easier', easy > 0); };
+  easyBox.oninput = () => {
+    if (!solo && !isHost) return showEasy();
+    easy = 2 - +easyBox.value; showEasy();
+    try { localStorage.setItem('mn-difficulty', easy); } catch (e) { /* no storage */ }
+    if (!solo) sendWs({ t: 'difficulty', easy });
+  };
+  showEasy();
   chosen = CAMPAIGN.find(id => unlockedMissions().has(id) && !profile.done[id]) || 'c1';
   const q = new URLSearchParams(location.search);    // dev: ?mission=rush&autostart
   if (q.get('mission') && MISSIONS[q.get('mission')]) chosen = q.get('mission');
@@ -229,6 +242,7 @@ function netClientMain() {
     const room = $('room'), L = lastLobby;
     const canPick = solo || isHost;
     room.classList.toggle('guest', !canPick);
+    $('lobby-easy').disabled = !canPick;
     const host = L && L.players.find(p => p.host);
     $('room-title').textContent = solo ? 'SOLO MISSION' : host ? `${host.name.toUpperCase()}'S GAME` : 'GAME';
     $('room-host').textContent = solo ? 'Just you and the ship.' : !L ? 'Joining…' : isHost ? 'You are the host: you pick the mission and start it.'
@@ -243,9 +257,9 @@ function netClientMain() {
   }
 
   // ----- buttons
-  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship }); };
-  $('menu-solo').onclick = () => { saveName(); solo = true; lastLobby = null; show('room'); markChosen(); };
-  $('menu-open').onclick = () => { saveName(); hello(); sendWs({ t: 'open', mission: chosen }); };
+  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship, easy }); };
+  $('menu-solo').onclick = () => { saveName(); solo = true; easy = storedEasy(); showEasy(); lastLobby = null; show('room'); markChosen(); };
+  $('menu-open').onclick = () => { saveName(); hello(); easy = storedEasy(); sendWs({ t: 'open', mission: chosen, easy }); };
   $('room-back').onclick = () => { if (!solo) sendWs({ t: 'leave' }); lastLobby = null; show('menu'); };
   $('lobby-start').onclick = () => { saveName(); if (solo) startSolo(); else if (isHost) sendWs({ t: 'start' }); };
   nameBox.onchange = () => { saveName(); hello(); };
@@ -271,7 +285,7 @@ function netClientMain() {
   ws.onopen = () => {
     clearTimeout(fail); netState = 'online'; hello();
     if (rejoin) sendWs({ t: 'join', game: rejoin.game, ticket: rejoin.ticket });
-    else if (autostart) sendWs({ t: 'open', mission: chosen });           // dev: open a game and start it right away
+    else if (autostart) sendWs({ t: 'open', mission: chosen, easy });           // dev: open a game and start it right away
     if (phase === 'menu') renderMenu();
   };
   ws.onclose = () => {
@@ -296,6 +310,7 @@ function netClientMain() {
       }
       lastLobby = m; isHost = m.host === myId;
       chosen = m.mission; lobbyUI.union = m.unlocked || null; markChosen();
+      easy = m.easy || 0; showEasy();
       renderRoom();
       if (autostart && isHost && m.phase === 'lobby') { autostart = false; sendWs({ t: 'start' }); }
     } else if (m.t === 'start') {

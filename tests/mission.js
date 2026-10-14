@@ -27,6 +27,25 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   check(G.combat.enemies.some(e => e.kind === 'interceptor'), 'the interceptor shows up on schedule');
 }
 
+// --- difficulty: easy / very easy take one / two optional encounters out, the rest evenly spread, the reactor's pace unchanged
+{
+  const G = loadGame([...NAMES, 'paceFactor']);
+  for (const [id, full] of [['intro', false], ['c3', false], ['intro', true], ['c4', true], ['pirates', true]]) {
+    if (!G.MISSIONS[id]) continue;
+    if (full) G.MISSIONS[id].crew = null;              // (all written events; solo otherwise)
+    G.startMission(id); const n0 = G.mission.events.length, pace = G.paceFactor(), jump = G.mission.jumpAt;
+    const ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(G.MISSIONS[id].essential || [])]);
+    const essN = G.mission.events.filter(e => ess.has(e.kind)).length;
+    for (const easy of [1, 2]) {
+      G.startMission(id, { easy }); const evs = G.mission.events, gaps = evs.slice(1).map((e, i) => e.t - evs[i].t);
+      const ts = evs.map(e => e.t).sort((a, b) => a - b), even = ts.slice(1).every((t, i) => Math.abs(t - ts[i] - (ts[1] - ts[0])) < 1e-6);
+      check(evs.length === Math.max(essN, 1, n0 - easy) && evs.filter(e => ess.has(e.kind)).length === essN && (evs.length < 2 || even)
+            && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump,
+            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), evenly spread (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s), same reactor pace and jump`);
+    }
+  }
+}
+
 // --- radar: reveals the next 45 s only; unscanned imminent threats show "????"
 {
   const G = fresh();

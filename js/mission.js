@@ -175,10 +175,14 @@ const missionCrew = (id, n) => { const C = MISSIONS[id]?.crew, i = Math.min(8, M
 // The reactor's ENERGY_TIME multiplier: the gap / the written gap, × the crew size's reactor tuning (crew.reactor,
 // < 1 where the energy needs a faster reactor to be in spec).
 const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
+// Difficulty (the lobby's slider, host's choice): 0 normal, 1 easy, 2 very easy. Each step takes one optional
+// encounter out (never an essential one, and never the last one); the rest spread evenly over the same mission time, and the reactor
+// keeps normal's pace, so the crew has the same energy for fewer encounters.
+const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
-function selectEvents(id, written, n, target) {
+function selectEvents(id, written, n, target, easy = 0) {
   const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]);
-  const want = missionCrew(id, n).events ?? written.length;
+  const base = missionCrew(id, n).events ?? written.length, want = Math.min(base, Math.max(1, base - easy));   // (at least one: the finale)
   const rank = (e) => (ess.has(e.kind) ? Infinity : DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
   const order = written.map((e, i) => ({ e, i })).sort((a, b) => rank(b.e) - rank(a.e) || a.i - b.i);   // most important first; ties: the earlier one
   const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(want, written.length))).map(o => o.e);
@@ -191,7 +195,7 @@ function selectEvents(id, written, n, target) {
 }
 function layoutMission(id, n) {
   const M = MISSIONS[id] || MISSIONS.intro, written = mission.written;
-  const evs = selectEvents(id, written, n, mission.maint?.target).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
+  const evs = selectEvents(id, written, n, mission.maint?.target, mission.easy || 0).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
     sys: e.kind === 'maintenance' ? mission.maint?.target : e.sys }));
   if (!evs.length) { Object.assign(mission, { events: [], lead: Infinity, gap: null, writtenGap: null, paceN: n, jumpAt: M.practice ? Infinity : JUMP_DELAY, overcharge: false }); return; }
   const lead = Math.min(...written.map(e => e.t)), end = (M.length || MISSION_LENGTH) - JUMP_DELAY;
@@ -206,7 +210,9 @@ function layoutMission(id, n) {
     if (fight) [fight.t, last.t] = [last.t, fight.t];
   }
   const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - lead) / (written.length - 1) : gap;
-  Object.assign(mission, { events: evs, lead, gap, writtenGap: wl || gap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + JUMP_DELAY });
+  const normal = mission.easy ? selectEvents(id, written, n, mission.maint?.target).length : evs.length;   // the reactor's pace: normal's gap
+  const paceGap = normal > 1 ? (end - lead) / (normal - 1) : end - lead;
+  Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + JUMP_DELAY });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
 }
 // Fuel: the cells this crew size needs (the reactor's own cell plus the crate), on top of what's been
@@ -232,7 +238,7 @@ function startMission(id = 'intro', opts = {}) {
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
-    maint: { target, decoy, serviced: false }, crewCells: undefined,
+    maint: { target, decoy, serviced: false }, crewCells: undefined, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
   });
   mission.written = (MISSIONS[id] || MISSIONS.intro).build(target).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
   layoutMission(id, crewSize());
@@ -242,7 +248,7 @@ function startMission(id = 'intro', opts = {}) {
   mission.upgrades = { ...(opts.ship || {}) }; mission.runId = `${Date.now().toString(36)}-${newUid()}`; mission.kills = 0;
   for (const c of crew) applyKit(c, c.kit);
   const mDef = MISSIONS[mission.id] || {};
-  combatBanner(mDef.practice ? 'Practice — the ship is yours' : mDef.tutorial ? 'Training — welcome aboard' : 'Jumped into the hot zone. Hold out until the jump!');
+  combatBanner(mDef.practice ? 'Practice — the ship is yours' : mDef.tutorial ? 'Training — welcome aboard' : `Jumped into the hot zone. Hold out until the jump!${mission.easy ? ` (${DIFFICULTIES[mission.easy].toLowerCase()})` : ''}`);
 }
 
 function runEvent(ev) {

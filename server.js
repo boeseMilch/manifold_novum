@@ -88,10 +88,11 @@ const colorOf = (c) => (/^#[0-9a-f]{6}$/i.test(c.kit?.paint) ? c.kit.paint : COL
 const live = (g) => g.members.filter(c => c.alive);
 const hostOf = (g) => g.members[0] || null;           // the earliest joined player still in the game
 
+const clampEasy = (v) => Math.min(2, Math.max(0, Math.floor(+v) || 0));   // difficulty: 0 normal, 1 easy, 2 very easy
 function lobbyState(g) {
   const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
   const host = hostOf(g);
-  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, unlocked, host: host && host.id, max: MAX_PLAYERS,
+  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, unlocked, host: host && host.id, max: MAX_PLAYERS,
     players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), level: c.level || 1, host: c === host, away: !c.alive || undefined })) };
 }
 function gameList() {
@@ -151,8 +152,8 @@ function enter(c, g) {                                 // c joins g (there is ro
   if (g.run) { g.run.sim.netServer.addCrew(c.id, c.name, c.kit); send(c, { t: 'start', mission: g.missionId, game: g.id }); }
   changed(g);
 }
-function openGame(c, mission) {
-  const g = { id: nextGameId++, members: [c], phase: 'lobby', missionId: mission ? String(mission).slice(0, 40) : 'intro', run: null };
+function openGame(c, mission, easy) {
+  const g = { id: nextGameId++, members: [c], phase: 'lobby', missionId: mission ? String(mission).slice(0, 40) : 'intro', easy: clampEasy(easy), run: null };
   games.set(g.id, g);
   enter(c, g);
   console.log(`[game ${g.id}] opened by ${c.name}`);
@@ -188,11 +189,12 @@ function onMessage(c, m) {
     changed(g);
   }
   else if (m.t === 'games') send(c, gameList());
-  else if (m.t === 'open') { if (g) removeMember(g, c); openGame(c, m.mission); }
+  else if (m.t === 'open') { if (g) removeMember(g, c); openGame(c, m.mission, m.easy); }
   else if (m.t === 'join') { if (g && g.id === +m.game) return; if (g) removeMember(g, c); joinGame(c, m.game, m.ticket); }
   else if (m.t === 'leave') leaveGame(c);
   else if (!g) return;                                 // (everything below is for players in a game)
   else if (m.t === 'mission' && isHost && g.phase === 'lobby') { g.missionId = String(m.id).slice(0, 40); changed(g); }
+  else if (m.t === 'difficulty' && isHost && g.phase === 'lobby') { g.easy = clampEasy(m.easy); changed(g); }
   else if (m.t === 'start' && isHost && g.phase === 'lobby') startGame(g);
   else if (m.t === 'input' && g.run) g.run.sim.netServer.input(c.id, m);
   else if (m.t === 'cmd' && g.run) g.run.sim.netServer.command(c.id, m.cmd);
@@ -219,14 +221,14 @@ function startGame(g) {
   const sim = makeSim();
   const sfx = sim.netCaptureSfx();
   const ship = Object.assign({}, ...crewNow.map(c => c.ship || {}));      // the crew's ship has every upgrade anyone bought
-  sim.netServer.init(g.missionId, ship);
+  sim.netServer.init(g.missionId, ship, g.easy || 0);
   for (const c of crewNow) sim.netServer.addCrew(c.id, c.name, c.kit);
   g.phase = 'game';
   g.run = { sim, sfx, tick: 0, last: Date.now(), acc: 0 };
   sendAll(crewNow, { t: 'start', mission: g.missionId, game: g.id });
   g.run.timer = setInterval(() => stepGame(g), 1000 / 120);
   changed(g);
-  console.log(`[game ${g.id}] started "${g.missionId}" with ${crewNow.length} crew`);
+  console.log(`[game ${g.id}] started "${g.missionId}" with ${crewNow.length} crew${g.easy ? ` (${['', 'easy', 'very easy'][g.easy]})` : ''}`);
 }
 function stepGame(g) {
   const run = g.run, now = Date.now();
