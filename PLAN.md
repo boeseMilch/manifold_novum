@@ -1906,10 +1906,11 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   8 bars with their chords and a composed theme; every part takes its notes from the same bar's chord.
   `tests/music.js` checks that each theme note on a strong beat is a tone of its chord.
 - **The build-up** follows `setIntensity` (time towards the jump), so the climax lands on the jump for any
-  mission length: 0 drone and dark pad → 1 bell arpeggio → 2 ostinato, a taiko → 3 bass, 16ths, hats →
+  mission length. Held Together's order: 0 drone and dark pad → 1 bell arpeggio → 2 ostinato, a taiko → 3 bass, 16ths, hats →
   4 the theme on the horn, snare → 5 brass swells, busier drums → 6 climax (strings double the theme an octave
   up, brass stabs, full taikos). Stages only change on bar lines, up after a one-bar tom fill, down only at a
-  phrase start. A threat adds one stage (at least 3, at most 5: the climax is saved for the end).
+  phrase start. A threat adds one stage (at least 3, at most 5: the climax is saved for the end), and counts for
+  20 s after it's gone, so flickering fights don't flip the arrangement. The other pieces build their own way (below).
 - **The jump:** while the drive spools (`setJump`), the spool chords (bVI-bVII) with a rising line, snare rolls
   and a riser in 4-bar waves, for as long as the drive needs. `jumped()` cuts it, swells for 1.5 s into the
   jump's boom (`sfx.jumpOut`) and lands on the home chord in major; then quiet until `rearm()`.
@@ -1920,6 +1921,26 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   quiet start, -20 dB at the climax and in the spool, peaks at -4 dB or lower, no silence or NaN. A soft
   compressor on the music bus. About 160 new nodes a second at the climax.
 - `music.html` lists the pieces (tempo, key, missions) and shows the stage and section while it plays.
+- **Every piece its own identity** (playtest: "every soundtrack is very similar, they all begin with humm and
+  bells"). The score keeps one engine, but each piece has a `parts` table (which layer plays from which stage to
+  which), its own lead sound, drum style and feel:
+
+  | piece | opens with | lead | drums, feel |
+  |---|---|---|---|
+  | Held Together | drone, dark pad, bells (the first score, unchanged) | horn | taikos |
+  | Cargo Run | pulsing synth bass + shaker, then strummed chords | whistle-flute | swung backbeat kit |
+  | Red Comet Gallop | stomp-and-clap + accordion, then oom-pah bass | accordion reed | 6/8 jig, tambourine |
+  | A Signal in the Dark | radio static, the theme on a far-away radio horn | solo voice ("ah") | soft taikos |
+  | Bloom | low choir + popping spores | glassy FM | hand drums, taikos late |
+  | Pressure Hull | sonar ping + heartbeat | cello | half time, full time at stage 5 |
+  | Last Jump Home | ticking clock + the theme on a music box | detuned saw | driving 16ths, synth-bass pulse |
+
+  All of them still meet at the same climax (theme doubled by strings, brass swells and stabs, full drums), the
+  spool and the final hit. *Held Together* plays exactly as in the first score: checked by recording every
+  WebAudio call of both versions through a scripted mission (47,707 identical events). The first score is kept
+  outside the repo as `music-v1.js` (reconstructed from the session) in case a piece should come back.
+- Levels per stage (offline, dB RMS): the openings sit at -28..-39, the climaxes at -19..-23, peaks -3.4 dB or lower.
+  `music.html?check` also prints each opening's layers, brightness and onsets a second.
 
 ### Weapons in hand, lethal ship shots, foam, smooth asteroids (2026-10-14 playtest)
 - **The hand weapon is in the hand** (sprite view): `items/held_<kind>` (laser, heavy, drill, repair kit carried
@@ -1948,12 +1969,12 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
 ## Sound
 
 - **Soundtrack:** original and fully synthesized (`js/music.js`), seven cinematic pieces shared by the
-  missions: *Held Together* (intro, rush hour, practice; D minor, 100 BPM), *Cargo Run* (ch. 1-3, black box),
-  *Red Comet Gallop* (ch. 4, pirate cove), *A Signal in the Dark* (ch. 5, stranded engineer), *Bloom* (ch. 6,
-  ore run), *Pressure Hull* (ch. 7, deep drift), *Last Jump Home* (ch. 8, nightmare). Each is one piece on one
-  grid: two 8-bar sections with a written theme, plucked ostinato, bells, pads, bass, brass, taikos. It builds in
-  8 stages with the time towards the jump (threats push it up one stage), spools while the drive charges and
-  ends on a big major-chord hit with the jump's boom. Pauses while the tab is hidden. Details: "New soundtrack".
+  missions, each with its own opening, lead, drums and feel: *Held Together* (intro, rush hour, practice; the
+  first score's piece, unchanged), *Cargo Run* (ch. 1-3, black box; swing), *Red Comet Gallop* (ch. 4, pirate cove;
+  6/8), *A Signal in the Dark* (ch. 5, stranded engineer), *Bloom* (ch. 6, ore run), *Pressure Hull* (ch. 7, deep
+  drift), *Last Jump Home* (ch. 8, nightmare). Each builds in stages with the time towards the jump (threats push
+  it up one stage), spools while the drive charges and ends on a big major-chord hit with the jump's boom. Pauses
+  while the tab is hidden. Details: "New soundtrack".
 - **Mute:** the speaker button at the top left, or M. It mutes music and effects, and is
   remembered in the browser.
 
