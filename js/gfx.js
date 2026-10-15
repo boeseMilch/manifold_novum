@@ -663,7 +663,7 @@ vec4 iPath;    // floor tiles: the walk field per plate cell (same order; packed
 uniform vec2 uView;
 out vec2 vLp;
 flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor, vPath;
-flat out float vFlip, vRot, vDesat, vLayout;
+flat out vec4 vXf;   // flip/stretch, rotation, desaturation, floor layout: one vector (Firefox runs out of varyings with four floats)
 void main() {
   int id = uFirst + gl_InstanceID;
   ivec2 at = ivec2((id % ${INST_ROW}) * ${INST / 4}, id / ${INST_ROW});
@@ -674,14 +674,18 @@ void main() {
   float cr = cos(iXf.x), sr = sin(iXf.x);
   vec2 p = iScreen.xy + vec2(q.x * cr - q.y * sr, q.x * sr + q.y * cr);
   gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0);
-  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x; vDesat = iXf.z; vLayout = iXf.w; vFloor = iFloor; vPath = iPath;
+  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vXf = vec4(iScreen.w * iXf.y, iXf.x, iXf.z, iXf.w); vFloor = iFloor; vPath = iPath;
 }`;
 
   const FS_SPRITE = `#version 300 es
 precision highp float;
 in vec2 vLp;
 flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor, vPath;
-flat in float vFlip, vRot, vDesat, vLayout;
+flat in vec4 vXf;
+#define vFlip vXf.x
+#define vRot vXf.y
+#define vDesat vXf.z
+#define vLayout vXf.w
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies with the same uv
 uniform float uHasMask, uHR, uDepthScale;
