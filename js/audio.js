@@ -1,5 +1,7 @@
-// Tiny synthesized sound effects (WebAudio, no files). The audio context starts on the
-// first key press or click, because browsers block sound before user input.
+// Tiny synthesized sound effects (WebAudio, no files). The audio context is made as the page loads, so
+// the menu music (Held Together) plays from the start where the browser allows it (e.g. coming back from
+// a mission, or a site the browser already lets play); otherwise it waits suspended and starts on the
+// first key press, click or tap anywhere, because browsers block sound before user input.
 // Everything (effects and music) goes through one output gain, which the mute button sets.
 
 const sfx = (() => {
@@ -12,7 +14,7 @@ const sfx = (() => {
   if (silent) muted = true;
   const ready = [];                                 // callbacks run once the context exists
   function ensure() {
-    if (ac) { if (ac.state === 'suspended') ac.resume(); return true; }
+    if (ac) { if (ac.state !== 'running' && ac.state !== 'closed') ac.resume()?.catch?.(() => {}); return true; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return false;
     ac = new AC();
@@ -24,7 +26,9 @@ const sfx = (() => {
     for (const f of ready) f(ac, out, noiseBuf);
     return true;
   }
-  window.addEventListener('keydown', ensure); window.addEventListener('mousedown', ensure);
+  for (const ev of ['keydown', 'mousedown', 'pointerdown', 'touchend', 'click']) window.addEventListener(ev, ensure);
+  // Right away, unless the browser says it would refuse (then the first input makes it: no console warning).
+  try { if (navigator.getAutoplayPolicy?.('audiocontext') !== 'disallowed') ensure(); } catch (e) { /* no audio */ }
 
   function env(g, t0, a, peak, dur) {
     g.gain.setValueAtTime(0.0001, t0);

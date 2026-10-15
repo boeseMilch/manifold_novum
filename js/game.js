@@ -1040,12 +1040,14 @@ function clientUpdate(dt) {
   }
   if (tutAllows('debug')) updateDebug();
   if (localInput.pressed.has('KeyM')) sfx.toggleMute();
-  music.setThreat(combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0
-    || (!!mission.press && !mission.over));              // not jumping yet: the hot zone keeps the threat up
-  music.setMission(mission.id || 'intro');                // each mission has its own piece, building up towards the jump
-  music.setIntensity(!mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
-  music.setJump(!!mission.jump && !mission.over);
-  const lobby = ['menu', 'room'].some(id => document.getElementById?.(id)?.hidden === false);
+  // The menus (main menu, lobby, locker, shipyard: everything in #lobby) play Held Together, calm and steady
+  // (stage 1: no build-up, no threat, no spool), the same piece across every menu screen; a mission plays its own.
+  const lobby = document.getElementById?.('lobby')?.hidden === false;   // (#lobby itself: #menu/#room keep their own flags under it during a game)
+  music.setThreat(!lobby && (combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0
+    || (!!mission.press && !mission.over)));             // not jumping yet: the hot zone keeps the threat up
+  music.setMission(lobby ? 'menu' : mission.id || 'intro');   // each mission has its own piece, building up towards the jump
+  music.setIntensity(lobby || !mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
+  music.setJump(!lobby && !!mission.jump && !mission.over);
   if (mission.over?.survived && !lobby) music.jumped();    // the big final hit as we jump out
   else if (!mission.over || lobby) music.rearm();          // a new mission, the menu or the lobby: the music plays again
   if (mission.over) creditMission();                 // rewards for this browser's player (once per run; early, before anything else can throw)
@@ -1079,7 +1081,7 @@ function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05); last = now;   // (the first frame's timestamp can be a hair before `last`)
   if (NET.on) NET.frame(dt);
   else if (typeof tutorialPaused === 'function' && tutorialPaused()) tutorialClient(dt);   // a tutorial message is open: the game is paused
-  else if (!lobbyOpen()) tick(dt); else clientUpdate(dt);
+  else if (!lobbyOpen()) tick(dt); else { clientUpdate(dt); localInput.pressed.clear(); }   // (menus: a key counts once, so M mutes once, not every frame)
   // a drawing error must never stop the game loop (the end of a mission, its rewards: clientUpdate above)
   try { render(now / 1000); } catch (e) { if (!frame.err) { frame.err = true; console.error('render error', e); } }
   requestAnimationFrame(frame);

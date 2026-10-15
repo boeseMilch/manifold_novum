@@ -88,6 +88,7 @@ const tutorialOverview = () => tut.on && tut.msg?.pages[tut.msg.i]?.view === 'sh
 function tutorialClient(dt) {
   const m = tut.msg;
   if (m?.waitFor && m.waitFor()) { tutClose(true); return; }
+  if (localInput.pressed.has('KeyM')) sfx.toggleMute();     // (M mutes during a message too)
   localInput.pressed.clear(); localInput.mouse.click = false; localInput.mouse.rightClick = false;
   updateCamera(dt);
   updateSidebar(HUD_H, dt);                          // (the plates still slide in: a message can point at a new one)
