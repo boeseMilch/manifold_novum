@@ -45,6 +45,8 @@
 //   floor     [layout, wear top-left, top-right, bottom-left, bottom-right]: a 2 x 2 floor tile; the
 //             shader draws procedural scratches, gouges and duct tape on it (FLOOR_WEAR; layout 1 / 2 /
 //             3 = tile layout a / b / all tread). Off with ?noscratch or GFX.setScratches(false) (remembered).
+//             Then optionally the walk field per plate cell (js/walkfield.js walkFieldPacked(), order as the
+//             wear): part of the hairlines follow it (FW_PATH). Off with ?nopathscratch or GFX.setPathScratches(false).
 //
 // Lighting (one place for it: js/lights.js gameLighting()):
 //   GFX.lighting({ ambient: [r,g,b], sun: { dir: [x,y,z], color: [r,g,b], k }, areas: [{ x, y, w, h,
@@ -120,7 +122,7 @@ const GFX = (() => {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
     begin: noop, end: noop, sprite: () => false, lighting: noop, backdrop: noop, overlay: () => false, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
-    setScale: noop, setShadows: noop, setScratches: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
+    setScale: noop, setShadows: noop, setScratches: noop, setPathScratches: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
   const off = (why) => { api.reason = why; return api; };
@@ -333,6 +335,7 @@ vec4 fwR4() { fwSt = fwH(fwSt + 0x9e3779b9u); return fwB4(fwSt); }
 vec2 fwDir(float a) { return vec2(cos(a), sin(a)); }
 vec2 fwTilt, fwTan, fwDx, fwDy;   // sum of normal tilts (world xy); the strongest groove's tangent; world units per pixel
 float fwCov, fwBare, fwRim;        // the strongest groove's coverage (glint); gouges: bare metal, dark rim
+float fwPathA, fwPathK, fwPathBoxA, fwPathBox;   // this plate cell's walking direction + strength, crate axis + nearness (FW_PATH)
 // One groove: s along (total length L), d across (unit p, tangent t), half width w, depth h; kind 1 = gouge.
 void fwGroove(float s, float d, float L, vec2 p, vec2 t, float w, float h, float kind) {
   float pw = abs(dot(p, fwDx)) + abs(dot(p, fwDy)), pl = abs(dot(t, fwDx)) + abs(dot(t, fwDy));
@@ -388,9 +391,28 @@ void fwScratches(vec2 P, ivec2 cell, float kind, float wear, float wearP) {
       vec4 a = fwB4(fwSt);
       vec2 c = vec2(0.08) + a.xy * 0.84;
       float L = 0.04 + 0.30 * a.z * a.z;
+      // -- path scratches (FW_PATH): where the crew walk (js/walkfield.js), part of the hairlines are boot
+      // scuffs along the way they go (±13°), a bit shorter, bunched round two spots per cell; next to crates a few
+      // are shoved-box scrapes along the crate's axis. Its own random stream: with the field at 0 (off,
+      // ?nopathscratch) every hairline is exactly what it was.
+      float fpK = 0.0, fpAng = 0.0;
+      if (fwPathK + fwPathBox > 0.0) {
+        vec4 e = fwB4(fwH(fwSt ^ 0x68e31da4u));
+        if (e.x < 0.85 * fwPathK) {                                    // a boot scuff
+          vec4 sp = fwB4(fwH(seed ^ 0x2545f491u));
+          vec2 st = fwDir(fwPathA), sn = vec2(-st.y, st.x);
+          if (e.z < 0.65) c = vec2(0.2) + (e.y < 0.5 ? sp.xy : sp.zw) * 0.6 + st * (a.x - 0.5) * 0.3 + sn * (a.y - 0.5) * 0.12;
+          L = 0.04 + 0.22 * a.z * a.z;
+          fpK = 1.0; fpAng = fwPathA + (e.w - 0.5) * 0.45;
+        } else if (e.x > 1.0 - 0.25 * fwPathBox) {                     // a crate shoved along the floor
+          L = 0.08 + 0.22 * a.z;
+          fpK = 1.0; fpAng = fwPathBoxA + (e.w - 0.5) * 0.15;
+        }
+      }
+      // -- (end of path scratches)
       if (length(q - c) > L * 0.5 + 0.01) continue;                    // not near it: skip the rest
       vec4 b = fwR4();
-      float ang = a.w < 0.65 ? dir0 + (b.x - 0.5) * 0.7 : b.x * 3.14159265;
+      float ang = fpK > 0.5 ? fpAng : a.w < 0.65 ? dir0 + (b.x - 0.5) * 0.7 : b.x * 3.14159265;
       vec2 hd = fwDir(ang) * L * 0.5;
       fwSeg(q, clamp(c - hd, 0.05, 0.95), clamp(c + hd, 0.05, 0.95), 0.0025 + 0.003 * b.y, 0.0008 + 0.0012 * b.z, 0.0);
     }
@@ -592,6 +614,9 @@ float floorWear(vec3 P, inout vec3 base, inout vec3 N, float msk, vec2 dlx, vec2
   vec2 u = clamp(rel * 0.5, 0.0, 1.0), uc = (vec2(sub) + 0.5) * 0.5;
   float wearP = mix(mix(vFloor.x, vFloor.y, u.x), mix(vFloor.z, vFloor.w, u.x), u.y);
   float wearC = mix(mix(vFloor.x, vFloor.y, uc.x), mix(vFloor.z, vFloor.w, uc.x), uc.y);
+  uint pu = uint(vPath[sub.x + 2 * sub.y] + 0.5);                    // FW_PATH: packed by js/walkfield.js walkFieldPacked()
+  fwPathA = float(pu >> 14) / 64.0 * 3.14159265; fwPathK = float((pu >> 9) & 31u) / 31.0;
+  fwPathBoxA = float((pu >> 4) & 31u) / 32.0 * 3.14159265; fwPathBox = float(pu & 15u) / 15.0;
   fwScratches(P.xy, cell, fwKind(vLayout, sub), wearC, wearP);
   float flat_ = smoothstep(0.5, 0.9, msk) * smoothstep(0.96, 0.995, N.z);   // the plate tops only (not seams, bevels, rivets)
   fwTilt *= flat_; fwCov *= flat_; fwBare *= flat_; fwRim *= flat_;
@@ -615,7 +640,7 @@ float floorWear(vec3 P, inout vec3 base, inout vec3 N, float msk, vec2 dlx, vec2
   // Sprite instances: INST floats (INST / 4 vec4 texels) each, uploaded once per frame into an RGBA32F texture,
   // INST_ROW instances per row; the vertex shader fetches its own with gl_InstanceID (one uniform per batch
   // instead of re-pointing 11 instanced attributes, which cost more CPU than everything else in end())
-  const INST = 11 * 4, INST_ROW = 128;
+  const INST = 12 * 4, INST_ROW = 128;
   const VS_SPRITE = `#version 300 es
 precision highp float;
 layout(location = 0) in vec2 aPos;
@@ -634,27 +659,28 @@ vec4 iTint;     // rgb, strength
 vec4 iMisc;     // tint reference luminance, emissive, alpha, flags (1 unlit)
 vec4 iXf;      // screen rotation (rad, clockwise) around the origin, stretch along the sprite's x, desaturation, floor layout (0: not a floor tile; see FLOOR_WEAR)
 vec4 iFloor;   // floor tiles: wear at the tile's corners (top-left, top-right, bottom-left, bottom-right)
+vec4 iPath;    // floor tiles: the walk field per plate cell (same order; packed, see FW_PATH; 0 = none)
 uniform vec2 uView;
 out vec2 vLp;
-flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor;
+flat out vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor, vPath;
 flat out float vFlip, vRot, vDesat, vLayout;
 void main() {
   int id = uFirst + gl_InstanceID;
   ivec2 at = ivec2((id % ${INST_ROW}) * ${INST / 4}, id / ${INST_ROW});
-  iScreen = texelFetch(uInst, at + ivec2(0, 0), 0); iQuad = texelFetch(uInst, at + ivec2(1, 0), 0); iBase = texelFetch(uInst, at + ivec2(2, 0), 0); iPatch = texelFetch(uInst, at + ivec2(3, 0), 0); iOff = texelFetch(uInst, at + ivec2(4, 0), 0); iGround = texelFetch(uInst, at + ivec2(5, 0), 0); iOrigin = texelFetch(uInst, at + ivec2(6, 0), 0); iTint = texelFetch(uInst, at + ivec2(7, 0), 0); iMisc = texelFetch(uInst, at + ivec2(8, 0), 0); iXf = texelFetch(uInst, at + ivec2(9, 0), 0); iFloor = texelFetch(uInst, at + ivec2(10, 0), 0);
+  iScreen = texelFetch(uInst, at + ivec2(0, 0), 0); iQuad = texelFetch(uInst, at + ivec2(1, 0), 0); iBase = texelFetch(uInst, at + ivec2(2, 0), 0); iPatch = texelFetch(uInst, at + ivec2(3, 0), 0); iOff = texelFetch(uInst, at + ivec2(4, 0), 0); iGround = texelFetch(uInst, at + ivec2(5, 0), 0); iOrigin = texelFetch(uInst, at + ivec2(6, 0), 0); iTint = texelFetch(uInst, at + ivec2(7, 0), 0); iMisc = texelFetch(uInst, at + ivec2(8, 0), 0); iXf = texelFetch(uInst, at + ivec2(9, 0), 0); iFloor = texelFetch(uInst, at + ivec2(10, 0), 0); iPath = texelFetch(uInst, at + ivec2(11, 0), 0);
   vec2 lp = iQuad.xy + aPos * iQuad.zw;
   vLp = lp;
   vec2 q = vec2((lp.x - iOrigin.x) * iScreen.w * iXf.y, lp.y - iOrigin.y) * iScreen.z;
   float cr = cos(iXf.x), sr = sin(iXf.x);
   vec2 p = iScreen.xy + vec2(q.x * cr - q.y * sr, q.x * sr + q.y * cr);
   gl_Position = vec4(p.x / uView.x * 2.0 - 1.0, 1.0 - p.y / uView.y * 2.0, 0.0, 1.0);
-  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x; vDesat = iXf.z; vLayout = iXf.w; vFloor = iFloor;
+  vBase = iBase; vPatch = iPatch; vOff = iOff; vGround = iGround; vOrigin = iOrigin; vTint = iTint; vMisc = iMisc; vFlip = iScreen.w * iXf.y; vRot = iXf.x; vDesat = iXf.z; vLayout = iXf.w; vFloor = iFloor; vPath = iPath;
 }`;
 
   const FS_SPRITE = `#version 300 es
 precision highp float;
 in vec2 vLp;
-flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor;
+flat in vec4 vBase, vPatch, vOff, vGround, vOrigin, vTint, vMisc, vFloor, vPath;
 flat in float vFlip, vRot, vDesat, vLayout;
 uniform sampler2D uBeauty, uNormal, uHeight, uMask;
 uniform vec2 uPage;        // page size (beauty px); the map pages are scaled copies with the same uv
@@ -1166,6 +1192,10 @@ void main() {
   // Procedural floor wear (FLOOR_WEAR): on unless ?noscratch or GFX.setScratches(false) (remembered).
   let scratchOn = true;
   try { if (/[?&]noscratch\b/.test(search) || localStorage.getItem('mn-gfx-scratch') === '0') scratchOn = false; } catch (e) { /* no storage */ }
+  // The hairlines along the crew's paths (FW_PATH, js/walkfield.js): on unless ?nopathscratch or
+  // GFX.setPathScratches(false) (remembered); off, the floor is exactly as before.
+  let pathScratchOn = true;
+  try { if (/[?&]nopathscratch\b/.test(search) || localStorage.getItem('mn-gfx-pathscratch') === '0') pathScratchOn = false; } catch (e) { /* no storage */ }
   const WEAR = { fine: 1, gouge: 0.07, tape: 0.1 };   // fine scratch density, deep gouge chance per plate cell, tape chance per 2 x 2 tile
   try { if (/[?&]noshadows\b/.test(search) || localStorage.getItem('mn-gfx-shadows') === '0') shadowsWanted = false; } catch (e) { /* no storage */ }
 
@@ -1551,13 +1581,14 @@ void main() {
     const ey0 = sy + (qy0 - S.oy) * k, ey1 = sy + (qy1 - S.oy) * k;
     if (o.pick) picks.push({ x, y, sortY: o.sortY != null ? o.sortY : y, x0: sx - o.pick[0] * Sdev, x1: sx + o.pick[0] * Sdev, y0: sy - o.pick[1] * Sdev, y1: sy + 0.15 * Sdev });
     if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
-    const t = o.tint ? rgb(o.tint) : o.recolor ? rgb(o.recolor) : null, useMask = !!o.tint && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null;
+    const t = o.tint ? rgb(o.tint) : o.recolor ? rgb(o.recolor) : null, useMask = !!o.tint && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null, fp = fl && pathScratchOn && fl.length > 8;
     queue.push({
       layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || page(S.group, b[0]), mask: useMask,
       d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
           t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : !o.tint && o.recolor ? -1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, fl ? fl[0] : 0,
-          fl ? fl[1] : 0, fl ? fl[2] : 0, fl ? fl[3] : 0, fl ? fl[4] : 0],
+          fl ? fl[1] : 0, fl ? fl[2] : 0, fl ? fl[3] : 0, fl ? fl[4] : 0,
+          fp ? fl[5] : 0, fp ? fl[6] : 0, fp ? fl[7] : 0, fp ? fl[8] : 0],
       depthWrite: o.depthWrite !== false,
       // anything for depthPass(): it writes the depth buffer, or can be a solid lit pixel
       inDepth: ((LAYERS[o.layer] ?? 3) === 2 || (LAYERS[o.layer] ?? 3) === 3) && o.depthWrite !== false || !o.unlit && !(o.alpha <= 0.6),
@@ -1931,6 +1962,8 @@ void main() {
     on: true, gl, begin, end, sprite, lighting, backdrop, overlay, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome, wear: WEAR,
     get scratches() { return scratchOn; },
     setScratches: (on) => { scratchOn = !!on; try { localStorage.setItem('mn-gfx-scratch', on ? '1' : '0'); } catch (e) { /* no storage */ } },
+    get pathScratches() { return pathScratchOn; },
+    setPathScratches: (on) => { pathScratchOn = !!on; try { localStorage.setItem('mn-gfx-pathscratch', on ? '1' : '0'); } catch (e) { /* no storage */ } },
     has: (name) => !!(DYNS[name] || (MAN && MAN[name] && MAN[name].f && MAN[name].f.length)),
     ready: (name) => !!(DYNS[name] ? spriteReady(DYNS[name]) : MAN && MAN[name] && spriteReady(MAN[name])),
     info: (name) => DYNS[name] || (MAN && MAN[name]) || null,

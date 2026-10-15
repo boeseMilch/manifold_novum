@@ -204,6 +204,16 @@ function walkField() {
   return WALK_FIELD = { X0, Y0, W, H, res: WF_RES, traffic, vx, vy, tRef, cells, dests, free };
 }
 
+// The field at plate cell (gx, gy) for the shader (js/gfx.js FW_PATH), packed into one float (exact up to
+// 2^24): direction (6 bits, 0..pi), strength (5), crate axis (5, 0..pi), crate nearness (4). 0: nothing.
+function walkFieldPacked(gx, gy) {
+  const c = walkField().cells.get(gx + ',' + gy);
+  if (!c) return 0;
+  const P = Math.PI, ang = Math.round(((c.ang % P + P) % P) / P * 64) % 64, str = Math.round(Math.min(1, c.str) * 31);
+  const ba = Math.round(c.boxAng / P * 32) % 32, box = c.box > 0.1 ? Math.round(Math.min(1, c.box) * 15) : 0;
+  return ((ang * 32 + str) * 32 + ba) * 16 + box;
+}
+
 // --- debug overlay (?walkfield, or the debug menu) --------------------------------------------------
 let walkFieldShow = typeof location !== 'undefined' && /[?&]walkfield\b/.test(location.search || '');
 function drawWalkFieldDebug() {

@@ -976,6 +976,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   having no light, keeps a glossy black core with a cool white glowing ring and halo; dark paint is
   glossier, so the unchosen black lamp reads as black, not as a missing one. Tooltips name the colours
   (`PAINT_NAMES`: Rust, Blue, Green, Magenta, Mustard, Purple, Teal, White, Black, Pink).
+  In game: a white suit's trim is tinted brighter than white (`suitTint()` in js/sprites.js), so it
+  shines and doesn't look untinted; black (dark) name tags get a light outline (`labelIsDark()` in js/game.js).
   **Locker / Shipyard** (`shopItem()` in `js/progress.js`, playtest: "make locked choices more
   apparent"): three states at a glance. Owned: latched, LED, "✔ OWNED" (profession: "✔ YOURS"), not
   dimmed. Available: normal metal with a green price tag. Locked: much darker grey metal, struck-through
@@ -1550,6 +1552,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   - Off switch: `?nopathscratch` or `GFX.setPathScratches(false)` (remembered): pixel-identical to before (checked
     against a copy of the tree without the change, same frame, fixed time and random seed). To remove it entirely,
     revert its commit.
+  - Cost: one extra hash per hairline on a walked cell; bridge view, half resolution, SwiftShader (machine under load):
+    median frame 400–417 ms on vs 400–450 ms off, i.e. lost in the noise. The field: ~0.2 s once on the first floor draw
+    (only with path scratches on). tests/walkfield.js checks the field and the floor data.
 
 ### 9q. Floor nuts with a real normal map (request: "the littered nuts on the ground still need a normal map")
 

@@ -60,6 +60,8 @@ const HUD_H = 36;
 // The simulation updates crew members one at a time; while it does, the globals below point at
 // that crew member ("acting crew"): player, keys, pressed, mouse, inv, ui, prompt, hover.
 const CREW_COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#c43a3a'];
+// A name tag in this colour needs a light outline instead of the dark one (black and other dark suits on the dark floor)
+const labelIsDark = (col) => { const m = /^#([0-9a-f]{6})$/i.exec(col || ''); if (!m) return false; const n = parseInt(m[1], 16); return 0.3 * (n >> 16) + 0.55 * (n >> 8 & 255) + 0.15 * (n & 255) < 0.3 * 255; };
 let crewIdCounter = 1;
 function makeCrew(name = 'Crew', x = 22.2, y = 4.5) {
   const id = crewIdCounter++;
@@ -521,6 +523,7 @@ const DEBUG_ITEMS = [
   { key: 'c', label: 'Organic: grappler left, leeches + spore mother right, leviathan', run: () => { combatSpawn('grappler', 'port', true); combatSpawn('mother', 'star', true); spawnLeeches('star'); startLeviathan(); } },
   { key: 'd', label: 'Pirates dock left · derelict (box + engineer) right', run: () => { dockShip('pirate', 'port'); } },
   { key: 'r', label: 'Derelict with black box + engineer on the right', run: () => { dockShip('derelict', 'star', { blackbox: true, npc: true }); } },
+  { key: 'G', label: 'Walk field overlay (floor scratches) on / off', run: () => { walkFieldShow = !walkFieldShow; } },
   { key: 'a', label: '', hidden: true, run: () => combatSpawn('grappler', 'port', true) },   // debug only
   { key: 't', label: '', hidden: true, run: () => { for (const e of combat.enemies) if (e.D.organic) for (const p of e.pois) hitPoi(e, p, e.x, e.y); } },   // debug only: finish off organic enemies
   { key: 's', label: '', hidden: true, run: () => combatSpawn('mother', 'star', true) },   // debug only
@@ -820,7 +823,8 @@ function render(t) {
     if (c.lamp && standing(c) && c.mode !== 'gun') drawHelmetGlow(c, sprited.has(c));
     if (c !== me && crew.length > 1) upright(view, c.x, c.y, sprited.has(c) ? 1.35 : 0.45, () => {   // name tags for the others
       ctx.font = `700 ${T * 0.26}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, 0, 0);
+      const dark = labelIsDark(c.color);                     // dark suits (black): a light outline, so the dark name still reads
+      ctx.lineWidth = dark ? 5 : 4; ctx.strokeStyle = dark ? 'rgba(226,232,244,0.92)' : 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, 0, 0);
       ctx.fillStyle = c.color; ctx.fillText(c.name, 0, 0); ctx.textAlign = 'left';
     });
   }
@@ -832,6 +836,7 @@ function render(t) {
   drawDockDarkness();
   drawCombatFront(t);
   drawUseMarks(t);                                   // rings round what you can use, over everything in the world (js/systems.js)
+  drawWalkFieldDebug();                              // debug: where the crew walk (js/walkfield.js; ?walkfield or the debug menu)
   if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
   drawJumpStallMark(view, t);                        // the jump stalled: NO ENERGY over the middle capacitor
 

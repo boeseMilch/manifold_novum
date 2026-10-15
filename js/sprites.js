@@ -320,11 +320,18 @@ function crewPose(c, t) {
   }
   return { set: 'idle', f: 0 };
 }
+// The suit trim's tint. White paint on the white suit would look untinted: brighter than white instead,
+// so the trim shines (and the sprite's emissive makes it glow a little).
+const suitTint = (col) => {
+  if (typeof col !== 'string' || !/^#[0-9a-f]{6}$/i.test(col)) return col;
+  const v = [1, 3, 5].map(i => parseInt(col.substr(i, 2), 16) / 255);
+  return 0.3 * v[0] + 0.55 * v[1] + 0.15 * v[2] > 0.8 ? [1.55, 1.55, 1.6] : col;
+};
 function drawCrewSprite(c, visor, t) {
   const down = c.health === 'down' || c.health === 'out';
   if (down && !GFX.has('crew/down')) return false;
   if (!GFX.ready('crew/idle')) return false;
-  const tint = down && c.health === 'out' ? '#7a7f8a' : c.color, V = visor ? '_visor' : '';
+  const tint = down && c.health === 'out' ? '#7a7f8a' : suitTint(c.color), V = visor ? '_visor' : '';
   let pose, f = 0;
   if (down) pose = 'down';
   else ({ set: pose, f } = crewPose(c, t));
