@@ -325,4 +325,46 @@ check(nodes > n0, 'and plays again when shown');
   check(!clicks.length, `no clicks: ${all.filter(n => n.kind === 'osc' || n.kind === 'src').length} sounds in all pieces start and stop at zero, no envelope jumps (${clicks.length ? Object.entries(kinds).map(([k, v]) => `${v}× ${k}`).join('; ') + '; e.g. ' + clicks.slice(0, 3).join(', ') : 'none'})`);
 }
 
+// ---- Last Jump Home's opening (the clock and the music box, stages 0-1) stays exactly as it is.
+// Every WebAudio call (node creation, connections, types, values, automation, start/stop) of the engine with
+// js/music/home.js is recorded through a scripted 5-minute mission (seeded randomness) and the calls made in
+// stages 0-1 are hashed. Changing that opening on purpose (in home.js or in the engine) means updating OPENING.
+{
+  const OPENING = '0b3d3e74054e1e80';
+  const crypto = require('crypto');
+  let t3 = 0, mus = null; const log = [];
+  const r6 = (v) => (typeof v === 'number' ? +v.toFixed(6) : v);
+  const push = (s) => { if (mus && mus.stage < 2) log.push(s); };
+  const rec = (kind) => {
+    push('new ' + kind);
+    return new Proxy({ kind }, { get: (o, k) => {
+      if (k in o) return o[k];
+      if (k === 'connect') return (d) => { push(`${kind}->${d && d.kind ? d.kind : 'param'}`); return d; };
+      if (k === 'disconnect') return () => {};
+      if (k === 'setPeriodicWave') return () => push(kind + '.periodicWave');
+      if (k === 'start' || k === 'stop') return (...a) => push(`${kind}.${k}(${a.map(r6)})`);
+      return (o[k] = new Proxy({ value: 0 }, { get: (p, m) => (m in p ? p[m] : (...a) => push(`${kind}.${String(k)}.${String(m)}(${a.map(r6)})`)),
+        set: (p, m, v) => { if (m === 'value') push(`${kind}.${String(k)}=${r6(v)}`); p[m] = v; return true; } }));
+    }, set: (o, k, v) => { if (k === 'type' || k === 'oversample') push(`${kind}.${String(k)}=${v}`); o[k] = v; return true; } });
+  };
+  class OpenAC { constructor() { this.sampleRate = 22050; this.destination = rec('dest'); this.state = 'running'; }
+    get currentTime() { return t3; } resume() {}
+    createGain() { return rec('gain'); } createOscillator() { return rec('osc'); } createBiquadFilter() { return rec('filt'); }
+    createBufferSource() { return rec('src'); } createConvolver() { return rec('conv'); } createDelay() { return rec('delay'); }
+    createDynamicsCompressor() { return rec('comp'); } createStereoPanner() { return rec('pan'); } createWaveShaper() { return rec('shaper'); }
+    createPeriodicWave() { return {}; } createBuffer(c, n) { return { getChannelData: () => new Float32Array(n) }; } }
+  let seed = 1; const M = Object.create(Math); M.random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const L = {}, iv = [];
+  const sb = { window: { AudioContext: OpenAC, addEventListener: (n, f) => (L[n] ||= []).push(f) }, localStorage: { getItem: () => null, setItem() {} },
+    setInterval: (f) => iv.push(f), setTimeout() {}, Math: M, console };
+  vm.createContext(sb);
+  for (const f of ['audio', 'music', 'music/home']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sb);
+  mus = vm.runInContext('music', sb);
+  mus.setSong('home'); L.mousedown.forEach((f) => f()); seed = 1; log.length = 0; mus.reset();
+  let reached = false;
+  for (let x = 0; x < 300 && !reached; x += 0.025) { mus.setIntensity(Math.pow(Math.min(1, x / 285), 1.3)); t3 += 0.025; iv[0](); reached = mus.stage >= 2; }
+  const hash = crypto.createHash('sha256').update(log.join('\n')).digest('hex').slice(0, 16);
+  check(reached && hash === OPENING, `Last Jump Home's opening (clock and music box, stages 0-1) is unchanged, call for call (${log.length} calls, hash ${hash})`);
+}
+
 process.exit(failed ? 1 : 0);

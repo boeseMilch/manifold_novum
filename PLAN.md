@@ -2011,12 +2011,12 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   | piece | opens with | lead | drums, feel |
   |---|---|---|---|
   | Held Together | drone, dark pad, bells (the first score, unchanged) | horn | taikos |
-  | Cargo Run | a walking boogie bass (round, woody) + shaker, then strummed chords | whistle-flute | swung backbeat kit |
-  | Red Comet Gallop | stomp-and-clap + accordion, then oom-pah bass | accordion reed | 6/8 jig, tambourine |
-  | A Signal in the Dark | the theme on a far-away radio horn, faint radio crackle | solo voice ("ah") | soft taikos |
-  | Bloom | low choir + popping spores | glassy FM | hand drums, taikos late |
-  | Pressure Hull | sonar ping + heartbeat | cello | half time, full time at stage 5 |
-  | Last Jump Home | ticking clock + the theme on a music box | detuned saw | a wobble bass eased in, then half-time dubstep drums (heavy snare on 3) |
+  | Cargo Run | one steady boogie riff (woody bass) + shaker, then strummed chords | whistle-flute | swung backbeat kit |
+  | Red Comet Gallop | stomp-and-clap + accordion, then oom-pah bass | accordion reed, a fiddle | 6/8 jig, tambourine, crew shouts |
+  | A Signal in the Dark | the theme on a far-away radio horn, a faint crackle | solo voice ("ah") answering the radio | soft taikos, spiccato strings |
+  | Bloom | a breathing vowel choir + spore runs | glassy FM | 3:4 marimba, hand drums, taikos late |
+  | Pressure Hull | sonar ping + heartbeat, hull groans and creaks | cello (octaves at the climax) | half time, full time at stage 5 |
+  | Last Jump Home | ticking clock + the theme on a music box | detuned saw | a talking growl bass, half-time dubstep drums (heavy snare on 3) |
 
   All of them still meet at the same climax (theme doubled by strings, brass swells and stabs, full drums), the
   spool and the final hit. *Held Together* plays exactly as in the first score: checked by recording every
@@ -2049,11 +2049,31 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   the drums, then a build bar, and a bigger drop. At stage 5 the lead calls and the strings answer (every 2 bars).
   So: build → drop → breakdown → bigger build → bigger drop → climax → spool → ending. Tested (drops on phrase
   starts after a build bar, a breakdown with < 60 % of the sounds of the phrase before, before the climax).
-- **Last Jump Home goes dubstep after its music box** ("the synth is too fast and drops too fast"): the 16th synth
-  bass is gone; a wobble bass (saws + square through a resonant lowpass swept by a tempo-synced LFO starting closed
-  on the beat, a sine sub under it) fades in over a whole bar with slow quarter-note wobbles, 8ths at stage 3, and
-  after the drop a 4-bar cycle of 1/8, triplet, 1/8, 1/16 wobbles with half-time drums (kick on 1, a heavy snare +
-  clap on 3). The music-box opening is untouched.
+- **Last Jump Home: a talking growl bass** ("the synth is too fast and drops too fast"; replaced the first
+  LFO wobble bass): two FM'd saws and a square an octave down, saturated, through a resonant lowpass and two vowel
+  formants, a clean sine sub under it. No LFO: every wobble is written on the grid (one bar = 8 slots: 1/4, 1/8,
+  triplets, 1/16, 1/32 stutters, slow "waaah" / "yowww", dives from an octave up), so each starts closed on its
+  beat. It creeps in muffled, climbs and speeds up in the build, stops dead for the silence; the drop: an 808 sub
+  diving onto the root (in place of the kick on that 1), a bright-to-dark impact, a brass stab, a crash. The music
+  box comes back over the climax. The music-box opening is untouched: `tests/music.js` hashes every WebAudio call
+  of stages 0-1 (7,950 calls). Peaks: the first drop ~-3.5 dB (the growl's first note there swells in over 50 ms).
+- **Per-piece reworks (2026-10-14, one agent per song), each piece checked against references by offline renders:**
+  - *Cargo Run:* one steady boogie riff in every bar (major 6th, a slapped octave on the 4, a pitchless dead-note
+    thump; no bar-to-bar changes; tested to stay the same); the drop is a truck pulling out (chugging rev,
+    air-brake hiss, a growling slide up into the root).
+  - *Red Comet Gallop:* a real 6/8 jig grid; the crew stomps and shouts "HEY!" on the drops; a fiddle counter-line;
+    the breakdown is call and response (accordion calls, stomps and claps answer); the climax is the boarding
+    party charging (galloping toms and snare).
+  - *A Signal in the Dark:* minimal static (a rare narrow crackle, gone by stage 2); the radio horn calls and a
+    distant voice answers, a dialogue in the breakdown; a warm string pad; spiccato strings drive the middle; at the
+    climax the hook lifts to Eb major.
+  - *Bloom:* its own choir, two half-choirs through drifting vowel formants (mm, oo, oh → ah, eh); spore runs up
+    the chord's tones; a rosewood marimba in 3 against 4; the breakdown breathes (the vowel opening and closing);
+    the climax blooms (choir swell oo → ah → ee, a high choir on the 9th, a spore burst, glass petals).
+  - *Pressure Hull:* the hull groans and metal creaks through the quiet stages and squeezes in the builds; every
+    drop lands on a falling sub hit and a plating clank; a struck-pipe ostinato; the cello plays the theme in
+    octaves at the climax.
+  - *Last Jump Home:* the growl bass above.
 - **Mix, from a reference analysis.** The two "epic" reference tracks (epic.mp3, FoxieEpic.OGG; not in the repo,
   analysed with ffmpeg + numpy) against full 5-minute renders of ours: spectral centroid 500-545 Hz vs our 165-280 Hz,
   low-mid (60-250 Hz) share 23-28 % vs our 62-78 %, stereo width (side/mid) 0.54-0.74 vs our 0.13-0.15, and their
@@ -2080,6 +2100,15 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   sound faded. Buttons: play/pause, restart, spool, JUMP NOW (the ending, on the grid), plus the threat toggle,
   the mission length and speed; the status shows stage, section and bar. The player's intensity now follows the
   game's curve (towards the spool, not the end of the mission).
+- **Open (soundtrack):** Red Comet Gallop's climax makes ~268 new nodes a second (budget ~150) and has no
+  full-mission render against the references yet. Engine requests from the song reworks: build/breakdown/drop
+  flags on the `step` and `drums` hooks; a pad hook (replace the engine pad, keep its renewal rule); a cadence hook
+  (or cadence-voices override) so a piece's own voices swell into the final hit, plus a tagged
+  `K.releaseHeld(t, tag)` for them and a signal when an ending is planned (so queued late-in-bar notes don't sound
+  over the cadence chord); a flag to keep the theme out of a piece's breakdown; a recipe field to drop the pad from
+  a breakdown (`breakdownSkip: ['pad']`); more stereo spread on pad / reverb / drone, or a quieter half-time bass
+  (Pressure Hull's width 0.29); Bloom's climax still bass-heavy (60-250 Hz at 0.50-0.65: shared bass, taikos,
+  drop booms).
 
 ### Weapons in hand, lethal ship shots, foam, smooth asteroids (2026-10-14 playtest)
 - **The hand weapon is in the hand** (sprite view): `items/held_<kind>` (laser, heavy, drill, repair kit carried

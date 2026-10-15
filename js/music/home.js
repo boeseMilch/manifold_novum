@@ -130,7 +130,7 @@
     n.connect(lp); lp.connect(g); route(pan(g, 0), true, false);
   }
 
-  let cur = null, buildBar = -1, spoolAt = 0;            // this bar's growl, the last build bar, the spool's first bar
+  let cur = null, buildBar = -1, spoolAt = 0, dropBar = -1;   // this bar's growl, the last build bar, the spool's first bar, this bar if it drops
 
   music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8', 'nightmare'],
     mood: 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
@@ -147,9 +147,9 @@
     hooks: {
       bar(x) {
         const { t, b, bi, c, st, has, bd, e8, spool, build, drop, bk, first } = x;
-        if (build) buildBar = b; cur = null;
+        if (build) buildBar = b; cur = null; dropBar = drop ? b : -1;
         if (spool && !(x.prev && x.prev.spool)) spoolAt = b;
-        if (drop) {                                       // the drop: everything at once, the sub first
+        if (drop) {                                       // the drop: everything at once, the sub first (it stands in for the kick)
           subHit(c, t, st >= 6 ? 0.1 : 0.11, bd * 1.1); impact(t, bd * 0.9, st >= 6 ? 0.14 : 0.12);
           brass(c, t, stepDur() * 2, 0.07, true); crash(t + 0.01, 0.18);
           if (st >= 6) subHit(c, t + bd / 2, 0.12, bd * 0.5);
@@ -172,6 +172,7 @@
           const pat = st >= 6 ? PAT.six[bi] : st === 5 ? PAT.five[bi] : st === 4 ? PAT.drop[bi] : st === 3 ? PAT.rise[bi % 4] : PAT.creep[0];
           segs = segsOf(pat, t, e8);
           if (first('wobble') && st <= 3) segs[0].att = bd * 0.9;   // (its first bar: fading in)
+          if (drop) segs[0].att = 0.05;                   // (a drop's first growl swells in a hair late: the sub and boom take the hit)
         }
         cur = growl(c, segs, o);
       },
@@ -188,7 +189,7 @@
         const E = music.ending, bd = stepDur() * N;      // the cadence or the final fill takes over mid-bar: this bar's growl stops
         if (E && cur && s === N / 2 && (Math.abs(E.from - t0) < 1e-6 || Math.abs(E.T - bd / 2 - t0) < 1e-6)) kill(cur, t0);
       },
-      drums({ s, b, st, t, has, lv }) {                  // half time: kick on the 1, a heavy snare on the 3 (from the drop)
+      drums({ s, b, st, t, has, lv }) {                  // half time: kick on the 1 (not on a drop's 1: the sub hit is there), a heavy snare on the 3
         const d = has('drums') ? lv('drums') : -1, bi = b % 8, sd = stepDur(), push = st >= 6 && bi >= 6;   // push: the climax's last 2 bars go double time
         if (push) {
           if (d >= 0 && [0, 6, 8, 10].includes(s)) kick(t, 0.65);
@@ -197,7 +198,7 @@
           hat(t, s % 4 === 2 ? 0.08 : 0.035);
           return;
         }
-        if (d >= 0 && (s === 0 || (st >= 4 && s === 10 && bi % 2 === 1) || (st >= 5 && s === 10) || (st >= 6 && s === 7))) kick(t, 0.65);
+        if (d >= 0 && ((s === 0 && b !== dropBar) || (st >= 4 && s === 10 && bi % 2 === 1) || (st >= 5 && s === 10) || (st >= 6 && s === 7))) kick(t, 0.65);
         if (has('snare') && s === 8) { snare(t, 0.4); clap(t, 0.16); taiko(t, 0.3, 1.4); }
         if (has('snare') && bi % 4 === 3 && s >= 12) snare(t, 0.05 + 0.035 * (s - 12));   // a roll into the next four bars
         if (has('hats')) {
