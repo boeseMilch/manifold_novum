@@ -63,6 +63,7 @@
   // stage → [level, how far the filter opens, FM growl, formant width, sub level]
   const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.11],
     5: [0.18, 0.95, 0.9, 1, 0.11], 6: [0.186, 1, 1, 1, 0.115], 7: [0.18, 0.8, 0.9, 1, 0.11] };
+  const zg = () => { const g = K.ac.createGain(); g.gain.value = 0; return g; };   // (an enveloped gain starts silent: no click before its first event)
   let curve = null;
   function shaper() {                                    // saturation (where the browser has it), a little lopsided: 2nd and 3rd harmonics
     if (!K.ac.createWaveShaper) return null;
@@ -74,12 +75,12 @@
     if (!segs.length) return null;
     const t = segs[0].at, last = segs[segs.length - 1], stop = last.at + last.dur + 0.05, m0 = bassRoot(c) + 12, beat = 4 * stepDur();
     const saws = [osc('sawtooth', hz(m0), t, stop, -9), osc('sawtooth', hz(m0), t, stop, 9)], sq = osc('square', hz(m0) / 2, t, stop);
-    const mod = osc('sine', hz(m0), t, stop), mg = K.ac.createGain(), pre = K.ac.createGain();
+    const mod = osc('sine', hz(m0), t, stop), mg = zg(), pre = K.ac.createGain();
     mod.connect(mg); saws.forEach(s => { mg.connect(s.frequency); s.connect(pre); }); sq.connect(pre);
     pre.gain.value = 0.5;
     const sh = shaper(), lp = filt('lowpass', 200, 5), hp = filt('highpass', 150, 0.7), f1 = filt('bandpass', 400, 6), f2 = filt('bandpass', 1000, 8);
     if (sh) { pre.connect(sh); sh.connect(lp); } else pre.connect(lp);
-    const g = K.ac.createGain(), b1 = K.ac.createGain(), b2 = K.ac.createGain(), kg = K.ac.createGain();
+    const g = zg(), b1 = K.ac.createGain(), b2 = K.ac.createGain(), kg = K.ac.createGain();
     b1.gain.value = 4.3; b2.gain.value = 4;                  // (the formants, against the body through the highpass)
     lp.connect(hp); hp.connect(g); lp.connect(f1); f1.connect(b1); lp.connect(f2); f2.connect(b2);
     pan(b1, -0.7 * o.wide).connect(g); pan(b2, 0.7 * o.wide).connect(g);
@@ -87,8 +88,8 @@
     // formants' highpass, centred; and a detuned unison pair, left and right, for width in the low mids
     const low = filt('lowpass', 300, 0.9), bl = K.ac.createGain(); bl.gain.value = 1.3;
     (sh || pre).connect(low); low.connect(bl); bl.connect(g);
-    const gu = K.ac.createGain(), uni = [-23, 23].map(d => { const u = osc('sawtooth', hz(m0), t, stop, d), ul = filt('lowpass', 300, 2); mg.connect(u.frequency); u.connect(ul); pan(ul, d < 0 ? -0.6 : 0.6).connect(gu); return [u, ul]; });
-    const sub = osc('sine', hz(bassRoot(c)), t, stop), sg = K.ac.createGain();
+    const gu = zg(), uni = [-23, 23].map(d => { const u = osc('sawtooth', hz(m0), t, stop, d), ul = filt('lowpass', 300, 2); mg.connect(u.frequency); u.connect(ul); pan(ul, d < 0 ? -0.6 : 0.6).connect(gu); return [u, ul]; });
+    const sub = osc('sine', hz(bassRoot(c)), t, stop), sg = zg();
     sub.connect(sg); sg.connect(kg); g.connect(kg); gu.connect(kg); route(kg, false, false);
     const [v0, v1] = o.vow.map(v => VOW[v]);
     for (const S of segs) {
@@ -125,14 +126,14 @@
   // The sub hit on a drop: an 808-ish sine diving from an octave up onto the root, ringing (a soft-ish front: the
   // drop's boom and taiko take the first hit).
   function subHit(c, t, vel, len) {
-    const f = hz(bassRoot(c)), o = osc('sine', f * 2, t, t + len + 0.2), g = K.ac.createGain();
+    const f = hz(bassRoot(c)), o = osc('sine', f * 2, t, t + len + 0.2), g = zg();
     o.frequency.setValueAtTime(f * 2, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.14);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.03); g.gain.linearRampToValueAtTime(vel * 0.85, t + len * 0.5); g.gain.linearRampToValueAtTime(0, t + len);
     o.connect(g); route(g, false, false);
   }
   // The impact after the silence: a noise burst falling from bright to dark.
   function impact(t, len, vel) {
-    const n = noiseSrc(t, t + len + 0.05), lp = filt('lowpass', 9000, 1.2), g = K.ac.createGain();
+    const n = noiseSrc(t, t + len + 0.05), lp = filt('lowpass', 9000, 1.2), g = zg();
     lp.frequency.setValueAtTime(9000, t); lp.frequency.exponentialRampToValueAtTime(250, t + len);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.005); g.gain.linearRampToValueAtTime(0, t + len);
     n.connect(lp); lp.connect(g); route(pan(g, 0), true, false);
@@ -143,6 +144,7 @@
   music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8', 'nightmare'],
     mood: 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
     lead: 'saw', ostInst: 'pluck', drums: 'dub',
+    engineDrums: false,                                   // (the engine's rolls, fills, drop hits and spool percussion are off: the growl carries the rhythm, over a sparse kit of its own)
     parts: { tick: [0, 3], tines: [0, 3], pad: 1, wobble: 2, drums: 3, hats: 3, snare: 4, theme: 4, choir: 5, brass: 5, stabs: 6, strings: 6 },
     A: { chords: 'Cm Cm Ab Ab Fm Fm G G', theme: [
       'C5 _ _ G4 _ _ C5 _', 'Eb5 _ _ _ C5 _ D5 _', 'Eb5 _ _ _ _ _ C5 _', 'Ab4 _ _ _ _ _ Bb4 _',
@@ -158,8 +160,8 @@
         if (build) buildBar = b; cur = null; dropBar = drop ? b : -1;
         if (spool && !(x.prev && x.prev.spool)) spoolAt = b;
         if (drop) {                                       // the drop: everything at once, the sub first (it stands in for the kick)
-          subHit(c, t, st >= 6 ? 0.1 : 0.11, bd * 1.1); impact(t, bd * 0.9, st >= 6 ? 0.14 : 0.12);
-          brass(c, t, stepDur() * 2, 0.07, true); crash(t + 0.01, 0.18);
+          subHit(c, t, st >= 6 ? 0.45 : 0.5, bd * 1.1); impact(t, bd * 0.9, st >= 6 ? 0.2 : 0.18);   // (the sub hit stands in for the engine's boom)
+          brass(c, t, stepDur() * 2, 0.07, true); crash(t + 0.01, 0.14);
           if (st >= 6) subHit(c, t + bd / 2, 0.12, bd * 0.5);
         }
         if (!has('wobble') && !build) return;
@@ -169,7 +171,7 @@
           const sd = stepDur();
           segs = [['e', 0, 4, 0, 0.4], ['t', 4, 8, 7, 0.6], ['s', 8, 10, 12, 0.8], ['z', 10, 11.98, 12, 1]]
             .map(([kind, a, z, off, open]) => ({ at: rt(t + a * sd), dur: rt(t + z * sd) - rt(t + a * sd), kind, off, open }));
-          o = { ...o, vel: 0.072, open: 1, fm: 0.8, wide: 1, sub: 0.06, vow: ['oo', 'ee'] };
+          o = { ...o, vel: 0.095, open: 1, fm: 0.8, wide: 1, sub: 0.06, vow: ['oo', 'ee'] };
         } else if (bk >= 0) {                               // the breakdown: far away under the music box, then closer
           segs = segsOf(PAT.dist[bk >= 6 ? 2 : bi % 2], t, e8);
           o = { ...o, vel: bk >= 6 ? 0.048 : 0.036, open: bk >= 6 ? 0.3 : 0.14, fm: 0.2, wide: 0.5, sub: 0.06 };
@@ -197,30 +199,47 @@
         const E = music.ending, bd = stepDur() * N;      // the cadence or the final fill takes over mid-bar: this bar's growl stops
         if (E && cur && s === N / 2 && (Math.abs(E.from - t0) < 1e-6 || Math.abs(E.T - bd / 2 - t0) < 1e-6)) kill(cur, t0);
       },
-      drums({ s, b, st, t, has, lv }) {                  // half time: kick on the 1 (not on a drop's 1: the sub hit is there), a heavy snare on the 3
-        const d = has('drums') ? lv('drums') : -1, bi = b % 8, sd = stepDur(), push = st >= 6 && bi >= 6;   // push: the climax's last 2 bars go double time
-        if (push) {
+      // The kit: sparse half time. Kick on the 1 (not on a drop's 1: the sub hit is there), from the drop a snare and clap
+      // on the 3; hats on the off-beats, 8ths from the drop, 16ths at the climax, whose last 2 bars of a phrase go double time.
+      drums({ s, b, st, t, has, lv }) {
+        const d = has('drums') ? lv('drums') : -1, bi = b % 8;
+        if (st >= 6 && bi >= 6) {
           if (d >= 0 && [0, 6, 8, 10].includes(s)) kick(t, 0.65);
           if (s === 4 || s === 12) { snare(t, 0.36); clap(t, 0.14); }
           if (bi === 7 && s >= 13) snare(t, 0.12 + 0.06 * (s - 13));
-          hat(t, s % 4 === 2 ? 0.08 : 0.035);
+          if (s % 2 === 0) hat(t, s % 4 === 2 ? 0.08 : 0.035);
           return;
         }
-        if (d >= 0 && ((s === 0 && b !== dropBar) || (st >= 4 && s === 10 && bi % 2 === 1) || (st >= 5 && s === 10) || (st >= 6 && s === 7))) kick(t, 0.65);
-        if (has('snare') && s === 8) { snare(t, 0.4); clap(t, 0.16); taiko(t, 0.3, 1.4); }
-        if (has('snare') && bi % 4 === 3 && s >= 12) snare(t, 0.05 + 0.035 * (s - 12));   // a roll into the next four bars
-        if (has('hats')) {
-          if (lv('hats') >= 2) hat(t, s % 4 === 2 ? 0.07 : 0.03); else if (s % 2 === 0) hat(t, s % 4 === 2 ? 0.06 : 0.03);
-          if (st >= 5 && bi % 4 === 1 && s === 12) for (let k = 1; k < 3; k++) hat(t + k * sd * 4 / 3, 0.05);   // a triplet hat
-        }
-        if (st >= 6 && s === 15) snare(t, 0.1);
+        if (d >= 0 && s === 0 && b !== dropBar) kick(t, 0.65);
+        if (has('snare') && s === 8) { snare(t, 0.4); clap(t, 0.16); }
+        if (has('hats')) { if (st >= 6) hat(t, s % 4 === 2 ? 0.07 : 0.03); else if (st >= 4 ? s % 2 === 0 : s % 4 === 2) hat(t, s % 4 === 2 ? 0.06 : 0.03); }
       },
-      endFill({ s, t, c, N }) {                           // into the final hit: the growl climbs and speeds up
-        if (s !== N / 2) return;
+      fill(x) {                                          // no drum fill into the growl's stages: it fades in, stages just change on the bar line
+        if (x.r === -1) return x.to >= 2 ? 'skip' : undefined;
+        if (x.r !== 1) tom(x.t, x.big ? 0.5 : 0.36, 230 - x.r * 18);   // (into stage 1: the opening's own little tom fill, as it always was)
+        if (x.big) snare(x.t, 0.06 + x.r * 0.03);
+      },
+      build({ s, t, k }) {                                // the build: kicks on 1 and 3, snare 8ths tightening to 16ths into the silence (the growl climbs over it)
+        if (s === 0 || s === 8) kick(t, 0.55);
+        if (s >= 8 || s % 2 === 0) snare(t, 0.06 + 0.3 * k * k);
+        return true;
+      },
+      dropHit() { return true; },                          // (the drop is the bar hook's: sub dive, impact, brass stab, one low crash)
+      spoolPerc({ s, t, cb }) {                            // the spool: the growl's waves carry it; a skeleton under them
+        if (s === 0) kick(t, 0.6);
+        if (s === 8) { snare(t, 0.36); clap(t, 0.14); }
+        if (s % 4 === 2) hat(t, 0.05);
+        if (cb === 3 && s >= 12) snare(t, 0.08 + 0.05 * (s - 12));   // into the next wave
+        return true;
+      },
+      endFill({ s, t, c, N }) {                           // into the final hit: the growl climbs and speeds up, one snare flam at the end
         const sd = stepDur();
-        growl(c, [{ at: rt(t), dur: rt(t + 4 * sd) - rt(t), kind: 's', off: 0, open: 0.7 }, { at: rt(t + 4 * sd), dur: rt(t + 7.98 * sd) - rt(t + 4 * sd), kind: 'z', off: 12, open: 1 }],
+        if (s === N / 2) growl(c, [{ at: rt(t), dur: rt(t + 4 * sd) - rt(t), kind: 's', off: 0, open: 0.7 }, { at: rt(t + 4 * sd), dur: rt(t + 7.98 * sd) - rt(t + 4 * sd), kind: 'z', off: 12, open: 1 }],
           { vel: 0.09, open: 1, fm: 0.9, wide: 1, sub: 0.07, vow: ['oh', 'ee'] });
+        if (s === N - 1) { snare(t, 0.2); snare(t + 0.025, 0.32); }
+        return true;
       },
+      finalHit({ T }) { crash(T, 0.24); taiko(T, 0.45, 0.8); return true; },   // (with the finale's sub and growl)
       finale({ T, c, v, sd }) {                           // the music box rolls up the chord; the clock ticks once more
         v.forEach((m, i) => tine(m + 24 > 91 ? m + 12 : m + 24, T + sd * (2 + 2 * i), 0.1, (i - 1.5) * 0.3)); tick2(T + sd * 16, 0.14, true);
         subHit(c, T, 0.32, 2.4);                          // and under the hit: the sub, and one last slow "yowww" dying away

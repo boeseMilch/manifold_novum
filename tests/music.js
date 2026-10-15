@@ -158,13 +158,13 @@ for (const p of music.pieces.filter(p => !p.classic)) {
 check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and climax; a seek lands on the next bar line inside the breakdown (${seeks.map(x => x.info).join('; ')})`);
 
 // Cargo Run's walking bass (js/music/cargo.js logs every note it plays into walkLog): through a whole mission and
-// after seeks, the downbeat and the slapped octave are tones of the chord in force, every other note is in the key or
-// the boogie's sixth; the line plans the chord that actually comes next, plays the same riff in every bar (a line
-// changing from bar to bar sounded like wrong notes), and never leaps more than an octave from one 8th to the next.
+// after seeks, its written line stays strictly in E natural minor (D# only over the B chord: no C#, no G#), puts chord
+// tones on beats 1 and 3, moves by steps and small leaps (at most a fifth from one 8th to the next) and steps across
+// the bar lines (at most a major third from a bar's last note into the next bar's first), so it sings as one melody.
 {
   const p = music.pieces.find(x => x.name === 'cargo'), PCN = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   const chord = (n) => { const m = /^([A-G])([#b]?)(m?)$/.exec(n), r = (PCN[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12) % 12; return [r, (r + (m[3] ? 3 : 4)) % 12, (r + 7) % 12]; };
-  const inKey = (pc) => [0, 2, 3, 5, 7, 8, 10, 11].includes((pc - p.tonic + 24) % 12);
+  const deg = (pc) => (pc - p.tonic + 24) % 12, MINOR = [0, 2, 3, 5, 7, 8, 10];
   const runs = [];
   const take = (f) => { p.walkLog = []; f(); runs.push(p.walkLog); p.walkLog = null; };
   music.setSong('cargo'); music.setJump(false); music.setThreat(false);
@@ -173,26 +173,20 @@ check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and clim
   for (const at0 of [20.3, P.bars.find(B => B.breakdown).t - 4.7, P.bars.find(B => B.drop).t - 6.1]) take(() => {
     const at = music.seek(at0, 300); for (let x = 0; x < 40; x += 0.25) { music.setIntensity(Math.pow((at + x) / 300, 1.3)); run(0.25); }
   });
-  const bad = [], seen = { notes: 0, changes: 0, riffs: {} };
-  for (const log of runs) {
-    const ns = log.filter(e => e.kind !== 'ghost');
-    log.forEach((e, i) => {
-      const pcs = chord(e.c), pc = ((e.m % 12) + 12) % 12, where = `bar ${e.b} step ${e.s} on ${e.c}: ${e.kind} ${e.m}`;
-      seen.notes++;
-      if (log.some(o => o.b === e.b && o.c !== e.c)) bad.push(`${where} (two chords in one bar)`);
-      if ((e.s === 0 || e.kind === 'pop' || e.kind === 'pull' || e.kind === 'rev') && !pcs.includes(pc)) bad.push(`${where} is not a chord tone on a strong note`);
-      else if (!pcs.includes(pc) && !inKey(pc) && pc !== (pcs[0] + 9) % 12) bad.push(`${where} is out of the key`);
-      const next = log.find(o => o.b === e.b + 1 && o.kind !== 'ghost');
-      if (e.to && next && next.c !== e.to) bad.push(`${where} walks towards ${e.to}, but ${next.c} comes`);
-      if (e.s === 14 && e.kind !== 'ghost' && next && next.c !== e.c) seen.changes++;
-      const riff = log.filter(o => o.b === e.b && o.kind !== 'ghost').map(o => o.s + ':' + (o.m - log.find(q => q.b === e.b && q.s === 0)?.m)).join(' ');
-      if (e.s === 0 && e.kind === 'note' && log.filter(o => o.b === e.b).length >= 9) (seen.riffs[riff] = (seen.riffs[riff] || 0) + 1);
-      const j = ns.indexOf(e), prev = j > 0 ? ns[j - 1] : null;
-      if (prev && e.kind !== 'ghost' && (prev.b * 16 + prev.s) >= e.b * 16 + e.s - 4 && Math.abs(e.m - prev.m) > 12) bad.push(`${where}: leaps ${Math.abs(e.m - prev.m)} semitones from ${prev.m}`);
-    });
-  }
-  const riffs = Object.keys(seen.riffs).length;   // (one riff: over minor chords, over major ones, and on C its 5-6 rock)
-  check(!bad.length && seen.changes > 10 && riffs <= 3, `Cargo Run's walking bass fits its chords, walks into the chord that comes and plays one riff (${seen.notes} notes, ${seen.changes} chord changes over ${runs.length} runs, ${riffs} riff shapes: ${Object.keys(seen.riffs).join(' | ')}; ${bad.length ? bad.length + ' wrong, e.g. ' + [...new Set(bad)].slice(0, 6).join('; ') : 'all fine'})`);
+  const bad = [], seen = { notes: 0, written: 0, barLines: 0 };
+  for (const log of runs) log.forEach((e, i) => {
+    const pcs = chord(e.c), pc = ((e.m % 12) + 12) % 12, where = `bar ${e.b} step ${e.s} on ${e.c}: ${e.kind} ${e.m}`;
+    seen.notes++; if (e.sec) seen.written++;
+    if (!MINOR.includes(deg(pc)) && !(deg(pc) === 11 && e.c === 'B')) bad.push(`${where} is out of E natural minor`);
+    if ((e.s % 8 === 0 || e.kind !== 'note') && !pcs.includes(pc)) bad.push(`${where} is not a chord tone on a strong beat`);
+    const prev = log[i - 1];
+    if (prev && prev.b * 16 + prev.s >= e.b * 16 + e.s - 4) {
+      const d = Math.abs(e.m - prev.m);
+      if (d > 7) bad.push(`${where}: leaps ${d} semitones from ${prev.m}`);
+      if (e.s === 0 && prev.sec && e.sec) { seen.barLines++; if (d > 4) bad.push(`${where}: jumps ${d} semitones across the bar line`); }
+    }
+  });
+  check(!bad.length && seen.written > seen.notes * 0.8 && seen.barLines > 50, `Cargo Run's walking bass is one melody strictly in E minor (${seen.notes} notes, ${seen.written} from the written line, ${seen.barLines} bar lines over ${runs.length} runs; ${bad.length ? bad.length + ' wrong, e.g. ' + [...new Set(bad)].slice(0, 6).join('; ') : 'all fine'})`);
 }
 
 // The ending lands in time and in phrase: whenever the ship jumps (any piece, during the spool or straight
@@ -231,6 +225,44 @@ check(nodes === n0, 'a hidden tab is silent (two open tabs never play over each 
 doc.hidden = false; docListeners.visibilitychange.forEach(f => f()); run(1);
 check(nodes > n0, 'and plays again when shown');
 
+// Pieces can take over every engine gesture: hooks of the gesture's name run first (true / 'handled' replaces the
+// engine's version), the fill hook can skip a stage-change fill outright ('skip' at x.r === -1, with x.from / x.to),
+// and engineDrums: false / noEngine switch the engine's own percussion off. (A throwaway test piece.)
+{
+  const recipe = (name, extra) => Object.assign({ name, title: name, bpm: 120, key: 'A', missions: [], lead: 'saw', drums: 'taiko',
+    parts: { pad: 0, ost: 1, drums: 2, bass: 3, hats: 3, snare: 4, theme: 4, brass: 5, stabs: 6, strings: 6 },
+    A: { chords: 'Am Am F F C C G G', theme: Array(8).fill('A4 _ _ _ C5 _ _ _') },
+    B: { chords: 'F F C C G G E E', theme: Array(8).fill('A4 _ _ _ C5 _ _ _') },
+    spool: 'F G', end: 'A', ost: '0 0 2 0 1 0 2 0 0 0 2 0 3 1 2 1' }, extra);
+  const mission = (name) => {                                   // a quick mission: ramp, spool, jump
+    music.setSong(name); music.setJump(false); music.setThreat(false); music.reset();
+    const n0 = nodes;
+    for (let x = 0; x < 200; x += 0.5) { music.setIntensity(Math.pow(x / 200, 1.3)); run(0.5); }
+    music.setJump(true); run(10); music.jumped(); music.setJump(false); run(6);
+    return nodes - n0;
+  };
+  const seen = {}, fills = [];
+  const count = (n) => (x) => { (seen[n] ||= []).push(x); };
+  music.define(recipe('hooktest', { hooks: { build: count('build'), buildSweep: count('buildSweep'), dropHit: count('dropHit'), accent: count('accent'),
+    spoolWave: count('spoolWave'), spoolPerc: count('spoolPerc'), endFill: count('endFill'), finalHit: count('finalHit'), cadence: count('cadence'),
+    pad: count('pad'), endingPlanned: count('endingPlanned'), fill: (x) => { fills.push([x.r, x.from, x.to]); } } }));
+  const loud = mission('hooktest');
+  const names = ['fill', 'build', 'buildSweep', 'dropHit', 'accent', 'spoolWave', 'spoolPerc', 'endFill', 'finalHit', 'cadence', 'pad', 'endingPlanned'];
+  seen.fill = fills;
+  check(names.every(n => (seen[n] || []).length), `every gesture hook is called (${names.map(n => n + ' ' + (seen[n] || []).length).join(', ')})`);
+  check(fills.some(f => f[0] === -1) && fills.every(f => f[2] > f[1]) && fills.some(f => f[0] >= 0),
+    `the fill hook learns the transition: once at the bar start (r = -1), then per step, from → to (${[...new Set(fills.filter(f => f[0] === -1).map(f => f[1] + '→' + f[2]))].join(', ')})`);
+  const fillSteps = [];
+  music.define(recipe('hooktest3', { hooks: { fill: (x) => { if (x.r === -1) { fillSteps.push(['plan', x.to]); return 'skip'; } fillSteps.push(['step', x.to]); } } }));
+  mission('hooktest3');
+  check(fillSteps.some(f => f[0] === 'plan') && !fillSteps.some(f => f[0] === 'step'), `'skip' plays that bar as a normal bar: no fill steps follow (${fillSteps.length} fills planned, all skipped)`);
+  music.define(recipe('hooktest4', { engineDrums: false, noEngine: ['riser', 'stabs'] }));
+  const quiet = mission('hooktest4');
+  check(quiet < loud * 0.8, `engineDrums: false switches the engine's percussion off (${loud} → ${quiet} sounds over the mission)`);
+  for (const n of ['hooktest', 'hooktest3', 'hooktest4']) music.pieces.splice(music.pieces.findIndex(p => p.name === n), 1);
+  music.setSong('held');
+}
+
 // ---- clicks: every sound starts and stops at (near) zero gain, and no envelope jumps.
 // A second fake WebAudio records each node's connections, each source's start/stop and each gain's automation,
 // then replays the automation (setValue, linear/exponential ramps, setTarget, cancel) to check, for every
@@ -249,12 +281,13 @@ check(nodes > n0, 'and plays again when shown');
     P.cancelScheduledValues = (t) => { P.ev = P.ev.filter(e => e.t < t); };
     return new Proxy(P, { set: (o, k, v) => { o[k] = v; if (k === 'value' && !o.ev.length) o.init = v; return true; } });
   };
+  let curPiece = '';
   const mk = (kind) => {
     const n = { kind, out: [], start: null, stop: null };
     n.connect = (d) => { n.out.push(d); return d; }; n.disconnect = () => {};
     n.start = (t) => { n.start = t; }; n.stop = (t) => { n.stop = t; };
     for (const p of ['gain', 'frequency', 'detune', 'Q', 'pan', 'delayTime', 'threshold', 'knee', 'ratio', 'attack', 'release']) n[p] = mkParam(n, p, p === 'gain' ? 1 : 0);
-    all.push(n); return n;
+    n.piece = curPiece; all.push(n); return n;
   };
   class RecAC { constructor() { this.sampleRate = 8000; this.destination = mk('dest'); this.state = 'running'; } get currentTime() { return t2; } resume() {}
     createGain() { return mk('gain'); } createOscillator() { return mk('osc'); } createBiquadFilter() { return mk('filt'); } createBufferSource() { return mk('src'); }
@@ -269,7 +302,7 @@ check(nodes > n0, 'and plays again when shown');
   L2.mousedown.forEach(f => f());
   const run2 = (sec) => { for (let i = 0; i < sec / 0.025; i++) { t2 += 0.025; iv2[0](); } };
   for (const p of music.pieces) {
-    m2.setSong(p.name); m2.reset();
+    curPiece = p.name; m2.setSong(p.name); m2.reset();
     for (const k of [0, 0.2, 0.33, 0.5, 0.68, 0.9]) { m2.setIntensity(k); run2(12); }
     m2.setThreat(true); run2(6); m2.setThreat(false); m2.setJump(true); run2(9); m2.jumped(); run2(8); m2.setJump(false); m2.rearm();
   }
@@ -291,7 +324,7 @@ check(nodes > n0, 'and plays again when shown');
     }
     return cur(x);
   };
-  const peakOf = (P) => Math.max(Math.abs(P.init), ...P.ev.map(e => Math.abs(e.v)));
+  const peakOf = (P) => Math.max(1, Math.abs(P.init), ...P.ev.map(e => Math.abs(e.v)));   // (levels relative to full scale or the envelope's peak, whichever is bigger)
   const gainsOf = (n, depth = 0, acc = []) => {                     // the enveloped gains a source plays through (to an audible output)
     for (const d of n.out) {
       if (d.isParam) return null;                                    // a modulator (LFO, FM): not heard directly
@@ -322,6 +355,18 @@ check(nodes > n0, 'and plays again when shown');
     });
   }
   const kinds = {}; for (const c of clicks) { const k = c.replace(/[\d.]+%|\(t=[\d.]+\)|t=[\d.]+/g, '').trim(); kinds[k] = (kinds[k] || 0) + 1; }
+  // A new GainNode plays at 1 until its first scheduled event: every enveloped gain a sound plays through must be
+  // created at 0 (K.gain(), or K.env, which zeroes it first), or a real-time click slips through before the envelope.
+  const unzeroed = {};
+  for (const n of all) {
+    if ((n.kind !== 'osc' && n.kind !== 'src') || typeof n.start !== 'number') continue;
+    const gs = gainsOf(n); if (!gs) continue;
+    for (const P of gs) {                                          // (envelopes starting from silence: the first event sets ~0, at or after the start)
+      const first = P.ev.map((e, idx) => ({ ...e, idx })).sort((a, b) => a.t - b.t || a.idx - b.idx)[0];
+      if (first && (first.k === 'set' || first.k === 'lin') && Math.abs(first.v) <= 1e-3 && first.t >= n.start - 1e-9 && P.init !== 0) { unzeroed[n.piece] = (unzeroed[n.piece] || 0) + 1; break; }
+    }
+  }
+  check(!Object.keys(unzeroed).length, `every enveloped gain starts at 0 before its envelope (no real-time click before the first event)${Object.keys(unzeroed).length ? ': not yet in ' + Object.entries(unzeroed).map(([k, v]) => `${k} (${v} sounds)`).join(', ') : ''}`);
   check(!clicks.length, `no clicks: ${all.filter(n => n.kind === 'osc' || n.kind === 'src').length} sounds in all pieces start and stop at zero, no envelope jumps (${clicks.length ? Object.entries(kinds).map(([k, v]) => `${v}× ${k}`).join('; ') + '; e.g. ' + clicks.slice(0, 3).join(', ') : 'none'})`);
 }
 
@@ -330,7 +375,7 @@ check(nodes > n0, 'and plays again when shown');
 // js/music/home.js is recorded through a scripted 5-minute mission (seeded randomness) and the calls made in
 // stages 0-1 are hashed. Changing that opening on purpose (in home.js or in the engine) means updating OPENING.
 {
-  const OPENING = '0b3d3e74054e1e80';
+  const OPENING = '10fc3741d1ad5122';   // (re-pinned: engineDrums: false took the engine's stage-change fill (7 toms, a riser) out of the opening; clock and music box call-for-call as before; initial-zero gains are not counted)
   const crypto = require('crypto');
   let t3 = 0, mus = null; const log = [];
   const r6 = (v) => (typeof v === 'number' ? +v.toFixed(6) : v);
@@ -344,7 +389,7 @@ check(nodes > n0, 'and plays again when shown');
       if (k === 'setPeriodicWave') return () => push(kind + '.periodicWave');
       if (k === 'start' || k === 'stop') return (...a) => push(`${kind}.${k}(${a.map(r6)})`);
       return (o[k] = new Proxy({ value: 0 }, { get: (p, m) => (m in p ? p[m] : (...a) => push(`${kind}.${String(k)}.${String(m)}(${a.map(r6)})`)),
-        set: (p, m, v) => { if (m === 'value') push(`${kind}.${String(k)}=${r6(v)}`); p[m] = v; return true; } }));
+        set: (p, m, v) => { if (m === 'value' && !(kind === 'gain' && k === 'gain' && v === 0)) push(`${kind}.${String(k)}=${r6(v)}`); p[m] = v; return true; } }));   // (a gain created at 0 is not a change of the sound: see K.gain)
     }, set: (o, k, v) => { if (k === 'type' || k === 'oversample') push(`${kind}.${String(k)}=${v}`); o[k] = v; return true; } });
   };
   class OpenAC { constructor() { this.sampleRate = 22050; this.destination = rec('dest'); this.state = 'running'; }
@@ -365,6 +410,39 @@ check(nodes > n0, 'and plays again when shown');
   for (let x = 0; x < 300 && !reached; x += 0.025) { mus.setIntensity(Math.pow(Math.min(1, x / 285), 1.3)); t3 += 0.025; iv[0](); reached = mus.stage >= 2; }
   const hash = crypto.createHash('sha256').update(log.join('\n')).digest('hex').slice(0, 16);
   check(reached && hash === OPENING, `Last Jump Home's opening (clock and music box, stages 0-1) is unchanged, call for call (${log.length} calls, hash ${hash})`);
+}
+
+// The menu music: the audio starts as the page loads when the browser allows it, so Held Together plays in the
+// menu from the start; when the browser would refuse, it waits for the first input of any kind (not only PLAY).
+{
+  const boot = (policy) => {
+    const L = {}, iv = [];
+    const sb = { window: { AudioContext: FakeAC, addEventListener: (n, f) => (L[n] ||= []).push(f) }, document: { hidden: false, addEventListener() {} },
+      navigator: { getAutoplayPolicy: () => policy }, localStorage: { getItem: () => null, setItem() {} },
+      setInterval: (f) => iv.push(f), setTimeout() {}, Math, console };
+    vm.createContext(sb);
+    for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sb);
+    return { L, iv, music: vm.runInContext('music', sb) };
+  };
+  const a = boot('allowed');
+  a.music.setMission('menu');
+  check(a.iv.length === 1 && a.music.title === 'Held Together', 'autoplay allowed: the menu plays Held Together as the page loads, before any input');
+  const d = boot('disallowed');
+  check(d.iv.length === 0, 'autoplay refused: no audio context (and no console warning) before the first input');
+  d.L.keydown.forEach(f => f());
+  check(d.iv.length === 1, 'and any key in the menu (typing a name) starts it');
+  check(['pointerdown', 'mousedown', 'click', 'touchend'].every(n => d.L[n]?.length), 'any click or tap on the menu starts it too');
+  // calm and steady in the menu: stage 1 for minutes, no drops, never the climax
+  a.music.setIntensity(0.15); a.music.setThreat(false); a.music.setJump(false);
+  for (let i = 0; i < 10 / 0.025; i++) { now += 0.025; a.iv[0](); }   // (it opens on stage 0, then settles: the page loads before the menu sets its level)
+  const stages = new Set();
+  for (let i = 0; i < 180 / 0.025; i++) { now += 0.025; a.iv[0](); stages.add(a.music.stage); }
+  check(stages.size === 1 && stages.has(1) && !a.music.arc.some(e => e.kind === 'drop'), `the menu stays on one calm early stage for minutes (stages ${[...stages]})`);
+  a.music.setMission('menu');                           // navigating the menu screens: the same piece, it doesn't restart
+  const st = a.music.step; now += 0.5; a.iv[0]();
+  check(a.music.step > st, 'staying in the menus never restarts the piece');
+  a.music.setMission('c3'); check(a.music.title === a.music.songOf('c3'), 'a mission switches to its own piece');
+  a.music.setMission('menu'); check(a.music.title === 'Held Together' && a.music.step === 0, 'and back in the menu, Held Together starts again from the top');
 }
 
 process.exit(failed ? 1 : 0);

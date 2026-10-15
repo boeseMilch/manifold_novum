@@ -30,7 +30,7 @@
     const [a, b] = VOWEL[vowel];
     for (let i = 0; i < n; i++) {
       const [f0, p] = CREW[i % CREW.length], t0 = t - 0.03 + i * 0.009 + (i % 2) * 0.006, end = t0 + 0.6;
-      const v = osc('sawtooth', f0, t0, end), nz = noiseSrc(t0, end), vg = K.ac.createGain(), ng = K.ac.createGain(), mix = K.ac.createGain(), g = K.ac.createGain();
+      const v = osc('sawtooth', f0, t0, end), nz = noiseSrc(t0, end), vg = K.gain(), ng = K.gain(), mix = K.ac.createGain(), g = K.ac.createGain();   // (K.gain: an enveloped gain created at 0)
       v.frequency.setValueAtTime(f0 * 0.92, t0); v.frequency.linearRampToValueAtTime(f0 * 1.1, t0 + 0.08); v.frequency.exponentialRampToValueAtTime(f0 * 0.8, t0 + 0.32);
       vg.gain.setValueAtTime(0, t0); vg.gain.setValueAtTime(0, t0 + 0.025); vg.gain.linearRampToValueAtTime(1.5, t0 + 0.06); vg.gain.setTargetAtTime(0, t0 + 0.2, 0.05);
       ng.gain.setValueAtTime(0, t0); ng.gain.linearRampToValueAtTime(1.2, t0 + 0.01); ng.gain.linearRampToValueAtTime(0.2, t0 + 0.07); ng.gain.setTargetAtTime(0, t0 + 0.2, 0.05);

@@ -50,7 +50,7 @@
   }
   // A halo over the glass lead's long notes: a sine an octave up, a hair sharp, swelling in an 8th late.
   function halo(m, t, len, vel, p) {
-    const g = K.ac.createGain(), end = t + len + 1.3;
+    const g = K.gain(), end = t + len + 1.3;   // (K.gain: an enveloped gain created at 0)
     osc('sine', hz(m), t, end, 6).connect(g);
     g.gain.setValueAtTime(0, t); g.gain.setTargetAtTime(vel, t, 0.18); g.gain.setTargetAtTime(0, t + len, 0.2);
     route(pan(g, p), true, true);
@@ -84,7 +84,7 @@
   // The choir: two half-choirs (low and high note each) left and right, saws through three gliding formants; the
   // high choir (the climax) on the chord's upper notes and its 9th. Returns its release.
   function makeVox(voice, c, t, o) {
-    const ac = K.ac, bd = o.bd, os = [], g = ac.createGain(), vel = o.vel;
+    const ac = K.ac, bd = o.bd, os = [], g = K.gain(), vel = o.vel;   // (K.gain: created at 0)
     const lfo = ac.createOscillator(), lg = ac.createGain();
     lfo.frequency.value = 4.2 + hash(o.b + 3) * 0.9; lg.gain.value = o.st >= 6 ? 12 : 7; lfo.connect(lg); lfo.start(t); os.push(lfo);
     const voiceOsc = (m, d, into) => { const x = ac.createOscillator(); x.type = 'sawtooth'; x.frequency.value = hz(m); x.detune.value = d; lg.connect(x.detune); x.start(t); into.forEach(b => x.connect(b)); os.push(x); };
@@ -100,7 +100,7 @@
       if (o.bk >= 0) breathe(lp, bps, side ? null : g, t, bd, o.bk, vel);
       else vowels(bps, t, bd, o.b * 2 + side, pool, side * bd / 4, o.swell ? ['U', 'U', 'O', 'A'] : null);
       if (o.whisper && side === 0) {                   // a breath of air through the same formants (dies by itself)
-        const n = noiseSrc(t, t + bd * 2), ng = ac.createGain();
+        const n = noiseSrc(t, t + bd * 2), ng = K.gain();
         ng.gain.setValueAtTime(0, t); ng.gain.setTargetAtTime(0.5, t, 0.6); ng.gain.setTargetAtTime(0, t + bd * 1.5, 0.12);
         n.connect(ng); bps.forEach(b => ng.connect(b));
       }

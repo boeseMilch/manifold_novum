@@ -2093,6 +2093,26 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   `js/music.js` by index.html, music.html, tests/music.js and tests/harness.js (the server's simulation plays no
   music and needs none of them). The split changed nothing: every piece's audio calls, connections included, were
   recorded before and after and are identical.
+- **Every engine gesture can be the piece's own** (playtest: "it still uses the vanilla drum rolls ... especially
+  Last Jump Home, where the wobble bass does the job of the drums"). Each percussion / transition gesture the
+  engine plays runs through one gate: the piece's hook of the same name first (returning true / 'handled' replaces
+  the engine's version), `noEngine: ['<name>']` switches it off. Gestures: `fill` (the one-bar fill before a stage
+  change: asked once at the bar start with `x.from` / `x.to`, 'skip' there plays a normal bar instead, then per
+  step), `build` and `buildSweep` (the roll and riser before the beat of silence), `dropHit`, `accent` (the
+  phrase-start crashes), `spoolWave` / `spoolPerc`, `endFill`, `finalHit`, `cadence`, `pad`. Inside them the
+  engine's own percussion can be switched off by instrument (`noEngine: ['taiko', 'crash', ...]`) or all at once
+  (`engineDrums: false`, risers stay); `'drums'` and `'stabs'` switch off the engine kit and the brass stabs.
+  The arc's structure (the beat of silence, drops on phrase starts, breakdowns) stays the engine's. Also for the
+  song agents: `build`, `bk`, `drop` and `ending` on the step hook's x, `breakdownSkip: [...]`,
+  `hooks.endingPlanned(x)`, `K.releaseHeld(t, tag)`, `K.hush(t)`, `K.ending`. With no overrides every piece is
+  call-for-call identical to before (recorded through a scripted mission with threats, breakdown, spool, jump).
+- **Real-time clicks before envelopes**: a new GainNode plays at 1 until its first scheduled event, so a sound
+  starting a hair before its envelope let one full-level sample through (heard in real time, invisible offline).
+  Every engine envelope now starts from a gain created at 0 (`vca()`, offered to pieces as `K.gain()`; `env()`
+  zeroes the gain first too). Only initial values changed: the scheduled automation is identical. `tests/music.js`
+  now requires every envelope that starts from silence to sit on a gain created at 0 (the piece files' own
+  hand-made envelopes in Bloom, Comet, Signal and Home still need `K.gain()`); the click check's levels are
+  relative to full scale or the envelope's peak, whichever is bigger (as before, now explicit).
 - **music.html: jump to any part.** The mission bar is clickable (and draggable): it seeks there. `music.plan(L)`
   runs the arc of an L-second mission ahead (the stage machine is a pure function now), marks the drops, the
   breakdown, the climax and the spool on the bar, and `music.seek(t, L)` puts the arrangement into the state it
@@ -2100,6 +2120,19 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   sound faded. Buttons: play/pause, restart, spool, JUMP NOW (the ending, on the grid), plus the threat toggle,
   the mission length and speed; the status shows stage, section and bar. The player's intensity now follows the
   game's curve (towards the spool, not the end of the mission).
+- **Menu music** (playtest: "Held Together only starts once I click PLAY SOLO, but then keeps playing when I go
+  back to the menu"): the audio context only started on the first click, and PLAY SOLO usually is the first one.
+  `js/audio.js` now makes it as the page loads (unless `navigator.getAutoplayPolicy` says it would be refused),
+  so where the browser allows it (coming back from a mission, a site it already lets play) Held Together plays
+  from the first frame of the menu; otherwise the context waits suspended and the first key, click or tap
+  anywhere (`keydown`, `mousedown`, `pointerdown`, `touchend`, `click`) starts it. Everything inside `#lobby`
+  (main menu, solo / game lobby, locker, shipyard) plays the `menu` piece = Held Together at intensity 0.15, no
+  threat, no spool: one calm stage (stage 1, Held Together has no drops), and it never restarts between menu
+  screens. The lobby check in `clientUpdate` now looks at `#lobby` itself: it looked at `#menu` / `#room`, which
+  keep `hidden = false` under the hidden `#lobby` during a mission, so the jump's final hit never fired in a
+  real game. M in the menus toggled mute every frame (keys were never cleared there): now cleared after each
+  menu frame, and M also works while a tutorial message is open. `tests/music.js` checks the start on load,
+  the start on any input, the calm menu stage and the switch to a mission's piece and back.
 - **Open (soundtrack):** Red Comet Gallop's climax makes ~268 new nodes a second (budget ~150) and has no
   full-mission render against the references yet. Engine requests from the song reworks: build/breakdown/drop
   flags on the `step` and `drums` hooks; a pad hook (replace the engine pad, keep its renewal rule); a cadence hook

@@ -34,7 +34,7 @@
     n.connect(bp); bp.connect(g); env(g, t, 0.002, vel, 0, 0.007); route(pan(g, 0.45), false, false);
   }
   function tuning(t, len, vel) {
-    const n = noiseSrc(t, t + len + 0.4), bp = filt('bandpass', 1300, 6), g = K.ac.createGain();
+    const n = noiseSrc(t, t + len + 0.4), bp = filt('bandpass', 1300, 6), g = K.gain();   // (K.gain: an enveloped gain created at 0)
     bp.frequency.setValueAtTime(1150, t); bp.frequency.linearRampToValueAtTime(1750, t + len);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.12); g.gain.setTargetAtTime(0, t + len, 0.06);
     n.connect(bp); bp.connect(g); route(pan(g, 0.45), true, false);
@@ -45,7 +45,7 @@
   function strings(voice, t, vel, bright, up) {
     for (const side of [-1, 1]) {
       const notes = (side < 0 ? [voice[0] - 12, voice[1], voice[3]] : [voice[0], voice[2], voice[3]]).map(m => m + (up ? 12 : 0));
-      const lp = filt('lowpass', 0, 0.6), g = K.ac.createGain(), vib = K.ac.createOscillator(), vg = K.ac.createGain();
+      const lp = filt('lowpass', 0, 0.6), g = K.gain(), vib = K.ac.createOscillator(), vg = K.ac.createGain();   // (K.gain: created at 0)
       lp.frequency.setValueAtTime(600 + 700 * bright, t); lp.frequency.linearRampToValueAtTime(900 + 1500 * bright, t + 3);
       vib.frequency.value = 4.8 + side * 0.4; vg.gain.value = 7; vib.connect(vg); vib.start(t);
       const os = notes.map((m, i) => { const o = K.ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(m); o.detune.value = side * 6 + (i - 1) * 3; vg.connect(o.detune); o.connect(lp); o.start(t); return o; });

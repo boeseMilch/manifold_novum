@@ -26,6 +26,28 @@
 //   music.setMission(id)  setIntensity(0..1)  setThreat(bool)  setJump(bool)  jumped()  rearm()
 //   music.title  songOf(id)  list()  setSong(name)  setPaused(bool)  reset()  level  stage  section  step
 // music.html is a little player for the pieces; tests/music.js checks the composition and the engine.
+//
+// Pieces in js/music/<name>.js: music.define(recipe) with the score (see below) and, optionally:
+//   hooks.bar(x) / hooks.step(x)    the piece's own layers per bar / per 16th (x: stage st, has(layer), chord c,
+//                                   voice, t, bar b, ..., build, bk (breakdown bar or -1), drop, ending)
+//   hooks.theme(x, note, at, len)   its own voices for the theme;  hooks.ost(m, t, a, st)  its ostinato instrument
+//   hooks.drums(x)                  its kit (replaces the engine's taiko kit);  hooks.finale(x)  its last word
+//   hooks.endingPlanned(x)          called when jumped() plans the ending (x.T, x.from, x.cad, x.notes, x.hush)
+// The engine's percussion and transition gestures: hooks.<name>(x) runs first; returning true / 'handled'
+// replaces the engine's version, noEngine: ['<name>'] switches it off:
+//   fill        the one-bar fill before a stage change: called once at the bar start with x.r === -1, x.from,
+//               x.to (return 'skip' there: no fill into that stage, a normal bar), then per step (x.r, x.big)
+//   build       the build bar's roll before the beat of silence (per step, x.k 0..1); buildSweep: its riser
+//   dropHit     the drop's boom, crash, taiko;   accent: the phrase-start crashes / booms
+//   spoolWave   the spool's crash and 4-bar riser (per bar, x.cb);   spoolPerc: the spool's rolls (per step)
+//   endFill     the fill into the final hit (per step, x.k);   finalHit: the final hit's boom, crash, taikos
+//   cadence     the cadence voices into the final hit;   pad: the pad / choir renewal (hold your own with
+//               K.hold('pad', release) and the engine renews it)
+// Recipe switches: noEngine: [...] also takes 'drums' (the engine kit), 'stabs', and single engine instruments
+// inside the gestures ('taiko', 'kick', 'snare', 'clap', 'hat', 'crash', 'tom', 'boom', 'riser');
+// engineDrums: false = all engine drums off (risers stay); breakdownSkip: [...] keeps layers out of breakdowns;
+// groove: [...] comes back first in a breakdown's rebuild. The arc (beat of silence, drops, breakdowns) stays here.
+// music.kit: the engine's clock, buses and shared instruments for piece files (K.hold, K.releaseHeld, K.hush, K.ending).
 
 const music = (() => {
   // ---------------------------------------------------------------- the score
@@ -34,7 +56,7 @@ const music = (() => {
   // (third + octave), 4 fifth + octave, '.' rest.
   // parts: layer → [first stage, last stage] (a number: from that stage on).
   const PIECES = [
-    { name: 'held', title: 'Held Together', bpm: 100, key: 'D', missions: ['intro', 'rush', 'practice'],
+    { name: 'held', title: 'Held Together', bpm: 100, key: 'D', missions: ['menu', 'intro', 'rush', 'practice'],
       mood: 'the crew\'s theme (kept from the first score): a drone, a dark pad and bells, then taikos and the horn',
       lead: 'horn', ostInst: 'pluck', drums: 'taiko', classic: true,       // classic: plays exactly as in the first score
       parts: { drone: [0, 4], pad: 0, bells: [0, 4], ost: 2, ost16: 3, drums: 2, bass: 3, hats: 3, snare: 4, theme: 4, brass: 5, stabs: 6, strings: 6 },
@@ -79,7 +101,8 @@ const music = (() => {
     const parts = {};
     for (const [k, v] of Object.entries(p.parts)) parts[k] = Array.isArray(v) ? v : [v, 6];
     return { ...p, meter, swing: p.swing || 0, parts, A: sec(p.A), B: sec(p.B), spool: p.spool.split(/\s+/).map(chordOf), end: chordOf(p.end),
-      ost, tonic: chordOf(p.key).root, hooks: p.hooks || {}, groove: p.groove || [] };
+      ost, tonic: chordOf(p.key).root, hooks: p.hooks || {}, groove: p.groove || [],
+      noEngine: new Set(p.noEngine || []), engineDrums: p.engineDrums !== false, breakdownSkip: p.breakdownSkip || [] };
   };
   const SONGS = PIECES.map(compile), BY_MISSION = {};
   for (const s of SONGS) for (const id of s.missions) BY_MISSION[id] = s;
@@ -174,9 +197,13 @@ const music = (() => {
 
   // ---------------------------------------------------------------- instruments
   const env = (g, t, a, peak, hold, tc) => {               // attack, hold, exponential-ish release
+    g.gain.value = 0;                                      // (a new gain is at 1 until its first event: silent from the start, no click)
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + a);
     g.gain.setValueAtTime(peak, t + a + hold); g.gain.setTargetAtTime(0, t + a + hold, tc);
   };
+  // A gain for an envelope: created at 0. (A new GainNode plays at 1 until its first scheduled event, so a source
+  // starting a hair before it lets a full-level sample through: a click in real time that offline renders never show.)
+  function vca() { const g = ac.createGain(); g.gain.value = 0; return g; }
   function osc(type, f, t, end, detune) {
     const o = ac.createOscillator(); o.type = type; o.frequency.value = f; if (detune) o.detune.value = detune;
     o.start(t); o.stop(end); return o;
@@ -195,7 +222,7 @@ const music = (() => {
 
   // A plucked, slightly out-of-tune string: saw + square a few cents apart, a snappy filter.
   function pluck(m, t, vel, bright, p = 0) {
-    const f = hz(m), end = t + 0.4, lp = filt('lowpass', 0, 4), g = ac.createGain();
+    const f = hz(m), end = t + 0.4, lp = filt('lowpass', 0, 4), g = vca();
     lp.frequency.setValueAtTime(500 + 2800 * bright, t); lp.frequency.exponentialRampToValueAtTime(160 + f, t + 0.16);
     osc('sawtooth', f, t, end).connect(lp); osc('square', f, t, end, 8).connect(lp);
     env(g, t, 0.004, vel, 0.01, 0.07); lp.connect(g); route(p ? pan(g, p) : g, false, true);
@@ -204,7 +231,7 @@ const music = (() => {
   function pad(voice, t, vel, bright, sides = [-1, 1]) {
     const parts = [];
     for (const side of sides) {
-      const lp = filt('lowpass', 0, 0.8), g = ac.createGain();
+      const lp = filt('lowpass', 0, 0.8), g = vca();
       const br = song.classic ? 1 : 1.5;
       lp.frequency.setValueAtTime((350 + 1800 * bright) * br, t); lp.frequency.linearRampToValueAtTime((500 + 2600 * bright) * br, t + 3);
       const os = voice.map(m => { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(m); o.detune.value = side * 9; o.start(t); o.connect(lp); return o; });
@@ -216,7 +243,7 @@ const music = (() => {
   }
   // A low choir ("ooh"): the voicing an octave down on saws through two vowel formants, slow vibrato.
   function choir(voice, t, vel) {
-    const g = ac.createGain(), f1 = filt('bandpass', 380, 3), f2 = filt('bandpass', 900, 4);
+    const g = vca(), f1 = filt('bandpass', 380, 3), f2 = filt('bandpass', 900, 4);
     const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 4.7; lg.gain.value = 8; lfo.connect(lg); lfo.start(t);
     const os = voice.map((m, i) => { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = hz(m - (i < 2 ? 12 : 0)); o.detune.value = (i - 1.5) * 6; lg.connect(o.detune); o.start(t); o.connect(f1); o.connect(f2); return o; });
     f1.connect(g); f2.connect(g);
@@ -225,7 +252,7 @@ const music = (() => {
   }
   // The low drone: a sine root and a filtered saw. Returns its release.
   function drone(m, t, vel) {
-    const g = ac.createGain(), lp = filt('lowpass', 220, 1), a = ac.createOscillator(), b = ac.createOscillator();
+    const g = vca(), lp = filt('lowpass', 220, 1), a = ac.createOscillator(), b = ac.createOscillator();
     a.type = 'sine'; a.frequency.value = hz(m); b.type = 'sawtooth'; b.frequency.value = hz(m) * 1.002;
     a.connect(g); b.connect(lp); lp.connect(g); a.start(t); b.start(t);
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 2.5); route(g, true, false);
@@ -233,14 +260,14 @@ const music = (() => {
   }
   // A small bell (glockenspiel-ish): a sine and an inharmonic overtone that dies first.
   function bell(m, t, vel, p) {
-    const f = hz(m), g = ac.createGain(), g2 = ac.createGain();
-    osc('sine', f, t, t + 2).connect(g); osc('sine', f * 2.76, t, t + 0.6).connect(g2); g2.connect(g);
+    const f = hz(m), g = vca(), g2 = vca();
+    osc('sine', f, t, t + (song.classic ? 2 : 3.2)).connect(g); osc('sine', f * 2.76, t, t + 0.6).connect(g2); g2.connect(g);   // (stops once the tail is silent; Held Together as it was)
     env(g, t, 0.003, vel, 0, 0.45); env(g2, t, 0.002, 0.35, 0, 0.08);
     route(pan(g, p), true, true);
   }
   function bass(m, t, len, vel) {
     if (!song.classic) vel *= 0.55;                       // (the new pieces: less low-mid weight, see the analysis)
-    const f = hz(m), end = t + len + 0.3, lp = filt('lowpass', 0, 2), g = ac.createGain();
+    const f = hz(m), end = t + len + 0.3, lp = filt('lowpass', 0, 2), g = vca();
     lp.frequency.setValueAtTime(900, t); lp.frequency.exponentialRampToValueAtTime(260, t + 0.12);
     osc('sawtooth', f, t, end).connect(lp); osc('sine', f, t, end).connect(g);
     lp.connect(g); env(g, t, 0.006, vel, Math.max(0, len - 0.05), 0.04); route(g, false, false);
@@ -249,14 +276,14 @@ const music = (() => {
   // saw (a bright detuned synth lead), flute (a whistle: sine, a breath of noise), reed (accordion),
   // fm (glassy FM bell lead), cello (dark, slow bow), radio (a horn on a far-away radio).
   function lead(m, t, len, vel, type) {
-    const f = hz(m), end = t + len + 0.8, g = ac.createGain();
+    const f = hz(m), g = vca();
     const V = { horn: [5.0, 0.005, 0.05, 0.1], strings: [5.6, 0.007, 0.16, 0.18], saw: [5.5, 0.004, 0.02, 0.09], flute: [5.2, 0.009, 0.07, 0.08],
       reed: [6.3, 0.004, 0.03, 0.05], fm: [0, 0, 0.005, 0.25], cello: [5.0, 0.008, 0.15, 0.2], radio: [5.0, 0.004, 0.05, 0.1], voice: [5.4, 0.01, 0.12, 0.2] }[type];
-    const [rate, depth, att, rel] = V;
+    const [rate, depth, att, rel] = V, end = t + len + (song.classic ? 0.8 : Math.max(0.8, rel * 7));   // (stops once the release is silent)
     const vib = [];
     let src;
     if (type === 'fm') {                                   // carrier + modulator at 3.5×, the index dying away
-      const car = osc('sine', f, t, end), mod = osc('sine', f * 3.5, t, end), mg = ac.createGain();
+      const car = osc('sine', f, t, end), mod = osc('sine', f * 3.5, t, end), mg = vca();
       mg.gain.setValueAtTime(f * 2.2, t); mg.gain.setTargetAtTime(f * 0.25, t, 0.25);
       mod.connect(mg); mg.connect(car.frequency); src = car;
     } else if (type === 'voice') {                         // a solo vocalise ("ah"): saws through two vowel formants
@@ -281,7 +308,7 @@ const music = (() => {
       src = lp;
     }
     if (rate) {
-      const lfo = osc('sine', rate, t, end), lg = ac.createGain();
+      const lfo = osc('sine', rate, t, end), lg = vca();
       lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * depth, t + Math.min(0.5, len));
       lfo.connect(lg); vib.forEach(o => lg.connect(o.frequency));
     }
@@ -294,7 +321,7 @@ const music = (() => {
   const LEAD_VEL = { horn: 0.085, saw: 0.06, flute: 0.11, reed: 0.06, fm: 0.09, cello: 0.09, radio: 0.3, voice: 0.3 };
   // Brass: root, fifth, octave and tenth swelling open ("bwaaam"), or a short stab.
   function brass(c, t, len, vel, stab) {
-    const r = bassRoot(c) + (song.classic || song.keepRegister ? 12 : 24), end = t + len + 0.6, lp = filt('lowpass', 0, 1.2), g = ac.createGain();   // (the new pieces: horns an octave up, brighter)
+    const r = bassRoot(c) + (song.classic || song.keepRegister ? 12 : 24), end = t + len + 0.6, lp = filt('lowpass', 0, 1.2), g = vca();   // (the new pieces: horns an octave up, brighter)
     for (const m of [r, r + 7, r + 12, r + 12 + c.third]) osc('sawtooth', hz(m), t, end, (m % 3 - 1) * 6).connect(lp);
     lp.frequency.setValueAtTime(220, t);
     if (stab) { lp.frequency.linearRampToValueAtTime(2400, t + 0.03); lp.frequency.setTargetAtTime(500, t + 0.05, 0.08); }
@@ -304,23 +331,23 @@ const music = (() => {
   }
   // Drums.
   function taiko(t, vel, p = 1) {
-    const g = ac.createGain(), o = osc('sine', 130 * p, t, t + 0.9), skin = song.classic ? 0 : 1;   // (the new pieces: less boom, more skin)
+    const g = vca(), o = osc('sine', 130 * p, t, t + 0.9), skin = song.classic ? 0 : 1;   // (the new pieces: less boom, more skin)
     o.frequency.setValueAtTime(130 * p, t); o.frequency.exponentialRampToValueAtTime(46 * p, t + 0.28);
     const og = skin ? ac.createGain() : null; if (og) { og.gain.value = 0.7; o.connect(og); og.connect(g); } else o.connect(g);
     env(g, t, 0.003, vel, 0.02, 0.17);
-    const n = noiseSrc(t, t + (skin ? 0.35 : 0.12)), lp = filt(skin ? 'bandpass' : 'lowpass', skin ? 700 : 900, skin ? 0.8 : 0), ng = ac.createGain();
+    const n = noiseSrc(t, t + (skin ? 0.35 : 0.12)), lp = filt(skin ? 'bandpass' : 'lowpass', skin ? 700 : 900, skin ? 0.8 : 0), ng = vca();
     n.connect(lp); lp.connect(ng); env(ng, t, 0.002, vel * (skin ? 1.1 : 0.5), 0, skin ? 0.045 : 0.03); ng.connect(g);
     route(g, true, false);
   }
   function kick(t, vel) {
-    const o = osc('sine', 120, t, t + 0.4), g = ac.createGain();
+    const o = osc('sine', 120, t, t + 0.4), g = vca();
     o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.09);
     o.connect(g); env(g, t, 0.002, vel, 0.01, 0.08); route(g, false, false);
   }
   function snare(t, vel) {
-    const n = noiseSrc(t, t + 0.35), bp = filt('bandpass', 1900, 0.7), g = ac.createGain();
+    const n = noiseSrc(t, t + 0.35), bp = filt('bandpass', 1900, 0.7), g = vca();
     n.connect(bp); bp.connect(g); env(g, t, 0.002, vel, 0, 0.065);
-    const o = osc('triangle', 200, t, t + 0.2), og = ac.createGain();
+    const o = osc('triangle', 200, t, t + 0.2), og = vca();
     o.frequency.exponentialRampToValueAtTime(150, t + 0.08); o.connect(og); env(og, t, 0.002, vel * 0.7, 0, 0.04); og.connect(g);
     route(g, true, false);
   }
@@ -328,35 +355,52 @@ const music = (() => {
     const n = noiseSrc(t, t + 0.4), bp = filt('bandpass', 1200, 0.9), sum = ac.createGain();
     n.connect(bp);
     for (const d of [0, 0.011, 0.023]) {                   // (each slap its own envelope: no ramp after a decay, which can jump)
-      const g = ac.createGain(); env(g, t + d, 0.003, vel, 0, d < 0.02 ? 0.003 : 0.05); bp.connect(g); g.connect(sum);
+      const g = vca(); env(g, t + d, 0.003, vel, 0, d < 0.02 ? 0.003 : 0.05); bp.connect(g); g.connect(sum);
     }
     route(pan(sum, -0.2), true, false);
   }
   function hat(t, vel, open, kind) {                      // kind: 'shaker', 'jingle' (tambourine), or a hi-hat
-    const n = noiseSrc(t, t + (open ? 0.6 : kind ? 0.15 : 0.12)), hp = filt(kind ? 'bandpass' : 'highpass', kind === 'shaker' ? 5200 : kind ? 7000 : 7200, kind ? 1.2 : 0), g = ac.createGain();
+    const stop = song.classic ? (open ? 0.6 : kind ? 0.15 : 0.12) : (open ? 0.85 : kind === 'jingle' ? 0.36 : kind ? 0.23 : 0.16);   // (stops once the tail is silent)
+    const n = noiseSrc(t, t + stop), hp = filt(kind ? 'bandpass' : 'highpass', kind === 'shaker' ? 5200 : kind ? 7000 : 7200, kind ? 1.2 : 0), g = vca();
     n.connect(hp); hp.connect(g); env(g, t, kind === 'shaker' ? 0.012 : kind ? 0.003 : 0.001, vel, 0, open ? 0.12 : kind === 'jingle' ? 0.05 : kind ? 0.03 : 0.022);
     route(pan(g, kind === 'shaker' ? -0.3 : 0.3), false, false);
   }
   function crash(t, vel) {
-    const n = noiseSrc(t, t + 4), hp = filt('highpass', 3800), g = ac.createGain();
+    const n = noiseSrc(t, t + 4), hp = filt('highpass', 3800), g = vca();
     n.connect(hp); hp.connect(g); env(g, t, 0.003, vel, 0, 0.8); route(g, true, false);
   }
   function tom(t, vel, f, short, classic) {
-    const o = osc('sine', f, t, t + 0.6), g = ac.createGain();
+    const o = osc('sine', f, t, t + (song.classic ? 0.6 : short ? 0.36 : 1)), g = vca();   // (stops once the tail is silent; Held Together as it was)
     if (!classic) o.frequency.setValueAtTime(f, t);
     o.frequency.exponentialRampToValueAtTime(f * (short ? 0.8 : 0.55), t + 0.3);
     o.connect(g); env(g, t, 0.003, vel, 0, short ? 0.05 : 0.14); route(g, true, false);
   }
   function boom(t, vel) {
-    const o = osc('sine', 58, t, t + 3), g = ac.createGain();
+    const o = osc('sine', 58, t, t + 3), g = vca();
     o.frequency.exponentialRampToValueAtTime(29, t + 1.4); o.connect(g); env(g, t, 0.005, vel, 0.05, 0.6); route(g, false, false);
   }
   // A swell into a downbeat: filtered noise opening up.
   function riser(t, dur, vel, from, to) {
-    const n = noiseSrc(t, t + dur + 0.05), bp = filt('bandpass', from, 1.6), g = ac.createGain();
+    const n = noiseSrc(t, t + dur + 0.05), bp = filt('bandpass', from, 1.6), g = vca();
     bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + dur);
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vel, t + dur); g.gain.linearRampToValueAtTime(0, t + dur + 0.04);
     n.connect(bp); bp.connect(g); route(g, true, false);
+  }
+
+  // ---------------------------------------------------------------- the engine's gestures (overridable per piece)
+  // Every percussion / transition gesture the engine plays goes through gesture(name, x, play): the piece's hook of
+  // that name runs first and returning true replaces the engine's version; noEngine: [name] switches it off. Inside
+  // the gestures the engine's percussion goes through E (switch single instruments off with noEngine: ['taiko', ...],
+  // or all of them with engineDrums: false). A piece calling music.kit instruments itself is never gated.
+  const ENGINE_DRUMS = new Set(['taiko', 'kick', 'snare', 'clap', 'hat', 'crash', 'tom', 'boom']);
+  const engineOff = (name) => song.noEngine.has(name) || (!song.engineDrums && ENGINE_DRUMS.has(name));
+  const E = {};
+  for (const [n, f] of Object.entries({ taiko: (...a) => taiko(...a), kick: (...a) => kick(...a), snare: (...a) => snare(...a), clap: (...a) => clap(...a),
+    hat: (...a) => hat(...a), crash: (...a) => crash(...a), tom: (...a) => tom(...a), boom: (...a) => boom(...a), riser: (...a) => riser(...a) })) E[n] = (...a) => (engineOff(n) ? undefined : f(...a));
+  function gesture(name, x, play) {
+    const r = song.hooks[name]?.(x);
+    if (r === true || r === 'handled' || r === 'skip' || song.noEngine.has(name)) return;
+    play();
   }
 
   // ---------------------------------------------------------------- the sequencer
@@ -401,6 +445,7 @@ const music = (() => {
     else if (mid >= nextT + 0.005) ending = { T: T1, from: mid, cad };
     else ending = { T: T1 + bd, from: T1, cad };
     ending.jumpedAt = now(); ending.bd = bd;
+    song.hooks.endingPlanned?.({ T: ending.T, from: ending.from, cad: ending.cad, bd, notes: bar.notes, hush: (tm) => hush(tm) });   // (e.g. cut the piece's own queued notes)
   }
   // The cadence chord from the half bar: everything held (and melody notes still to come) gives way to it.
   function cadenceAt(tm) {
@@ -409,6 +454,7 @@ const music = (() => {
     bar.c = cad; bar.voice = padVoicing(cad); bar.notes = [];
     cadenceVoices(tm, ending.T - tm, has);
   }
+  function endingInfo() { return ending && { T: ending.T, from: ending.from, cad: ending.cad }; }   // (x.ending: the planned ending, or null)
   function hush(tm) {                               // everything held, and melody notes still sounding or to come, stops
     releaseHeld(tm);
     for (const n of bar.notes) {
@@ -418,11 +464,13 @@ const music = (() => {
   }
   function cadenceVoices(t, len, has) {             // the cadence chord, swelling into the final downbeat
     const cad = ending.cad, voice = padVoicing(cad), m = inRange((cad.root + cad.third) % 12, 69);
-    if (has('pad') || !has('choir')) hold('pad', pad(voice, t, 0.05, Math.max(0.5, BRIGHT[bar.st])));
-    if (has('choir')) hold('choir', choir(voice, t, 0.25));
-    brass(cad, t, len * 0.95, 0.05, false);
-    bar.notes.push(lead(m, t, len * 0.97, song.classic ? 0.08 : LEAD_VEL[song.lead], song.lead), lead(m + 12, t, len * 0.97, 0.045, 'strings'));
-    riser(t, len, 0.12, 400, 7000);
+    gesture('cadence', { t, len, cad, voice, has, st: bar.st, notes: bar.notes, T: ending.T }, () => {
+      if (has('pad') || !has('choir')) hold('pad', pad(voice, t, 0.05, Math.max(0.5, BRIGHT[bar.st])));
+      if (has('choir')) hold('choir', choir(voice, t, 0.25));
+      brass(cad, t, len * 0.95, 0.05, false);
+      bar.notes.push(lead(m, t, len * 0.97, song.classic ? 0.08 : LEAD_VEL[song.lead], song.lead), lead(m + 12, t, len * 0.97, 0.045, 'strings'));
+      E.riser(t, len, 0.12, 400, 7000);
+    });
   }
 
   // The stage machine for one bar line (pure, so music.plan can run it ahead): S = { stage, pending, arc }.
@@ -493,12 +541,13 @@ const music = (() => {
     const sig = (p) => !!song.parts[p] && song.parts[p][0] === 0;
     const has = bk < 0 ? (p) => plays(song, p, st)                 // in the breakdown: the signature, pad and theme; then layers return
       : (p) => (['pad', 'choir'].includes(p) || (p === 'theme' && !sig('tines') && !sig('radio')) || sig(p) || (bk >= 4 && ['ost', 'ost16', 'bass', ...song.groove].includes(p)) || (bk >= 6 && ['drums', 'hats'].includes(p)))
-        && (plays(song, p, st) || sig(p));
+        && (plays(song, p, st) || sig(p)) && !song.breakdownSkip.includes(p);
     const sec = B ? song.B : song.A;
     const cadBar = !!ending && t >= ending.from - 1e-6;           // a full cadence bar before the final hit
     const c = cadBar ? ending.cad : spool ? song.spool[(b - spoolBar) % song.spool.length] : sec.chords[bi];
     const N = song.meter, bd = stepDur() * N, e8 = stepDur() * 2, prev = bar;
     bar = { b, t, c, st, fill: cadBar || build ? null : pending, voice: padVoicing(c, song.classic || song.keepRegister ? 62 : 66), spool, sec, notes: [], has, bk, build, drop };
+    if (bar.fill !== null && song.hooks.fill?.({ t, b, bi, c, st, has, r: -1, from: st, to: bar.fill }) === 'skip') bar.fill = null;   // (no fill into this stage: a normal bar)
     if (cadBar) {
       if (prev && prev.c.name === c.name && ending.from < t - 1e-6) return;   // (already swelling on it)
       releaseHeld(t); cadenceVoices(t, ending.T - t, has); return;
@@ -507,9 +556,11 @@ const music = (() => {
     if (changed) {                                               // held harmony: pad, choir (and the brass swell)
       repad = false;
       releaseHeld(t, 'pad'); releaseHeld(t, 'choir');
-      if (has('pad')) hold('pad', pad(bar.voice, t, [0.03, 0.04, 0.045, 0.045, 0.045, 0.045, 0.05, 0.055][st], BRIGHT[st]));
-      if (has('choir')) hold('choir', choir(bar.voice, t, st <= 2 ? 0.2 : 0.25));
-      if (!song.classic && st >= 4 && bk < 0 && has('pad')) hold('pad', pad(bar.voice.map(m => m + 12), t, 0.045, 1, [bi % 2 ? 1 : -1]));   // (one layer, alternating sides: half the cost)   // air: the pad an octave up, wide
+      gesture('pad', { t, b, bi, c, st, has, bk, spool, voice: bar.voice, bd }, () => {   // (a piece's own pad: hold it with K.hold('pad', release) and the engine renews it)
+        if (has('pad')) hold('pad', pad(bar.voice, t, [0.03, 0.04, 0.045, 0.045, 0.045, 0.045, 0.05, 0.055][st], BRIGHT[st]));
+        if (has('choir')) hold('choir', choir(bar.voice, t, st <= 2 ? 0.2 : 0.25));
+        if (!song.classic && st >= 4 && bk < 0 && has('pad')) hold('pad', pad(bar.voice.map(m => m + 12), t, 0.045, 1, [bi % 2 ? 1 : -1]));   // air: the pad an octave up, wide (one layer, alternating sides: half the cost)
+      });
       let run = 1; while (!spool && bi + run < 8 && sec.chords[bi + run].name === c.name) run++;   // (never into the next chord)
       if (has('brass')) brass(c, t, bd * (spool ? 0.9 : Math.min(2, run) * 0.9), spool ? 0.05 : 0.04, false);
     }
@@ -519,13 +570,12 @@ const music = (() => {
       const lift = spool || bk >= 0 || st < 2 || B ? 1 : st < 4 ? 0.86 : 0.78;
       pb.fader.gain.setTargetAtTime(lift, t, drop ? 0.01 : bd * 0.3);
     }
-    if (drop) { boom(t, 0.6); crash(t, 0.3); taiko(t, 0.6, 0.8); }   // the drop
-    else if (build) riser(t, bd * 0.75, 0.15, 300, 8000);          // the build, up to the beat of silence
+    const x = { t, b, bi, ph, c, st, has, prev, bd, e8, spool, build, bk, drop, sec, voice: bar.voice, notes: bar.notes, first: (p) => !prev || !prev.has(p), ending: endingInfo() };
+    if (drop) gesture('dropHit', x, () => { E.boom(t, 0.6); E.crash(t, 0.3); E.taiko(t, 0.6, 0.8); });   // the drop
+    else if (build) gesture('buildSweep', x, () => E.riser(t, bd * 0.75, 0.15, 300, 8000));           // the build, up to the beat of silence
     if (bi === 0 && !spool && !drop && bk < 0) {
-      if (st >= 6) { boom(t, 0.55); crash(t, 0.22); }
-      else if (st >= 4) crash(t, 0.13);
-    } else if (st === 6 && bi === 4 && !drop) crash(t, 0.12);
-    const x = { t, b, bi, ph, c, st, has, prev, bd, e8, spool, build, bk, drop, sec, voice: bar.voice, notes: bar.notes, first: (p) => !prev || !prev.has(p) };
+      if (st >= 4) gesture('accent', x, () => { if (st >= 6) { E.boom(t, 0.55); E.crash(t, 0.22); } else E.crash(t, 0.13); });   // phrase starts
+    } else if (st === 6 && bi === 4 && !drop) gesture('accent', x, () => E.crash(t, 0.12));
     song.hooks.bar?.(x);                                          // the piece's own per-bar layers (js/music/<name>.js)
     // melodies: the theme (from stage 4, strings an octave up at the climax), or its early disguises
     if (!spool) for (const n of sec.theme[bi]) {
@@ -539,7 +589,7 @@ const music = (() => {
     if (spool) {                                                 // the spool: a rising line and waves of tension
       const cb = (b - spoolBar) % 4, m = inRange((c.root + c.third) % 12, 69);
       bar.notes.push(lead(m, t, bd * 0.97, song.classic ? 0.08 : LEAD_VEL[song.lead], song.lead), lead(m + 12, t, bd * 0.97, 0.05, 'strings'));
-      if (cb === 0) { crash(t, 0.2); riser(t, bd * 4, 0.12, 300, 6000); }
+      if (cb === 0) gesture('spoolWave', { ...x, cb }, () => { E.crash(t, 0.2); E.riser(t, bd * 4, 0.12, 300, 6000); });   // a wave every 4 bars
     }
   }
 
@@ -569,7 +619,7 @@ const music = (() => {
       const lb = lv('bells'), on = lb === 0 ? s % 4 === 0 : s % 2 === 0;
       if (on) { const ARP = [0, 1, 2, 3, 2, 1, 3, 2], i = ARP[(s / 2 + (lb === 0 ? b : 0)) % 8 | 0]; bell(voice[i] + 12, t, 0.05, (i - 1.5) * 0.3); }
     }
-    const x = { s, b, t, t0, c, voice, st, has, lv, late, N, spool, step };
+    const x = { s, b, t, t0, c, voice, st, has, lv, late, N, spool, step, build: bar.build, bk: bar.bk, drop: bar.drop, ending: endingInfo() };
     song.hooks.step?.(x);                                         // the piece's own per-step layers (js/music/<name>.js)
     // bass
     if (has('bass') && !(late && !spool)) {
@@ -579,46 +629,49 @@ const music = (() => {
     }
     // drums: into the final downbeat, a fill that grows (snare roll, toms, taikos)
     if (ending && t0 >= ending.T - stepDur() * N / 2 - 1e-6) {
-      const k3 = 1 - (ending.T - t0) / (stepDur() * N / 2);
-      snare(t, 0.08 + 0.25 * k3); if (s % 2 === 0) taiko(t, 0.3 + 0.35 * k3, 1.25 - 0.4 * k3);
-      song.hooks.endFill?.(x);
+      const k3 = 1 - (ending.T - t0) / (stepDur() * N / 2);         // into the final downbeat: a fill that grows
+      gesture('endFill', { ...x, k: k3 }, () => { E.snare(t, 0.08 + 0.25 * k3); if (s % 2 === 0) E.taiko(t, 0.3 + 0.35 * k3, 1.25 - 0.4 * k3); });
       return;
     }
     if (bar.build) {                                               // the build: a snare roll and taikos swelling
       const k4 = s / (N * 3 / 4);
-      snare(t, 0.05 + 0.25 * k4); if (s % 2 === 0) taiko(t, 0.25 + 0.35 * k4, 1.3 - 0.3 * k4);
+      gesture('build', { ...x, k: k4 }, () => { E.snare(t, 0.05 + 0.25 * k4); if (s % 2 === 0) E.taiko(t, 0.25 + 0.35 * k4, 1.3 - 0.3 * k4); });
       return;
     }
     if (bar.bk >= 0 && bar.bk < 6) return;                          // the breakdown: no drums yet
-    if (spool) {
+    if (spool) {                                                   // the spool: rolls growing in 4-bar waves
       const cb = (b - spoolBar) % 4, k2 = (cb * N + s) / (4 * N);
-      if (s % 2 === 0) taiko(t, 0.42 + 0.25 * k2, s % 4 === 0 ? 1 : 1.2);
-      if (cb < 2 ? s % 2 === 0 : true) snare(t, 0.06 + 0.22 * k2);
-      hat(t, s % 4 === 2 ? 0.07 : 0.04);
-      if (s % 4 === 0) brass(c, t, stepDur() * 1.5, 0.035, true);
+      gesture('spoolPerc', { ...x, cb, k: k2 }, () => {
+        if (s % 2 === 0) E.taiko(t, 0.42 + 0.25 * k2, s % 4 === 0 ? 1 : 1.2);
+        if (cb < 2 ? s % 2 === 0 : true) E.snare(t, 0.06 + 0.22 * k2);
+        E.hat(t, s % 4 === 2 ? 0.07 : 0.04);
+        if (s % 4 === 0 && !song.noEngine.has('stabs')) brass(c, t, stepDur() * 1.5, 0.035, true);
+      });
       return;
     }
-    if (fill) {
+    if (fill) {                                                    // the one-bar fill before a stage change
       const r = s - N / 2;
-      if (song.classic) { if (s in TOMS) tom(t, big ? 0.5 : 0.36, TOMS[s], false, true); }
-      else if (r !== 1) tom(t, big ? 0.5 : 0.36, 230 - r * 18);
-      if (big) snare(t, 0.06 + r * 0.03);
-      if (r === 0) riser(t, stepDur() * N / 2, big ? 0.14 : 0.08, 1500, 9000);
+      gesture('fill', { ...x, r, big, from: st, to: bar.fill }, () => {
+        if (song.classic) { if (s in TOMS) E.tom(t, big ? 0.5 : 0.36, TOMS[s], false, true); }
+        else if (r !== 1) E.tom(t, big ? 0.5 : 0.36, 230 - r * 18);
+        if (big) E.snare(t, 0.06 + r * 0.03);
+        if (r === 0) E.riser(t, stepDur() * N / 2, big ? 0.14 : 0.08, 1500, 9000);
+      });
       return;
     }
-    if (song.hooks.drums) song.hooks.drums(x); else drums(s, st, t, has, lv);
-    if (has('stabs') && (N === 12 ? [0, 6] : [0, 3, 6]).includes(s)) brass(c, t, stepDur() * 1.5, 0.03, true);
+    if (song.hooks.drums) song.hooks.drums(x); else if (!song.noEngine.has('drums')) drums(s, st, t, has, lv);
+    if (has('stabs') && !song.noEngine.has('stabs') && (N === 12 ? [0, 6] : [0, 3, 6]).includes(s)) brass(c, t, stepDur() * 1.5, 0.03, true);
   }
 
   function drums(s, st, t, has, lv) {
     const style = song.drums, d = has('drums') ? lv('drums') : -1;   // (the engine's own kit: taikos; other pieces bring theirs as hooks.drums)
     if (style === 'taiko' || style === 'drive') {
-      if (d >= 0 && TAIKO[Math.min(d, 4)].includes(s)) taiko(t, s === 0 ? 0.6 : 0.42, s === 0 ? 1 : 1.15);
-      if (has('snare') && (s === 4 || s === 12)) snare(t, 0.25);
-      if (style === 'drive' && has('snare') && st >= 5 && s % 2 === 1) snare(t, 0.035);   // driving ghost notes
-      if (style === 'drive' && d >= 0 && (s === 14 || s === 15)) tom(t, 0.25, s === 14 ? 180 : 140);
-      if (st >= 6 && s === 15) snare(t, 0.08);
-      if (has('hats')) { const lh = lv('hats'); if (lh >= 2) hat(t, s % 4 === 2 ? 0.08 : s % 2 ? 0.03 : 0.045, s === 14); else if (s % 2 === 0) hat(t, s % 4 === 2 ? 0.07 : 0.035); }
+      if (d >= 0 && TAIKO[Math.min(d, 4)].includes(s)) E.taiko(t, s === 0 ? 0.6 : 0.42, s === 0 ? 1 : 1.15);
+      if (has('snare') && (s === 4 || s === 12)) E.snare(t, 0.25);
+      if (style === 'drive' && has('snare') && st >= 5 && s % 2 === 1) E.snare(t, 0.035);   // driving ghost notes
+      if (style === 'drive' && d >= 0 && (s === 14 || s === 15)) E.tom(t, 0.25, s === 14 ? 180 : 140);
+      if (st >= 6 && s === 15) E.snare(t, 0.08);
+      if (has('hats')) { const lh = lv('hats'); if (lh >= 2) E.hat(t, s % 4 === 2 ? 0.08 : s % 2 ? 0.03 : 0.045, s === 14); else if (s % 2 === 0) E.hat(t, s % 4 === 2 ? 0.07 : 0.035); }
     }
   }
 
@@ -627,14 +680,14 @@ const music = (() => {
   function finale(T) {
     const c = { ...song.end, third: 4, pcs: [song.end.root, (song.end.root + 4) % 12, (song.end.root + 7) % 12] }, P = song.parts;
     releaseHeld(T);
-    boom(T, 0.5); crash(T, 0.3); taiko(T, 0.55, 1); taiko(T, 0.4, 0.7);
+    const sd = stepDur();
+    gesture('finalHit', { T, c, sd }, () => { E.boom(T, 0.5); E.crash(T, 0.3); E.taiko(T, 0.55, 1); E.taiko(T, 0.4, 0.7); });   // the hit's percussion
     brass(c, T, 3.2, 0.09, false);
     const v = padVoicing(c), rel = pad(v, T, 0.08, 0.9), rel2 = pad(v.map(m => m + 12), T, 0.05, 1);
     rel(T + 2.6); rel2(T + 2.6);
     const third = inRange(c.pcs[1], 69);
     lead(third, T, 2.6, song.classic ? 0.08 : LEAD_VEL[song.lead], song.lead); lead(third + 12, T, 2.6, 0.05, 'strings');
     bass(bassRoot(c), T, 2.5, 0.25);
-    const sd = stepDur();
     if (song.classic || P.bells) v.forEach((m, i) => bell(m + 24, T + 0.08 * i, 0.05, (i - 1.5) * 0.4));
     if (P.choir) { const r = choir(v, T, 0.3); r(T + 2.8); }
     song.hooks.finale?.({ T, c, v, sd });                         // the piece's own last word
@@ -656,7 +709,8 @@ const music = (() => {
 
   // The kit for piece files: the engine's clock, buses and shared instruments (they all play on the current piece's buses).
   const kit = { get ac() { return ac; }, get song() { return song; }, get noise() { return noiseBuf; },
-    hz, inRange, bassRoot, padVoicing, osc, filt, noiseSrc, pan, route, env, holder, hold, hash, stepDur, swing, now,
+    get ending() { return endingInfo(); },
+    gain: vca, hz, inRange, bassRoot, padVoicing, osc, filt, noiseSrc, pan, route, env, holder, hold, releaseHeld, hush: (tm) => hush(tm), hash, stepDur, swing, now,
     pluck, pad, choir, drone, bell, bass, lead, brass, taiko, kick, snare, clap, hat, crash, tom, boom, riser, LEAD_VEL, BRIGHT };
 
   const info = (s) => ({ name: s.name, title: s.title, bpm: s.bpm, key: s.key + ' minor' /* (every piece is in minor and ends in major) */,
