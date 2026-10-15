@@ -4,7 +4,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
   'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
-  'spawnInvader', 'power', 'MAX_DAMAGE', 'MAINT_WARNING', 'jumpStall', 'PRESS_FIRST', 'PRESS_SHRINK', 'PRESS_FLOOR', 'STRAIN_FIRST',
+  'spawnInvader', 'power', 'MAX_DAMAGE', 'MAINT_WARNING', 'MAINT_YELLOW', 'jumpStall', 'PRESS_FIRST', 'PRESS_SHRINK', 'PRESS_FLOOR', 'STRAIN_FIRST',
   'STRAIN_FLOOR', 'STALL_CYCLE', 'simTick', 'startTutorial', 'netSerialize', 'netApply', 'jumpCharge', 'me', 'radarList'];
 const DT = 1 / 60;
 let failed = 0;
@@ -94,24 +94,79 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   }
 }
 
-// --- diagnosis: two yellow from the start; the failing one turns orange 20 s ahead, red when broken
+// --- diagnosis: a failure's pair shows yellow MAINT_YELLOW s ahead (the intro's comes before that: from the start);
+// the failing one turns orange 20 s ahead, red when broken, and the decoy goes back to normal
+const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
 {
-  const G = fresh(), m = G.mission.maint, ev = G.mission.events.find(e => e.kind === 'maintenance');
+  const G = fresh(), ev = maintEv(G), m = { target: ev.sys, decoy: ev.decoy };
   const yellow = G.SYSTEMS.filter(s => G.diagState(s)?.col === '#ffd84a');
-  check(yellow.length === 2 && yellow.includes(m.target) && yellow.includes(m.decoy), 'diagnosis shows two yellow systems at the start, the failing one among them');
+  check(ev.t < G.MAINT_YELLOW && yellow.length === 2 && yellow.includes(m.target) && yellow.includes(m.decoy) && m.target !== m.decoy, 'diagnosis shows two yellow systems at the start, the failing one among them');
   runTo(G, ev.t - G.MAINT_WARNING + 1, calm(G, m.target));
   check(G.diagState(m.target)?.orange && /breaks in \d+ s/.test(G.diagState(m.target).text), `${G.MAINT_WARNING} s before, it turns orange with a countdown ("${G.diagState(m.target)?.text}")`);
   runTo(G, ev.t + 1, calm(G, m.target));
   check(m.target.broken && G.diagState(m.target).text === 'BROKEN', `then it breaks and shows red (${m.target.name})`);
+  check(!m.decoy.broken && G.diagState(m.decoy) === null, `and the decoy goes back to normal (${m.decoy.name})`);
 }
 {
-  const G = fresh(), m = G.mission.maint, ev = G.mission.events.find(e => e.kind === 'maintenance');
+  const G = fresh(), ev = maintEv(G), m = { target: ev.sys };
   runTo(G, ev.t - 15, calm(G));
   G.inv.weapon = 'repair'; G.player.x = m.target.x + 0.6; G.player.y = m.target.y + 0.6;
   let t = 0;
-  while (!m.serviced && t < 6) { G.updateRepair(DT, G.clickTarget(m.target.x, m.target.y), true); t += DT; }
+  while (!ev.serviced && t < 6) { G.updateRepair(DT, G.clickTarget(m.target.x, m.target.y), true); t += DT; }
   runTo(G, ev.t + 2, calm(G, m.target));
-  check(m.serviced && !m.target.broken, `servicing it with the repair kit while orange stops the breakdown (took ${t.toFixed(1)} s)`);
+  check(ev.serviced && !m.target.broken, `servicing it with the repair kit while orange stops the breakdown (took ${t.toFixed(1)} s)`);
+}
+// --- several maintenance failures in one mission: each has its own pair (four different parts), yellow only within
+// MAINT_YELLOW s of its break, one part of each pair breaks (unless serviced); the pairs survive a network snapshot
+{
+  const G = loadGame(NAMES);
+  G.MISSIONS.twoFail = { name: 'Two failures', rules: {}, build: () => [{ t: 40, kind: 'interceptor', side: 'port' }, { t: 100, kind: 'maintenance', radar: false },
+    { t: 200, kind: 'maintenance', radar: false }, { t: 300, kind: 'frigate', side: 'star' }] };
+  G.startMission('twoFail'); G.power.reactor.fuel = 0;
+  const [a, b] = G.mission.events.filter(e => e.kind === 'maintenance').sort((x, y) => x.t - y.t);
+  const parts = [a.sys, a.decoy, b.sys, b.decoy];
+  check(a && b && new Set(parts).size === 4 && parts.every(s => s && !s.outside), `two failures, two pairs of four different parts: ${parts.map(s => s?.name).join(', ')}`);
+  const yellowNow = () => G.SYSTEMS.filter(s => G.diagState(s)?.col === '#ffd84a');
+  const keep = new Set(parts), calmM = () => { G.combat.shots.length = 0; G.fires.length = 0; G.SYSTEMS.forEach(s => { if (!keep.has(s)) s.broken = false; }); };
+  runTo(G, 1, calmM);
+  check(b.t - G.MAINT_YELLOW > 1 && !yellowNow().includes(b.sys) && !yellowNow().includes(b.decoy) && yellowNow().includes(a.sys) && yellowNow().includes(a.decoy),
+        `at the start only the first pair is yellow (the second's break is ${b.t.toFixed(0)} s away, more than ${G.MAINT_YELLOW} s)`);
+  runTo(G, b.t - G.MAINT_YELLOW - 2, calmM);
+  check(!yellowNow().includes(b.sys), `still normal ${G.MAINT_YELLOW + 2} s before its break`);
+  runTo(G, b.t - G.MAINT_YELLOW + 1, calmM);
+  const y = yellowNow();
+  check(y.length === 4 && parts.every(s => y.includes(s)) && / · pairs with the /.test(G.diagState(b.decoy).text),
+        `${G.MAINT_YELLOW} s before, it turns yellow too: two pairs at once, each line names its partner ("${G.diagState(b.decoy)?.text}")`);
+  // snapshot round trip (a browser's view)
+  const C = loadGame(NAMES); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  const cm = C.mission.events.filter(e => e.kind === 'maintenance').sort((x, y) => x.t - y.t);
+  check(cm.length === 2 && cm[0].sys === C.SYSTEMS[G.SYSTEMS.indexOf(a.sys)] && cm[1].decoy === C.SYSTEMS[G.SYSTEMS.indexOf(b.decoy)]
+        && C.SYSTEMS.every((s, i) => C.diagState(s)?.text === G.diagState(G.SYSTEMS[i])?.text),
+        'the pairs survive a network snapshot (a browser shows the same diagnosis)');
+  // the first: let it break; only its target does, its decoy goes back to normal
+  runTo(G, a.t + 1, calmM);
+  check(a.sys.broken && !a.decoy.broken && G.diagState(a.decoy) === null && !b.sys.broken && G.diagState(b.sys)?.col === '#ffd84a',
+        `the first pair: its failing part breaks, the decoy is fine again; the second pair is still yellow`);
+  // the second: service it while orange
+  runTo(G, b.t - 12, calmM);
+  check(G.serviceTarget() === b.sys && G.diagState(b.sys)?.orange, 'the second turns orange: it can be serviced');
+  G.inv.weapon = 'repair'; G.player.x = b.sys.x + 0.6; G.player.y = b.sys.y + 0.6;
+  let t = 0;
+  while (!b.serviced && t < 6) { G.updateRepair(DT, G.clickTarget(b.sys.x, b.sys.y), true); t += DT; }
+  check(b.serviced && !a.serviced && G.diagState(b.sys) === null && G.diagState(b.decoy) === null, 'servicing it clears that pair (and only that one)');
+  runTo(G, b.t + 2, calmM);
+  check(!b.sys.broken && !b.decoy.broken && a.sys.broken, 'the serviced one never breaks: one part broke in all');
+}
+{
+  // a part of a pair broken (a hit) before its warning starts: the pair takes a working part instead
+  const G = loadGame(NAMES);
+  G.MISSIONS.lateFail = { name: 'Late failure', rules: {}, build: () => [{ t: 40, kind: 'swarm' }, { t: 200, kind: 'maintenance', radar: false }, { t: 300, kind: 'interceptor', side: 'port' }] };
+  G.startMission('lateFail'); G.power.reactor.fuel = 0;
+  const ev = maintEv(G), old = ev.sys;
+  runTo(G, 2, () => { G.combat.shots.length = 0; G.fires.length = 0; });
+  old.broken = true;
+  runTo(G, ev.t - G.MAINT_YELLOW + 1, () => { G.combat.shots.length = 0; G.fires.length = 0; G.SYSTEMS.forEach(s => { if (s !== old) s.broken = false; }); });
+  check(ev.sys !== old && !ev.sys.broken && ev.sys !== ev.decoy && G.diagState(ev.sys)?.col === '#ffd84a', `a pair part broken before its warning is swapped for a working one (${old.name} → ${ev.sys.name})`);
 }
 
 // --- security: locked door closes (not while occupied), manual override takes 3 bonks

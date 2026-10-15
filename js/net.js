@@ -33,8 +33,7 @@ function netSerialize() {
     luck, hz, evs, enc, org, dk,
     mission: {
       ...mission, revealed: [...mission.revealed],
-      events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined })),
-      maint: mission.maint && { target: sysIdx(mission.maint.target), decoy: sysIdx(mission.maint.decoy), serviced: mission.maint.serviced },
+      events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined, decoy: e.decoy ? sysIdx(e.decoy) : undefined })),   // (maintenance: its pair)
     },
     combat: {
       enemies: combat.enemies.map(({ D, stopCharge, pois, ...e }) => ({ ...e, pois: pois.map(p => [p.hit ? 1 : 0, p.smoke, p.healT || 0]) })),
@@ -95,8 +94,7 @@ function netApply(s, myId) {
   if (JSON.stringify(s.mission.upgrades || {}) !== JSON.stringify(mission.upgrades || {})) applyShipUpgrades(s.mission.upgrades || {});   // (HUD numbers like shots per energy)
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
-    events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined })),
-    maint: s.mission.maint && { target: SYSTEMS[s.mission.maint.target], decoy: SYSTEMS[s.mission.maint.decoy], serviced: s.mission.maint.serviced },
+    events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined, decoy: e.decoy !== undefined ? SYSTEMS[e.decoy] : undefined })),
   });
   const C2 = s.combat;
   combat.enemies = C2.enemies.map(d => {

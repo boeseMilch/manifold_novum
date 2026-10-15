@@ -7,6 +7,7 @@
 //   - Enemy hits never do real damage here (combat.js shipHit / crewHit → tutorialHit).
 //   - Steps are data: TUT_STEPS[id] = { objective(), marker(), allow(what, arg), enter(), tick(dt) }.
 //     tutGo(id) moves on; add a step by adding an entry and pointing a tutGo at it.
+//   - After the last message: free roam (step 'roam'), every gate open, until the player leaves (BACK TO MENU / Esc).
 // Solo only: the server doesn't load this file (every hook in the other files checks it exists).
 
 const tut = {
@@ -16,6 +17,7 @@ const tut = {
   reactorDone: false,        // the reactor section is done (the lever demo)
   fuelLoaded: false,         // a cell went into the reactor: from then on the training reactor never runs dry
   misses: 0, blockFails: 0, swallow: new Set(), done: false,
+  ask: false,                // free roam: the "back to the menu?" confirm is open
 };
 const TUT_KEY = 'mn-controls', TUT_DONE_KEY = 'mn-tutorial-done';
 const tutC = (mouseText, keyText) => (tut.controls === 'keyboard' ? keyText : mouseText);   // the text for the chosen controls
@@ -25,6 +27,7 @@ const tutPoi = (e, id) => e?.pois.find(p => p.id === id);
 const tutPoiAt = (e, p) => { const [x, y] = enemyToWorld(e, ...p.c); return { x, y, r: 0.5 }; };
 const tutSys = (name) => SYSTEMS.find(s => s.name === name);
 const tutLeftCannon = () => SYSTEMS.find(s => s.ref === tutGun());
+const tutMaint = () => { const e = mission.events.find(e => e.kind === 'maintenance'); return { target: e?.sys, decoy: e?.decoy }; };
 const lc = (s) => s.name.charAt(0).toLowerCase() + s.name.slice(1);
 
 MISSIONS.tutorial = {
@@ -42,8 +45,8 @@ function startTutorial(controls = 'mouse') {
   startMission('tutorial', { ship: {} });                    // a stock ship: the numbers in the texts hold
   combat.banner = null;
   const target = tutSys('Left shield button'), decoy = tutSys('Right capacitor');
-  mission.maint = { target, decoy, serviced: false };          // the two "irregular readings" at the helm; the target breaks in the repair step
-  mission.events = [{ id: 0, kind: 'maintenance', t: 1e9, t1: 1e9, sys: target, radar: false, done: false }];
+  // the two "irregular readings" at the helm, from the start (warnFrom); the target breaks in the repair step
+  mission.events = [{ id: 0, kind: 'maintenance', t: 1e9, t1: 1e9, sys: target, decoy, serviced: false, warnFrom: 0, radar: false, done: false }];
   mission.jumpAt = Infinity;
   power.reactor.fuel = 0; power.reactor.t = 0; power.reserve = Math.max(1, power.reserve);   // the cell is empty (the reactor section)
   power.lever.pos = 1; power.lever.jammed = true;              // wedged on MID: nothing reaches the left capacitor
@@ -170,7 +173,7 @@ const TUT_STEPS = {
     allow: (w, t) => w === 'target' && t?.run === openDiagnosis,
     tick() {
       if (me.ui.panel !== 'diagnosis') return;
-      const m = mission.maint;
+      const m = tutMaint();
       tutSay([
         'This is the *systems diagnosis*: every part of the ship and how it\'s doing. Green means fine.',
         `Two lines are *yellow*: "irregular readings" on the *${lc(m.target)}* and the *${lc(m.decoy)}*. RAIDER engineering calls that "character".`,
@@ -486,7 +489,7 @@ const TUT_STEPS = {
   },
   repair: {
     enter() {
-      const s = mission.maint.target;
+      const s = tutMaint().target;
       breakSystem(s); mission.events.forEach(e => { if (e.kind === 'maintenance') e.done = true; });
       tutSay([
         { text: `Hear that? The *${lc(s)}* just broke. Remember the helm? It was one of the two with "irregular readings". Told you one would fail.`, mark: () => s },
@@ -495,13 +498,13 @@ const TUT_STEPS = {
     },
   },
   tryIt: {
-    objective: () => `Walk up to the ${lc(mission.maint.target)}` + viaText(tutRoute(mission.maint.target.x, mission.maint.target.y + 1)),
-    marker: () => tutRoute(mission.maint.target.x, mission.maint.target.y + 0.4),
+    objective: () => `Walk up to the ${lc(tutMaint().target)}` + viaText(tutRoute(tutMaint().target.x, tutMaint().target.y + 1)),
+    marker: () => tutRoute(tutMaint().target.x, tutMaint().target.y + 0.4),
     allow: () => false,
     tick() {
       if (!/broken/.test(me.prompt?.text || '')) { tut.d.seenT = null; return; }
       if (tut.t - (tut.d.seenT ??= tut.t) < 1.2) return;
-      const s = mission.maint.target;
+      const s = tutMaint().target;
       tutSay([
         `See? Broken: no left shield until it's fixed. Same everywhere: broken cannons only spark, broken capacitors hold nothing.`,
         'Had you serviced it with the repair kit while its line at the helm was orange, it would never have broken. Next time.',
@@ -510,11 +513,11 @@ const TUT_STEPS = {
     },
   },
   fix: {
-    objective: () => (me.inv.weapon === 'repair' ? `Repair the ${lc(mission.maint.target)}: ${tutC('hold click on it', 'hold E next to it')} (5 s)` : `Take the repair kit (${tutC('click it', 'E')})`),
-    marker: () => (me.inv.weapon === 'repair' ? mission.maint.target : tutItem('repair')),
-    allow: (w, t) => w === 'closePanel' || (w === 'target' && (tt.text(t, /take the repair kit/) || t?.repair === mission.maint.target)),
+    objective: () => (me.inv.weapon === 'repair' ? `Repair the ${lc(tutMaint().target)}: ${tutC('hold click on it', 'hold E next to it')} (5 s)` : `Take the repair kit (${tutC('click it', 'E')})`),
+    marker: () => (me.inv.weapon === 'repair' ? tutMaint().target : tutItem('repair')),
+    allow: (w, t) => w === 'closePanel' || (w === 'target' && (tt.text(t, /take the repair kit/) || t?.repair === tutMaint().target)),
     tick() {
-      if (mission.maint.target.broken) return;
+      if (tutMaint().target.broken) return;
       tutSay(['Repaired. Honestly, that\'s most of the job: things break, you fix them. Repeat until the jump.',
               `Last part: a quick tour of everything else on board. ${tutC('Click', 'Enter')} to go on.`], () => tutGo('overview'));
     },
@@ -545,10 +548,27 @@ const TUT_STEPS = {
       tutSay([
         'That\'s it for basic training. *More training modules are coming soon*, pending budget approval.',
         'Remember: jump in, solve the problem, jump out. RAIDER thanks you for your service. Your next clone is on standby, just in case.',
-      ], () => { if (typeof backToLobby === 'function' && typeof location.reload === 'function') backToLobby(); }, { button: 'BACK TO THE LOBBY' });
+        'Your training is saved. The ship is all yours now: walk around and *try everything*, no rush, nothing attacks. When you\'re done: *BACK TO MENU* (top right) or *Esc*.',
+      ], () => tutGo('roam'), { button: 'EXPLORE THE SHIP ▸' });
+    },
+  },
+  // Free roam after the training: every gate open (but the debug menu), no threats, no jump, no timer. Only the
+  // player leaves (tutLeave: the BACK TO MENU button, or Esc → a small confirm).
+  roam: {
+    objective: () => 'Training complete — explore the ship freely',
+    allow: (what) => what !== 'debug',
+    enter() { tut.done = true; tutDom.render(); },
+    tick() {
+      mission.jumpAt = Infinity; mission.jump = null; mission.press = null;   // a calm sandbox: no jump, no hot zone
+      const broken = SYSTEMS.filter(s => s.broken);                          // (and the ship never falls apart)
+      if (broken.length >= MAX_DAMAGE) broken[0].broken = false;
     },
   },
 };
+// Back to the menu (the training is already saved: TUT_DONE_KEY is written when the end step starts).
+function tutLeave() { tut.ask = false; if (typeof backToLobby === 'function') backToLobby(); }
+// Esc in free roam asks first, unless it has something else to close (a panel, an override, the debug menu).
+const tutEscapeAsks = () => tut.on && tut.step === 'roam' && !tut.msg && !me.ui.panel && !me.ui.override && !debugOpen;
 const tutItem = (kind) => ITEMS.find(i => i.kind === kind) || null;
 function tutExtinguisher() {                          // the one nearest to the fire (the bridge's)
   const f = fires[0] || tutLeftCannon();
@@ -605,10 +625,23 @@ const tutDom = {
     box.addEventListener('contextmenu', e => e.preventDefault());
     veil.querySelector('#tut-skip').onclick = () => { if (confirm('Leave the training? You can start it again from the menu.')) backToLobby(); };
     this.box = veil;
+    // free roam: the BACK TO MENU button (top right) and the Esc confirm
+    const menu = document.createElement('button'); menu.id = 'tut-menu'; menu.hidden = true; menu.textContent = '◂ BACK TO MENU';
+    menu.title = 'Training complete: your progress is saved'; menu.onclick = tutLeave;
+    const ask = document.createElement('div'); ask.id = 'tut-ask'; ask.hidden = true;
+    ask.innerHTML = '<div class="tut-card"><div class="tut-head"><span>RAIDER ONBOARDING</span></div><p>Back to the main menu? Your training is saved.</p>'
+      + '<div class="tut-ask-row"><button class="tut-stay">stay aboard (Esc)</button><button class="tut-go">BACK TO MENU (Enter)</button></div></div>';
+    ask.querySelector('.tut-stay').onclick = () => { tut.ask = false; this.render(); };
+    ask.querySelector('.tut-go').onclick = tutLeave;
+    for (const el of [menu, ask]) el.addEventListener('mousedown', e => e.stopPropagation());
+    document.body.append(menu, ask);
+    this.menu = menu; this.ask = ask;
   },
   render() {
     if (!this.ready()) return;
     if (!this.box) this.build();
+    this.menu.hidden = !(tut.on && tut.step === 'roam');
+    this.ask.hidden = !(tut.on && tut.ask);
     const m = tut.msg, veil = this.box;
     veil.hidden = !m;
     if (!m) return;
@@ -628,6 +661,13 @@ const tutDom = {
 function tutKeyDown(e) {
   if (!tut.on) return;
   if (tut.swallow.has(e.code)) { e.stopImmediatePropagation(); e.preventDefault(); return; }
+  if (tut.ask) {                                      // free roam's "back to the menu?": Enter goes, Esc stays
+    e.stopImmediatePropagation(); e.preventDefault();
+    if (e.code === 'Enter' || e.code === 'NumpadEnter') tutLeave();
+    else if (e.code === 'Escape') { tut.ask = false; tutDom.render(); }
+    return;
+  }
+  if (e.code === 'Escape' && !e.repeat && tutEscapeAsks()) { e.stopImmediatePropagation(); e.preventDefault(); tut.ask = true; tutDom.render(); return; }
   const m = tut.msg;
   if (!m || e.target?.tagName === 'INPUT') return;
   if (m.pass?.includes(e.code) || e.code === 'KeyM') return;

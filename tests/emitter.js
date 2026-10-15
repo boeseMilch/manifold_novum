@@ -92,7 +92,7 @@ function holdOn(G, x, y, max = 20) {
 // --- the maintenance failure stays inside
 {
   let outside = 0;
-  for (let i = 0; i < 60; i++) { const G = loadGame(NAMES); G.startMission('intro'); if (G.mission.maint.target.outside || G.mission.maint.decoy.outside) outside++; }
+  for (let i = 0; i < 60; i++) { const G = loadGame(NAMES); G.startMission('intro'); for (const e of G.mission.events) if (e.kind === 'maintenance' && (e.sys.outside || e.decoy.outside)) outside++; }
   check(outside === 0, 'the maintenance failure never picks an emitter (it\'s serviced inside)');
 }
 // --- multiplayer: the browsers see it break and get repaired

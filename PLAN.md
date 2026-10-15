@@ -250,11 +250,21 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   as sidebar plates, for everyone. An unscanned threat 3–8 s out shows a mocking
   "???? T-???" plate.
 - **Helm diagnosis** (click the helm):
-  - From the start two systems read yellow ("irregular readings"); one of them is the
-    real failure.
-  - It turns orange with a countdown 20 s before it breaks, and red once broken.
-  - Servicing it with the repair kit (hold click for 5 s) while it's orange prevents the
-    breakdown.
+  - A mission can hold several maintenance failures (a written list or the bigger crews'
+    repeats). Each has its own pair of parts (`ev.sys` breaks, `ev.decoy` is just shaky; all
+    different, inside, not broken; `pickMaintPairs` in `layoutMission`, the first pair drawn up front
+    as before so the balance model's seeded builds stay the same). A pair reads yellow ("irregular
+    readings") from `MAINT_YELLOW` = 3 min before its break (`ev.warnFrom` overrides: the tutorial's
+    from the start); with several pairs yellow at once each line names its partner. A part of a pair
+    broken before its warning starts is swapped for a working one (`armMaintPairs`).
+  - The real one turns orange with a countdown 20 s before it breaks, and red once broken; the decoy
+    goes back to normal.
+  - Servicing it with the repair kit (hold click for 5 s) while it's orange prevents that
+    breakdown (`ev.serviced`). The sidebar has a FAILING plate per orange part and, once the helm
+    was looked at during its warning (`ev.seen`), an IRREGULAR plate per pair ("A or B").
+    `maintWarnings()` lists the pairs warning right now (for markers). `mission.maint` is gone: the
+    state lives on the events (and in the snapshot with them); the balance model looks at the helm
+    once per failure, when its pair turns yellow.
   - The results stay in the mission panel.
 - **Security console** (left cannon room, top wall): a ship map where you can lock or
   unlock every door.
@@ -1408,8 +1418,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   under the HUD; walking to the other deck points at the nearest deck airlock first.
 - The run: a stock ship (no upgrades: 3 shots per energy, capacitors of 3), the reactor's cell empty, the
   lever wedged on MID, the left capacitor with exactly 1 energy, the left cannon with 1 shot. The helm shows
-  the left shield button and the right capacitor as "irregular readings" (`mission.maint`; its maintenance
-  event is pushed to t = 10⁹, so it never fires). No jump. Enemy hits never do real damage (combat.js
+  the left shield button and the right capacitor as "irregular readings" (its maintenance event's pair,
+  `warnFrom: 0`; the event is pushed to t = 10⁹, so it never fires). No jump. Enemy hits never do real damage (combat.js
   `shipHit` / `crewHit` ask `tutorialHit`: just the flash and sparks).
 - Steps (data in `TUT_STEPS`, each `{ objective, marker, allow, enter, tick }`, `tutGo(id)` moves on):
   welcome (RAIDER intro, you, a tour of the decks) → helm (the two yellow readings, orange = service it) →
@@ -1430,7 +1440,14 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   the left shield button breaks (the irregular one from the helm): walk up to it, it does nothing; the repair
   kit, hold to repair (a tape job counts too) → overview pages (laser gun for intruders, spacewalks, manual
   override, vent panels, security console, shields, treating crewmates, hull plates / patch board / snacks,
-  the jump) → "more training modules coming soon" and BACK TO THE LOBBY.
+  the jump) → "more training modules coming soon" → free roam (below).
+- Free roam after the training (request: "let the player roam freely, a button back to the menu, don't kick
+  them out"): the end step saves `mn-tutorial-done` the moment it starts, then step `roam` opens every gate
+  (but the debug menu) and keeps the ship a calm sandbox: no enemies, no jump (`jumpAt` stays Infinity, no
+  hot zone), the training reactor never runs dry, and it never falls apart (a part is mended before
+  MAX_DAMAGE). Nothing ends it: only BACK TO MENU (a small button top right) or Esc → "Back to the main
+  menu? Your training is saved." (Enter goes, Esc stays; Esc still just closes an open panel first). Not the
+  practice panel: that one spawns threats, and this is meant to be calm.
 - `tests/tutorial.js` drives both branches headlessly.
 
 ### 9o. E and left click do the same everywhere (playtest: "the EVA airlocks only work by clicking, barnacles only with E")
@@ -1931,12 +1948,12 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   | piece | opens with | lead | drums, feel |
   |---|---|---|---|
   | Held Together | drone, dark pad, bells (the first score, unchanged) | horn | taikos |
-  | Cargo Run | pulsing synth bass + shaker, then strummed chords | whistle-flute | swung backbeat kit |
+  | Cargo Run | a walking boogie bass (round, woody) + shaker, then strummed chords | whistle-flute | swung backbeat kit |
   | Red Comet Gallop | stomp-and-clap + accordion, then oom-pah bass | accordion reed | 6/8 jig, tambourine |
-  | A Signal in the Dark | radio static, the theme on a far-away radio horn | solo voice ("ah") | soft taikos |
+  | A Signal in the Dark | the theme on a far-away radio horn, faint radio crackle | solo voice ("ah") | soft taikos |
   | Bloom | low choir + popping spores | glassy FM | hand drums, taikos late |
   | Pressure Hull | sonar ping + heartbeat | cello | half time, full time at stage 5 |
-  | Last Jump Home | ticking clock + the theme on a music box | detuned saw | driving 16ths, synth-bass pulse |
+  | Last Jump Home | ticking clock + the theme on a music box | detuned saw | a wobble bass eased in, then half-time dubstep drums (heavy snare on 3) |
 
   All of them still meet at the same climax (theme doubled by strings, brass swells and stabs, full drums), the
   spool and the final hit. *Held Together* plays exactly as in the first score: checked by recording every
@@ -1944,6 +1961,44 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   outside the repo as `music-v1.js` (reconstructed from the session) in case a piece should come back.
 - Levels per stage (offline, dB RMS): the openings sit at -28..-39, the climaxes at -19..-23, peaks -3.4 dB or lower.
   `music.html?check` also prints each opening's layers, brightness and onsets a second.
+- **The ending lands in time and in phrase** (playtest: "it all ends in a harmony, but not in phrase"). The jump
+  comes at game time (MID energy, the handle; a jump can even end the mission in the frame the drive starts, before
+  `setJump` is seen), so it can't be known ahead; `jumped()` plans the ending on the music's own grid instead of
+  cutting: already on the cadence chord (the spool's bVII, or a V) → the hit on the next downbeat; in the first half
+  of another chord → the cadence chord takes over from the half bar; later → one full cadence bar. A growing fill
+  (snare roll, taikos) leads in; the hit is the home chord in major on the piece's own instruments with its own
+  last word (the jig's stomp-clap, the last sonar ping and heartbeat, the music box, the radio answering, spores, a
+  strum), ringing out naturally. Tested: the hit is on a bar line, after ≥ half a bar of cadence, at most ~1.5 bars
+  after the jump; rendered at several jump timings per piece (hits 0.2-3.7 s after the jump, all on bar lines).
+- **Clicks** (playtest: Cargo Run's synth "is clicking and sounds weird"): its opening line is redone as a walking
+  boogie bass (root, third, fifth, sixth, seventh and back in swung 8ths, passing notes kept in the key; a round
+  triangle + sine). `tests/music.js` records every WebAudio call in a fake context, replays the gain automation
+  and checks that every one of ~17,000 sounds starts and stops at zero gain, that no envelope jumps, and that no
+  ramp directly follows a `setTargetAtTime` (browsers start such a ramp from the wrong value: the old claps did
+  this). Offline renders are also scanned for isolated spikes in quiet passages (none).
+- **A Signal in the Dark: less noise** ("too much white noise"): no constant hiss any more; short band-passed
+  crackles and a brief "tuning" sweep every other bar, fading out as the music builds.
+- **Real dynamics** (playtest: "a truly epic buildup is not just a continuous ramp"). Every piece but Held Together
+  now has an arc on phrase boundaries: small steps after a one-bar fill; the big ones (the theme's entrance, the
+  climax) only at a phrase start, after a build bar (snare roll, taikos, a riser) that ends in a beat of silence:
+  the drop (boom, crash, taiko). Once the theme has had two phrases and the mission is past half way, a breakdown
+  phrase strips it to the piece's signature, the pad and the theme (4 bars), brings bass and ostinato back, then
+  the drums, then a build bar, and a bigger drop. At stage 5 the lead calls and the strings answer (every 2 bars).
+  So: build → drop → breakdown → bigger build → bigger drop → climax → spool → ending. Tested (drops on phrase
+  starts after a build bar, a breakdown with < 60 % of the sounds of the phrase before, before the climax).
+- **Last Jump Home goes dubstep after its music box** ("the synth is too fast and drops too fast"): the 16th synth
+  bass is gone; a wobble bass (saws + square through a resonant lowpass swept by a tempo-synced LFO starting closed
+  on the beat, a sine sub under it) fades in over a whole bar with slow quarter-note wobbles, 8ths at stage 3, and
+  after the drop a 4-bar cycle of 1/8, triplet, 1/8, 1/16 wobbles with half-time drums (kick on 1, a heavy snare +
+  clap on 3). The music-box opening is untouched.
+- **Mix, from a reference analysis.** The two "epic" reference tracks (epic.mp3, FoxieEpic.OGG; not in the repo,
+  analysed with ffmpeg + numpy) against full 5-minute renders of ours: spectral centroid 500-545 Hz vs our 165-280 Hz,
+  low-mid (60-250 Hz) share 23-28 % vs our 62-78 %, stereo width (side/mid) 0.54-0.74 vs our 0.13-0.15, and their
+  loudness moving in 7-11 dB dips and drops where ours sat on a flat plateau (±1 dB for 3.5 minutes). So for the new
+  pieces: less bass, brighter and wider pads (±0.85), an "air" pad an octave up from stage 4, leads and strings
+  panned wider, the ostinato alternating left/right, more reverb; plus the arc above. Held Together keeps the first
+  score's mix and smooth build (only its ending is new); it is still checked identical to the first score, call
+  for call, up to the jump.
 
 ### Weapons in hand, lethal ship shots, foam, smooth asteroids (2026-10-14 playtest)
 - **The hand weapon is in the hand** (sprite view): `items/held_<kind>` (laser, heavy, drill, repair kit carried
@@ -1993,7 +2048,8 @@ dummy canvas):
 - `node tests/tutorial.js`: the tutorial's step machine, both branches (mouse with a failed block and the
   lock-LEFT detour; keyboard with the interceptor dead in the first fight): gates, the shot back on a miss, the
   block loop doing no damage, out of energy → reactor, the lever demo, the fire on climbing out (never spreads),
-  the repair and the overview.
+  the repair and the overview; then the free roam (saved at the end, every gate open, 10 minutes of walking
+  about end nothing, Esc asks, BACK TO MENU leaves).
 - `node tests/sway.js`: hitting an engine causes no position jump and no velocity kink.
 - `node tests/cables.js`: the power lines' topology (reactor → trunk → lever → branches → capacitors), the energy
   bolts' way and timing, see 9r.

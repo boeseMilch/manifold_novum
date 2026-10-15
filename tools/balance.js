@@ -76,7 +76,7 @@ const A = {
   RADAR_EVERY: 2,         // after a scan that shows nothing, the next one comes RADAR_RANGE × this later (1: nothing on radar ever comes
                           // unannounced, but in quiet stretches that alone keeps one crew member ~27% busy; 2: ~14%, with some surprises)
   RADAR_WORK: 9,          // s per scan at the map table: open it, ping front, turn the dish, ping left, turn, ping right (PING_CD 2 s each), read the echoes
-  DIAG_WORK: 6,           // s at the helm for the diagnosis (oscilloscope: match two dials), once per mission with a maintenance failure
+  DIAG_WORK: 6,           // s at the helm for the diagnosis (oscilloscope: match two dials), once per maintenance failure (when its pair turns yellow)
   LEVER_TURN: 1,          // s at the power lever to step it round to the side you want (up to two taps of E), each time it's re-routed;
                           // plus holding E LEVER_E_HOLD (0.5 s) to wedge the wrench in or pull it out, plus the walk there
   SHIELD_GRACE: 1,        // s a shield press may come late (the heavy shot is heard charging) before the shot lands
@@ -118,7 +118,7 @@ const targetIdle = (id, n) => (n > 1 ? A.TARGET_IDLE_CREW : A.TARGET_IDLE) - A.T
 const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
   'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
-  'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'SCRAPE_TIME', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
+  'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'SCRAPE_TIME', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
   'BARNACLE_GROW', 'BARNACLE_DRAIN', 'FLARE_WARN', 'FLARE_TIME', 'STORM_TIME', 'STORM_ARC', 'COOLANT_RISE', 'COOLANT_FIX', 'SCRAM_TIME',
   'HEAL_TIME', 'TENTACLE_COIL', 'ACID_TIME', 'LEECH_CHEW', 'PUFF_EVERY', 'SAC_OPEN', 'MOTHER_TOSSES', 'LEV_TIME', 'LEV_STEP', 'TREAT_TIME',
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
@@ -381,7 +381,7 @@ function schedule(build, waitByKey) {
     j.radarable = ev.radar !== false && j.rel >= 0 && j.prio <= 1;  // the radar can tell what's coming
     push(j, ev.t + j.rel, ev);
   }
-  // routine work: the radar and the helm diagnosis (once, if something is going to fail). Radar: scan; if it
+  // routine work: the radar and the helm diagnosis (a look when each failing pair turns yellow). Radar: scan; if it
   // shows a contact, nothing can come before it, so the next scan is due when that contact arrives;
   // if it shows nothing, scan again RADAR_RANGE × A.RADAR_EVERY later.
   const scanJob = (t) => push({ label: 'radar scan', radar: true, prio: 1, trip: H('bridge'), work: A.RADAR_WORK }, t, { kind: 'radar', t });
@@ -391,7 +391,10 @@ function schedule(build, waitByKey) {
     if (at < end) scanJob(at);
   };
   scanJob(0);
-  if (events.some(e => e.kind === 'maintenance')) push({ label: 'helm diagnosis', prio: 1, trip: H('Helm'), work: A.DIAG_WORK }, 0, { kind: 'diag', t: 0 });
+  for (const e of events.filter(e => e.kind === 'maintenance')) {   // (each failure's pair shows MAINT_YELLOW s ahead: a look at the helm then)
+    const at = Math.max(0, e.t - g.MAINT_YELLOW);
+    push({ label: 'helm diagnosis', prio: 1, trip: H('Helm'), work: A.DIAG_WORK }, at, { kind: 'diag', t: at });
+  }
   // the jump: coils aligned outside before it, the handle pulled at it
   if (rules.coils) for (const c of g.COIL_SPOTS) {
     const e = evaTrip(nearSide(c.x), [[c.x, c.y]]);

@@ -16,7 +16,7 @@ const PIN_MAX = 8, PIN_DENIED_T = 0.7, PIN_GRANTED_T = 0.8;
 // Opening
 // ---------------------------------------------------------------------------
 // The helm diagnosis: just the readings (the oscilloscope calibration is gone).
-function openDiagnosis() { ui.panel = 'diagnosis'; ui.mini = null; mission.diagRun = true; }
+function openDiagnosis() { ui.panel = 'diagnosis'; ui.mini = null; mission.diagRun = true; for (const w of maintWarnings()) w.ev.seen = true; }   // (seen: the sidebar lists that pair)
 function openPatch() { ui.panel = 'mini'; ui.mini = { kind: 'patch', pick: null }; }
 // The airlock vent's PIN pad: a fresh random 4–6 digit admin password each time it opens.
 function openPinPad(roomId) {

@@ -45,14 +45,14 @@ function encounterPlates() {
   shipEventPlates(add);
   organicPlates(add);
   dockPlates(add);
-  const svc = mission.active ? serviceTarget() : null;
-  if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
+  for (const svc of serviceTargets()) add('failing' + svc.name, { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
   const dead = SYSTEMS.filter(s => s.broken);                // (one panel for all of them: the header counts them too)
   if (dead.length) add('broken', { icon: 'wrench', title: dead.length > 1 ? `BROKEN (${dead.length})` : 'BROKEN', sub: dead.map(s => s.outside ? `${s.name} (outside)` : s.name).join(', '), stripe: '#e2574c', red: true, wrap: true });
   if (mission.active && !mission.over) {
     const { known } = radarList();
     for (const e of known) if (!e.done) add('ev' + e.id, { icon: e.kind === 'swarm' ? 'asteroid' : e.kind === 'intruder' ? 'alien' : e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });
-    if (mission.diagRun) for (const s of SYSTEMS) if (diagState(s)?.col === '#ffd84a') add('irr' + s.name, { icon: 'wrench', title: 'IRREGULAR', sub: s.name, stripe: '#ffd84a' });
+    // a maintenance pair seen at the helm, not yet orange: one panel per pair (names sorted: it doesn't say which one fails)
+    for (const w of maintWarnings()) if (w.ev.seen && !w.orange) add('irr' + w.ev.id, { icon: 'wrench', title: 'IRREGULAR', sub: `${[w.sys, w.decoy].filter(s => s && !s.broken).map(s => s.name).sort().join(' or ')}`, stripe: '#ffd84a' });
   }
   return out;
 }

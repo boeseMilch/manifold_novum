@@ -1,14 +1,16 @@
 // The tutorial's step machine, driven headlessly: gates, the windshield (a miss gives the shot back),
 // the block lesson (a hit that gets through loops, does no damage, costs no shots), out of energy → the
 // reactor, the lever demo, lock LEFT only while the interceptor lives, the fire on climbing out (both
-// branches; it never spreads), the repair and the overview. Run: node tests/tutorial.js
+// branches; it never spreads), the repair, the overview, and the free roam after it (saved, nothing
+// ends it, only the player leaves). Run: node tests/tutorial.js
 const { loadGame } = require('./harness');
 const NAMES = ['tut', 'tutGo', 'tutorialNext', 'tutorialClient', 'tutorialAllows', 'startTutorial', 'me', 'GUNS', 'combat', 'CAPACITORS', 'power', 'simTick',
   'fires', 'mission', 'SYSTEMS', 'ITEMS', 'LEVER', 'REACTOR', 'FUEL_CRATE', 'hitPoi', 'enemyToWorld', 'openDiagnosis', 'radarScan', 'clickTarget', 'withCrew', 'SHOTS_PER_ENERGY',
-  'SHIELD_BUTTONS', 'roomAt'];
+  'SHIELD_BUTTONS', 'roomAt', 'tutLeave', 'tutEscapeAsks'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
+const maintOf = (G) => { const e = G.mission.events.find(e => e.kind === 'maintenance'); return { target: e.sys, decoy: e.decoy }; };
 
 // helpers
 const skip = (G) => { for (let n = 0; G.tut.msg && !G.tut.msg.waitFor && n < 100; n++) G.tutorialNext(); };
@@ -49,7 +51,7 @@ function toKill(G, controls, failBlock) {
   check(!G.tutorialAllows('fire') && !G.tutorialAllows('reload') && !G.tutorialAllows('debug') && !G.tutorialAllows('closePanel'), 'gate: no firing, reloading, debug menu, panel closing');
   Object.assign(G.me, { x: 22.2, y: -0.9 }); clickAt(G, 22.2, -1.9);
   check(G.me.ui.panel === 'diagnosis' && !!G.tut.msg, 'clicking the helm opens the diagnosis, and the explanation');
-  const m = G.mission.maint;
+  const m = maintOf(G);
   check(/irregular readings/.test(allText(G)) && allText(G).includes(m.target.name.toLowerCase()) && allText(G).includes(m.decoy.name.toLowerCase()), '…naming the two yellow systems');
   skip(G); G.me.input.pressed.add('Escape'); G.simTick(DT);
   check(!G.me.ui.panel && !!G.tut.msg, 'Esc closes the panel; on to the radar');
@@ -114,7 +116,12 @@ function toKill(G, controls, failBlock) {
 
 // --- mouse; the block fails once; out of energy → reactor → lock LEFT → kill → fire → repair → overview
 {
-  const G = loadGame(NAMES); const { g, e } = toKill(G, 'mouse', true);
+  const G = loadGame(NAMES);
+  const glob = G.tutorialNext.constructor('return this')();          // the game's global: a storage, and a stand-in for the page reload
+  const store = {}; let left = 0;
+  glob.localStorage = { getItem: (k) => store[k] ?? null, setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } };
+  glob.backToLobby = () => { left++; };
+  const { g, e } = toKill(G, 'mouse', true);
   g.aim = g.a + 1.2; holdFire(G, 3); msgUntil(G, 3);
   check(G.tut.msg && /out of shots/i.test(allText(G)) && /reactor/.test(allText(G)) && foe(G), 'three misses: out of energy, go check the reactor');
   skip(G);
@@ -168,7 +175,7 @@ function toKill(G, controls, failBlock) {
   G.fires[0].hp = 0; msgUntil(G, 2);
   check(G.tut.msg && /out/.test(allText(G)), 'put out');
   one(G);
-  const t = G.mission.maint.target;
+  const t = maintOf(G).target;
   check(G.tut.step === 'repair' && t.broken && brokenNow(G).length === 1 && /irregular readings/.test(allText(G)), 'repair: the irregular one breaks (the reactor is done)');
   skip(G);
   const b = G.SHIELD_BUTTONS.find(b => b.side === 'port'); Object.assign(G.me, { x: b.x, y: b.y + 0.8 });
@@ -182,6 +189,36 @@ function toKill(G, controls, failBlock) {
   check(G.tut.step === 'overview' && G.tut.msg && /laser gun/.test(allText(G)) && /spacewalk/.test(allText(G)) && /security console/.test(allText(G)) && /jump/.test(allText(G)), 'the overview of the rest');
   one(G);
   check(G.tut.step === 'end' && G.tut.done && /coming soon/.test(allText(G)), 'the end: more modules coming soon');
+  check(store['mn-tutorial-done'] === '1', 'the training is saved the moment it ends (before any roaming)');
+  // free roam: nothing kicks you out, everything works, only the player leaves
+  check(/BACK TO MENU/.test(allText(G)) && G.tut.msg.button && !/LOBBY/.test(G.tut.msg.button), 'the last message: explore, no "back to the lobby"');
+  skip(G);
+  check(G.tut.step === 'roam' && !G.tut.msg && G.tut.on && left === 0, 'closing it: free roam (not back to the menu)');
+  check(['fire', 'reload', 'cover', 'climbDown', 'closePanel', 'weapon', 'drop'].every(w => G.tutorialAllows(w)) && G.tutorialAllows('target', { run: G.radarScan }) && G.tutorialAllows('target', { text: 'Click: take the repair kit' }), 'every gate is open');
+  const scan0 = G.mission.scanT;
+  Object.assign(G.me, { mode: 'inside', gun: null, x: 22.2, y: 7.4 }); G.simTick(DT); clickAt(G, 22.2, 6.4);
+  check(G.mission.scanT > scan0, 'stations work (a radar scan)');
+  const x0 = G.me.x; G.me.input.keys.add('KeyD'); tickUntil(G, () => false, 1); G.me.input.keys.delete('KeyD');
+  check(G.me.x > x0 + 0.5, 'you can walk');
+  climbLeft(G);
+  check(G.me.mode === 'gun', 'and climb into a cannon…');
+  G.me.input.pressed.add('KeyE'); G.simTick(DT);
+  check(G.me.mode === 'inside', '…and out again');
+  let t0 = G.mission.t;
+  for (let i = 0; i < 10 * 60 * 60; i++) {               // 10 minutes, wandering about
+    if (i % 600 === 0) { G.me.input.keys.clear(); G.me.input.keys.add(['KeyW', 'KeyA', 'KeyS', 'KeyD'][(i / 600) % 4]); }
+    G.simTick(DT);
+  }
+  G.me.input.keys.clear();
+  check(G.mission.t - t0 > 599 && G.mission.active && !G.mission.over && !G.mission.jump && G.tut.step === 'roam' && !G.tut.msg && left === 0, '10 minutes later: still roaming (no jump, no end, no message)');
+  check(!G.combat.enemies.length, '…and nothing attacked');
+  G.me.input.pressed.add('Escape'); G.simTick(DT);
+  check(G.tutEscapeAsks() && !G.tut.ask && left === 0, 'Esc with nothing open: asks first (the browser shows the confirm)');
+  G.me.ui.panel = 'radar';
+  check(!G.tutEscapeAsks(), '…but with a panel open, Esc just closes the panel');
+  G.me.ui.panel = null;
+  G.tutLeave();
+  check(left === 1, 'BACK TO MENU: back to the menu');
 }
 
 // --- keyboard; the interceptor dies in the first fight: climbing out starts nothing, the reactor comes first
@@ -211,7 +248,7 @@ function toKill(G, controls, failBlock) {
   G.fires[0].hp = 0; msgUntil(G, 2);
   check(/out/.test(allText(G)) && !/reactor room/.test(allText(G)), 'fire out (no second trip to the reactor)');
   one(G);
-  check(G.tut.step === 'repair' && G.mission.maint.target.broken, 'then the repair');
+  check(G.tut.step === 'repair' && maintOf(G).target.broken, 'then the repair');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');

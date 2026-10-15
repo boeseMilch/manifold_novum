@@ -5,6 +5,9 @@ let RADAR_RANGE = 45;                                // (ship upgrades: see prog
 const STEALTH_RADAR = 12;                            // a stealth fighter only shows on the radar this close (s) to arriving
 const radarReach = (ev) => (ev.kind === 'stealth' ? Math.min(RADAR_RANGE, STEALTH_RADAR) : RADAR_RANGE);
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
+// Maintenance failures: each one has its own pair of parts (the one that breaks + a decoy) that show
+// "irregular readings" at the helm MAINT_YELLOW s before the break; the real one turns orange MAINT_WARNING s ahead.
+const MAINT_YELLOW = 180;
 const JUMP_DELAY = 22;                      // the jump comes mid-battle: 22 s after the final fight starts
 // ... or MISSIONS[id].finaleLead s after it, where the finale needs longer to matter (c2's frigate: its heavy shots)
 const finaleLead = (id) => MISSIONS[id]?.finaleLead ?? JUMP_DELAY;
@@ -24,7 +27,7 @@ const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
 
 const mission = {
   active: true, t: 0, events: [], revealed: new Set(), scanT: -10, lastScan: null,
-  maint: null, diagRun: false, jump: null, over: null, banner: 0,
+  diagRun: false, jump: null, over: null, banner: 0,
 };
 const fires = [];
 // Luck: petting the cat makes the dice friendlier for LUCK_TIME seconds.
@@ -206,8 +209,8 @@ function selectEvents(id, written, n, target, easy = 0) {
 }
 function layoutMission(id, n) {
   const M = MISSIONS[id] || MISSIONS.intro, written = mission.written;
-  const evs = selectEvents(id, written, n, mission.maint?.target, mission.easy || 0).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
-    sys: e.kind === 'maintenance' ? mission.maint?.target : e.sys }));
+  const evs = selectEvents(id, written, n, null, mission.easy || 0).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
+    sys: e.kind === 'maintenance' ? null : e.sys }));
   if (!evs.length) { Object.assign(mission, { events: [], lead: Infinity, gap: null, writtenGap: null, paceN: n, jumpAt: M.practice ? Infinity : JUMP_DELAY, overcharge: false }); return; }
   const lead = Math.min(...written.map(e => e.t)), fl = finaleLead(id), end = (M.length || MISSION_LENGTH) - fl;
   const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
@@ -221,11 +224,49 @@ function layoutMission(id, n) {
     if (fight) [fight.t, last.t] = [last.t, fight.t];
   }
   const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - lead) / (written.length - 1) : gap;
-  const normal = mission.easy ? selectEvents(id, written, n, mission.maint?.target).length : evs.length;   // the reactor's pace: normal's gap
+  const normal = mission.easy ? selectEvents(id, written, n, null).length : evs.length;   // the reactor's pace: normal's gap
   const paceGap = normal > 1 ? (end - lead) / (normal - 1) : end - lead;
   mission.extraLuck = ((mission.easy || 0) - (normal - evs.length)) / 2;   // easier steps with nothing left to drop: half a cat each
   Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + fl });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
+  pickMaintPairs(evs, maintPrev);
+}
+// Each maintenance failure gets its own target (breaks) + decoy (just shaky): all different parts, inside
+// (it's serviced with the repair kit: no hull parts), not broken already. A relayout (crew joined in the
+// lead-in) keeps the pairs it had, in time order, so the helm doesn't shuffle. Only when the ship runs out
+// of parts may a pair reuse one whose warning doesn't overlap.
+let maintPrev = [];                                  // (the last layout's pairs: [{ sys, decoy }], in time order)
+function pickMaintPairs(evs, prev = []) {
+  const ms = evs.filter(e => e.kind === 'maintenance').sort((a, b) => a.t - b.t), used = [];
+  const free = (ev) => {
+    const ok = SYSTEMS.filter(s => !s.broken && !s.outside && !used.some(u => u.s === s));
+    const apart = SYSTEMS.filter(s => !s.broken && !s.outside && !used.some(u => u.s === s && Math.abs(u.t - ev.t) < MAINT_YELLOW));
+    return ok.length >= 2 ? ok : apart.length >= 2 ? apart : SYSTEMS.filter(s => !s.broken && !s.outside);   // (last resort: any)
+  };
+  ms.forEach((ev, i) => {
+    let p = prev[i];
+    if (!p || used.some(u => u.s === p.sys || u.s === p.decoy) || !p.sys || p.sys.broken || p.decoy?.broken) {
+      const c = free(ev), take = () => c.splice(Math.floor(Math.random() * c.length), 1)[0];
+      p = { sys: take(), decoy: take() };
+    }
+    Object.assign(ev, { sys: p.sys, decoy: p.decoy || null, serviced: false, seen: !!p.seen });
+    used.push({ s: p.sys, t: ev.t }, { s: p.decoy, t: ev.t });
+  });
+  maintPrev = ms.map(e => ({ sys: e.sys, decoy: e.decoy, seen: e.seen }));
+}
+// When a pair's warning starts (MAINT_YELLOW s ahead): if one of its parts got broken meanwhile (a hit, a fire),
+// it takes a working part instead, one no other warning pair uses.
+function armMaintPairs() {
+  for (const ev of mission.events) {
+    if (ev.kind !== 'maintenance' || ev.armed || ev.done || mission.t < (ev.warnFrom ?? ev.t - MAINT_YELLOW)) continue;
+    ev.armed = true;
+    if (!ev.sys?.broken && !ev.decoy?.broken) continue;
+    const busy = new Set(maintWarnings().filter(w => w.ev !== ev).flatMap(w => [w.sys, w.decoy]));
+    const c = SYSTEMS.filter(s => !s.broken && !s.outside && !busy.has(s) && s !== ev.sys && s !== ev.decoy);
+    const take = () => c.splice(Math.floor(Math.random() * c.length), 1)[0];
+    if (ev.sys?.broken && c.length) ev.sys = take();
+    if (ev.decoy?.broken && c.length) ev.decoy = take();
+  }
 }
 // Fuel: the cells this crew size needs (the reactor's own cell plus the crate), on top of what's been
 // given already (never taken back).
@@ -243,16 +284,19 @@ function crewChanged(n) {
 }
 function startMission(id = 'intro', opts = {}) {
   applyShipUpgrades(opts.ship || {});
+  // the first failure's pair is drawn up front (as it always was: the random draws, and with them the balance
+  // model's seeded builds, stay the same for a mission with one); more failures draw theirs in the layout
   const candidates = SYSTEMS.filter(s => !s.broken && !s.outside);   // (the maintenance failure is fixed inside: no hull parts)
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
-  const target = pick(), decoy = pick();
+  const sys = pick(), decoy = pick();
+  maintPrev = [{ sys, decoy }];
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
     id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
-    maint: { target, decoy, serviced: false }, crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
+    crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
   });
-  mission.written = (MISSIONS[id] || MISSIONS.intro).build(target).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
+  mission.written = (MISSIONS[id] || MISSIONS.intro).build(null).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
   layoutMission(id, crewSize());
   if (mission.objective?.kind === 'ore' && !ITEMS.some(i => i.kind === 'drill')) ITEMS.push({ kind: 'drill', x: 4.2, y: 21.8 });   // the mining drill, left airlock room
   power.reserve = 0; crewFuel(crewSize());              // (the crew's cells, then the ship's spare cell on top)
@@ -269,7 +313,7 @@ function runEvent(ev) {
   else if (ev.kind === 'swarm') combatSpawn('swarm');
   else if (ev.kind === 'intruder') spawnIntruders(ev);
   else if (ev.kind === 'saboteur') spawnSaboteur(ev.side);
-  else if (ev.kind === 'maintenance' && !mission.maint.serviced && !ev.sys.broken) breakSystem(ev.sys);
+  else if (ev.kind === 'maintenance') { if (!ev.serviced && ev.sys && !ev.sys.broken) breakSystem(ev.sys); }
   else if (ev.kind === 'mines') spawnMineDrone(ev.side);
   else if (ev.kind === 'spores') spawnSpores(ev.side);
   else if (ev.kind === 'debris') jamCannon(ev.gun);
@@ -282,6 +326,7 @@ function updateMission(dt) {
   if (!mission.active || mission.over) return;
   mission.t += dt;
   if (crewSize() !== mission.paceN) crewChanged(crewSize());            // someone joined or left
+  armMaintPairs();
   for (const ev of mission.events) if (!ev.done && mission.t >= ev.t) runEvent(ev);
   // jump: after the last encounter the drive spools up; it jumps as soon as MID has energy (and the handle is
   // pulled, rule handle). There's no time limit, but every second it doesn't, things get worse (updatePressure).
@@ -388,21 +433,36 @@ function radarScan() {
   combatBanner(n ? `Radar: ${n} contact${n > 1 ? 's' : ''} in the next ${RADAR_RANGE} s` : `Radar: nothing in the next ${RADAR_RANGE} s`);
 }
 
-// Helm diagnosis: two systems look shaky from the start; one really fails.
+// Helm diagnosis: MAINT_YELLOW s before a maintenance failure, two parts look shaky (its pair); one really
+// fails, the other goes back to normal. Several failures can overlap: each pair is its own.
+// The pairs warning right now (not done, not serviced, in their window): [{ ev, sys, decoy, orange, left }].
+// (ev.warnFrom: an explicit start of the yellow, the tutorial's.)
+function maintWarnings() {
+  if (!mission.active) return [];
+  return mission.events.filter(e => e.kind === 'maintenance' && e.sys && !e.done && !e.serviced && mission.t >= (e.warnFrom ?? e.t - MAINT_YELLOW))
+    .sort((a, b) => a.t - b.t)
+    .map(ev => ({ ev, sys: ev.sys, decoy: ev.decoy, left: ev.t - mission.t, orange: ev.t - mission.t <= MAINT_WARNING }));
+}
 function diagState(s) {
   if (s.broken) return { col: '#ff5a4a', text: s.outside ? 'BROKEN — outside, fix it on a spacewalk' : 'BROKEN' };
-  const m = mission.maint;
-  if (!mission.active || !m || m.serviced) return null;
-  const ev = mission.events.find(e => e.kind === 'maintenance');
-  if (!ev) return null;                              // no maintenance failure in this mission
-  if (s === m.target && !ev.done && ev.t - mission.t <= MAINT_WARNING) return { col: '#ff9a2e', text: `FAILING — breaks in ${Math.ceil(ev.t - mission.t)} s`, orange: true };
-  if ((s === m.target && !ev.done) || s === m.decoy) return { col: '#ffd84a', text: 'irregular readings' };
+  const ws = maintWarnings(), pair = ws.length > 1;  // (several pairs at once: each line names its partner)
+  const w = ws.find(w => w.sys === s && w.orange);
+  if (w) return { col: '#ff9a2e', text: `FAILING — breaks in ${Math.ceil(w.left)} s`, orange: true, ev: w.ev };
+  const y = ws.find(w => w.sys === s || w.decoy === s);
+  if (y) {
+    const other = y.sys === s ? y.decoy : y.sys, partner = other && pair ? ` · pairs with the ${other.name.charAt(0).toLowerCase() + other.name.slice(1)}` : '';
+    return { col: '#ffd84a', text: `irregular readings${partner}`, ev: y.ev, other };
+  }
   return null;
 }
-// The repair kit can service the failing system while it's orange; then it doesn't break.
-function serviceTarget() {
-  const m = mission.maint;
-  return m && !m.serviced && diagState(m.target)?.orange ? m.target : null;
+// The repair kit can service a failing system while it's orange; then it doesn't break.
+const serviceTargets = () => maintWarnings().filter(w => w.orange && !w.sys.broken).map(w => w.sys);
+function serviceTarget() { return serviceTargets()[0] || null; }
+// The service is done: that part's maintenance failure won't happen.
+function serviceDone(s) {
+  const w = maintWarnings().find(w => w.sys === s && w.orange);
+  if (w) w.ev.serviced = true;
+  return !!w;
 }
 
 // ---------------------------------------------------------------------------
@@ -556,8 +616,8 @@ function stationSpots() {
   ];
 }
 function missionClickTarget(mx, my) {
-  const svc = serviceTarget();
-  if (svc && Math.hypot(mx - svc.x, my - svc.y) <= svc.r) {
+  for (const svc of serviceTargets()) {
+    if (Math.hypot(mx - svc.x, my - svc.y) > svc.r) continue;
     if (inv.weapon !== 'repair') return { text: `${svc.name} is failing — service it with the repair kit`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     if (!near(svc.x, svc.y, REACH + svc.r * 0.6)) return { text: `${svc.name} — get closer`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     return { text: `Hold click: service the ${svc.name.toLowerCase()} before it breaks`, ok: true, repair: svc, service: true, x: svc.x, y: svc.y, r: svc.r };

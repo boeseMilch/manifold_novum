@@ -569,7 +569,7 @@ function updateRepair(dt, target, holding) {
   player.repair.t += dt * repairSpeed(player);
   if (Math.random() < dt * 8) combatFx(target.x + (Math.random() - 0.5) * 0.6, target.y + (Math.random() - 0.5) * 0.6, 0, -1, 0.3, '#ffe08a', 0.06);
   if (player.repair.t >= REPAIR_TIME) {
-    if (target.service) { mission.maint.serviced = true; combatBanner(`${player.repair.sys.name} serviced — it won't break now`); }
+    if (target.service) { serviceDone(player.repair.sys); combatBanner(`${player.repair.sys.name} serviced — it won't break now`); }
     else { player.repair.sys.broken = false; hz.stats.repairs++; combatBanner(`${player.repair.sys.name} repaired`); }
     sfx.win();
     player.repair = null;
