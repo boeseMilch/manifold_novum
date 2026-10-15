@@ -91,7 +91,12 @@ function buildWalls() {
 function tileX(name, x0, x1, y, per, o) {
   for (let x = x0; x < x1 - 1e-4; x += per) GFX.sprite(name, 0, x, y, 0, { layer: 'wall', ...o, clip: [x0, null, x1, null] });
 }
-const JUNCTION_BIAS = 0.02;                          // (depth units, about a cm or two: well under the gap to anything in front)
+// The pieces set into a wall run (junction squares, the step down to the low height, door and hatch frames
+// with their panels) overlap the run's wall tiles at the same height: with equal depths the depth test picked
+// per pixel, and which one won flipped with the camera's sub-pixel position and zoom (z-fighting: a dark band
+// under the hull's corner posts, the pipes under the outer airlocks, blinking as you moved past). PIECE_BIAS
+// (depth units, a cm or two: well under the gap to anything in front of a wall): the piece always wins.
+const PIECE_BIAS = 0.02;
 function drawWallSprites() {
   if (!WALLS) WALLS = buildWalls();
   const hInfo = GFX.info('ship/wall_h'), hLowInfo = GFX.info('ship/wall_h_low'), vInfo = GFX.info('ship/wall_v');
@@ -107,15 +112,12 @@ function drawWallSprites() {
     for (const [name, a, b, hz] of [['ship/wall_v', v.y0, step, 1.6], ['ship/wall_v_low', step, v.y1, H_LOW]]) {
       for (let y = a; y < b - 1e-4; y += PV) GFX.sprite(name, 0, v.x, y, 0, { layer: 'wall', clip: [null, y, null, Math.min(y + PV, b), hz], sortY: y + PV / 2 });
     }
-    if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) GFX.sprite('interior/wall_v_step', 0, v.x, v.step, 0, { layer: 'wall', sortY: v.step + 0.01 });
+    if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) GFX.sprite('interior/wall_v_step', 0, v.x, v.step, 0, { layer: 'wall', sortY: v.step + 0.01, depthBias: PIECE_BIAS });
   }
-  // The junction square is also covered by the wall tiles running through it (the up-down run's tile is
-  // drawn after it), at the same height: with equal depths the depth test picked per pixel, and which one
-  // won flipped with the camera's sub-pixel position (z-fighting: a dark band under the corner posts that
-  // blinked as you moved past). JUNCTION_BIAS: the junction always wins in its square.
+  // (the junction square is also covered by the wall tiles running through it: PIECE_BIAS)
   for (const j of WALLS.J) {
     const name = `interior/wall_j_${j.low ? 'low_' : ''}${j.arms}`;
-    if (j.arms && GFX.has(name)) GFX.sprite(name, 0, j.x, j.y, 0, { layer: 'wall', sortY: j.y - 0.3 + 0.002, depthBias: JUNCTION_BIAS });
+    if (j.arms && GFX.has(name)) GFX.sprite(name, 0, j.x, j.y, 0, { layer: 'wall', sortY: j.y - 0.3 + 0.002, depthBias: PIECE_BIAS });
   }
 }
 
@@ -164,8 +166,8 @@ function drawDoorSprites(t) {
     const x = d.x + d.w / 2, k = Math.round(clamp(d.open, 0, 1) * 5);
     const frame = d.blast ? `interior/door_v_frame_blast_f${Math.floor(t * 4) % 4}` : d.locked ? 'interior/door_v_frame_locked' : 'interior/door_v_frame';
     const panels = d.blast ? `interior/door_v_blast_f${k}` : d.locked ? `interior/door_v_locked_f${k}` : `interior/door_v_f${k}`;
-    GFX.sprite(frame, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2, emissive: 0.6 });
-    GFX.sprite(panels, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2 + 0.01 });
+    GFX.sprite(frame, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2, emissive: 0.6, depthBias: PIECE_BIAS });
+    GFX.sprite(panels, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2 + 0.01, depthBias: PIECE_BIAS });
   }
   return true;
 }
@@ -177,8 +179,8 @@ function drawHatchSprites(t) {
     const s = `interior/hatch_${h.side}`, x = h.x - h.dir * 0.3, y = h.y - 0.9, b = broken(h);
     const frame = b ? `${s}_frame_broken_f${Math.floor(t * 8) % 2}` : h.locked ? `${s}_frame_locked` : `${s}_frame`;
     const panels = b ? `${s}_broken` : h.locked && h.open < 0.05 ? `${s}_locked` : `${s}_f${Math.round(clamp(h.open, 0, 1) * 5)}`;
-    GFX.sprite(frame, 0, x, y, 0, { layer: 'wall', sortY: h.y, emissive: 0.6 });
-    GFX.sprite(panels, 0, x, y, 0, { layer: 'wall', sortY: h.y + 0.01 });
+    GFX.sprite(frame, 0, x, y, 0, { layer: 'wall', sortY: h.y, emissive: 0.6, depthBias: PIECE_BIAS });
+    GFX.sprite(panels, 0, x, y, 0, { layer: 'wall', sortY: h.y + 0.01, depthBias: PIECE_BIAS });
   }
   return true;
 }
@@ -190,6 +192,7 @@ function drawHatchSprites(t) {
 // its layout (which plate cells are tread / grille) and the wear field at its four corners: a base per
 // room (busy rooms more, doorways most) plus more where people walk (doorways, deck airlocks, outer
 // hatches, consoles, the reactor). floor: [layout, wear top-left, top-right, bottom-left, bottom-right].
+// With path scratches on (GFX.pathScratches), also the walk field of its four plate cells (same order).
 const hash2 = (a, b) => { let h = Math.imul(Math.round(a * 10) | 0, 374761393) ^ Math.imul(Math.round(b * 10) | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const FLOOR_ROOM_WEAR = { bridge: 1.25, reactor: 1.2, portGun: 1.0, starGun: 1.0, portLock: 1.05, starLock: 1.05 };
 const FLOOR_LAYOUT = { 'ship/floor': 1, 'ship/floor_b': 2, 'interior/floor_tread': 3 };
@@ -220,6 +223,7 @@ function drawFloorSprites() {
       const key = base + ':' + tx + ':' + ty;
       let floor = floorCache.get(key);
       if (!floor) floorCache.set(key, floor = [FLOOR_LAYOUT[name] || (name.endsWith('_b') ? 2 : 1), floorWear(base, tx, ty), floorWear(base, tx + 2, ty), floorWear(base, tx, ty + 2), floorWear(base, tx + 2, ty + 2)]);
+      if (floor.length === 5 && GFX.pathScratches && typeof walkFieldPacked === 'function') floor.push(walkFieldPacked(tx, ty), walkFieldPacked(tx + 1, ty), walkFieldPacked(tx, ty + 1), walkFieldPacked(tx + 1, ty + 1));   // + where the crew walk (js/walkfield.js)
       GFX.sprite(name, 0, tx, ty, 0, { layer: 'ground', floor, clip: [Math.max(r.x, tx), Math.max(r.y, ty), Math.min(r.x + r.w, tx + 2), Math.min(r.y + r.h, ty + 2)] });
     }
   }
