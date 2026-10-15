@@ -12,7 +12,7 @@
   h1 { letter-spacing: 4px; margin: 0 0 4px; } .sub { color: var(--dim); margin: 0 0 18px; font-size: 14px; }
   #songs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
   .song { text-align: left; padding: 10px 12px; border-radius: 8px; border: 2px solid #14161b; background: var(--plate); color: var(--ink); cursor: pointer; font: inherit; }
-  .song b { display: block; font-size: 14px; } .song span { font-size: 12px; color: #c9ced8; }
+  .song b { display: block; font-size: 14px; } .song span { display: block; font-size: 12px; color: #c9ced8; }
   .song.on { background: #1d4a36; border-color: var(--accent); }
   .panel { margin-top: 16px; padding: 14px 16px; border-radius: 10px; background: #1c2028; border: 2px solid #14161b; }
   .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; font-size: 13px; color: #dfe4ec; }
@@ -22,12 +22,13 @@
   .bar i { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #2f8a5f, #ffe08a 75%, #ff6a4a); }
   .lvl i { background: linear-gradient(90deg, #3a8fc4, #ff6a4a); }
   #status { color: var(--dim); font-size: 12px; }
+  #check { margin-top: 10px; padding: 10px; border-radius: 8px; background: #0e1118; color: #cfe; font-size: 12px; overflow-x: auto; }
 </style>
 </head>
 <body>
 <main>
   <h1>MANIFOLD NOVUM — MUSIC</h1>
-  <p class="sub">Every mission has its own piece. It plays along with a simulated mission: calm at the start, building up, a crescendo towards the jump, and the final hit when the ship jumps out.</p>
+  <p class="sub">Seven pieces, shared by the missions, each with its own opening, lead and feel. Each one plays along with a simulated mission: drifting in, building up layer by layer, the climax towards the jump, the spool while the drive charges, and the final hit when the ship jumps out.</p>
   <div id="songs"></div>
   <div class="panel">
     <div class="row"><button class="act" id="play">▶ PLAY</button><button class="act" id="jump">JUMP NOW</button>
@@ -35,10 +36,12 @@
       <label>mission length <select id="len"><option value="180">3 min</option><option value="300" selected>5 min</option><option value="420">7 min</option></select></label>
       <label>speed <select id="speed"><option value="1">×1</option><option value="4">×4</option><option value="10">×10</option></select></label></div>
     <div class="row">mission <div class="bar" id="prog"><i></i></div><span id="clock">0:00</span></div>
-    <div class="row">intensity <div class="bar lvl" id="lvl"><i></i></div>
+    <div class="row">stage <div class="bar lvl" id="lvl"><i></i></div>
       <label><input type="checkbox" id="manual"> set by hand</label> <input type="range" id="k" min="0" max="100" value="15"></div>
     <div id="status">Pick a piece, then press play.</div>
   </div>
+  <p class="sub" style="margin-top:14px"><a href="?check" style="color:var(--accent)">Level check</a>: renders every piece offline (quiet start, climax, spool, final hit) and lists its loudness.</p>
+  <pre id="check" hidden></pre>
 </main>
 <script>const clamp = (v, a, b) => Math.max(a, Math.min(b, v)), lerp = (a, b, k) => a + (b - a) * k;</script>
 <script src="js/audio.js"></script>
@@ -47,19 +50,23 @@
   const $ = (id) => document.getElementById(id);
   const NAMES = { intro: 'Intro run', rush: 'Rush hour', c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', salvage: 'Black box', c4: 'Ch. 4', pirates: 'Pirate cove', c5: 'Ch. 5', rescue: 'Stranded engineer',
                   c6: 'Ch. 6', ore: 'Ore run', c7: 'Ch. 7', deep: 'Deep drift', c8: 'Ch. 8', nightmare: 'Nightmare', practice: 'Practice' };
-  let chosen = 'nebula', playing = false, t = 0, jumped = false, last = performance.now();
+  const STAGES = ['Drifting in.', 'Drifting in.', 'Building up.', 'Building up.', 'The theme.', 'The fight is on.', 'Climax.', 'The jump drive is spooling up…'];
+  let chosen = music.list()[0].name, playing = false, t = 0, jumped = false, last = performance.now();
   music.setPaused(true);
   const list = $('songs');
   for (const s of music.list()) {
     const b = document.createElement('button'); b.className = 'song'; b.dataset.name = s.name;
-    b.innerHTML = `<b>${s.title}</b><span>${s.bpm} bpm${s.missions.length ? ' · ' + s.missions.map(m => NAMES[m] || m).join(', ') : ''}</span>`;
-    b.onclick = () => { chosen = s.name; music.setSong(s.name); t = 0; jumped = false; music.reset(); mark(); };
+    b.title = s.mood; b.innerHTML = `<b>${s.title}</b><span>${s.bpm} bpm · ${s.key} · ${s.meter} · ${s.lead} lead</span><span>${s.mood}</span><span>${s.missions.map(m => NAMES[m] || m).join(', ')}</span>`;
+    b.onclick = () => { chosen = s.name; t = 0; jumped = false; music.setJump(false); music.setSong(s.name); music.reset(); mark(); };
     list.appendChild(b);
   }
   const mark = () => list.querySelectorAll('.song').forEach(b => b.classList.toggle('on', b.dataset.name === chosen));
   mark(); music.setSong(chosen);
-  $('play').onclick = () => { playing = !playing; music.setPaused(!playing); $('play').textContent = playing ? '❚❚ PAUSE' : '▶ PLAY'; if (playing && jumped) { t = 0; jumped = false; music.reset(); music.setSong(chosen); } };
-  $('jump').onclick = () => { t = +$('len').value; };
+  $('play').onclick = () => {
+    playing = !playing; music.setPaused(!playing); $('play').textContent = playing ? '❚❚ PAUSE' : '▶ PLAY';
+    if (playing && jumped) { t = 0; jumped = false; music.setJump(false); music.reset(); }
+  };
+  $('jump').onclick = () => { t = Math.max(t, +$('len').value - 15); };
   $('threat').onchange = () => music.setThreat($('threat').checked);
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
@@ -68,15 +75,48 @@
     const k = t / len, spool = k >= 1 - 15 / len && k < 1;
     if ($('manual').checked) music.setIntensity($('k').value / 100);
     else music.setIntensity(Math.pow(clamp(k, 0, 1), 1.3));
-    music.setJump(playing && spool);
+    music.setJump(playing && spool && !jumped);
     if (playing && k >= 1 && !jumped) { jumped = true; music.jumped(); }
     $('prog').firstElementChild.style.width = `${clamp(k, 0, 1) * 100}%`;
     $('lvl').firstElementChild.style.width = `${music.level * 100}%`;
     const s = Math.floor(Math.min(t, len)); $('clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} / ${len / 60}:00`;
-    $('status').textContent = !playing ? (jumped ? 'Jumped out. Press play to start over.' : 'Paused.') : jumped ? 'JUMP! (the final hit)' : spool ? 'The jump drive is spooling up…' : k > 0.82 ? 'Crescendo.' : k > 0.5 ? 'The fight is on.' : k > 0.18 ? 'Building up.' : 'Drifting in.';
+    $('status').textContent = !playing ? (jumped ? 'Jumped out. Press play to start over.' : 'Paused.') : jumped ? 'JUMP! (the final hit)' : `${STAGES[music.stage]} (stage ${music.stage}, section ${music.section})`;
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
+
+  // ?check: render each piece offline and measure it (dB full scale; the game adds the effects on top).
+  async function levelCheck() {
+    const pre = $('check'); pre.hidden = false; pre.textContent = 'rendering…\n'; music.setPaused(false);
+    const db = (x) => (x > 0 ? (20 * Math.log10(x)).toFixed(1) : '-inf').padStart(6);
+    const rows = [];
+    for (const s of music.list()) {
+      const sr = 22050, secs = 44, oac = new OfflineAudioContext(2, sr * secs, sr), nb = oac.createBuffer(1, sr, sr);
+      const d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      music.offline.attach(oac, oac.destination, nb); music.setSong(s.name); music.setThreat(false); music.setJump(false); music.setIntensity(0); music.reset();
+      const plan = [[0, 0, false], [8, 1, false], [30, 1, true]];          // [from s, intensity, jump]
+      for (let x = 0.5; x <= 38; x += 0.5) {
+        const p = plan.filter(q => q[0] <= x).pop(); music.setIntensity(p[1]); music.setJump(p[2]); music.setThreat(p[1] > 0.5);
+        music.offline.pump(x);
+      }
+      music.jumped(); music.offline.pump(secs);
+      const buf = await oac.startRendering(), L = buf.getChannelData(0), R = buf.getChannelData(1);
+      const win = (a, b) => { let pk = 0, sum = 0, nan = false; for (let i = a * sr; i < b * sr; i++) { const v = Math.max(Math.abs(L[i]), Math.abs(R[i])); if (v !== v) nan = true; pk = Math.max(pk, v); sum += L[i] * L[i] + R[i] * R[i]; } return { pk, rms: Math.sqrt(sum / ((b - a) * sr * 2)), nan }; };
+      const q = win(1, 8), c = win(18, 30), sp = win(30, 38), hit = win(39.4, 41), tail = win(42, 44), all = win(0, secs);
+      const open = (() => {                              // the opening (stage 0): brightness (zero crossings) and onsets a second
+        let zc = 0; for (let i = sr + 1; i < 8 * sr; i++) if ((L[i - 1] < 0) !== (L[i] < 0)) zc++;
+        const fr = Math.floor(sr / 100), envs = [];
+        for (let i = sr; i + fr < 8 * sr; i += fr) { let e = 0; for (let j = i; j < i + fr; j++) e += L[j] * L[j]; envs.push(Math.sqrt(e / fr)); }
+        let on = 0; for (let i = 5; i < envs.length; i++) { const prev = Math.max(...envs.slice(i - 5, i)); if (envs[i] > prev * 1.6 && envs[i] > 0.003) on++; }
+        return { zc: Math.round(zc / 7 / 2), on: (on / 7).toFixed(1) };
+      })();
+      let quietest = 1; for (let a = 1; a < 40; a++) quietest = Math.min(quietest, win(a, a + 1).rms);
+      rows.push({ name: s.name, open, quiet: q.rms, climax: c.rms, spool: sp.rms, hit: hit.pk, tail: tail.rms, peak: all.pk, quietest, nan: all.nan });
+      pre.textContent += `${s.title.padEnd(22)} rms quiet ${db(q.rms)}  climax ${db(c.rms)}  spool ${db(sp.rms)}  climax peak ${db(c.pk)}  hit peak ${db(hit.pk)}  tail ${db(tail.rms)}  peak ${db(all.pk)}  quietest second ${db(quietest)}${all.nan ? '  NaN!' : ''}\n${''.padEnd(22)} opening: ${music.layersAt(s.name, 0).join(' + ')} · ~${open.zc} Hz zero crossings · ${open.on} onsets/s\n`;
+    }
+    window.checkResult = rows; pre.textContent += 'done\n';
+  }
+  if (/[?&]check\b/.test(location.search)) levelCheck();
 </script>
 </body>
 </html>

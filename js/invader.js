@@ -69,7 +69,7 @@ function lineOfSight(x0, y0, x1, y1) {
   }
   return true;
 }
-const freeAt = (x, y) => walkRects().some(r => inRect(x, y, r)) || !pointInPoly(x, y);   // projectile space
+const freeAt = (x, y) => walkRects().some(r => inRect(x, y, r)) || (!pointInPoly(x, y) && !(typeof dockSolid === 'function' && dockSolid(x, y)));   // projectile space (the pirate base's walls stop shots too)
 
 // ---------------------------------------------------------------------------
 // Invaders
@@ -484,8 +484,8 @@ function hurtInvader(a, dmg, stun = 0) {
   } else if (sab && a.hp === 1 && a.state === 'fight') sabCloak(a);   // nearly done for: it tries to slip away
 }
 
-// What one of our bolts does: wrenches 3 (and a stun), heavy blaster shots carry their own damage.
-const boltDamage = (b) => b.dmg || (b.wrench ? 3 : 1);
+// What one of our bolts does: 1 (a wrench too, but it stuns), heavy blaster shots carry their own damage.
+const boltDamage = (b) => b.dmg || 1;
 const boltStun = (b) => b.stun ?? (b.wrench ? 1.5 : 0);
 function updateBoarding(dt) {
   for (const a of boarding.invaders) updateInvader(a, dt);
@@ -827,11 +827,13 @@ function drawBoarding(t) {
     if (a.kind === 'saboteur') drawSaboteur(a, t); else drawAlien(a, t);
   }
   for (const b of boarding.bolts) {
-    if (b.wrench) { wrench(L(b.x), L(b.y), b.spin); continue; }
+    const by = b.y - GFX.lift(b.z || 0);           // (our shots fly at the height of the muzzle they left: b.z)
+    if (b.wrench) { wrench(L(b.x), L(by), b.spin); continue; }
     const crew = b.owner === 'crew' || b.owner === 'pirate', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
     if (crew) {                                      // laser bolt: bright red streak (a pirate's fast shot: a long one)
-      const len = b.fast ? 2.2 : 0.7, w = b.heavy ? 2.2 : b.dmg === 2 ? 1.5 : 1;   // heavy blaster: fatter (a charged blast: blue-white)
-      ctx.beginPath(); ctx.moveTo(L(b.x), L(b.y)); ctx.lineTo(L(b.x - dx * len), L(b.y - dy * len));
+      // (the streak's tail: no further back than where it left the muzzle)
+      const len0 = b.fast ? 2.2 : 0.7, len = b.ox != null ? Math.min(len0, Math.hypot(b.x - b.ox, b.y - b.oy)) : len0, w = b.heavy ? 2.2 : b.dmg === 2 ? 1.5 : 1;   // heavy blaster: fatter (a charged blast: blue-white)
+      ctx.beginPath(); ctx.moveTo(L(b.x), L(by)); ctx.lineTo(L(b.x - dx * len), L(by - dy * len));
       ctx.strokeStyle = b.heavy ? 'rgba(120,200,255,0.55)' : 'rgba(255,80,60,0.5)'; ctx.lineWidth = 7 * w; ctx.lineCap = 'round'; ctx.stroke();
       ctx.strokeStyle = b.heavy ? '#f0f8ff' : '#ffe0d8'; ctx.lineWidth = 2.5 * w; ctx.stroke();
     } else if (b.owner === 'saboteur') {             // the saboteur's shot: a slow, fat cyan plasma ball (easy to see coming)

@@ -204,8 +204,27 @@ function distToPoly(x, y, pts = HULL) {
   }
   return best;
 }
-const EVA_RANGE = 2.8;                            // how far from the hull you may float
-const evaOk = (x, y) => !pointInPoly(x, y) && distToPoly(x, y) <= EVA_RANGE;
+// How far a spacewalker may float: as far as keeps some of the hull on screen. Outside, the camera follows you at
+// 0.75 × the room zoom (js/game.js cameraTarget), which shows at least 25.3 × 17.3 units of space whatever the
+// window's shape (19 × 13 room units / 0.75); minus a margin for the HUD, the sidebar and the camera's lag, that
+// leaves EVA_REACH: the hull's nearest point may be up to that far off sideways / up-down (an ellipse). No wall:
+// from EVA_SOFT of the way out your outward drift fades (you stop short of the ellipse) and, when you stop pushing,
+// you drift gently back (js/game.js evaDrift); the ellipse itself is only the safety net.
+const EVA_REACH = { x: 9.5, y: 6.5 }, EVA_SOFT = 0.6;
+// e: how far out you are (0 on the hull, 1 at the edge); nx, ny: the way out (unit vector, world coords).
+function evaReach(x, y) {
+  const sx = EVA_REACH.x, sy = EVA_REACH.y;
+  let best = Infinity, bx = 0, by = 0;
+  for (let i = 0, j = HULL.length - 1; i < HULL.length; j = i++) {
+    const ax = HULL[j][0] / sx, ay = HULL[j][1] / sy, dx = HULL[i][0] / sx - ax, dy = HULL[i][1] / sy - ay;
+    const k = clamp(((x / sx - ax) * dx + (y / sy - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+    const ex = x / sx - ax - dx * k, ey = y / sy - ay - dy * k, d = Math.hypot(ex, ey);
+    if (d < best) { best = d; bx = ex; by = ey; }
+  }
+  const gx = bx / sx, gy = by / sy, g = Math.hypot(gx, gy) || 1;   // (the gradient of e: scaled back to world coords)
+  return { e: best, nx: gx / g, ny: gy / g };
+}
+const evaOk = (x, y) => !pointInPoly(x, y) && evaReach(x, y).e <= 1;
 // x where a horizontal line at height y first meets the hull from the given side.
 function hullEdgeX(y, side) {
   if (side === 'port') { for (let x = -3; x < 10; x += 0.1) if (pointInPoly(x, y)) return x; }

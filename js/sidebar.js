@@ -1,9 +1,10 @@
-// Encounter sidebar (left edge): a steel header with the mission clock and damage lights,
-// then one riveted metal plate per encounter / problem. New plates slide up from the bottom
-// into their slot and stay until the problem is dealt with; problems that are actually
-// happening get a pulsing red light. Screen-space drawing.
+// Encounter sidebar (left edge): a header with the jump clock and damage lights, then one dark,
+// high-contrast panel per encounter / problem (all broken parts share one). New panels slide up from the
+// bottom into their slot and stay until the problem is dealt with; problems that are actually
+// happening get a pulsing red light. Problems somewhere off-screen also get an arrow at the screen's
+// edge with the room's name (drawProblemMarkers). Screen-space drawing.
 
-const PLATE_W = 236, PLATE_H = 54, PLATE_GAP = 7, SIDEBAR_X = 12;
+const PLATE_W = 268, PLATE_H = 58, PLATE_GAP = 7, SIDEBAR_X = 12, HEAD_H = 62;
 const sidePlates = new Map();                          // key → { y, x, alpha, age, leaving, data }
 const uid = (o) => o.uid || (o.uid = newUid());
 
@@ -11,6 +12,8 @@ const uid = (o) => o.uid || (o.uid = newUid());
 function encounterPlates() {
   const out = [];
   const add = (key, d) => out.push({ key, ...d });
+  // the objective is pinned at the top
+  if (mission.active && mission.objective && !mission.over) { const o = objectiveStatus(); add('objective', { icon: 'jump', title: o.done ? 'OBJECTIVE ✔' : 'OBJECTIVE', sub: o.text, stripe: o.done ? '#5fd6a0' : '#ffe08a' }); }
   if (mission.active && mission.jump && !mission.over) {
     const handle = mission.rules?.handle && (mission.jump.pull || 0) < JUMP_PULL ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s)` : '';
     const need = broken(CAPACITORS[1]) ? 'fix the middle capacitor, then 1 energy' : CAPACITORS[1].charge > 0 ? '' : handle ? '1 energy in MID' : 'needs 1 energy in the middle capacitor';
@@ -35,126 +38,135 @@ function encounterPlates() {
   }
   for (const f of fires) add('fire' + uid(f), { icon: 'fire', title: f.plasma ? 'PLASMA FIRE' : 'FIRE', sub: `${f.sys.name} · flares up in ${Math.ceil(fireLeft(f))} s${f.plasma ? ' · vent it at the airlock panel!' : ''}`, stripe: f.plasma ? '#b07aff' : '#ff8a2e', red: true });
   for (const b of hz.breaches) add('breach' + b.room, { icon: 'breach', title: b.tarp ? 'TARPED BREACH' : 'HULL BREACH', sub: `${roomById(b.room).name}${b.tarp ? ' · holds until the next hit' : b.plated ? ' · nail the plate down (repair kit)' : ' · plate + repair kit, outside'}`, stripe: b.tarp ? '#e8c34f' : '#7ab8ff', red: !b.tarp });
-  if (hz.vent) add('vent', { icon: 'breach', title: 'VENTING', sub: `${roomById(hz.vent.room).name} · ${Math.ceil(hz.vent.t)} s`, stripe: '#7ab8ff', red: true });
+  if (hz.vent) add('vent', { icon: 'breach', title: hz.vent.forced ? 'AIRLOCK FORCED · VENTING' : 'VENTING', sub: `${roomById(hz.vent.room).name} · ${Math.ceil(hz.vent.t)} s`, stripe: '#7ab8ff', red: true });
   for (const id of hz.surges) add('surge' + id, { icon: 'surge', title: 'POWER SURGE', sub: `${lineName(LINE[id])} · splice it (repair kit)`, stripe: '#bfe8ff', red: true });
   for (const id of hz.noGrav) add('grav' + id, { icon: 'surge', title: 'NO GRAVITY', sub: `${roomById(id).name} · reset the floor breaker (repair kit)`, stripe: '#7af0ff', red: true });
-  if (mission.active && mission.objective && !mission.over) { const o = objectiveStatus(); add('objective', { icon: 'jump', title: o.done ? 'OBJECTIVE ✔' : 'OBJECTIVE', sub: o.text, stripe: o.done ? '#5fd6a0' : '#ffe08a' }); }
   evaPlates(add);
   shipEventPlates(add);
   organicPlates(add);
   dockPlates(add);
   const svc = mission.active ? serviceTarget() : null;
   if (svc) add('failing', { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
-  for (const s of SYSTEMS) if (s.broken) add('broken' + s.name, { icon: 'wrench', title: 'BROKEN', sub: s.outside ? `${s.name} · no shield · fix it outside` : s.name, stripe: '#e2574c', red: true });
+  const dead = SYSTEMS.filter(s => s.broken);                // (one panel for all of them: the header counts them too)
+  if (dead.length) add('broken', { icon: 'wrench', title: dead.length > 1 ? `BROKEN (${dead.length})` : 'BROKEN', sub: dead.map(s => s.outside ? `${s.name} (outside)` : s.name).join(', '), stripe: '#e2574c', red: true, wrap: true });
   if (mission.active && !mission.over) {
-    const { known, mocks } = radarList();
+    const { known } = radarList();
     for (const e of known) if (!e.done) add('ev' + e.id, { icon: e.kind === 'swarm' ? 'asteroid' : e.kind === 'intruder' ? 'alien' : e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });
-    for (const e of mocks) add('mock' + e.id, { icon: 'unknown', title: '????', sub: 'T-??? (should have used the radar)', stripe: 'hazard', mock: true });
     if (mission.diagRun) for (const s of SYSTEMS) if (diagState(s)?.col === '#ffd84a') add('irr' + s.name, { icon: 'wrench', title: 'IRREGULAR', sub: s.name, stripe: '#ffd84a' });
   }
   return out;
 }
 
-// Positions update with the game clock (plates slide up into their slots, leavers slide out).
+// Layout (game clock): the panels form one column in list order. Each one takes up `grow` (0..1) of a
+// slot: a new panel opens its slot (the ones below glide down) while it slides in from the left, a
+// panel that's dealt with slides out and closes its slot. Positions are cumulative, so panels never
+// overlap, also while they move. What doesn't fit is summed up in a "+n more" line.
+let sideOrder = [], sideMore = 0;
 function updateSidebar(top, dt) {
   const list = encounterPlates(), keys = new Set(list.map(p => p.key));
-  const headH = mission.active ? 66 : 0, y0 = top + 10 + (headH ? headH + PLATE_GAP : 0);
-  const avail = VH - 120 - y0, step = Math.min(PLATE_H + PLATE_GAP, list.length > 1 ? (avail - PLATE_H) / (list.length - 1) : PLATE_H);
-  list.forEach((d, i) => {
+  const headH = mission.active ? HEAD_H : 0, y0 = top + 10 + (headH ? headH + PLATE_GAP : 0);
+  const fit = Math.max(1, Math.floor((VH - 140 - y0 - 22) / (PLATE_H + PLATE_GAP)));   // (above the energy panel, room for "+n more")
+  const shown = list.length > fit + 1 ? list.slice(0, fit) : list;
+  sideMore = list.length - shown.length;
+  const shownKeys = new Set(shown.map(d => d.key));
+  shown.forEach(d => {
     let p = sidePlates.get(d.key);
-    if (!p || p.leaving) { p = { y: VH + 30 + i * 20, x: 0, alpha: 1, age: 0 }; sidePlates.set(d.key, p); if (d.red) sfx.alarm?.(); }
-    p.data = d; p.target = y0 + i * step; p.leaving = false;
+    if (!p) { p = { y: null, x: -PLATE_W - 40, alpha: 1, age: 0, grow: 0 }; sidePlates.set(d.key, p); if (d.red) sfx.alarm?.(); }
+    p.data = d; p.leaving = false; p.absent = 0;
   });
-  for (const [k, p] of sidePlates) {
-    if (!keys.has(k)) p.leaving = true;
+  // the column's order: this tick's list, with leaving panels kept where they were
+  const order = shown.map(d => d.key);
+  sideOrder.forEach((k, i) => { if (!shownKeys.has(k) && sidePlates.has(k)) order.splice(Math.min(i, order.length), 0, k); });
+  for (const k of sidePlates.keys()) if (!order.includes(k)) order.push(k);   // (never lose track of one)
+  sideOrder = order;
+  let y = y0;
+  for (const k of order) {
+    const p = sidePlates.get(k);
+    if (!shownKeys.has(k) && (p.absent = (p.absent || 0) + dt) > 0.25) p.leaving = true;   // (gone for a moment, e.g. one odd snapshot: it stays put)
     p.age += dt;
-    if (p.leaving) { p.x -= dt * 600; p.alpha -= dt * 3; if (p.alpha <= 0) sidePlates.delete(k); }
-    else p.y = lerp(p.y, p.target, 1 - Math.exp(-7 * dt));
+    if (p.leaving) {                                 // slide out first, then close the slot
+      p.x -= dt * 900; p.alpha = Math.max(0, p.alpha - dt * 4);
+      if (p.alpha <= 0) p.grow = Math.max(0, p.grow - dt * 5);
+    } else {                                         // open the slot first, then slide in
+      p.alpha = 1; p.grow = Math.min(1, p.grow + dt * 5);
+      if (p.grow >= 1) { p.x = lerp(p.x, 0, 1 - Math.exp(-12 * dt)); if (Math.abs(p.x) < 0.5) p.x = 0; }
+    }
+    const ty = y;                                    // its slot: glides up into it, never above it (no overlap)
+    p.y = p.y == null ? ty : Math.max(ty, lerp(p.y, ty, 1 - Math.exp(-9 * dt)));
+    y = p.y + (PLATE_H + PLATE_GAP) * p.grow;
+    if (p.leaving && p.grow <= 0) sidePlates.delete(k);
   }
+  sideOrder = sideOrder.filter(k => sidePlates.has(k));
+  updateSidebar.bottom = y;
 }
 function drawSidebar(top) {
   if (mission.active) drawSidebarHeader(top + 10);
-  // draw back to front so the upper plates sit on top when squeezed
-  [...sidePlates.values()].sort((a, b) => b.y - a.y).forEach(p => drawPlate(p));
+  for (const k of sideOrder) { const p = sidePlates.get(k); if (p && p.alpha > 0.01) drawPlate(p); }
+  if (sideMore > 0) {
+    const y = (updateSidebar.bottom || 0) + 4;
+    ctx.font = '700 13px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const t = `+ ${sideMore} more`, w = ctx.measureText(t).width + 20;
+    rr(SIDEBAR_X, y, w, 22, 6); ctx.fillStyle = 'rgba(12,14,20,0.9)'; ctx.fill();
+    ctx.fillStyle = '#dfe4ec'; ctx.fillText(t, SIDEBAR_X + 10, y + 11);
+  }
 }
 
 function plateBody(x, y, w, h) {
-  rr(x, y, w, h, 7);
-  const g = ctx.createLinearGradient(x, y, x, y + h);
-  g.addColorStop(0, '#7d8697'); g.addColorStop(0.5, '#5a6272'); g.addColorStop(1, '#3f4757');
-  ctx.fillStyle = g; ctx.fill(); stroke(2.5);
-  rr(x + 3, y + 3, w - 6, h - 6, 5); ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.5; ctx.stroke();
-  ctx.fillStyle = 'rgba(0,0,0,0.12)';                // brushed metal streaks
-  for (let i = 0; i < 4; i++) ctx.fillRect(x + 6, y + 8 + i * (h - 16) / 3, w - 12, 1);
-  for (const [rx, ry] of [[7, 7], [w - 7, 7], [7, h - 7], [w - 7, h - 7]]) {   // rivets
-    ctx.beginPath(); ctx.arc(x + rx, y + ry, 2.4, 0, TAU); ctx.fillStyle = '#2b303a'; ctx.fill();
-    ctx.beginPath(); ctx.arc(x + rx - 0.6, y + ry - 0.6, 1, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
-  }
+  rr(x, y, w, h, 8); ctx.fillStyle = 'rgba(12,14,20,0.9)'; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = '#4b5263'; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x + 6, y + 2, w - 12, 1.5);   // a thin top highlight
 }
 
 function drawPlate(p) {
   const d = p.data, x = SIDEBAR_X + p.x, y = p.y, w = PLATE_W, h = PLATE_H, t = time;
   ctx.save(); ctx.globalAlpha = clamp(p.alpha, 0, 1);
-  shadowEllipse(x + w / 2 + 3, y + h - 2, w * 0.48, 6, 0.35);
   plateBody(x, y, w, h);
-  // colored edge stripe (hazard tape for the mocking ones)
-  if (d.stripe === 'hazard') hazardStripe(x + 4, y + 4, 9, h - 8);
-  else { rr(x + 4, y + 4, 9, h - 8, 3); ctx.fillStyle = d.stripe; ctx.fill(); stroke(1.2); }
-  // recessed icon
-  ctx.beginPath(); ctx.arc(x + 38, y + h / 2, 17, 0, TAU); ctx.fillStyle = '#1c2028'; ctx.fill(); stroke(2);
-  plateIcon(d.icon, x + 38, y + h / 2, t);
-  // text
+  rr(x + 1, y + 1, 7, h - 2, 4); ctx.fillStyle = d.stripe; ctx.fill();          // coloured edge
+  ctx.beginPath(); ctx.arc(x + 32, y + h / 2, 17, 0, TAU); ctx.fillStyle = '#232833'; ctx.fill();
+  plateIcon(d.icon, x + 32, y + h / 2, t);
   ctx.textBaseline = 'middle';
-  ctx.font = '800 14px system-ui, sans-serif'; ctx.fillStyle = d.mock ? '#ff4a3a' : '#f2f4f8';
-  ctx.fillText(d.title, x + 62, y + 19);
-  ctx.font = '11px system-ui, sans-serif'; ctx.fillStyle = d.mock ? '#ffb0a0' : '#dfe4ec';
-  const fits = (s) => ctx.measureText(s).width <= w - 76;
+  ctx.font = '800 16px system-ui, sans-serif'; ctx.fillStyle = '#ffffff';
+  ctx.fillText(d.title, x + 58, y + 18);
+  ctx.font = '500 13px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec';
+  const room = w - 66 - (d.red ? 14 : 0), fits = (s) => ctx.measureText(s).width <= room;
   const words = d.sub.split(' '), cut = words.findIndex((_, i) => !fits(words.slice(0, i + 1).join(' ')));
   if (d.wrap && cut > 0 && fits(words.slice(cut).join(' '))) {   // (wrap: two lines instead of cutting it off)
-    ctx.fillText(words.slice(0, cut).join(' '), x + 62, y + 33); ctx.fillText(words.slice(cut).join(' '), x + 62, y + 45);
+    ctx.fillText(words.slice(0, cut).join(' '), x + 58, y + 35); ctx.fillText(words.slice(cut).join(' '), x + 58, y + 49);
   } else {
     let sub = d.sub; while (!fits(sub) && sub.length > 4) sub = sub.slice(0, -2);
     if (sub !== d.sub) sub = sub.slice(0, -1) + '…';
-    ctx.fillText(sub, x + 62, y + 37);
+    ctx.fillText(sub, x + 58, y + 39);
   }
-  // red light for problems that are actually happening
-  if (d.red) {
+  if (d.red) {                                       // red light: a problem that is happening right now
     const k = 0.55 + 0.45 * Math.sin(t * 6);
-    const g = ctx.createRadialGradient(x + w - 16, y + 15, 0, x + w - 16, y + 15, 12);
-    g.addColorStop(0, `rgba(255,60,40,${0.7 * k})`); g.addColorStop(1, 'rgba(255,60,40,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + w - 16, y + 15, 12, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + w - 16, y + 15, 4.5, 0, TAU); ctx.fillStyle = `rgb(255,${60 + 60 * k | 0},40)`; ctx.fill(); stroke(1.2);
+    ctx.beginPath(); ctx.arc(x + w - 14, y + 15, 5, 0, TAU); ctx.fillStyle = `rgb(255,${50 + 60 * k | 0},40)`; ctx.fill();
   }
-  if (p.age < 0.6) {                                // fresh plate: brief shine
-    ctx.globalAlpha = (1 - p.age / 0.6) * 0.5 * clamp(p.alpha, 0, 1);
-    rr(x, y, w, h, 7); ctx.fillStyle = '#ffffff'; ctx.fill();
+  if (p.age < 0.6) {                                // fresh: brief flash
+    ctx.globalAlpha = (1 - p.age / 0.6) * 0.35 * clamp(p.alpha, 0, 1);
+    rr(x, y, w, h, 8); ctx.fillStyle = '#ffffff'; ctx.fill();
   }
   ctx.restore();
 }
 
 function drawSidebarHeader(y) {
-  const x = SIDEBAR_X, w = PLATE_W, h = 66;
+  const x = SIDEBAR_X, w = PLATE_W, h = HEAD_H;
   plateBody(x, y, w, h);
   ctx.textBaseline = 'middle';
-  ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec';
-  ctx.fillText(`MISSION T+${fmt(mission.t)}`, x + 14, y + 15);
   const jumpIn = mission.jumpAt - mission.t;
   const stalled = typeof jumpStall === 'function' && jumpStall();
-  ctx.font = '800 18px system-ui, sans-serif'; ctx.fillStyle = stalled ? (Math.sin(time * 8) > 0 ? '#ff5a4a' : '#ffb0a4') : mission.jump ? '#ffe08a' : '#f2f4f8';
-  ctx.fillText(stalled ? 'JUMP STALLED' : mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE', x + 14, y + 35);
-  ctx.font = '10px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
-  ctx.fillText(mission.lastScan === null ? 'radar: not scanned (map table)' : `radar: scanned ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 54);
+  ctx.font = '800 22px system-ui, sans-serif'; ctx.fillStyle = stalled ? (Math.sin(time * 8) > 0 ? '#ff5a4a' : '#ffb0a4') : mission.jump ? '#ffe08a' : '#ffffff';
+  ctx.fillText(stalled ? 'JUMP STALLED' : mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE', x + 14, y + 22);
+  ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
+  ctx.fillText(mission.lastScan === null ? 'radar: not scanned yet' : `radar: ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 46);
   // damage lights: one per broken system; more than MAX_DAMAGE loses the ship
   const dmg = SYSTEMS.filter(s => s.broken).length;
-  const gap = MAX_DAMAGE > 5 ? 15 : 17, cx = x + w - (MAX_DAMAGE > 5 ? 54 : 46);   // (6 lights with the reinforced hull: tighter, and in from the edge)
-  ctx.font = '700 9px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec'; ctx.textAlign = 'center';
-  ctx.fillText('DAMAGE', cx, y + 15);
+  const gap = MAX_DAMAGE > 5 ? 13 : 15, cx = x + w - 12 - (MAX_DAMAGE - 1) * gap / 2 - 7;
+  ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec'; ctx.textAlign = 'center';
+  ctx.fillText(dmg >= MAX_DAMAGE ? 'ONE MORE = LOST' : `DAMAGE ${dmg}/${MAX_DAMAGE}`, cx, y + 17);
   for (let i = 0; i < MAX_DAMAGE; i++) {
-    const bx = cx + (i - (MAX_DAMAGE - 1) / 2) * gap, by = y + 36, on = i < dmg;   // (centred under DAMAGE)
-    ctx.beginPath(); ctx.arc(bx, by, 7, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#2b303a'; ctx.fill(); stroke(1.5);
-    if (on) { ctx.beginPath(); ctx.arc(bx - 2, by - 2, 2.5, 0, TAU); ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill(); }
+    const bx = cx + (i - (MAX_DAMAGE - 1) / 2) * gap, by = y + 39, on = i < dmg;
+    ctx.beginPath(); ctx.arc(bx, by, 6, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#2b303a'; ctx.fill(); stroke(1.5, on ? '#ffb0a4' : '#5a6272');
   }
-  ctx.fillStyle = dmg >= MAX_DAMAGE ? '#ff8a7a' : '#c9ced8'; ctx.fillText(dmg >= MAX_DAMAGE ? 'one more = lost' : `${dmg}/${MAX_DAMAGE}`, cx, y + 54);
   ctx.textAlign = 'left';
 }
 
@@ -222,4 +234,72 @@ function plateIcon(kind, cx, cy, t) {
     ctx.fillText('?', 0, 1);
   }
   ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// Where things happen: every active problem with a place in the ship (fires, broken parts, hull
+// breaches, intruders, arcing lines, dead gravity, a crewmate down). Off-screen ones get an arrow at
+// the edge of the view with what and where ("FIRE · Bridge"); new ones on screen get a short ping.
+// ---------------------------------------------------------------------------
+const problemSeen = new Map();                      // key → time first seen (for the ping)
+function problemSpots() {
+  const out = [], where = (x, y, fallback) => roomAt(x, y)?.name || (typeof inDock === 'function' && inDock(x, y) ? dockName() : fallback);
+  for (const f of fires) if (f.hp > 0) out.push({ key: 'fire' + uid(f), x: f.x, y: f.y, icon: 'fire', what: f.plasma ? 'PLASMA FIRE' : 'FIRE', room: where(f.x, f.y, f.sys.name), col: '#ff8a2e' });
+  for (const s of SYSTEMS) if (s.broken) out.push({ key: 'sys' + s.name, x: s.x, y: s.y, icon: 'wrench', what: 'BROKEN', room: s.name + (s.outside ? ' (outside)' : ''), col: '#ff6a5a' });
+  for (const b of hz.breaches) if (!b.tarp) { const p = BREACH_SPOTS[b.room]; if (p) out.push({ key: 'breach' + b.room, x: p.x, y: p.y, icon: 'breach', what: 'BREACH', room: roomById(b.room).name, col: '#7ab8ff' }); }
+  for (const a of boarding.invaders) if (!['dormant', 'sneak', 'cloak'].includes(a.state))
+    out.push({ key: 'inv' + uid(a), x: a.x, y: a.y, icon: 'alien', what: a.kind === 'saboteur' ? 'SABOTEUR' : 'INTRUDER', room: where(a.x, a.y, 'airlock'), col: '#c8ff6e' });
+  for (const id of hz.surges) { const l = LINE[id]; if (l) { const [x, y] = linePoint(l, 0.5); out.push({ key: 'surge' + id, x, y, icon: 'surge', what: 'SURGE', room: where(x, y, lineName(l)), col: '#bfe8ff' }); } }
+  for (const id of hz.noGrav) { const [x, y] = roomCenter(roomById(id)); out.push({ key: 'grav' + id, x, y, icon: 'surge', what: 'NO GRAVITY', room: roomById(id).name, col: '#7af0ff' }); }
+  for (const c of crew) if (c !== me && !standing(c) && c.mode !== 'gun') out.push({ key: 'down' + c.id, x: c.x, y: c.y, icon: 'alien', what: `${c.name.toUpperCase()} DOWN`, room: where(c.x, c.y, ''), col: '#ff9ab0' });
+  return out;
+}
+function drawProblemMarkers(view) {
+  if (!mission.active || mission.over || !me) return;
+  const spots = problemSpots(), keys = new Set(spots.map(s => s.key));
+  for (const k of problemSeen.keys()) if (!keys.has(k)) problemSeen.delete(k);
+  const box = { x0: SIDEBAR_X + PLATE_W + 20, y0: HUD_H + 56, x1: VW - 20, y1: invSlots()[0].y - 12 };   // (clear of the sidebar, banner and bottom HUD)
+  const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
+  const groups = new Map();                          // off-screen ones: one arrow per what + where
+  for (const s of spots) {
+    if (!problemSeen.has(s.key)) problemSeen.set(s.key, time);
+    const sx = view.ox + s.x * T * view.zoom, sy = view.oy + s.y * T * view.zoom * view.sy;
+    if (sx > box.x0 - 20 && sx < box.x1 + 20 && sy > box.y0 - 20 && sy < box.y1 + 20) {
+      const age = time - problemSeen.get(s.key);   // on screen: a ping when it's new
+      if (age < 2) for (const off of [0, 0.5]) {
+        const q = (age + off) % 1;
+        ctx.beginPath(); ctx.arc(sx, sy, 14 + q * 60, 0, TAU); ctx.strokeStyle = s.col; ctx.globalAlpha = (1 - q) * 0.9; ctx.lineWidth = 3; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      continue;
+    }
+    const g = groups.get(s.what + s.room);
+    if (g) g.n++; else groups.set(s.what + s.room, { ...s, sx, sy, n: 1 });
+  }
+  const placed = [];
+  for (const g of [...groups.values()].slice(0, 6)) {
+    const dx = g.sx - cx, dy = g.sy - cy, a = Math.atan2(dy, dx);
+    const kx = dx ? (dx > 0 ? box.x1 - cx : box.x0 - cx) / dx : Infinity, ky = dy ? (dy > 0 ? box.y1 - cy : box.y0 - cy) / dy : Infinity;
+    const k = Math.min(kx, ky);
+    let px = cx + dx * k, py = cy + dy * k;
+    const text = `${g.what}${g.n > 1 ? ` ×${g.n}` : ''}${g.room ? ' · ' + g.room : ''}`;
+    ctx.font = '700 13px system-ui, sans-serif';
+    const tw = ctx.measureText(text).width, w = tw + 46, h = 30;
+    px = clamp(px, box.x0 + w / 2 + 14, box.x1 - w / 2 - 14);   // (the pill sits just inside the edge, the arrow points out)
+    py = clamp(py, box.y0 + h / 2 + 14, box.y1 - h / 2 - 14);
+    for (const q of placed) if (Math.abs(q.x - px) < (q.w + w) / 2 && Math.abs(q.y - py) < h + 4) py = q.y + (py >= q.y ? h + 6 : -h - 6);   // (don't stack on top of each other)
+    placed.push({ x: px, y: py, w });
+    const pulse = 0.75 + 0.25 * Math.sin(time * 5);
+    // the arrow head, on the side the problem is
+    const reach = Math.min(Math.abs(w / 2 / (Math.cos(a) || 1e-6)), Math.abs(h / 2 / (Math.sin(a) || 1e-6))) + 5;
+    const ex = px + Math.cos(a) * reach, ey = py + Math.sin(a) * reach;
+    ctx.save(); ctx.globalAlpha = pulse;
+    ctx.save(); ctx.translate(ex, ey); ctx.rotate(a);
+    poly([[10, 0], [-4, -9], [-4, 9]]); ctx.fillStyle = g.col; ctx.fill(); stroke(1.5, 'rgba(10,12,18,0.9)');
+    ctx.restore();
+    rr(px - w / 2, py - h / 2, w, h, h / 2); ctx.fillStyle = 'rgba(12,14,20,0.9)'; ctx.fill(); stroke(2, g.col);
+    ctx.save(); ctx.translate(px - w / 2 + 17, py); ctx.scale(0.75, 0.75); plateIcon(g.icon, 0, 0, time); ctx.restore();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, px - w / 2 + 34, py + 0.5);
+    ctx.restore();
+  }
 }

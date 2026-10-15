@@ -27,9 +27,9 @@ const climbIn = (G, c, g, viaNet) => {
   climbIn(G, me, g);
   check(me.mode === 'gun' && me.gun === g, 'climbed into the left cannon');
   shootAt(G, me, g); tickN(G, 90);
-  check(me.health === 'hurt', 'a standing gunner gets hit by a shot aimed at them');
-  G.hurtCrew(me);
-  check(me.health === 'down' && me.mode === 'gun' && me.gun === g, 'second hit: down, slumped in the seat (not thrown off the cannon)');
+  check(me.health === 'out' && me.mode === 'gun' && me.gun === g, 'a ship\'s shot in a standing gunner\'s body: out at once, slumped in the seat (not thrown off the cannon)');
+  me.health = 'down';                                            // (from here on: down, to patch yourself up)
+  check(me.health === 'down' && me.mode === 'gun' && me.gun === g, 'down: slumped in the seat');
   const x0 = me.x, y0 = me.y; shootAt(G, me, g); shootAt(G, me, g); tickN(G, 90);
   check(me.health === 'down', 'enemy shots aimed at the downed gunner fly over them (below the rim)');
   check(G.combat.shots.length === 0, '…and are gone afterwards (they hit the hull behind)');

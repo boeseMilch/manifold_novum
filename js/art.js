@@ -486,8 +486,8 @@ function drawDeckLock(L, t) {
 // Capacitor bank: a cabinet of cells, lit cells hold charge.
 function drawCapacitor(cap, max, t) {
   const name = broken(cap) ? `systems/cap${max}_broken` : `systems/cap${max}_c${clamp(cap.charge, 0, max)}${cap.pulse > 0 && cap.charge > 0 ? '_pulse' : ''}`;
-  if (spr(name, 0, cap.x, cap.y, 0, { emissive: 0.7, pick: [max * 0.3, 1.0] })) {
-    worldText(cap.x, cap.y - 0.45, 1.05, `${cap.charge}/${max}`, `700 ${T * 0.22}px system-ui, sans-serif`, broken(cap) ? '#ff8a78' : C.glow, { base: 'bottom', outline: 'rgba(10,12,18,0.7)', sortY: cap.y + 0.01, depthBias: 0.05 });
+  if (spr(name, 0, cap.x, cap.y, 0, { emissive: 0.7, pick: [max * 0.3, 1.0], recolor: POWER_COL })) {   // (energy: the power colour)
+    worldText(cap.x, cap.y - 0.45, 1.05, `${cap.charge}/${max}`, `700 ${T * 0.22}px system-ui, sans-serif`, broken(cap) ? '#ff8a78' : POWER_COL, { base: 'bottom', outline: 'rgba(10,12,18,0.7)', sortY: cap.y + 0.01, depthBias: 0.05 });
     return;
   }
   const cw = T * 0.42, gap = 5, w = max * cw + (max - 1) * gap + 14, h = T * 0.9;
@@ -500,15 +500,15 @@ function drawCapacitor(cap, max, t) {
   for (let i = 0; i < max; i++) {
     const cx = x + 7 + i * (cw + gap), on = i < cap.charge;
     rr(cx, y + 7, cw, h - 14, 4);
-    ctx.fillStyle = on ? '#1d3a44' : '#1c1f25'; ctx.fill(); stroke(1.5);
+    ctx.fillStyle = on ? '#4a3d14' : '#1c1f25'; ctx.fill(); stroke(1.5);
     if (on) {
       const pulse = 0.75 + 0.25 * Math.sin(t * 3 + i);
       const lg = ctx.createLinearGradient(0, y + 7, 0, y + h - 7);
-      lg.addColorStop(0, `rgba(233,253,255,${pulse})`); lg.addColorStop(1, `rgba(95,214,228,${pulse * 0.8})`);
+      lg.addColorStop(0, `rgba(255,250,220,${pulse})`); lg.addColorStop(1, `rgba(${POWER_RGB},${pulse * 0.8})`);
       rr(cx + 3, y + 10, cw - 6, h - 20, 3); ctx.fillStyle = lg; ctx.fill();
     }
   }
-  ctx.fillStyle = C.glow; ctx.font = `700 ${T * 0.22}px system-ui, sans-serif`;
+  ctx.fillStyle = POWER_COL; ctx.font = `700 ${T * 0.22}px system-ui, sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
   ctx.fillText(`${cap.charge}/${max}`, cap.x * T, y - 3); ctx.textAlign = 'left';
 }
@@ -586,7 +586,7 @@ function drawReactor(R, t) {
         spr('ship/reactor_broken', hash01(Math.floor(t * 9) + 7) < 0.18 ? 1 : 0, R.x, R.y, 0, { emissive: 0.6, pick: [R.w / 2, 2.2] });
       else if (dead) spr('ship/reactor_off', 0, R.x, R.y, 0, { emissive: 0.4, pick: [R.w / 2, 2.2] });
       else {
-        spr('ship/reactor', Math.floor(t * (over ? 14 : 6)) % 6, R.x, R.y, 0, { emissive: over ? 1 : 0.7, pick: [R.w / 2, 2.2] });
+        spr('ship/reactor', Math.floor(t * (over ? 14 : 6)) % 6, R.x, R.y, 0, { emissive: over ? 1 : 0.7, pick: [R.w / 2, 2.2], recolor: POWER_COL });   // (its glowing core: the power colour)
         reactorFuelBars(R);
       }
       if (over && !dead) labelAt(R.x, R.y - R.h / 2, 2.1, 'OVERCHARGED', `800 ${T * 0.2}px system-ui, sans-serif`, '#ffd28a', 'bottom', 'rgba(10,12,18,0.8)');

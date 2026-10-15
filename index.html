@@ -53,6 +53,18 @@
   #shop .item b { display: block; font-size: 14px; margin-bottom: 3px; } #shop .item span { font-size: 12px; color: #c9ced8; }
   #shop .item.chosen { background: #1d4a36; border-color: #5fd6a0; } #shop .item:disabled { opacity: 0.5; cursor: default; }
   #shop .item.chosen:disabled { opacity: 1; }
+  /* three states (shopItem() in js/progress.js): owned (latched, LED, "OWNED"), available (price tag), locked (dark, padlock, why) */
+  #shop .item b { display: flex; align-items: baseline; gap: 10px; }
+  #shop .item .tag { margin-left: auto; flex: none; font: 800 12px system-ui, sans-serif; font-style: normal; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 4px; text-shadow: none; }
+  #shop .item .tag.price { background: #1d4a36; color: #eafff3; box-shadow: 0 0 0 1px rgba(95, 214, 160, 0.6); }
+  #shop .item .tag.own { color: #17663f; padding-right: 0; }
+  #shop .item .why { display: flex; align-items: center; gap: 6px; margin-top: 6px; font: 800 12px system-ui, sans-serif; font-style: normal; letter-spacing: 0.3px; color: #e3a64a; }
+  #shop .item .padlock { display: inline-block; width: 11px; height: 13px; flex: none; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M4.2 8.5V5.6a3.8 3.8 0 0 1 7.6 0v2.9' fill='none' stroke='%23e3a64a' stroke-width='2.2'/%3E%3Crect x='1.5' y='8' width='13' height='9.5' rx='1.6' fill='%23e3a64a'/%3E%3Crect x='7' y='11' width='2' height='3.6' rx='1' fill='%233a2a12'/%3E%3C/svg%3E") center / contain no-repeat; }
+  #shop .item.locked { cursor: not-allowed; }
+  #shop .item.locked::after { content: ''; position: absolute; right: 13px; top: 50%; width: 20px; height: 23px; margin-top: -12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M4.2 8.5V5.6a3.8 3.8 0 0 1 7.6 0v2.9' fill='none' stroke='%23e3a64a' stroke-width='2.2'/%3E%3Crect x='1.5' y='8' width='13' height='9.5' rx='1.6' fill='%23e3a64a'/%3E%3Crect x='7' y='11' width='2' height='3.6' rx='1' fill='%233a2a12'/%3E%3C/svg%3E") center / contain no-repeat !important; filter: none !important; }
+  html #shop #shop-body .item.locked:disabled { color: #b9bfc9 !important; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6) !important; }
+  html #shop #shop-body .item.locked:disabled span { color: #939aa6 !important; }
+  #shop .item.locked .tag.price { background: rgba(0, 0, 0, 0.35); color: #8a909b; box-shadow: none; text-decoration: line-through; }
   #shop h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: 1px; color: #dfe4ec; }
   .paints { display: flex; gap: 6px; flex-wrap: wrap; } .paint { width: 26px; height: 26px; border-radius: 50%; border: 3px solid #14161b; cursor: pointer; padding: 0; }
   .paint.chosen { border-color: #fff; } #shop .note { font-size: 12px; color: #9aa3b5; }
@@ -204,8 +216,8 @@
   }
   /* silver buttons: dark, embossed labels; the red START keeps white. Disabled / not yours to pick:
      the metal is dimmed (menugl.js) and the label greyed, but no see-through opacity */
-  :is(#lobby, #shop) :is(button:disabled:not(#lobby-start), #room.guest .mission:not(.chosen), .mission.locked) { opacity: 1 !important; color: #2c3038 !important; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) !important; }
-  :is(#lobby, #shop) :is(button:disabled:not(#lobby-start), #room.guest .mission:not(.chosen), .mission.locked) :is(span, small) { color: #383d45 !important; }
+  :is(#lobby, #shop) :is(button:disabled:not(#lobby-start, .item.chosen), #room.guest .mission:not(.chosen), .mission.locked) { opacity: 1 !important; color: #2c3038 !important; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) !important; }
+  :is(#lobby, #shop) :is(button:disabled:not(#lobby-start, .item.chosen), #room.guest .mission:not(.chosen), .mission.locked) :is(span, small) { color: #383d45 !important; }
   :is(#lobby, #shop) :is(.row button, #shop-close, .mission, .item, #room-back, button.join) {
     color: #161a21; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); }
   :is(#lobby, #shop) :is(.row button small, .mission span, .item span) { color: #353c49; }
@@ -236,11 +248,14 @@
   html.metal-css #lobby input { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 9px stretch; }
   html.metal-css #lobby-profile .bar { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 5px stretch; }
   html.metal-css .paint { border: none; background-image: url(assets/ui/swatch.png) !important; background-size: 100% 100% !important; background-blend-mode: multiply; }
-  html.metal-css .paint.chosen { background-image: url(assets/ui/swatch_down.png) !important; box-shadow: 0 0 0 2px #fff, 0 0 10px rgba(255,255,255,0.5); }
+  html.metal-css .paint.chosen { background-image: url(assets/ui/swatch_down.png) !important; box-shadow: 0 0 6px 2px var(--c, #fff), 0 0 16px 4px var(--c, #fff); }
   html.metal-css :is(.mission, #shop .item)::after { content: ''; position: absolute; right: 15px; top: 50%; width: 16px; height: 16px; margin-top: -8px;
     background: url(assets/ui/led_off.png) center / 100% 100%; }
   html.metal-css :is(.mission.chosen, #shop .item.chosen)::after { background-image: url(assets/ui/led_on.png); filter: drop-shadow(0 0 4px rgba(95, 214, 160, 0.8)); }
-  html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, .item):disabled { opacity: 1; filter: brightness(0.6) saturate(0.5); }
+  html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, .item):disabled:not(.chosen) { opacity: 1; filter: brightness(0.6) saturate(0.5); }
+  html.metal-css #shop .item.locked { filter: brightness(0.55) saturate(0.5) !important; }
+  html.metal-css #shop #shop-body .item.locked:disabled { color: #e4e8ee !important; } html.metal-css #shop #shop-body .item.locked:disabled span { color: #c9ced8 !important; }
+  html.metal-css #shop .item.locked .why { color: #ffc66e; }
   html.metal-css :is(#menu-you, #menu-play, #room .plate)::before { display: block; content: ''; position: absolute; pointer-events: none;
     inset: auto auto 2px calc(50% - 41.5px); width: 83px; height: 18px; background: center / 100% 100% no-repeat; }
   html.metal-css #menu-you::before { background-image: url(assets/ui/tag_crew.png); }
@@ -254,7 +269,7 @@
   html.metal-gl :is(#lobby, #shop) .plate { background: none; border-color: transparent; box-shadow: 0 16px 44px rgba(0,0,0,0.55); }
   html.metal-gl :is(#lobby, #shop) :is(button, input, #menu-games, #lobby-brief, #lobby-missions, .bar) {
     background: transparent !important; border-color: transparent !important; box-shadow: none !important; filter: none !important; }
-  html.metal-gl .paint.chosen { box-shadow: 0 0 0 2px rgba(255,255,255,0.85), 0 0 8px rgba(255,255,255,0.4) !important; }
+  html.metal-gl #lobby #lobby-paint .paint.chosen { box-shadow: 0 0 6px 1px var(--c, #fff), 0 0 16px 3px var(--c, #fff) !important; }   /* the chosen suit colour's lamp glows (menugl.js lights it) */
   /* tutorial (js/tutorial.js): the menu button, the controls question, the message box */
   #lobby .row.tut-row { margin: 0 0 14px; }
   html #lobby #menu-tutorial.fresh { box-shadow: 0 0 0 2px rgba(255,224,110,0.85), 0 0 18px rgba(255,224,110,0.45) !important; }

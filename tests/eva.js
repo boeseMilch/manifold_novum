@@ -2,7 +2,8 @@
 // antenna, a fuel canister drifting past, and the jump coils. Run: node tests/eva.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'evs', 'hz', 'mission', 'startMission', 'spawnMineDrone', 'spawnSpores', 'jamCannon', 'knockAntenna',
-  'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'BARNACLE_GROW', 'MISSIONS', 'JAM_SPOTS', 'pointInPoly', 'distToPoly'];
+  'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'BARNACLE_GROW', 'MISSIONS', 'JAM_SPOTS', 'pointInPoly', 'distToPoly',
+  'evaOk', 'evaReach', 'EVA_REACH', 'HATCHES', 'HULL', 'dk', 'dockGeom', 'SHIP_W'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -144,5 +145,40 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
   check(c.ok, 'a spacewalker aligns a coil in 3 s');
   const G3 = fresh(); G3.startMission('intro');
   check(!G3.evs.coils.length, 'the intro run has no jump coils');
+}
+// --- how far you may float: no wall near the hull; a soft edge that keeps the ship on screen
+{
+  // the outside camera (0.75 × the room zoom) shows at least 19/0.75 × 13/0.75 units, whatever the window's shape
+  const halfW = 19 / 0.75 / 2, halfH = 13 / 0.75 / 2;
+  const nearest = (G, x, y) => {                       // per-axis offset to the hull's nearest point (screen-wise)
+    let best = Infinity, off = [0, 0];
+    for (let i = 0, j = G.HULL.length - 1; i < G.HULL.length; j = i++) {
+      const [ax, ay] = G.HULL[j], [bx, by] = G.HULL[i];
+      for (let k = 0; k <= 20; k++) {
+        const px = ax + (bx - ax) * k / 20, py = ay + (by - ay) * k / 20, d = Math.max(Math.abs(px - x) / halfW, Math.abs(py - y) / halfH);
+        if (d < best) { best = d; off = [Math.abs(px - x), Math.abs(py - y)]; }
+      }
+    }
+    return off;
+  };
+  for (const [dir, key, x0, y0] of [['left', 'KeyA', -1.1, 19.2], ['right', 'KeyD', 45.5, 19.4], ['up', 'KeyW', 22, -4], ['down', 'KeyS', 22, 27]]) {
+    const G = fresh(); outside(G, x0, y0);
+    const keys = G.me.input.keys; keys.add(key); tickN(G, 60 * 15);
+    const far = G.distToPoly(G.me.x, G.me.y), e = G.evaReach(G.me.x, G.me.y).e, sp = Math.hypot(G.me.vx, G.me.vy);
+    const [ox, oy] = nearest(G, G.me.x, G.me.y);
+    check(far > 5 && e < 1 && sp < 0.2 && ox < halfW - 1.5 && oy < halfH - 1.5,
+      `floating ${dir}: you get ${far.toFixed(1)} units off the hull (was 2.8), then slow to a stop with the hull still well on screen (${ox.toFixed(1)}/${oy.toFixed(1)} of ${halfW.toFixed(1)}/${halfH.toFixed(1)})`);
+    keys.clear(); const e1 = e; tickN(G, 60 * 4);
+    check(G.evaReach(G.me.x, G.me.y).e < e1 - 0.02, `let go out there (${dir}): you drift gently back towards the ship`);
+  }
+  const G = fresh();
+  check(G.evaOk(-1.1, 19.2) && G.evaOk(-8, 19.2) && G.evaOk(22, -9) && !G.evaOk(-14, 19.2) && !G.evaOk(22, -14) && !G.evaOk(20, 10),
+    'evaOk: far wider than before, still not inside the hull nor off past the screen edge');
+  // a docked ship's rooms: you can't float through them, and someone it docks onto can float out
+  G.dk.dock = { kind: 'pirates', side: 'port', doors: [true, true], tube: 'docked' };
+  const g = G.dockGeom('port'), room = g.rooms[0]; outside(G, -3, g.y - 1.5); G.me.input.keys.add('KeyA'); tickN(G, 60 * 6);
+  check(G.me.x > room.x + room.w + 0.15, `floating at a docked ship you can't drift into its rooms (stopped at x ${G.me.x.toFixed(2)}, its wall at ${(room.x + room.w).toFixed(1)})`);
+  G.me.input.keys.clear(); outside(G, -7, g.y + 1.5); G.me.input.keys.add('KeyD'); tickN(G, 60 * 3);
+  check(G.me.x > -5.2, 'caught in its way when it docks: you can float out');
 }
 process.exitCode = failed ? 1 : 0;

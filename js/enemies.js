@@ -809,17 +809,26 @@ function drawEnemyOverlays(t) {
 }
 
 // Asteroids: asteroid_big<k> (+ _crack, the weak spot: both picked by the crack's angle rot + crackA, 48
-// steps) and asteroid_small<k> (32 steps), k from the shape seed. Neighbouring steps are crossfaded so the
-// rock turns smoothly. The damage cracks and the hit flash stay 2D, on top (drawAsteroidOverlays).
+// steps) and asteroid_small<k> (32 steps), k from the shape seed. The nearest step, turned on screen (`rot`)
+// by what's left to the exact angle: the rock turns continuously instead of jumping step by step. The screen
+// turn pivots round the top of the rock (where the turning axis comes out, most of what you see), not its
+// centre, so it matches the real turn there. Only around the switch to the next step (the middle 30%) both
+// are drawn, each turned to the exact angle, and crossfaded (a screen turn isn't quite a turn in the tilted
+// view: crossfading all the time would ghost). The damage cracks and the hit flash stay 2D, on top
+// (drawAsteroidOverlays).
 function drawAsteroidSprite(a, t) {
   const k = a.shapeSeed % 3, n = a.big ? `enemy/asteroid_big${k}` : `enemy/asteroid_small${k}`, c = n + '_crack';
   if (!GFX.ready(n) || (a.big && !GFX.ready(c))) return false;
-  const steps = a.big ? 48 : 32, u = (a.big ? a.rot + a.crackA : a.rot) / (TAU / steps), i0 = Math.floor(u), w = u - i0;
-  for (const [i, al] of [[i0, 1], [i0 + 1, w]]) {
+  const step = TAU / (a.big ? 48 : 32), steps = a.big ? 48 : 32, u = (a.big ? a.rot + a.crackA : a.rot) / step, i0 = Math.floor(u);
+  const s = clamp((u - i0 - 0.35) / 0.3, 0, 1), w = s * s * (3 - 2 * s);   // the next step's share
+  for (const [i, al] of [[i0, 1 - w], [i0 + 1, w]].sort((p, q) => q[1] - p[1]).map(([i, al], j) => [i, j ? al : 1])) {   // (the main one opaque, the other faded in on top)
     if (al < 0.03) continue;
-    const f = ((i % steps) + steps) % steps;
-    GFX.sprite(n, f, a.x, a.y, 0, { layer: 'under', alpha: al, emissive: 0.5 });
-    if (a.big) GFX.sprite(c, f, a.x, a.y, 0, { layer: 'under', alpha: al, emissive: 0.9 });
+    const f = ((i % steps) + steps) % steps, rot = (u - i) * step;   // (index i shows the rock turned clockwise by i steps, like rot)
+    // turning the picture round the pivot h above the origin (screen units) = turning it round the origin and
+    // moving the origin by (-h sin, -h (1 - cos)) on screen (ground y: / SIN)
+    const h = 0.75 * a.r * GFX.COS, x = a.x - h * Math.sin(rot), y = a.y - h * (1 - Math.cos(rot)) / GFX.SIN;
+    GFX.sprite(n, f, x, y, 0, { layer: 'under', alpha: al, emissive: 0.5, rot });
+    if (a.big) GFX.sprite(c, f, x, y, 0, { layer: 'under', alpha: al, emissive: 0.9, rot });
   }
   spritedAsteroids.add(a);
   return true;

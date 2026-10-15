@@ -370,20 +370,13 @@ function drawEvaJobs(t) {
   if (evs.canister) {
     const c = evs.canister;
     pickupHalo(L(c.x), L(c.y), T * 0.5, t, reach(c.x, c.y), 4.2);
-    if (!(GFX.on && GFX.ready('enemy/fuel_canister') && GFX.sprite('enemy/fuel_canister', GFX.frameIndex('enemy/fuel_canister', c.t * 0.9), c.x, c.y, 0, { layer: 'main', emissive: 0.4 }))) {
+    if (!(GFX.on && GFX.ready('enemy/fuel_canister') && GFX.sprite('enemy/fuel_canister', GFX.frameIndex('enemy/fuel_canister', c.t * 0.9), c.x, c.y, 0, { layer: 'main', emissive: 0.4, recolor: POWER_COL }))) {
       ctx.save(); ctx.translate(L(c.x), L(c.y)); ctx.rotate(c.t * 0.9); drawItemIcon('fuel', 0, 0, 1.3); ctx.restore();
     }
   }
 }
-// A pulsing ring around a spacewalk job, brighter in reach (the outside version of the brackets).
-function jobMarker(x, y, t, close, col) {          // (a dashed ring on the hull: unlit glow layer with sprites, so it reads in the dark)
-  glowLayer(() => {
-    const k = 0.5 + 0.5 * Math.sin(t * 4);
-    ctx.beginPath(); ctx.arc(L(x), L(y), L(0.6) + k * 3, 0, TAU);
-    ctx.setLineDash([5, 5]); ctx.strokeStyle = close ? '#ffffff' : col; ctx.globalAlpha = close ? 0.9 : 0.55; ctx.lineWidth = 2.5; ctx.stroke();
-    ctx.setLineDash([]); ctx.globalAlpha = 1;
-  });
-}
+// A spacewalk job: ringed like everything usable inside (js/systems.js drawUseMarks, on top of everything).
+function jobMarker(x, y, t, close, col) { useExtra.push({ x, y, r: 0.6 }); }
 
 // Sidebar plates for all of the above.
 function evaPlates(add) {

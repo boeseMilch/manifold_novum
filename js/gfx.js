@@ -30,6 +30,7 @@
 //             top: after everything, in submission order, no depth test
 //   sortY     sort key in 'wall' / 'main' (default y). Ties keep submission order.
 //   alpha     0..1                  tint   '#rrggbb' or [r, g, b] (0..1) for the tint mask
+//   recolor   '#rrggbb': the saturated cyan / green pixels (energy glows) take this colour (no mask needed)
 //   emissive  0..1: how much the brightest pixels light themselves (screens, lamps)
 //   unlit     true: beauty as rendered, no lighting
 //   scale     size multiplier       flip   true: mirrored horizontally around the origin
@@ -698,6 +699,9 @@ void main() {
     vec3 t = vTint.rgb * (lum / ref);
     t = mix(t, vec3(1.0), clamp(lum / ref - 1.3, 0.0, 0.6));   // keep specular glints white
     base = mix(base, t, m);
+  } else if (vTint.a < 0.0) {                       // recolor: the saturated cyan / green pixels (energy glows) take the colour
+    float m = smoothstep(0.08, 0.28, max(base.g, base.b) - base.r);
+    base = mix(base, vTint.rgb * max(base.r, max(base.g, base.b)), m);
   }
   if (vDesat > 0.0) base = mix(base, vec3(dot(base, vec3(0.2126, 0.7152, 0.0722))), vDesat);
   vec3 col = base;
@@ -1547,12 +1551,12 @@ void main() {
     const ey0 = sy + (qy0 - S.oy) * k, ey1 = sy + (qy1 - S.oy) * k;
     if (o.pick) picks.push({ x, y, sortY: o.sortY != null ? o.sortY : y, x0: sx - o.pick[0] * Sdev, x1: sx + o.pick[0] * Sdev, y0: sy - o.pick[1] * Sdev, y1: sy + 0.15 * Sdev });
     if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
-    const t = o.tint ? rgb(o.tint) : null, useMask = !!t && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null;
+    const t = o.tint ? rgb(o.tint) : o.recolor ? rgb(o.recolor) : null, useMask = !!o.tint && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null;
     queue.push({
       layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || page(S.group, b[0]), mask: useMask,
       d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
-          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, fl ? fl[0] : 0,
+          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : !o.tint && o.recolor ? -1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, fl ? fl[0] : 0,
           fl ? fl[1] : 0, fl ? fl[2] : 0, fl ? fl[3] : 0, fl ? fl[4] : 0],
       depthWrite: o.depthWrite !== false,
       // anything for depthPass(): it writes the depth buffer, or can be a solid lit pixel

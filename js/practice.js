@@ -45,6 +45,7 @@ const PRACTICE = [
   ['Other ships', 'Pirates dock (left)', () => { dk.dock = null; dockShip('pirate', 'port'); }],
   ['Other ships', 'Derelict + black box (right)', () => { dk.dock = null; dockShip('derelict', 'star', { blackbox: true }); }],
   ['Other ships', 'Derelict + engineer (right)', () => { dk.dock = null; dockShip('derelict', 'star', { npc: true, alien: false }); }],
+  ['Other ships', 'Pirate base + Dr. Varga (left)', () => { dk.dock = null; dk.pirates = []; dockShip('base', 'port'); }],
   ['Other ships', 'Cast off the docked ship', () => undock()],
   ['Other ships', 'Ore asteroid + drill', () => { EVENT_RUNNERS.rock(); give('drill'); }],
   // mini-games

@@ -55,6 +55,7 @@ function updateMinigames(dt) {
       if (m.flash === 'denied') { m.flash = null; m.typed = ''; }
       else {                                             // ACCESS GRANTED: the operator closes their visor, both doors open
         c.ui.panel = null; c.ui.mini = null;
+        if (m.door) { baseCodeOk(); continue; }       // (the pirate base's brig door: js/dock.js)
         if (hz.vent) continue;                           // (someone else got there first)
         if (fireIn(m.room)) startVent(m.room, c); else combatBanner('The fire is already out — vent cancelled');
         continue;
@@ -143,7 +144,7 @@ function drawPatchPanel(m, t) {
     ctx.fillStyle = '#e8ecf4'; ctx.font = '700 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(LEVER_NAMES[i], outX, row(i)); ctx.fillText('lever', outX - 48, row(i));
     ui.hits.push({ x: outX, y: row(i), r: 20, cmd: ['mini', 'patch', 'out', i] });
-    ctx.beginPath(); ctx.arc(capX, row(i), 18, 0, TAU); ctx.fillStyle = '#262b35'; ctx.fill(); stroke(2, hot ? '#bfe8ff' : '#9cd8ff');
+    ctx.beginPath(); ctx.arc(capX, row(i), 18, 0, TAU); ctx.fillStyle = '#262b35'; ctx.fill(); stroke(2, hot ? '#fff0b0' : POWER_COL);
     ctx.fillStyle = '#e8ecf4'; ctx.fillText(['L', 'M', 'R'][i], capX, row(i)); ctx.fillText(`${['left', 'mid', 'right'][i]} cap${hot ? ' ⚡' : ''}`, capX + 58, row(i));
     ui.hits.push({ x: capX, y: row(i), r: 20, cmd: ['mini', 'patch', 'cap', i] });
   }
@@ -155,7 +156,7 @@ function drawPatchPanel(m, t) {
 const PIN_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'CLR', '0', 'OK'];
 const PIN_HAND = "'Patrick Hand', 'Segoe Print', 'Bradley Hand', 'Comic Sans MS', 'Comic Neue', 'Marker Felt', 'Chalkboard SE', cursive";
 function drawPinPanel(m, t) {
-  const w = 560, h = 466, [x, y] = panelFrame(w, h, `AIRLOCK VENT — ${roomById(m.room)?.name || ''}`);
+  const w = 560, h = 466, [x, y] = panelFrame(w, h, m.door ? 'BRIG DOOR — KEYPAD' : `AIRLOCK VENT — ${roomById(m.room)?.name || ''}`);
   // the keypad housing: a brushed metal plate with screws
   const px = x + 30, py = y + 52, pw = 284, ph = 392;
   rr(px, py, pw, ph, 12);
@@ -172,13 +173,13 @@ function drawPinPanel(m, t) {
   const col = red ? '#ff6a5a' : '#5fd6a0';
   ctx.shadowColor = col; ctx.shadowBlur = 6; ctx.fillStyle = col;
   ctx.font = '700 12px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText('EMERGENCY VENT — OPEN BOTH DOORS', dx + 10, dy + 16);
+  ctx.fillText(m.door ? 'RED COMET SECURITY — BRIG' : 'EMERGENCY VENT — OPEN BOTH DOORS', dx + 10, dy + 16);
   if (flash) {
     ctx.font = '800 22px ui-monospace, Menlo, Consolas, monospace'; ctx.textAlign = 'center';
     if (green || Math.floor(t * 8) % 2 === 0) ctx.fillText(red ? 'ACCESS DENIED' : 'ACCESS GRANTED', dx + dw / 2, dy + 54);
     ctx.textAlign = 'left';
   } else {
-    ctx.fillText('ADMIN PASSWORD:', dx + 10, dy + 40);
+    ctx.fillText(m.door ? 'DOOR CODE:' : 'ADMIN PASSWORD:', dx + 10, dy + 40);
     ctx.font = '800 22px ui-monospace, Menlo, Consolas, monospace';
     const stars = '*'.repeat(m.typed.length);
     ctx.fillText(stars, dx + 10, dy + 64);
@@ -210,11 +211,11 @@ function drawPinPanel(m, t) {
   ctx.shadowColor = 'transparent';
   ctx.fillStyle = 'rgba(0,0,0,0.06)'; ctx.fillRect(-ns / 2, -ns / 2, ns, 22);                           // the sticky strip
   ctx.fillStyle = '#26324f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  handText('admin password', 0, -32, `20px ${PIN_HAND}`, 1);
-  ctx.save(); ctx.rotate(0.03); const pw2 = handText(m.pin, 0, 14, `700 34px ${PIN_HAND}`, 3);
+  handText(m.door ? 'brig code?' : 'admin password', 0, -32, `20px ${PIN_HAND}`, 1);
+  ctx.save(); ctx.rotate(0.03); const pw2 = handText(m.door ? 'ask Rusty' : m.pin, 0, 14, `700 ${m.door ? 26 : 34}px ${PIN_HAND}`, 3);   // (the brig's: on the barracks wall)
   ctx.strokeStyle = '#26324f'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-pw2 / 2 - 4, 36); ctx.quadraticCurveTo(0, 41, pw2 / 2 + 6, 34); ctx.stroke();   // underlined
   ctx.restore();
-  ctx.font = `14px ${PIN_HAND}`; ctx.fillStyle = 'rgba(38,50,79,0.75)'; ctx.fillText('(don\'t tell anyone!)', 0, 58);
+  ctx.font = `14px ${PIN_HAND}`; ctx.fillStyle = 'rgba(38,50,79,0.75)'; ctx.fillText(m.door ? '(he wrote it on a wall)' : '(don\'t tell anyone!)', 0, 58);
   ctx.restore(); ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'center';
   ctx.fillText('Click the keys, or type 0–9 + Enter', x + 436, y + h - 53); ctx.textAlign = 'left';

@@ -267,20 +267,27 @@ function drawLampSprites() {
 }
 function drawInteriorWalls() { toiletSign(); incidentBoard(); flushLater(); }
 function drawInterior(t) {
-  kitchen(t); kitchenSteam(t); bunkRoom(t); toiletStall(t); couch(); exerciseBike(t);
+  kitchen(t); kitchenSteam(t); kitchenMug(t); bunkRoom(t); toiletStall(t); couch(); exerciseBike(t);
   if (GFX.on) drawLampSprites();
+}
+// The coffee mug on the counter (js/hazards.js COFFEE_MUG), drawn flat when its sprite isn't there:
+// after the counter, so it sits on top (the sprite version: js/decor.js drawPropDecor).
+function kitchenMug(t) {
+  if (typeof COFFEE_MUG === 'undefined' || (GFX.on && GFX.ready('systems/mug_full'))) return;
+  if (typeof hz === 'undefined' || hz.coffee >= 1) coffee(U(COFFEE_MUG.x), U(COFFEE_MUG.y), t);
+  else { ctx.beginPath(); ctx.arc(U(COFFEE_MUG.x), U(COFFEE_MUG.y), 8, 0, TAU); ctx.fillStyle = '#e8e4dc'; ctx.fill(); stroke(2);
+         ctx.beginPath(); ctx.arc(U(COFFEE_MUG.x), U(COFFEE_MUG.y), 5.5, 0, TAU); ctx.fillStyle = '#3a2a1a'; ctx.fill(); }   // empty: just dregs
 }
 // Steam from the pot on the kitchen stove (its sprite: props/kitchen_counter; the classic drawing has its own).
 function kitchenSteam(t) { if (GFX.on && GFX.ready('props/kitchen_counter')) steamWisps('stove', 8.05, 11.0, 1.05, t * 0.8, 1.3, 11.2); }
 
 // ---------------------------------------------------------------------------
-// Everything clickable gets green corner brackets: faint when you're in the room, bright and
-// gently pulsing in reach. Decoration never does, so brackets always mean "you can use this".
+// Everything clickable (drawn by drawUseMarks, js/systems.js: a thin dashed white ring, faint in your room,
+// brighter in reach; what a click / E would do a thick solid one). Decoration never gets one.
 // ---------------------------------------------------------------------------
 function interactSpots() {
   const out = [
     ...stationSpots().map(s => ({ x: s.x, y: s.y, r: s.r })),
-    { x: FUEL_CRATE.x, y: FUEL_CRATE.y, r: 0.75 },
     { x: LEVER.x, y: LEVER.y, r: 0.6 },
     { x: REACTOR.x, y: REACTOR.y, w: REACTOR.w, h: REACTOR.h },
     ...SHIELD_BUTTONS.map(b => ({ x: b.x, y: b.y, r: 0.55 })),
@@ -291,28 +298,4 @@ function interactSpots() {
     ...DOORWAYS.filter(d => d.locked || d.blast).map(d => ({ x: d.x + d.w / 2, y: d.y + d.h / 2, w: d.w + 0.3, h: d.h, both: true })),
   ];
   return out;
-}
-function brackets(cx, cy, hw, hh, col, len, width) {
-  ctx.strokeStyle = col; ctx.lineWidth = width; ctx.lineCap = 'round';
-  for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-    const x = cx + sx * hw, y = cy + sy * hh;
-    ctx.beginPath(); ctx.moveTo(x, y - sy * len); ctx.lineTo(x, y); ctx.lineTo(x - sx * len, y); ctx.stroke();
-  }
-  ctx.lineCap = 'butt';
-}
-function drawInteractMarkers(t) {
-  if (!me || me.mode !== 'inside' || !standing(me)) return;
-  const here = roomAt(me.x, me.y), ov = typeof cam !== 'undefined' ? cam.overview : 0;
-  for (const s of interactSpots()) {
-    const d = Math.hypot(s.x - me.x, s.y - me.y);
-    const p = s.probe || [s.x, s.y];
-    const sameRoom = here && (s.both ? d < 8 : roomAt(p[0], p[1]) === here);
-    const close = d < REACH + 0.9;
-    const a = close ? 0.75 + 0.2 * Math.sin(t * 4) : sameRoom || d < 6 ? 0.32 : ov * 0.45;
-    if (a < 0.03) continue;
-    const hw = U(s.w ? s.w / 2 : s.r) + 4, hh = U(s.h ? s.h / 2 : s.r) + 4;
-    const len = Math.min(hw, hh, U(0.3)) * (close ? 1 : 0.75);
-    brackets(U(s.x) + 1.5, U(s.y) + 1.5, hw, hh, `rgba(10,14,20,${a * 0.6})`, len, close ? 4 : 3);   // dark backing, readable on any floor
-    brackets(U(s.x), U(s.y), hw, hh, `rgba(95,214,160,${a})`, len, close ? 3 : 2);
-  }
 }

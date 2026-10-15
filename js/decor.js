@@ -181,7 +181,7 @@ function coffee(x, y, t) {
 }
 
 // Round map table with a flickering holographic star chart, plus breakfast.
-const TABLE_Z = 0.78, DESK_Z = 0.72;                // map table / console desk top heights (models/systems/consoles.py)
+const TABLE_Z = 0.78, DESK_Z = 0.72, COUNTER_Z = 0.8;   // map table / console desk / kitchen counter top heights (models/systems/consoles.py, props/interior.py)
 function mapTable(x, y, t) {
   const r = T * 1.1;
   const off = typeof CAPACITORS !== 'undefined' && (CAPACITORS[1].charge <= 0 || broken(CAPACITORS[1]));
@@ -537,11 +537,12 @@ function drawPropDecor(t) {
   mapTable(U(22.2), U(6.4), t);
   if (!S('props/donut_box', 22.6, 6.65, TABLE_Z, onTop(TABLE_Z, 6.45))) donutBox(U(23.0), U(6.9), 0.3);   // (sprite: on the table top, not over its edge)
   if (!S('props/papers_maptable', 21.6, 6.0, TABLE_Z, onTop(TABLE_Z, 6.41))) papers(U(21.6), U(6.0), 57);
-  // Bridge: the helm runs on coffee (the mug: systems/mug_*, origin on the floor, lands on the desk)
-  const full = typeof hz === 'undefined' || hz.coffee >= 1;
-  if (S(full ? 'systems/mug_full' : 'systems/mug_empty', 22.75, -2.1, 0, { sortY: -1.75, depthBias: 0.03, pick: [0.15, 1.0] })) {
-    if (full) steamWisps('mug', 22.75, -2.1, DESK_Z + 0.2, t, 1, -1.7);   // steam over the mug, at desk height
-  } else coffee(U(22.75), U(-2.1), t);
+  // Kitchen: the crew runs on coffee (the mug: systems/mug_*, origin on the floor at COFFEE_MUG, modelled
+  // at desk height; the counter top is COUNTER_Z, so it's lifted by the difference)
+  const full = typeof hz === 'undefined' || hz.coffee >= 1, MUG = typeof COFFEE_MUG === 'undefined' ? { x: 7.52, y: 10.92 } : COFFEE_MUG;
+  if (S(full ? 'systems/mug_full' : 'systems/mug_empty', MUG.x, MUG.y, COUNTER_Z - DESK_Z, { sortY: 10.69, depthBias: 0.03, pick: [0.15, 1.0] })) {
+    if (full) steamWisps('mug', MUG.x, MUG.y, COUNTER_Z + 0.2, t, 1, 10.69);   // steam over the mug, at counter height
+  }                                                                       // (no sprite: js/interior.js kitchenMug, over the counter)
   if (!S('props/sticky_yellow', 21.65, -2.1, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.65), U(-2.1), 0.2);
   if (!S('props/sticky_pink', 21.95, -1.95, DESK_Z, onTop(DESK_Z, -1.76))) stickyNote(U(21.95), U(-1.95), -0.3, '#f29bc4');
   if (!S('props/duck_star', 42.6, 6.4)) duck(U(42.6), U(6.4), Math.PI);
@@ -625,7 +626,7 @@ function drawJunk() {
 // Crate of spare fuel cells for the reactor.
 function fuelCrate(x, y, a) {
   const cells = typeof power !== 'undefined' ? power.reserve : 3;
-  if (spr(`systems/fuel_crate_c${clamp(cells, 0, 4)}`, 0, x / T, y / T, 0, { emissive: 0.5, pick: [0.7, 0.8] })) {
+  if (spr(`systems/fuel_crate_c${clamp(cells, 0, 4)}`, 0, x / T, y / T, 0, { emissive: 0.5, pick: [0.7, 0.8], recolor: POWER_COL })) {
     if (cells > 4) {                                 // a bigger crew gets more spare cells than the crate shows
       ctx.fillStyle = 'rgba(200,255,216,0.9)'; ctx.font = `800 ${T * 0.16}px system-ui, sans-serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(`×${cells}`, x, y + T * 0.5); ctx.textAlign = 'left';

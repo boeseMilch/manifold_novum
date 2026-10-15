@@ -5,7 +5,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
   'clickTarget', 'inv', 'fires', 'SYSTEMS', 'igniteSystem', 'spray', 'startVent', 'pressShield', 'combat', 'surgeColumn', 'LINE', 'linePoint',
   'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENT_PANELS', 'CAP_MAX',
-  'boarding', 'spawnInvader', 'spawnSaboteur', 'dk', 'HATCHES', 'roomAt'];
+  'boarding', 'spawnInvader', 'spawnSaboteur', 'dk', 'HATCHES', 'roomAt', 'makeCrew', 'overrideHit', 'ui', 'netSerialize', 'netApply', 'SYSTEMS'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -151,6 +151,50 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const hpNow = far.hp; tickN(G, 60);
   check(far.dead || far.hp === hpNow, 'one hit per vent: no damage every tick');
 }
+// --- forcing an outer airlock by manual override vents the airlock room (broken or locked; out and back in);
+//     it's the same vent as the panel's, so hostiles in there are hit and blown out as tested above
+{
+  const G = fresh({}); const me = G.me, h = G.HATCHES[0], m = me.input.mouse;
+  const bonk = () => { for (let k = 0; k < 3; k++) { G.withCrew(me, () => G.overrideHit()); tickN(G, 40); } tickN(G, 70); };
+  const clickAt = (x, y) => { m.wx = x; m.wy = y; m.click = true; G.simTick(DT); m.click = false; };
+  G.SYSTEMS.find(s => s.ref === h).broken = true;
+  const mate = G.makeCrew('Mate', 9, 20.5); mate.mode = 'inside'; G.crew.push(mate);
+  me.x = h.inside[0]; me.y = h.inside[1]; me.mode = 'inside'; me.vx = me.vy = 0; G.simTick(DT);
+  check(/force the broken outer airlock/.test(me.prompt?.text || '') && /vents/.test(me.prompt.text), `the prompt warns before you force it ("${me.prompt?.text}")`);
+  clickAt(h.x, h.y);
+  check(G.withCrew(me, () => G.ui.panel) === 'override', 'clicking opens the manual override');
+  bonk();
+  check(G.hz.vent?.room === 'portLock' && G.hz.vent.forced && G.vacuumRoom('portLock'), 'forcing it vents the left airlock room: vacuum');
+  check(/forced/.test(G.combat.banner?.text || '') && /vents/.test(G.combat.banner.text), `a banner says so ("${G.combat.banner?.text}")`);
+  check(me.health === 'ok' && mate.health === 'hurt', 'the one who forced it is fine (visor down), a crewmate in the room gets hurt');
+  tickN(G, 60 * 2);
+  check(me.mode === 'eva', 'and you still get out on your spacewalk');
+  check(G.DOORWAYS[2].blast && G.DOORWAYS[2].open < 0.1, 'the blast door to the reactor room drops');
+  const C2 = loadGame(['netApply', 'hz', 'DOORWAYS', 'vacuumRoom']); C2.netApply(JSON.parse(JSON.stringify(G.netSerialize())), me.id);
+  check(C2.hz.vent?.forced && C2.vacuumRoom('portLock') && C2.DOORWAYS[2].blast, 'multiplayer: the forced vent and the blast door are in the snapshot');
+  tickN(G, 60 * 9);
+  check(!G.hz.vent && !G.vacuumRoom('portLock'), 'after 10 s the forced airlock swings shut and the room repressurizes');
+  tickN(G, 60);
+  check(!G.DOORWAYS[2].blast, 'the blast door lifts again');
+  // back in through the same broken hatch: it vents again, and you get in (never stuck outside)
+  mate.health = 'ok'; me.x = h.outside[0]; me.y = h.outside[1]; G.simTick(DT);
+  check(/vents/.test(me.prompt?.text || ''), `outside, the prompt warns too ("${me.prompt?.text}")`);
+  clickAt(h.x, h.y); bonk();
+  check(G.hz.vent?.room === 'portLock' && mate.health === 'hurt', 'forcing it from outside vents the room as well');
+  tickN(G, 60 * 2);
+  check(me.mode === 'inside', 'and you are back inside');
+  // crew sealed in the vented room: the deck airlock up to the spine still works
+  tickN(G, 60 * 12); mate.health = 'ok';
+  // a locked outer airlock: forcing it unlocks it and vents the room too
+  G.SYSTEMS.find(s => s.ref === h).broken = false; h.locked = true;
+  me.x = h.inside[0]; me.y = h.inside[1]; me.vx = me.vy = 0; G.simTick(DT);
+  check(/locked outer airlock/.test(me.prompt?.text || '') && /vents/.test(me.prompt.text), 'a locked outer airlock warns the same way');
+  clickAt(h.x, h.y); bonk();
+  check(!h.locked && G.hz.vent?.forced && G.vacuumRoom('portLock'), 'forcing the locked one unlocks it and vents the room');
+  // one vent at a time: forcing the other airlock closes the first one's vent
+  G.startVent('starLock', null, true);
+  check(G.hz.vent.room === 'starLock' && !G.vacuumRoom('portLock') && G.hz.repress?.room === 'portLock', 'forcing the other airlock: that room vents, the first one repressurizes');
+}
 // --- surges
 {
   const G = fresh({ surge: true }); G.CAPACITORS[0].charge = 3;
@@ -186,7 +230,8 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(me.hurtT > h1 - 1 && me.snackT > 50, 'one snack per minute');
   me.health = 'ok'; me.snackT = 0;
   check(!G.withCrew(me, () => G.clickTarget(G.SNACK.x, G.SNACK.y)).ok, 'when you\'re not hurt, the machine doesn\'t hand one out');
-  me.x = G.COFFEE_MUG.x; me.y = G.COFFEE_MUG.y + 1.2; m.wx = G.COFFEE_MUG.x; m.wy = G.COFFEE_MUG.y; m.click = true; G.simTick(DT);
+  me.x = G.COFFEE_MUG.x; me.y = G.COFFEE_MUG.y - 0.9;   // in front of the kitchen counter
+  m.wx = G.COFFEE_MUG.x; m.wy = G.COFFEE_MUG.y; m.click = true; G.simTick(DT);
   check(me.coffeeT > 14 && G.hz.coffee < 0.01, 'coffee: a speed boost for 15 s, and the mug is empty');
   const pc = G.PLATE_CRATES[0]; me.x = pc.x; me.y = pc.y - 1; m.wx = pc.x; m.wy = pc.y; m.click = true; G.simTick(DT);
   check(me.inv.item === 'plate' && G.hz.plates === 3, 'hull plates come from the crates in the airlock rooms');

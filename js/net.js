@@ -17,7 +17,7 @@ function netSerialize() {
       id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, face: c.face, walk: c.walk, mode: c.mode, lamp: !!c.lamp,
       gun: c.gun?.id || null,
       hatch: c.hatch ? HATCHES.indexOf(c.hatch) : -1, hatchT: c.hatchT, hatchDir: c.hatchDir, cover: c.cover,
-      repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen, e: c.prompt.e },
+      repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen, e: c.prompt.e, eAct: c.prompt.eAct, quiet: c.prompt.quiet },
       health: c.health, hurtT: c.hurtT, treat: c.treat, hold: c.hold, coffeeT: c.coffeeT, snackT: c.snackT, slow: c.slow, kit: c.kit, armor: c.armor, charge: c.charge, aim: c.aim,
       ui: { panel: c.ui.panel, mini: c.ui.mini, override: c.ui.override ? { name: c.ui.override.name, hits: c.ui.override.hits, swing: c.ui.override.swing } : null },
     })),

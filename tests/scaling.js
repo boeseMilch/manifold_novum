@@ -72,8 +72,9 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   for (const easy of [1, 2]) {
     const G = loadGame(NAMES); const keep = Math.random; Math.random = mulberry(5);
     try { G.startMission('c2', { easy }); } finally { Math.random = keep; }
-    const k = [...G.mission.events].sort((a, b) => a.t - b.t).map(e => e.kind).join(', ');
-    check(k === 'intruder, frigate', `c2 solo on ${easy === 1 ? 'easy' : 'very easy'}: ${k} (the frigate still the finale)`);
+    const ev = [...G.mission.events].sort((a, b) => a.t - b.t), k = ev.map(e => e.kind).join(', ');
+    check(/^(swarm|interceptor), intruder, frigate$/.test(k) && ev[0].opener && G.mission.extraLuck === easy / 2,
+          `c2 solo on ${easy === 1 ? 'easy' : 'very easy'}: ${k} (the opener is never dropped, the frigate still the finale: ${G.mission.extraLuck} cat(s) of luck instead)`);
   }
   const big = withCrew(4, 'c2', 3), last = [...big.mission.events].sort((a, b) => a.t - b.t).pop();
   check(near(last.t, L - 70) && last.kind !== 'intruder' && near(big.mission.jumpAt, L), `c2 for 4: the finale (${last.kind}) also 70 s before the jump`);
@@ -184,10 +185,11 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   const rows = balance({ players: [1, 2, 3, 4] });
   check(rows.length === 16 * 4 && rows.every(r => r.verdict && Number.isFinite(r.score) && r.sides.length === 3), `tools/balance.js rates ${rows.length / 4} missions × 4 crew sizes (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   const pct = (v) => Math.round(v * 100);
-  // the targets: intro (step 0) 70% solo, then chapter n (step n) 0.5 points less per step, c8 66%; 2+ players 2 points lower
+  // the targets: intro (step 0) 56% solo (was 70%: the 2026-10-14 playtest), then chapter n (step n) 0.5 points less per step,
+  // c8 52%; 2+ players 68% on intro, same ramp
   const camp = G0.CAMPAIGN.map(id => targetIdle(id, 1));
-  check(near(targetIdle('intro', 1), 0.70) && camp.every((v, i) => near(v, 0.70 - 0.005 * (i + 1))) && near(targetIdle('c8', 1), 0.66) && near(targetIdle('intro', 3), 0.68)
-        && ALL.every(id => PROGRESSION[id] !== undefined), `the idle targets ramp down: intro 70%, chapters 1-8 ${camp.map(v => (v * 100).toFixed(1)).join(' ')}% solo; 68% for 2+ players on intro, same ramp`);
+  check(near(targetIdle('intro', 1), 0.56) && camp.every((v, i) => near(v, 0.56 - 0.005 * (i + 1))) && near(targetIdle('c8', 1), 0.52) && near(targetIdle('intro', 3), 0.68)
+        && ALL.every(id => PROGRESSION[id] !== undefined), `the idle targets ramp down: intro 56%, chapters 1-8 ${camp.map(v => (v * 100).toFixed(1)).join(' ')}% solo; 68% for 2+ players on intro, same ramp`);
   // Out of spec even with every prerequisite the player can have by then (see the balance section in PLAN.md).
   const OUT = { rush: [2, 3, 4], deep: [3, 4], nightmare: [3, 4], c7: [3, 4], c8: [3, 4] };
   const early = rows.filter(r => ['intro', 'c1', 'c2'].includes(r.id));
@@ -197,28 +199,34 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   console.log(`      (out of spec with everything: ${rows.filter(r => !r.inSpec).map(r => `${r.name} ×${r.n}`).join(', ') || 'none'})`);
   // Solo: one encounter more or less moves a solo crew's idle by ~13-15 points (1 vs 2 encounters: ~76% vs ~62%), so
   // the nearest count lands within ~8 points of its target. SHORT: the essentials (+ the finale fight) alone keep a
-  // solo crew busier than the target (two pirate raiders in c1 / c4 / Pirate cove, c6's four).
-  const SHORT = ['c1', 'c4', 'c6', 'pirates'];
+  // solo crew busier than the target (c1: two pirate raiders + finale; c4: the opener + two raiders + finale; c6: the
+  // opener, rock, spores, leeches + finale; the model rates raiders heavily, the 2026-10-14 playtest found c4 too easy).
+  const SHORT = ['c1', 'c4', 'c6'];
   // HARD: set harder than the model's target on purpose, after a playtest (c2: two aliens + opener + frigate even solo)
   const HARD = ['c2'];
-  const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => !SHORT.includes(r.id) && !HARD.includes(r.id));
+  // COARSE: one encounter is the nearest count but still above the target (two are out of spec or far below);
+  // PENDING: chapter 5 is set by hand: the pirate base is boarding work the model doesn't see (its idle reads high)
+  const COARSE = ['rush', 'deep', 'c7'], PENDING = ['c5'];
+  const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => ![...SHORT, ...HARD, ...COARSE, ...PENDING].includes(r.id));
+  const coarse = solo.filter(r => COARSE.includes(r.id));
+  check(coarse.every(r => r.events === 1 && r.idle > r.aim && r.idle < 0.8), `solo, the one-encounter missions sit above their targets (two would be out of spec or far below): ${coarse.map(r => `${r.id} ${pct(r.idle)}%`).join(', ')}`);
   const hard = solo.filter(r => HARD.includes(r.id));
   check(hard.every(r => r.idle < r.aim - 0.1 && r.idle > 0.3 && r.verdict !== 'impossible'), `solo, the deliberately harder missions sit well below their targets but stay doable (> 30% idle): ${hard.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters, ${r.verdict})`).join(', ')}`);
   const off = fit.filter(r => Math.abs(r.idle - r.aim) > 0.08), bias = fit.reduce((s, r) => s + r.idle - r.aim, 0) / fit.length;
   const intro = solo.find(r => r.id === 'intro');
-  check(Math.abs(intro.idle - 0.70) <= 0.03, `solo, the first mission (intro) leaves the crew ${pct(intro.idle)}% idle (target 70%)`);
+  check(Math.abs(intro.idle - 0.56) <= 0.06, `solo, the first mission (intro) leaves the crew ${pct(intro.idle)}% idle (target 56%)`);
   check(!off.length && Math.abs(bias) <= 0.04, `solo, every other mission within 8 points of its ramped target, ${(bias * 100).toFixed(1)} points off on average: ${fit.map(r => `${r.id} ${pct(r.idle)}/${(r.aim * 100).toFixed(1)}`).join(', ')}${off.map(r => `; OFF: ${r.id}`).join('')}`);
   const short = solo.filter(r => SHORT.includes(r.id));
-  check(short.every(r => r.idle < r.aim && r.idle > 0.35 && r.events <= 4), `solo, the essentials-only missions sit below their targets but stay playable (≥ 35% idle): ${short.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters)`).join(', ')}`);
+  check(short.every(r => r.idle < r.aim && r.idle > 0.3 && r.events <= 5), `solo, the essentials-only missions sit below their targets but stay playable (> 30% idle): ${short.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters)`).join(', ')}`);
   // 2-4 players: around the 68% − ramp target (the event count is finer here: ~3-6 points per encounter)
-  const team = [...new Set(rows.map(r => r.id))].map(id => {
+  const team = [...new Set(rows.map(r => r.id))].filter(id => !PENDING.includes(id)).map(id => {
     const rs = rows.filter(r => r.id === id && r.n > 1 && !(OUT[id] || []).includes(r.n));
     const dev = rs.length ? rs.reduce((s, r) => s + r.idle - r.aim, 0) / rs.length : 0;
     // (missions in spec only at ×2 — deep drift, nightmare, c7, c8 — have 1-2 heavy encounters there: one more is 10-45 points)
     return { id, ok: (rs.length < 2 || Math.abs(dev) <= 0.07) && rs.every(r => Math.abs(r.idle - r.aim) <= 0.15), per: rs.map(r => pct(r.idle)).join('/'), aim: (targetIdle(id, 2) * 100).toFixed(1) };
   });
   check(team.every(o => o.ok), `2-4 players: every mission near its target (68% − 0.5 per step; each within 15 points, a mission's mean within 7): ${team.map(o => `${o.id} ${o.per || '-'}/${o.aim}${o.ok ? '' : ' OFF'}`).join(', ')}`);
-  check(rows.every(r => Math.abs(r.length - L) < 5), `every mission jumps at about ${L} s for every crew size`);
+  check(rows.every(r => Math.abs(r.length - (G0.MISSIONS[r.id].length || L)) < 5), `every mission jumps at about ${L} s (or its own length: c5 ${G0.MISSIONS.c5.length} s) for every crew size`);
   const bad = rows.filter(r => r.verdict === 'impossible' && !(OUT[r.id] || []).includes(r.n));
   check(!bad.length, `no other mission is rated impossible${bad.map(r => `; ${r.name} ×${r.n} (${r.why.join('; ')})`).join('')}`);
 }

@@ -29,17 +29,19 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
 
 // --- difficulty: easy / very easy take one / two optional encounters out, the rest evenly spread, the reactor's pace unchanged
 {
-  const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT']);
+  const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT', 'COMBAT_KINDS']);
   for (const [id, full] of [['intro', false], ['c3', false], ['intro', true], ['c4', true], ['pirates', true]]) {
     if (!G.MISSIONS[id]) continue;
     if (full) G.MISSIONS[id].crew = null;              // (all written events; solo otherwise)
     G.startMission(id); const n0 = G.mission.events.length, pace = G.paceFactor(), jump = G.mission.jumpAt;
     const ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(G.MISSIONS[id].essential || [])]);
-    const essN = G.mission.events.filter(e => ess.has(e.kind)).length;
+    // never dropped: the essentials and the opener, plus a finale fight if none of those may be the finale
+    const core = G.mission.events.filter(e => ess.has(e.kind) || e.opener), obj = new Set(G.MISSIONS[id].essential || []);
+    const essN = core.length + ((obj.size || core.some(e => e.opener)) && core.filter(e => G.COMBAT_KINDS.has(e.kind)).every(e => obj.has(e.kind) || e.opener) && n0 > core.length ? 1 : 0);
     for (const easy of [1, 2]) {
       G.startMission(id, { easy }); const evs = G.mission.events, gaps = evs.slice(1).map((e, i) => e.t - evs[i].t);
       const ts = evs.map(e => e.t).sort((a, b) => a - b), even = ts.slice(1).every((t, i) => Math.abs(t - ts[i] - (ts[1] - ts[0])) < 1e-6);
-      check(evs.length === Math.max(essN, 1, n0 - easy) && evs.filter(e => ess.has(e.kind)).length === essN && (evs.length < 2 || even)
+      check(evs.length === Math.max(essN, 1, n0 - easy) && evs.filter(e => ess.has(e.kind) || e.opener).length === core.length && (evs.length < 2 || even)
             && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump
             && G.mission.extraLuck === (easy - (n0 - evs.length)) / 2 && Math.abs(G.luckCut() - G.LUCK_CUT ** G.mission.extraLuck) < 1e-12,
             `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), evenly spread (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s), same reactor pace and jump; ${G.mission.extraLuck * 2} step(s) with nothing to drop → ${G.mission.extraLuck} cat(s) of luck`);
@@ -60,6 +62,36 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   check(r2.mocks.length === 1 && r2.mocks[0].kind === 'frigate', `an unscanned frigate 5 s out shows up as "???? T-???" (t=${G.mission.t.toFixed(1)}, over=${JSON.stringify(G.mission.over)}, mocks=${r2.mocks.map(e => e.kind)})`);
   G.radarScan();
   check(G.radarList().mocks.length === 0 && G.radarList().known.some(e => e.kind === 'frigate'), 'scanning replaces the "????" with the real contact');
+}
+
+// --- the stealth fighter only shows on the radar STEALTH_RADAR s before it arrives (an interceptor: RADAR_RANGE)
+{
+  const G = loadGame([...NAMES, 'STEALTH_RADAR', 'RADAR_RANGE']);
+  G.MISSIONS.intro.crew = null; G.startMission(); G.power.reactor.fuel = 0;
+  G.mission.events = [{ id: 0, t: 60, kind: 'stealth', side: 'port', radar: true, done: false }, { id: 1, t: 61, kind: 'interceptor', side: 'star', radar: true, done: false }];
+  runTo(G, 60 - G.RADAR_RANGE + 5, calm(G)); G.radarScan();
+  const far = G.radarList().known.map(e => e.kind);
+  runTo(G, 60 - G.STEALTH_RADAR + 1, calm(G)); G.radarScan();
+  const near = G.radarList().known.map(e => e.kind);
+  check(G.STEALTH_RADAR < G.RADAR_RANGE && far.join() === 'interceptor' && near.includes('stealth'),
+        `radar ${G.RADAR_RANGE - 5} s out: only the interceptor (${far.join(', ')}); the stealth fighter shows ${G.STEALTH_RADAR} s out (${near.join(', ')})`);
+}
+
+// --- the campaign's openers: a calm half minute, then something else before the mission's main encounter
+{
+  const G = loadGame(NAMES);
+  const MAIN = { c3: 'derelict', c4: 'pirates', c6: 'rock' };   // (c5: being redesigned separately)
+  for (const [id, main] of Object.entries(MAIN)) {
+    let ok = true, msg = '';
+    for (const easy of [0, 1, 2]) {
+      G.startMission(id, { easy });
+      const ev = [...G.mission.events].sort((a, b) => a.t - b.t), first = ev[0], m = ev.findIndex(e => e.kind === main), last = ev[ev.length - 1];
+      const good = first.opener && first.kind !== main && first.t >= 25 && m > 0 && ev[m].t >= 45 && !last.opener && last.kind !== main;
+      if (!good) { ok = false; msg += ` difficulty ${easy}: ${ev.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', ')};`; }
+      if (easy === 0) msg += ` ${ev.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', ')}`;
+    }
+    check(ok, `${id} solo, every difficulty: nothing for ${G.mission.events[0]?.t.toFixed(0)} s, the opener, then the ${main}, a fight as the finale:${msg}`);
+  }
 }
 
 // --- diagnosis: two yellow from the start; the failing one turns orange 20 s ahead, red when broken

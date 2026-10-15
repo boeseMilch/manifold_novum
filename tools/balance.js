@@ -81,7 +81,8 @@ const A = {
                           // plus holding E LEVER_E_HOLD (0.5 s) to wedge the wrench in or pull it out, plus the walk there
   SHIELD_GRACE: 1,        // s a shield press may come late (the heavy shot is heard charging) before the shot lands
   ENERGY_DT: 0.1,         // s per tick of the game's energy code in the energy runs
-  TARGET_IDLE: 0.70,      // --calibrate: the share of crew time the event counts aim to leave free, solo, on the first mission …
+  TARGET_IDLE: 0.56,      // --calibrate: the share of crew time the event counts aim to leave free, solo, on the first mission …
+                          // (was 0.70: playtest 2026-10-14, chapter 1 solo felt right at the model's 51%, chapters 3 / 5 at 63% too easy)
   TARGET_IDLE_CREW: 0.68, // … and for 2-8 players (--target sets both)
   TARGET_RAMP: 0.005,     // … minus this per step in PROGRESSION (a difficulty ramp: c8 solo aims at 66%)
   FUEL_MARGIN: 1,         // --calibrate: fuel cells on top of what the energy runs need
@@ -122,7 +123,7 @@ const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'make
   'HEAL_TIME', 'TENTACLE_COIL', 'ACID_TIME', 'LEECH_CHEW', 'PUFF_EVERY', 'SAC_OPEN', 'MOTHER_TOSSES', 'LEV_TIME', 'LEV_STEP', 'TREAT_TIME',
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
-  'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD'];
+  'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -422,7 +423,8 @@ function schedule(build, waitByKey) {
     for (let i = 0; i < chunks; i++) repairs(small / chunks, large / chunks, t0 + (t1 - t0) * (i + 0.5) / chunks, side, ev);
   };
   // an event the radar has shown: someone sets off early and is there when it starts; else they react
-  const known = (j, now) => j.radarable && scans.some(s => s <= now && s <= j.ev.t && j.ev.t - s <= build.radarRange);
+  const reach = (ev) => (ev.kind === 'stealth' ? Math.min(build.radarRange, g.STEALTH_RADAR) : build.radarRange);   // (a stealth fighter shows up late)
+  const known = (j, now) => j.radarable && scans.some(s => s <= now && s <= j.ev.t && j.ev.t - s <= reach(j.ev));
   const releaseOf = (j, now) => (j.radarable && known(j, now) ? j.release - j.trip : j.release + (j.radarable || (j.prio <= 1 && j.rel >= 0) ? A.REACT : 0));
 
   // the scheduler: whoever is free next takes the most urgent job that's come up
@@ -793,7 +795,7 @@ const meanIdle = (rs) => rs.reduce((s, r) => s + r.idle, 0) / rs.length;
 // essential minimum and twice the written list.
 function fitEvents(id, n, ship, oc, runs, minK = 1) {
   const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(M.essential || [])]);
-  const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind)).length), max = Math.max(2 * wrote, wrote + 16);
+  const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind) || e.opener).length), max = Math.max(2 * wrote, wrote + 16);
   const at = (k) => meanIdle(evalAt(id, n, { events: k, cells: A.AMPLE_CELLS, overcharge: oc, reactor: 1 }, ship, runs));
   let lo = min, hi = max, vLo = at(lo);
   if (vLo <= aim) return { events: lo, idle: vLo, short: true };   // even the essentials keep the crew busier than that

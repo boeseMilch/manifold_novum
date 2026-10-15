@@ -9,7 +9,9 @@ Sprites (16 facing directions each; dir i faces game angle i*22.5deg = c.face; d
   crew/settle              stopping: passing pose -> idle, `per` (2) frames from phase 0, then 2 from 0.5
   crew/visor               the gold visor (down) alone, rest pose: drawn over any standing frame at that
                            frame's `head` offset (every standing entry has one [x fwd, y left, z] per frame;
-                           the head keeps its orientation in all standing poses, so it always fits)
+                           the head keeps its orientation in all standing poses, so it always fits) and a
+                           `hand` per frame (the right glove's centre, [x fwd, y left, z] from the ground
+                           origin): js/sprites.js draws a held weapon (items/held_<kind>) there
   crew/down, crew/down_visor   health 'down' / 'out' (8 directions): flat on the back, head towards the
                            facing direction, limbs sprawled; the body's centre on the ground origin
                            (own canvas). 'out' = the same sprite, greyed and faded by the game.
@@ -33,6 +35,7 @@ the piece's mean distance from the camera); draw the worn pieces of a frame sort
     MN_ONLY=down,gear ... only these sprites (names, their first token, gear_<id> or gear_<id>_<set>)
     MN_VISOR=0|1          only the visor-up sprites / visor-down ones (crew/visor, down_visor)
     MN_PASSES=beauty      only these passes (one kind: persistent data, ~3x faster)
+    MN_HANDS_ONLY=1       no renders: only write each standing set's `hand` (right glove per frame) to the manifest
 (the full set is ~5000 frames x passes, ~30 min on one GPU; split it over several processes with MN_ONLY /
 MN_VISOR, they share the manifest safely.)
 """
@@ -571,18 +574,31 @@ def head_offsets(frames):
         bpy.context.scene.frame_set(f); bpy.context.view_layer.update()
         out.append([round(v, 4) for v in head.matrix_world.translation - rest])
     return out
+def hand_offsets(frames):
+    """Per frame: where the right glove's centre is, relative to the ground origin, in the model's frame
+    (x forward, y to the left, z up; the game turns it by the facing). A held weapon goes there."""
+    glove = bpy.data.objects['glove-1']; root.rotation_euler.z = 0; out = []
+    for f in frames:
+        bpy.context.scene.frame_set(f); bpy.context.view_layer.update()
+        out.append([round(v, 4) for v in glove.matrix_world.translation - root.matrix_world.translation])
+    return out
 def extra(nm, frames):
     """Manifest fields the game reads: how far a cycle carries you (no foot sliding), strafe direction,
-    settle frames per side, the head's offset per frame (for the visor overlay)."""
+    settle frames per side, the head's offset per frame (for the visor overlay), the right hand's place
+    per frame (for a held weapon)."""
     out = {}
     if nm in GAITS: out = {'stride': stride(nm), **({'side': 'left'} if nm == 'strafe' else {})}
     if nm == 'settle': out = {'per': len(SETTLE)}
-    if nm != 'down': out['head'] = head_offsets(frames)
+    if nm != 'down': out['head'] = head_offsets(frames); out['hand'] = hand_offsets(frames)
     return out
 def add_fields(name, fields):
     if not fields: return
     with open(mn.MANIFEST) as fh: ent = json.load(fh)[name]
     ent.update(fields); mn._manifest_put(name, ent)
+if os.environ.get('MN_HANDS_ONLY'):                  # only (re)compute the standing sets' `hand` lists, no renders
+    for nm, frames in SETS:
+        if nm != 'down': add_fields(f'crew/{nm}', {'hand': hand_offsets(frames)})
+    print('[crew] hand offsets written'); raise SystemExit(0)
 times = {}
 canvas = {}
 # Standing sets: visor up only; the visor down is the crew/visor overlay on top (16 frames instead of a

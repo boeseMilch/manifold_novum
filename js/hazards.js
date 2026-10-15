@@ -14,7 +14,7 @@ const hz = {
   surges: [],                              // ids of power lines that arc
   noGrav: [],                              // room ids whose gravity plating failed
   tape: 3, plates: 4,                      // duct tape rolls, hull plates left
-  coffee: 1,                               // the helm mug: 1 = full; refills itself (someone makes more)
+  coffee: 1,                               // the kitchen mug: 1 = full; refills itself (someone makes more)
   stats: { fires: 0, firesOut: 0, breaches: 0, repairs: 0, pets: 0, treated: {} },
 };
 const BREACH_TIME = 8, TARP_TIME = 15, WELD_TIME = 6, LEAK_TIME = 20, REPRESS_TIME = 2, VENT_TIME = 10;
@@ -38,7 +38,7 @@ const PLASMA_ROOMS = new Set(Object.keys(VENT_PANELS));
 const GRAV_PANELS = { portGun: [6.0, 9.6], bridge: [19.0, 8.6], starGun: [36.0, 9.2], portLock: [9.6, 19.6], reactor: [26.6, 21.2], starLock: [35.4, 18.0] };
 const SNACK = { x: 10.5, y: 3.85 };
 const PLATE_CRATES = [{ x: 12.6, y: 22.4 }, { x: 33.1, y: 22.8 }];
-const COFFEE_MUG = { x: 22.75, y: -2.1 };
+const COFFEE_MUG = { x: 7.52, y: 10.92 };              // on the kitchen counter, between the sink and the stove
 
 const roomById = (id) => ROOMS.find(r => r.id === id);
 // Where the hole shows on the outside of the hull (on the wall itself), and where a patched one stays.
@@ -188,15 +188,28 @@ function ventHostiles(dt) {
     if (f.ok(a.x, ny)) a.y = ny;
   }
 }
-function startVent(roomId, operator = null) {
-  hz.vent = { room: roomId, t: VENT_TIME, hit: [] };
+function startVent(roomId, operator = null, forced = false) {
+  if (hz.vent && hz.vent.room !== roomId) hz.repress = { room: hz.vent.room, t: REPRESS_TIME };   // (one vent at a time: the other one closes)
+  hz.vent = { room: roomId, t: VENT_TIME, hit: [], forced };
   const room = roomById(roomId);
-  combatBanner(`${room.name} vented to space — everything in there gets blown around!`);
+  combatBanner(forced ? `Outer airlock forced — ${room.name} vents to space! Blast doors down.`
+                      : `${room.name} vented to space — everything in there gets blown around!`);
   sfx.explosion(); sfx.hatch(); sfx.whoosh?.(); sfx.say?.(`Venting ${room.name}.`);
   for (const c of crew) if (c !== operator && c.mode === 'inside' && roomAt(c.x, c.y) === room) { hurtCrew(c); combatFx(c.x, c.y, 0, -3, 0.6, '#c9ced8', 0.2); }
   for (const f of fires) if (sysRooms(f.sys).includes(room)) { f.hp = 0; scorch(f.x, f.y); }
   ventHostiles(0);
   const h = ventHatch(roomId); if (h) h.open = 1;
+}
+// Forcing an outer airlock by manual override (broken or locked) opens both its doors at once: the
+// airlock room vents to space exactly like the vent panel does (anyone else in there gets hurt,
+// hostiles get blown out, blast doors seal it off from the reactor room), and repressurizes once the
+// hatch swings shut again after VENT_TIME. The one who forced it has their visor down: unhurt.
+// Forcing it again while it's still venting just keeps it open for the full time.
+const hatchRoom = (h) => h.side === 'port' ? 'portLock' : 'starLock';
+function forceHatchVent(h, operator = null) {
+  const id = hatchRoom(h);
+  if (hz.vent?.room === id) { hz.vent.t = VENT_TIME; hz.vent.forced = true; return; }
+  startVent(id, operator, true);
 }
 function updateVent(dt) {
   if (!hz.vent) return;
@@ -205,7 +218,10 @@ function updateVent(dt) {
   if (Math.random() < dt * 20) combatFx(vx + (Math.random() - 0.5), vy + (Math.random() - 0.5), (Math.random() - 0.5) * 2, -2 - Math.random() * 3, 0.7, '#dfe8f0', 0.2);
   const h = ventHatch(hz.vent.room); if (h) h.open = 1;  // both doors of the outer airlock stand open
   ventHostiles(dt);
-  if ((hz.vent.t -= dt) <= 0) { hz.vent = null; hz.repress = { room: room.id, t: REPRESS_TIME }; combatBanner(`${room.name}: vent closed, repressurizing`); }
+  if ((hz.vent.t -= dt) <= 0) {
+    const forced = hz.vent.forced; hz.vent = null; hz.repress = { room: room.id, t: REPRESS_TIME };
+    combatBanner(`${room.name}: ${forced ? 'the forced airlock swung shut' : 'vent closed'}, repressurizing`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +295,7 @@ function hazardClickTarget(mx, my) {
     if (!near(x, y)) return { text: `Arcing ${lineName(LINE[id])} — get closer`, ok: false, x, y, r: 0.8 };
     if (inv.weapon !== 'repair') return { text: `Arcing ${lineName(LINE[id])} — splice it with the repair kit`, ok: false, x, y, r: 0.8 };
     return holdTarget('splice' + id, SPLICE_TIME, `Hold click: cut and splice the ${lineName(LINE[id])} (${SPLICE_TIME} s)`, x, y, 0.8,
-                      () => { hz.surges = hz.surges.filter(s => s !== id); hz.stats.repairs++; combatBanner(`${lineName(LINE[id])} spliced`); sfx.win(); });
+                      () => { hz.surges = hz.surges.filter(s => s !== id); hz.stats.repairs++; sfx.win(); });
   }
   // failed gravity: the breaker under the floor
   for (const id of hz.noGrav) {
@@ -307,11 +323,11 @@ function hazardClickTarget(mx, my) {
     if (player.health !== 'hurt') return { ...t, text: 'Snack machine (a snack helps when you\'re hurt)', ok: false };
     if (player.snackT > 0) return { ...t, text: `You just had a snack (next one in ${Math.ceil(player.snackT)} s)`, ok: false };
     return { ...t, ok: true, text: 'Click: grab a snack — being hurt ends 10 s sooner',
-             run: () => { player.snackT = SNACK_COOLDOWN; player.hurtT = Math.max(0.1, player.hurtT - 10); sfx.clank(); combatBanner('Crunch. Feeling a bit better.'); } };
+             run: () => { player.snackT = SNACK_COOLDOWN; player.hurtT = Math.max(0.1, player.hurtT - 10); sfx.clank(); } };
   }
-  // coffee at the helm
+  // coffee in the kitchen
   if (at(COFFEE_MUG.x, COFFEE_MUG.y, 0.35)) {
-    const t = { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.35 };
+    const t = { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.35, z: COUNTER_Z };   // (z: on the counter, for the ring)
     if (!near(t.x, t.y, REACH + 0.6)) return { ...t, text: 'Coffee — get closer', ok: false };
     if (hz.coffee < 1) return { ...t, text: `The mug is empty (someone is making more: ${Math.ceil((1 - hz.coffee) * COFFEE_REFILL)} s)`, ok: false };
     return { ...t, ok: true, text: 'Click: drink the coffee (a bit faster for 15 s)', run: () => { hz.coffee = 0; player.coffeeT = COFFEE_TIME; sfx.poi(); } };
@@ -360,7 +376,7 @@ function hazardSpots() {
     ...hz.surges.map(id => { const [x, y] = linePoint(LINE[id], 0.5); return { x, y, r: 0.5 }; }),
     ...hz.noGrav.map(id => ({ x: GRAV_PANELS[id][0], y: GRAV_PANELS[id][1], r: 0.5 })),
     ...Object.entries(VENT_PANELS).filter(([id]) => fireIn(id)).map(([, [x, y]]) => ({ x, y, r: 0.4 })),
-    { x: SNACK.x, y: SNACK.y, r: 0.6 }, { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.3 },
+    { x: SNACK.x, y: SNACK.y, r: 0.6 }, { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.3, z: COUNTER_Z },
     ...PLATE_CRATES.filter(() => hz.plates > 0).map(p => ({ x: p.x, y: p.y, r: 0.6 })),
   ];
 }
@@ -588,8 +604,6 @@ function drawHazardProps(t) {
     ctx.fillText('SNAX', x + w * 0.3, y - h * 0.2); ctx.fillStyle = '#c9ced8'; ctx.fillRect(x + w * 0.22, y + 2, 10, 4);
     ctx.textAlign = 'left';
   }
-  // the helm mug, empty or full
-  if (hz.coffee < 1 && !sprReady('systems/mug_empty')) { ctx.beginPath(); ctx.arc(L(COFFEE_MUG.x), L(COFFEE_MUG.y), 5, 0, TAU); ctx.fillStyle = '#3a2a1a'; ctx.fill(); }
   // gravity breakers that need resetting: a floor plate with a flashing light
   for (const id of hz.noGrav) {
     const [gx, gy] = GRAV_PANELS[id], x = L(gx), y = L(gy);

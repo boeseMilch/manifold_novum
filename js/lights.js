@@ -221,11 +221,15 @@ function gameLighting(t) {
   // the docked ship: a dead derelict is dark inside but for its (dying) emergency strips; the
   // pirates keep their ship lit, warm and reddish. The tube between takes after ours.
   if (typeof dk !== 'undefined' && dk.dock && typeof DG === 'function') {
-    const g = DG(), pir = dk.dock.kind === 'pirate', S = Lt.strip;
-    areas.push({ x: g.tube.x, y: g.tube.y - 0.3, w: g.tube.w, h: g.tube.h + 0.6, color: pir ? [0.4, 0.34, 0.32] : [0.18, 0.18, 0.2], sun: 0 });
+    const g = DG(), pir = dk.dock.kind !== 'derelict', S = Lt.strip;   // (the pirate base: lit like their ship)
+    if (dk.dock.tube !== 'detached') areas.push({ x: g.tube.x, y: g.tube.y - 0.3, w: g.tube.w, h: g.tube.h + 0.6, color: pir ? [0.4, 0.34, 0.32] : [0.18, 0.18, 0.2], sun: 0 });
     for (const q of [...g.rooms, ...g.doors]) areas.push({ x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6, color: pir ? [0.36, 0.26, 0.25] : [0.09, 0.09, 0.105], sun: 0 });
     g.rooms.forEach((q, i) => {
-      if (pir) { add({ x: q.x + q.w / 2, y: q.y + q.h / 2, z: 1.8, color: [1.0, 0.62, 0.45], radius: 6, intensity: 0.9, shadow: true }); return; }
+      if (pir) {                                      // (the pirate base's bigger rooms: a lamp per ~6 units)
+        const nx = Math.max(1, Math.round(q.w / 6)), ny = Math.max(1, Math.round(q.h / 6));
+        for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) add({ x: q.x + q.w * (i + 0.5) / nx, y: q.y + q.h * (j + 0.5) / ny, z: 1.8, color: [1.0, 0.62, 0.45], radius: 6, intensity: 0.9, shadow: true });
+        return;
+      }
       const dying = hash01(Math.floor(t * 7) + i * 13) < 0.08 ? 0.15 : 1;   // a strip on its last legs
       for (const y of [q.y + 0.12, q.y + q.h - 0.12])
         add({ x: q.x + 0.3, y, z: S.z, x2: q.x + q.w - 0.3, y2: y, z2: S.z, color: S.color, radius: 5.5, intensity: 0.7 * dying, wrap: 0.05, shadow: true });
@@ -325,11 +329,11 @@ function gameLighting(t) {
   if (typeof boarding !== 'undefined') for (const b of boarding.bolts) {
     if (b.wrench) continue;
     const col = b.owner === 'alien' ? [0.6, 1.0, 0.35] : b.owner === 'saboteur' ? [0.35, 0.88, 1.0] : b.heavy ? [0.6, 0.85, 1.0] : [1.0, 0.32, 0.22];
-    add({ x: b.x, y: b.y, z: 0.9, color: col, radius: b.heavy ? 3.4 : 2.4, intensity: b.heavy ? 2.2 : 1.3 });
+    add({ x: b.x, y: b.y, z: b.z || 0.9, color: col, radius: b.heavy ? 3.4 : 2.4, intensity: b.heavy ? 2.2 : 1.3 });
   }
   if (typeof crew !== 'undefined') for (const c of crew) if (c.charge != null && typeof BLASTER_CHARGE !== 'undefined') {   // heavy blaster charging
-    const k = clamp(c.charge / BLASTER_CHARGE, 0, 1);
-    add({ x: c.x + Math.cos(c.face) * 0.45, y: c.y + Math.sin(c.face) * 0.45, z: 0.9, color: k >= 1 ? [0.6, 0.85, 1.0] : [1.0, 0.7, 0.45], radius: 1.5 + 1.5 * k, intensity: 0.4 + 1.2 * k });
+    const k = clamp(c.charge / BLASTER_CHARGE, 0, 1), m = muzzleAt(c);
+    add({ x: m.x, y: m.y, z: m.z + 0.1, color: k >= 1 ? [0.6, 0.85, 1.0] : [1.0, 0.7, 0.45], radius: 1.5 + 1.5 * k, intensity: 0.4 + 1.2 * k });
   }
   if (typeof combat !== 'undefined') {
     for (const s of combat.shells) add({ x: s.x, y: s.y, z: Math.max(0.8, 0.3 + shellZ(s)), color: [1.0, 0.85, 0.5], radius: 2.6, intensity: 1.1 });
@@ -339,7 +343,7 @@ function gameLighting(t) {
     // explosions and debris: the particles, clustered on a coarse grid
     const cells = new Map();
     for (const p of combat.fx) {
-      if (p.life <= 0) continue;
+      if (p.life <= 0 || p.foam) continue;           // (extinguisher foam glows only where it's lit: white lights from it lit up whole rooms)
       const w = (p.size || 0.1) * (p.life / (p.max || 1)), key = Math.floor(p.x / 2) * 1000 + Math.floor(p.y / 2);
       let c = cells.get(key);
       if (!c) cells.set(key, c = { x: 0, y: 0, w: 0, r: 0, g: 0, b: 0 });
@@ -436,6 +440,8 @@ function gameLighting(t) {
   add({ x: -1.6, y: 7.0, z: 0.6, color: [1.0, 0.15, 0.1], radius: 2.2, intensity: 0.5 + 0.4 * (Math.sin(t * 2) > 0) });
   add({ x: 46.0, y: 7.0, z: 0.6, color: [0.2, 1.0, 0.35], radius: 2.2, intensity: 0.5 + 0.4 * (Math.sin(t * 2) > 0) });
   if ((t % 1.6) < 0.08) add({ x: 22.2, y: -3.2, z: 0.6, color: [1, 1, 1], radius: 3.5, intensity: 2.0 });
+
+  if (typeof useLights === 'function') for (const l of useLights()) add(l);   // what E would act on: lit a little (js/systems.js)
 
   // --- outside: the distant star (a solar flare makes it glare) ---------------------------------------
   let sunCol = Lt.sun.color, outside = Lt.outside;

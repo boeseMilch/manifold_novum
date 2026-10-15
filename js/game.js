@@ -111,6 +111,18 @@ function nearestFree(x, y, ok) {
 }
 function unstick(c, ok) { const p = nearestFree(c.x, c.y, ok); if (p) { [c.x, c.y] = p; c.vx = c.vy = 0; } }
 
+// The soft edge of a spacewalk (see EVA_REACH, js/ship.js): past EVA_SOFT of the way out, the most you can drift
+// outwards fades away towards the edge, so holding a key away from the ship slows you to a stop; while you don't
+// push outwards you drift gently back in (EVA_PULL at the very edge, nothing at EVA_SOFT). Along or back in: free.
+const EVA_PULL = 0.9;
+function evaDrift(c, tx, ty) {
+  const r = evaReach(c.x, c.y);
+  if (r.e <= EVA_SOFT) return;
+  const f = Math.min(1, (r.e - EVA_SOFT) / (1 - EVA_SOFT)), out = c.vx * r.nx + c.vy * r.ny;
+  const most = tx * r.nx + ty * r.ny > 0.1 ? EVA_SPEED * (1 - f) * (1 - f) : -EVA_PULL * f;
+  if (out > most) { c.vx += (most - out) * r.nx; c.vy += (most - out) * r.ny; }
+}
+
 function updateCrew(c, dt, ix, iy) {
   if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
   const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y) && !perk(c, 'boots'));
@@ -118,12 +130,15 @@ function updateCrew(c, dt, ix, iy) {
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
   const k = Math.min(1, (floaty ? EVA_ACCEL * (eva ? 1 : 0.5) : WALK_ACCEL) * dt / speed);
   c.vx = lerp(c.vx, tx, k); c.vy = lerp(c.vy, ty, k);
+  if (eva) evaDrift(c, tx, ty);
   const ok = eva ? (x, y) => evaOk(x, y) : (() => { const rects = walkRects(); return (x, y) => canStand(x, y, rects); })();
   unstick(c, ok);
+  // (a docked ship's rooms: no floating in; anyone the ship docked onto may float out)
+  const go = eva && typeof dockBlocksEva === 'function' && !dockBlocksEva(c.x, c.y) ? (x, y) => ok(x, y) && !dockBlocksEva(x, y) : ok;
   const nx = c.x + c.vx * dt;
-  if (ok(nx, c.y)) c.x = nx; else c.vx = 0;
+  if (go(nx, c.y)) c.x = nx; else c.vx = 0;
   const ny = c.y + c.vy * dt;
-  if (ok(c.x, ny)) c.y = ny; else c.vy = 0;
+  if (go(c.x, ny)) c.y = ny; else c.vy = 0;
   if (c.mode === 'inside' && inRect(c.x, c.y, TREADMILL)) {          // on the treadmill: the belt carries you back
     const belt = speed * BELT_K, by = c.y + belt * dt;                // (half of this crew member's own walking speed)
     if (ok(c.x, by)) c.y = by;
@@ -242,7 +257,7 @@ function updatePlayer(dt) {
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
 
-  if (player.mode === 'hatch') { updateHatch(dt); prompt = { text: 'Cycling outer airlock…' }; return; }
+  if (player.mode === 'hatch') { updateHatch(dt); prompt = { text: 'Cycling outer airlock…', quiet: true }; return; }
   if (player.health === 'down' || player.health === 'out') {     // can't do anything but get patched up
     const self = treatInfo(player);
     if (player.mode === 'gun') {                                // slumped in the cannon's seat: no aiming, no firing (updateInteraction: patching)
@@ -289,8 +304,8 @@ function updatePlayer(dt) {
     const h = HATCHES.find(h => Math.hypot(player.x - h.outside[0], player.y - h.outside[1]) < 1.5);
     if (h) {
       const at = { x: h.x, y: h.y, r: 1.2 };
-      if (broken(h)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(h, 'Broken outer airlock', () => startHatch(h, 'in')) });
-      else if (h.locked) act({ text: 'Click: force the locked outer airlock (manual override)', at, run: () => startOverride(h, 'Outer airlock') });
+      if (broken(h)) act({ text: 'Click: force the broken outer airlock (manual override) — vents the airlock room!', at, run: () => startOverride(h, 'Broken outer airlock', () => { forceHatchVent(h, player); startHatch(h, 'in'); }) });
+      else if (h.locked) act({ text: 'Click: force the locked outer airlock (manual override) — vents the airlock room!', at, run: () => startOverride(h, 'Outer airlock', () => { h.locked = false; forceHatchVent(h, player); }) });
       else act({ text: 'Click: go back inside', at, run: () => startHatch(h, 'in') });
     }
     return;
@@ -317,8 +332,8 @@ function updatePlayer(dt) {
     else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
   } else if (hatch) {
     const at = { x: hatch.x - hatch.dir * 0.2, y: hatch.y, r: 1.1 };
-    if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override)', at, run: () => startOverride(hatch, 'Broken outer airlock', () => startHatch(hatch, 'out')) });
-    else if (hatch.locked) act({ text: 'Click: force the locked outer airlock (manual override)', at, run: () => startOverride(hatch, 'Outer airlock') });
+    if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override) — vents this room!', at, run: () => startOverride(hatch, 'Broken outer airlock', () => { forceHatchVent(hatch, player); startHatch(hatch, 'out'); }) });
+    else if (hatch.locked) act({ text: 'Click: force the locked outer airlock (manual override) — vents this room!', at, run: () => startOverride(hatch, 'Outer airlock', () => { hatch.locked = false; forceHatchVent(hatch, player); }) });
     else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
   } else if (dockAct()) {
   } else if (doorway && doorway.blast && doorRooms(doorway).some(r => r.id === 'reactor')) {
@@ -339,8 +354,8 @@ function updatePlayer(dt) {
         else act({ text: 'Deck airlock is broken (doors forced open)', at });
       }
       else if (L.locked) act({ text: 'Click: force the locked deck airlock (manual override)', at, run: () => startOverride(L, 'Deck airlock') });
-      else if (L.phase === 'cycling') act({ text: 'Airlock cycling…', at });
-      else if (L.phase !== 'idle') act({ text: 'Airlock doors moving…', at });
+      else if (L.phase === 'cycling') act({ text: 'Airlock cycling…', at, quiet: true });   // (quiet: only as the tooltip, not over your head)
+      else if (L.phase !== 'idle') act({ text: 'Airlock doors moving…', at, quiet: true });
       else if (inside) act({ text: 'Click: cycle the airlock', at, run: () => startCycle(L, other(L.open)) });
     }
   }
@@ -364,9 +379,10 @@ function act(p) {
   prompt = { ok: !!p.run || !!p.ok, ...p };
   if (!p.run) return;
   if (!tutAllows('target', p)) { prompt.ok = false; return; }   // tutorial: not what this step asks for
+  if (!p.noE) prompt.eAct = true;                    // (E does this: its spot gets the solid ring)
   if ((debugOpen && player === me) || ui.panel || mission.over) return;
   const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r && !clickTarget(m[0], m[1])?.ok;   // something more specific under the mouse wins
-  const eForMe = pressed.has('KeyE') && !ui.panel && !actionable(hover) && !p.noE;   // (E on something highlighted under the mouse goes there; noE: E goes to something more urgent nearby)
+  const eForMe = pressed.has('KeyE') && !ui.panel && !p.noE;   // (E goes by where you stand, never by the mouse; noE: E goes to something more urgent nearby)
   if ((mouse.click && onIt) || eForMe) { mouse.click = false; if (eForMe) player.eUsed = true; pressed.delete('KeyE'); p.run(); }
 }
 
@@ -384,21 +400,21 @@ function updateInteraction(dt) {
   }
   if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
   const [mx, my] = mouseWorld();
-  hover = pickHover(player, mx, my);
+  hover = player === me && invSlotAt(mouse.x, mouse.y) ? null : pickHover(player, mx, my);   // (on the inventory: that's a HUD click)
   if (hover?.ok && !tutAllows('target', hover)) hover = { text: hover.text, ok: false, x: hover.x, y: hover.y, r: hover.r };   // tutorial: only what the step asks for
-  let target = hover, holding = mouse.down, click = mouse.click;
+  let target = hover, holding = mouse.down && !mouse.suppress, click = mouse.click;
   const eDown = keys.has('KeyE') && !player.eUsed, eTap = pressed.has('KeyE') && !player.eUsed;
   if (!mouse.down) {
-    const e = actionable(hover) ? hover : nearbyTarget(eDown || eTap);   // (pointing at your prompt's own spot doesn't count: act() runs that)
-    if (e && !actionable(hover) && (!prompt?.run || prompt.noE) && !prompt?.screen)            // show what E would do
-      prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, at: { x: e.x, y: e.y, r: e.r, hullTop: e.hullTop } };
+    const e = nearbyTarget(eDown || eTap);          // E: what's nearest (and in front of you), wherever the mouse is
+    if (e && (!prompt?.run || prompt.noE) && !prompt?.screen)            // show what E would do
+      prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, eAct: true, at: { x: e.x, y: e.y, r: e.r, z: e.z, hullTop: e.hullTop } };
     const eLetGo = player.eHeld && !keys.has('KeyE');
-    const treating = e?.treat && player.treat?.id === e.treat.id && !actionable(hover);   // (letting go of E for a moment keeps a treatment going, as with the mouse)
+    const treating = e?.treat && player.treat?.id === e.treat.id && !mouse.down;   // (letting go of E for a moment keeps a treatment going, as with the mouse)
     if (eDown || eTap || eLetGo || treating) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
     if ((eDown || eTap || eLetGo) && e?.eHold) {                // E on a tap-or-hold thing (the power lever): nothing on the press,
       const eh = e.eHold;                          // a tap on letting go, the hold action once held long enough
       if ((eLetGo && player.hold?.id === 'eHold') || (eTap && !eDown)) eh.tap();
-      target = { ...e, run: null, hold: { id: 'eHold', time: eh.time, exact: true, done: () => { eh.hold(); player.eUsed = true; } } };
+      target = { ...e, run: null, hold: { id: 'eHold', time: eh.time, exact: true, label: eh.label, done: () => { eh.hold(); player.eUsed = true; } } };
       click = false;
     }
   }
@@ -422,8 +438,9 @@ function nearbyTarget(now) {
       if (gx * gx + gy * gy > REACH * REACH) continue;
       const t = clickTarget(player.x + gx, player.y + gy);
       if (!actionable(t) || !tutAllows('target', t)) continue;
-      const d = Math.hypot(t.x - player.x, t.y - player.y);
-      if (d < bd) { bd = d; best = t; }
+      const d = Math.hypot(t.x - player.x, t.y - player.y), f = player.face ?? 0;   // (the way you face counts a little)
+      const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
+      if (sc < bd) { bd = sc; best = t; }
     }
   player.eScan = { t: time, target: best };
   return best;
@@ -450,6 +467,7 @@ function runCommand(cmd) {
   else if (kind === 'reboot') rebootSwitch(arg);
   else if (kind === 'practice') runPractice(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
+  else if (kind === 'drop') { if (tutAllows('drop') && (arg === 'weapon' || arg === 'item')) dropSlot(arg); }   // (a click on an inventory slot)
   else if (kind === 'lamp') player.lamp = !player.lamp;   // the helmet lamp (L): drawing only, see js/lights.js
 }
 // Tutorial gate (js/tutorial.js): while the tutorial runs, only what its current step asks for works
@@ -575,7 +593,8 @@ function roomDist(room, x, y) {
   return Math.min(...room.rects.map(q => Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h))));
 }
 function cameraTarget() {
-  const vh = VH - HUD_H, vsy = viewSy(), zRoom = Math.min(VW / (VIEW_ROOM.w * T), vh / (VIEW_ROOM.h * T * vsy));
+  const vh = VH - HUD_H - INV_RESERVE, vsy = viewSy(), zRoom =   // (the room fits between the top bar and the inventory)
+    Math.min(VW / (VIEW_ROOM.w * T), vh / (VIEW_ROOM.h * T * vsy));
   if (player.mode === 'gun') {
     const [cx, cy, w] = player.gun.view;
     return [cx, cy, Math.min(VW / (w * T), vh / (w * 0.62 * T * vsy))];
@@ -612,7 +631,8 @@ function updateCamera(dt) {
 // Screen (CSS px) = (ox + x·T·zoom, oy + y·T·zoom·sy) for a point on the ground.
 function camera() {
   const x = cam.x + cam.ox + cam.sx, y = cam.y + cam.oy + cam.sy, sy = viewSy();
-  return { zoom: cam.zoom, sy, ox: VW / 2 - x * T * cam.zoom, oy: HUD_H + (VH - HUD_H) / 2 - y * T * cam.zoom * sy };
+  const below = INV_RESERVE * (1 - (cam.overview || 0));   // (centred above the inventory; the whole-ship overview uses the full height)
+  return { zoom: cam.zoom, sy, ox: VW / 2 - x * T * cam.zoom, oy: HUD_H + (VH - HUD_H - below) / 2 - y * T * cam.zoom * sy };
 }
 
 // ---------------------------------------------------------------------------
@@ -655,7 +675,7 @@ function drawInjuryOverlay(t) {
 // Charging the heavy blaster: a growing orb at the muzzle; fully charged it flickers blue-white.
 function drawBlasterCharge(c, t) {
   const k = clamp(c.charge / BLASTER_CHARGE, 0, 1), full = k >= 1;
-  const x = (c.x + Math.cos(c.face) * 0.42) * T, y = (c.y + Math.sin(c.face) * 0.42) * T, r = T * (0.06 + 0.16 * k) * (full ? 1 + 0.15 * Math.sin(t * 30) : 1);
+  const m = muzzleAt(c), x = m.x * T, y = (m.y - GFX.lift(m.z)) * T, r = T * (0.06 + 0.16 * k) * (full ? 1 + 0.15 * Math.sin(t * 30) : 1);
   const g = ctx.createRadialGradient(x, y, 0, x, y, r * 2);
   g.addColorStop(0, '#ffffff'); g.addColorStop(0.4, full ? '#9cd8ff' : '#ffb07a'); g.addColorStop(1, 'rgba(120,200,255,0)');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2, 0, TAU); ctx.fill();
@@ -762,14 +782,11 @@ function render(t) {
   drawEncounterProps(t);
   drawMinigameProps(t);
   drawInserter(t);
-  glow(() => drawInteractMarkers(t));
   glow(() => drawItems(t));
   drawFires(t);
   glow(() => { for (const s of SYSTEMS) if (s.broken) drawBroken(s, t); });
   glow(() => {
     drawEnergyBolts();
-    drawClickTarget(me.hover);
-    if (me.prompt?.e && !me.hover?.ok) drawClickTarget({ ...me.prompt.at, ok: true, hold: me.hold });   // what E would do
   });
   // the crew (as sprites when they're loaded, else in 2D)
   const visorOf = (c) => isOutside(c) || (c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y));
@@ -789,12 +806,11 @@ function render(t) {
   }
   for (const c of crew) {
     if (sprited.has(c) && !standing(c)) drawDownCross(c, t);
-    const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: progress ring
+    const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: the heartbeat ring
     if (tr) {
       const info = withCrew(tr, () => treatInfo(c));
       const [rx, ry] = crewDrawAt(c);
-      if (info) {
-        ctx.beginPath(); ctx.arc(rx * T, ry * T, T * 0.55, -Math.PI / 2, -Math.PI / 2 + Math.min(1, tr.treat.t / info.time) * TAU); ctx.strokeStyle = '#5fd6a0'; ctx.lineWidth = 5; ctx.stroke();
+      if (info) {                                   // (the progress itself: drawWorkBar)
         const beat = 1 - (((tr.treat.t + BEAT / 2) % BEAT) - BEAT / 2) ** 2 * 40;   // the heartbeat: click when the ring pulses
         if (beat > 0) { ctx.beginPath(); ctx.arc(rx * T, ry * T, T * (0.7 + 0.15 * beat), 0, TAU); ctx.strokeStyle = `rgba(255,120,140,${beat})`; ctx.lineWidth = 3; ctx.stroke(); }
       }
@@ -815,16 +831,18 @@ function render(t) {
   drawVentRush(t);                                   // a room being vented: air, papers and mist rushing out (js/hazards.js)
   drawDockDarkness();
   drawCombatFront(t);
+  drawUseMarks(t);                                   // rings round what you can use, over everything in the world (js/systems.js)
   if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
   drawJumpStallMark(view, t);                        // the jump stalled: NO ENERGY over the middle capacitor
 
   ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
   const prompt = me.prompt, hover = me.hover;
-  if (prompt && !prompt.screen) upright(view, me.x, me.y, G && sprited.has(me) ? 1.45 : 0.55, () => {
+  const working = workProgress(me);
+  if (prompt && !prompt.screen && !prompt.quiet && !working) upright(view, me.x, me.y, G && sprited.has(me) ? 1.45 : 0.55, () => {
     ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     const w = ctx.measureText(prompt.text).width + 18;
-    rr(-w / 2, -T * 0.42, w, T * 0.46, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? '#5fd6a0' : '#6b7486');
-    ctx.fillStyle = prompt.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(prompt.text, 0, -T * 0.06);
+    rr(-w / 2, -T * 0.42, w, T * 0.46, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? USE_COL : '#6b7486');
+    ctx.fillStyle = prompt.ok ? '#ffffff' : '#c9ced8'; ctx.fillText(prompt.text, 0, -T * 0.06);
     ctx.textAlign = 'left';
   });
   ctx.restore();
@@ -833,25 +851,59 @@ function render(t) {
   if (prompt && prompt.screen) {
     ctx.font = '600 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(prompt.text).width + 30;
-    rr(VW / 2 - w / 2, VH - 54, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, '#5fd6a0');
-    ctx.fillStyle = '#c8ffe6'; ctx.fillText(prompt.text, VW / 2, VH - 37); ctx.textAlign = 'left';
+    const py = me.mode === 'inside' ? invSlots()[0].y - 46 : VH - 54;   // (above the inventory)
+    rr(VW / 2 - w / 2, py, w, 34, 8); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, USE_COL);
+    ctx.fillStyle = '#ffffff'; ctx.fillText(prompt.text, VW / 2, py + 17); ctx.textAlign = 'left';
   }
+  for (const c of crew) drawWorkBar(view, c, sprited.has(c));   // hold jobs: a progress bar over the head
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);
   if (me.mode === 'gun' && standing(me)) drawCannonHUD(me.gun);
   drawSidebar(HUD_H);
-  if (hover && !debugOpen) {                        // tooltip next to the mouse
+  drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
+  if (hover && !debugOpen && !invSlotAt(mouse.x, mouse.y)) {   // tooltip next to the mouse
     ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';
     const w = ctx.measureText(hover.text).width + 16;
     const tx = Math.min(mouse.x + 16, VW - w - 6), ty = mouse.y + 22;
-    rr(tx, ty - 12, w, 24, 6); ctx.fillStyle = 'rgba(12,14,20,0.88)'; ctx.fill(); stroke(1.5, hover.ok ? '#5fd6a0' : '#6b7486');
-    ctx.fillStyle = hover.ok ? '#c8ffe6' : '#c9ced8'; ctx.fillText(hover.text, tx + 8, ty);
+    rr(tx, ty - 12, w, 24, 6); ctx.fillStyle = 'rgba(12,14,20,0.88)'; ctx.fill(); stroke(1.5, hover.ok ? USE_COL : '#6b7486');
+    ctx.fillStyle = hover.ok ? '#ffffff' : '#c9ced8'; ctx.fillText(hover.text, tx + 8, ty);
   }
   drawHUD();
   if (typeof drawTutorialHUD === 'function') drawTutorialHUD(t);
   drawDebugMenu();
   drawPanels(t);
   if (G) GFX.end();
+}
+// Progress of a hold job (repairing, welding, treating, …): a bar over the worker's head, in screen
+// space so it stays big and readable; yours with a caption, the others' small.
+function drawWorkBar(view, c, sprited) {
+  const w = workProgress(c);
+  if (!w || (c.mode !== 'inside' && c.mode !== 'eva' && !(c.mode === 'gun' && !standing(c)))) return;
+  const [ax, ay] = crewDrawAt(c), lift = (sprited ? 1.6 : 0.8) * T * view.zoom, k = clamp(w.k, 0, 1);
+  const mine = c === me;
+  ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const sx = view.ox + ax * T * view.zoom, sy = view.oy + ay * T * view.zoom * view.sy - lift;
+  if (!mine) {                                       // the others': a small bar
+    const bw = 110, bh = 10, x = clamp(sx - bw / 2, 8, VW - bw - 8), y = clamp(sy - bh, HUD_H + 8, VH - 40);
+    rr(x - 3, y - 3, bw + 6, bh + 6, 5); ctx.fillStyle = '#0c0e14'; ctx.fill();
+    if (k > 0) { rr(x, y, Math.max(4, bw * k), bh, 3); ctx.fillStyle = '#ffffff'; ctx.fill(); }
+    ctx.restore(); return;
+  }
+  // yours: one opaque panel with the caption and a big bar (drawn over everything, labels included)
+  ctx.font = '700 16px system-ui, sans-serif';
+  const pw = Math.max(280, ctx.measureText(w.label).width + 32), ph = 62, bw = pw - 24, bh = 20;
+  const px = clamp(sx - pw / 2, 8, VW - pw - 8), py = clamp(sy - ph, HUD_H + 8, invSlots()[0].y - ph - 8);
+  rr(px, py, pw, ph, 10); ctx.fillStyle = '#0c0e14'; ctx.fill(); stroke(2, '#8a909c');
+  ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(w.label, px + pw / 2, py + 17);
+  const bx = px + 12, by = py + 32;
+  rr(bx, by, bw, bh, 5); ctx.fillStyle = '#2b303a'; ctx.fill();
+  if (k > 0) { rr(bx, by, Math.max(10, bw * k), bh, 5); ctx.fillStyle = '#ffffff'; ctx.fill(); }   // (white: yellow is energy)
+  rr(bx, by, bw, bh, 5); ctx.lineWidth = 1.5; ctx.strokeStyle = '#c9ced8'; ctx.stroke();
+  const pct = `${Math.floor(k * 100)} %`;
+  ctx.font = '800 14px system-ui, sans-serif';
+  ctx.fillStyle = k > 0.45 ? '#14161b' : '#ffffff'; ctx.fillText(pct, bx + bw / 2, by + bh / 2 + 1);
+  ctx.restore(); ctx.textAlign = 'left';
 }
 // Text and labels above a world point, upright (not squashed by the tilted view): fn draws around
 // (0, -lift·T) in world px, with the world transform's zoom. `above`: screen units above the ground.
@@ -893,7 +945,7 @@ function drawCannonHUD(g) {
     rr(sx, sy, 14, 30, 6); ctx.fillStyle = on ? '#e8c34f' : '#2b303a'; ctx.fill(); stroke(1.5);
     if (on) { ctx.fillStyle = '#b8862a'; ctx.fillRect(sx + 2, sy + 20, 10, 5); }
   }
-  ctx.fillStyle = cap.charge ? '#9cd8ff' : '#ff8a7a'; ctx.font = '11px system-ui, sans-serif';
+  ctx.fillStyle = cap.charge ? POWER_COL : '#ff8a7a'; ctx.font = '11px system-ui, sans-serif';
   ctx.fillText(`energy: ${cap.charge}/${CAP_MAX}`, b.x + 86, b.y - 38);
   ctx.fillText(`(${['left', 'mid', 'right'][GUN_CAP[g.id]]} capacitor)`, b.x + 86, b.y - 22);
   const hover = inReloadBtn(mouse.x, mouse.y), pulse = empty ? 0.5 + 0.5 * Math.sin(time * 6) : 0;
@@ -988,7 +1040,9 @@ function clientUpdate(dt) {
   music.setMission(mission.id || 'intro');                // each mission has its own piece, building up towards the jump
   music.setIntensity(!mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
   music.setJump(!!mission.jump && !mission.over);
-  if (mission.over?.survived) music.jumped();              // the big final hit as we jump out
+  const lobby = ['menu', 'room'].some(id => document.getElementById?.(id)?.hidden === false);
+  if (mission.over?.survived && !lobby) music.jumped();    // the big final hit as we jump out
+  else if (!mission.over || lobby) music.rearm();          // a new mission, the menu or the lobby: the music plays again
   if (mission.over) creditMission();                 // rewards for this browser's player (once per run; early, before anything else can throw)
   jumpFxUpdate(dt);                                        // the jump's animation clock (js/mission.js)
   try { sfx.hum(jumpCharge()); } catch (e) { /* no audio */ }   // the drive's hum
@@ -997,12 +1051,13 @@ function clientUpdate(dt) {
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
   if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && standing(me) && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
+  if (me.mode === 'inside' && !me.ui.panel && m.click && invSlotAt(m.x, m.y)) { const b = invSlotAt(m.x, m.y); if (me.inv[b.slot]) sendCommand(['drop', b.slot]); m.click = false; m.suppress = true; }
   if (!m.down) m.suppress = false;
   // end screen: any key (but M, mute) or click goes back to the lobby; not during the jump animation, and only
   // after END_GRACE s, so a click or key meant for the fight doesn't skip the report
   endShown = endScreenReady() ? endShown + dt : 0;
   if (endShown > END_GRACE && ([...localInput.pressed].some(k => k !== 'KeyM') || m.click || m.rightClick)) backToLobby();
-  if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') ? pickHover(me, m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
+  if (NET.on) me.hover = withCrew(me, () => (me.mode === 'inside' || me.mode === 'eva') && !invSlotAt(m.x, m.y) ? pickHover(me, m.wx, m.wy) : null);   // the server doesn't send hover; work it out here
   updateSidebar(HUD_H, dt);
   updateCamera(dt);
 }

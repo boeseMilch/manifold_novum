@@ -202,7 +202,7 @@ function crewHit(side, c) {
   if (typeof tutorialHit === 'function' && tutorialHit('crew', side, c)) {   // tutorial: for show only
     combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/hit_spark', c.x, c.y, 1, gunnerZ(c)); return;
   }
-  combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c);
+  combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c, 3);   // a ship's gun: one hit in the body and you're out
   const z = gunnerZ(c);                            // the front gunner is up on the roof
   for (let i = 0; i < 10; i++) combatFxAt(z, c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, '#e2574c', 0.12);
   combatFlip('fx/hit_spark', c.x, c.y, 1, z);
@@ -322,6 +322,9 @@ function updateCombat(dt) {
     const tc = s.atCrew && crew.find(c => c.id === s.crewId);
     const slumped = tc && tc.mode === 'gun' && !standing(tc);         // down in a cannon's seat: below the rim, the shot flies over
     if (tc && isOutside(tc) && !slumped && segCircle(x0, y0, s.x, s.y, tc.x, tc.y, 0.5)) { s.dead = true; crewHit(s.side, tc); continue; }
+    // someone on a spacewalk in its way catches it with their body (shots fly at hull height, so not the roof gunner)
+    const blocker = crew.find(c => c !== tc && c.mode === 'eva' && standing(c) && segCircle(x0, y0, s.x, s.y, c.x, c.y, 0.4));
+    if (blocker) { s.dead = true; crewHit(s.side, blocker); continue; }
     // shots at the crew fly past the hull edge until they pass their target (the gunner sits on it)
     const passed = (s.tx - s.x) * s.vx + (s.ty - s.y) * s.vy < 0;
     const reached = !s.atCrew && Math.hypot(s.tx - s.x, s.ty - s.y) <= Math.hypot(s.vx, s.vy) * dt + 0.05;

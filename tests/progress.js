@@ -2,7 +2,7 @@
 // professions, ship upgrades, campaign objectives, and every practice-panel button.
 // Run: node tests/progress.js
 const { loadGame } = require('./harness');
-const NAMES = ['missionCrew', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
+const NAMES = ['missionCrew', 'GUNS', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
   'applyKit', 'perk', 'hurtCrew', 'SHOTS_PER_ENERGY', 'CAP_MAX', 'power', 'ITEMS', 'dk', 'combat', 'combatSpawn', 'hitPoi', 'enemyToWorld', 'objectiveStatus',
   'PRACTICE', 'runCommand', 'withCrew', 'CAPACITORS', 'levelOf', 'treatInfo', 'netServer', 'SHIELD_UP_TIME', 'endMission', 'boarding', 'spawnInvader', 'hurtInvader',
   'gearSpeed', 'creditMission', 'profile', 'lastReward', 'missionSuccess', 'MAX_DAMAGE', 'failGravity', 'ENERGY_TIME', 'REACTOR', 'clickTarget', 'fires', 'SYSTEMS', 'GEAR', 'BLASTER_CHARGE', 'inv', 'evs', 'repairSpeed'];
@@ -192,10 +192,12 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 // --- results per crew member
 {
   const G = loadGame(NAMES); G.netServer.init('c1'); G.netServer.addCrew(1, 'A'); G.netServer.addCrew(2, 'B');
-  const [A, B] = G.crew; B.mode = 'eva';
+  G.netServer.addCrew(3, 'C');
+  const [A, B, C] = G.crew; B.mode = 'eva'; C.mode = 'gun'; C.gun = G.GUNS[0];
   G.endMission(true, 'test');
   const r = G.mission.over.results;
   check(r.crew.find(c => c.id === 1).survived && !r.crew.find(c => c.id === 2).survived, 'at the end, only crew inside the ship and on their feet count as survived');
+  check(r.crew.find(c => c.id === 3).survived, 'a gunner in a cannon counts as aboard (gets the XP)');
 }
 // --- practice: every button works
 {
@@ -212,5 +214,15 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const G4 = loadGame(NAMES); G4.startMission('c1'); const before = G4.combat.enemies.length;
   G4.withCrew(G4.me, () => G4.runCommand(['practice', 0]));
   check(G4.combat.enemies.length === before, 'practice buttons do nothing outside practice mode');
+}
+// --- Locker / Shipyard choices: owned, available or locked (with why) at a glance
+{
+  const G = loadGame(['shopItem']);
+  const own = G.shopItem('data-gear="boots"', 'Gravity boots', 'd', { own: true, price: '$150' });
+  const avail = G.shopItem('data-gear="boots"', 'Gravity boots', 'd', { price: '$150' });
+  const locked = G.shopItem('data-ship="caps"', 'Bigger capacitors', 'd', { price: '★5', why: 'Need ★1 more reputation (missions)' });
+  check(/class="item chosen"/.test(own) && /disabled/.test(own) && /OWNED/.test(own), 'owned: latched, not clickable, says OWNED');
+  check(/class="item avail"/.test(avail) && !/disabled/.test(avail) && /tag price">\$150/.test(avail), 'available: clickable, with its price tag');
+  check(/class="item locked"/.test(locked) && /disabled/.test(locked) && /padlock/.test(locked) && /Need ★1 more reputation/.test(locked), 'locked: not clickable, padlock and why');
 }
 process.exitCode = failed ? 1 : 0;

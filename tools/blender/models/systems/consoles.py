@@ -21,8 +21,8 @@ Renders (build/renders/systems/):
         round radar table, r 1.1, origin = its centre (22.2, 6.4). The game's rotating sweep wedge
         stays procedural (a translucent overlay on the screen, z = TABLE_Z: see the manifest note).
   mug_full, mug_empty
-        on the helm desk; origin = COFFEE_MUG on the floor (the mug itself sits at desk height, so it
-        lands on the desk). Steam stays procedural.
+        origin = COFFEE_MUG on the floor (the mug itself sits at desk height, 0.72). It now stands on the
+        kitchen counter (0.8): the game lifts it by the difference. Steam stays procedural.
   jump_off, jump_p0..p4
         the jump handle cabinet against the wall at JUMP_HANDLE. off: no jump spooling (dim);
         p0..p4: mission.jump active, pull = mission.jump.pull / JUMP_PULL in 5 steps (the handle

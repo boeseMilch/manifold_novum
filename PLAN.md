@@ -35,7 +35,7 @@ security, fires, win/lose), `js/sidebar.js` (encounter sidebar) and `js/game.js`
   irregular plates (no visible grid), with mismatched replacement plates. Rooms have
   different sizes. There's one big engine at the stern. Clutter (purely visual, not
   solid): taped cracks and taped-down cables, crates, stains, scattered junk, a coffee
-  mug steaming at the helm, a donut box on the holo map table, a bucket under a leaking
+  mug steaming on the kitchen counter, a donut box on the holo map table, a bucket under a leaking
   pipe, a sleeping bag in the right cannon room, a ship cat asleep by the reactor, a
   rubber duck, socks drying, wall panels that spark now and then, a steam leak in the spine,
   and "DO NOT LICK THE REACTOR". Nothing flashes in the calm state.
@@ -76,7 +76,12 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   (in the left and right cannon rooms, and in the bridge nose next to the helm) with E.
   You can't man a cannon from a spacewalk; spacewalks are kept for other jobs (coming
   soon). Outer airlocks still take you outside (E at the hatch, about 1.6 s), where you
-  float along the hull on a safety line.
+  float along the hull on a safety line. No invisible wall 2.8 units off the hull any more: you
+  may drift as far as keeps the ship on screen (`EVA_REACH` 9.5 sideways / 6.5 up-down from the hull's
+  nearest point, from the outside camera's smallest view, 25.3 × 17.3 units, minus HUD/sidebar margin).
+  The edge is soft (`evaDrift`): past 60% of the way out your outward drift fades to a stop, and when you
+  stop pushing outwards you drift gently back. A docked ship's or the pirate base's rooms can't be floated
+  into (`dockBlocksEva`; anyone caught there when it docks can float out).
 - **Manning a cannon:** aim with the mouse (or A/D) and fire with click or Space. The aim
   range is ±75° for the side cannons and ±95° (190°) for the front cannon, which also zooms
   out further so asteroids show up earlier. E climbs back down the ladder. The gunner always sits opposite the
@@ -184,7 +189,7 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   - Energy sent to a full or broken capacitor is wasted (you see a puff and a banner).
     Each energy visibly flies from the reactor to its capacitor.
 - **Lights:** a zone column's rooms go dark when its capacitor is empty or broken.
-- **Inventory:** a weapon slot and an item slot (bottom left).
+- **Inventory:** a weapon slot and an item slot (bottom centre since the HUD pass; click one to drop it).
   - Left-click an object to grab it or use what you're holding on it. A tooltip says what
     a click would do, and you have to be within reach.
   - Grabbing into a full slot drops the old item at your feet.
@@ -214,7 +219,7 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
     cycle).
   - Shoot at it and it fights: it keeps about 5 units away, strafes, sidesteps incoming
     bolts (with a cooldown) and spits acid (counts as a crew hit).
-  - A wrench stuns it. It has 6 HP (laser 1, wrench 3) and leaves goo when it dies.
+  - A wrench stuns it. It has 6 HP (laser 1, wrench 1 + stun) and leaves goo when it dies.
   - Breaking things in rooms comes later.
 - **Enemy ships:** light turrets swing onto their target before firing, so the shot
   leaves along the barrel. The heavy cannon fires straight out of its barrel. Hitting a
@@ -388,7 +393,7 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
 
 ## Step 7 — A lived-in ship (built, waiting for feedback)
 
-- **Green corner brackets** mark everything you can click (consoles, radar, cat, ladders,
+- **Green corner brackets** (since the HUD pass: a soft yellow glow) mark everything you can click (consoles, radar, cat, ladders,
   shield buttons, airlocks, the reactor, lever and fuel crate, locked doors). They're faint
   when you're in the room and bright and pulsing within reach. Decoration never gets them,
   so brackets always mean "usable". Pickups keep their glowing halo.
@@ -412,8 +417,9 @@ get the rest.
 ### 8a. Small things (`js/hazards.js`, all missions)
 - **Snack machine** (left cannon room, next to the kitchen): free, one snack per minute each, and only
   when you're hurt: being hurt ends 10 s sooner.
-- **Coffee** at the helm: 15 s of slightly faster walking. Big hits may tip the mug over; it
-  refills itself after a minute.
+- **Coffee** on the kitchen counter (between the sink and the stove; it used to stand by the helm,
+  where nobody noticed it): 15 s of slightly faster walking. Big hits may tip the mug over; it
+  refills itself after a minute. The tutorial's ship tour has its own page for it and marks the mug.
 - **Intercoms** in every room: call for help (a "HELP!" plate on everyone's sidebar, 15 s).
 - **Ship voice** (speech synthesis, respects mute) for breaches, plasma fires and venting.
 - **Rattling panels:** every big hit on a side loosens wall panels there (a warning: the next
@@ -448,6 +454,14 @@ get the rest.
   spreads every 6 s, the extinguisher only pushes it back. Every room has an **emergency
   vent** valve (manual override): 10 s of vacuum blows every fire out, and hurts anyone still
   inside.
+- **Forcing an outer airlock** (any mission): the manual override on a broken or locked outer
+  airlock opens both its doors at once, so it is the same 10 s vent of that airlock room
+  (`forceHatchVent` → `startVent(room, you, forced)`): air rushes out, anyone else inside is
+  hurt, hostiles get hit and blown out, blast doors seal it off from the reactor room. The one
+  who forced it is fine (visor down) and still goes out / comes back in. Then the hatch swings
+  shut and the room repressurizes. The prompt warns first ("… vents this room!"); banner and
+  sidebar ("AIRLOCK FORCED · VENTING"); `hz.vent.forced` is in the snapshot. Crew caught in the
+  room leave by the deck airlock; one vent at a time (forcing the other side ends the first).
 - **Power surges** (`surge`, 35% on big hits): a power line arcs. Using its shield button or
   reloading its cannon zaps you (a hit); energy over an arcing feed line is lost. Splice it
   with the repair kit (hold 5 s on the sparks).
@@ -560,6 +574,43 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   aboard; a hit downs them again), `ore` (a big asteroid parks in front; drill it on a spacewalk
   with the mining drill, 6 s, bring the sample in), `pirates` (defeat N). Jumping without the
   objective done: survived, but the mission failed.
+- **No jumping while docked** (playtest 2026-10-14, `dockJumpHold()` / `releaseForJump()`): the jump waits with
+  "Jump blocked: …" while a ship is docked. Once the jump is due, docked ships let go: pirates aboard ours drop
+  everything and run home (their ship casts off when they're all back, at once if none is left alive); the
+  derelict's tether releases after 8 s. Whoever is still over there is cast adrift as before.
+- **Fallen pirates stay down** (`dk.bodies`, purely visual, synced with `dk`, at most 12): a short dazed
+  stagger, then they lie where they died (`chars/pirate/down`). Nothing to pick up.
+- **Dr. Varga / the engineer walks properly** (`updateNpc`): once treated she makes her own way to our ship
+  on the pirates' routes (doors, tube, our nav graph); no more following footsteps. A stray shot on the way
+  downs her again. Safe only once she's in one of our rooms (not in the tube's mouth, where casting off used
+  to take her along); then she steps clear of the hatch. Routes skip chain points behind you.
+- **Clutter and jokes aboard** (`DOCK_DECOR`): our clutter sprites, runtime plaques and floor stencils. Raider:
+  pizza, soda, a duck by the reactor, "WANTED: ONE SHIP CAT · 10,000 CR", "NO REFUNDS", "DAYS WITHOUT A
+  MUTINY: 3", "LICK IT. WE DARE YOU.", "PLUNDER RESPONSIBLY". Prison barge: "VISITING HOURS: NEVER", "THE BRIG
+  IS NOT A HOTEL", tally marks by Varga, bucket and bedroll. Varga's lab: papers, a dead plant, cold coffee,
+  "TO DO: 1. CURE IT 2. NAME IT 3. DON'T GET EATEN", "SPECIMEN 7 — DO NOT FEED", "DAYS SINCE LAST INCIDENT: ?".
+- **The pirate base** (chapter 5, the user's design, 2026-10-14; `dockBase` and "The pirate base" in js/dock.js, event
+  kind still `brig`): the whole mission is the base. A patrol interceptor (the opener, 25 s), then at 60 s we dock
+  (waits until the patrol is gone). Four rooms in a row (`baseGeom`, port layout mirrored): docking bay → server
+  room → barracks → brig, walked on a chain like the other ships (`dockRoute` takes `g.chain`). Two pirates rush out
+  of the bay at once and hunt the nearest of us (onto our ship); they drop their carbines (pick-up laser guns) and
+  their bodies. Guards hold each room (`baseGuards`: solo 2/2/1, +1 per extra crew member up to 4, −1 per easier
+  difficulty step, never below one) and come at whoever enters their room. A repair kit lies in the bay. The server
+  room's security terminal is broken: repair it (kit, 5 s), then hack it (5 s) → the barracks door opens. The brig
+  door's keypad (the PIN pad, `ui.mini.door`) wants a random 4-digit code, stuck on the barracks' back wall ("DO NOT
+  WRITE DOWN"). Dr. Varga lies in the brig: treated, she runs home on her own; shot, she goes down again. Shots stop
+  at the base's walls (`dockSolid` in `freeAt`). Drawn in 2D (hull, floors, terminal, keypad, cell bars, plaques:
+  "RED COMET BASE", "CHORE WHEEL", "BRIG RULES"), lit warm like the raider.
+  - **Engine off while docked or while anyone is over there** (`baseJumpHold`). Once she's aboard our airlock offers
+    **detach** (also once the jump is due, as a way out): the tube pulls in (whoever is in it lands on our side), the
+    base stays right there. Stranded? The bay's docking control (or our airlock) docks again: no softlock; nobody
+    can be left over there for the jump. Detached with her aboard and nobody left over there: the jump drive spools
+    up in 15 s (`ESCAPE_SPOOL`); otherwise the jump is due at 300 s (`length: 300, finaleLead: 240`) with the usual
+    hot-zone pressure. A bigger crew gets more guards, not more encounters (`crew.events` 2 for all).
+  - All of it lives in `dk` (tube, terminal, door code, guards), so the snapshot carries it.
+- **Nobody aboard at the jump = failed** (every mission, `crewAboard` in js/mission.js): the ship jumps out empty
+  (everyone on a spacewalk or over on a docked ship): mission failed, no pay. A cannon seat or an airlock counts as
+  aboard; down or out too (they're carried along).
 - New missions: Pirate cove, Black box, Stranded engineer, Ore run, Nightmare (everything);
   Deep drift gets the organic and ship-wide encounters. (Reworked into a campaign next.)
 - `node tests/dock.js`.
@@ -567,8 +618,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 ### 8h. Campaign and progression (`js/progress.js`)
 - **Campaign** (`c1`–`c8`), each with a briefing, objective and pay: First Contract (defeat pirates,
   $40 each, no intruder) → Strange Cargo (the intruder appears) → The Empty Lab (black box from
-  Dr. Varga's drifting lab) → Red Comet Cove (pirates took her) → Rescue Dr. Varga (pirate prison
-  barge) → Spore Season (living rock sample) → The Deep (coils + jump handle) → The Mother of All
+  Dr. Varga's drifting lab) → Red Comet Cove (pirates took her) → Rescue Dr. Varga (storm the
+  pirate base) → Spore Season (living rock sample) → The Deep (coils + jump handle) → The Mother of All
   (the leviathan). Each finished chapter unlocks the next.
 - **Success** (`missionSuccess`): the ship jumped out AND the objective is done (missions without
   one: the jump is enough). Only a success earns reputation (+1 the first time), counts as finished
@@ -610,6 +661,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   form: pads → arpeggio → bass + hats → drums + lead → in the last stretch a second lead an octave
   up, double-time hats, crashes, opening filters. Threats push it up; a riser and snare roll while
   the jump drive spools. `node tests/music.js` runs every piece against a fake WebAudio.
+  (Replaced on 2026-10-14 by a new score: see "New soundtrack".)
 - **Jump mid-battle:** the last event of every mission is a fight, and the jump comes 22 s after it
   starts (was 60 s after the last event). Jumping out plays a warp-streak effect before the results.
 - **Visual pass:** removed decor that wasn't clearly anything (tape and patches on the outer hull,
@@ -871,17 +923,24 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   DOM stays the source of truth: real buttons, inputs, crisp text, keyboard focus), clipped to scrolling
   ancestors; a G-buffer pass, then lighting: ambient with contact shading, a key light with soft cast
   shadows marched through the height buffer, ambient occlusion, up to 8 point lights and specular.
-- **Lighting and states:** a warm hand lamp follows the mouse (dim over the plate, bright on a hovered
-  button, moving highlights on bevels and bolts); pressing (pointer or Space / Enter) sinks the button
+- **Lighting and states:** the hovered (or keyboard-focused) button lights up itself: brighter, with a
+  warm glowing rim (playtest: the earlier hand lamp following the mouse was confusing, so it is gone);
+  pressing (pointer or Space / Enter) sinks the button
   (lower, darker, shadow gone, label 1 px down); chosen missions / gear are latched in with a lit LED and
-  a small green glow; disabled buttons are dimmed metal with greyed labels; the chosen suit colour is
-  pushed in with a ring. **Colour only where it means something:** every button face is silver except
+  a small green glow; disabled buttons are dimmed metal with greyed labels; the chosen suit colour's lamp
+  is pushed in and glows in its colour (emissive, a coloured light on the plate, a CSS halo).
+  **Locker / Shipyard** (`shopItem()` in `js/progress.js`, playtest: "make locked choices more
+  apparent"): three states at a glance. Owned: latched, LED, "✔ OWNED" (profession: "✔ YOURS"), not
+  dimmed. Available: normal metal with a green price tag. Locked: much darker grey metal, struck-through
+  price, an amber padlock where the LED would be, and an amber line saying why / what unlocks it
+  ("Unlocks at level 4 (you: 3)", "Need $20 more", "Engineers only · pick the profession above",
+  "Need ★1 more reputation (missions)"). **Colour only where it means something:** every button face is silver except
   START MISSION (red); status colours stay (server dot, LEDs, HOST badge, swatches, warnings).
 - **Layout:** an 8 px grid; plates with a 28 px frame + 18 px padding; primary buttons 68 px, secondary
   56 px, START 64 px; the crew plate's stats on three lines; panelling fitted per plate (at most 540 px
   per panel, so the menu plates are seamless at 1280 px); the briefing scrolls in its own well so START
   stays on screen at 1280×800; narrow (400 px): one column, two buttons per row.
-- **When it draws:** on DOM changes, resize, scroll, hover / press easing and mouse moves, coalesced and
+- **When it draws:** on DOM changes, resize, scroll and hover / press easing, coalesced and
   throttled by measured cost; nothing while a mission runs.
 - **Fallback:** `html.metal-css` (no WebGL2, `?classic`, `file://`, while loading, `?nometal`): the same
   textures as CSS border-images / backgrounds with :hover / :active states.
@@ -1593,6 +1652,48 @@ sound only, the game rules and timing are unchanged):
   encounters and failures, the pool, a passive crew loses, the snapshot carries it all, practice and the
   tutorial untouched), tests/jumpfx.js (the loop's phases and charge range, the jump-out after a stall).
 
+### HUD pass (2026-10-14 playtest: "UI is not intuitive")
+
+- **Hold jobs show a progress bar** (repairing, welding, splicing, treating, …): over the worker's
+  head in screen space (`drawWorkBar`, js/game.js; numbers from `workProgress`, js/systems.js), yours
+  an opaque panel on top of everything with a caption ("Repairing the reactor") and a big white bar
+  with an outline and the percentage, the others' a small bar. It replaces the ring round
+  the target; treating keeps its heartbeat ring (the click-on-the-beat bonus).
+- **Where things happen** (`drawProblemMarkers`, js/sidebar.js): fires, broken parts, open breaches,
+  visible boarders, arcing lines, dead gravity and downed crewmates off-screen get an arrow pill at the
+  view's edge ("FIRE · Bridge", "BROKEN · Reactor"); new ones on screen get a short ping.
+- **Sidebar, simpler:** dark high-contrast panels with bigger text (16 / 13 px), the header just the
+  jump clock, radar age and damage lights; all broken parts share one panel; the mocking "????" plates
+  are gone.
+  The objective is pinned at the top. Panels form one column (cumulative layout): a new one opens its
+  slot and then slides in from the left, a finished one slides out and then closes its slot, so they
+  never overlap, also mid-animation; what doesn't fit is a "+n more" line. A panel whose problem is missing for
+  under 0.25 s (one odd snapshot on a client) stays put instead of starting to slide out.
+- **Fewer messages:** no banner for things you just did yourself and can see (fuel cell loaded,
+  overcharge off, a snack, fire out, line spliced, the inserter, energy into a full capacitor); the
+  airlock "cycling…" / "doors moving…" texts only as the mouse tooltip (`prompt.quiet`).
+- **Inventory bottom centre**, big slots (184 px, still one weapon and one item, labelled WEAPON /
+  ITEM, clear of the energy panel); click a slot to drop what's in it (command `drop`; not during the
+  tutorial). The screen prompt, the work bar and the edge markers keep above it.
+- **Energy left** (bottom left, `shipEnergy`): one big number (reactor cell + capacitors + every spare
+  cell × 5), the reactor and capacitors as pips, tape and plates.
+- **One power colour** (`POWER_COL`, yellow): the capacitors (sprites via the new `recolor` sprite
+  option in js/gfx.js, which turns the saturated cyan / green pixels to a colour), their readouts, the
+  fuel crate, fuel cells and the drifting canister, the cannon HUD's energy, the patch board.
+- **One "usable" look, in white** (yellow means energy only; `drawUseMarks`, `useRing`, `USE_COL`): every
+  usable thing in your room (stations, items, the lever, the mug, docked-ship crates, spacewalk jobs)
+  always has a thin dashed white ring, faint, brighter in reach with a soft white haze; the one thing E
+  would act on gets a thick solid white ring, a haze and a small white light on it (`useLights`, so the
+  sprite itself brightens); what the mouse points at, if it's something else, a thin solid ring; things
+  you can't use yet a dim grey dashed one. All drawn after the world (over furniture, counters and the
+  dark; things on a counter get lifted by their `z`). It replaces the green corner brackets, the dashed
+  item halos, TAKE tags and spacewalk job rings. Prompts, tooltips and the work bar are white/neutral.
+- **E goes by where you stand, not the mouse:** E acts on your prompt's spot or else the nearest usable
+  thing in reach, weighted a little towards the way you face (`nearbyTarget`); the mouse only matters for
+  clicks (`prompt.eAct` marks the spot E would use, also over the network).
+- Tests: tests/hud.js (slot size and place, drop by click, total energy, progress numbers, problem
+  markers, E's target independent of the mouse); tests/sidebar.js (pinned objective, no overlaps).
+
 ## Performance
 
 Request: "Can we simplify the shadows and light work? I want it to be fast", then "60 Hz should work smoothly on
@@ -1632,8 +1733,10 @@ code. `--calibrate` (~25 min, or one process per mission: `node tools/balance.js
 mission's `crew` table (encounters, fuel cells, reactor speed, overcharge per crew size) and its prerequisites.
 History and the scheduler's details: 8z3.
 
-- **Targets (2026-10-13):** solo play leaves the crew **70 % idle on the first mission**, and every later step of
-  the progression **0.5 points less** (a difficulty ramp, c8 solo: 66 %); 2-8 players 68 % minus the same ramp.
+- **Targets (2026-10-13; solo lowered 2026-10-14, see "Openers, a calm start, busier solo missions" below):** solo
+  play leaves the crew **56 % idle on the first mission** (was 70 %), and every later step of the progression
+  **0.5 points less** (a difficulty ramp, c8 solo: 52 %); 2-8 players 68 % minus the same ramp. (The table below is
+  the 2026-10-13 state.)
   `A.TARGET_IDLE` / `TARGET_IDLE_CREW` / `TARGET_RAMP`, `--target` sets both bases.
 - **The progression** (`PROGRESSION` in tools/balance.js): chapter n is step n; intro (open from the start, "Start
   here") step 0; Rush hour (open from the start, "more trouble") with chapter 2; every other skirmish with the chapter
@@ -1752,19 +1855,105 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   objective), tests/scaling.js (c2's solo order and times, easy levels, finaleLead vs. c1), tests/progress.js
   (objective needs both), tests/hazards.js / tests/systems.js (4 hp).
 
+### Openers, a calm start, busier solo missions (2026-10-14 playtest)
+- **The designer's rule:** if a mission's point is X, X doesn't happen in the first 15 s. You jump in, get a calm
+  moment to look around, work through something else, then X, then things on the way out that make you want to jump.
+  A written event can carry `opener: true` (MISSIONS[id].build): `selectEvents` never drops it (like an essential,
+  also on easy / very easy: those give luck instead) and it is never the finale (`layoutMission` doesn't swap it to
+  the end; if the opener and the objective are the only fights, an optional fight is added as the finale). Its
+  written time is the mission's lead-in (`mission.lead`): **30 s of calm** (c2 keeps its 50 s).
+- **The timelines** (`*` opener; solo / 2 / 4 players, m:ss):
+  - c2 (unchanged, the swarm or interceptor opener now flagged): solo `opener* 0:50, 2 aliens 2:50, frigate 4:50`.
+  - c3 The Empty Lab ("too easy, no suspense when you start with the lab"): written `interceptor* 30, derelict,
+    mines, swarm, maintenance, flare` (was `derelict 15, …`). Solo `interceptor* 0:30, lab 3:04, swarm 5:38`
+    (3 encounters, was 2: lab 0:15 + a lone finale); 2: `+ mines`; 4: 10 encounters. Now recommends Efficient
+    cannons + overcharge (the base ship is ~16 s short on energy at 3-4 players).
+  - c4 Red Comet Cove ("needs one more encounter"): written `interceptor* 30 (scout), pirates, maintenance, pirates,
+    mines, glitch, swarm` (was `pirates 25, …`). Solo / 2: `interceptor* 0:30, raider 2:13, raider 3:55, swarm 5:38`
+    (4, was 3); 4: 13 encounters incl. the failing part. A frigate finale and the failing part as an essential were
+    tried: the model put solo at 14-18 % idle, so solo gets just the one extra encounter.
+  - c6 Spore Season (same rule): `interceptor* 0:30, rock 1:47, spores 3:04, leeches 4:21, swarm 5:38` solo (rock was
+    at 0:08).
+  - c5 is left alone (being redesigned separately). c1 is unchanged (its point, the raiders, comes at 0:30 and the
+    playtest liked it). c7 / c8 start at 30 s (were 20 / 15 s). Skirmishes keep their timelines.
+- **Stealth fighter on the radar:** it only shows `STEALTH_RADAR` (12 s) before it arrives (js/mission.js
+  `radarReach`; everything else RADAR_RANGE, 45 / 60 s). The balance model knows (it reacts later to it).
+- **Idle time:** the playtest found chapter 1 solo right — the model rates it **51 % idle** — while c3 / c5 solo
+  (62-63 %) were too easy. So the approach is kept and the solo aim lowered to match c1: `A.TARGET_IDLE` 0.70 → 0.56
+  (2-8 players unchanged at 68 %: no feedback there). Refitted with `--calibrate`: c3, c4, c6 (all crew sizes); solo
+  only for Intro (2 → 3 encounters), Ore run (2 → 3), Black box (2 → 3), Pirate cove (1 → 2), Stranded engineer
+  (2 → 3), Nightmare (1 → 2), c8 (1 → 2). Solo idle now (model): intro 51, c1 51, c2 36, c3 49, c4 34, c6 40, c8 52,
+  ore 54, black box 51, pirate cove 58, stranded 53, nightmare 47. Still one encounter (two are out of spec or far
+  too busy): Rush hour 76, Deep drift 63, c7 63. c5 63 (pending its redesign).
+  The model still rates pirate raiders as heavy (c4 solo 34 %) while the playtest found c4 too easy; worth a look
+  when c4 is played again.
+- Tests: tests/mission.js (stealth radar reach; openers for c3 / c4 / c6 at every difficulty: calm 30 s, the opener,
+  then the main encounter, a fight as the finale; the difficulty test counts openers as never dropped),
+  tests/scaling.js (the new targets; c2's opener kept on easy; COARSE / PENDING lists).
+
 ### Start over
 - "There should be a button to reset it so you can have the progression again with your friends": START OVER in
   the main menu (under the crew member; asks first). A fresh `defaultProfile()`, keeping the suit color (the name
   is its own key, `mn-name`); the old profile goes to localStorage `mn-profile-backup` in case of a misclick.
   Progress stays per browser (the server never stores it), so everyone presses it on their own machine.
 
+
+### New soundtrack (2026-10-14 playtest: "sounds like two music pieces at once")
+- Composed again from scratch (nothing kept from the old score), after looking at the game: a scrappy,
+  duct-taped crew, so a heroic underdog sound: a slightly out-of-tune plucked ostinato and little bells over
+  cinematic taikos, brass swells and a horn theme.
+- **Seven pieces**, each written as ONE piece: one tempo, key and 16th grid, A (verse) and B (hook) sections of
+  8 bars with their chords and a composed theme; every part takes its notes from the same bar's chord.
+  `tests/music.js` checks that each theme note on a strong beat is a tone of its chord.
+- **The build-up** follows `setIntensity` (time towards the jump), so the climax lands on the jump for any
+  mission length: 0 drone and dark pad → 1 bell arpeggio → 2 ostinato, a taiko → 3 bass, 16ths, hats →
+  4 the theme on the horn, snare → 5 brass swells, busier drums → 6 climax (strings double the theme an octave
+  up, brass stabs, full taikos). Stages only change on bar lines, up after a one-bar tom fill, down only at a
+  phrase start. A threat adds one stage (at least 3, at most 5: the climax is saved for the end).
+- **The jump:** while the drive spools (`setJump`), the spool chords (bVI-bVII) with a rising line, snare rolls
+  and a riser in 4-bar waves, for as long as the drive needs. `jumped()` cuts it, swells for 1.5 s into the
+  jump's boom (`sfx.jumpOut`) and lands on the home chord in major; then quiet until `rearm()`.
+- **One piece at a time:** one sequencer (one timer); switching fades the old piece's buses out and starts the
+  new one on its first step; after the final hit a mission switch waits for `rearm()`. The music pauses while
+  the browser tab is hidden, so two open tabs never play over each other (the game keeps running).
+- **Levels:** `music.html?check` renders every piece offline (OfflineAudioContext): about -31 dB RMS at the
+  quiet start, -20 dB at the climax and in the spool, peaks at -4 dB or lower, no silence or NaN. A soft
+  compressor on the music bus. About 160 new nodes a second at the climax.
+- `music.html` lists the pieces (tempo, key, missions) and shows the stage and section while it plays.
+
+### Weapons in hand, lethal ship shots, foam, smooth asteroids (2026-10-14 playtest)
+- **The hand weapon is in the hand** (sprite view): `items/held_<kind>` (laser, heavy, drill, repair kit carried
+  by its handle, extinguisher by its handle; 16 dirs, `tools/blender/models/items/items.py` HELD, origin = the
+  point in the glove) drawn at the right glove of the crew sprite's frame (`hand` per frame on every standing crew
+  set: `MN_HANDS_ONLY=1` in `crew.py` writes them without rendering), turned like the body (`drawHeldItem`).
+- **Shots leave the muzzle:** `muzzleAt(c, a)` = the idle hand + the item's `muzzle` (from items.py, mirrored in
+  `HELD_MUZZLE`). Bolts, the thrown wrench, the blast's sparks, the charge orb and the extinguisher's foam start
+  there; bolts carry `z` (the muzzle's height) and are drawn lifted to it (were drawn on the floor, ahead of your
+  feet), the streak never reaching back past the muzzle (`ox, oy`). Aiming with the mouse, the shot flies from the
+  muzzle straight at the point (`aimFromMuzzle`; closer than 1.2: straight ahead).
+- **Wrench:** 1 damage (was 3), still the 1.5 s stun.
+- **An enemy ship's shot in the body** (a gunner, someone on a spacewalk): straight out (`hurtCrew(c, 3)`; an armor
+  vest still soaks one step: down). Someone on a spacewalk in the line of a shot at the hull now catches it.
+- **XP:** a gunner in a cannon at the jump counts as aboard.
+- **Power lever:** the hub (wedge / pull the wrench) is picked where it's drawn, up on the dial (`pick` on the
+  base sprite); the click spot was the ground point, below the visible hub.
+- **Extinguisher foam** made light: its white particles went into the clustered particle lights (up to radius 7,
+  intensity 3.2), lighting whole rooms white, worst in the dark with the helmet lamp. Foam (`p.foam`) is no light
+  source now; only lit where a light falls on it.
+- **Asteroids turn smoothly:** the nearest of the 48 / 32 steps, turned on screen by the rest of the angle round
+  the rock's top (where the turning axis comes out), crossfaded with the next only around the switch. (Before:
+  a crossfade of two different angles all the time, which ghosted.)
+- `tests/handweapons.js`: muzzle, wrench damage, lethal ship shots, the spacewalker blocking a shot.
+
 ## Sound
 
-- **Soundtrack "Duct Tape Nebula":** original and fully synthesized (`js/music.js`). It's
-  about 4.6 min long and loops: reverb pads, a delayed arpeggio, a pulsing bass, soft
-  drums and a lead. It runs at 90 BPM in A minor, in sections: intro → arp → groove →
-  lead → breakdown → groove → lead → outro. While there are threats, bass and drums play
-  in every section.
+- **Soundtrack:** original and fully synthesized (`js/music.js`), seven cinematic pieces shared by the
+  missions: *Held Together* (intro, rush hour, practice; D minor, 100 BPM), *Cargo Run* (ch. 1-3, black box),
+  *Red Comet Gallop* (ch. 4, pirate cove), *A Signal in the Dark* (ch. 5, stranded engineer), *Bloom* (ch. 6,
+  ore run), *Pressure Hull* (ch. 7, deep drift), *Last Jump Home* (ch. 8, nightmare). Each is one piece on one
+  grid: two 8-bar sections with a written theme, plucked ostinato, bells, pads, bass, brass, taikos. It builds in
+  8 stages with the time towards the jump (threats push it up one stage), spools while the drive charges and
+  ends on a big major-chord hit with the jump's boom. Pauses while the tab is hidden. Details: "New soundtrack".
 - **Mute:** the speaker button at the top left, or M. It mutes music and effects, and is
   remembered in the browser.
 

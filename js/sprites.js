@@ -337,7 +337,19 @@ function drawCrewSprite(c, visor, t) {
     return { g, gk, d: GFX.info(g).depth?.[gk] ?? 0 };
   }).sort((p, q) => q.d - p.d);
   for (const { g, gk } of gear) GFX.sprite(g, gk, gx, gy, gz, { tint: out ? '#7a7f8a' : undefined, emissive: out ? 0.1 : 0.3, alpha, depthBias: bias + 0.02, desat });
+  if (!down && c.mode !== 'gun') drawHeldItem(c, name, f, gx, gy, gz, alpha);
   return true;
+}
+// The hand weapon (c.inv.weapon) in the right hand: items/held_<kind> (16 dirs, origin = the point in the
+// glove) at this frame's `hand` (the right glove, [x fwd, y left, z] from the ground origin), turned like
+// the body sprite's direction. Its muzzle (the shots' start, js/systems.js muzzleAt) comes with it.
+function drawHeldItem(c, body, f, gx, gy, gz, alpha) {
+  const it = 'items/held_' + c.inv?.weapon, S = GFX.info(body), hands = S?.hand;
+  if (!c.inv?.weapon || !hands || !GFX.has(it)) return;
+  const dirs = S.dirs || 1, n = S.frames || 1, a = Math.round(c.face / (TAU / dirs)) * (TAU / dirs);
+  const [hx, hy, hz] = hands[((Math.floor(f) % n) + n) % n] || HAND_REST;
+  const dx = hx * Math.cos(a) + hy * Math.sin(a), dy = hx * Math.sin(a) - hy * Math.cos(a);   // (model y = the character's left)
+  GFX.sprite(it, GFX.frameIndex(it, c.face, 0), gx + dx, gy + dy, gz + hz, { sortY: gy, emissive: 0.3, alpha, depthBias: 0.015 });
 }
 
 // ---------------------------------------------------------------------------------------------

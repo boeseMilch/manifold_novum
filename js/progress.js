@@ -19,7 +19,7 @@ const levelOf = (xp) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEV
 // ---------------------------------------------------------------------------
 const SHIP_UPGRADES = [
   { id: 'spareCell', name: 'Spare fuel cell', rep: 2, desc: 'One more spare fuel cell in the crate.' },
-  { id: 'coffee', name: 'Proper coffee machine', rep: 2, desc: 'The helm mug refills in 20 s instead of a minute.' },
+  { id: 'coffee', name: 'Proper coffee machine', rep: 2, desc: 'The kitchen coffee mug refills in 20 s instead of a minute.' },
   { id: 'inserter', name: 'Reactor fuel inserter', rep: 3, desc: 'Loads a fresh fuel cell into an empty reactor by itself (switch it off at the crate\'s handle).' },
   { id: 'cannons', name: 'Efficient cannons', rep: 3, desc: '4 shots per energy instead of 3.' },
   { id: 'airlocks', name: 'Faster airlock pumps', rep: 3, desc: 'Deck airlocks cycle in 0.7 s instead of 1.3 s.' },
@@ -69,7 +69,7 @@ const CAMPAIGN = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
 Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 100, perPirate: 40, rep: 1, xp: 80 },
-    crew: {events: [2, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 69.5% solo, 67.5% for 2-8)
+    crew: {events: [2, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 55.5% solo, 67.5% for 2-8)
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     objective: { kind: 'pirates', count: 2 }, rules: {},
     blurb: 'Clear pirate raiders out of the trade lanes. $40 per pirate.',
@@ -88,64 +88,76 @@ Object.assign(MISSIONS, {
     briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nTwo somethings with too many legs are loose on the ship: one prowls the upper deck, the other the lower. They force their way around, room by room, hunting whoever they can find. Lock them in with the security console, get a weapon, and kill them both, one at a time if you can. The Xenobiology Institute will pay for the remains.',
     // solo: the opener (asteroids or an interceptor, at random), the two aliens (the objective), the frigate (the finale);
     // bigger crews add the mine drone, the maintenance failure, a jammed cannon and the antenna (DROP_ORDER), then repeats
-    build: () => [Math.random() < 0.5 ? evAt('swarm', 50) : evAt('interceptor', 50, { side: randSide() }), evAt('intruder', 90, { side: randSide(), count: 2 }),
+    build: () => [Math.random() < 0.5 ? evAt('swarm', 50, { opener: true }) : evAt('interceptor', 50, { side: randSide(), opener: true }), evAt('intruder', 90, { side: randSide(), count: 2 }),
                   evAt('mines', 130, { side: randSide() }), evAt('debris', 160, { gun: ['port', 'front', 'star'][Math.floor(Math.random() * 3)] }),
                   evAt('maintenance', 190, { radar: false }), evAt('antenna', 220, { radar: false }), evAt('frigate', 250, { side: randSide() })],
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
-    crew: {events: [2, 3, 8, 10, 12, 15, 18, 19], cells: [2, 2, 5, 5, 5, 7, 9, 9], reactor: [1, 1, 1, 1, 1, 1, 0.85, 1]},   // --calibrate: 62% 73% 65% 68% 70% 66% 66% 67% idle for 1-8 players (aim 68.5% solo, 66.5% for 2-8)
+    crew: {events: [2, 4, 7, 10, 12, 15, 17, 19], cells: [2, 2, 6, 6, 9, 11, 11, 13], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 49% 71% 66% 69% 67% 65% 66% 66% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8); base ship: ×3: front cannon waits 17 s at 339 s; ×4: front cannon waits 16 s at 264 s
+    needs: {ship: ['cannons'], overcharge: true},
     objective: { kind: 'blackbox' }, rules: { breach: true },
     blurb: 'Dr. Varga\'s lab went quiet. Bring back its black box.',
     briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something is asleep in there. Don\'t wake it.',
-    build: () => [evAt('derelict', 15, { side: randSide() }), evAt('interceptor', 60, { side: randSide() }), evAt('swarm', 100), evAt('mines', 140, { side: randSide() }), evAt('flare', 185), evAt('maintenance', 230, { radar: false })],
+    // a calm half minute, a scavenger at the station (the opener), then the lab, then trouble on the way out
+    build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('derelict', 70, { side: randSide() }), evAt('mines', 110, { side: randSide() }), evAt('swarm', 150),
+                  evAt('maintenance', 190, { radar: false }), evAt('flare', 230)],
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 200, perPirate: 50, rep: 2, xp: 160 },
-    crew: {events: [2, 4, 8, 11, 15, 18, 22, 23], cells: [2, 2, 8, 8, 11, 15, 18, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 40% 66% 64% 68% 66% 67% 70% 72% idle for 1-8 players (aim 68.0% solo, 66.0% for 2-8)
+    crew: {events: [3, 4, 7, 13, 17, 23, 23, 23], cells: [2, 2, 2, 11, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 34% 68% 68% 65% 65% 67% 72% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); base ship: ×4: front cannon waits 27 s at 280 s
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     objective: { kind: 'pirates', count: 3 }, rules: { breach: true, surge: true },
     blurb: 'Pirates took Dr. Varga. Hunt the Red Comet gang.',
     briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away.\n\nTheir raiders patrol the Cove. Take them on — defeat at least three pirates. If they dock, board them back: their loot crate is full, and jamming their reactor sends them running. Power lines can arc now; splice them with the repair kit.',
-    build: () => [evAt('pirates', 25, { side: 'port' }), evAt('interceptor', 70, { side: 'star' }), evAt('pirates', 115, { side: randSide() }), evAt('mines', 160, { side: randSide() }), evAt('glitch', 200, { radar: false }), evAt('swarm', 240)],
+    // a calm half minute, a Red Comet scout (the opener), then the raiders; a part fails in between (bigger crews)
+    build: () => [evAt('interceptor', 30, { side: 'star', opener: true }), evAt('pirates', 70, { side: 'port' }), evAt('maintenance', 110, { radar: false }), evAt('pirates', 150, { side: randSide() }),
+                  evAt('mines', 190, { side: randSide() }), evAt('glitch', 230, { radar: false }), evAt('swarm', 270)],
   },
   c5: {
     name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 300, rep: 3, xp: 200 },
-    crew: {events: [2, 4, 8, 12, 15, 18, 22, 23], cells: [2, 2, 8, 8, 12, 15, 15, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 67% 66% 66% 66% 67% 70% 72% idle for 1-8 players (aim 67.5% solo, 65.5% for 2-8)
+    // set by hand: the whole mission is the pirate base. A patrol interceptor (the opener), then we dock (once it's
+    // gone: EVENT_RUNNERS.brig); the jump is due 240 s later (finaleLead), sooner once she's aboard and we've
+    // detached (js/dock.js ESCAPE_SPOOL). A bigger crew gets more guards in the base, not more encounters
+    // (stationGuards); easy / very easy take guards out (and give luck: nothing here to drop).
+    crew: {events: [2, 2, 2, 2, 2, 2, 2, 2], cells: [3, 3, 4, 4, 5, 5, 6, 6], overcharge: [true, true, true, true, true, true, true, true]},
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
+    length: 300, finaleLead: 240,
     objective: { kind: 'rescue', npc: 'Dr. Varga' }, rules: { breach: true, surge: true, gravity: true },
-    blurb: 'Dock with the pirates\' prison barge and bring Dr. Varga home.',
-    briefing: 'We tracked the Red Comet\'s prison barge. Dr. Varga is aboard — hurt, by the sound of her distress ping.\n\nWhen the barge docks, get past the guards, find her in the cargo hold, patch her up (hold click or E on her) and lead her back. She\'ll follow your footsteps, slowly. Don\'t let the barge cast off with her still on it.',
-    build: () => [evAt('brig', 20, { side: randSide() }), evAt('interceptor', 65, { side: randSide() }), evAt('stealth', 110, { side: randSide() }), evAt('maintenance', 150, { radar: false }), evAt('storm', 190), evAt('swarm', 230)],
+    blurb: 'Storm the Red Comet\'s base, room by room, and get Dr. Varga out.',
+    briefing: 'We found the Red Comet\'s hideout: a rusty base out in the Cove. Dr. Varga is locked up somewhere inside — hurt, by the sound of her distress ping.\n\nDeal with their patrol, then we dock. Grab a weapon first: they\'ll rush out the moment the tube opens (and drop their guns when they fall). Fight through the base room by room: a busted security terminal (repair it, then hack it) and a door code somebody surely wrote down.\n\nPatch her up (hold click or E on her) and she runs for our ship on her own. Cover her: if she\'s hit, she goes down again. The engine stays off while we\'re docked or anyone is still over there: once she\'s aboard, detach at our airlock and jump.',
+    build: () => [evAt('interceptor', 25, { side: randSide(), opener: true }), evAt('brig', 60, { side: randSide() })],
   },
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 300, rep: 3, xp: 220 },
-    crew: {events: [3, 4, 9, 12, 15, 16, 23, 23], cells: [3, 3, 11, 12, 17, 13, 22, 22], reactor: [1, 1, 0.7, 0.7, 0.7, 1, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 40% 72% 64% 66% 66% 70% 67% 71% idle for 1-8 players (aim 67.0% solo, 65.0% for 2-8)
+    crew: {events: [4, 5, 9, 11, 14, 18, 23, 24], cells: [3, 3, 9, 12, 17, 16, 24, 24], reactor: [1, 1, 0.7, 0.85, 0.7, 1, 0.7, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 40% 68% 66% 67% 67% 65% 65% 69% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8); base ship: ×3: star cannon waits 20 s at 292 s; ×4: port cannon waits 4 s at 223 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores', 'leeches'],
     objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
     blurb: 'Drill a sample of the living rock in the Mire Nebula.',
     briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. One will drift right in front of us: take the mining drill (left airlock room), spacewalk out, drill a sample and bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
-    build: () => [evAt('rock', 8), evAt('spores', 35, { side: randSide() }), evAt('leeches', 80, { side: randSide() }), evAt('mother', 120, { side: randSide() }), evAt('swarm', 170), evAt('coolant', 210, { radar: false }), evAt('grappler', 245, { side: randSide() })],
+    // a calm half minute, an interceptor (the opener), then the rock drifts in
+    build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('rock', 60), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
+                  evAt('swarm', 215), evAt('coolant', 255, { radar: false }), evAt('grappler', 290, { side: randSide() })],
   },
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 350, rep: 3, xp: 260 },
-    crew: {events: [1, 1, 2, 8, 11, 15, 18, 23], cells: [2, 2, 2, 4, 6, 7, 7, 10], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 57% 63% 66% 64% 64% 63% idle for 1-8 players (aim 66.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 136 s at 44 s; ×4 star cannon waits 21 s at 84 s
+    crew: {events: [1, 1, 2, 8, 11, 15, 18, 23], cells: [2, 2, 2, 4, 6, 7, 7, 10], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 57% 63% 66% 64% 64% 63% idle for 1-8 players (aim 52.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 136 s at 44 s; ×4 star cannon waits 21 s at 84 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Fly into the deep beyond the Mire and get out alive.',
     briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in and survive. Out there the jump drive is fussy: align the three jump coils on the hull (spacewalk), and when it spools up, someone holds the jump handle at the helm.',
-    build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 20, 18),
+    build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 30, 18),
   },
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 500, rep: 5, xp: 400 },
-    crew: {events: [1, 2, 3, 3, 4, 9, 9, 14], cells: [2, 2, 2, 2, 2, 4, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 73% 70% 76% 61% 63% 62% 63% idle for 1-8 players (aim 66.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 72 s at 194 s; ×4 port cannon waits 72 s at 194 s
+    crew: {events: [2, 2, 3, 3, 4, 9, 9, 14], cells: [2, 2, 2, 2, 2, 4, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 52% 73% 70% 76% 61% 63% 62% 63% idle for 1-8 players (aim 52.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 72 s at 194 s; ×4 port cannon waits 72 s at 194 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Sit next to the leviathan for five minutes. Survive.',
     briefing: 'Varga\'s theory: the swarms answer to one creature. To prove it, someone has to sit right next to it for five minutes and survive.\n\nThat someone is you. Everything out there will come for the ship at once. Good luck — and bring the cat.',
-    build: (target) => [...shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'flare', 'storm', 'coolant', 'glitch', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 15, 13), evAt('leviathan', 150)],
+    build: (target) => [...shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'flare', 'storm', 'coolant', 'glitch', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 30, 13), evAt('leviathan', 150)],
   },
   practice: {
     name: 'Practice', tier: 0, practice: true, rules: {}, objective: null,
@@ -156,8 +168,16 @@ Object.assign(MISSIONS, {
 });
 const SKIRMISH = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep', 'nightmare'];
 EVENT_SIDES.brig = randSide;
-EVENT_RUNNERS.brig = (ev) => dockShip('pirate', ev.side, { npc: true });
-EVENT_LABELS.brig = (ev) => `Prison barge — ${SIDE_NAME[ev.side]}`;
+// The pirate base (js/dock.js dockStation): we dock once the patrol is gone (checked again every 2 s).
+EVENT_RUNNERS.brig = (ev) => {
+  if (combat.enemies.some(e => e.phase !== 'gone' && e.phase !== 'burning') || dk.dock) {
+    if (!ev.waiting) combatBanner('The pirate base is in sight — deal with their patrol, then we dock.');
+    Object.assign(ev, { done: false, t: mission.t + 2, waiting: true });
+    return;
+  }
+  dockShip('base', ev.side);
+};
+EVENT_LABELS.brig = (ev) => `Pirate base — ${SIDE_NAME[ev.side]}`;
 const npcName = () => mission.objective?.npc || 'the engineer';
 
 // ---------------------------------------------------------------------------
@@ -210,14 +230,14 @@ function updateInserter(dt) {
   const I = power.inserter;
   if (!I) return;
   if (!I.on || power.reactor.fuel > 0 || power.reserve <= 0 || broken(REACTOR)) { I.t = 0; return; }
-  if ((I.t += dt) >= 2) { I.t = 0; power.reserve--; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); combatBanner('The inserter loaded a fuel cell'); }
+  if ((I.t += dt) >= 2) { I.t = 0; power.reserve--; power.reactor.fuel = CELL_ENERGY; power.reactor.t = 0; sfx.hatch(); }
 }
 // What happened, for the rewards (each browser credits its own player).
 function missionResults(jumped) {
   const obj = objectiveStatus();
   return {
     jumped, objective: !!obj.done && !!mission.objective, pirates: dk.defeated, kills: mission.kills || 0,
-    crew: crew.map(c => ({ id: c.id, survived: jumped && c.mode === 'inside' && !inDock(c.x, c.y) && standing(c) })),
+    crew: crew.map(c => ({ id: c.id, survived: jumped && (c.mode === 'gun' || c.mode === 'inside' && !inDock(c.x, c.y)) && standing(c) })),
   };
 }
 // A mission counts as a success (finished, unlocks the next chapter, earns reputation) only if the ship
@@ -342,6 +362,14 @@ function drawRewards(cx, y) {
 // ---------------------------------------------------------------------------
 // Browser side: lobby, locker, shipyard (DOM)
 // ---------------------------------------------------------------------------
+// One Locker / Shipyard choice, in one of three states that read at a glance: owned (latched in, green
+// LED, "OWNED"), available (price on a bright tag) or locked (dark, padlock, and why: what unlocks it).
+const shopItem = (data, name, desc, { own, ownTag = 'OWNED', price = '', why = '' }) => {
+  const state = own ? 'chosen' : why ? 'locked' : 'avail';
+  const tag = own ? `<em class="tag own">✔ ${ownTag}</em>` : price ? `<em class="tag price">${price}</em>` : '';
+  return `<button class="item ${state}" ${data} ${own || why ? 'disabled' : ''}${why ? ` title="Locked: ${escapeHtml(why)}"` : ''}>`
+    + `<b>${name}${tag}</b><span>${desc}</span>${why ? `<i class="why"><i class="padlock" aria-hidden="true"></i>${escapeHtml(why)}</i>` : ''}</button>`;
+};
 const lobbyUI = {
   union: null, onPick: null, onProfile: null,
   el: (id) => document.getElementById(id),
@@ -360,7 +388,7 @@ const lobbyUI = {
       <span>${p.xp} XP</span><span>$${p.money}</span><span>★ ${p.rep} reputation</span>`;
     const paint = this.el('lobby-paint');                    // suit color: free, saved in the profile
     if (paint) {
-      paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}" title="Suit color"></button>`).join('');
+      paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}; --c:${c}" title="Suit color"></button>`).join('');
       paint.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => { p.paint = p.paint === b.dataset.paint ? null : b.dataset.paint; saveProfile(p); this.render(); this.onProfile?.(); });
     }
     // One list: only what's unlocked (for you or anyone in the game), so future chapters don't spoil the story.
@@ -396,17 +424,21 @@ const lobbyUI = {
     this.el('shop-title').textContent = kind === 'locker' ? `LOCKER — $${p.money} · level ${lv}` : `SHIPYARD — ★ ${p.rep} reputation`;
     let html = '';
     if (kind === 'locker') {
-      html += `<h4>Profession${lv < 2 ? ' (from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => `<button class="item${p.profession === x.id ? ' chosen' : ''}" data-prof="${x.id}" ${lv < 2 ? 'disabled' : ''}><b>${x.name}</b><span>${x.desc}</span></button>`).join('') + '</div>';
-      const gearButtons = (list) => '<div class="grid">' + list.map(g => { const own = p.gear[g.id], ok = !own && p.money >= g.cost && lv >= g.level && (!g.prof || p.profession === g.prof);
-        return `<button class="item${own ? ' chosen' : ''}" data-gear="${g.id}" ${ok ? '' : 'disabled'}><b>${g.name} ${own ? '✔' : `· $${g.cost}${lv < g.level ? ` · level ${g.level}` : ''}`}</b><span>${g.desc}</span></button>`; }).join('') + '</div>';
+      html += `<h4>Profession${lv < 2 ? ' (from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => shopItem(`data-prof="${x.id}"`, x.name, x.desc,
+        { own: p.profession === x.id, ownTag: 'YOURS', why: lv < 2 ? 'Unlocks at level 2' : '' })).join('') + '</div>';
+      const gearButtons = (list) => '<div class="grid">' + list.map(g => {
+        const pr = g.prof && PROFESSIONS.find(x => x.id === g.prof);
+        const why = pr && p.profession !== g.prof ? `${pr.name}s only${lv < 2 ? ' · profession from level 2' : ' · pick the profession above'}`
+          : lv < g.level ? `Unlocks at level ${g.level} (you: ${lv})` : p.money < g.cost ? `Need $${g.cost - p.money} more` : '';
+        return shopItem(`data-gear="${g.id}"`, g.name, g.desc, { own: p.gear[g.id], price: `$${g.cost}`, why }); }).join('') + '</div>';
       html += '<h4>General</h4>' + gearButtons(GEAR.filter(g => !g.prof));
       for (const x of PROFESSIONS) {
         const track = GEAR.filter(g => g.prof === x.id);
         if (track.length) html += `<h4>${x.name} track${p.profession === x.id ? '' : ' (only as ' + x.name.toLowerCase() + ')'}</h4>` + gearButtons(track);
       }
     } else {
-      html += '<div class="grid">' + SHIP_UPGRADES.map(u => { const own = p.ship[u.id], ok = !own && p.rep >= u.rep;
-        return `<button class="item${own ? ' chosen' : ''}" data-ship="${u.id}" ${ok ? '' : 'disabled'}><b>${u.name} ${own ? '✔' : `· ★${u.rep}`}</b><span>${u.desc}</span></button>`; }).join('') + '</div>';
+      html += '<div class="grid">' + SHIP_UPGRADES.map(u => shopItem(`data-ship="${u.id}"`, u.name, u.desc,
+        { own: p.ship[u.id], price: `★${u.rep}`, why: p.rep < u.rep ? `Need ★${u.rep - p.rep} more reputation (missions)` : '' })).join('') + '</div>';
       html += '<p class="note">In multiplayer, the ship gets every upgrade anyone in the crew has bought.</p>';
     }
     box.innerHTML = html;

@@ -2,6 +2,8 @@
 // fires, and the win/lose rules. Units: layout units, times in seconds.
 
 let RADAR_RANGE = 45;                                // (ship upgrades: see progress.js)
+const STEALTH_RADAR = 12;                            // a stealth fighter only shows on the radar this close (s) to arriving
+const radarReach = (ev) => (ev.kind === 'stealth' ? Math.min(RADAR_RANGE, STEALTH_RADAR) : RADAR_RANGE);
 const MOCK_WINDOW = [3, 8], MAINT_WARNING = 20;
 const JUMP_DELAY = 22;                      // the jump comes mid-battle: 22 s after the final fight starts
 // ... or MISSIONS[id].finaleLead s after it, where the finale needs longer to matter (c2's frigate: its heavy shots)
@@ -65,7 +67,7 @@ const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
   intro: {
     name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
-    crew: {events: [2, 3, 6, 7, 12, 13, 17, 17], cells: [2, 3, 4, 6, 8, 11, 12, 12], reactor: [1, 1, 1, 0.85, 1, 0.7, 0.85, 0.85]},   // --calibrate: 71% 74% 70% 73% 67% 69% 67% 72% idle for 1-8 players (aim 70.0% solo, 68.0% for 2-8)
+    crew: {events: [3, 3, 6, 7, 12, 13, 17, 17], cells: [3, 3, 4, 6, 8, 11, 12, 12], reactor: [1, 1, 1, 0.85, 1, 0.7, 0.85, 0.85]},   // --calibrate: 51% 74% 70% 73% 67% 69% 67% 72% idle for 1-8 players (aim 56.0% solo, 68.0% for 2-8)
     build(target) {
       const s1 = randSide();
       return [
@@ -79,7 +81,7 @@ const MISSIONS = {
   },
   rush: {
     name: 'Rush hour', blurb: '7 incidents in random order. More trouble.',
-    crew: {events: [1, 3, 5, 8, 10, 13, 15, 17], cells: [2, 3, 5, 7, 11, 9, 14, 12], reactor: [1, 1, 1, 1, 0.7, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 76% 70% 65% 67% 68% 67% 67% 68% idle for 1-8 players (aim 69.0% solo, 67.0% for 2-8); OUT OF SPEC: ×2 front cannon waits 26 s at 55 s; ×3 port cannon waits 12 s at 348 s; ×4 front cannon waits 13 s at 323 s
+    crew: {events: [1, 3, 5, 8, 10, 13, 15, 17], cells: [2, 3, 5, 7, 11, 9, 14, 12], reactor: [1, 1, 1, 1, 0.7, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 76% 70% 65% 67% 68% 67% 67% 68% idle for 1-8 players (aim 55.0% solo, 67.0% for 2-8); OUT OF SPEC: ×2 front cannon waits 26 s at 55 s; ×3 port cannon waits 12 s at 348 s; ×4 front cannon waits 13 s at 323 s
     needs: {ship: [], overcharge: true},
     rules: { breach: true, surge: true },
     build(target) {
@@ -94,7 +96,7 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Breaches, plasma fires, failing gravity, things on the hull, and a fussy jump drive.',
-    crew: {events: [1, 1, 2, 2, 11, 17, 19, 23], cells: [2, 2, 2, 2, 4, 6, 8, 7], reactor: [1, 1, 1, 1, 1, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 66% 63% 65% 64% 65% 65% idle for 1-8 players (aim 66.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 star cannon waits 147 s at 44 s; ×4 port cannon waits 147 s at 44 s
+    crew: {events: [1, 1, 2, 2, 11, 17, 19, 23], cells: [2, 2, 2, 2, 4, 6, 8, 7], reactor: [1, 1, 1, 1, 1, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 66% 63% 65% 64% 65% 65% idle for 1-8 players (aim 52.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 star cannon waits 147 s at 44 s; ×4 port cannon waits 147 s at 44 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
@@ -103,7 +105,7 @@ const MISSIONS = {
   },
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Defeat the pirates. If their raider docks, they come aboard to steal — board them back.',
-    crew: {events: [1, 4, 8, 12, 16, 19, 22, 23], cells: [2, 2, 5, 5, 6, 8, 8, 10]},   // --calibrate: 58% 67% 64% 67% 67% 65% 70% 72% idle for 1-8 players (aim 67.5% solo, 65.5% for 2-8)
+    crew: {events: [2, 4, 8, 12, 16, 19, 22, 23], cells: [2, 2, 5, 5, 6, 8, 8, 10]},   // --calibrate: 58% 67% 64% 67% 67% 65% 70% 72% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8)
     needs: {ship: ['cannons', 'caps'], overcharge: false},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     rules: { breach: true, surge: true }, objective: { kind: 'pirates', count: 2 },
@@ -111,27 +113,27 @@ const MISSIONS = {
   },
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something is asleep over there.',
-    crew: {events: [2, 6, 8, 12, 15, 18, 21, 22], cells: [2, 2, 2, 5, 7, 7, 9, 9]},   // --calibrate: 62% 64% 69% 66% 67% 66% 67% 69% idle for 1-8 players (aim 68.0% solo, 66.0% for 2-8)
+    crew: {events: [3, 6, 8, 12, 15, 18, 21, 22], cells: [2, 2, 2, 5, 7, 7, 9, 9], reactor: [0.85, 1, 1, 1, 1, 1, 1, 1]},   // --calibrate: 51% 64% 69% 66% 67% 66% 67% 69% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons'], overcharge: false},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
   },
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
-    crew: {events: [2, 4, 8, 12, 13, 17, 19, 24], cells: [2, 2, 3, 5, 5, 6, 7, 8]},   // --calibrate: 61% 65% 66% 58% 65% 65% 65% 68% idle for 1-8 players (aim 67.0% solo, 65.0% for 2-8)
+    crew: {events: [3, 4, 8, 12, 13, 17, 19, 24], cells: [2, 2, 3, 5, 5, 6, 7, 8]},   // --calibrate: 53% 65% 66% 58% 65% 65% 65% 68% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8)
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'Spacewalk out and drill a big asteroid while the front cannon holds off the small ones.',
-    crew: {events: [2, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 6, 9, 12, 11, 10, 10], reactor: [1, 0.85, 0.85, 0.85, 0.85, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 68% 68% 66% 65% 66% 69% 73% idle for 1-8 players (aim 68.0% solo, 66.0% for 2-8)
+    crew: {events: [3, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 6, 9, 12, 11, 10, 10], reactor: [1, 0.85, 0.85, 0.85, 0.85, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 54% 68% 68% 66% 65% 66% 69% 73% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true }, objective: { kind: 'ore' },
     build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
   },
   nightmare: {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
-    crew: {events: [1, 2, 3, 4, 4, 4, 9, 13], cells: [2, 2, 2, 2, 2, 2, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 65% 73% 70% 49% 61% 66% 60% 64% idle for 1-8 players (aim 66.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 70 s at 194 s; ×4 star cannon waits 55 s at 36 s
+    crew: {events: [2, 2, 3, 4, 4, 4, 9, 13], cells: [2, 2, 2, 2, 2, 2, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 47% 73% 70% 49% 61% 66% 60% 64% idle for 1-8 players (aim 52.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 70 s at 194 s; ×4 star cannon waits 55 s at 36 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
@@ -163,6 +165,9 @@ const EVENT_SIDES = {};                                // event kinds with their
 // (MISSIONS[id].essential, plus ESSENTIAL_KINDS), then optional ones in DROP_ORDER (first dropped first),
 // so a solo run of a chapter always has the same kind of content. More events than written: repeats
 // of the mission's most important optional kinds.
+//   The opener (a written event with opener: true, the first one) is never dropped either, and never the finale:
+// a mission jumps in, gives the crew a calm half minute (the first written time), then something else
+// happens before the mission's main encounter (the designer's rule: if the point is X, X never comes first).
 //   The kept events stay in their written order and are spread evenly from the first event's written
 // time to MISSION_LENGTH - finaleLead(id) (JUMP_DELAY unless the mission says). The reactor follows the gaps: ENERGY_TIME × gap / the written gap
 // (paceFactor), so the energy made per gap is what the mission was written for.
@@ -189,12 +194,12 @@ const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
 function selectEvents(id, written, n, target, easy = 0) {
   const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]);
   const base = missionCrew(id, n).events ?? written.length, want = Math.min(base, Math.max(1, base - easy));   // (at least one: the finale)
-  const rank = (e) => (ess.has(e.kind) ? Infinity : DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
+  const rank = (e) => (ess.has(e.kind) || e.opener ? Infinity : DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
   const order = written.map((e, i) => ({ e, i })).sort((a, b) => rank(b.e) - rank(a.e) || a.i - b.i);   // most important first; ties: the earlier one
   const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(want, written.length))).map(o => o.e);
-  // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump)
+  // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump), nor the opener
   const objective = new Set(M.essential || []), optionalFight = order.find(o => rank(o.e) !== Infinity && COMBAT_KINDS.has(o.e.kind) && !keep.includes(o.e));
-  if (objective.size && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind))) keep.push(optionalFight.e);
+  if ((objective.size || keep.some(e => e.opener)) && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind) || e.opener)) keep.push(optionalFight.e);
   const extra = [...new Set(order.filter(o => rank(o.e) !== Infinity).map(o => o.e.kind))];   // repeats: most important optional kinds, in turn
   for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target), repeat: true });
   return written.filter(e => keep.includes(e)).concat(keep.filter(e => e.repeat));
@@ -211,8 +216,8 @@ function layoutMission(id, n) {
   // (and not an objective's event: it needs more than the 22 s before the jump)
   const sorted = () => [...evs].sort((a, b) => a.t - b.t), objective = new Set(M.essential || []);
   let last = sorted().pop();
-  if (last && (!COMBAT_KINDS.has(last.kind) || objective.has(last.kind))) {
-    const fight = sorted().filter(e => e !== last && COMBAT_KINDS.has(e.kind) && !objective.has(e.kind)).pop();
+  if (last && (!COMBAT_KINDS.has(last.kind) || objective.has(last.kind) || last.opener)) {
+    const fight = sorted().filter(e => e !== last && COMBAT_KINDS.has(e.kind) && !objective.has(e.kind) && !e.opener).pop();
     if (fight) [fight.t, last.t] = [last.t, fight.t];
   }
   const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - lead) / (written.length - 1) : gap;
@@ -294,10 +299,13 @@ function updateMission(dt) {
     const j = mission.jump;
     j.t += dt;
     const pulled = !mission.rules?.handle || (j.pull || 0) >= JUMP_PULL;      // harder missions: someone has to pull the handle
-    if (pulled && midReady()) {
+    const held = pulled && midReady() && typeof dockJumpHold === 'function' && dockJumpHold();   // a ship docked to ours (js/dock.js)
+    if (held) { if (!/^Jump blocked/.test(combat.banner?.text || '') || combat.banner.t < 0.5) combat.banner = { text: held, t: 1.5 }; }
+    else if (pulled && midReady()) {
       CAPACITORS[1].charge--;
       if (/^Jump failed/.test(combat.banner?.text || '')) combat.banner = null;
       const obj = objectiveStatus();
+      if (!crewAboard()) { endMission(false, 'The ship jumped with nobody aboard — the crew was left behind.', true); mission.over.results = missionResults(false); return; }   // (no pay either)
       if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out ${obj.fail}: objective failed.`, true);
       return;
     }
@@ -315,6 +323,9 @@ function updateMission(dt) {
   const dmg = SYSTEMS.filter(s => s.broken).length;
   if (dmg > MAX_DAMAGE) endMission(false, mission.press ? `The ship fell apart waiting for the jump (${dmg} parts broken).` : `The ship fell apart (${dmg} parts broken at once).`);
 }
+// Somebody is aboard for the jump (every mission): in a room, an airlock chamber or a cannon seat — not outside, not
+// over on a docked ship. (Down or out still counts: they're carried along.) Nobody aboard: the mission fails.
+const crewAboard = () => !crew.length || crew.some(c => c.mode === 'gun' || c.mode === 'hatch' || (c.mode === 'inside' && (!!roomAt(c.x, c.y) || !(typeof inDock === 'function' && inDock(c.x, c.y)))));
 // MID can power the jump: intact, with energy in it.
 const midReady = () => !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0;
 // Not jumping yet (the jump is due): extra encounters at ever shorter gaps (one queued at a time, on the radar
@@ -372,7 +383,7 @@ function radarScan() {
   if (enc.storm) { sfx.empty(); combatBanner('Radar: nothing but static — ion storm'); return; }
   for (const e of combat.enemies) if (e.D.stealth) e.reveal = 3;           // the ping lights up cloaked ships for a moment
   let n = 0;
-  for (const ev of mission.events) if (ev.radar && !ev.done && ev.t - mission.t <= RADAR_RANGE && !mission.revealed.has(ev.id)) { mission.revealed.add(ev.id); n++; }
+  for (const ev of mission.events) if (ev.radar && !ev.done && ev.t - mission.t <= radarReach(ev) && !mission.revealed.has(ev.id)) { mission.revealed.add(ev.id); n++; }
   sfx.poi();
   combatBanner(n ? `Radar: ${n} contact${n > 1 ? 's' : ''} in the next ${RADAR_RANGE} s` : `Radar: nothing in the next ${RADAR_RANGE} s`);
 }
@@ -477,16 +488,18 @@ function updateFires(dt) {
 function spray(mx, my, dt) {
   const a = Math.atan2(my - player.y, mx - player.x);
   player.face = a;
+  const n = muzzleAt(player, a);                     // out of the hose's nozzle
   sprayDock(a, dt);
   for (let i = 0; i < 3; i++) {
     const q = a + (Math.random() - 0.5) * 0.7, sp = 5 + Math.random() * 3;
-    combatFx(player.x + Math.cos(a) * 0.4, player.y + Math.sin(a) * 0.4, Math.cos(q) * sp, Math.sin(q) * sp, 0.45, Math.random() < 0.5 ? '#ffffff' : '#dfe8f0', 0.09 + Math.random() * 0.06);
+    combatFx(n.x, n.y, Math.cos(q) * sp, Math.sin(q) * sp, 0.45, Math.random() < 0.5 ? '#ffffff' : '#dfe8f0', 0.09 + Math.random() * 0.06);
+    const p = combat.fx[combat.fx.length - 1]; p.z = n.z; p.foam = true;   // foam: lit, but no light of its own (js/lights.js)
   }
   for (const f of fires) {
     const d = Math.hypot(f.x - player.x, f.y - player.y), off = Math.abs(wrapAngle(Math.atan2(f.y - player.y, f.x - player.x) - a));
     if (d >= SPRAY_RANGE || off >= 0.45) continue;
     if (f.plasma) { f.hp = Math.max(0.6, f.hp - SPRAY_RATE * dt); f.t = Math.max(0, f.t - dt * 2); continue; }   // only pushes it back
-    f.hp -= SPRAY_RATE * dt; if (f.hp <= 0) combatBanner('Fire out');
+    f.hp -= SPRAY_RATE * dt;
   }
   if (Math.random() < dt * 6) sfx.spray();
 }
@@ -522,8 +535,9 @@ function updateOverride(dt) {
   if (!o) return;
   o.swing = Math.max(0, o.swing - dt);
   if (o.doneT !== undefined && (o.doneT -= dt) <= 0) {
+    combatBanner(`${o.name}: forced open`);          // (first: onDone may put up a more urgent banner, e.g. a forced outer airlock venting)
     if (o.onDone) o.onDone(); else o.ref.locked = false;
-    combatBanner(`${o.name}: forced open`); ui.panel = null; ui.override = null;
+    ui.panel = null; ui.override = null;
   }
 }
 
