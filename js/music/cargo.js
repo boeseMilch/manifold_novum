@@ -9,9 +9,13 @@
   // The walking bass (Cargo Run): a fingered upright, warm and round. A triangle body, two saws a few cents apart through a
   // lowpass that closes right after the finger's attack (the "thump"), the pitch a few cents sharp as the string is
   // struck and settling. kind: 'note'; 'pop' (the slapped octave on the 4: brighter, snappier, a hair sharper);
-  // 'ghost' (a dead note: a muted thud between the notes); 'pull' (the truck pulling out: the note slides up a
+  // 'ghost' (a dead note: a pitchless thump of muted strings); 'pull' (the truck pulling out: the note slides up a
   // fourth into the root, growling, with the sub octave under it); 'rev' (the engine revving, sliding up an octave).
   function playWalk(m, t, len, vel, kind = 'note', bright = 0) {
+    if (kind === 'ghost') {                              // the dead note: the fingers slapping muted strings (no pitch)
+      const n = noiseSrc(t, t + 0.2), lp = filt('lowpass', 260, 1.2), g = K.ac.createGain();
+      n.connect(lp); lp.connect(g); env(g, t, 0.003, vel * 2.2, 0.005, 0.018); route(g, false, false); return;
+    }
     const f = hz(m), g = K.ac.createGain(), pop = kind === 'pop', ghost = kind === 'ghost', pull = kind === 'pull', rev = kind === 'rev';
     const lp = filt('lowpass', 0, pop ? 2.4 : pull || rev ? 3 : 1.6), end = t + len + 0.35, os = [osc('triangle', f, t, end), osc('sawtooth', f, t, end, 4)];
     if (!ghost) os.push(osc('sawtooth', f, t, end, -4));
@@ -49,19 +53,15 @@
   let cur = null;                                         // this bar, from hooks.bar (the cadence bar has none)
   const roots = {};                                       // bar → the root note the walk planned to land on there
   const nextChord = (x, c) => x.spool ? K.song.spool.find(ch => ch.name !== c.name) : x.bi < 7 ? x.sec.chords[x.bi + 1] : (x.sec === K.song.A ? K.song.B : K.song.A).chords[0];
-  // The next bar's root: the octave of its chord's root nearest to this one (between C2 and E3), so the line walks
-  // smoothly instead of jumping between fixed registers; the approach note at the end of a bar leads into exactly it.
-  const nearRoot = (pc, from) => { const lo = inRange(pc, 36); return lo + 12 < 53 && Math.abs(lo + 12 - from) + 3 < Math.abs(lo - from) ? lo + 12 : lo; };   // (leaning low: it never drifts up)
-  // The line of one bar, in 8ths (intervals over the root). Two bars on a chord: the boogie (root, third, fifth,
-  // sixth, seventh, sixth), the octave slapped on the 4 and the fifth. A bar before a new chord climbs to the octave
-  // on 3 (slapped), walks down and ends a half step from the next bar's root (in the key if it can).
-  function walkLine(c, next, base, nb) {
-    const ok = (iv) => c.pcs.includes((c.root + iv) % 12) || inKey(c.root + iv);
-    const six = ok(9) ? 9 : 8, sev = ok(10) ? 10 : 7, T = c.third;   // (no major 7th: a 5-6 rock instead)
-    if (!next || next.name === c.name) return { iv: [0, T, 7, six, sev, six, 12, 7], pop: 6, ghost: 11, to: next && next.name };
-    const app = inKey((nb - 1) % 12) || !inKey((nb + 1) % 12) ? nb - 1 : nb + 1;
-    const near = [7, T, 0, 12].filter(y => base + y !== app).reduce((x, y) => (Math.abs(base + y - app) < Math.abs(base + x - app) ? y : x));
-    return { iv: [0, T, 7, six, 12, sev === 7 ? six : sev, near, app - base], pop: 4, ghost: 7, to: next.name };
+  // The next bar's root: the octave of its chord's root nearest to where this bar's riff ends (its fifth), between C2
+  // and E3 and leaning low, so the riff steps into the next chord (B2 → C3, G2 → A2, ...) instead of jumping.
+  const nearRoot = (pc, from) => { const lo = inRange(pc, 36); return lo + 12 < 53 && Math.abs(lo + 12 - from) + 3 < Math.abs(lo - from) ? lo + 12 : lo; };
+  // The riff, the same in every bar (a boogie repeats; a line that changes from bar to bar sounded like wrong notes):
+  // in 8ths over the root, root, third, fifth, sixth, seventh, sixth, the octave slapped on the 4, the fifth; a dead
+  // note on the swung 16th before the slap. Where the minor seventh is out of the key (on C) it rocks 5-6 instead.
+  function walkLine(c, next) {
+    const sev = inKey(c.root + 10) ? 10 : 7;
+    return { iv: [0, c.third, 7, 9, sev, 9, 12, 7], pop: 6, ghost: 11, to: next && next.name };
   }
 
   music.define({ name: 'cargo', title: 'Cargo Run', bpm: 96, key: 'E', missions: ['c1', 'c2', 'c3', 'salvage'],
@@ -79,14 +79,14 @@
     hooks: {
       step(x) {
         const { s, t, c, voice, st, has, late } = x;
-        // the walking boogie bass: swung 8ths, accents on 1 and 3, the octave slapped, a dead note before it
+        // the walking boogie bass: swung 8ths, accents on 1 and 3, the octave slapped on the 4, a dead note before it
         if (has('walk') && !late) {
           const here = cur && cur.b === x.b ? cur : null, v0 = st <= 1 ? 0.08 : 0.066, sd = stepDur();
           const base = roots[x.b] !== undefined && roots[x.b] % 12 === c.root ? roots[x.b] : inRange(c.root, 38);
-          const next = here && nextChord(here, c), nb = next ? nearRoot(next.root, base) : null;
+          const next = here && nextChord(here, c), nb = next ? nearRoot(next.root, base + 7) : null;
           if (next && s === 0) { roots[x.b + 1] = nb; delete roots[x.b - 4]; }
           const log = K.song.walkLog, walkBass = (m, t2, len, vel, kind = 'note', br) => {   // (tests/music.js reads walkLog)
-            if (log) log.push({ b: x.b, s, c: c.name, m, kind, to: L && L.to });
+            if (log) log.push({ b: x.b, s, c: c.name, m, kind, to: L && L.to, t: t2, len });
             playWalk(m, t2, len, vel, kind, br);
           };
           let L = null;
@@ -94,7 +94,7 @@
             if (s % 2 === 0 && s < 12) walkBass(base, t, s === 10 ? sd * 1.65 : sd * 1.1, v0 * (0.75 + s * 0.04), s === 10 ? 'rev' : 'note', s / 10);
             if (s === 10) airBrake(t + sd * 2 - swing(10) + 0.02, 0.08);
           } else {
-            L = walkLine(c, next, base, nb);
+            L = walkLine(c, next);
             if (s % 2 === 0 && !(here && here.drop && s === 2)) {   // (the pull rings through the 2nd 8th)
               const i = s / 2, pop = i === L.pop, pull = here && here.drop && s === 0, acc = s % 8 === 0 ? 1 : s % 4 === 0 ? 0.9 : 0.78;
               const len = sd * (s + 1 === L.ghost ? 0.9 : s % 4 === 0 ? 1.75 : 1.4);

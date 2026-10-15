@@ -158,10 +158,9 @@ for (const p of music.pieces.filter(p => !p.classic)) {
 check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and climax; a seek lands on the next bar line inside the breakdown (${seeks.map(x => x.info).join('; ')})`);
 
 // Cargo Run's walking bass (js/music/cargo.js logs every note it plays into walkLog): through a whole mission and
-// after seeks, the downbeat and the slapped octave are tones of the chord in force, every other note is in the key
-// (the boogie's sixth and seventh); the line
-// walks into the chord that actually comes next (the last note of a bar before a change is a half step from the
-// next bar's first note, never an octave off), and it never leaps more than an octave from one 8th to the next.
+// after seeks, the downbeat and the slapped octave are tones of the chord in force, every other note is in the key or
+// the boogie's sixth; the line plans the chord that actually comes next, plays the same riff in every bar (a line
+// changing from bar to bar sounded like wrong notes), and never leaps more than an octave from one 8th to the next.
 {
   const p = music.pieces.find(x => x.name === 'cargo'), PCN = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   const chord = (n) => { const m = /^([A-G])([#b]?)(m?)$/.exec(n), r = (PCN[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12) % 12; return [r, (r + (m[3] ? 3 : 4)) % 12, (r + 7) % 12]; };
@@ -174,7 +173,7 @@ check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and clim
   for (const at0 of [20.3, P.bars.find(B => B.breakdown).t - 4.7, P.bars.find(B => B.drop).t - 6.1]) take(() => {
     const at = music.seek(at0, 300); for (let x = 0; x < 40; x += 0.25) { music.setIntensity(Math.pow((at + x) / 300, 1.3)); run(0.25); }
   });
-  const bad = [], seen = { notes: 0, approaches: 0 };
+  const bad = [], seen = { notes: 0, changes: 0, riffs: {} };
   for (const log of runs) {
     const ns = log.filter(e => e.kind !== 'ghost');
     log.forEach((e, i) => {
@@ -182,19 +181,18 @@ check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and clim
       seen.notes++;
       if (log.some(o => o.b === e.b && o.c !== e.c)) bad.push(`${where} (two chords in one bar)`);
       if ((e.s === 0 || e.kind === 'pop' || e.kind === 'pull' || e.kind === 'rev') && !pcs.includes(pc)) bad.push(`${where} is not a chord tone on a strong note`);
-      else if (!pcs.includes(pc) && !inKey(pc) && e.s !== 14) bad.push(`${where} is out of the key`);
+      else if (!pcs.includes(pc) && !inKey(pc) && pc !== (pcs[0] + 9) % 12) bad.push(`${where} is out of the key`);
       const next = log.find(o => o.b === e.b + 1 && o.kind !== 'ghost');
       if (e.to && next && next.c !== e.to) bad.push(`${where} walks towards ${e.to}, but ${next.c} comes`);
-      if (e.s === 14 && e.kind !== 'ghost' && next) {
-        const d = Math.abs(next.m - e.m);
-        if (next.c !== e.c) { seen.approaches++; if (d !== 1) bad.push(`${where}: the approach is ${d} semitones from the next bar's ${next.m}`); }
-        else if (d > 7) bad.push(`${where}: leaps ${d} semitones into the next bar`);
-      }
+      if (e.s === 14 && e.kind !== 'ghost' && next && next.c !== e.c) seen.changes++;
+      const riff = log.filter(o => o.b === e.b && o.kind !== 'ghost').map(o => o.s + ':' + (o.m - log.find(q => q.b === e.b && q.s === 0)?.m)).join(' ');
+      if (e.s === 0 && e.kind === 'note' && log.filter(o => o.b === e.b).length >= 9) (seen.riffs[riff] = (seen.riffs[riff] || 0) + 1);
       const j = ns.indexOf(e), prev = j > 0 ? ns[j - 1] : null;
       if (prev && e.kind !== 'ghost' && (prev.b * 16 + prev.s) >= e.b * 16 + e.s - 4 && Math.abs(e.m - prev.m) > 12) bad.push(`${where}: leaps ${Math.abs(e.m - prev.m)} semitones from ${prev.m}`);
     });
   }
-  check(!bad.length && seen.approaches > 10, `Cargo Run's walking bass fits its chords and walks into the chord that comes (${seen.notes} notes, ${seen.approaches} approaches over ${runs.length} runs; ${bad.length ? bad.length + ' wrong, e.g. ' + [...new Set(bad)].slice(0, 6).join('; ') : 'all fine'})`);
+  const riffs = Object.keys(seen.riffs).length;   // (one riff: over minor chords, over major ones, and on C its 5-6 rock)
+  check(!bad.length && seen.changes > 10 && riffs <= 3, `Cargo Run's walking bass fits its chords, walks into the chord that comes and plays one riff (${seen.notes} notes, ${seen.changes} chord changes over ${runs.length} runs, ${riffs} riff shapes: ${Object.keys(seen.riffs).join(' | ')}; ${bad.length ? bad.length + ' wrong, e.g. ' + [...new Set(bad)].slice(0, 6).join('; ') : 'all fine'})`);
 }
 
 // The ending lands in time and in phrase: whenever the ship jumps (any piece, during the spool or straight
