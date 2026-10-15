@@ -76,7 +76,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   let nothing = 0;
   let lit = 0, brk = 0;
   for (let i = 0; i < 2000; i++) { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.smallHit('port', -0.2, 8); if (G.fires.length) lit++; else if (G.SYSTEMS.some(s => s.broken)) brk++; else nothing++; }
-  check(lit > 300 && lit < 420 && brk > 130 && brk < 230, `while lucky, small hits start a fire 18% of the time instead of 20% (${lit}/2000) and break a part 9% instead of 10% (${brk}/2000)`);
+  check(lit > 380 && lit < 490 && brk > 70 && brk < 150, `while lucky, small hits start a fire 21.6% of the time instead of 24% (${lit}/2000) and break a part 5.4% instead of 6% (${brk}/2000)`);
   for (let i = 0; i < 60 * 61; i++) G.tick(DT);
   check(!G.lucky(), 'luck wears off after a minute');
 }

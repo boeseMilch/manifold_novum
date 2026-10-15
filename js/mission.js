@@ -466,7 +466,7 @@ function serviceDone(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Fires: every fire sits on a ship part. Small hits: 20% a fire, 10% a broken part, else nothing.
+// Fires: every fire sits on a ship part. Small hits: 24% a fire, 6% a broken part, else nothing.
 // Big hits: always exactly one broken part (systems.js damageColumn) and a fire. Luck (the cat)
 // makes the fire chances and the small-hit break chance 10% smaller (relative). Every FIRE_TIME (roughly) an ignored fire
 // spreads to a part in the same or an adjacent room (1/3), burns out its part (1/3; half of those
@@ -498,7 +498,7 @@ function igniteSystem(s, plasma = false) {
   else combatBanner(`Fire at the ${s.name.toLowerCase()}! Grab a fire extinguisher.`);
   return true;
 }
-const HIT_FIRE = 0.2, HIT_BREAK = 0.1, LUCK_CUT = 0.9;   // small hits: fire / broken part (exclusive); luck: x0.9 on both
+const HIT_FIRE = 0.24, HIT_BREAK = 0.06, LUCK_CUT = 0.9;   // small hits: fire / broken part (exclusive); luck: x0.9 on both
 // A fire on one of the 3 parts on that side nearest to the hit (intact ones first).
 function fireNear(side, x, y) {
   const col = colOfSide(side), free = SYSTEMS.filter(s => s.col === col && !s.outside && !burning(s));

@@ -287,8 +287,8 @@ intruder (random airlock). The jump comes 60 s after the last one (about 5:40).
   the door.
 - **Locks and the intruder:** it's stopped by locked inner doors (it waits, then picks
   another route), and has to bash a locked outer airlock for 8 s.
-- **Hits** (odds changed 2026-10-13; luck used to be much stronger):
-  - Small hit: 20% a fire on one of the 3 parts nearest to the hit on that side, 10% a
+- **Hits** (odds changed 2026-10-13; luck used to be much stronger; 2026-10-14: 24% / 6%, was 20% / 10%):
+  - Small hit: 24% a fire on one of the 3 parts nearest to the hit on that side, 6% a
     broken part on that side, 70% nothing. Never both.
   - Large hit: always breaks exactly 1 part and always starts a fire near the hit.
 - **Fires:**

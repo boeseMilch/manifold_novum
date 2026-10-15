@@ -209,7 +209,7 @@ const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
 }
 
 function fireAndJumpTests() {
-  // --- fires: small hits = 20% fire, 10% a broken part, 70% nothing (never both);
+  // --- fires: small hits = 24% fire, 6% a broken part, 70% nothing (never both);
   //     big hits: a broken part and a fire, always;
   //     fires sit on a part, burn it out or spread to another part nearby; spray puts them out
   {
@@ -218,7 +218,7 @@ function fireAndJumpTests() {
       G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.shipHit('port', -0.2, 8, false);
       const f = G.fires.length > 0, b = G.SYSTEMS.some(s => s.broken); if (f) n++; if (b) broke++; if (f && b) both++;
     }
-    check(n > 160 && n < 240 && broke > 65 && broke < 135 && both === 0, `a small hit starts a fire 20% of the time (${n}/1000), breaks a part 10% (${broke}/1000), never both`);
+    check(n > 200 && n < 280 && broke > 35 && broke < 90 && both === 0, `a small hit starts a fire 24% of the time (${n}/1000), breaks a part 6% (${broke}/1000), never both`);
     let bigFire = 0, bigBroke = 0, bigTwo = 0;
     for (let i = 0; i < 50; i++) {
       G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.shipHit('port', -0.2, 8, true);
