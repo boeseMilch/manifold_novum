@@ -2011,7 +2011,7 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   | piece | opens with | lead | drums, feel |
   |---|---|---|---|
   | Held Together | drone, dark pad, bells (the first score, unchanged) | horn | taikos |
-  | Cargo Run | one steady boogie riff (woody bass) + shaker, then strummed chords | whistle-flute | swung backbeat kit |
+  | Cargo Run | a twangy baritone-guitar riff (written out, G minor) + shaker, then strummed chords | whistle-flute | rock backbeat kit, light swing |
   | Red Comet Gallop | stomp-and-clap + accordion, then oom-pah bass | accordion reed, a fiddle | 6/8 jig, tambourine, crew shouts |
   | A Signal in the Dark | the theme on a far-away radio horn, a faint crackle | solo voice ("ah") answering the radio | soft taikos, spiccato strings |
   | Bloom | a breathing vowel choir + spore runs | glassy FM | 3:4 marimba, hand drums, taikos late |
@@ -2058,9 +2058,12 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   box comes back over the climax. The music-box opening is untouched: `tests/music.js` hashes every WebAudio call
   of stages 0-1 (7,950 calls). Peaks: the first drop ~-3.5 dB (the growl's first note there swells in over 50 ms).
 - **Per-piece reworks (2026-10-14, one agent per song), each piece checked against references by offline renders:**
-  - *Cargo Run:* one steady boogie riff in every bar (major 6th, a slapped octave on the 4, a pitchless dead-note
-    thump; no bar-to-bar changes; tested to stay the same); the drop is a truck pulling out (chugging rev,
-    air-brake hiss, a growling slide up into the root).
+  - *Cargo Run:* recomposed from scratch (2026-10-14, late): G minor, 102 bpm, light swing. A baritone-guitar
+    riff written out bar by bar as one line per 8-bar section (chord tones on 1 and 3, steps and small leaps, each
+    phrase ending D-C-A-F# into G), doubled by a sine sub from the kit on; shaker; strummed chords from stage 1; its
+    own rock kit, fills (snare pickup, tom run), build (snare tightening, a pick scrape into the silence), drop (kick,
+    crash, power chord, stab) and spool (four on the floor) with engineDrums off. A | Gm Gm Eb F | Gm Gm Eb D |,
+    B | Cm Cm Gm Gm | Eb F Gm D |; the flute theme from the first drop. `tests/music.js` checks the riff stays in key.
   - *Red Comet Gallop:* a real 6/8 jig grid; the crew stomps and shouts "HEY!" on the drops; a fiddle counter-line;
     the breakdown is call and response (accordion calls, stomps and claps answer); the climax is the boarding
     party charging (galloping toms and snare).

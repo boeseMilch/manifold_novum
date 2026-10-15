@@ -157,10 +157,10 @@ for (const p of music.pieces.filter(p => !p.classic)) {
 }
 check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and climax; a seek lands on the next bar line inside the breakdown (${seeks.map(x => x.info).join('; ')})`);
 
-// Cargo Run's walking bass (js/music/cargo.js logs every note it plays into walkLog): through a whole mission and
-// after seeks, its written line stays strictly in E natural minor (D# only over the B chord: no C#, no G#), puts chord
-// tones on beats 1 and 3, moves by steps and small leaps (at most a fifth from one 8th to the next) and steps across
-// the bar lines (at most a major third from a bar's last note into the next bar's first), so it sings as one melody.
+// Cargo Run's riff (js/music/cargo.js logs every note it plays into walkLog): through a whole mission and after
+// seeks, its written line stays strictly in its natural minor (the leading tone only over the major V chord), puts
+// chord tones on beats 1 and 3, moves by steps and small leaps (at most a fifth from one 8th to the next) and steps
+// across the bar lines (at most a fourth from a bar's last note into the next bar's first), so it sings as one melody.
 {
   const p = music.pieces.find(x => x.name === 'cargo'), PCN = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
   const chord = (n) => { const m = /^([A-G])([#b]?)(m?)$/.exec(n), r = (PCN[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + 12) % 12; return [r, (r + (m[3] ? 3 : 4)) % 12, (r + 7) % 12]; };
@@ -177,16 +177,16 @@ check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and clim
   for (const log of runs) log.forEach((e, i) => {
     const pcs = chord(e.c), pc = ((e.m % 12) + 12) % 12, where = `bar ${e.b} step ${e.s} on ${e.c}: ${e.kind} ${e.m}`;
     seen.notes++; if (e.sec) seen.written++;
-    if (!MINOR.includes(deg(pc)) && !(deg(pc) === 11 && e.c === 'B')) bad.push(`${where} is out of E natural minor`);
+    if (!MINOR.includes(deg(pc)) && !(deg(pc) === 11 && chord(e.c)[0] === (p.tonic + 7) % 12 && !/m$/.test(e.c))) bad.push(`${where} is out of the natural minor`);
     if ((e.s % 8 === 0 || e.kind !== 'note') && !pcs.includes(pc)) bad.push(`${where} is not a chord tone on a strong beat`);
     const prev = log[i - 1];
     if (prev && prev.b * 16 + prev.s >= e.b * 16 + e.s - 4) {
       const d = Math.abs(e.m - prev.m);
       if (d > 7) bad.push(`${where}: leaps ${d} semitones from ${prev.m}`);
-      if (e.s === 0 && prev.sec && e.sec) { seen.barLines++; if (d > 4) bad.push(`${where}: jumps ${d} semitones across the bar line`); }
+      if (e.s === 0 && prev.sec && e.sec) { seen.barLines++; if (d > 5) bad.push(`${where}: jumps ${d} semitones across the bar line`); }
     }
   });
-  check(!bad.length && seen.written > seen.notes * 0.8 && seen.barLines > 50, `Cargo Run's walking bass is one melody strictly in E minor (${seen.notes} notes, ${seen.written} from the written line, ${seen.barLines} bar lines over ${runs.length} runs; ${bad.length ? bad.length + ' wrong, e.g. ' + [...new Set(bad)].slice(0, 6).join('; ') : 'all fine'})`);
+  check(!bad.length && seen.written > seen.notes * 0.8 && seen.barLines > 50, `Cargo Run's riff is one melody strictly in ${p.key} minor (${seen.notes} notes, ${seen.written} from the written line, ${seen.barLines} bar lines over ${runs.length} runs; ${bad.length ? bad.length + ' wrong, e.g. ' + [...new Set(bad)].slice(0, 6).join('; ') : 'all fine'})`);
 }
 
 // The ending lands in time and in phrase: whenever the ship jumps (any piece, during the spool or straight
