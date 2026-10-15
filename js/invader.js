@@ -487,6 +487,20 @@ function hurtInvader(a, dmg, stun = 0) {
 // What one of our bolts does: 1 (a wrench too, but it stuns), heavy blaster shots carry their own damage.
 const boltDamage = (b) => b.dmg || 1;
 const boltStun = (b) => b.stun ?? (b.wrench ? 1.5 : 0);
+// Our bolt's step vs everyone it can hit (the invaders; the pirates, js/dock.js), as they're drawn (segBody: a
+// capsule from feet to head, the bolt at its muzzle height b.z): the first one along its path that isn't behind a wall.
+const HUMAN_HIT = { r: 0.4, top: 1.05 }, ALIEN_HIT = { r: 0.42, top: 0.45 };
+function boltHitsBody(b, x0, y0) {
+  let best = null, bk = 2;
+  const test = (o, H, hit) => {
+    const k = segBody(x0, y0, b.x, b.y, b.z, o.x, o.y, H.r, H.top);
+    if (k >= 0 && k < bk && freeAt(x0 + (b.x - x0) * k, y0 + (b.y - y0) * k)) { bk = k; best = hit; }
+  };
+  for (const a of boarding.invaders) if (a.state !== 'entering' && a.mode === 'inside') test(a, a.kind === 'saboteur' ? HUMAN_HIT : ALIEN_HIT, () => hurtInvader(a, boltDamage(b), boltStun(b)));
+  if (typeof dk !== 'undefined') for (const p of dk.pirates) if (!p.dead) test(p, HUMAN_HIT, () => hurtPirate(p, boltDamage(b), boltStun(b), b));
+  if (!best) return false;
+  b.dead = true; best(); return true;
+}
 function updateBoarding(dt) {
   for (const a of boarding.invaders) updateInvader(a, dt);
   boarding.invaders = boarding.invaders.filter(a => !a.dead);
@@ -494,15 +508,13 @@ function updateBoarding(dt) {
     const x0 = b.x, y0 = b.y;
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; if (b.wrench) b.spin += dt * 18;
     if (b.fast && !freeAt((x0 + b.x) / 2, (y0 + b.y) / 2)) { b.x = (x0 + b.x) / 2; b.y = (y0 + b.y) / 2; }   // (fast shots: don't skip through a wall)
+    if (b.owner === 'crew' && boltHitsBody(b, x0, y0)) continue;   // (before the wall: someone standing right at one)
     if (!freeAt(b.x, b.y)) {                       // hit a wall
       b.dead = true;
       for (let i = 0; i < 5; i++) combatFx(x0, y0, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, b.owner === 'alien' ? '#9cff5a' : b.owner === 'saboteur' ? '#5ae0ff' : '#ffb0a0', 0.07);
       continue;
     }
     if (b.owner === 'crew') {
-      for (const a of boarding.invaders) {
-        if (a.state !== 'entering' && a.mode === 'inside' && segCircle(x0, y0, b.x, b.y, a.x, a.y, 0.42)) { b.dead = true; hurtInvader(a, boltDamage(b), boltStun(b)); break; }
-      }
       // a near miss still gets its attention
       for (const a of boarding.invaders) if (a.mode === 'inside' && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) {
         if (a.kind === 'saboteur') sabProvoke(a); else if (a.state === 'wander') { a.state = 'fight'; a.seen = 0; }
@@ -511,7 +523,7 @@ function updateBoarding(dt) {
       const c = crew.find(c => c.mode === 'inside' && segCircle(x0, y0, b.x, b.y, c.x, c.y, 0.35));
       if (c) {
         b.dead = true; combat.hits.crew++; combat.flashes[b.vx > 0 ? 'port' : 'star'] = 1; sfx.hit(false); hurtCrew(c);
-        for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, b.owner === 'saboteur' ? '#5ae0ff' : '#9cff5a', 0.1);
+        for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, b.owner === 'saboteur' ? '#5ae0ff' : b.owner === 'alien' ? '#9cff5a' : '#ff8a6a', 0.1);
       }
     }
   }
@@ -815,6 +827,14 @@ function drawSaboteurCorpses() {
   }
 }
 
+// A thrown wrench (sprite mode): items/wrench, 16 spin angles (dir i = turned to i * 22.5 deg), lying flat at
+// its flight height b.z, lit like the rest. The nearest angle, turned on screen by what's left to b.spin, so
+// it spins smoothly instead of in 22.5 deg steps (as the asteroids do, js/enemies.js drawAsteroidSprite).
+function drawWrenchSprite(b) {
+  if (!GFX.on || !GFX.ready('items/wrench')) return false;
+  const step = TAU / 16, i = Math.round(b.spin / step);
+  return GFX.sprite('items/wrench', ((i % 16) + 16) % 16, b.x, b.y, b.z || 0, { rot: b.spin - i * step, emissive: 0.15, sortY: b.y });
+}
 function drawBoarding(t) {
   drawAlienCorpses();
   drawSaboteurCorpses();
@@ -828,8 +848,8 @@ function drawBoarding(t) {
   }
   for (const b of boarding.bolts) {
     const by = b.y - GFX.lift(b.z || 0);           // (our shots fly at the height of the muzzle they left: b.z)
-    if (b.wrench) { wrench(L(b.x), L(by), b.spin); continue; }
-    const crew = b.owner === 'crew' || b.owner === 'pirate', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
+    if (b.wrench) { if (!drawWrenchSprite(b)) wrench(L(b.x), L(by), b.spin); continue; }
+    const crew = b.owner === 'crew' || b.owner === 'pirate' || b.owner === 'sentry', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
     if (crew) {                                      // laser bolt: bright red streak (a pirate's fast shot: a long one)
       // (the streak's tail: no further back than where it left the muzzle)
       const len0 = b.fast ? 2.2 : 0.7, len = b.ox != null ? Math.min(len0, Math.hypot(b.x - b.ox, b.y - b.oy)) : len0, w = b.heavy ? 2.2 : b.dmg === 2 ? 1.5 : 1;   // heavy blaster: fatter (a charged blast: blue-white)

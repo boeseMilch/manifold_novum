@@ -601,8 +601,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   "TO DO: 1. CURE IT 2. NAME IT 3. DON'T GET EATEN", "SPECIMEN 7 — DO NOT FEED", "DAYS SINCE LAST INCIDENT: ?".
 - **The pirate base** (chapter 5, the user's design, 2026-10-14; `dockBase` and "The pirate base" in js/dock.js, event
   kind still `brig`): the whole mission is the base. A patrol interceptor (the opener, 25 s), then at 60 s we dock
-  (waits until the patrol is gone). Four rooms in a row (`baseGeom`, port layout mirrored): docking bay → server
-  room → barracks → brig, walked on a chain like the other ships (`dockRoute` takes `g.chain`). Two pirates rush out
+  (waits until the patrol is gone). Rooms in a row (`baseGeom`, port layout mirrored): docking bay → server
+  room → barracks → gun corridor → brig, walked on a chain like the other ships (`dockRoute` takes `g.chain`). Two pirates rush out
   of the bay at once and hunt the nearest of us (onto our ship); they drop their carbines (pick-up laser guns) and
   their bodies. Guards hold each room (`baseGuards`: solo 2/2/1, +1 per extra crew member up to 4, −1 per easier
   difficulty step, never below one) and come at whoever enters their room. A repair kit lies in the bay. The server
@@ -611,6 +611,20 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   WRITE DOWN"). Dr. Varga lies in the brig: treated, she runs home on her own; shot, she goes down again. Shots stop
   at the base's walls (`dockSolid` in `freeAt`). Drawn in 2D (hull, floors, terminal, keypad, cell bars, plaques:
   "RED COMET BASE", "CHORE WHEEL", "BRIG RULES"), lit warm like the raider.
+  - **The gun corridor** (2026-10-14, user feedback): 12 units between the barracks and the brig (the brig moved
+    off its far end; the code door is now in the corridor's wall right beside the gun). A sentry gun (`updateSentry`,
+    `dk.dock.sentry`, synced with `dk`) sits on a pedestal at the far end, fixed facing down the corridor. Anyone in
+    its field of fire (±0.36 rad, 13 units, clear line: the cover blocks it) makes it spool up (`SENTRY_SPOOL` 1.3 s;
+    a rising whine `sfx.charge`, the barrel glowing, a red fan on the floor, "SPOOLING UP!" tag), then it sprays
+    bolts (±0.3 rad, 7/s, 16 units/s, owner `sentry`: they hurt the crew like a pirate's, stop at walls and cover)
+    for 5 s whatever it sees, then cools 3 s (time to run to the next cover). Three stacks of crates against
+    alternate walls are the cover: holes in the corridor's walkable floor (`g.floor`, `floorMinus`), so nobody
+    walks through them and shots and sight lines stop at them. Right beside the gun you're out of its fan: hold
+    click on it there to switch it off (4 s by hand, 2 s with the repair kit). A guard posts at its end. Dr. Varga,
+    treated, waits in the brig while it's live ("I'm not walking into that sentry gun!"), so the gun is part of
+    the rescue. Easy / very easy: spool 1.9 / 2.5 s, 4.5 / 3 shots a second. Drawn in 2D (sprites: our crate props
+    stacked, and a small copy of our hull cannon on the pedestal). Guard counts unchanged (the brig's guard now
+    stands at the gun's end, a second one for big crews in the brig).
   - **Engine off while docked or while anyone is over there** (`baseJumpHold`). Once she's aboard our airlock offers
     **detach** (also once the jump is due, as a way out): the tube pulls in (whoever is in it lands on our side), the
     base stays right there. Stranded? The bay's docking control (or our airlock) docks again: no softlock; nobody
@@ -767,14 +781,28 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - The snack machine is free: one snack per minute each, only when you're hurt (ends it 10 s sooner).
 
 ### 8t. Pirates aim, loot and leave; enemies on the security map
-- Pirates fight like gunslingers now: they stop and aim, a faint laser sight tracking you, which then
-  locks (bright, flickering) for the last 0.1 s (was 0.6, then 0.3; 2026-10-14: too easy to dodge); after 1.7 s a very fast shot (30 units/s) goes down the
-  locked line. Dive behind a wall (or just out of the line) when you see it. If they lose sight of you
-  while tracking, they give up the shot. Then a 5 s cooldown — your window to hit them.
+- Pirates fight like gunslingers now: they stop and aim, a faint laser sight tracking you right up to the
+  shot (no lock-on phase any more, 2026-10-14: it was 0.6, then 0.3, then 0.1 s of a bright locked sight; now
+  `PIRATE_LOCK` is gone); after 1.7 s a very fast shot (30 units/s) goes down the sight's line. Get behind a wall
+  (out of its sight) when you see it. If they lose sight of you for 0.5 s they give up the shot. Then a 5 s
+  cooldown — your window to hit them. Their shots fly (and are drawn) at the carbine's height, along the sight.
+- **Hits as you see them** (2026-10-14, "sometimes I don't hit them though I feel I should"): our bolts used to be
+  point-tested against a 0.42 circle round the pirate's feet once a frame (after the bolt moved, so a fast one
+  could skip through, and one that reached a wall that frame never got tested). Now `boltHitsBody` (js/invader.js)
+  tests the bolt's whole step, before the wall check, against the body as drawn (`segBody`, js/combat.js): the
+  bolt at its muzzle height `b.z` (drawn `GFX.lift(z)` up the screen) vs a capsule from the feet to the head
+  (r 0.4, top 1.05 for pirates and the saboteur; aliens r 0.42, top 0.45). In the classic view it's the old
+  circle, swept. The first body along the path takes it. A hit shows on that pirate: a stronger, longer flash,
+  sparks at the bolt's height, a small shove back along the shot, the lost HP pip blinking (bigger pips).
+- **Pirates keep apart** (`separatePirates`): closer than 0.8 to each other they push apart (half each), and
+  0.65 from the crew, Dr. Varga and intruders; a pirate making no headway along its route for 0.8 s squeezes
+  past for 1.5 s (no pushing), so two meeting in a door or the tube pass in single file instead of deadlocking.
 - They loot two things each (or fewer if nothing's left), carry them to their crate, then head home.
   Once every pirate is back aboard, their ship casts off with the loot 4 s later.
 - Security console: red blips for enemies (intruders, pirates), blue for friends (crew, the engineer).
-  `tests/dock.js` covers aim → shot timing, dodging by diving out of the line, the cooldown, leaving.
+  `tests/dock.js` covers aim → shot timing, the sight tracking you to the shot (stepping aside within it
+  doesn't dodge, getting out of sight does), the cooldown, leaving, grazing / very fast / sprite-view hits,
+  separation and two pirates passing head-on in the tube.
 
 ### 8u. The other newer threats: defeatability checked, art polished
 - `tests/threats.js`: a simulated gunner that only aims at what a player could see kills the stealth
@@ -1837,7 +1865,7 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   goes back to the lobby (was R only), from 1 s after the report shows (`END_GRACE`), so a click meant for the
   fight doesn't skip it.
 - "The pirates are a bit easy": a boarding pirate's laser sight now locks 0.3 s before the shot (was 0.6;
-  `PIRATE_LOCK`), the tracking before it unchanged (aim 2 → 1.7 s in all).
+  `PIRATE_LOCK`), the tracking before it unchanged (aim 2 → 1.7 s in all). (Later removed entirely: 8t.)
 - Tests: tests/mission.js (frozen after the jump; the end screen's keys), tests/dock.js (the aim time).
 
 ### Chapter 2 harder: two aliens, a fuller timeline, a finale that matters (2026-10-14 playtest)
@@ -1999,6 +2027,24 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   panned wider, the ostinato alternating left/right, more reverb; plus the arc above. Held Together keeps the first
   score's mix and smooth build (only its ending is new); it is still checked identical to the first score, call
   for call, up to the jump.
+- **One file per piece** (so each piece can be worked on on its own): `js/music.js` is the engine (sequencer,
+  stages and the arc, drops and breakdowns, the ending in phrase, buses and mix, the shared instruments: pad,
+  pluck, bell, choir, drone, bass, brass, the lead timbres, the drums) and keeps Held Together, frozen. The six
+  other pieces live in `js/music/<name>.js` (cargo, comet, signal, bloom, hull, home): each one calls
+  `music.define(recipe)` with its score (key, tempo, chords, themes, parts table, ...), its own instruments (built
+  from `music.kit`) and hooks into the engine: `bar(x)` and `step(x)` for its own layers, `theme(x, note)` for its
+  own voices of the theme, `ost(m, t, a, st)` for its ostinato instrument, `drums(x)` for its kit, `endFill(x)`
+  and `finale(x)` for its ending, `groove` for what comes back first after a breakdown. Loaded after
+  `js/music.js` by index.html, music.html, tests/music.js and tests/harness.js (the server's simulation plays no
+  music and needs none of them). The split changed nothing: every piece's audio calls, connections included, were
+  recorded before and after and are identical.
+- **music.html: jump to any part.** The mission bar is clickable (and draggable): it seeks there. `music.plan(L)`
+  runs the arc of an L-second mission ahead (the stage machine is a pure function now), marks the drops, the
+  breakdown, the climax and the spool on the bar, and `music.seek(t, L)` puts the arrangement into the state it
+  would have at that point (stage, breakdown, pending drops) and starts it cleanly on the next bar line, the old
+  sound faded. Buttons: play/pause, restart, spool, JUMP NOW (the ending, on the grid), plus the threat toggle,
+  the mission length and speed; the status shows stage, section and bar. The player's intensity now follows the
+  game's curve (towards the spool, not the end of the mission).
 
 ### Weapons in hand, lethal ship shots, foam, smooth asteroids (2026-10-14 playtest)
 - **The hand weapon is in the hand** (sprite view): `items/held_<kind>` (laser, heavy, drill, repair kit carried

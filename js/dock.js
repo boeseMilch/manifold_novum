@@ -7,16 +7,17 @@
 //   Derelict    a dark, airless wreck on a tether: a sleeping intruder, a jammed door, a fire, and
 //               (depending on the mission) the black box to bring home or an engineer to rescue.
 //   Mining      not a ship: a big asteroid parked in front; drill it on a spacewalk for an ore sample.
-//   Base        the Red Comet's base (chapter 5): four rooms in a row (docking bay, server room, barracks, brig),
-//               guards in each, a broken security terminal to repair and hack, a door code someone wrote on
+//   Base        the Red Comet's base (chapter 5): rooms in a row (docking bay, server room, barracks, gun corridor, brig),
+//               guards in each, a sentry gun down the corridor, a broken security terminal to repair and hack, a door code someone wrote on
 //               the wall, and Dr. Varga in the brig. See "The pirate base" below.
 // Everything in `dk` is plain data.
 
 const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, bodies: [] };   // bodies: fallen pirates { x, y, face, t } (purely visual)
 const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9;
-// Pirates stop and aim: a faint laser sight tracks you, then locks (bright) — after PIRATE_AIM s a very fast shot
-// goes down that line, so dive behind a wall when you see it. Then a long cooldown: your window to hit back.
-const PIRATE_AIM = 1.7, PIRATE_LOCK = 0.1, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, LEAVE_DELAY = 4;
+// Pirates stop and aim: a faint laser sight tracks you right up to the shot — after PIRATE_AIM s a very fast shot
+// goes down that line, so get behind a wall (out of its sight) when you see it. Then a long cooldown: your window
+// to hit back. (No lock-on phase any more: the sight never stops following you.)
+const PIRATE_AIM = 1.7, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, LEAVE_DELAY = 4;
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 const MAX_BODIES = 12, FALL_TIME = 0.6;               // fallen pirates kept lying around (oldest go first); how long the fall takes
@@ -50,7 +51,7 @@ const DG = () => dk.dock && (dk.dock.kind === 'base' ? baseGeom(dk.dock.side) : 
 function dockRects() {
   const g = DG();
   if (!g) return [];
-  return [...(dk.dock.tube === 'detached' ? [] : [g.tube]), ...g.rooms, ...g.doors.filter((d, i) => !dk.dock.doors[i])];
+  return [...(dk.dock.tube === 'detached' ? [] : [g.tube]), ...(g.floor || g.rooms), ...g.doors.filter((d, i) => !dk.dock.doors[i])];
 }
 const inDock = (x, y) => { const g = DG(); return !!g && [g.tube, ...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
 // A spacewalker can't float through the docked ship's (or the pirate base's) rooms; over the tube is fine.
@@ -172,10 +173,14 @@ function dockRoute(x, y, tx, ty) {
   while (pts.length > 1 && clear(pts[1])) pts.shift();
   return pts;
 }
-function hurtPirate(p, dmg, stun = 0) {
+// A hit (b: the bolt, if it was one) shows on the pirate it hit: a flash, sparks where the bolt struck (at its
+// height), a little shove back along the shot, and the lost HP pip blinking (drawPirate).
+function hurtPirate(p, dmg, stun = 0, b = null) {
   p.hp -= dmg; p.flash = 1; p.stun = Math.max(p.stun, stun); p.state = 'fight';
   sfx.alienHurt();
-  for (let i = 0; i < 8; i++) combatFx(p.x, p.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#e2574c', 0.1);
+  const sp = b ? Math.hypot(b.vx, b.vy) || 1 : 1, ux = b ? b.vx / sp : 0, uy = b ? b.vy / sp : 0, z = b?.z ?? 0.6;
+  for (let i = 0; i < 10; i++) combatFxAt(z, p.x - ux * 0.25, p.y - uy * 0.25, -ux * 2 + (Math.random() - 0.5) * 4, -uy * 2 + (Math.random() - 0.5) * 4, 0.5, i % 3 ? '#e2574c' : '#ffe0d8', 0.1);
+  if (b) for (const k of [0.25, 0.15]) if (pirateOk(p.x + ux * k, p.y + uy * k)) { p.x += ux * k; p.y += uy * k; break; }
   if (p.hp <= 0) {
     p.dead = true; dk.defeated++;
     if (p.carry) ITEMS.push({ kind: p.carry, ...dropSpot(p.x, p.y) });
@@ -184,23 +189,52 @@ function hurtPirate(p, dmg, stun = 0) {
     combatBanner('Pirate down!'); sfx.win();
   }
 }
+// Pirates keep apart (no stacks where you can't tell which one you hit): closer than PIRATE_SEP to each other they
+// push apart (softly, half each), and away from the crew, Dr. Varga and intruders (all of it on the pirate). Who
+// still makes no headway along their route for a while squeezes past for a moment (p.squeeze: no pushing), so two
+// in a door or the tube never deadlock: they pass in single file.
+const PIRATE_SEP = 0.8, PIRATE_SEP_OTHERS = 0.65;
+function separatePirates(dt) {
+  const P = dk.pirates, k = Math.min(1, dt * 10);
+  const shove = (p, dx, dy) => { if (pirateOk(p.x + dx, p.y)) p.x += dx; if (pirateOk(p.x, p.y + dy)) p.y += dy; };
+  // push p (and o, by the other share) apart along the line between them; on the very same spot: some way (seed)
+  const away = (p, o, sep, share, other, seed) => {
+    let dx = p.x - o.x, dy = p.y - o.y, d = Math.hypot(dx, dy);
+    if (d >= sep) return;
+    if (d < 1e-4) { dx = Math.cos(seed * 2.39996); dy = Math.sin(seed * 2.39996); d = 0; } else { dx /= d; dy /= d; }
+    const m = (sep - d) * k;
+    shove(p, dx * m * share, dy * m * share);
+    if (other) shove(o, -dx * m * other, -dy * m * other);
+  };
+  for (const p of P) p.squeeze = Math.max(0, (p.squeeze || 0) - dt);
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) {
+    if (P[i].squeeze > 0 || P[j].squeeze > 0) continue;
+    away(P[i], P[j], PIRATE_SEP, 0.5, 0.5, i * 7 + j);
+  }
+  const others = [...crew.filter(c => c.mode === 'inside'), ...(dk.npc ? [dk.npc] : []), ...boarding.invaders.filter(a => a.mode === 'inside')];
+  for (const [i, p] of P.entries()) if (!(p.squeeze > 0)) for (const o of others) away(p, o, PIRATE_SEP_OTHERS, 1, 0, i);
+  for (const p of P) {                                // no headway along the route (pushed back as fast as they walk): squeeze past
+    const want = p.route?.length > 0 && p.aim <= 0 && !(p.stun > 0), moved = Math.hypot(p.x - (p.lx ?? p.x), p.y - (p.ly ?? p.y));
+    p.jam = want && moved < PIRATE_SPEED * dt * 0.25 ? (p.jam || 0) + dt : 0;
+    if (p.jam > 0.8) { p.jam = 0; p.squeeze = 1.5; }
+    p.lx = p.x; p.ly = p.y;
+  }
+}
 function updatePirate(p, dt) {
-  p.flash = Math.max(0, p.flash - dt * 4); p.cd -= dt;
+  p.flash = Math.max(0, p.flash - dt * 2.5); p.cd -= dt;
   if (p.stun > 0) { p.stun -= dt; p.aim = 0; return; }
   const g = DG();
   const sees = (c) => c.mode === 'inside' && standing(c) && Math.hypot(c.x - p.x, c.y - p.y) < PIRATE_RANGE && lineOfSight(p.x, p.y, c.x, c.y);
-  // aiming: stand still, the laser sight tracks the target, then locks; the shot follows the locked line
+  // aiming: stand still, the laser sight tracks the target until the shot, which goes down the sight's line
   if (p.aim > 0) {
     const c = crew.find(c => c.id === p.target);
     p.aim += dt;
-    if (p.aim < PIRATE_AIM - PIRATE_LOCK) {
-      if (c && sees(c)) { p.face = Math.atan2(c.y - p.y, c.x - p.x); p.lost = 0; }
-      else if ((p.lost = (p.lost || 0) + dt) > 0.5) { p.aim = 0; return; }     // lost sight of them: give up the shot
-    }
+    if (c && sees(c)) { p.face = Math.atan2(c.y - p.y, c.x - p.x); p.lost = 0; }
+    else if ((p.lost = (p.lost || 0) + dt) > 0.5) { p.aim = 0; return; }       // lost sight of them: give up the shot
     if (p.aim >= PIRATE_AIM) {
       p.aim = 0; p.cd = PIRATE_COOLDOWN;
       const ux = Math.cos(p.face), uy = Math.sin(p.face);
-      boarding.bolts.push({ x: p.x + ux * 0.4, y: p.y + uy * 0.4, vx: ux * PIRATE_SHOT, vy: uy * PIRATE_SHOT, life: 0.5, owner: 'pirate', fast: true }); sfx.heavyLaunch();
+      boarding.bolts.push({ x: p.x + ux * 0.4, y: p.y + uy * 0.4, z: PIRATE_GUN_Z, vx: ux * PIRATE_SHOT, vy: uy * PIRATE_SHOT, life: 0.5, owner: 'pirate', fast: true }); sfx.heavyLaunch();
     }
     return;
   }
@@ -250,14 +284,11 @@ function updateDock(dt) {
   if (dk.dock?.kind === 'pirate' && dk.dock.detachT === null && dk.pirates.length && dk.pirates.every(p => p.home)) {
     dk.dock.detachT = LEAVE_DELAY; combatBanner(`The pirates are leaving with their loot — ${LEAVE_DELAY} s until they cast off!`); sfx.alarm();
   }
-  for (const b of boarding.bolts) {                   // our bolts vs pirates
-    if (b.owner !== 'crew') continue;
-    const p = dk.pirates.find(p => !p.dead && Math.hypot(b.x - p.x, b.y - p.y) < 0.42);
-    if (p) { b.dead = true; hurtPirate(p, boltDamage(b), boltStun(b)); }
-  }
-  boarding.bolts = boarding.bolts.filter(b => !b.dead);
+  // (our bolts vs pirates: js/invader.js boltHitsBody)
   dk.pirates = dk.pirates.filter(p => !p.dead);
+  separatePirates(dt);
   for (const B of dk.bodies || []) B.t = Math.min(B.t + dt, FALL_TIME);   // (bodies: the fall, then they lie still)
+  updateSentry(dt);
   updateNpc(dt);
   updateBase(dt);
   for (const c of crew) c.slow = c.inv.item === 'blackbox' ? 0.6 : 1;   // the black box is heavy
@@ -284,7 +315,10 @@ function npcStep(N, tx, ty, dt) {
 function updateNpc(dt) {
   const N = dk.npc;
   if (!N) return;
-  if (N.state === 'follow') {
+  if (N.state === 'follow' && sentryLive() && inRect(N.x, N.y, DG().rooms[3])) {   // (the pirate base: not past a live sentry gun)
+    N.route = [];
+    if (!N.waits) { N.waits = true; combatBanner(`"I'm not walking into that sentry gun! Switch it off — I'll wait here."`); }
+  } else if (N.state === 'follow') {
     const goal = npcHome();
     const key = `${goal.x.toFixed(0)},${goal.y.toFixed(0)}`;
     if (!N.route?.length || N.goalKey !== key) { N.route = dockRoute(N.x, N.y, goal.x, goal.y); N.goalKey = key; }
@@ -533,17 +567,17 @@ const DOCK_DECOR = {
             [0, -7.9, 'refunds', 1.4, [['NO REFUNDS', 0.14], ['NO RETURNS · NO MERCY', 0.075, 700]], '#7a1f1a', '#ffe0d0']],
     stencils: [[-14.6, -1.3, 'THE BRIG IS NOT A HOTEL', 0.16], [-18.0, 2.2, '|||| |||| ||', 0.16, 'rgba(232,236,244,0.35)'], [-22.0, 2.1, 'LICK IT. WE DARE YOU.', 0.15]],
   },
-  // the Red Comet's base (positions for the port side, like all of these; rooms: bay, server room, barracks, brig)
+  // the Red Comet's base (positions for the port side, like all of these; rooms: bay, server room, barracks, brig, gun corridor)
   base: {
     props: [['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#c0392b'), -7.0, 2.4, 1.2], ['props/wrapper', (x, y, a) => wrapper(x, y, a, '#e2574c', 5), -10.2, -2.2, 0.2, true],
             ['props/pizza', pizza, -14.0, 3.2, 0.4], ['props/stool', null, -19.4, -2.2, 0], ['props/papers_bridge', (x, y) => papers(x, y, 73), -19.4, 3.2, 0, true],
             ['props/sleeping_bag', sleepingBag, -13.2, -11.4, 0], ['props/sleeping_bag', sleepingBag, -20.6, -11.4, 0], ['props/magazine', null, -12.6, -5.4, 0.3, true], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#e8c34f'), -21.6, -5.4, -0.6],
-            ['props/bucket', bucket, -30.2, -11.6, 0], ['props/duck', duck, -23.8, -5.4, 2.4], ['props/stool', null, -24.2, -11.2, 0]],
+            ['props/bucket', bucket, -37.2, -17.6, 0], ['props/duck', duck, -30.8, -11.4, 2.4], ['props/stool', null, -31.2, -17.6, 0]],
     signs: [[0, -9.0, 'base_welcome', 1.8, [['RED COMET BASE', 0.13], ['NO VISITORS · NO REFUNDS', 0.075, 700]], '#7a1f1a', '#ffe0d0'],
             [1, -15.0, 'server', 1.6, [['SERVER ROOM', 0.12], ['DO NOT FEED THE HAMSTER', 0.07, 700]], '#2b303a', '#9cd8ff'],
             [2, -19.4, 'chores', 1.6, [['CHORE WHEEL', 0.12], ['DISHES: NOBODY', 0.08, 700], ['MUTINY: TUESDAY', 0.08, 700]], '#e8dcb8', '#3a2418'],
-            [3, -25.0, 'brig_rules', 1.6, [['BRIG RULES', 0.12], ['1. NO ESCAPING', 0.08, 700], ['2. SEE RULE 1', 0.08, 700]], '#2b303a', '#ff9a8a']],
-    stencils: [[-9.0, 2.6, 'WIPE YOUR BOOTS', 0.15], [-17.2, 3.4, 'AUTHORIZED PIRATES ONLY', 0.14], [-14.0, -5.2, 'LIGHTS OUT AT NEVER', 0.14], [-26.8, -5.2, 'THE BRIG IS NOT A HOTEL', 0.14]],
+            [3, -32.6, 'brig_rules', 1.6, [['BRIG RULES', 0.12], ['1. NO ESCAPING', 0.08, 700], ['2. SEE RULE 1', 0.08, 700]], '#2b303a', '#ff9a8a']],
+    stencils: [[-9.0, 2.6, 'WIPE YOUR BOOTS', 0.15], [-17.2, 3.4, 'AUTHORIZED PIRATES ONLY', 0.14], [-14.0, -5.2, 'LIGHTS OUT AT NEVER', 0.14], [-32.6, -16.6, 'THE BRIG IS NOT A HOTEL', 0.14]],
   },
   // Dr. Varga's lab module: left in a hurry
   derelict: {
@@ -596,6 +630,7 @@ function drawNpcSprite(N) {
 // Pirates and the engineer: drawn with the crew (after the floors), so they're visible on our ship too.
 function drawDockActors(t) {
   for (const B of dk.bodies || []) drawBody(B);
+  if (dk.dock?.kind === 'base') drawSentryFx(dk.dock, DG(), t);
   for (const p of dk.pirates) drawPirate(p, t);
   const N = dk.npc;
   if (N) {
@@ -631,22 +666,25 @@ function drawPirateSprite(p, t) {
 const PIRATE_GUN_Z = 1.05;                            // the levelled carbine's height (chars/pirate/aim)
 function drawPirate(p, t) {
   const sprited = drawPirateSprite(p, t), lz = sprited ? GFX.lift(PIRATE_GUN_Z) : 0, m0 = sprited ? 0.45 : 0;
-  if (p.aim > 0) {                                    // laser sight: faint while tracking, bright and flickering once locked
-    const locked = p.aim >= PIRATE_AIM - PIRATE_LOCK;
+  if (p.aim > 0) {                                    // laser sight: tracks you right up to the shot (a bit stronger as it comes)
+    const k = clamp(p.aim / PIRATE_AIM, 0, 1);
     let len = 0; while (len < PIRATE_RANGE && freeAt(p.x + Math.cos(p.face) * len, p.y + Math.sin(p.face) * len)) len += 0.1;   // up to the first wall
     const ex = L(p.x + Math.cos(p.face) * len), ey = L(p.y + Math.sin(p.face) * len - lz);
     ctx.beginPath(); ctx.moveTo(L(p.x + Math.cos(p.face) * m0), L(p.y + Math.sin(p.face) * m0 - lz)); ctx.lineTo(ex, ey);
-    ctx.strokeStyle = locked ? `rgba(255,${Math.sin(t * 40) > 0 ? 60 : 160},60,0.95)` : 'rgba(255,90,90,0.35)'; ctx.lineWidth = locked ? 3 : 1.2; ctx.stroke();
-    if (locked) { ctx.beginPath(); ctx.arc(ex, ey, 5, 0, TAU); ctx.fillStyle = 'rgba(255,80,60,0.9)'; ctx.fill(); }
+    ctx.strokeStyle = `rgba(255,90,90,${0.3 + 0.25 * k})`; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(ex, ey, 2.5, 0, TAU); ctx.fillStyle = `rgba(255,90,90,${0.4 + 0.3 * k})`; ctx.fill();
   }
   if (sprited) {
     const view = camera();
-    if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${p.flash * 0.4})`; ctx.beginPath(); ctx.ellipse(L(p.x), L(p.y - GFX.lift(0.65)), L(0.32), L(0.6), 0, 0, TAU); ctx.fill(); }
+    if (p.flash > 0) {                                // hit: the whole body flashes
+      ctx.fillStyle = `rgba(255,${Math.round(150 + 105 * p.flash)},${Math.round(130 + 125 * p.flash)},${p.flash * 0.7})`;
+      ctx.beginPath(); ctx.ellipse(L(p.x), L(p.y - GFX.lift(0.6)), L(0.36), L(0.62), 0, 0, TAU); ctx.fill();
+    }
     if (p.carry) upright(view, p.x, p.y, 1.0, () => drawItemIcon(p.carry, L(0.5), 0, 0.7));
     upright(view, p.x, p.y, 1.4, () => {
       ctx.font = `800 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('PIRATE', 0, 0); ctx.fillStyle = '#ff7a6a'; ctx.fillText('PIRATE', 0, 0); ctx.textAlign = 'left';
-      for (let i = 0; i < PIRATE_HP; i++) { ctx.fillStyle = i < p.hp ? '#e2574c' : '#2b303a'; ctx.fillRect(-8 + i * 6, 2, 5, 3); }
+      pirateHpPips(p, 0, 2);
     });
     if (p.stun > 0) for (let i = 0; i < 3; i++) {     // dazed stars
       const q = t * 4 + i * TAU / 3;
@@ -662,8 +700,16 @@ function drawPirate(p, t) {
   ctx.font = `800 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
   ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('PIRATE', L(p.x), L(p.y) - L(0.62)); ctx.fillStyle = '#ff7a6a'; ctx.fillText('PIRATE', L(p.x), L(p.y) - L(0.62)); ctx.textAlign = 'left';
   if (p.carry) drawItemIcon(p.carry, L(p.x) + L(0.45), L(p.y) - L(0.3), 0.7);
-  if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${p.flash * 0.4})`; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.35), 0, TAU); ctx.fill(); }
-  for (let i = 0; i < PIRATE_HP; i++) { ctx.fillStyle = i < p.hp ? '#e2574c' : '#2b303a'; ctx.fillRect(L(p.x) - 8 + i * 6, L(p.y) - L(0.6), 5, 3); }
+  if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${p.flash * 0.7})`; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.38), 0, TAU); ctx.fill(); }
+  pirateHpPips(p, L(p.x), L(p.y) - L(0.6));
+}
+// HP pips under the name tag: the one just lost blinks white while the hit flash lasts.
+function pirateHpPips(p, x, y) {
+  for (let i = 0; i < PIRATE_HP; i++) {
+    const lost = i >= p.hp, fresh = i === p.hp && p.flash > 0;
+    ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x - 11 + i * 8, y - 1, 8, 6);
+    ctx.fillStyle = !lost ? '#e2574c' : fresh && Math.sin(p.flash * 40) > 0 ? '#ffffff' : '#2b303a'; ctx.fillRect(x - 10 + i * 8, y, 6, 4);
+  }
 }
 function dockPlates(add) {
   if (dk.dock?.kind === 'base') basePlates(add);
@@ -671,18 +717,20 @@ function dockPlates(add) {
   for (const e of combat.enemies) if (e.kind === 'pirate' && e.phase === 'fighting') add('dockT' + uid(e), { icon: 'frigate', title: 'PIRATES DOCKING', sub: `in ${Math.ceil(e.dockT ?? DOCK_TIME)} s unless driven off`, stripe: '#e2574c', red: true });
   if (dk.dock?.kind === 'pirate') add('pship', { icon: 'frigate', title: dk.dock.overloaded ? 'PIRATES CASTING OFF' : 'PIRATE SHIP DOCKED', sub: dk.dock.overloaded ? `in ${Math.ceil(dk.dock.detachT)} s — get off their ship!` : `${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · loot crate · jam their reactor`, stripe: '#e8c34f', red: !!dk.dock.overloaded });
   if (dk.dock?.kind === 'derelict') add('derelict', { icon: 'frigate', title: 'DERELICT', sub: `tethered at the ${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · no air inside`, stripe: '#7a8396' });
-  if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: npcName().replace(/^the /, '').toUpperCase(), sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : 'on the way to our ship — cover them', stripe: '#ffe08a', red: dk.npc.state === 'down' });
+  if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: npcName().replace(/^the /, '').toUpperCase(), sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : dk.npc.waits && sentryLive() ? 'waiting in the brig — switch off the sentry gun' : 'on the way to our ship — cover them', stripe: '#ffe08a', red: dk.npc.state === 'down' });
   if (dk.rock) add('rock', { icon: 'asteroid', title: 'ORE ASTEROID', sub: 'front · drill it on a spacewalk', stripe: '#7af0ff' });
 }
 
 // ---------------------------------------------------------------------------
 // The pirate base (chapter 5, "Hold On, Dr. Varga"; event kind 'brig'). It docks to one of our outer
-// airlocks; four rooms in a row: docking bay → server room → barracks → brig. Two pirates rush out of
+// airlocks; rooms in a row: docking bay → server room → barracks → gun corridor → brig (the gun corridor: a sentry
+// gun at its far end beside the brig door, stacks of crates as cover along it; see updateSentry). Two pirates rush out of
 // the bay as soon as we dock (they drop their carbines when they fall: pick-up laser guns for whoever
 // storms in); guards hold each room (more for a bigger crew, fewer on easy: baseGuards). A repair kit
 // lies in the bay. The server room's security terminal is broken: repair it, then hack it (hold click)
 // to open the barracks door. The brig door wants a 4-digit code, written on the barracks wall. Dr. Varga
-// lies in the brig: treated, she runs for our ship on her own (updateNpc); shot, she goes down again.
+// lies in the brig: treated, she runs for our ship on her own (updateNpc) once the sentry gun is off (until then
+// she waits in the brig); shot, she goes down again.
 // While we're docked, or while anyone is still over there, the engine stays off (no jump:
 // baseJumpHold). Once she's aboard our airlock can detach: the tube pulls in, the base stays right
 // there. Anyone left behind (or the crew aboard) can dock again: the bay's docking control or our airlock.
@@ -698,25 +746,48 @@ function baseGeom(side) {
     R(-12.4, y - 3.0, -5.6, y + 3.0),             // docking bay
     R(-21.4, y - 4.0, -13.0, y + 4.0),            // server room
     R(-22.4, y - 12.4, -11.6, y - 4.6),           // barracks
-    R(-31.0, y - 12.4, -23.0, y - 4.6),           // brig
+    R(-38.0, y - 18.5, -30.0, y - 10.7),          // brig (off the gun corridor's far end)
+    R(-35.0, y - 10.1, -23.0, y - 6.9),           // the gun corridor (the sentry gun at its far end)
     R(-13.0, y - 0.8, -12.4, y + 0.8),            // door bay–server room
     R(-18.0, y - 4.6, -16.4, y - 4.0),            // door server room–barracks (the hacked one)
-    R(-23.0, y - 9.3, -22.4, y - 7.7),            // door barracks–brig (the code)
+    R(-34.6, y - 10.7, -33.0, y - 10.1),          // door gun corridor–brig (the code)
+    R(-23.0, y - 9.3, -22.4, y - 7.7),            // door barracks–gun corridor (open)
   ];
-  const M = side === 'port' ? P : P.map(q => R(SHIP_W - q.x - q.w, q.y, SHIP_W - q.x, q.y + q.h));
+  // the gun corridor's cover (shelves and crates, alternately against either wall) and the sentry gun's base:
+  // holes in its floor (no walking through them; shots and sight lines stop at them: js/invader.js freeAt)
+  const H = [R(-25.4, y - 8.3, -24.4, y - 6.9), R(-28.4, y - 10.1, -27.4, y - 8.7), R(-31.2, y - 8.3, -30.2, y - 6.9), R(-35.0, y - 9.1, -34.0, y - 7.9)];
+  const mr = (q) => side === 'port' ? q : R(SHIP_W - q.x - q.w, q.y, SHIP_W - q.x, q.y + q.h);
+  const M = P.map(mr), holes = H.map(mr);
   const pt = (x, dy) => ({ x: side === 'port' ? x : SHIP_W - x, y: y + dy });
+  const rooms = M.slice(1, 6);
   return (BASE_GEOM[side] = {
-    tube: M[0], rooms: M.slice(1, 5), doors: M.slice(5, 8), hatch: h, y,
+    tube: M[0], rooms, doors: M.slice(6, 10), hatch: h, y,
+    floor: [...rooms.slice(0, 4), ...floorMinus(rooms[4], holes)],   // (walkable: the corridor without its cover)
+    cover: holes.slice(0, 3), sentry: { ...pt(-34.5, -8.5), base: holes[3], dir: side === 'port' ? 0 : Math.PI, muzzle: pt(-33.75, -8.5) },
     entry: pt(-7.6, 0), tubeMid: pt(-2.5, 0),
-    console: pt(-6.3, -2.4), toolbox: pt(-11.6, 2.3), terminal: pt(-20.4, -3.2), keypad: pt(-21.9, -10.0), note: pt(-14.2, 0),
-    npcSpot: pt(-29.4, -6.2),
+    console: pt(-6.3, -2.4), toolbox: pt(-11.6, 2.3), terminal: pt(-20.4, -3.2), keypad: pt(-32.4, -9.85), note: pt(-14.2, 0),
+    npcSpot: pt(-36.9, -14.6), cellX: pt(-35.6, 0).x, cellGap: [y - 15.5, y - 13.7],
     spew: [pt(-9.6, -1.0), pt(-8.6, 1.0)],
-    posts: [[], [pt(-19.6, 2.6), pt(-14.4, -2.6), pt(-15.2, 2.8)], [pt(-13.6, -10.6), pt(-20.2, -6.2), pt(-16.0, -11.0), pt(-12.8, -6.0)], [pt(-25.0, -10.8), pt(-25.6, -6.0)]],
-    // the walking line, brig → our airlock (dockRoute): the rooms are in a row, so a chain does
-    chain: [pt(-27.0, -8.5), pt(-22.7, -8.5), pt(-17.2, -8.5), pt(-17.2, -4.3), pt(-17.2, 0), pt(-12.7, 0), pt(-9.0, 0), pt(-2.5, 0), { x: h.inside[0], y: h.inside[1] }],
+    // guard posts per group [bay, server room, barracks, the gun's end]; room: the one they hold (default: the group's)
+    posts: [[], [pt(-19.6, 2.6), pt(-14.4, -2.6), pt(-15.2, 2.8)], [pt(-13.6, -10.6), pt(-20.2, -6.2), pt(-16.0, -11.0), pt(-12.8, -6.0)],
+            [{ ...pt(-32.7, -7.5), room: 4 }, { ...pt(-32.4, -14.2), room: 3 }]],
+    // the walking line, brig → our airlock (dockRoute): the rooms are in a row, so a chain does (zig-zagging past the cover)
+    chain: [pt(-35.0, -14.6), pt(-33.8, -11.8), pt(-33.8, -10.4), pt(-33.3, -9.6), pt(-30.7, -9.4), pt(-27.9, -7.6), pt(-24.9, -9.4), pt(-22.7, -8.5),
+            pt(-17.2, -8.5), pt(-17.2, -4.3), pt(-17.2, 0), pt(-12.7, 0), pt(-9.0, 0), pt(-2.5, 0), { x: h.inside[0], y: h.inside[1] }],
   });
 }
-// Guards per room [bay, server room, barracks, brig]: solo 0/2/2/1; each extra crew member (up to 4) one more,
+// A room's floor with holes cut out, as rects (slabs between the holes' x edges, split around them).
+function floorMinus(q, holes) {
+  const xs = [...new Set([q.x, q.x + q.w, ...holes.flatMap(o => [o.x, o.x + o.w]).filter(x => x > q.x && x < q.x + q.w)])].sort((a, b) => a - b), out = [];
+  for (let i = 0; i + 1 < xs.length; i++) {
+    const x0 = xs[i], x1 = xs[i + 1], cut = holes.filter(o => o.x < x1 - 1e-6 && o.x + o.w > x0 + 1e-6).sort((a, b) => a.y - b.y);
+    let y0 = q.y;
+    for (const o of cut) { if (o.y > y0 + 1e-6) out.push(R(x0, y0, x1, o.y)); y0 = Math.max(y0, o.y + o.h); }
+    if (q.y + q.h > y0 + 1e-6) out.push(R(x0, y0, x1, q.y + q.h));
+  }
+  return out;
+}
+// Guards per room [bay, server room, barracks, the gun's end (and the brig)]: solo 0/2/2/1; each extra crew member (up to 4) one more,
 // each easier difficulty step one fewer (barracks first, never below one a room).
 function baseGuards(n, easy = 0) {
   const k = [0, 2, 2, 1];
@@ -726,17 +797,17 @@ function baseGuards(n, easy = 0) {
 }
 function dockBase(side) {
   const g = baseGeom(side), n = typeof crewSize === 'function' ? crewSize() : 1;
-  dk.dock = { kind: 'base', side, doors: [false, true, true], crate: [], detachT: null, overloaded: false, fires: [], tube: 'docked',
-              terminal: 'broken', code: String(1000 + Math.floor(Math.random() * 9000)) };
+  dk.dock = { kind: 'base', side, doors: [false, true, true, false], crate: [], detachT: null, overloaded: false, fires: [], tube: 'docked',
+              terminal: 'broken', code: String(1000 + Math.floor(Math.random() * 9000)), sentry: { state: 'idle', t: 0, shotT: 0, shots: 0 } };
   dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
   ITEMS.push({ kind: 'repair', x: g.toolbox.x, y: g.toolbox.y });
   const pirate = (p, more) => ({ uid: newUid(), x: p.x, y: p.y, face: side === 'port' ? 0 : Math.PI, walk: 0, hp: PIRATE_HP, carry: null, state: 'guard', cd: 1, aim: 0, route: [], stuck: 0, stun: 0, flash: 0, post: { x: p.x, y: p.y }, ...more });
   g.spew.forEach((p, i) => dk.pirates.push(pirate(p, { mode: 'hunt', room: 0, drops: 'laser', cd: 1.5 + i })));
-  baseGuards(n, mission.easy || 0).forEach((k, r) => g.posts[r].slice(0, k).forEach(p => dk.pirates.push(pirate(p, { mode: 'guard', room: r, cd: 0.5 }))));
+  baseGuards(n, mission.easy || 0).forEach((k, r) => g.posts[r].slice(0, k).forEach(p => dk.pirates.push(pirate({ x: p.x, y: p.y }, { mode: 'guard', room: p.room ?? r, cd: 0.5 }))));
   combatBanner(`Docked to the pirate base at the ${side === 'port' ? 'left' : 'right'} airlock — two pirates are rushing out!`); sfx.explosion();
   return true;
 }
-const BASE_ROOMS = ['Docking bay', 'Server room', 'Barracks', 'Brig'];
+const BASE_ROOMS = ['Docking bay', 'Server room', 'Barracks', 'Brig', 'Gun corridor'];
 const inBase = (x, y) => { const g = dk.dock?.kind === 'base' && DG(); return !!g && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
 const baseCrew = () => crew.filter(c => (c.mode === 'inside' || c.mode === 'hatch') && inBase(c.x, c.y));
 // The base's walls stop shots (projectile space outside our hull is otherwise free: js/invader.js freeAt).
@@ -764,6 +835,48 @@ function updateBase(dt) {
     mission.jumpAt = mission.t + ESCAPE_SPOOL; combatBanner(`Clear of the base with ${npcName().replace(/^the /, '')} aboard — the jump drive spools up in ${ESCAPE_SPOOL} s!`); sfx.alarm();
   }
 }
+// The sentry gun at the gun corridor's far end: bolted down, facing down the corridor (it never turns). Anyone
+// standing in its field of fire with a clear line to its muzzle (the cover blocks it) makes it spool up (a rising
+// whine, the barrel glowing: SENTRY_SPOOL s), then it sprays bolts down the corridor for SENTRY_BURST s whether
+// it still sees anyone or not, then cools down (SENTRY_COOL s: run to the next bit of cover). Its shots hurt the
+// crew like a pirate's (and Dr. Varga: she waits in the brig until it's off). Right beside it you're out of its
+// fan: hold click on it there to switch it off for good (quicker with the repair kit). Easier difficulty: a
+// longer spool-up and fewer shots a second. dk.dock.sentry: { state: idle|spool|fire|cool|off, t, shotT, shots }.
+const SENTRY_SPOOL = [1.3, 1.9, 2.5], SENTRY_RATE = [7, 4.5, 3], SENTRY_BURST = 5, SENTRY_COOL = 3;
+const SENTRY_SPREAD = 0.3, SENTRY_CONE = 0.36, SENTRY_RANGE = 13, SENTRY_SHOT = 16, SENTRY_Z = 0.75;
+const SENTRY_OFF_HAND = 4, SENTRY_OFF_KIT = 2;
+const sentryLive = () => dk.dock?.kind === 'base' && !!dk.dock.sentry && dk.dock.sentry.state !== 'off';
+function sentrySees(x, y) {
+  const S = DG().sentry, m = S.muzzle, dx = x - m.x, dy = y - m.y, d = Math.hypot(dx, dy);
+  return d < SENTRY_RANGE && Math.abs(wrapAngle(Math.atan2(dy, dx) - S.dir)) < SENTRY_CONE && lineOfSight(m.x, m.y, x, y);
+}
+function updateSentry(dt) {
+  const S = dk.dock?.sentry;
+  if (!S || S.state === 'off' || dk.dock.kind !== 'base') return;
+  const G = DG().sentry, easy = clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
+  S.t += dt;
+  if (S.state === 'idle') {
+    if (crew.some(c => c.mode === 'inside' && standing(c) && sentrySees(c.x, c.y))) { S.state = 'spool'; S.t = 0; }
+  } else if (S.state === 'spool') {
+    if (S.t >= SENTRY_SPOOL[easy]) { S.state = 'fire'; S.t = 0; S.shotT = 0; }
+  } else if (S.state === 'fire') {
+    for (S.shotT -= dt; S.shotT <= 0; S.shotT += 1 / SENTRY_RATE[easy]) {
+      const a = G.dir + (Math.random() * 2 - 1) * SENTRY_SPREAD, m = G.muzzle;
+      boarding.bolts.push({ x: m.x, y: m.y, z: SENTRY_Z, ox: m.x, oy: m.y, vx: Math.cos(a) * SENTRY_SHOT, vy: Math.sin(a) * SENTRY_SHOT, life: SENTRY_RANGE / SENTRY_SHOT, owner: 'sentry' });
+      S.shots++;
+    }
+    if (S.t >= SENTRY_BURST) { S.state = 'cool'; S.t = 0; }
+  } else if (S.state === 'cool' && S.t >= SENTRY_COOL) { S.state = 'idle'; S.t = 0; }
+}
+function sentryClickTarget(mx, my) {
+  const S = dk.dock.sentry, G = DG().sentry, t = { x: G.x, y: G.y, r: 0.75 };
+  if (!S || Math.hypot(mx - G.x, my - G.y) > t.r) return null;
+  if (S.state === 'off') return { ...t, text: 'Sentry gun — switched off', ok: false };
+  if (!near(G.x, G.y, REACH)) return { ...t, text: 'Sentry gun — get right beside it (it can\'t turn) to switch it off', ok: false };
+  const kit = inv.weapon === 'repair', time = kit ? SENTRY_OFF_KIT : SENTRY_OFF_HAND;
+  return holdTarget('sentryOff', time, `Hold click: ${kit ? 'unscrew the sentry gun\'s power cell' : 'rip out the sentry gun\'s cables'} (${time} s${kit ? '' : '; quicker with the repair kit'})`, t.x, t.y, t.r,
+                    () => { S.state = 'off'; S.t = 0; sfx.spark(); sfx.empty(); combatBanner(`Sentry gun switched off!${dk.npc && dk.npc.state !== 'safe' ? ` ${cap(npcName())} can get out now.` : ''}`); });
+}
 function baseJumpHold() {
   if (dk.dock.tube !== 'detached') return `Jump blocked: the engine is off while we're docked to the pirate base${dk.npc?.state === 'safe' ? ' — detach at our airlock' : ''}`;
   const left = baseCrew();
@@ -789,7 +902,8 @@ function baseCodeOk() {                            // (js/minigames.js: ACCESS G
 }
 // Clicking: the security terminal (repair kit, then a hack).
 function baseClickTarget(mx, my) {
-  const d = dk.dock, g = DG(), q = g.terminal, t = { x: q.x, y: q.y, r: 0.8 };
+  const d = dk.dock, g = DG(), q = g.terminal, t = { x: q.x, y: q.y, r: 0.8 }, gun = sentryClickTarget(mx, my);
+  if (gun) return gun;
   if (Math.hypot(mx - q.x, my - q.y) > t.r) return null;
   if (d.terminal === 'hacked') return { ...t, text: 'Security terminal — hacked, the barracks door is open', ok: false };
   if (!near(t.x, t.y, REACH + 0.3)) return { ...t, text: `Security terminal (${d.terminal === 'broken' ? 'broken' : 'locked'}) — get closer`, ok: false };
@@ -829,6 +943,7 @@ function baseSpots(g) {
   const d = dk.dock, out = [];
   if (d.terminal !== 'hacked') out.push({ x: g.terminal.x, y: g.terminal.y, r: 0.6 });
   if (d.doors[2]) out.push({ x: g.keypad.x, y: g.keypad.y, r: 0.45 });
+  if (d.sentry && d.sentry.state !== 'off') out.push({ x: g.sentry.x, y: g.sentry.y, r: 0.55 });
   if (d.tube === 'detached') out.push({ x: g.console.x, y: g.console.y, r: 0.5 });
   return out;
 }
@@ -838,6 +953,8 @@ function basePlates(add) {
   const sub = d.tube === 'detached' ? (left.length ? `detached · ${left.map(c => c.name).join(', ')} still inside — dock again!` : 'detached · engine free')
     : `${SIDE_LABEL[d.side].toLowerCase()} airlock · ${inside} pirate${inside === 1 ? '' : 's'} inside · engine off while docked`;
   add('base', { icon: 'frigate', title: 'PIRATE BASE', sub, stripe: '#e8c34f', red: !!left.length && d.tube === 'detached' });
+  const S = d.sentry;
+  if (S && S.state !== 'off' && !d.doors[1]) add('sentry', { icon: 'frigate', title: 'SENTRY GUN', sub: S.state === 'spool' ? 'spooling up — take cover!' : S.state === 'fire' ? 'firing down the corridor — stay behind cover' : 'gun corridor · get beside it and switch it off', stripe: '#e2574c', red: S.state === 'spool' || S.state === 'fire' });
 }
 // Drawing (2D, also under the sprites): a blocky, patched hull around each room, the tube (or its two
 // stubs once detached), floors, the locked doors, the terminal, the keypad, the cell bars and the code.
@@ -852,7 +969,7 @@ function drawBase(d, g, t) {
     rr(L(x), L(tq.y) - 6, L(w), L(tq.h) + 12, 10); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(3);
     for (let xx = x + 0.3; xx < x + w; xx += 0.45) { ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(L(xx), L(tq.y) - 6, 4, L(tq.h) + 12); }
   }
-  const tints = ['#6a5a5e', '#5a6070', '#665c58', '#5e5a52'];
+  const tints = ['#6a5a5e', '#5a6070', '#665c58', '#5e5a52', '#5c5a60'];
   drawFloors([...g.rooms, ...g.doors.filter((q, i) => !d.doors[i])], (r) => tints[g.rooms.indexOf(r)] || '#5e5658');
   if (docked) { ctx.fillStyle = 'rgba(30,34,42,0.5)'; ctx.fillRect(L(tq.x), L(tq.y), L(tq.w), L(tq.h)); }
   d.doors.forEach((locked, i) => {                    // locked doors: hazard stripes and a red lamp
@@ -861,10 +978,11 @@ function drawBase(d, g, t) {
     ctx.fillStyle = Math.sin(t * 4 + i) > 0 ? '#ff5a4a' : '#8e2f22'; ctx.beginPath(); ctx.arc(L(q.x + q.w / 2), L(q.y + q.h / 2), 4, 0, TAU); ctx.fill();
   });
   drawDockDecor(d, g, t);
+  drawGunCorridor(d, g, t);
   // the brig's cells: bars along the back of the room (Dr. Varga's door hangs open once she's out)
-  const B = g.rooms[3], cellX = mx(-27.6);
+  const B = g.rooms[3], cellX = g.cellX;
   ctx.strokeStyle = '#9aa3b5'; ctx.lineWidth = 3;
-  for (let y = B.y + 0.15; y < B.y + B.h - 0.1; y += 0.32) { if (y > g.y - 7.0 && y < g.y - 5.2) continue; ctx.beginPath(); ctx.moveTo(L(cellX) - 3, L(y)); ctx.lineTo(L(cellX) + 3, L(y)); ctx.stroke(); }
+  for (let y = B.y + 0.15; y < B.y + B.h - 0.1; y += 0.32) { if (y > g.cellGap[0] && y < g.cellGap[1]) continue; ctx.beginPath(); ctx.moveTo(L(cellX) - 3, L(y)); ctx.lineTo(L(cellX) + 3, L(y)); ctx.stroke(); }
   ctx.fillStyle = '#6b7486'; ctx.fillRect(L(cellX) - 4, L(B.y), 8, L(B.h));
   ctx.fillStyle = '#3a404d'; ctx.fillRect(L(cellX) - 3, L(B.y), 6, L(B.h)); ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(L(cellX) - 4, L(B.y), 8, L(B.h));
   // the security terminal: sparking (broken), LOCKED (repaired), OPEN (hacked)
@@ -889,4 +1007,74 @@ function drawBase(d, g, t) {
   ctx.textAlign = 'left';
   // the door code: on a sticky note on the barracks' back wall, of course
   dockSign('code' + d.code, g.note.x, g.rooms[2].y + 0.02, WALL_SIGN_Z + 0.15, 1.3, [['BRIG DOOR CODE', 0.1], [d.code, 0.22], ['(DO NOT WRITE DOWN)', 0.07, 700]], '#ffe95c', '#26324f');
+}
+
+// The gun corridor (drawn with the base): the stacks of crates (cover) and the sentry gun on its pedestal. With
+// sprites: our crate props stacked up and a small copy of our own hull cannon (hull/gun) bolted to the pedestal.
+// Its field of fire shows on the floor (a red fan) while it spools up and fires.
+function drawGunCorridor(d, g, t) {
+  const S = d.sentry || { state: 'off' }, G = g.sentry, C = g.rooms[4];
+  if (S.state === 'spool' || S.state === 'fire') glowLayer(() => {
+    const k = S.state === 'fire' ? 0.22 + 0.06 * Math.sin(t * 30) : 0.06 + 0.14 * clamp(S.t / SENTRY_SPOOL[clamp(mission.easy || 0, 0, 2)], 0, 1);
+    ctx.save(); ctx.beginPath(); ctx.rect(L(C.x), L(C.y), L(C.w), L(C.h)); ctx.clip();
+    const m = G.muzzle, gr = ctx.createRadialGradient(L(m.x), L(m.y), 0, L(m.x), L(m.y), L(SENTRY_RANGE));
+    gr.addColorStop(0, `rgba(255,70,50,${k})`); gr.addColorStop(1, 'rgba(255,70,50,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(L(m.x), L(m.y)); ctx.arc(L(m.x), L(m.y), L(SENTRY_RANGE), G.dir - SENTRY_SPREAD, G.dir + SENTRY_SPREAD); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  });
+  stencil(L(C.x + C.w / 2), L(C.y + C.h - 0.35), 'KEEP OUT OF THE LINE OF FIRE', 0, 0.14, 'rgba(232,90,70,0.45)');
+  g.cover.forEach((q, i) => {                          // the cover: crates stacked two deep, one more on top
+    const cx = q.x + q.w / 2, ys = [q.y + 0.38, q.y + q.h - 0.38], names = ['props/crate_misc', 'props/crate_tape', 'props/crate_blank_port', 'props/crate_snax'];
+    if (GFX.on && ys.every((y, j) => spr(names[(i + j) % 4], 0, cx, y, 0)) && spr(names[(i + 2) % 4], 0, cx, (ys[0] + ys[1]) / 2, 0.72)) return;
+    for (const [j, y] of ys.entries()) crate(L(cx), L(y), L(q.w), L(q.h / 2 - 0.04), 0, j ? '#7a6248' : '#8a6a4a', j ? '' : 'COVER');
+  });
+  // the pedestal
+  const b = G.base;
+  rr(L(b.x - 0.05), L(b.y - 0.05), L(b.w + 0.1), L(b.h + 0.1), 6); ctx.fillStyle = '#2b2e36'; ctx.fill(); stroke(3);
+  hazardStripe(L(b.x + 0.08), L(b.y + b.h - 0.22), L(b.w - 0.16), L(0.14));
+  if (GFX.on && GFX.ready(S.state === 'off' ? 'hull/gun_broken' : 'hull/gun')) {
+    const name = S.state === 'off' ? 'hull/gun_broken' : 'hull/gun', kick = S.state === 'fire' && Math.sin(t * 60) > 0 ? 0.05 : 0;
+    GFX.sprite(name, GFX.frameIndex(name, G.dir), G.x - Math.cos(G.dir) * kick, G.y, 0.3, { scale: 0.8, sortY: G.y + 0.4, emissive: 0.3 });
+    return;
+  }
+  GFX.preload?.(['hull']);
+  // 2D: a squat turret, its twin barrels down the corridor
+  ctx.save(); ctx.translate(L(G.x), L(G.y)); ctx.rotate(G.dir);
+  const heat = S.state === 'fire' ? 1 : S.state === 'spool' ? clamp(S.t / SENTRY_SPOOL[clamp(mission.easy || 0, 0, 2)], 0, 1) : 0;
+  for (const sy of [-0.12, 0.12]) { rr(0, L(sy) - 4, L(0.95), 8, 3); ctx.fillStyle = S.state === 'off' ? '#4a4d55' : `rgb(${Math.round(80 + 175 * heat)},${Math.round(84 + 40 * heat)},${Math.round(92 - 40 * heat)})`; ctx.fill(); stroke(2); }
+  ctx.beginPath(); ctx.arc(0, 0, L(0.38), 0, TAU); ctx.fillStyle = S.state === 'off' ? '#3a3d45' : '#5a3a36'; ctx.fill(); stroke(3);
+  ctx.beginPath(); ctx.arc(0, 0, L(0.16), 0, TAU); ctx.fillStyle = S.state === 'off' ? '#1a1c22' : S.state === 'idle' ? (Math.sin(t * 3) > 0 ? '#ffb84a' : '#7a5a2a') : '#ff4a3a'; ctx.fill();
+  ctx.restore();
+}
+// Drawn with the crew (on top of the sprites): the barrel glowing as it spools, the muzzle flashes, sparks once
+// it's off, and its name tag with what it's doing. Also its sounds (in every browser, from the synced state): the
+// whine as it spools up, the rattle of its shots.
+const sentryHeard = { state: null, shots: 0, stop: null };
+function drawSentryFx(d, g, t) {
+  const S = d.sentry;
+  if (!S) return;
+  const G = g.sentry, easy = clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2), m = G.muzzle, mz = GFX.on ? 0.62 : 0;
+  if (S.state !== sentryHeard.state) {
+    if (sentryHeard.stop) { sentryHeard.stop(); sentryHeard.stop = null; }
+    if (S.state === 'spool') sentryHeard.stop = sfx.charge(Math.max(0.3, SENTRY_SPOOL[easy] - S.t));
+    sentryHeard.state = S.state;
+  }
+  if (S.shots > sentryHeard.shots && S.shots % 2 === 0) sfx.enemyShot();
+  sentryHeard.shots = S.shots;
+  const mx = L(m.x + Math.cos(G.dir) * 0.15), my = L(m.y - GFX.lift(mz));
+  const heat = S.state === 'fire' ? 1 : S.state === 'spool' ? clamp(S.t / SENTRY_SPOOL[easy], 0, 1) : S.state === 'cool' ? Math.max(0, 1 - S.t / SENTRY_COOL) : 0;
+  if (heat > 0) {                                      // the barrel glowing: red-orange, white-hot while it fires
+    const r = L(0.25 + 0.35 * heat) * (S.state === 'spool' ? 1 + 0.15 * Math.sin(t * (10 + 30 * heat)) : 1);
+    const gr = ctx.createRadialGradient(mx, my, 0, mx, my, r);
+    gr.addColorStop(0, S.state === 'fire' ? 'rgba(255,240,200,0.95)' : `rgba(255,170,90,${0.5 + 0.4 * heat})`); gr.addColorStop(0.5, `rgba(255,80,40,${0.5 * heat})`); gr.addColorStop(1, 'rgba(255,60,30,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(mx, my, r, 0, TAU); ctx.fill();
+  }
+  if (S.state === 'fire' && Math.sin(t * 50) > 0.3) {  // muzzle flash
+    ctx.fillStyle = 'rgba(255,230,160,0.9)'; ctx.beginPath(); ctx.ellipse(mx + Math.cos(G.dir) * 8, my, 10, 5, G.dir, 0, TAU); ctx.fill();
+  }
+  if (S.state === 'off' && Math.sin(t * 7 + 1) > 0.85) for (let i = 0; i < 3; i++) { ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.arc(L(G.x) + (Math.random() - 0.5) * L(0.6), L(G.y - GFX.lift(0.5)) + (Math.random() - 0.5) * L(0.4), 2, 0, TAU); ctx.fill(); }
+  const label = S.state === 'off' ? 'SENTRY — OFF' : S.state === 'spool' ? 'SENTRY — SPOOLING UP!' : S.state === 'fire' ? 'SENTRY — FIRING' : S.state === 'cool' ? 'SENTRY — COOLING' : 'SENTRY GUN';
+  const col = S.state === 'off' ? '#9aa3b5' : S.state === 'idle' ? '#ffb84a' : S.state === 'cool' ? '#ffd08a' : Math.sin(t * 16) > 0 ? '#ff5a4a' : '#ffe0d8';
+  const tag = () => { ctx.font = `800 ${T * 0.2}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(label, 0, 0); ctx.fillStyle = col; ctx.fillText(label, 0, 0); ctx.textAlign = 'left'; };
+  if (GFX.on) upright(camera(), G.x, G.y - 0.2, 1.35, tag); else { ctx.save(); ctx.translate(L(G.x), L(G.y) - L(0.6)); tag(); ctx.restore(); }
 }

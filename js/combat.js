@@ -23,7 +23,20 @@ function segCircle(x0, y0, x1, y1, cx, cy, r) {
   const k = clamp(((cx - x0) * dx + (cy - y0) * dy) / l2, 0, 1);
   return Math.hypot(x0 + dx * k - cx, y0 + dy * k - cy) <= r;
 }
-const SLIME_COLS = ['#9cff5a', '#6ad13a', '#c8ff6e'];   // (slimeBurst, organic deaths: drawn as slime drops with sprites)
+// A shot against a body, as the player sees it: the shot flies at height z (drawn GFX.lift(z) up the screen),
+// the body stands at (cx, cy) from its feet up to height top and is r wide: on screen a capsule from its
+// feet to its head. Swept over the whole step (x0, y0) → (x1, y1), so a fast shot can't skip past it.
+// Returns how far along the step (0..1) the shot first touches the body, or -1 for a miss. In the classic
+// view (no lift) the capsule is a circle of radius r around the feet.
+function segBody(x0, y0, x1, y1, z, cx, cy, r, top) {
+  const lz = GFX.lift(z || 0), head = cy - GFX.lift(top), n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 0.03));
+  for (let i = 0; i <= n; i++) {
+    const k = i / n, px = x0 + (x1 - x0) * k, py = y0 + (y1 - y0) * k - lz;
+    if (Math.hypot(px - cx, py - clamp(py, head, cy)) <= r) return k;
+  }
+  return -1;
+}
+const SLIME_COLS =['#9cff5a', '#6ad13a', '#c8ff6e'];   // (slimeBurst, organic deaths: drawn as slime drops with sprites)
 function combatFx(x, y, vx, vy, life, col, size) {
   combat.fx.push({ x, y, vx, vy, life, max: life, col, size });
 }
@@ -509,8 +522,10 @@ function drawCombatFront(t) {
     g.addColorStop(0, '#fff'); g.addColorStop(0.3, s.acid ? '#9cff5a' : s.heavy ? '#ff8ac0' : '#ff6a4a'); g.addColorStop(1, s.acid ? 'rgba(120,255,60,0)' : 'rgba(255,60,60,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(s.x), L(y), L(r) * 2.2, 0, TAU); ctx.fill();
   }
+  if (typeof drawFoamDecals === 'function') drawFoamDecals(t);   // the extinguisher's foam (js/mission.js)
   for (const p of combat.fx) {
     if (p.flip) { if (GFX.on) drawFlip(p); continue; }
+    if (p.foam && typeof drawFoamParticle === 'function') { drawFoamParticle(p, t); continue; }
     const slime = GFX.on ? SLIME_COLS.indexOf(p.col) : -1;   // organic slime: the drop sprites (organic/slime_drop_*, ~0.12 across)
     if (slime >= 0 && GFX.sprite(`organic/slime_drop_${slime}`, 0, p.x, p.y, 0, { layer: 'top', scale: p.size / 0.12, alpha: clamp(p.life / p.max, 0, 1), emissive: 0.4 })) continue;
     ctx.globalAlpha = clamp(p.life / p.max, 0, 1);

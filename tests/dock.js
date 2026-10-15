@@ -3,7 +3,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
-  'baseGeom', 'baseGuards', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS'];
+  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -45,19 +45,26 @@ function walkTo(G, tx, ty, max = 20) {                 // straight-line walking 
     G.simTick(DT); if (p.aim > 0) sawLaser = true;
     const b = G.boarding.bolts.find(b => b.owner === 'pirate'); if (b) { shotAt = t; shotSpeed = Math.hypot(b.vx, b.vy); }
   }
-  check(sawLaser && shotAt > 1.6 && shotAt < 1.9 && shotSpeed >= 25, `a pirate stops and aims (laser sight) for 1.7 s (locked for the last 0.3), then fires a very fast shot (after ${shotAt?.toFixed(2)} s, ${shotSpeed.toFixed(0)} units/s)`);
+  check(sawLaser && shotAt > 1.6 && shotAt < 1.9 && shotSpeed >= 25, `a pirate stops and aims (laser sight) for 1.7 s, then fires a very fast shot (after ${shotAt?.toFixed(2)} s, ${shotSpeed.toFixed(0)} units/s)`);
   for (let i = 0; i < 20; i++) G.simTick(DT);
   check(me.health === 'hurt', 'standing in the laser line gets you hit');
   let again = false; for (let i = 0; i < 60 * 4.5; i++) { G.simTick(DT); if (p.aim > 0) again = true; me.health = 'ok'; }
   check(!again, 'then a long cooldown before it aims again (your window to hit back)');
 }
-{
+// no lock-on: the sight follows you right up to the shot; only getting out of its sight dodges it
+for (const hide of [false, true]) {
   const G = fresh(); G.dockShip('pirate', 'port'); G.dk.pirates.splice(1);
   const p = G.dk.pirates[0], me = G.me; p.x = 6; p.y = 19.5; p.cd = 0; me.x = 10.5; me.y = 19.5;
-  for (let i = 0; i < 60 * 1.6; i++) G.simTick(DT);                       // the laser has locked onto where you stood…
-  me.y = 17.0;                                                             // …dive out of the line
+  check(G.PIRATE_AIM === 1.7 && !/PIRATE_LOCK|locked = p\.aim/.test(require('fs').readFileSync(require('path').join(__dirname, '../js/dock.js'), 'utf8')), 'there is no lock-on phase (PIRATE_LOCK and the locked sight are gone)');
+  let spot = null;                                                         // somewhere 2-6 units off, in (or out of) its sight
+  for (let r = 2; r < 9 && !spot; r += 0.5) for (let a = 0; a < 32 && !spot; a++) {
+    const x = me.x + Math.cos(a / 32 * 6.283) * r, y = me.y + Math.sin(a / 32 * 6.283) * r;
+    if (G.canStand(x, y, G.walkRects()) && G.lineOfSight(p.x, p.y, x, y) !== hide && Math.hypot(x - p.x, y - p.y) < 8.5) spot = { x, y };
+  }
+  for (let i = 0; i < 60 * 1.6; i++) G.simTick(DT);                       // the sight is on where you stand…
+  me.x = spot.x; me.y = spot.y;                                            // …0.1 s before the shot, move
   for (let i = 0; i < 60; i++) G.simTick(DT);
-  check(me.health === 'ok', 'diving out of the locked laser line dodges the shot');
+  check(hide ? me.health === 'ok' : me.health === 'hurt', hide ? 'getting out of its sight just before the shot dodges it' : 'stepping aside within its sight doesn\'t: the sight tracks you until the shot');
 }
 {
   const G = fresh(); G.ITEMS.length = 0; G.power.reserve = 0; G.dockShip('pirate', 'port');
@@ -207,10 +214,13 @@ for (const side of ['port', 'star']) {
         `${side}: guards, Dr. Varga and the terminal's spot are all on the floor`);
   check(!d.doors[0] && d.doors[1] && d.doors[2] && !G.walkRects().includes(g.doors[1]) && !G.walkRects().includes(g.doors[2]), `${side}: the barracks and the brig doors start locked (no walking through)`);
   // every room reachable along the chain once the doors are open (Dr. Varga walks it home on her own)
-  d.doors = [false, false, false]; G.dk.pirates.length = 0;
+  d.doors = [false, false, false, false]; G.dk.pirates.length = 0;
   const N = G.dk.npc; N.state = 'follow';
+  tickN(G, 60 * 5);
+  check(N.state === 'follow' && G.inBase(N.x, N.y) && Math.hypot(N.x - g.npcSpot.x, N.y - g.npcSpot.y) < 3 && G.sentryLive(), `${side}: with the sentry gun still live, she waits in the brig (Varga safe)`);
+  d.sentry.state = 'off';
   let t = 0; while (N.state !== 'safe' && t < 40) { G.simTick(DT); t += DT; }
-  check(N.state === 'safe' && G.roomAt(N.x, N.y), `${side}: treated, she walks from the brig through all four rooms and the tube into our airlock room (${t.toFixed(1)} s)`);
+  check(N.state === 'safe' && G.roomAt(N.x, N.y), `${side}: once it's off, she walks from the brig down the gun corridor (past the cover), through the rooms and the tube into our airlock room (${t.toFixed(1)} s)`);
 }
 {
   const G = baseFresh(), g = G.baseGeom('port'), me = G.me, p = G.dk.pirates.find(p => p.mode === 'hunt');
@@ -232,7 +242,7 @@ for (const side of ['port', 'star']) {
   holdOn(G, g.terminal.x, g.terminal.y, () => d.terminal === 'hacked');
   check(d.terminal === 'hacked' && !d.doors[1], 'hacked: the barracks door slides open');
   // the brig door: its keypad wants the code from the barracks wall
-  const q = g.doors[2]; me.x = q.x + q.w + 0.8; me.y = q.y + q.h / 2; G.simTick(DT);
+  const q = g.doors[2]; me.x = q.x + q.w / 2; me.y = q.y + q.h + 0.6; G.simTick(DT);
   check(/door code/.test(me.prompt?.text || ''), `at the brig door: "${me.prompt?.text}"`);
   G.withCrew(me, () => G.openBasePad());
   const type = (code) => { G.withCrew(me, () => { for (const ch of code) G.miniCommand('pin', 'key', +ch); G.miniCommand('pin', 'ok'); }); for (let i = 0; i < 60; i++) G.simTick(DT); };
@@ -283,6 +293,113 @@ for (const side of ['port', 'star']) {
   const C = loadGame(NAMES); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   check(C.dk.dock.kind === 'base' && C.dk.dock.tube === 'detached' && C.dk.dock.terminal === 'fixed' && C.dk.dock.code === G.dk.dock.code && C.dk.pirates.length === G.dk.pirates.length,
         'the snapshot carries the base (tube, terminal, door code, guards) to every browser');
+}
+// --- our bolts vs pirates: a swept test against the body as drawn (js/combat.js segBody, js/invader.js boltHitsBody)
+{
+  const G = fresh(); G.dockShip('pirate', 'port'); G.dk.pirates.splice(1);
+  const p = G.dk.pirates[0], place = () => { p.x = 10; p.y = 19.5; p.hp = 3; p.cd = 99; p.route = []; p.flash = 0; };
+  const shoot = (dy, speed, z = 0.52, ticks = 3) => { place(); G.boarding.bolts.length = 0; G.boarding.bolts.push({ x: 7, y: 19.5 + dy, z, vx: speed, vy: 0, life: 1, owner: 'crew' }); tickN(G, ticks); return p.hp < 3; };
+  check(shoot(0.33, 26, 0.52, 12) && !shoot(0.6, 26, 0.52, 12), 'classic view: a grazing bolt 0.33 off the pirate\'s middle hits, one 0.6 off misses');
+  // a very fast bolt steps 2 units a frame: the old point test skipped right past
+  let fast = 0; for (const x0 of [7.0, 7.3, 7.7, 8.1, 8.5]) { place(); G.boarding.bolts.length = 0; G.boarding.bolts.push({ x: x0, y: 19.5, vx: 120, vy: 0, life: 0.1, owner: 'crew' }); tickN(G, 4); if (p.hp < 3) fast++; }
+  check(fast === 5, `a very fast bolt (2 units a frame) can't tunnel through a pirate (${fast}/5 hit)`);
+  G.GFX.on = true;                                      // the sprite view: bodies stand up, bolts fly at muzzle height
+  const behind = shoot(-0.45, 26, 0.52, 12), front = shoot(0.35, 26, 0.52, 12), below = shoot(0.95, 26, 0.52, 12), over = shoot(-1.6, 26, 0.52, 12);
+  G.GFX.on = false;
+  check(behind && front && !below && !over, `sprite view: what you see is what you hit — a bolt drawn across the head (behind) ${behind ? 'hits' : 'misses'}, across the legs ${front ? 'hits' : 'misses'}, under the feet ${below ? 'hits' : 'misses'}, far over the head ${over ? 'hits' : 'misses'}`);
+  check(p.flash > 0 || (shoot(0, 26, 0.52, 12) && p.flash > 0), 'a hit shows on the pirate it hit (hit flash; its HP pips: drawPirate)');
+  // two pirates in a row: the near one takes it
+  const G2 = fresh(); G2.dockShip('pirate', 'port');
+  const [a, b] = G2.dk.pirates; Object.assign(a, { x: 10, y: 19.5, cd: 99, route: [] }); Object.assign(b, { x: 11, y: 19.5, cd: 99, route: [] });
+  G2.boarding.bolts.push({ x: 7, y: 19.5, z: 0.52, vx: 26, vy: 0, life: 1, owner: 'crew' }); tickN(G2, 12);
+  check(a.hp === 2 && b.hp === 3, 'a bolt hits the first pirate along its path, not the one behind');
+}
+// --- pirates keep apart (and pass each other in single file through the tube)
+{
+  const G = fresh(); G.dockShip('pirate', 'port');
+  G.dk.pirates.push({ ...G.dk.pirates[0], uid: 999 });
+  for (const p of G.dk.pirates) Object.assign(p, { x: 10, y: 19.5, cd: 99, done: true, home: false });
+  G.me.x = 10.2; G.me.y = 19.6;
+  tickN(G, 30);
+  const P = G.dk.pirates, dists = [];
+  for (let i = 0; i < P.length; i++) for (let j = i + 1; j < P.length; j++) dists.push(Math.hypot(P[i].x - P[j].x, P[i].y - P[j].y));
+  check(Math.min(...dists) > 0.7, `three pirates dropped on one spot push apart (closest pair ${Math.min(...dists).toFixed(2)})`);
+  check(P.every(p => Math.hypot(p.x - G.me.x, p.y - G.me.y) > 0.55), 'and out of the crew member standing there');
+}
+for (const side of ['port', 'star']) {
+  const G = baseFresh(side), g = G.baseGeom(side), me = G.me; me.x = 37; me.y = 5;
+  const [a, b] = G.dk.pirates; G.dk.pirates.length = 0; G.dk.pirates.push(a, b);
+  const ours = { x: g.hatch.inside[0] - g.hatch.dir * 1.5, y: g.hatch.inside[1] }, bay = { x: g.entry.x, y: g.y };
+  Object.assign(a, { mode: 'guard', room: 0, x: ours.x, y: ours.y, post: bay, cd: 99, route: [] });
+  Object.assign(b, { mode: 'guard', room: 0, x: bay.x, y: bay.y, post: ours, cd: 99, route: [] });
+  let t = 0; while (t < 20 && !(Math.hypot(a.x - bay.x, a.y - bay.y) < 0.5 && Math.hypot(b.x - ours.x, b.y - ours.y) < 0.5)) { G.simTick(DT); t += DT; }
+  check(t < 20, `${side}: two pirates meeting head-on in the docking tube get past each other (no deadlock, ${t.toFixed(1)} s)`);
+}
+// --- the gun corridor's sentry gun
+{
+  const G = baseFresh(), g = G.baseGeom('port'), d = G.dk.dock, S = d.sentry, me = G.me, y = g.y; G.dk.pirates.length = 0;
+  const at = (x, dy) => ({ x, y: y + dy }), put = (q) => { me.x = q.x; me.y = q.y; me.health = 'ok'; me.armor = 0; };
+  check(g.rooms[4] && !G.walkRects().includes(g.rooms[4]) && g.cover.every(q => !G.canStand(q.x + q.w / 2, q.y + q.h / 2, G.walkRects()) && !G.freeAt(q.x + q.w / 2, q.y + q.h / 2)),
+        'a gun corridor between the barracks and the brig, with cover you can\'t walk through and shots don\'t pass');
+  put(at(-24.0, -7.6)); tickN(G, 60);
+  check(S.state === 'idle', 'behind the first crates it doesn\'t see you');
+  put(at(-29.0, -8.5)); G.simTick(DT);
+  check(S.state === 'spool', 'step into its line of fire: it spools up (whine, glowing barrel)');
+  let fired = null;
+  for (let t = 0; t < 4 && !fired; t += DT) { G.simTick(DT); if (S.state === 'fire') fired = t; }
+  tickN(G, 60 * (G.SENTRY_BURST + 0.5));
+  check(fired !== null && Math.abs(fired - G.SENTRY_SPOOL[0]) < 0.1, `then it opens fire (after ${fired?.toFixed(2)} s)`);
+  check(me.health !== 'ok', `standing in the open through a burst gets you hit (${me.health})`);
+  check(S.state === 'cool' && S.shots > 25, `it fires for ${G.SENTRY_BURST} s (${S.shots} shots), then cools down`);
+  tickN(G, 60 * (G.SENTRY_COOL + 0.1)); me.x = 37; me.y = 5; G.simTick(DT);
+  check(S.state === 'idle', 'and goes back to watching');
+  // cover: crouched behind each stack, a whole burst doesn't touch you
+  let safe = true;
+  for (const q of g.cover) {
+    put({ x: q.x + q.w + 0.35, y: q.y + q.h / 2 }); S.state = 'fire'; S.t = 0; S.shotT = 0;
+    tickN(G, 60 * G.SENTRY_BURST); if (me.health !== 'ok') safe = false;
+  }
+  check(safe, 'behind each stack of cover a whole burst misses you');
+  const spots = g.cover.map(q => ({ x: q.x + q.w + 0.35, y: q.y + q.h / 2 })), gap = Math.max(...spots.slice(1).map((q, i) => Math.hypot(q.x - spots[i].x, q.y - spots[i].y)));
+  check(gap / 4.2 + 0.5 < G.SENTRY_COOL + G.SENTRY_SPOOL[0], `between bursts there's time to run to the next cover (${gap.toFixed(1)} units, ${(G.SENTRY_COOL + G.SENTRY_SPOOL[0]).toFixed(1)} s)`);
+  // right beside it you're out of its fan, and can switch it off
+  S.state = 'idle'; G.boarding.bolts.length = 0;
+  put(at(-34.5, -9.7)); tickN(G, 30);
+  check(S.state === 'idle', 'right beside the gun it can\'t see you (it never turns)');
+  S.state = 'fire'; S.t = 0; tickN(G, 60 * 2);
+  check(me.health === 'ok', '…and its fire doesn\'t reach you there');
+  S.state = 'idle';
+  const tHand = holdOn(G, g.sentry.x, g.sentry.y, () => S.state === 'off');
+  check(S.state === 'off' && tHand > 3.5 && tHand < 4.5, `hold click on it: switched off by hand (${tHand.toFixed(1)} s)`);
+  put(at(-29.0, -8.5)); G.boarding.bolts.length = 0; tickN(G, 60 * 4);
+  check(S.state === 'off' && !G.boarding.bolts.some(b => b.owner === 'sentry') && me.health === 'ok', 'switched off, it stays quiet');
+  // with the repair kit it's quicker
+  const H = baseFresh(), hg = H.baseGeom('port'); H.dk.pirates.length = 0; H.me.x = hg.sentry.x; H.me.y = hg.y - 9.7;
+  H.withCrew(H.me, () => { H.inv.weapon = 'repair'; });
+  const tKit = holdOn(H, hg.sentry.x, hg.sentry.y, () => H.dk.dock.sentry.state === 'off');
+  check(H.dk.dock.sentry.state === 'off' && tKit < 2.5, `with the repair kit: ${tKit.toFixed(1)} s`);
+  // the snapshot carries it
+  const C = loadGame(NAMES); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  check(C.dk.dock.sentry?.state === 'off' && C.walkRects().length === G.walkRects().length, 'the snapshot carries the sentry gun\'s state (and every browser has the corridor\'s cover)');
+}
+{
+  // a pirate guards the gun's end; the starboard base is the mirror image
+  const G = baseFresh('star'), g = G.baseGeom('star');
+  const gunGuard = G.dk.pirates.find(p => p.mode === 'guard' && p.room === 4);
+  check(gunGuard && Math.hypot(gunGuard.x - g.sentry.x, gunGuard.y - g.sentry.y) < 3, 'a pirate guards the gun\'s end of the corridor');
+  check(g.sentry.dir === Math.PI && g.sentry.muzzle.x < g.sentry.x && G.canStand(g.sentry.muzzle.x - 4, g.y - 8.5, G.walkRects()), 'starboard: the gun faces the other way, down its own corridor');
+}
+{
+  // difficulty: on very easy it spools up longer and fires fewer shots
+  const burst = (easy) => {
+    const G = baseFresh('port', 1, easy), g = G.baseGeom('port'), S = G.dk.dock.sentry; G.dk.pirates.length = 0;
+    G.me.x = g.sentry.muzzle.x + 4.75; G.me.y = g.y - 8.5; G.me.armor = 0;
+    let t = 0; while (S.state !== 'fire' && t < 5) { G.simTick(DT); t += DT; G.me.health = 'ok'; }
+    tickN(G, 60 * 5, () => { G.me.health = 'ok'; });
+    return { spool: t, shots: S.shots };
+  };
+  const n = burst(0), e = burst(2);
+  check(e.spool > n.spool + 0.8 && e.shots < n.shots * 0.6, `easier: a longer spool-up (${n.spool.toFixed(1)} → ${e.spool.toFixed(1)} s) and fewer shots a burst (${n.shots} → ${e.shots})`);
 }
 // --- every mission: the ship jumping with nobody aboard is a failure
 {
