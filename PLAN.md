@@ -758,7 +758,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 
 ### 8t. Pirates aim, loot and leave; enemies on the security map
 - Pirates fight like gunslingers now: they stop and aim, a faint laser sight tracking you, which then
-  locks (bright, flickering) for the last 0.3 s (was 0.6, 2026-10-14: too easy to dodge); after 1.7 s a very fast shot (30 units/s) goes down the
+  locks (bright, flickering) for the last 0.1 s (was 0.6, then 0.3; 2026-10-14: too easy to dodge); after 1.7 s a very fast shot (30 units/s) goes down the
   locked line. Dive behind a wall (or just out of the line) when you see it. If they lose sight of you
   while tracking, they give up the shot. Then a 5 s cooldown — your window to hit them.
 - They loot two things each (or fewer if nothing's left), carry them to their crate, then head home.
