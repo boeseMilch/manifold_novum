@@ -1056,6 +1056,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   with sprites: hull body, floors (zone tiles mixed by a hash), walls built from the room layout (back
   walls full height, near walls cut down, up-down walls stepping down before a near wall, junction
   pieces), the spine, deck airlocks, doors, outer hatches (inside), cannons and the crew.
+  The junction pieces get a small depth bias (`JUNCTION_BIAS`): the wall tiles running through their
+  square lie at the same height, and the depth test flipped between the two with the camera's sub-pixel
+  position (z-fighting: a dark band under the hull's corner posts blinked on spacewalks).
 - The camera is tilted (screen y = ground y × sin 50°) whenever the sprites are on; mouse picking maps
   onto the ground plane, and the crew can be clicked on their body (`GFX.pickAt`). Everything not
   converted is still drawn by its old 2D function, into a 2D layer at ground level (see render() in

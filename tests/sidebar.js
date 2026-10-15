@@ -45,11 +45,12 @@ check(!overlap, `no two visible panels overlap while the list changes (${overlap
 
 // settled panels sit fully on screen: at several window sizes, after resizes, and when a panel's
 // problem blinks out for single ticks (a multiplayer client between snapshots)
-const onScreen = () => [...G.sidePlates.values()].filter(p => !p.leaving).every(p => p.x === 0 && p.alpha === 1 && p.y >= G.HUD_H && p.y + 58 <= G.VH);
+const settled = (p) => !p.leaving && p.age > 2;   // (a problem that just popped up may still be sliding in)
+const onScreen = () => [...G.sidePlates.values()].filter(settled).every(p => p.x === 0 && p.alpha === 1 && p.y >= G.HUD_H && p.y + 58 <= G.VH);
 for (const [w, h] of [[1600, 1000], [1024, 700], [800, 600], [1920, 1080]]) {
   G.window.innerWidth = w; G.window.innerHeight = h; G.listeners.resize?.();
   step(240);
-  const ps = [...G.sidePlates.values()].filter(p => !p.leaving);
+  const ps = [...G.sidePlates.values()].filter(settled);
   check(G.VW === w && ps.length && onScreen(), `${w}×${h}: every settled panel is fully on screen (${ps.map(p => `x ${p.x.toFixed(1)} y ${Math.round(p.y)}`).join(', ')})`);
 }
 const keep = G.mission.objective || { kind: "intruder", count: 1 };

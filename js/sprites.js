@@ -91,6 +91,7 @@ function buildWalls() {
 function tileX(name, x0, x1, y, per, o) {
   for (let x = x0; x < x1 - 1e-4; x += per) GFX.sprite(name, 0, x, y, 0, { layer: 'wall', ...o, clip: [x0, null, x1, null] });
 }
+const JUNCTION_BIAS = 0.02;                          // (depth units, about a cm or two: well under the gap to anything in front)
 function drawWallSprites() {
   if (!WALLS) WALLS = buildWalls();
   const hInfo = GFX.info('ship/wall_h'), hLowInfo = GFX.info('ship/wall_h_low'), vInfo = GFX.info('ship/wall_v');
@@ -108,9 +109,13 @@ function drawWallSprites() {
     }
     if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) GFX.sprite('interior/wall_v_step', 0, v.x, v.step, 0, { layer: 'wall', sortY: v.step + 0.01 });
   }
+  // The junction square is also covered by the wall tiles running through it (the up-down run's tile is
+  // drawn after it), at the same height: with equal depths the depth test picked per pixel, and which one
+  // won flipped with the camera's sub-pixel position (z-fighting: a dark band under the corner posts that
+  // blinked as you moved past). JUNCTION_BIAS: the junction always wins in its square.
   for (const j of WALLS.J) {
     const name = `interior/wall_j_${j.low ? 'low_' : ''}${j.arms}`;
-    if (j.arms && GFX.has(name)) GFX.sprite(name, 0, j.x, j.y, 0, { layer: 'wall', sortY: j.y - 0.3 + 0.002 });
+    if (j.arms && GFX.has(name)) GFX.sprite(name, 0, j.x, j.y, 0, { layer: 'wall', sortY: j.y - 0.3 + 0.002, depthBias: JUNCTION_BIAS });
   }
 }
 
