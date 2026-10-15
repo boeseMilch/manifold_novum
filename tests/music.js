@@ -21,7 +21,8 @@ const doc = { hidden: false, addEventListener: (n, f) => { (docListeners[n] ||= 
 const sandbox = { window: { AudioContext: FakeAC, addEventListener: (n, f) => { (listeners[n] ||= []).push(f); } }, document: doc, localStorage: { getItem: () => null, setItem() {} },
   setInterval: (f) => intervals.push(f), setTimeout: () => {}, Math, console, clamp: (v, a, b) => Math.max(a, Math.min(b, v)), lerp: (a, b, k) => a + (b - a) * k };
 vm.createContext(sandbox);
-for (const f of ['audio', 'music']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sandbox);
+const SCRIPTS = ['audio', 'music', ...fs.readdirSync(path.join(__dirname, '..', 'js', 'music')).filter(f => f.endsWith('.js')).sort().map(f => 'music/' + f.slice(0, -3))];   // (the engine, then every piece)
+for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sandbox);
 const music = vm.runInContext('music', sandbox);
 const run = (sec) => { for (let i = 0; i < sec / 0.025; i++) { now += 0.025; intervals.forEach(f => f()); } };
 
@@ -143,6 +144,19 @@ const arcBad = arcs.filter(a => !a.ok);
 check(!arcBad.length, `every piece breathes: a drop into the theme, a breakdown, a bigger drop into the climax, all on phrase starts (${arcs.filter(a => !a.classic).map(a => `${a.p}: drops at bars ${a.drops.map(e => e.bar + '→' + e.stage).join(', ')}, breakdown at ${a.bd?.bar} (${a.bdLayers} sounds a bar, down from ${a.maxBefore}), climax from ${a.climax?.b}`).join('; ')}${arcBad.length ? ' — FAILING: ' + arcBad.map(a => a.p).join(', ') : ''})`);
 check(arcs.find(a => a.p === 'held').ok, 'Held Together keeps its smooth build (no drops or breakdowns)');
 
+// The player can seek: the plan of a mission marks the drops, the breakdown and the climax, and seeking lands on a
+// bar line in exactly the state the arrangement would have there (the breakdown plays as a breakdown).
+const seeks = [];
+for (const p of music.pieces.filter(p => !p.classic)) {
+  music.setSong(p.name); music.setJump(false); music.setThreat(false); music.reset();
+  const P = music.plan(300), bd = P.bars.find(B => B.breakdown), dr = P.bars.filter(B => B.drop), cl = P.bars.find(B => B.stage === 6);
+  const at = music.seek(bd.t + 0.3, 300);                  // (a little after the bar line: lands on the next one)
+  music.setIntensity(Math.pow(at / 300, 1.3)); run(P.barDur * 0.5);
+  const B = music.bar, nb = P.bars.find(x => x.t === at);
+  seeks.push({ p: p.name, ok: !!bd && dr.length >= 2 && !!cl && Math.abs(at - (bd.b + 1) * P.barDur) < 1e-6 && B.b === nb.b && B.bk === 1 && B.st === nb.stage, info: `${p.name}: breakdown at bar ${bd.b}, drops ${dr.map(x => x.b).join('/')}, climax ${cl?.b}; seek → bar ${B.b} (breakdown bar ${B.bk + 1}, stage ${B.st})` });
+}
+check(seeks.every(x => x.ok), `seeking: the plan marks drops, breakdown and climax; a seek lands on the next bar line inside the breakdown (${seeks.map(x => x.info).join('; ')})`);
+
 // The ending lands in time and in phrase: whenever the ship jumps (any piece, during the spool or straight
 // from the music without one), the final hit is on a bar line of the piece's grid, after a cadence on its bVII
 // (or V), and never long after the jump.
@@ -212,7 +226,7 @@ check(nodes > n0, 'and plays again when shown');
   const sb2 = { window: { AudioContext: RecAC, addEventListener: (n, f) => { (L2[n] ||= []).push(f); } }, localStorage: { getItem: () => null, setItem() {} },
     setInterval: (f) => iv2.push(f), setTimeout: () => {}, Math, console };
   vm.createContext(sb2);
-  for (const f of ['audio', 'music']) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sb2);
+  for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sb2);
   const m2 = vm.runInContext('music', sb2);
   L2.mousedown.forEach(f => f());
   const run2 = (sec) => { for (let i = 0; i < sec / 0.025; i++) { t2 += 0.025; iv2[0](); } };
