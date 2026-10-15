@@ -48,27 +48,63 @@ function worldText(x, y, z, text, font, fill, o = {}) {
   if (o.outline) { ctx.lineWidth = 3; ctx.strokeStyle = o.outline; ctx.strokeText(text, 0, 0); }
   ctx.fillStyle = fill; ctx.fillText(text, 0, 0); ctx.restore();
 }
-// Steam wisps rising from (x, y, z) (a mug, a pot): with GFX on an upright canvas sprite redrawn every
-// frame (key: one per source), so it sits in the world; classic: 2D strokes at once.
-function steamWisps(key, x, y, z, t, k = 1, sortY = y + 0.05) {
-  const draw = (g, ox, oy, s) => {
-    for (let i = 0; i < 3; i++) {
-      const q = (t * 0.45 + i / 3) % 1;
-      g.beginPath(); g.moveTo(ox + Math.sin(t * 2 + i * 2) * 3 * s, oy - q * 26 * s);
-      g.quadraticCurveTo(ox + 6 * s * Math.sin(t * 3 + i), oy - (6 + q * 26) * s, ox + Math.sin(t * 2.5 + i) * 4 * s, oy - (12 + q * 26) * s);
-      g.strokeStyle = `rgba(235,240,245,${0.35 * (1 - q)})`; g.lineWidth = 2.5 * s; g.lineCap = 'round'; g.stroke();
-    }
-  };
+// Steam: soft particles (one radial-gradient puff, PUFF, drawn scaled and faded), each a pure function of the
+// time (its own lane and phase, a fresh random start every loop: nothing stored, nothing allocated per frame).
+// A particle leaves the source thin and fast, slows, widens and fades; sideways it follows a wave travelling
+// up the plume (shared by all particles at that height, so they line up into one curling wisp) plus a slow
+// drift and a little turbulence of its own. STEAM_KINDS: mug (a calm thin wisp, rising slowly: life 9.6 s), pot (more, wider, rising in
+// puffs as the stew bubbles), leak (a jet sideways out of a pipe, drifting up as it slows). World px (T = 48).
+const STEAM_KINDS = {
+  mug:  { n: 30, life: 9.6, d: 56, jx: 0, jy: -1, rise: 0, w0: 1.4, r0: 1.6, r1: 10, a: 0.34, sway: 6, tk: 0.4, w: 64, h: 76 },   // (slow: a lazy curl)
+  pot:  { n: 36, life: 2.6, d: 70, jx: 0, jy: -1, rise: 0, w0: 7, r0: 2.5, r1: 16, a: 0.36, sway: 9, burst: true, w: 96, h: 96 },
+  leak: { n: 26, life: 1.4, d: 50, jx: 1, jy: 0, rise: 18, w0: 1, r0: 1.5, r1: 15, a: 0.4, sway: 5, w: 0, h: 0 },
+};
+let PUFF = null;
+function steamPuffImage() {
+  if (PUFF || typeof document === 'undefined' || typeof document.createElement !== 'function') return PUFF;
+  const c = document.createElement('canvas'); if (!c || !c.getContext) return null; c.width = c.height = 32;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, 'rgba(238,242,247,1)'); gr.addColorStop(0.35, 'rgba(232,238,245,0.7)'); gr.addColorStop(0.7, 'rgba(225,232,242,0.22)'); gr.addColorStop(1, 'rgba(220,228,240,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+  return (PUFF = c);
+}
+const steamHash = (i, c) => { const v = Math.sin(i * 12.9898 + c * 78.233) * 43758.5453; return v - Math.floor(v); };
+// Draws one source's steam into g with its origin at (ox, oy), scaled by s (canvas px per world px).
+function steamPlume(g, ox, oy, s, t, P, k0 = 1) {
+  const img = steamPuffImage(); if (!img) return;
+  const a0 = g.globalAlpha, px = -P.jy, py = P.jx, tw = t * (P.tk || 1);   // (px, py: sideways to the jet; tw: the sway's clock)
+  for (let i = 0; i < P.n; i++) {
+    const u = t / P.life + i / P.n + steamHash(i, 0) * 0.31, cyc = Math.floor(u), k = u - cyc;
+    const h1 = steamHash(i, cyc), h2 = steamHash(i + 57, cyc);
+    let f = 0.6 + 0.8 * h2;                                  // this puff's strength
+    if (P.burst) { const tb = (cyc - i / P.n) * P.life; f *= 0.45 + 0.9 * Math.max(0, Math.sin(tb * 2.9) * Math.sin(tb * 1.3 + 1)); }   // born in a bubble's burst
+    const e = 1 - (1 - k) * (1 - k), d = P.d * k0 * (0.8 + 0.4 * h1) * e;   // along the jet: fast out, slowing
+    const lat = (h1 - 0.5) * 2 * P.w0 * (1 + k)                                    // where on the source it left
+      + P.sway * k0 * Math.pow(k, 1.2) * (Math.sin(d * 0.11 / k0 - tw * 1.4) + 0.6 * Math.sin(tw * 0.37 + 1.3))   // the curling wisp, its slow drift
+      + P.sway * 0.4 * k * Math.sin(tw * 2.3 + i * 1.7 + h2 * 6);                   // its own turbulence
+    const x = ox + (P.jx * d + px * lat) * s, y = oy + (P.jy * d + py * lat - P.rise * k * k) * s;
+    const r = (P.r0 + (P.r1 - P.r0) * Math.pow(k, 0.8)) * (0.75 + 0.5 * h2) * k0 * s, st = 1 + 0.7 * (1 - k);   // stretched along its way while young
+    const al = P.a * f * Math.min(1, k / 0.12) * Math.pow(1 - k, 1.6);
+    if (al < 0.004) continue;
+    g.globalAlpha = Math.min(1, al);
+    if (P.jy) g.drawImage(img, x - r, y - r * st, 2 * r, 2 * r * st); else g.drawImage(img, x - r * st, y - r, 2 * r * st, 2 * r);
+  }
+  g.globalAlpha = a0;
+}
+// Steam rising from (x, y, z) (a mug, a pot; kind: a STEAM_KINDS key): with GFX on an upright canvas sprite
+// redrawn every frame (one per source), so it sits in the world, lit like it; classic: straight on the canvas.
+function steamWisps(kind, x, y, z, t, k = 1, sortY = y + 0.05) {
+  const P = STEAM_KINDS[kind];
   if (GFX.on) {
-    const S = 2, D = GFX.canvasSprite('steam_' + key, 30 * S * k, 46 * S * k, { ppu: T * S, ox: 15 * S * k, oy: 44 * S * k });
+    const S = 2, W = P.w * k * S, H = P.h * k * S, D = GFX.canvasSprite('steam_' + kind, W, H, { ppu: T * S, ox: W / 2, oy: H - 2 * S });
     if (D) {
       D.ctx.setTransform(1, 0, 0, 1, 0, 0); D.ctx.clearRect(0, 0, D.w, D.h);
-      draw(D.ctx, 15 * S * k, 42 * S * k, S * k); D.commit();
-      GFX.sprite(D.name, 0, x, y, z, { billboard: true, unlit: true, sortY, depthWrite: false });
+      steamPlume(D.ctx, W / 2, H - 2 * S, S, t, P, k); D.commit();
+      GFX.sprite(D.name, 0, x, y, z, { billboard: true, emissive: 0.8, sortY, depthWrite: false });
       return;
     }
   }
-  draw(ctx, x * T, (y - GFX.lift(z)) * T, k);
+  steamPlume(ctx, x * T, (y - GFX.lift(z)) * T, 1, t, P, k);
 }
 // Item / gear / upgrade icons (items/icon_*, 128 x 128) on the 2D canvas (HUD, panels): straight
 // from the atlas page. size = the icon canvas' size in CSS px. False until the page has loaded.
@@ -171,13 +207,7 @@ function coffee(x, y, t) {
   ctx.beginPath(); ctx.arc(x, y, 8, 0, TAU); ctx.fillStyle = '#e8e4dc'; ctx.fill(); stroke(2);
   ctx.beginPath(); ctx.arc(x, y, 5.5, 0, TAU); ctx.fillStyle = '#4a2c1a'; ctx.fill();
   ctx.beginPath(); ctx.arc(x - 1.5, y - 1.5, 1.8, 0, TAU); ctx.fillStyle = 'rgba(255,230,200,0.4)'; ctx.fill();
-  for (let i = 0; i < 3; i++) {                     // steam wisps drifting up
-    const k = (t * 0.45 + i / 3) % 1;
-    ctx.beginPath();
-    ctx.moveTo(x + Math.sin(t * 2 + i * 2) * 3, y - 4 - k * 26);
-    ctx.quadraticCurveTo(x + 6 * Math.sin(t * 3 + i), y - 10 - k * 26, x + Math.sin(t * 2.5 + i) * 4, y - 16 - k * 26);
-    ctx.strokeStyle = `rgba(235,240,245,${0.35 * (1 - k)})`; ctx.lineWidth = 2.5; ctx.stroke();
-  }
+  steamPlume(ctx, x, y - 3, 1, t, STEAM_KINDS.mug);   // steam drifting up
 }
 
 // Round map table with a flickering holographic star chart, plus breakfast.
@@ -442,13 +472,8 @@ function sparks(x, y, t, seed) {
   }
 }
 
-function steamPuff(x, y, t) {
-  for (let i = 0; i < 4; i++) {
-    const k = (t * 0.7 + i / 4) % 1;
-    ctx.beginPath(); ctx.arc(x + k * 30 + Math.sin(t + i) * 4, y - k * 12, 4 + k * 14, 0, TAU);
-    ctx.fillStyle = `rgba(225,232,240,${0.3 * (1 - k)})`; ctx.fill();
-  }
-}
+// A hiss of steam out of a leaky pipe (x, y in world px): a jet to the right, slowing and drifting up.
+function steamPuff(x, y, t) { steamPlume(ctx, x, y, 1, t, STEAM_KINDS.leak); }
 
 function stencil(x, y, text, a = 0, size = 0.3, col = 'rgba(210,166,46,0.55)') {
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);

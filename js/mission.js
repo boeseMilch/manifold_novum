@@ -633,55 +633,192 @@ function missionClickTarget(mx, my) {
 // ---------------------------------------------------------------------------
 // Drawing
 // ---------------------------------------------------------------------------
-// Fire sprites (tools/blender/models/fx/fire.py): fx/fire_s/m/l rendered at s = 0.95 / 1.24 / 1.6,
-// plasma_m/l at 1.31 / 1.6; the nearest one, scaled to the fire's s. 8-frame loop at ~12 fps (each
-// fire starts at its own frame), unlit (flames are light), depth-tested but not writing depth (so
-// crew in front or behind sort right through the soft edges). Smoke: fx/smoke_* puffs rising above.
-const FIRE_SPRITES = [['fx/fire_s', 0.95], ['fx/fire_m', 1.24], ['fx/fire_l', 1.6]], PLASMA_SPRITES = [['fx/plasma_m', 1.31], ['fx/plasma_l', 1.6]];
-function drawFireSprite(f, s, t) {
-  const [name, s0] = (f.plasma ? PLASMA_SPRITES : FIRE_SPRITES).reduce((a, b) => (Math.abs(b[1] - s) < Math.abs(a[1] - s) ? b : a));
-  if (!GFX.sprite(name, Math.floor(t * 12 + f.seed * 7) % 8, f.x, f.y, 0, { scale: s / s0, unlit: true, depthWrite: false })) return false;
-  for (let i = 0; i < 3; i++) {
-    const q = (t * 0.5 + i / 3 + f.seed) % 1;
-    fxSmoke(f.x + Math.sin(t + i) * 0.12, f.y + 0.02, (0.9 + q * 1.4) * s, (0.18 + q * 0.35) * s, 0.55 * (1 - q) * Math.min(1, q * 6), i + Math.floor(f.seed));
+// Extinguisher foam (drawing only; the spray's particles are p.foam in combat.fx, the gameplay is spray()).
+// Each particle is a billowy puff (FOAM_PUFF: a few overlapping soft lumps, three variants) that leaves the
+// nozzle small and fast, slows, swells, churns sideways and sinks to the floor, so the jet reads as one
+// dense cone of foam rather than dots. Where they come down they leave a foam blanket on the floor
+// (foamDecals: a bounded ring, this browser only) that spreads a little and fades over FOAM_DECAL_LIFE s.
+// Sprites: dyn/foam_0..2 (upright, lit by the scene's lights only: foam has no light of its own) and
+// dyn/foam_floor (the same lumps squashed flat); ?classic: the same canvases straight on the 2D canvas.
+const FOAM_DECAL_LIFE = 3.5, FOAM_DECALS_MAX = 72;
+const foamDecals = [];
+let foamDecalAt = 0, FOAM_PUFF = null;
+const foamHash = (v) => { const s = Math.sin(v * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); };
+function foamPuffs() {
+  if (FOAM_PUFF || typeof document === 'undefined' || typeof document.createElement !== 'function') return FOAM_PUFF;
+  const lumps = (g, n, sy, seed) => {                // soft white lumps round the middle of a 64 x 64 * sy canvas
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.4 + seed, d = i ? 9 + 5 * foamHash(seed + i) : 0, r = (i ? 12 + 5 * foamHash(seed * 3 + i) : 17);
+      const x = 32 + Math.cos(a) * d, y = (32 + Math.sin(a) * d) * sy;
+      g.save(); g.translate(x, y); g.scale(1, sy);
+      const gr = g.createRadialGradient(0, -r * 0.2, 0, 0, 0, r);
+      gr.addColorStop(0, 'rgba(255,255,255,0.95)'); gr.addColorStop(0.5, 'rgba(244,247,250,0.7)'); gr.addColorStop(0.8, 'rgba(225,232,240,0.25)'); gr.addColorStop(1, 'rgba(215,224,235,0)');
+      g.fillStyle = gr; g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill(); g.restore();
+    }
+  };
+  const canvas = (sy, seed, n) => { const c = document.createElement('canvas'); c.width = 64; c.height = Math.ceil(64 * sy); lumps(c.getContext('2d'), n, sy, seed); return c; };
+  FOAM_PUFF = { img: [canvas(1, 1, 6), canvas(1, 7, 5), canvas(1, 13, 7)], floor: canvas(GFX.SIN || 0.77, 21, 9), spr: null };
+  if (GFX.on) {                                      // the same pictures as sprites (0.5 across at scale 1)
+    const up = (key, c) => { const D = GFX.canvasSprite(key, c.width, c.height, { ppu: 128 }); if (!D) return null; D.ctx.drawImage(c, 0, 0); D.commit(); return D.name; };
+    FOAM_PUFF.spr = { img: FOAM_PUFF.img.map((c, i) => up('foam_' + i, c)), floor: up('foam_floor', FOAM_PUFF.floor) };
+    if (FOAM_PUFF.spr.img.some(n => !n) || !FOAM_PUFF.spr.floor) FOAM_PUFF.spr = null;
   }
+  return FOAM_PUFF;
+}
+// One puff of the jet (from drawCombatFront). t: the drawing clock (for the floor blanket's fade).
+function drawFoamParticle(p, t) {
+  const P = foamPuffs(); if (!P) return;
+  const a = clamp(1 - p.life / p.max, 0, 1), h = foamHash(p.size * 977.3 + p.max * 13.1), v = Math.floor(h * 3);
+  const sp = Math.hypot(p.vx, p.vy) || 1, nx = -p.vy / sp, ny = p.vx / sp;
+  const wob = 0.14 * Math.pow(a, 1.3) * Math.sin(a * 8 + h * TAU);   // churning sideways as it slows
+  const x = p.x + nx * wob, y = p.y + ny * wob, z = (p.z || 0) * (1 - a * a) + 0.05 * (1 - a);   // sinking to the floor
+  const r = p.size * (0.45 + 2.4 * Math.pow(a, 0.65)), al = 0.92 * Math.min(1, (1 - a) * 2.5);
+  if (a > 0.72 && !p.dec && h < 0.6) {               // coming down: a dab of foam stays on the floor
+    p.dec = true;
+    foamDecals[foamDecalAt] = { x: p.x, y: p.y, r: r * (1.1 + 0.6 * h), t0: t, v }; foamDecalAt = (foamDecalAt + 1) % FOAM_DECALS_MAX;
+  }
+  if (P.spr) { GFX.sprite(P.spr.img[v], 0, x, y, z, { billboard: true, scale: r / 0.25, alpha: al, rot: h * TAU, sortY: y + 0.05, depthWrite: false }); return; }
+  ctx.globalAlpha = al; const R = L(r) * 1.0;
+  ctx.drawImage(P.img[v], L(x) - R, L(y - GFX.lift(z)) - R, 2 * R, 2 * R);
+  ctx.globalAlpha = 1;
+}
+// The foam blanket on the floor (before the jet; GFX: flat on the floor, lit).
+function drawFoamDecals(t) {
+  const P = foamDecals.length && foamPuffs(); if (!P) return;
+  for (const d of foamDecals) {
+    const e = t - d.t0;
+    if (!(e >= 0 && e < FOAM_DECAL_LIFE)) continue;
+    const k = e / FOAM_DECAL_LIFE, r = d.r * (0.6 + 0.4 * Math.min(1, e / 0.25) + 0.25 * k), al = 0.7 * Math.pow(1 - k, 1.4) * Math.min(1, e / 0.08);
+    if (P.spr) { GFX.sprite(P.spr.floor, 0, d.x, d.y, 0.01, { layer: 'decal', scale: r / 0.25, alpha: al, depthWrite: false }); continue; }
+    ctx.globalAlpha = al; const R = L(r);
+    ctx.drawImage(P.floor, L(d.x) - R, L(d.y) - R * P.floor.height / 64, 2 * R, 2 * R * P.floor.height / 64);
+  }
+  ctx.globalAlpha = 1;
+}
+// How much foam is landing on a fire right now (0..1): the jet's puffs near it. Drawing only.
+function foamOn(f) {
+  let n = 0;
+  for (const p of combat.fx) if (p.foam && Math.abs(p.x - f.x) < 0.7 && Math.abs(p.y - f.y) < 0.7) n++;
+  return Math.min(1, n / 5);
+}
+// Fire: soft particle flames. Each tongue is a soft teardrop (FLAME: a radial gradient, stretched upwards)
+// born at the base, rising and narrowing as it goes, passing from the white-yellow core over orange to a
+// deep red tip (plasma: white over pale blue and violet to deep indigo) as it fades: the two nearest colour
+// stages crossfaded, so the colour flows. Each is a pure function of the time (own lane, phase, and a fresh
+// random start every loop): nothing stored. Upright (billboard) in the tilted view, unlit (flames are light),
+// depth-tested (biased towards the camera: out of the part it sits on) but not writing depth. fireLook() holds what the flames and the fire's light (js/lights.js)
+// share: the flicker, the swell towards flaring up / spreading (f.t / f.period), the foam smothering it.
+// Smoke: the lit fx/smoke_* puffs rising above, more as it swells; foam on it: white steam bursting off.
+// ?classic: the same flames on the 2D canvas, added up ('lighter'), with soft smoke puffs.
+// (The Blender flame flipbooks fx/fire_* / fx/plasma_* are no longer used.)
+const FLAME_COLS = {
+  fire:   [[255, 228, 140], [255, 160, 40], [240, 88, 22], [176, 34, 10]],
+  plasma: [[248, 244, 255], [150, 204, 255], [176, 108, 255], [104, 44, 220]],
+};
+const FLAME_N = 22;                                 // tongues per fire
+let FLAME = null;
+function flameImgs() {
+  if (FLAME || typeof document === 'undefined' || typeof document.createElement !== 'function') return FLAME;
+  const mk = ([r, g, b], dark) => {
+    const c = document.createElement('canvas'); c.width = 32; c.height = 56;
+    const x = c.getContext('2d'); x.translate(16, 38); x.scale(dark ? 1 : 0.8, dark ? 1 : 2.1);
+    const gr = x.createRadialGradient(0, 0, 0, 0, 0, 15);
+    gr.addColorStop(0, `rgba(${r},${g},${b},${dark ? 0.8 : 1})`); gr.addColorStop(0.4, `rgba(${r},${g},${b},${dark ? 0.55 : 0.75})`);
+    gr.addColorStop(0.75, `rgba(${r},${g},${b},0.18)`); gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    x.fillStyle = gr; x.beginPath(); x.arc(0, 0, 15, 0, TAU); x.fill();
+    return c;
+  };
+  FLAME = { fire: FLAME_COLS.fire.map(c => mk(c)), plasma: FLAME_COLS.plasma.map(c => mk(c)), smoke: mk([46, 44, 46], true), spr: null };
+  if (GFX.on) {                                      // the same as sprites: origin = the blob's middle, 1/3 unit across at scale 1
+    const up = (key, c) => { const D = GFX.canvasSprite(key, 32, 56, { ppu: 96, ox: 16, oy: 36 }); if (!D) return null; D.ctx.drawImage(c, 0, 0); D.commit(); return D.name; };
+    const spr = { fire: FLAME.fire.map((c, i) => up('flame_fire_' + i, c)), plasma: FLAME.plasma.map((c, i) => up('flame_plasma_' + i, c)) };
+    if (![...spr.fire, ...spr.plasma].some(n => !n)) FLAME.spr = spr;
+  }
+  return FLAME;
+}
+const fireHash = (a, b) => { const v = Math.sin(a * 91.7 + b * 47.3 + 3.1) * 43758.5453; return v - Math.floor(v); };
+// What the flames and the fire's light share this frame (f: a fire, or a docked derelict's { x, y, hp }).
+function fireLook(f, t) {
+  const seed = f.seed != null ? f.seed : f.x * 2.3 + f.y;
+  const n = typeof noise1 === 'function' ? noise1(t * 11 + seed) : 0.5 + 0.5 * Math.sin(t * 11 + seed);
+  const fl = 0.72 + 0.28 * n + 0.1 * Math.sin(t * 23 + seed);          // ~0.62 .. 1.1
+  const prog = f.period ? clamp(f.t / f.period, 0, 1) : 0;                // towards flaring up / spreading
+  const foam = typeof foamOn === 'function' && typeof combat !== 'undefined' ? foamOn(f) : 0;
+  return { seed, fl, prog, grow: 1 + 0.5 * prog * prog * prog, foam, smother: 1 - 0.5 * foam };
+}
+// The flames of one fire of size s at (f.x, f.y): sprites (GFX on) or the 2D canvas. False: nothing to draw with.
+function drawFlames(f, s, t, look) {
+  const P = flameImgs(); if (!P) return false;
+  const kind = f.plasma ? 'plasma' : 'fire', S = GFX.on && P.spr ? P.spr[kind] : null, imgs = P[kind];
+  const H = 1.25 * s * look.grow * look.smother * (0.72 + 0.3 * look.fl), W = 0.2 * s * (0.85 + 0.15 * look.grow), seed = look.seed;
+  const put = (j, x, y, z, r, a) => {
+    if (a < 0.01) return;
+    if (S) { GFX.sprite(S[j], 0, x, y, z, { billboard: true, unlit: true, scale: r / 0.167, alpha: Math.min(1, a * (j ? 0.95 : 0.6)),   // (the hot stage less: bloom)
+       sortY: f.y + 0.03, depthWrite: false, depthBias: 1.5 }); return; }
+    const R = L(r), cx = L(x), cy = L(y) - L(z) * 0.85;
+    ctx.globalAlpha = Math.min(1, a); ctx.drawImage(imgs[j], cx - R, cy - R * 36 / 16, 2 * R, 2 * R * 56 / 32);
+  };
+  if (!S) ctx.save();
+  put(1, f.x, f.y + 0.02, 0.12 * s, 0.32 * s * look.smother, 0.55 * look.fl);          // the glowing bed at the base
+  for (let i = 0; i < FLAME_N; i++) {
+    const h0 = fireHash(i, seed), life = (0.5 + 0.3 * h0) * (f.plasma ? 0.8 : 1), u = t / life + h0 * 3, cyc = Math.floor(u), k = u - cyc;
+    const h1 = fireHash(i + 17, cyc + seed), h2 = fireHash(i + 41, cyc - seed);
+    const x = f.x + (h1 - 0.5) * 2 * W * (1 - 0.6 * k) + 0.1 * s * k * Math.sin(t * 7 + i * 2.3 + h1 * 6);
+    const y = f.y + (h2 - 0.5) * 0.22 * s + 0.02, z = 0.05 + k * H * (0.5 + 0.6 * h2);
+    const r = 0.22 * s * (0.75 + 0.5 * h1) * (1 - 0.7 * k) * look.smother;
+    const a = Math.min(1, k * 10) * Math.pow(1 - k, 0.6) * (0.6 + 0.25 * look.fl), c = Math.min(2.999, k * 2.8), c0 = Math.floor(c), w = c - c0;
+    put(c0, x, y, z, r, a); put(c0 + 1, x, y, z, r, a * w);   // (the next stage fading in over it)
+  }
+  if (!S) ctx.globalCompositeOperation = 'lighter';
+  put(0, f.x, f.y + 0.03, 0.2 * s, 0.17 * s * look.smother, (S ? 0.3 : 0.45) * look.fl);           // the white-hot core (2D: added on)
+  if (!S) ctx.restore(); else ctx.globalAlpha = 1;
+  return true;
+}
+// Smoke rising off the top (dark, heavier as the fire swells) and, while foam lands on it, white steam bursts.
+function drawFireSmoke(f, s, t, look) {
+  const n = 3 + Math.round(2 * look.prog), top = 1.0 * s * look.grow * look.smother, P = flameImgs();
+  for (let i = 0; i < n; i++) {
+    const q = (t * 0.45 + i / n + look.seed) % 1, sx = 0.14 * Math.sin(t * 0.9 + i * 2.1) + 0.25 * q * Math.sin(look.seed + i);
+    const z = top * 1.05 + q * 1.5 * s, r = (0.16 + q * 0.38) * s, a = 0.5 * (1 - q) * Math.min(1, q * 4);   // (above the flames, not over them)
+    if (GFX.on && GFX.ready('fx/smoke_0')) { fxSmoke(f.x + sx, f.y + 0.02, z, r, a, i + Math.floor(look.seed), 1.5); continue; }
+    if (!P) continue;
+    ctx.globalAlpha = a * 0.8; const R = L(r) * 1.4;
+    ctx.drawImage(P.smoke, L(f.x + sx) - R, L(f.y) - L(z) * 0.85 - R * 36 / 16, 2 * R, 2 * R * 56 / 32);
+  }
+  ctx.globalAlpha = 1;
+  if (look.foam > 0.05) {                            // steam bursting off where the foam hits the flames
+    const F = typeof foamPuffs === 'function' ? foamPuffs() : null;
+    for (let i = 0; i < 5; i++) {
+      const q = (t * 1.3 + i / 5 + look.seed * 0.37) % 1, x = f.x + 0.3 * s * Math.sin(i * 2.4 + t * 2) * (0.3 + q), z = 0.2 * s + q * 1.6 * s;
+      const r = (0.14 + 0.4 * q) * s, a = 0.6 * look.foam * (1 - q) * Math.min(1, q * 5);
+      if (F && F.spr && GFX.on) GFX.sprite(F.spr.img[i % 3], 0, x, f.y + 0.03, z, { billboard: true, scale: r / 0.25, alpha: a, rot: i + t, sortY: f.y + 0.04, depthWrite: false, depthBias: 1.5 });
+      else if (F) { ctx.globalAlpha = a; const R = L(r); ctx.drawImage(F.img[i % 3], L(x) - R, L(f.y) - L(z) * 0.85 - R, 2 * R, 2 * R); }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+// A fire (or a docked derelict's) in sprite mode: flames and smoke. False when GFX can't draw it.
+function drawFireSprite(f, s, t, look = fireLook(f, t)) {
+  if (!GFX.on || !drawFlames(f, s, t, look)) return false;
+  drawFireSmoke(f, s, t, look);
   return true;
 }
 function drawFires(t) {
   for (const f of fires) {
-    const x = L(f.x), y = L(f.y), s = (0.55 + 0.45 * f.hp) * 1.6;
+    const x = L(f.x), y = L(f.y), s = (0.55 + 0.45 * f.hp) * 1.6, look = fireLook(f, t);
     if (!GFX.on) {                                   // (sprites: the fire is a real light, js/lights.js)
-      const g = ctx.createRadialGradient(x, y, 0, x, y, L(1.6) * s);
-      g.addColorStop(0, `rgba(255,150,50,${0.35 + 0.05 * Math.sin(t * 7 + f.seed)})`); g.addColorStop(1, 'rgba(255,120,40,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, L(1.6) * s, 0, TAU); ctx.fill();
+      const R = L(1.6) * s * (0.8 + 0.2 * look.grow);
+      const g = ctx.createRadialGradient(x, y, 0, x, y, R), c = f.plasma ? '170,110,255' : '255,140,50';
+      g.addColorStop(0, `rgba(${c},${0.3 * look.fl * look.smother})`); g.addColorStop(1, `rgba(${c},0)`);
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
     }
-    const sprited = GFX.on && drawFireSprite(f, s, t);
-    // a cluster of teardrop flames, each in three layers (red → orange → yellow-white core)
-    if (!sprited) {
-      const tongues = [[-0.3, 0.75, 0], [0.25, 0.9, 1.7], [0, 1.15, 3.1], [-0.12, 0.6, 4.4], [0.38, 0.55, 5.6]];
-      for (const [layer, col, k] of f.plasma ? [[1, '#7a3ad8', 1.15], [0.72, '#c08aff', 0.85], [0.42, '#ffffff', 0.6]] : [[1, '#d8401c', 1], [0.72, '#ff9a2e', 0.78], [0.42, '#fff0a8', 0.55]]) {
-        for (const [ox, hgt, ph] of tongues) {
-          const flick = 0.85 + 0.15 * Math.sin(t * 11 + ph + f.seed) + 0.08 * Math.sin(t * 23 + ph * 2);
-          const h = L(hgt) * s * k * flick, w = L(0.22) * s * layer, bx = x + L(ox) * s * 0.9, by = y + L(0.15) * s;
-          const tipX = bx + Math.sin(t * 5 + ph) * w * 0.8;
-          ctx.beginPath(); ctx.moveTo(bx - w, by);
-          ctx.bezierCurveTo(bx - w * 1.1, by - h * 0.45, tipX - w * 0.3, by - h * 0.8, tipX, by - h);
-          ctx.bezierCurveTo(tipX + w * 0.3, by - h * 0.8, bx + w * 1.1, by - h * 0.45, bx + w, by);
-          ctx.quadraticCurveTo(bx, by + w * 0.6, bx - w, by);
-          ctx.fillStyle = col; ctx.fill();
-          if (layer === 1) { ctx.strokeStyle = 'rgba(60,15,5,0.5)'; ctx.lineWidth = 1.5; ctx.stroke(); }
-        }
-      }
-    }
-    for (let i = 0; i < 4; i++) {                    // embers (rising: lifted in the tilted view)
-      const q = (t * 0.9 + i / 4 + f.seed) % 1;
-      ctx.fillStyle = `rgba(255,200,90,${1 - q})`;
-      ctx.fillRect(x + Math.sin(i * 3 + f.seed + t) * L(0.4) * s, y - (sprited ? L(GFX.lift(0.4 + q * 1.6)) : q * L(1.4)) * s, 2.5, 2.5);
-    }
-    if (!sprited) for (let i = 0; i < 3; i++) {      // smoke
-      const q = (t * 0.5 + i / 3 + f.seed) % 1;
-      ctx.beginPath(); ctx.arc(x + Math.sin(t + i) * 6, y - L(0.6) - q * L(1.4), L(0.18 + q * 0.35) * s, 0, TAU);
-      ctx.fillStyle = `rgba(60,60,64,${0.4 * (1 - q)})`; ctx.fill();
+    const sprited = GFX.on && drawFireSprite(f, s, t, look);
+    if (!sprited && drawFlames(f, s, t, look)) drawFireSmoke(f, s, t, look);
+    const ne = 4 + Math.round(6 * look.prog * look.prog);   // embers / sparks (more as it swells)
+    for (let i = 0; i < ne; i++) {
+      const q = (t * (0.8 + 0.35 * fireHash(i, 3)) + i / ne + f.seed) % 1, e = 1 - q;
+      ctx.fillStyle = f.plasma ? `rgba(200,170,255,${e})` : `rgba(255,${170 + 60 * e | 0},90,${e})`;
+      ctx.fillRect(x + Math.sin(i * 3 + f.seed + t * (1 + i * 0.1)) * L(0.4) * s * (0.5 + q), y - (sprited ? L(GFX.lift(0.4 + q * 1.8)) : q * L(1.5)) * s, 2.5, 2.5);
     }
     // time until it spreads / breaks something (in the tilted view: in front of the flames' base)
     ctx.beginPath(); ctx.arc(x, y + L(sprited ? 0.75 : 0.45), 7, -Math.PI / 2, -Math.PI / 2 + (f.t / (f.period || (f.plasma ? PLASMA_TIME : FIRE_TIME))) * TAU);

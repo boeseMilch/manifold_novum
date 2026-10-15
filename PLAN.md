@@ -931,6 +931,12 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   Practice sections; **only unlocked missions**, for you or anyone in the game, so later chapters
   don't spoil the story: a quiet "More chapters unlock as you go." instead); briefing, crew (HOST
   badge), Locker / Shipyard and START on the right; "‹ LEAVE GAME" (or "‹ MENU" solo).
+  **Skirmish shows only Intro run and Rush hour** (playtest: "why two buttons for one thing?"): the
+  skirmishes that are a campaign chapter's twin (`SKIRMISH_TWIN` in js/progress.js: Black box → c3,
+  Pirate cove → c4, Stranded engineer → c5, Ore run → c6, Deep drift → c7, Nightmare → c8) are hidden;
+  finished chapters stay in the campaign list (✔) and replay from there. The twins stay defined
+  (`SKIRMISH`, MISSIONS, unlocks, old saves' `done.*`, `?mission=`, an older host's pick, which then
+  still shows in the list); they never gave anything a chapter doesn't.
 - **server.js** keeps a `games` map; each game has its members (join order), phase, mission, own
   simulation and 60 Hz timer, capped at MAX_PLAYERS = 8. Messages in: `open {mission}`,
   `join {game, ticket?}`, `leave`; out: `games`, `joined {game, ticket}`, `full`, `gone`; `lobby`
@@ -966,7 +972,10 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   pressing (pointer or Space / Enter) sinks the button
   (lower, darker, shadow gone, label 1 px down); chosen missions / gear are latched in with a lit LED and
   a small green glow; disabled buttons are dimmed metal with greyed labels; the chosen suit colour's lamp
-  is pushed in and glows in its colour (emissive, a coloured light on the plate, a CSS halo).
+  is pushed in and glows in its colour (emissive, a coloured light on the plate, a CSS halo); black,
+  having no light, keeps a glossy black core with a cool white glowing ring and halo; dark paint is
+  glossier, so the unchosen black lamp reads as black, not as a missing one. Tooltips name the colours
+  (`PAINT_NAMES`: Rust, Blue, Green, Magenta, Mustard, Purple, Teal, White, Black, Pink).
   **Locker / Shipyard** (`shopItem()` in `js/progress.js`, playtest: "make locked choices more
   apparent"): three states at a glance. Owned: latched, LED, "✔ OWNED" (profession: "✔ YOURS"), not
   dimmed. Available: normal metal with a green price tag. Locked: much darker grey metal, struck-through
@@ -1094,9 +1103,11 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   with sprites: hull body, floors (zone tiles mixed by a hash), walls built from the room layout (back
   walls full height, near walls cut down, up-down walls stepping down before a near wall, junction
   pieces), the spine, deck airlocks, doors, outer hatches (inside), cannons and the crew.
-  The junction pieces get a small depth bias (`JUNCTION_BIAS`): the wall tiles running through their
-  square lie at the same height, and the depth test flipped between the two with the camera's sub-pixel
-  position (z-fighting: a dark band under the hull's corner posts blinked on spacewalks).
+  The pieces set into a wall run (junction squares, the step down to the low height, door and hatch
+  frames and their panels) get a small depth bias (`PIECE_BIAS`): the run's wall tiles overlap them at the
+  same height, and the depth test flipped between the two with the camera's sub-pixel position and zoom
+  (z-fighting: a dark band under the hull's corner posts, the pipes under the outer airlocks, blinking on
+  spacewalks). A frozen-time sweep over the ship (zoom and sub-pixel scans) found no other z-fighting.
 - The camera is tilted (screen y = ground y × sin 50°) whenever the sprites are on; mouse picking maps
   onto the ground plane, and the crew can be clicked on their body (`GFX.pickAt`). Everything not
   converted is still drawn by its old 2D function, into a 2D layer at ground level (see render() in
@@ -1520,6 +1531,25 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   strips and one loop draws those near the pixel. Measured in SwiftShader (software GL, so only relative): bridge view,
   half resolution, median frame 667 ms off → 767 ms on.
 - Off switch: `?noscratch` or `GFX.setScratches(false)` (remembered). `?classic` has none.
+- **Path scratches** (request: "make only part of the scratches random and the other scratches come from paths a human
+  would take through the ship ... suggesting they come from boots. Maybe a few orthogonal scratches from shifting boxes";
+  then "obviously people walk to the cat a bunch too"). Only the fine hairlines change; gouges, scuff clusters, swirls,
+  drags and tape are untouched.
+  - The walk field (js/walkfield.js `walkField()`, once, on the first floor draw): the floor on a 0.2 grid minus the
+    solids (grown by a body radius); 39 weighted destinations (`WALK_DESTS`: rooms, deck airlocks, outer hatches,
+    consoles, reactor front, cannon ladders, shield buttons, capacitors, lever, fuel crate, patch board, coffee, snack
+    machine, fridge, table, bunks, lockers, toilet, treadmill, couch, the cat 1.5); weighted shortest paths between every
+    pair (Dijkstra, dearer near walls), straightened to what's in plain sight and rounded, laid on the grid as traffic
+    plus a doubled-angle direction, blurred. Per 1 x 1 plate cell: direction, strength (alignment x traffic), and near
+    the crates (`WALK_BOXES`) their axis and nearness. `?walkfield` or debug key G draws it.
+  - Shader (FW_PATH block in `fwScratches()`, js/gfx.js): per hairline, with chance 0.85 x strength a boot scuff along
+    the field (±13°, a bit shorter, most bunched round two spots per cell); with chance 0.25 x crate nearness a longer scrape
+    along the crate's axis; the rest random as before. Its own random stream, so with the field at 0 every hairline is
+    what it was. Data: one more instance vec4 (`iPath`, the tile's four plate cells packed by `walkFieldPacked()`;
+    `INST` 11 → 12 vec4s), passed as `opts.floor[5..8]` by js/sprites.js.
+  - Off switch: `?nopathscratch` or `GFX.setPathScratches(false)` (remembered): pixel-identical to before (checked
+    against a copy of the tree without the change, same frame, fixed time and random seed). To remove it entirely,
+    revert its commit.
 
 ### 9q. Floor nuts with a real normal map (request: "the littered nuts on the ground still need a normal map")
 
@@ -2069,6 +2099,29 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   the rock's top (where the turning axis comes out), crossfaded with the next only around the switch. (Before:
   a crossfade of two different angles all the time, which ghosted.)
 - `tests/handweapons.js`: muzzle, wrench damage, lethal ship shots, the spacewalker blocking a shot.
+
+### Thrown wrench sprite; steam, foam and fire redone (2026-10-14 playtest)
+- **Thrown wrench** (sprite view): `items/wrench` (16 spin angles) lying flat at its flight height `b.z`, lit,
+  the nearest angle turned on screen by the rest of `b.spin` so it spins smoothly (`drawWrenchSprite`,
+  js/invader.js); ?classic keeps the 2D `wrench()`.
+- **Steam** (was a few rising stroke "sausages"): soft particles, one radial-gradient puff drawn scaled and
+  faded (`steamPlume` / `STEAM_KINDS` in js/decor.js), each a pure function of the time (no state, no per-frame
+  allocation). They leave the source thin, slow down, widen and fade; sideways they follow a wave travelling up
+  the plume (so they line up into one curling wisp), a slow drift and some turbulence. Mug: a thin, slow wisp
+  (life 9.6 s: rises at a third of the first try's speed, same height and density); pot: wider, denser, rising in
+  puffs as the stew bubbles; the spine's leaky pipe: a jet sideways that slows and drifts up. Sprite view: one
+  upright canvas sprite per source, lit by the room (emissive 0.8); ?classic the same on the 2D canvas.
+- **Extinguisher foam** (was white dots): each `p.foam` particle is a billowy puff (`dyn/foam_0..2`, a few soft
+  lumps) that leaves the nozzle small, swells as it slows, churns sideways and sinks to the floor, so the jet reads
+  as one dense cone; lit by the scene's lights only. Where it comes down it leaves a foam blanket on the floor
+  (`foamDecals`, a ring of 72, this browser only, fades over 3.5 s). Gameplay (`spray()`, range, rate) unchanged.
+- **Fire** (was the cartoon `fx/fire_*` / `fx/plasma_*` flipbooks, now unused): soft particle flames
+  (`drawFlames`, js/mission.js), 22 tongues per fire rising from a glowing bed, narrowing and passing from the
+  yellow-white core over orange to deep red (plasma: white, pale blue, violet, indigo), plus a white-hot core;
+  unlit, depth-biased out of the part they sit on. `fireLook(f, t)` is shared with the fire's light
+  (js/lights.js): the flicker, the swell as the fire nears flaring up / spreading (`f.t / f.period`: taller
+  flames, more embers and smoke) and the foam smothering it (`foamOn`: flames shrink, the light dims, white steam
+  bursts off). Smoke: the lit `fx/smoke_*` puffs, above the flames. ?classic: the same flames on the 2D canvas.
 
 ## Sound
 

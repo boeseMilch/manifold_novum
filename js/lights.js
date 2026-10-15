@@ -288,7 +288,9 @@ function gameLighting(t) {
   // --- fires -----------------------------------------------------------------------------------------
   const F = Lt.fire;
   const fireLight = (f, seed) => {
-    const hp = clamp(f.hp, 0, 1), fl = 0.72 + 0.28 * noise1(t * 11 + seed) + 0.1 * Math.sin(t * 23 + seed);
+    // (flicker, swell and smothering in step with the flames: js/mission.js fireLook)
+    const hp = clamp(f.hp, 0, 1), lk = typeof fireLook === 'function' ? fireLook(f, t) : null;
+    const fl = lk ? lk.fl * (0.85 + 0.15 * lk.grow) * (1 - 0.35 * lk.foam) : 0.72 + 0.28 * noise1(t * 11 + seed) + 0.1 * Math.sin(t * 23 + seed);
     add({ x: f.x + 0.08 * Math.sin(t * 7 + seed), y: f.y + 0.06 * Math.cos(t * 9 + seed), z: F.z + 0.12 * noise1(t * 6 + seed * 2),
           color: f.plasma ? F.plasma : F.color, radius: F.radius * (0.7 + 0.3 * hp), intensity: F.intensity * (0.45 + 0.55 * hp) * fl, shadow: true });
   };

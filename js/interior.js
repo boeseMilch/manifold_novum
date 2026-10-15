@@ -57,7 +57,7 @@ function kitchen(t) {
   ctx.beginPath(); ctx.arc(kx - U(0.25), ky, U(0.2), 0, TAU); ctx.fillStyle = '#5a6170'; ctx.fill(); stroke(1.5);   // the pot
   ctx.beginPath(); ctx.arc(kx - U(0.25), ky, U(0.14), 0, TAU); ctx.fillStyle = '#9b6a3a'; ctx.fill();               // mystery stew
   ctx.fillStyle = '#3a3f4a'; ctx.fillRect(kx - U(0.25) + U(0.18), ky - 2, 12, 4);
-  steamPuff(kx - U(0.3), ky - 4, t * 0.8);
+  steamPlume(ctx, kx - U(0.25), ky - 2, 1, t, STEAM_KINDS.pot);   // steam off the stew
   // cutting board, hot sauce, mug
   ctx.save(); ctx.translate(U(9.35), ky); ctx.rotate(0.12);
   rr(-U(0.3), -U(0.2), U(0.6), U(0.4), 4); ctx.fillStyle = '#b8874f'; ctx.fill(); stroke(1.4);
@@ -279,7 +279,7 @@ function kitchenMug(t) {
          ctx.beginPath(); ctx.arc(U(COFFEE_MUG.x), U(COFFEE_MUG.y), 5.5, 0, TAU); ctx.fillStyle = '#3a2a1a'; ctx.fill(); }   // empty: just dregs
 }
 // Steam from the pot on the kitchen stove (its sprite: props/kitchen_counter; the classic drawing has its own).
-function kitchenSteam(t) { if (GFX.on && GFX.ready('props/kitchen_counter')) steamWisps('stove', 8.05, 11.0, 1.05, t * 0.8, 1.3, 11.2); }
+function kitchenSteam(t) { if (GFX.on && GFX.ready('props/kitchen_counter')) steamWisps('pot', 8.05, 11.0, 1.05, t, 1, 11.2); }
 
 // ---------------------------------------------------------------------------
 // Everything clickable (drawn by drawUseMarks, js/systems.js: a thin dashed white ring, faint in your room,

@@ -215,6 +215,18 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G4.withCrew(G4.me, () => G4.runCommand(['practice', 0]));
   check(G4.combat.enemies.length === before, 'practice buttons do nothing outside practice mode');
 }
+// --- skirmish twins of campaign chapters: hidden from the menu, still defined; old saves that finished them load fine
+{
+  const G = loadGame(['SKIRMISH', 'SKIRMISH_TWIN', 'MISSIONS', 'CAMPAIGN', 'migrateProfile', 'unlockedMissions']);
+  const twins = Object.entries(G.SKIRMISH_TWIN);
+  check(twins.every(([s, c]) => G.MISSIONS[s] && G.SKIRMISH.includes(s) && G.CAMPAIGN.includes(c) && G.MISSIONS[s].objective?.kind === G.MISSIONS[c].objective?.kind),
+    'every hidden skirmish is still defined and has the same objective as its campaign twin');
+  check(G.SKIRMISH.filter(id => !G.SKIRMISH_TWIN[id]).join() === 'intro,rush', 'the menu\'s skirmishes: Intro run and Rush hour');
+  const old = G.migrateProfile({ v: 2, xp: 900, money: 50, rep: 3, done: { c1: 1, c2: 1, c3: 2, c4: 1, salvage: 3, pirates: 1, ore: 1 }, ship: {}, gear: {}, profession: null, paint: null });
+  const u = G.unlockedMissions(old);
+  check(old.done.salvage === 3 && old.done.pirates === 1 && old.done.c3 === 2, 'an old save with skirmish completions loads and keeps them');
+  check(['c1', 'c2', 'c3', 'c4', 'c5'].every(id => u.has(id)), 'finished chapters stay playable (replay from the campaign) and the next one is open');
+}
 // --- Locker / Shipyard choices: owned, available or locked (with why) at a glance
 {
   const G = loadGame(['shopItem']);

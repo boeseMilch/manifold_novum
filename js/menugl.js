@@ -143,7 +143,12 @@ void main() {
     b = textureLod(uB, uv, uLod); n = textureLod(uN, uv, uLod);
     if (uFx.x > 0.0) { b = mix(b, textureLod(uB2, uv, uLod), uFx.x); n = mix(n, textureLod(uN2, uv, uLod), uFx.x); }
     if (uTint.w > 0.0) { float m = textureLod(uM, uv, uLod).r * uTint.w; b.rgb = mix(b.rgb, b.rgb * uTint.rgb * 1.08, m);
-      if (uGlow > 0.0) { b.rgb = mix(b.rgb, max(b.rgb, uTint.rgb * 0.8 + 0.12), m * uGlow); glow = m * uGlow; } }
+      if (uGlow > 0.0) {
+        if (dot(uTint.rgb, vec3(0.3, 0.55, 0.15)) > 0.25) { b.rgb = mix(b.rgb, max(b.rgb, uTint.rgb * 0.75), m * uGlow); glow = 0.55 * m * uGlow; }   // (lit, but still its colour)
+        else {                                   // black has no light: its glossy core stays black, a cool white ring glows round it
+          float ring = m * smoothstep(0.42, 0.62, length(p / S - 0.5) * 2.0) * uGlow;
+          b.rgb = mix(b.rgb, vec3(0.8, 0.86, 1.0), ring); glow = ring;
+        } } }
   }
   float a = b.a;
   if (a < 0.003) discard;
@@ -347,6 +352,7 @@ void main() {
     return m ? [m[1] / 255, m[2] / 255, m[3] / 255] : [1, 1, 1];
   };
 
+  const luma = (c) => 0.3 * c[0] + 0.55 * c[1] + 0.15 * c[2];
   // --- drawing -------------------------------------------------------------------------------------
   const KEY = (() => { const v = [0.34, -0.56, 0.76], l = Math.hypot(...v); return v.map(x => x / l); })();
   function bindTex(unit, t) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t); }
@@ -356,7 +362,8 @@ void main() {
     if (it.kind === 'plate') { name = 'plate'; mode = 1; spec = 0.55; }
     else if (it.kind === 'decal') { name = it.name; mode = 2; spec = 0.5; }
     else if (it.kind === 'inset') { name = 'inset'; spec = 1.0; }
-    else if (it.kind === 'swatch') { name = 'swatch'; mode = 2; tint = hexRgb(it.tint); press = Math.max(s.press, it.latched ? 1 : 0); glow = it.latched ? 1 : 0; }
+    else if (it.kind === 'swatch') { name = 'swatch'; mode = 2; tint = hexRgb(it.tint); press = Math.max(s.press, it.latched ? 1 : 0); glow = it.latched ? 1 : 0;
+      spec = 0.8 + 3 * Math.max(0, 0.45 - luma(tint)); }   // (dark paint: glossier, so black reads as a black lamp, not a missing one)
     else { name = (it.kind === 'btns' ? 'btns' : 'btn') + (it.tone === 'red' ? '_red' : ''); spec = 1.0; press = Math.max(s.press, it.latched ? 0.85 : 0); }
     const T = TEX[name]; if (!T) return;
     const D = TEX[name + '_down'] || T, F = TEX.plate_fill, P = T.p, k = META.texPerCss, pz = 0;   // (heights in ui.json are already above the plate surface)
@@ -399,7 +406,7 @@ void main() {
       const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
       if (cx < it.clip[0] || cx > it.clip[2] || cy < it.clip[1] || cy > it.clip[3]) continue;   // scrolled out of its list
       if (it.led && it.latched) out.push([it.x + it.w - 25, it.y + it.h / 2, 10, 46, 0.12, 0.42, 0.26, 0]);
-      else if (it.kind === 'swatch' && it.latched) { const c = hexRgb(it.tint).map(v => 0.15 + 0.85 * v); out.push([it.x + it.w / 2, it.y + it.h / 2, 16, 52, c[0] * 1.1, c[1] * 1.1, c[2] * 1.1, 0]); }   // (its lamp lights the plate around it)
+      else if (it.kind === 'swatch' && it.latched) { const t = hexRgb(it.tint), c = luma(t) > 0.25 ? t.map(v => 0.15 + 0.85 * v) : [0.62, 0.7, 0.95];   /* (black: a cool white light) */ out.push([it.x + it.w / 2, it.y + it.h / 2, 16, 52, c[0] * 1.1, c[1] * 1.1, c[2] * 1.1, 0]); }   // (its lamp lights the plate around it)
     }
     return out.slice(0, NL);
   }

@@ -60,6 +60,9 @@ const PROFESSIONS = [
   { id: 'weapons', name: 'Weapons specialist', desc: 'Fires the laser gun and the heavy blaster 35% faster. Reloads cannons 50% faster.' },
 ];
 const PAINTS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#e8e4dc', '#2b303a', '#ff7ab0'];
+const PAINT_NAMES = ['Rust', 'Blue', 'Green', 'Magenta', 'Mustard', 'Purple', 'Teal', 'White', 'Black', 'Pink'];
+// The halo round the chosen suit lamp in the menu: its own colour; black (no light of its own) gets a cool white one
+const paintGlow = (c) => { const v = [1, 3, 5].map(i => parseInt(c.substr(i, 2), 16) / 255); return 0.3 * v[0] + 0.55 * v[1] + 0.15 * v[2] > 0.25 ? c : '#c4d0ff'; };
 
 // ---------------------------------------------------------------------------
 // The campaign
@@ -167,6 +170,10 @@ Object.assign(MISSIONS, {
   },
 });
 const SKIRMISH = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep', 'nightmare'];
+// Skirmishes that are the same mission as a campaign chapter (playtest: "why two buttons for one thing?"):
+// the menu hides them and offers the chapter instead (finished chapters stay replayable). The ids stay
+// defined: old saves (done.*), ?mission= links and hosts on an older page can still name them.
+const SKIRMISH_TWIN = { salvage: 'c3', pirates: 'c4', rescue: 'c5', ore: 'c6', deep: 'c7', nightmare: 'c8' };
 EVENT_SIDES.brig = randSide;
 // The pirate base (js/dock.js dockStation): we dock once the patrol is gone (checked again every 2 s).
 EVENT_RUNNERS.brig = (ev) => {
@@ -388,13 +395,14 @@ const lobbyUI = {
       <span>${p.xp} XP</span><span>$${p.money}</span><span>★ ${p.rep} reputation</span>`;
     const paint = this.el('lobby-paint');                    // suit color: free, saved in the profile
     if (paint) {
-      paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}; --c:${c}" title="Suit color"></button>`).join('');
+      paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}; --c:${paintGlow(c)}" title="${PAINT_NAMES[PAINTS.indexOf(c)] || 'Suit'} suit"></button>`).join('');
       paint.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => { p.paint = p.paint === b.dataset.paint ? null : b.dataset.paint; saveProfile(p); this.render(); this.onProfile?.(); });
     }
     // One list: only what's unlocked (for you or anyone in the game), so future chapters don't spoil the story.
     const avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
     list.innerHTML = '';
-    for (const [title, ids] of [['Campaign', CAMPAIGN], ['Skirmish', SKIRMISH], ['Practice', ['practice']]]) {
+    const skirmish = SKIRMISH.filter(id => !SKIRMISH_TWIN[id] || id === this.chosen);   // (a twin only when it is already picked, e.g. by an older host)
+    for (const [title, ids] of [['Campaign', CAMPAIGN], ['Skirmish', skirmish], ['Practice', ['practice']]]) {
       const open = ids.filter(id => MISSIONS[id] && avail.has(id));
       if (!open.length) continue;
       const h = document.createElement('div'); h.className = 'mission-group'; h.textContent = title; list.appendChild(h);
