@@ -61,12 +61,12 @@
     dist: P(['q - - - - - - -', 'q - - - - - - -', 'e - - - . e - -']),         // the breakdown: far away, coming back
   };
   // stage → [level, how far the filter opens, FM growl, formant width, sub level]
-  const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.085],
-    5: [0.18, 0.95, 0.9, 1, 0.085], 6: [0.186, 1, 1, 1, 0.09], 7: [0.18, 0.8, 0.9, 1, 0.085] };
+  const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.11],
+    5: [0.18, 0.95, 0.9, 1, 0.11], 6: [0.186, 1, 1, 1, 0.115], 7: [0.18, 0.8, 0.9, 1, 0.11] };
   let curve = null;
-  function shaper() {                                    // soft saturation (where the browser has it)
+  function shaper() {                                    // saturation (where the browser has it), a little lopsided: 2nd and 3rd harmonics
     if (!K.ac.createWaveShaper) return null;
-    if (!curve) { curve = new Float32Array(1025); for (let i = 0; i < 1025; i++) curve[i] = Math.tanh((i / 512 - 1) * 3) / Math.tanh(3); }
+    if (!curve) { curve = new Float32Array(1025); const b = Math.tanh(0.6), n = Math.max(Math.tanh(3.6) - b, b - Math.tanh(-2.4)); for (let i = 0; i < 1025; i++) curve[i] = (Math.tanh((i / 512 - 1) * 3 + 0.6) - b) / n; }
     const s = K.ac.createWaveShaper(); s.curve = curve; s.oversample = '2x'; return s;
   }
   // segs: [{ at, dur, kind, off, glide, open?, att?, rel? }] in time order; o: { vel, open, fm, wide, sub, vow }
@@ -83,12 +83,17 @@
     b1.gain.value = 4.3; b2.gain.value = 4;                  // (the formants, against the body through the highpass)
     lp.connect(hp); hp.connect(g); lp.connect(f1); f1.connect(b1); lp.connect(f2); f2.connect(b2);
     pan(b1, -0.7 * o.wide).connect(g); pan(b2, 0.7 * o.wide).connect(g);
+    // the deep body: the saturated saws and square (with their low overtones) through a gentle lowpass, below the
+    // formants' highpass, centred; and a detuned unison pair, left and right, for width in the low mids
+    const low = filt('lowpass', 300, 0.9), bl = K.ac.createGain(); bl.gain.value = 1.3;
+    (sh || pre).connect(low); low.connect(bl); bl.connect(g);
+    const gu = K.ac.createGain(), uni = [-23, 23].map(d => { const u = osc('sawtooth', hz(m0), t, stop, d), ul = filt('lowpass', 300, 2); mg.connect(u.frequency); u.connect(ul); pan(ul, d < 0 ? -0.6 : 0.6).connect(gu); return [u, ul]; });
     const sub = osc('sine', hz(bassRoot(c)), t, stop), sg = K.ac.createGain();
-    sub.connect(sg); sg.connect(kg); g.connect(kg); route(kg, false, false);
+    sub.connect(sg); sg.connect(kg); g.connect(kg); gu.connect(kg); route(kg, false, false);
     const [v0, v1] = o.vow.map(v => VOW[v]);
     for (const S of segs) {
       const f = hz(m0 + S.off), end = rt(S.at + S.dur), op = o.open * (S.open || 1), hi = 170 + 3400 * op;
-      for (const [p, ff] of [[saws[0].frequency, f], [saws[1].frequency, f], [sq.frequency, f / 2], [mod.frequency, f], [sub.frequency, hz(bassRoot(c) + (S.off === 7 ? 7 : 0))]]) {
+      for (const [p, ff] of [[saws[0].frequency, f], [saws[1].frequency, f], [sq.frequency, f / 2], [mod.frequency, f], [uni[0][0].frequency, f], [uni[1][0].frequency, f], [sub.frequency, hz(bassRoot(c) + (S.off === 7 ? 7 : 0))]]) {
         if (S.glide) { p.setValueAtTime(ff * 2, S.at); p.exponentialRampToValueAtTime(ff, S.at + Math.min(0.3, S.dur * 0.5)); }
         else p.setValueAtTime(ff, S.at);
       }
@@ -96,12 +101,15 @@
       const att = S.att || 0.006, rel = S.rel || 0.018;
       sg.gain.setValueAtTime(0, S.at); sg.gain.linearRampToValueAtTime(o.sub, S.at + Math.max(att, 0.01)); sg.gain.linearRampToValueAtTime(o.sub, end - Math.max(rel, 0.03)); sg.gain.linearRampToValueAtTime(0, end);
       const n = DIV[S.kind] ? Math.max(1, Math.round(S.dur / (beat / DIV[S.kind]))) : 1, C = S.dur / n, cyc = (i) => (i >= n ? end : rt(S.at + i * C));   // (times on a 1 µs grid: a segment ends exactly where the next begins)
-      if (S.kind === 'z') for (let i = 0; i < n; i++) {
-        const c0 = cyc(i); g.gain.setValueAtTime(0, c0); g.gain.linearRampToValueAtTime(o.vel, c0 + 0.003); g.gain.linearRampToValueAtTime(o.vel, c0 + C * 0.5); g.gain.linearRampToValueAtTime(0, c0 + C * 0.75);
-      } else { g.gain.setValueAtTime(0, S.at); g.gain.linearRampToValueAtTime(o.vel, S.at + att); g.gain.linearRampToValueAtTime(o.vel, end - rel); g.gain.linearRampToValueAtTime(0, end); }
+      for (const [P, v] of [[g.gain, o.vel * 1.45], [gu.gain, o.vel * 0.65]]) {   // (1.45: makes up for the lopsided curve's lower output)
+        if (S.kind === 'z') for (let i = 0; i < n; i++) {
+          const c0 = cyc(i); P.setValueAtTime(0, c0); P.linearRampToValueAtTime(v, c0 + 0.003); P.linearRampToValueAtTime(v, c0 + C * 0.5); P.linearRampToValueAtTime(0, c0 + C * 0.75);
+        } else { P.setValueAtTime(0, S.at); P.linearRampToValueAtTime(v, S.at + att); P.linearRampToValueAtTime(v, end - rel); P.linearRampToValueAtTime(0, end); }
+      }
       // the wobble: filter, both formants and the growl's FM depth, one cycle per wobble (k: where it is most open)
       const k = S.kind === 'W' ? 0.8 : S.kind === 'H' ? 0.12 : S.kind === 'z' ? 0.05 : S.kind === 's' || S.kind === 'x' ? 0.35 : 0.45;
-      const sweeps = [[lp.frequency, 200 + 450 * op, hi, false], [f1.frequency, v0[0], v0[0] + (v1[0] - v0[0]) * op, false], [f2.frequency, v0[1], v0[1] + (v1[1] - v0[1]) * op, false], [mg.gain, 0, f * 1.1 * o.fm, true]];
+      const sweeps = [[lp.frequency, 200 + 450 * op, hi, false], [low.frequency, 180, 180 + 380 * op, false],
+        ...uni.map(([, ul]) => [ul.frequency, 200 + 300 * op, 300 + 1500 * op, false]), [f1.frequency, v0[0], v0[0] + (v1[0] - v0[0]) * op, false], [f2.frequency, v0[1], v0[1] + (v1[1] - v0[1]) * op, false], [mg.gain, 0, f * 1.1 * o.fm, true]];
       for (const [p, lo, top, lin] of sweeps) {
         const ramp = lin ? 'linearRampToValueAtTime' : 'exponentialRampToValueAtTime';
         p.setValueAtTime(lo, S.at);
