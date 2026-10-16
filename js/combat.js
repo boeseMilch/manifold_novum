@@ -185,8 +185,20 @@ function shieldX(side, y) {
   return side === 'port' ? -bulge : SHIP_W + bulge;
 }
 // The front shield arcs around the nose (only exists between FRONT_SHIELD_X0 and _X1).
-const FRONT_SHIELD_X0 = 10.4, FRONT_SHIELD_X1 = 34;
-function shieldYFront(x) { const u = (x - 22.2) / 11.8; return -5.8 + 7.6 * u * u; }
+// It covers the whole span the asteroid swarm aims at (x 8..36, js/enemies.js spawnSwarmAsteroid): the nose's arc,
+// and out over the deck on both wings, 1.8 units off the hull (playtest 2026-10-16: "shields should help against
+// asteroids"; with the old 10.4..34 arc, rocks aimed at the wings slipped past it: 40% of them hit with it up).
+const FRONT_SHIELD_X0 = 6.5, FRONT_SHIELD_X1 = 38, FRONT_SHIELD_GAP = 1.8;
+function hullTopY(x) {                               // the hull outline's topmost y at x
+  let top = Infinity;
+  for (let i = 0; i < HULL.length; i++) {
+    const [x0, y0] = HULL[i], [x1, y1] = HULL[(i + 1) % HULL.length];
+    if ((x0 - x) * (x1 - x) > 0 || x0 === x1) continue;
+    top = Math.min(top, y0 + (y1 - y0) * (x - x0) / (x1 - x0));
+  }
+  return top;
+}
+function shieldYFront(x) { const u = (x - 22.2) / 11.8; return Math.min(-5.8 + 7.6 * u * u, hullTopY(x) - FRONT_SHIELD_GAP); }
 function shieldAbsorb(s, side, x, y) {
   combat.shieldHits.push({ side, x, y, t: 0, heavy: s.heavy, vx: s.vx, vy: s.vy });
   sfx.shieldBlock(); if (s.heavy) sfx.shieldUp();
@@ -441,7 +453,7 @@ const SHIELD_GROW = 0.1;                             // shields grow out of / sh
 const SHIELD_DOMES = {
   port: { c: [8, 12.5, 0], r: [11.8, 24, 6.5], out: [-1, 0], fade: [-0.1, 0.5] },
   star: { c: [SHIP_W - 8, 12.5, 0], r: [11.8, 24, 6.5], out: [1, 0], fade: [-0.1, 0.5] },
-  front: { c: [22.2, 6.2, 0], r: [12.7, 12, 6.5], out: [0, -1], fade: [-0.1, 0.5] },
+  front: { c: [22.2, 6.2, 0], r: [16.6, 12, 6.5], out: [0, -1], fade: [-0.1, 0.5] },   // (wide: over the wings too, like shieldYFront)
 };
 const SHIELD_WARN = 2.5;                             // its last seconds: it flickers (about to drop)
 function domePoint(D, x, y, z) {                     // (x, y, z) pushed out (or in) onto the dome's surface
