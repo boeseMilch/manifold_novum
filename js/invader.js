@@ -498,7 +498,7 @@ function boltHitsBody(b, x0, y0) {
   };
   for (const a of boarding.invaders) if (a.state !== 'entering' && a.mode === 'inside') test(a, a.kind === 'saboteur' ? HUMAN_HIT : ALIEN_HIT, () => hurtInvader(a, boltDamage(b), boltStun(b)));
   if (typeof dk !== 'undefined') for (const p of dk.pirates) if (!p.dead) test(p, HUMAN_HIT, () => hurtPirate(p, boltDamage(b), boltStun(b), b));
-  if (!best) return false;
+  if (!best) { if (typeof s7BoltHit === 'function' && s7BoltHit(b, x0, y0)) { b.dead = true; return true; } return false; }   // (S-7's tendrils and creep: js/culture.js)
   b.dead = true; best(); return true;
 }
 function updateBoarding(dt) {

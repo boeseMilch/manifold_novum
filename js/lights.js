@@ -234,6 +234,12 @@ function gameLighting(t) {
       for (const y of [q.y + 0.12, q.y + q.h - 0.12])
         add({ x: q.x + 0.3, y, z: S.z, x2: q.x + q.w - 0.3, y2: y, z2: S.z, color: S.color, radius: 5.5, intensity: 0.7 * dying, wrap: 0.05, shadow: true });
     });
+    const s7 = dk.dock.s7;                            // S-7 (js/culture.js): the heart's pink pulse, the running freezer's cold blue
+    if (s7 && typeof s7Geom === 'function') {
+      const G = s7Geom(dk.dock.side);
+      if (!s7.heartOpen) add({ x: G.heart.x, y: G.heart.y, z: 0.6, color: [1.0, 0.35, 0.85], radius: 3.2, intensity: 0.5 + 0.3 * Math.sin(t * 4) });
+      if (s7.freezer) add({ x: G.freezer.x, y: G.freezer.y + 0.6, z: 1.0, color: [0.6, 0.85, 1.0], radius: 4, intensity: 0.7 });
+    }
   }
 
   // --- ceiling lights (with power; no visible fixture in the cutaway) and the bulkhead lamps on the back walls

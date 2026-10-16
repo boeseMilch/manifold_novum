@@ -127,6 +127,7 @@ function evaDrift(c, tx, ty) {
 
 function updateCrew(c, dt, ix, iy) {
   if (c.health === 'down' || c.health === 'out') { ix = iy = 0; }          // can't move while down
+  if (typeof s7Holding === 'function' && s7Holding(c)) { ix = iy = 0; c.vx = c.vy = 0; }   // held by one of S-7's tendrils (js/culture.js): aim and shoot, but no walking
   const eva = c.mode === 'eva', floaty = eva || (c.mode === 'inside' && noGravAt(c.x, c.y) && !perk(c, 'boots'));
   const len = Math.hypot(ix, iy), speed = (eva ? EVA_SPEED : WALK_SPEED) * (c.health === 'hurt' ? HURT_SPEED : 1) * crewSpeedMul(c) * (c.slow || 1) * gearSpeed(c);
   const tx = len ? ix / len * speed : 0, ty = len ? iy / len * speed : 0;
@@ -999,6 +1000,7 @@ function simTick(dt) {
     updateOverride(dt);
     updateInjury(player, dt);
     inv.cd = Math.max(0, inv.cd - dt);
+    if (typeof s7Struggle === 'function') s7Struggle(player, pressed);   // held by S-7: mashing the keys wriggles you free (js/culture.js)
     pressed.clear(); mouse.click = false; mouse.rightClick = false; mouse.look = 0;
   });
   updateHatches(dt);

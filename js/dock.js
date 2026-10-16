@@ -4,8 +4,8 @@
 //               docks, and two pirates come over to steal loose items and fuel cells. Board them back:
 //               their cargo crate has the loot, and jamming their reactor's overload makes them panic
 //               and cast off 15 s later (anyone still aboard ends up floating outside our hull).
-//   Derelict    a dark, airless wreck on a tether: a sleeping intruder, a jammed door, a fire, and
-//               (depending on the mission) the black box to bring home or an engineer to rescue.
+//   Derelict    a dark, airless wreck on a tether (Dr. Varga's lab): S-7, the growth that took it over (js/culture.js),
+//               a jammed door, a fire, and (depending on the mission) the black box to bring home or an engineer to rescue.
 //   Mining      not a ship: a big asteroid parked in front; drill it on a spacewalk for an ore sample.
 //   Base        the Red Comet's base (chapter 5): rooms in a row (docking bay, server room, barracks, gun corridor, brig),
 //               guards in each, a sentry gun down the corridor, a broken security terminal to repair and hack, a door code someone wrote on
@@ -41,7 +41,7 @@ function dockGeom(side) {
   return {
     tube: M[0], rooms: [M[1], M[2], M[3]], doors: [M[4], M[5]], hatch: h, y,
     crate: { x: mx(-14.6), y: y - 2.6 }, core: { x: mx(-23.6), y }, boxSpot: { x: mx(-22.4), y: y + 1.8 },
-    npcSpot: { x: mx(-16.0), y: y + 2.4 }, alienSpot: { x: mx(-21.5), y: y - 1.6 }, fire: { x: mx(-14.6), y: y + 1.4 },
+    npcSpot: { x: mx(-16.0), y: y + 2.4 }, fire: { x: mx(-14.6), y: y + 1.4 },
     entry: { x: mx(-7.9), y }, tubeMid: { x: mx(-2.5), y },
   };
 }
@@ -81,10 +81,7 @@ function dockShip(kind, side, contents = {}) {
     dk.dock.fires.push({ x: g.fire.x, y: g.fire.y, hp: 1, t: 0 });
     if (contents.blackbox) ITEMS.push({ kind: 'blackbox', x: g.boxSpot.x, y: g.boxSpot.y });
     if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
-    if (contents.alien !== false) {
-      boarding.invaders.push({ uid: newUid(), x: g.alienSpot.x, y: g.alienSpot.y, vx: 0, vy: 0, face: 0, walk: 0, mode: 'inside', state: 'dormant', dormantHome: true,
-                               hatch: g.hatch, t: 0, hp: ALIEN_HP, path: [], linger: 0, stuck: 0, spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: 1, stun: 0, seen: 0, flash: 0 });
-    }
+    dk.dock.s7 = s7Dock(side);                         // S-7, the growth (js/culture.js; it replaced the sleeping intruder)
     combatBanner('Tether locked onto the derelict — the tube is open at the ' + (side === 'port' ? 'left' : 'right') + ' airlock.'); sfx.hatch();
   }
   return true;
@@ -103,6 +100,7 @@ function undock() {
   if (dk.npc && inDock(dk.npc.x, dk.npc.y) && !npcAboard(dk.npc)) dk.npc = null;   // (left behind on their ship)
   dk.bodies = (dk.bodies || []).filter(B => !inDock(B.x, B.y) || roomAt(B.x, B.y));
   dk.dock = null;
+  if (d.s7 && d.s7.creep.d > 0.5 && !d.s7.creep.dead) combatBanner('The tether is cut — S-7\'s creep in our airlock shrivels and dies.');
   if (d.kind === 'pirate' && d.overloaded) {   // the jammed reactor blows it apart as it pulls away: a raider destroyed
     dk.ships++; combatFlip('fx/explosion_l', g.core.x, g.core.y, 2.2); sfx.explosion();
     combatBanner('The pirate ship cast off in a panic — and its jammed reactor blew it apart!'); sfx.hatch(); return;
@@ -282,6 +280,7 @@ function updateDock(dt) {
       for (const c of crew) if (c.mode === 'inside' && Math.hypot(c.x - f.x, c.y - f.y) < 0.8 && f.t > 1.5) { f.t = 0; hurtCrew(c); combatBanner(`${c.name} walked into the fire!`); }
     }
     if (d.fires) d.fires = d.fires.filter(f => f.hp > 0);
+    updateS7(dt);                                     // the derelict's growth (js/culture.js)
   }
   for (const p of dk.pirates) updatePirate(p, dt);
   if (typeof mission !== 'undefined' && mission.active && !mission.over) releaseForJump();
@@ -365,11 +364,12 @@ function releaseForJump() {
   d.detachT = RELEASE_TIME; sfx.alarm();
   combatBanner(`Jump drive spooling — releasing the derelict's tether in ${RELEASE_TIME} s. Get back aboard!`);
 }
-function sprayDock(a, dt) {                           // the extinguisher works on the derelict's fire
+function sprayDock(a, dt) {                           // the extinguisher works on the derelict's fire (and on S-7: js/culture.js)
   for (const f of dk.dock?.fires || []) {
     const d = Math.hypot(f.x - player.x, f.y - player.y), off = Math.abs(wrapAngle(Math.atan2(f.y - player.y, f.x - player.x) - a));
     if (d < SPRAY_RANGE && off < 0.45) f.hp -= SPRAY_RATE * dt;
   }
+  s7Spray(a, dt);
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +385,7 @@ function dockClickTarget(mx, my) {
                       () => { N.state = 'follow'; N.leader = player.id; N.route = []; combatBanner('"Thanks! I\'ll make a run for your ship — cover me!"'); sfx.poi(); });
   }
   if (!d || d.kind === 'base') return null;
+  if (d.kind === 'derelict') { const st = s7ClickTarget(mx, my); if (st) return st; }
   if (at(g.crate, 0.7)) {
     const t = { x: g.crate.x, y: g.crate.y, r: 0.7 };
     if (!near(t.x, t.y)) return { ...t, text: 'Cargo crate — get closer', ok: false };
@@ -434,6 +435,7 @@ function dockSpots() {
     if (dk.dock.crate.length) out.push({ ...g.crate, r: 0.6 });
     if (dk.dock.kind === 'pirate' && !dk.dock.overloaded) out.push({ ...g.core, r: 0.9 });
     dk.dock.doors.forEach((locked, i) => { if (locked) { const q = g.doors[i]; out.push({ x: q.x + q.w / 2, y: q.y + q.h / 2, w: q.w + 0.3, h: q.h }); } });
+    out.push(...s7Spots());
   }
   if (dk.npc?.state === 'down') out.push({ x: dk.npc.x, y: dk.npc.y, r: 0.5 });
   return out;
@@ -498,6 +500,7 @@ function drawDock(t) {
       crate(L(g.crate.x), L(g.crate.y), L(1.3), L(1.0), 0.05, pir ? '#8a5a3a' : '#6a6f7a', pir ? 'LOOT' : 'CARGO');
     }
     drawDockDecor(d, g, t);
+    if (d.s7) drawS7Floor(d, g, t);                    // S-7: mats, frost, freezer, J1, the heart (js/culture.js)
     if (d.crate.length) glowLayer(() => pickupHalo(L(g.crate.x), L(g.crate.y), T * 0.8, t, me.mode === 'inside' && Math.hypot(me.x - g.crate.x, me.y - g.crate.y) <= REACH, 2.2));
     // core: a pirate reactor (red, overloading?) or a dead one
     const cx = L(g.core.x), cy = L(g.core.y);
@@ -583,14 +586,17 @@ const DOCK_DECOR = {
             [3, -32.6, 'brig_rules', 1.6, [['BRIG RULES', 0.12], ['1. NO ESCAPING', 0.08, 700], ['2. SEE RULE 1', 0.08, 700]], '#2b303a', '#ff9a8a']],
     stencils: [[-9.0, 2.6, 'WIPE YOUR BOOTS', 0.15], [-17.2, 3.4, 'AUTHORIZED PIRATES ONLY', 0.14], [-14.0, -5.2, 'LIGHTS OUT AT NEVER', 0.14], [-32.6, -16.6, 'THE BRIG IS NOT A HOTEL', 0.14]],
   },
-  // Dr. Varga's lab module: left in a hurry
+  // Dr. Varga's lab module: left in a hurry, overgrown by S-7 (js/culture.js; its freezer, J1, the heart and the cocooned
+  // pirate are drawn there; Varga's own extinguisher by the tube is a real item now, s7Dock)
   derelict: {
     props: [['props/papers_bridge', (x, y) => papers(x, y, 81), -12.0, -3.0, 0, true], ['props/papers_maptable', (x, y) => papers(x, y, 82), -17.2, 3.2, 0, true], ['props/plant', plant, -11.4, 3.2, 0],
-            ['props/coffee_empty', coffee, -17.6, -3.1, 0], ['props/sticky_yellow', stickyNote, -12.6, 2.4, 0.3], ['props/duck', duck, -20.0, 2.3, 0.6], ['props/extinguisher', extinguisher, -9.4, -1.8, 0.4]],
+            ['props/coffee_empty', coffee, -18.0, 3.4, 0], ['props/sticky_yellow', stickyNote, -12.6, 2.4, 0.3], ['props/duck', duck, -20.0, 2.3, 0.6]],
     signs: [[1, -11.7, 'todo', 1.6, [['TO DO', 0.13], ['1. CURE IT', 0.09, 700], ['2. NAME IT', 0.09, 700], ['3. DON\'T GET EATEN', 0.09, 700]], '#e8ecf0', '#2a2d35'],
-            [2, -20.6, 'specimen', 1.5, [['SPECIMEN 7', 0.15], ['DO NOT FEED', 0.11, 700]], '#e8c34f', '#2a2d35'],
+            [1, -15.4, 'keepfrozen', 1.3, [['S-7:', 0.12], ['KEEP FROZEN.', 0.11], ['I MEAN IT. — I.V.', 0.08, 700]], '#ffe95c', '#26324f'],
+            [2, -20.6, 'specimen', 1.5, [['SPECIMEN 7', 0.15], ['DO NOT FEED', 0.11, 700], ['(IT FEEDS ITSELF)', 0.075, 700]], '#e8c34f', '#2a2d35'],
             [0, -7.9, 'lab', 1.6, [['VARGA LAB', 0.14], ['PLEASE WIPE YOUR SPORES', 0.075, 700]], '#2d5f82', '#e8f4ff']],
-    stencils: [[-14.6, -1.4, 'DAYS SINCE LAST INCIDENT: ?', 0.15], [-7.9, 1.5, 'DECON →', 0.16]],
+    stencils: [[-14.6, -1.4, 'DAYS SINCE LAST INCIDENT: 0', 0.15], [-7.9, 1.5, 'DECON →', 0.16], [-8.6, -1.6, 'IF GRABBED: WIGGLE', 0.13, 'rgba(232,236,244,0.4)'],
+               [-22.0, -2.0, 'WARM IN HERE, ISN\'T IT', 0.13, 'rgba(196,106,216,0.45)']],
   },
 };
 function drawDockDecor(d, g, t) {
@@ -636,6 +642,7 @@ function drawDockActors(t) {
   for (const B of dk.bodies || []) drawBody(B);
   if (dk.dock?.kind === 'base') drawSentryFx(dk.dock, DG(), t);
   for (const p of dk.pirates) drawPirate(p, t);
+  drawS7Live(t);                                       // S-7's tendrils, its creep, the tether line (js/culture.js)
   const N = dk.npc;
   if (N) {
     const sprited = drawNpcSprite(N);
@@ -721,6 +728,7 @@ function dockPlates(add) {
   for (const e of combat.enemies) if (e.kind === 'pirate' && e.phase === 'fighting') add('dockT' + uid(e), { icon: 'frigate', title: 'PIRATES DOCKING', sub: `in ${Math.ceil(e.dockT ?? DOCK_TIME)} s unless driven off`, stripe: '#e2574c', red: true });
   if (dk.dock?.kind === 'pirate') add('pship', { icon: 'frigate', title: dk.dock.overloaded ? 'PIRATES CASTING OFF' : 'PIRATE SHIP DOCKED', sub: dk.dock.overloaded ? `in ${Math.ceil(dk.dock.detachT)} s — get off their ship!` : `${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · loot crate · jam their reactor`, stripe: '#e8c34f', red: !!dk.dock.overloaded });
   if (dk.dock?.kind === 'derelict') add('derelict', { icon: 'frigate', title: 'DERELICT', sub: `tethered at the ${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · no air inside`, stripe: '#7a8396' });
+  s7Plates(add);
   if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: npcName().replace(/^the /, '').toUpperCase(), sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : dk.npc.waits && sentryLive() ? 'waiting in the brig — switch off the sentry gun' : 'on the way to our ship — cover them', stripe: '#ffe08a', red: dk.npc.state === 'down' });
   if (dk.rock) add('rock', { icon: 'asteroid', title: 'ORE ASTEROID', sub: 'front · drill it on a spacewalk', stripe: '#7af0ff' });
 }

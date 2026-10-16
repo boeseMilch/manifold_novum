@@ -5,6 +5,7 @@
 //   treat pulse     treating someone: clicking on the heartbeat speeds it up
 //   held shields    keep holding the button for +2 s of shield (1 more energy)
 //   PIN pad         the airlock vent panel: type the admin password (it's on a sticky note right next to it)
+//   junction J1     the derelict lab's dead power junction: patch our tether line into its freezer circuit (js/culture.js)
 
 const JUMP_PULL = 6, JUMP_PULL_TWO = 1.8;
 const PATCH_BOARD = { x: 20.0, y: 23.0 };
@@ -33,7 +34,8 @@ function miniCommand(action, a, b) {
     if (a === 'out') m.pick = clamp(b | 0, 0, 2);
     else if (a === 'cap' && m.pick !== null) { power.patch[m.pick] = clamp(b | 0, 0, 2); m.pick = null; sfx.clank(); }
     else if (a === 'reset') { power.patch = [0, 1, 2]; sfx.clank(); }
-  } else if (action === 'pin' && m?.kind === 'pin' && !m.flash) {
+  } else if (action === 'j1' && m?.kind === 'j1') s7J1Command(m, a, b);   // the derelict's junction J1 (js/culture.js)
+  else if (action === 'pin' && m?.kind === 'pin' && !m.flash) {
     if (a === 'key' && m.typed.length < PIN_MAX && /^[0-9]$/.test(String(b))) { m.typed += String(b); sfx.clank(); }
     else if (a === 'back') m.typed = m.typed.slice(0, -1);
     else if (a === 'clr') m.typed = '';
@@ -122,6 +124,7 @@ function drawMiniPanel(t) {
   if (!m) return;
   if (m.kind === 'patch') drawPatchPanel(m, t);
   else if (m.kind === 'pin') drawPinPanel(m, t);
+  else if (m.kind === 'j1') drawJ1Panel(m, t);
 }
 function miniButton(x, y, w, h, label, cmd, active = true) {
   const hover = mouse.x > x && mouse.x < x + w && mouse.y > y && mouse.y < y + h;

@@ -1,9 +1,10 @@
-// Other ships: pirates (dock, steal, get boarded back, cast off), the derelict (jammed door, sleeping
-// intruder, black box, engineer to rescue) and mining an asteroid. Run: node tests/dock.js
+// Other ships: pirates (dock, steal, get boarded back, cast off), the derelict (jammed door, S-7 the growth,
+// black box, engineer to rescue) and mining an asteroid. Run: node tests/dock.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
-  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES'];
+  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES',
+  's7Geom', 's7Holding', 's7Wrapped', 'attack', 'spray', 'useEnergy', 'S7_FREEZE', 'S7_DRAW', 'S7_RECOIL_SHOT', 'S7_RECOIL_SPRAY', 'S7_STRUGGLE_PRESSES', 'resetDock', 'SIDE_CAP'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -93,20 +94,21 @@ for (const hide of [false, true]) {
 // --- derelict
 {
   const G = fresh(); G.dockShip('derelict', 'star', { blackbox: true, npc: true });
+  const s7 = G.dk.dock.s7, tick0 = G.simTick;                // (S-7 itself: tested below; here the freezer keeps every room frozen)
+  Object.assign(s7, { j1: true, freezer: true, cold: [1, 1, 1] });
+  Object.defineProperty(G, 'simTick', { value: (dt) => { G.CAPACITORS[2].charge = 3; tick0(dt); }, configurable: true });
   const g = G.dockGeom('star'), me = G.me; me.x = 41; me.y = g.y;
   const doorX = g.doors[0].x + g.doors[0].w / 2;
   walkTo(G, doorX - 0.9, g.y, 15);
   check(me.x < doorX && /jammed/.test(me.prompt?.text || ''), `a jammed door blocks the way ("${me.prompt?.text}")`);
   G.dk.dock.doors[0] = false;                             // (forced open with the manual override)
-  const alien = G.boarding.invaders[0];
-  check(alien.state === 'dormant', 'something is asleep in there');
+  check(!G.boarding.invaders.length && !!G.dk.dock.s7, 'no intruder sleeps on the derelict any more: S-7 grows there instead');
   via(G, [doorC(g.doors[0]), [g.npcSpot.x - 0.8, g.y], [g.npcSpot.x - 0.8, g.npcSpot.y]], 15);
   holdOn(G, G.dk.npc.x, G.dk.npc.y, () => G.dk.npc.state !== 'down');
   check(G.dk.npc.state === 'follow', 'treating the engineer: they set off for our ship');
   const box = G.ITEMS.find(i => i.kind === 'blackbox');
   via(G, [[box.x - 0.5 > g.doors[1].x ? g.doors[1].x - 1 : box.x, g.y], doorC(g.doors[1]), [box.x - 0.6, g.y], [box.x - 0.6, box.y]], 15);
-  check(alien.state === 'fight' || me.health !== 'ok', 'the intruder guarding the core room wakes up and attacks when you come close');
-  G.boarding.invaders.length = 0; me.health = 'ok';
+  check(s7.heartOpen && !G.crew.some(c => G.s7Holding(c)), `with the lab frozen, the husks let you through and the heart has let go of the box (${s7.heartOpen}, ${me.health}, ${G.combat.banner?.text})`);
   const m = me.input.mouse; m.wx = box.x; m.wy = box.y; m.click = true; G.simTick(DT);
   check(me.inv.item === 'blackbox', 'the black box is there to take');
   const x0 = me.x; me.input.keys.add('KeyD'); tickN(G, 30); me.input.keys.delete('KeyD');
@@ -121,6 +123,160 @@ for (const hide of [false, true]) {
   const G = fresh(); G.startMission('salvage'); G.mission.events.forEach(e => { e.done = true; });
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1; tickN(G, 60);
   check(G.mission.over && !G.mission.over.won && G.mission.over.survived, `jumping without the black box: survived, but the mission failed ("${G.mission.over?.reason}")`);
+}
+// --- S-7, the derelict's growth (js/culture.js)
+const s7Fresh = (side = 'port', contents = { blackbox: true }) => {
+  const G = fresh(); G.dockShip('derelict', side, contents); G.dk.dock.fires = []; G.dk.dock.doors = [false, false];
+  return { G, s: G.dk.dock.s7, S: G.s7Geom(side), g: G.dockGeom(side) };
+};
+const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me.x = h.x + dx; G.me.y = h.y; G.me.vx = G.me.vy = 0; };   // stand right by tendril i's head
+{
+  const { G, s, S } = s7Fresh();
+  check(!G.boarding.invaders.length, 'no intruder spawns on the derelict any more');
+  check(G.ITEMS.some(it => it.kind === 'extinguisher' && G.inDock(it.x, it.y)), 'Varga\'s own fire extinguisher hangs in the lab\'s airlock');
+  const me = G.me; tendrilBy(G, s, S, 0);
+  tickN(G, 18);
+  check(s.tendrils[0].state === 'twitch' && !G.s7Holding(me), 'come close to a tendril: it twitches first (the telegraph)');
+  tickN(G, 60);
+  check(G.s7Holding(me) && s.tendrils[0].state === 'grab', 'then it grabs');
+  const x0 = me.x; me.input.keys.add('KeyD'); tickN(G, 60); me.input.keys.delete('KeyD');
+  check(Math.abs(me.x - x0) < 1e-6, 'held: you can\'t walk');
+  tickN(G, 60 * 3);
+  check(me.health === 'hurt', 'and it squeezes (a hurt every few seconds)');
+  // a laser shot (yourself, while held: solo works) frees you, the tendril recoils ~4 s
+  const root = S.tendrils[0].root;
+  G.withCrew(me, () => { G.inv.weapon = 'laser'; G.inv.cd = 0; G.attack(Math.atan2(root.y - me.y, root.x - me.x), false, [root.x, root.y]); });
+  tickN(G, 6);
+  check(!G.s7Holding(me) && s.tendrils[0].state === 'recoil', 'shooting the tendril that holds you frees you (solo self-free)');
+  tickN(G, 60 * 3);
+  check(s.tendrils[0].state === 'recoil' && !G.s7Holding(me), `a shot tendril stays recoiled for a while (and recoiled tendrils don't grab) (${s.tendrils[0].t.toFixed(1)} s left)`);
+  tickN(G, 60 * 2);
+  check(s.tendrils[0].state !== 'recoil', `after ~${G.S7_RECOIL_SHOT} s it comes back`);
+}
+{
+  const { G, s, S } = s7Fresh(), me = G.me;
+  tendrilBy(G, s, S, 0); tickN(G, 60 * 2);
+  check(G.s7Holding(me), '(grabbed again)');
+  const root = S.tendrils[0].root;
+  G.withCrew(me, () => { G.inv.weapon = 'extinguisher'; });
+  for (let i = 0; i < 30; i++) { G.withCrew(me, () => G.spray(root.x, root.y, DT)); G.simTick(DT); }
+  check(!G.s7Holding(me) && s.tendrils[0].state === 'recoil' && s.tendrils[0].t > 12, `the extinguisher (cold CO2) frees you too, and the tendril shrinks back much longer (${s.tendrils[0].t.toFixed(1)} s)`);
+}
+{
+  const { G, s, S } = s7Fresh(), me = G.me;
+  tendrilBy(G, s, S, 0); tickN(G, 60 * 2);
+  let n = 0; while (G.s7Holding(me) && n < 60) { me.input.pressed.add(n % 2 ? 'KeyA' : 'KeyD'); G.simTick(DT); G.simTick(DT); n++; }
+  check(!G.s7Holding(me) && n >= G.S7_STRUGGLE_PRESSES - 2 && n <= G.S7_STRUGGLE_PRESSES + 4, `empty-handed: mashing the keys wriggles you free (${n} presses)`);
+}
+{
+  const { G, s, S } = s7Fresh(), me = G.me;          // two crew: one is held, the other shoots the tendril
+  const B = G.makeCrew('B'); G.crew.push(B);
+  tendrilBy(G, s, S, 0); B.x = S.tendrils[0].head.x + 4; B.y = S.tendrils[0].head.y; tickN(G, 60 * 2);
+  const root = S.tendrils[0].root, mid = { x: (root.x + me.x) / 2, y: (root.y + me.y) / 2 };
+  G.withCrew(B, () => { G.inv.weapon = 'laser'; G.inv.cd = 0; G.attack(Math.atan2(mid.y - B.y, mid.x - B.x), false, [mid.x, mid.y]); });
+  tickN(G, 12);
+  check(!G.s7Holding(me), 'a crewmate\'s laser hit on the tendril frees you');
+}
+// J1, the freezer and our capacitor; the cold room by room; the heart lets go only when the core is frozen
+{
+  const { G, s, S, g } = s7Fresh(), me = G.me, cap = G.CAPACITORS[S.capIdx];
+  check(S.capIdx === 0 && G.s7Geom('star').capIdx === 2, 'the freezer draws from our capacitor on the docked side (left / right)');
+  for (const T of s.tendrils) { T.state = 'recoil'; T.t = 999; }   // (S-7's tendrils held off: this is about the machine)
+  me.x = S.freezer.x; me.y = S.freezer.y + 1;
+  holdOn(G, S.freezer.x, S.freezer.y, () => s.freezer, 3);
+  check(!s.freezer && /J1/.test(G.withCrew(me, () => me.hover?.text) || me.prompt?.text || ''), `the freezer is dead until J1 is patched ("${me.hover?.text}")`);
+  me.x = S.j1.x; me.y = S.j1.y + 0.8;
+  const m = me.input.mouse; m.wx = S.j1.x; m.wy = S.j1.y; m.click = true; G.simTick(DT);
+  check(me.ui.mini?.kind === 'j1', 'J1 opens a patch-board panel');
+  G.withCrew(me, () => { G.miniCommand('j1', 'src'); G.miniCommand('j1', 'to', 0); });
+  check(!s.j1, 'the wrong circuit (the lights) does nothing');
+  G.withCrew(me, () => { G.miniCommand('j1', 'src'); G.miniCommand('j1', 'to', 2); });
+  check(s.j1 && !me.ui.mini, 'patching our tether line into C3 (the cold store) connects the lab');
+  G.power.reactor.fuel = 0; G.power.reserve = 0; cap.charge = 2;   // (no new energy: count what the freezer takes)
+  me.x = S.freezer.x; me.y = S.freezer.y + 1;
+  const t = holdOn(G, S.freezer.x, S.freezer.y, () => s.freezer, 4);
+  check(s.freezer && t > 1.9 && cap.charge === 1, `hold click ~2 s: the freezer runs, drawing its first energy from our left capacitor (${t.toFixed(1)} s, ${cap.charge} left)`);
+  const at = [null, null, null]; let open = null, boxEarly = null, why = '';
+  const box = G.ITEMS.find(it => it.kind === 'blackbox');
+  for (let k = 0; k < 60 * 45; k++) {
+    if (k === 60 * 5) { me.x = box.x + 0.6; me.y = box.y; const mm = me.input.mouse; mm.wx = box.x; mm.wy = box.y; mm.click = true; }
+    if (k === 60 * 5 + 1) { boxEarly = me.inv.item === 'blackbox'; why = me.hover?.text || ''; }
+    cap.charge = Math.max(cap.charge, 1); G.simTick(DT);
+    s.frozen.forEach((f, i) => { if (f && at[i] === null) at[i] = k / 60; });
+    if (s.heartOpen && open === null) open = k / 60;
+  }
+  check(boxEarly === false && /heart is wrapped round it/.test(why), `before the core is frozen the black box can't be taken, and the prompt says why ("${why}")`);
+  check(at[1] < at[0] && at[0] <= at[2] && Math.abs(at[1] - G.S7_FREEZE[1]) < 1 && Math.abs(at[2] - G.S7_FREEZE[2]) < 1,
+        `the cold spreads: the lab freezes first, then the airlock, then the core (${at.map(v => v?.toFixed(0)).join(' / ')} s: airlock / lab / core)`);
+  check(open !== null && Math.abs(open - at[2]) < 0.05, `the heart lets go of the black box when the core is frozen (${open?.toFixed(0)} s)`);
+  me.x = box.x + 0.6; me.y = box.y; me.health = 'ok'; const mm = me.input.mouse; mm.wx = box.x; mm.wy = box.y; mm.click = true; G.simTick(DT);
+  check(me.inv.item === 'blackbox', 'then the box can be taken');
+  // husks don't grab: stand right by a lab tendril
+  for (const T of s.tendrils) { T.state = 'idle'; T.t = 0; } tickN(G, 1);
+  check(s.tendrils.every(T => T.state === 'husk'), 'in frozen rooms the tendrils are grey husks');
+  tendrilBy(G, s, S, 1, 0.3); tickN(G, 120);
+  check(!G.s7Holding(me), 'husks don\'t grab');
+  // the capacitor runs dry: the freezer stops, the rooms thaw slowly
+  cap.charge = 0; let stopAt = null;
+  for (let k = 0; k < 60 * 70 && stopAt === null; k++) { G.simTick(DT); if (!s.freezer) stopAt = k / 60; }
+  check(stopAt !== null && stopAt <= G.S7_DRAW[0] + 0.1 && /capacitor/.test(G.combat.banner?.text || ''), `our capacitor empty: the freezer stops (after ${stopAt?.toFixed(0)} s: "${G.combat.banner?.text}")`);
+  let thaw = null; me.x = 37; me.y = 6;
+  for (let k = 0; k < 60 * 40 && thaw === null; k++) { G.simTick(DT); if (!s.frozen[1]) thaw = k / 60; }
+  check(thaw > 10 && thaw < 30, `then the cold slowly retreats: the lab thaws and S-7 stirs again (${thaw?.toFixed(0)} s later)`);
+}
+{
+  const { G, s, S } = s7Fresh(), me = G.me;          // a grab is released when the room freezes
+  tendrilBy(G, s, S, 1); tickN(G, 120);
+  const held = G.s7Holding(me);
+  s.cold[1] = 0.999; s.freezer = true; s.j1 = true; G.CAPACITORS[0].charge = 3; tickN(G, 30);
+  check(held && !G.s7Holding(me) && s.tendrils[1].state === 'husk', 'when its room freezes, a tendril lets go of whoever it holds');
+}
+// the creep: toward our ship, wraps our capacitor (no charging, no using it); spray / shots push it back
+{
+  const { G, s, S } = s7Fresh(), me = G.me, cap = G.CAPACITORS[0];
+  me.x = 37; me.y = 6;                               // (out of the way)
+  let inRoom = null, wrapped = null;
+  for (let k = 0; k < 60 * 200 && wrapped === null; k++) { G.simTick(DT); if (s.creep.inRoom && inRoom === null) inRoom = k / 60; if (s.creep.wrapped) wrapped = k / 60; }
+  check(inRoom > 50 && inRoom < 100, `S-7 creeps along the tube and reaches our airlock room (${inRoom?.toFixed(0)} s solo)`);
+  check(wrapped !== null && G.s7Wrapped(0) && /capacitor/.test(G.combat.banner?.text || ''), `then wraps our left capacitor (${wrapped?.toFixed(0)} s: "${G.combat.banner?.text}")`);
+  cap.charge = 2;
+  check(!G.useEnergy(0) && cap.charge === 2, 'a wrapped capacitor can\'t be used');
+  G.power.lever.pos = 0; G.power.lever.jammed = true; G.power.reactor.t = 19.9; tickN(G, 60 * 3);
+  check(cap.charge === 2, 'nor charged (the energy is wasted)');
+  me.x = cap.x + 1.2; me.y = cap.y - 0.2; G.withCrew(me, () => { G.inv.weapon = 'extinguisher'; });
+  let t = 0; while (s.creep.wrapped && t < 5) { G.withCrew(me, () => G.spray(cap.x, cap.y - 0.15, DT)); G.simTick(DT); t += DT; }
+  check(!s.creep.wrapped && t > 1.8 && t < 2.3 && G.useEnergy(0), `spraying it for ~2 s clears the wrap (${t.toFixed(1)} s)`);
+  const tipAt = (d) => { const P = S.creep; let rest = d; for (let i = 1; i < P.length; i++) { const l = Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y); if (rest <= l) return { x: P[i - 1].x + (P[i].x - P[i - 1].x) * rest / l, y: P[i - 1].y + (P[i].y - P[i - 1].y) * rest / l }; rest -= l; } return P[P.length - 1]; };
+  const d0 = s.creep.d, tip = tipAt(d0);
+  const by = tipAt(d0 - 1.5); me.x = by.x; me.y = by.y + 0.8;                     // (beside the creep, a bit back from the tip)
+  for (let i = 0; i < 60; i++) { const q = tipAt(s.creep.d); G.withCrew(me, () => G.spray(q.x, q.y, DT)); G.simTick(DT); }   // (following the tip)
+  check(s.creep.d < d0 - 2, `spraying the creep pushes it back a good chunk (${d0.toFixed(1)} → ${s.creep.d.toFixed(1)} units in 1 s)`);
+  const d1 = s.creep.d, tip1 = tipAt(d1);
+  G.boarding.bolts.push({ x: tip1.x + 0.5, y: tip1.y - 1.5, z: 1, vx: -0.5 * 26 / 1.58, vy: 1.5 * 26 / 1.58, life: 0.5, owner: 'crew' }); tickN(G, 6);
+  check(s.creep.d < d1 - 0.8 && s.creep.d > d1 - 1.3, `a shot pushes it back a bit (${d1.toFixed(1)} → ${s.creep.d.toFixed(1)})`);
+  // three shots clear a wrap
+  s.creep.d = 1e9; tickN(G, 2); check(s.creep.wrapped, '(wrapped again)');
+  for (let i = 0; i < 3; i++) { G.boarding.bolts.push({ x: cap.x + 2, y: cap.y - 0.15, z: 1, vx: -26, vy: 0, life: 0.5, owner: 'crew' }); tickN(G, 10); }
+  check(!s.creep.wrapped, 'three hits clear the wrap too');
+  // casting off cuts it
+  s.creep.d = 1e9; tickN(G, 2);
+  G.undock();
+  check(!G.dk.dock && !G.s7Wrapped(0) && G.useEnergy(0), 'when the derelict casts off the creep is cut and dies: our capacitor works again');
+}
+{
+  const { G, s } = s7Fresh(), cap = G.CAPACITORS[0];  // the core freezes: the heart turns to a husk, the creep withers with it
+  G.me.x = 37; G.me.y = 6; s.creep.d = 1e9; tickN(G, 2);
+  const w = G.s7Wrapped(0);
+  Object.assign(s, { j1: true, freezer: true, drawT: 99 }); s.cold = [1, 1, 0.999]; cap.charge = 3; tickN(G, 30);   // (drawT: its energy for now already drawn)
+  check(w && s.creep.dead && !G.s7Wrapped(0), 'when the core freezes the creep withers and lets go of our capacitor');
+}
+// the snapshot carries S-7
+{
+  const { G, s, S } = s7Fresh(); tendrilBy(G, s, S, 0); tickN(G, 120); s.j1 = true; s.cold[1] = 0.4; s.creep.d = 3.3;
+  const snap = JSON.parse(JSON.stringify(G.netSerialize()));
+  const H = loadGame(NAMES); H.startMission('intro'); H.netApply(snap, G.me.id);
+  const t = H.dk.dock?.s7;
+  check(t && t.j1 && t.cold[1] === 0.4 && t.creep.d === 3.3 && t.tendrils[0].state === 'grab' && H.s7Holding(H.crew.find(c => c.id === G.me.id)), 'the snapshot (netSerialize / netApply) carries S-7: tendrils, cold, J1, the creep');
 }
 // --- mining
 {
@@ -167,7 +323,7 @@ for (const side of ['port', 'star']) {
 // --- no jumping while a ship is docked; docked ships let go once the jump is due
 {
   const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {};
-  G.dockShip('derelict', 'port', { alien: false }); G.dk.dock.fires = [];
+  G.dockShip('derelict', 'port'); G.dk.dock.fires = [];
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1;
   tickN(G, 60);
   check(!G.mission.over && /^Jump blocked: the derelict/.test(G.combat.banner?.text || ''), `the jump waits while the derelict is tethered ("${G.combat.banner?.text}")`);

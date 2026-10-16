@@ -200,8 +200,9 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   // Solo: one encounter more or less moves a solo crew's idle by ~13-15 points (1 vs 2 encounters: ~76% vs ~62%), so
   // the nearest count lands within ~8 points of its target. SHORT: the essentials (+ the finale fight) alone keep a
   // solo crew busier than the target (c1: two pirate raiders + finale; c4: the opener + two raiders + finale; c6: the
-  // opener, rock, spores, leeches + finale; the model rates raiders heavily, the 2026-10-14 playtest found c4 too easy).
-  const SHORT = ['c1', 'c4', 'c6'];
+  // opener, rock, spores, leeches + finale; the model rates raiders heavily, the 2026-10-14 playtest found c4 too easy;
+  // c3: the opener + the lab, whose S-7 work (J1, the freezer, the cold, the creep: js/culture.js) is a long job solo).
+  const SHORT = ['c1', 'c3', 'c4', 'c6'];
   // HARD: set harder than the model's target on purpose, after a playtest (c2: two aliens + opener + frigate even solo)
   const HARD = ['c2'];
   // COARSE: one encounter is the nearest count but still above the target (two are out of spec or far below);

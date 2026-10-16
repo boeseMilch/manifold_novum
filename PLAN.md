@@ -577,8 +577,62 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   whatever they stole; jamming their reactor's overload with the repair kit (3 s) makes them cast
   off 15 s later — anyone still aboard is cast adrift outside our hull.
 - **Derelict** (event `derelict`): airless and dark. A jammed door (manual override), a fire that
-  hurts (the extinguisher works), an intruder asleep in the core that wakes when you come close
-  (and goes back to sleep there), plus the mission's objective.
+  hurts (the extinguisher works), S-7 (below; it replaced the intruder asleep in the core), plus the
+  mission's objective.
+- **S-7, "The Culture"** (2026-10-16, the user's pick of the docking concepts; `js/culture.js`, state in `dk.dock.s7`,
+  synced with `dk`): Dr. Varga's lab is overgrown by S-7, a grappler tissue cutting that thawed when the Red Comet
+  pirates cut the power to her cryo freezer. A growth, not a creature; on every derelict (Varga's lab, Black box, the
+  stranded engineer). Story text: c3's briefing ends "And something in there is still alive. The station's freezer log
+  has one line: KEEP S-7 FROZEN."; the Black box blurb likewise.
+  - **Tendrils** (6: 1 in the lab's airlock, 3 in the lab, 2 in the core, one across each inner doorway; `s7Geom`).
+    Within 1.6 units of a tendril's head (line of sight) it twitches (0.6 s; +0.3 s per easier difficulty step,
+    +0.3 s solo), then GRABS: held in place (no walking; aiming, shooting and spraying still work), squeezed with
+    `hurtCrew` every 3 s (+1 s per easier step); someone who goes down is dropped (the tendril recoils 8 s). A laser /
+    blaster / wrench hit on the tendril (its body, root to head) frees them, recoil 4 s; the extinguisher's spray
+    (cold CO2) 15 s; mashing move / use keys (22 presses, ~4 s) wriggles free, 3 s (`s7Struggle`, from simTick).
+    Recoiled tendrils don't grab. The lab's fire makes tendrils within 3 units recover twice as fast.
+  - **J1 and the freezer**: junction J1 in the lab's airlock opens a patch-board-style panel (`ui.mini.kind 'j1'`:
+    click our tether line, then the lab circuit; only C3 "COLD STORE (S-7)" works, the others flicker). Then hold
+    click 2 s on Varga's freezer (in the lab): it draws 1 energy every 20 s (25 / 30 on easy / very easy) from OUR
+    capacitor on the docked side (left for port, right for starboard); empty, broken or wrapped: it stops ("The
+    freezer stopped …"). Click it to switch it off. Varga's own extinguisher hangs by the tube (an item, `s7Dock`).
+  - **The cold**: while it runs each room's cold rises (lab frozen after 15 s, the airlock 25 s, the core 30 s);
+    frozen rooms turn the growth into grey husks (they release whoever they hold and don't grab). Off: −1/40 per s,
+    alive again below 60% (~16 s). The HEART in the core is wrapped round the black box: the box can't be taken
+    (the prompt says why) until the core is frozen; then "The heart let go of the black box".
+  - **The creep**: from docking a tendril grows along the tube toward our warm ship: 60 s to our airlock room (×1.3 /
+    1.6 easy / very easy, ×1.5 solo), twice as fast inside it, then it wraps that room's capacitor: no charging
+    (energy wasted, banner), no using it (`capWrapped` in `useEnergy`), so no freezer either. Spraying pushes it back
+    3 units/s, a shot 1 unit; the wrap takes 2 s of spray or 3 hits (then it's pushed 3 units back). It withers when
+    the core freezes (the heart turns to a husk) and dies when the derelict casts off.
+  - Banners: the first grab ("S-7 has …! Shoot or spray the tendril — or wriggle free"), squeezes, J1 patched, the
+    freezer on / stopped, each room freezing / thawing, the heart letting go, the creep reaching our airlock, the
+    capacitor wrapped / freed, the tether cut. Sidebar: a FREEZER plate ("drawing from the left capacitor · cold %")
+    and an S-7 plate (box held / free, creep %, who it has). Decor: "S-7: KEEP FROZEN. I MEAN IT. — I.V.", "SPECIMEN 7 —
+    DO NOT FEED (IT FEEDS ITSELF)", "IF GRABBED: WIGGLE", "DAYS SINCE LAST INCIDENT: 0", "WARM IN HERE, ISN'T IT", a
+    cocooned pirate on the lab wall. Lights: the heart's pink pulse, the running freezer's cold blue.
+  - Drawing: `drawS7Floor` (in drawDock: mats, frost, freezer, J1, cocoon, heart) and `drawS7Live` (in
+    drawDockActors: tendrils, the creep, the wrap, the tether line). Every piece tries its sprite first (`s7Spr`:
+    `GFX.on && GFX.info(name)`; names in `S7_SPRITES`: dock/s7_mat_{airlock,lab,core}[_husk] at the room centre,
+    dock/s7_tendril[_twitch|_grab|_recoil|_husk] at the root facing the head (frameIndex by angle, frame by time),
+    dock/s7_heart / _open (frozen, box still in it) / _husk, dock/s7_creep_seg every 0.5 units along the path + dock/s7_creep_tip,
+    dock/s7_wrap_capacitor at our capacitor, dock/s7_freezer_off/_on, dock/s7_junction_dead/_patched, dock/s7_frost (alpha =
+    the room's cold), dock/s7_cocoon_pirate), else a procedural 2D drawing (fleshy purple mats with glowing green
+    nodules, thick curved tendrils that wobble / twitch / coil round whoever they hold, the pulsing heart, pale frost
+    with crystals, grey husks).
+  - Practice: "Derelict: S-7's creep at our airlock", "Derelict: J1 patched, freezer on". The derelict's sleeping
+    intruder is gone (`contents.alien` too).
+  - Balance model (tools/balance.js): the derelict job counts grabs (2, rescue 3; 3 s each, 0.3 crew hits each), J1
+    (8 s), the freezer hold and the wait for the core's cold (black box), the freezer's draws on our capacitor (the
+    energy runs: `plan.freezers`; a draw on an empty capacitor delays the job, the lever is routed there), and the creep
+    as its own job at our airlock (late: clear the wrap). DERELICT_ALIEN is gone. Re-calibrated (`--calibrate`):
+    c3 events 2/2/6/8/11/13/15/17, cells 2/2/2/6/9/9/11/11 (was 2/4/7/10/12/15/17/19; solo 34% idle with only the opener
+    and the lab: tests/scaling.js lists c3 with the essentials-only missions, SHORT); Black box events 2/2/7/11/14/17/20/23,
+    cells 2/2/3/8/8/12/12/17, now overcharged and recommending the inserter (solo 46%); Stranded engineer events
+    3/4/8/11/13/17/19/24, cells 2/2/3/4/5/6/7/8 (solo 50%).
+  - Tests: tests/dock.js (grab after the twitch, held, squeezed; self-free by shot, spray, wriggling; a crewmate's shot;
+    J1 + freezer drain our capacitor; rooms freeze in order, husks don't grab; the heart and the box; the creep reaches,
+    wraps, is sprayed / shot back; cast-off and the frozen core kill it; the snapshot carries S-7; no intruder).
 - **Objectives** (`mission.objective`, `objectiveStatus()`): `blackbox` (heavy: 60% speed, no
   weapon while carrying it), `rescue` (treat the engineer, they follow your footsteps, safe once
   aboard; a hit downs them again), `ore` (a big asteroid parks in front; drill it on a spacewalk

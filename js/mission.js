@@ -115,15 +115,15 @@ const MISSIONS = {
     build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['pirates', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
   },
   salvage: {
-    name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something is asleep over there.',
-    crew: {events: [3, 6, 8, 12, 15, 18, 21, 22], cells: [2, 2, 2, 5, 7, 7, 9, 9], reactor: [0.85, 1, 1, 1, 1, 1, 1, 1]},   // --calibrate: 51% 64% 69% 66% 67% 66% 67% 69% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
-    needs: {ship: ['cannons'], overcharge: false},
+    name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something over there is still alive — its freezer log says: KEEP S-7 FROZEN.',
+    crew: {events: [2, 2, 7, 11, 14, 17, 20, 23], cells: [2, 2, 3, 8, 8, 12, 12, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (S-7, 2026-10-16): 46% 69% 68% 65% 67% 66% 66% 66% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); base ship: ×3: front cannon waits 23 s at 256 s; ×4: front cannon waits 15 s at 348 s
+    needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
   },
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
-    crew: {events: [3, 4, 8, 12, 13, 17, 19, 24], cells: [2, 2, 3, 5, 5, 6, 7, 8]},   // --calibrate: 53% 65% 66% 58% 65% 65% 65% 68% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8)
+    crew: {events: [3, 4, 8, 11, 13, 17, 19, 24], cells: [2, 2, 3, 4, 5, 6, 7, 8]},   // --calibrate (S-7, 2026-10-16): 50% 65% 65% 63% 65% 65% 65% 67% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8)
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },

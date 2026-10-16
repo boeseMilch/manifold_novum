@@ -67,7 +67,14 @@ const A = {
   LEECH_LATCH: 12,        // s until the whole leech swarm has latched on (then one shield burns them all off)
   BOARD_WALK: 24,         // units from our outer airlock to the far end of a docked ship (and back)
   DERELICT_EXTRA: 20,     // s inside a derelict: the jammed door, its fire, finding the box / the engineer
-  DERELICT_ALIEN: 0.5,    // chance the sleeping intruder on a derelict wakes up and has to be fought
+  S7_GRABS: 2,            // S-7 (the derelict's growth, js/culture.js): tendril grabs on the way in, before the cold (black box) …
+  S7_GRABS_RESCUE: 3,     // … and when fighting through to the engineer without the freezer
+  S7_FREE: 3,             // s per grab to get free (a shot, a spray, or wriggling) and step past
+  S7_GRAB_HITS: 0.3,      // hits on the crew per grab (squeezed before they're free)
+  S7_PATCH: 8,            // s at junction J1: open it, the patch-board mini-game
+  S7_TO_CORE: 8,          // s from switching the freezer on to standing at the core (then waiting for its cold)
+  S7_CREEP_WORK: 6,       // s at our airlock spraying S-7's creep back (plus clearing the wrap if it got there)
+  S7_CREEP_SHARE: 0.5,    // share of runs where the creep reaches our airlock before the cold kills it (black box: the core freezes)
   BOX_SLOW: 0.7,          // walking speed carrying the black box
   PANIC_OPEN: 1.5,        // broken parts' worth of problems open at which the crew fixes things before taking on new threats
   JUMP_PREP: 40,          // s before the jump someone pins the lever on MID if the middle capacitor is empty …
@@ -123,7 +130,8 @@ const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'make
   'HEAL_TIME', 'TENTACLE_COIL', 'ACID_TIME', 'LEECH_CHEW', 'PUFF_EVERY', 'SAC_OPEN', 'MOTHER_TOSSES', 'LEV_TIME', 'LEV_STEP', 'TREAT_TIME',
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
-  'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR'];
+  'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -301,8 +309,18 @@ function jobsFor(ev, ctx) {
     let work = walk + A.DERELICT_EXTRA + g.HATCH_TIME * 2;
     if (obj === 'blackbox') work += A.BOARD_WALK / g.WALK_SPEED * (1 / A.BOX_SLOW - 1);
     if (obj === 'rescue') work += g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED - A.BOARD_WALK / g.WALK_SPEED;
-    work += A.DERELICT_ALIEN * g.ALIEN_HP / A.LASER_HIT * A.LASER_SHOT;
-    job({ label: `derelict (${obj || 'explore'})`, prio: 1, trip: H(`${L(side)} outer airlock`), work, crewHits: A.DERELICT_ALIEN * 1, objective: obj ? { [obj]: 1 } : null });
+    // S-7: tendrils grab on the way in (freed by a shot, a spray or wriggling); the black box needs J1 patched, the
+    // freezer on (drawing from our capacitor on that side every S7_DRAW s until the crew is back) and the core frozen;
+    // the engineer is fought through to without it. Meanwhile the creep grows toward our airlock (its own job).
+    const box = obj !== 'rescue', grabs = box ? A.S7_GRABS : A.S7_GRABS_RESCUE;
+    work += grabs * A.S7_FREE;
+    if (box) work += A.S7_PATCH + g.S7_FREEZER_HOLD + Math.max(0, g.S7_FREEZE[2] - A.S7_TO_CORE);
+    const freezerAt = A.BOARD_WALK * 0.6 / g.WALK_SPEED + g.HATCH_TIME + A.S7_PATCH + grabs * A.S7_FREE / 2;   // (s after arriving at our airlock)
+    job({ label: `derelict (${obj || 'explore'})`, prio: 1, trip: H(`${L(side)} outer airlock`), work, crewHits: grabs * A.S7_GRAB_HITS, objective: obj ? { [obj]: 1 } : null,
+          freezer: box ? { cap: CAP[side], at: freezerAt, every: g.S7_DRAW[0] } : null });
+    const reach = g.S7_CREEP_TIME * (n > 1 ? 1 : 1.5), lock = H(lockRoom(side));
+    job({ label: 'S-7 creep (push it back)', rel: reach, prio: 1, trip: lock, work: A.S7_CREEP_WORK * A.S7_CREEP_SHARE, deadline: reach * 0.4,
+          late: () => ({ jobs: [{ label: 'S-7 wrap (clear our capacitor)', rel: reach * 1.4, prio: 1, trip: lock, work: (g.S7_WRAP_SPRAY + A.TOOL_FETCH) * A.S7_CREEP_SHARE }] }) });
   } else if (k === 'rock') {
     const e = evaTrip('port', [[22.2, -7.6]]);
     job({ label: 'drill the ore asteroid', prio: 1, trip: H('portLock') + T('portLock', 'Left outer airlock'), work: e.extra + g.DRILL_TIME + 2, objective: { ore: 1 } });
@@ -403,7 +421,7 @@ function schedule(build, waitByKey) {
   if (rules.handle) push({ label: 'jump handle', trip: H('Helm'), work: n > 1 ? g.JUMP_PULL_TWO : g.JUMP_PULL }, jumpAt - H('Helm'), { kind: 'handle', t: jumpAt });
 
   const free = Array(n).fill(0), done = [], open = [], scrams = [], drains = [], storms = [], got = {}, lateList = [], scans = [];
-  const plan = { fights: [], shields: [], jumpAt, window: g.PRESS_FIRST, scrams, drains, storms, end };
+  const plan = { fights: [], shields: [], freezers: [], jumpAt, window: g.PRESS_FIRST, scrams, drains, storms, end };
   let crewHits = 0, bonusCells = 0, jumpDelay = 0, busy = 0, coilsDone = 0, radarBusy = 0;
   const roomOf = (side) => (side === 'front' ? 'bridge' : side === 'port' ? 'portGun' : 'starGun');
   const sideOf = (j) => j.ev?.side || 'front';
@@ -514,6 +532,7 @@ function schedule(build, waitByKey) {
       if (e.shots !== undefined) plan.fights.push({ key: j.key, gun: e.gun, t0: atJob + A.CLIMB, shots: Math.max(1, Math.round(e.shots)), span: Math.max(1, finish - atJob - A.CLIMB - (waitByKey[j.key] || 0)) });
       else if (e.shield) plan.shields.push({ t: j.notBefore ? Math.max(atJob, j.release + j.notBefore) : atJob, side: sideOf(j), key: j.key });
     }
+    if (j.freezer) plan.freezers.push({ key: j.key, cap: j.freezer.cap, t0: atJob + j.freezer.at, t1: finish, every: j.freezer.every });   // (S-7: Varga's freezer on our capacitor)
     if (j.storm) storms.push(j.release);
     if (j.radar) { scans.push(finish); radarBusy += finish - start; nextScan(finish); }
     if (j.objective && finish < end) for (const k in j.objective) got[k] = (got[k] || 0) + j.objective[k];
@@ -595,11 +614,14 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
   const interval = G.ENERGY_TIME * build.factor / (build.overcharge ? 2 : 1), prepFor = Math.max(A.JUMP_PREP, A.JUMP_PREP_ENERGIES * interval);
   const scrams = [...plan.scrams].sort((a, b) => a[0] - b[0]), storms = [...plan.storms].sort((a, b) => a - b);
   const drains = plan.drains.map(d => ({ ...d, on: false, uids: [] }));
-  // where energy is wanted now: fights waiting at their cannon's capacitor, the jump at MID
+  const fzWaits = [], freezers = (plan.freezers || []).filter(f => f.t0 < plan.end).map(f => ({ ...f, next: f.t0 }));   // (S-7: the derelict's freezer draws from our capacitor)
+  // where energy is wanted now: fights waiting at their cannon's capacitor, the jump at MID, the freezer's capacitor running dry
   const wanted = (t) => {
     if (jump.t <= t && !jump.done) return 1;
     const w = fights.find(f => f.waitFrom !== null);
     if (w) return CAPI[w.gun];
+    const fz = freezers.find(f => f.next < f.t1 && t >= f.t0 - 5 && G.CAPACITORS[f.cap].charge < 1);
+    if (fz) return fz.cap;
     if (Number.isFinite(jump.t) && t >= jump.t - prepFor && (prep || G.CAPACITORS[1].charge < 1)) { prep = true; return 1; }   // MID ready for the jump (then it stays there)
     return null;
   };
@@ -608,6 +630,7 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
     for (const f of fights) if (f.left > 0 && CAPI[f.gun] === cap) { at = Math.min(at, Math.max(t, f.next)); break; }
     for (const s of shields) if (!s.done && CAPI[s.side] === cap) { at = Math.min(at, s.t); break; }
     if (cap === 1 && !jump.done) at = Math.min(at, jump.t);
+    for (const f of freezers) if (f.cap === cap && f.next < f.t1) at = Math.min(at, Math.max(t, f.next));
     return at;
   };
   for (let t = 0; t <= horizon + dt; t += dt) {
@@ -660,6 +683,10 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
       else if (t > s.t + A.SHIELD_GRACE) { s.done = true; unmet.push({ side: s.side, t: s.t, why: r === false ? 'cooldown' : r }); }
     }
     if (!jump.done && t >= jump.t && G.CAPACITORS[1].charge > 0) { G.useEnergy(1); used[1]++; jump.done = t; }
+    for (const f of freezers) while (f.next <= t && f.next < f.t1) {   // the freezer's draws; empty: it stops, the cold retreats (the job waits)
+      if (G.useEnergy(f.cap)) used[f.cap]++; else fzWaits.push({ key: f.key, wait: f.every / 2 });   // (the derelict job takes longer; not a cannon's wait)
+      f.next += f.every;
+    }
     // the game ticks (charges: what arrives, what the storm / barnacles take)
     const c0 = G.CAPACITORS.map(c => c.charge), f0 = P.reactor.fuel;
     G.updatePower(dt);
@@ -672,7 +699,7 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
     for (let i = 0; i < 3; i++) lost[i] += Math.max(0, c2[i] - G.CAPACITORS[i].charge);
   }
   for (const f of fights) if (f.waitFrom !== null) waits.push({ key: f.key, side: f.gun, t: f.waitFrom, wait: horizon - f.waitFrom, never: true });
-  const waitByKey = {}; for (const w of waits) waitByKey[w.key] = (waitByKey[w.key] || 0) + w.wait;
+  const waitByKey = {}; for (const w of [...waits, ...fzWaits]) waitByKey[w.key] = (waitByKey[w.key] || 0) + w.wait;
   const produced = got.reduce((s, v) => s + v, 0), demand = used.reduce((s, v) => s + v, 0) + unmet.length + (jump.done === null && Number.isFinite(jump.t) ? 1 : 0);
   const worst = waits.reduce((a, w) => (w.wait > (a?.wait || 0) ? w : a), null);
   const jumpOk = !Number.isFinite(jump.t) || (jump.done !== null && jump.done - jump.t <= plan.window);

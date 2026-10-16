@@ -97,11 +97,11 @@ Object.assign(MISSIONS, {
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
-    crew: {events: [2, 4, 7, 10, 12, 15, 17, 19], cells: [2, 2, 6, 6, 9, 11, 11, 13], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 49% 71% 66% 69% 67% 65% 66% 66% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8); base ship: ×3: front cannon waits 17 s at 339 s; ×4: front cannon waits 16 s at 264 s
+    crew: {events: [2, 2, 6, 8, 11, 13, 15, 17], cells: [2, 2, 2, 6, 9, 9, 11, 11], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (S-7, 2026-10-16): 34% 63% 70% 68% 66% 66% 67% 67% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8; solo: the opener + the lab alone); base ship: ×4: front cannon waits 39 s at 313 s
     needs: {ship: ['cannons'], overcharge: true},
     objective: { kind: 'blackbox' }, rules: { breach: true },
     blurb: 'Dr. Varga\'s lab went quiet. Bring back its black box.',
-    briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something is asleep in there. Don\'t wake it.',
+    briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something in there is still alive. The station\'s freezer log has one line: KEEP S-7 FROZEN.',
     // a calm half minute, a scavenger at the station (the opener), then the lab, then trouble on the way out
     build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('derelict', 70, { side: randSide() }), evAt('mines', 110, { side: randSide() }), evAt('swarm', 150),
                   evAt('maintenance', 190, { radar: false }), evAt('flare', 230)],

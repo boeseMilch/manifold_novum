@@ -89,10 +89,11 @@ function damageColumn(side, large) {
 // Energy
 // ---------------------------------------------------------------------------
 const capBroken = (i) => broken(CAPACITORS[i]);
+const capWrapped = (i) => typeof s7Wrapped === 'function' && s7Wrapped(i);   // S-7's creep wrapped round it (js/culture.js): no charging, no using it
 // line: the power line the energy leaves through (a pulse runs along it to the consumer)
 function useEnergy(i, line) {
   const c = CAPACITORS[i];
-  if (capBroken(i) || c.charge <= 0) return false;
+  if (capBroken(i) || capWrapped(i) || c.charge <= 0) return false;
   c.charge--;
   if (line) power.pulses.push({ line, t: 0 });
   return true;
@@ -329,9 +330,10 @@ function updatePower(dt) {
     if (b.t >= 1 && !b.done) {
       b.done = true;
       const c = CAPACITORS[b.to];
-      if (capBroken(b.to) || c.charge >= CAP_MAX) {                  // full or broken: wasted
+      if (capBroken(b.to) || capWrapped(b.to) || c.charge >= CAP_MAX) {   // full, broken or wrapped by S-7: wasted
         for (let k = 0; k < 10; k++) combatFx(c.x, c.y - 0.3, (Math.random() - 0.5) * 3, -Math.random() * 3, 0.8, POWER_COL, 0.1);
         if (capBroken(b.to)) combatBanner(`Energy wasted — the ${['left', 'middle', 'right'][b.to]} capacitor is broken`);   // (full: the sparks show it, no banner)
+        else if (capWrapped(b.to)) combatBanner(`Energy wasted — S-7 is wrapped round the ${['left', 'middle', 'right'][b.to]} capacitor`);
       } else { c.charge++; c.pulse = 1; sfx.poi(); }
     }
   }
