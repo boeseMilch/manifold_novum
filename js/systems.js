@@ -913,9 +913,10 @@ function useRing(x, y, hw, hh, style, a = 1) {
 const useLift = (s) => (s.z ? GFX.lift(s.z) : 0) + (s.hullTop && typeof hullTopZ === 'function' ? GFX.lift(hullTopZ(s.x, s.y)) : 0);   // (on a counter / the hull wall's top)
 function drawItems(t) {
   ITEMS.forEach((it, i) => {
-    const x = L(it.x), y = L(it.y), bob = Math.sin(t * 2.6 + i * 1.7) * 3;
+    // lying still on the floor (playtest: a bobbing item looked like a dancing panel); floating only where gravity has failed
+    const float = typeof noGravAt === 'function' && noGravAt(it.x, it.y), x = L(it.x), y = L(it.y), bob = float ? Math.sin(t * 2.6 + i * 1.7) * 3 : 0;
     shadowEllipse(x + 3, y + 5, 13 - bob * 0.6, 8, 0.3);
-    if (!spr('items/' + it.kind, 0, it.x, it.y, 0.12 + bob / T, { pick: [0.4, 0.7], emissive: 0.15, ...(it.kind === 'fuel' ? { recolor: POWER_COL } : {}) })) drawItemIcon(it.kind, x, y - 3 + bob, 1.15, t);
+    if (!spr('items/' + it.kind, 0, it.x, it.y, (float ? 0.12 : 0.02) + bob / T, { pick: [0.4, 0.7], emissive: 0.15, ...(it.kind === 'fuel' ? { recolor: POWER_COL } : {}) })) drawItemIcon(it.kind, x, y - 3 + bob, 1.15, t);
   });
 }
 // What E would do ('target': the thick ring and a haze) or what the mouse is on ('hover'), world space.
