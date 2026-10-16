@@ -2,7 +2,7 @@
 // held shields, the jump handle, heartbeat treatment. Run: node tests/minigames.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'clickTarget',
-  'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'hurtCrew', 'netServer', 'evs', 'enc', 'STATIONS'];
+  'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'workProgress', 'hurtCrew', 'netServer', 'evs', 'enc', 'STATIONS'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -71,7 +71,8 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
   check(!G.mission.over, 'with the handle rule the drive waits for someone to pull the handle');
   const me = G.me; me.x = G.JUMP_HANDLE.x + 0.9; me.y = G.JUMP_HANDLE.y + 0.8; me.health = 'ok';
   const m = me.input.mouse; m.wx = G.JUMP_HANDLE.x; m.wy = G.JUMP_HANDLE.y; m.down = true;
-  let t = 0; while (!G.mission.over && t < 10) { G.simTick(DT); t += DT; }
+  let t = 0, mid = null; while (!G.mission.over && t < 10) { G.simTick(DT); t += DT; if (mid === null && t >= G.JUMP_PULL / 2) mid = G.workProgress(me); }
+  check(mid && Math.abs(mid.k - 0.5) < 0.1, `the work bar fills while you pull the handle (${mid ? Math.round(mid.k * 100) : '?'}% halfway)`);
   check(G.mission.over?.won && Math.abs(t - G.JUMP_PULL) < 0.3, `holding the jump handle for ${G.JUMP_PULL} s jumps (${t.toFixed(1)} s)`);
 }
 // --- heartbeat treatment

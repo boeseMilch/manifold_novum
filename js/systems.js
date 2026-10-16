@@ -50,7 +50,7 @@ const ITEMS = [
   { kind: 'extinguisher', x: 31.7, y: 3.8 },     // starboard cannon room
 ];
 const ITEM_NAMES = { repair: 'repair kit', laser: 'laser gun', heavy: 'heavy blaster', fuel: 'fuel cell', extinguisher: 'fire extinguisher', plate: 'hull plate',
-                     coolant: 'coolant canister', blackbox: 'black box', drill: 'mining drill', ore: 'ore sample' };
+                     coolant: 'coolant canister', blackbox: 'black box', drill: 'mining drill', ore: 'ore sample', navcore: 'nav core' };
 const WEAPONS = new Set(['repair', 'laser', 'heavy', 'extinguisher', 'drill']);
 const slotOf = (kind) => WEAPONS.has(kind) ? 'weapon' : 'item';
 
@@ -856,6 +856,18 @@ function drawItemIcon(kind, x, y, s = 1, t = 0) {
   } else if (kind === 'ore') {
     poly([[-9, -4], [-3, -10], [6, -8], [10, 0], [5, 9], [-6, 8]]); ctx.fillStyle = '#6e6359'; ctx.fill(); stroke(2);
     ctx.fillStyle = '#7af0ff'; for (const [ox, oy] of [[-2, -3], [3, 2], [-4, 4]]) { ctx.beginPath(); ctx.arc(ox, oy, 2.2, 0, TAU); ctx.fill(); }
+  } else if (kind === 'navcore') {                                                              // a raider's nav core: a data core with the Red Comet on it
+    const pulse = 0.6 + 0.4 * Math.sin(t * 4);
+    const gl = ctx.createRadialGradient(0, 0, 2, 0, 0, 17); gl.addColorStop(0, `rgba(120,230,255,${0.5 * pulse})`); gl.addColorStop(1, 'rgba(120,230,255,0)');
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, 17, 0, TAU); ctx.fill();
+    poly(Array.from({ length: 6 }, (_, i) => [Math.cos(i * Math.PI / 3 + Math.PI / 6) * 11, Math.sin(i * Math.PI / 3 + Math.PI / 6) * 12]));
+    ctx.fillStyle = '#2b2f3a'; ctx.fill(); stroke(2);
+    rr(-6, -9, 12, 18, 3); ctx.fillStyle = `rgba(110,225,255,${0.55 + 0.35 * pulse})`; ctx.fill(); stroke(1.2);           // the glowing data stack
+    ctx.fillStyle = 'rgba(20,40,60,0.55)'; for (let i = 0; i < 4; i++) ctx.fillRect(-5, -7 + i * 4.2, 10, 1.2);
+    ctx.save(); ctx.translate(2.5, 2.5); ctx.rotate(-0.6);                                         // the Red Comet: a red ball with a tail
+    poly([[0, -2.6], [-9, -0.6], [-9, 0.6], [0, 2.6]]); ctx.fillStyle = 'rgba(232,74,58,0.85)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, TAU); ctx.fillStyle = '#e84a3a'; ctx.fill(); ctx.strokeStyle = '#ffd0c8'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
   } else if (kind === 'fuel') {
     rr(-6, -12, 12, 24, 5);
     const g = ctx.createLinearGradient(-6, 0, 6, 0); g.addColorStop(0, '#b8902e'); g.addColorStop(0.5, '#fff0b0'); g.addColorStop(1, '#8a6a1e');   // (the power colour)
@@ -953,6 +965,7 @@ function useLights() {
 // How far along the hold job `c` is busy with (repair, a hold target, treating someone): { k, label } or null.
 function workProgress(c) {
   if (c.repair?.sys) return { k: c.repair.t / REPAIR_TIME, label: `Repairing the ${c.repair.sys.name.toLowerCase()}` };
+  if (c.hold?.id === 'jumpHandle') return { k: Math.min(1, (mission.jump?.pull || 0) / JUMP_PULL), label: 'Pulling the jump handle' };   // (its own meter: the hold itself never ends)
   if (c.hold && c.hold.time) return { k: c.hold.t / c.hold.time, label: c.hold.label || 'Working' };
   if (c.treat) {
     const who = crew.find(o => o.id === c.treat.id);
