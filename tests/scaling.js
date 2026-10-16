@@ -284,7 +284,12 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   // COARSE: one encounter is the nearest count but still above the target (two are out of spec or far below);
   // PENDING: chapter 5 is set by hand: the pirate base is boarding work the model doesn't see (its idle reads high)
   const COARSE = ['rush'], PENDING = ['c5'];
-  const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => ![...SHORT, ...HARD, ...COARSE, ...PENDING].includes(r.id) && !(FIXED[r.id] || []).includes(1));
+  // BELOW: busier solo than the target since 2026-10-16 (asteroid swarms from the side: the side cannon and its capacitor,
+  // which the auto lever feeds last; leeches no longer burnt off by a shield: shot or pried off outside). The user's rule:
+  // keep the encounters (counts, always, essential) and fix the energy with cells / reactor only, accepting the lower idle:
+  // intro ~48% (target 56%), c6 ~27% and c7 ~27% (37%)
+  const BELOW = ['intro', 'c6', 'c7'];
+  const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => ![...SHORT, ...HARD, ...COARSE, ...PENDING, ...BELOW].includes(r.id) && !(FIXED[r.id] || []).includes(1));
   const fixed = rows.filter(r => (FIXED[r.id] || []).includes(r.n));
   check(fixed.every(r => r.idle < r.aim && r.idle > 0 && r.inSpec && r.verdict !== 'impossible'), `the fixed minimum (c8: six encounters at every crew size) keeps 1-2 players busier than the target, in spec and doable: ${fixed.map(r => `${r.id} ×${r.n} ${pct(r.idle)}% (${r.events} encounters, ${r.verdict})`).join(', ')}`);
   const coarse = solo.filter(r => COARSE.includes(r.id));
@@ -293,7 +298,9 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   check(hard.every(r => r.idle < r.aim - 0.1 && r.idle > 0.2 && r.verdict !== 'impossible'), `solo, the deliberately harder missions sit well below their targets but stay doable (> 20% idle): ${hard.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters, ${r.verdict})`).join(', ')}`);
   const off = fit.filter(r => Math.abs(r.idle - r.aim) > 0.08), bias = fit.reduce((s, r) => s + r.idle - r.aim, 0) / fit.length;
   const intro = solo.find(r => r.id === 'intro');
-  check(Math.abs(intro.idle - 0.56) <= 0.06, `solo, the first mission (intro) leaves the crew ${pct(intro.idle)}% idle (target 56%)`);
+  check(Math.abs(intro.idle - 0.56) <= 0.06 || (BELOW.includes('intro') && intro.idle < 0.56 && intro.idle > 0.4), `solo, the first mission (intro) leaves the crew ${pct(intro.idle)}% idle (target 56%; accepted below it: BELOW)`);
+  const below = solo.filter(r => BELOW.includes(r.id));
+  check(below.every(r => r.idle < r.aim && r.idle > 0.2 && r.inSpec && r.verdict !== 'impossible'), `solo, the missions accepted below their targets (BELOW) stay in spec and doable (> 20% idle): ${below.map(r => `${r.id} ${pct(r.idle)}/${(r.aim * 100).toFixed(1)}% (${r.verdict})`).join(', ')}`);
   check(!off.length && Math.abs(bias) <= 0.04, `solo, every other mission within 8 points of its ramped target, ${(bias * 100).toFixed(1)} points off on average: ${fit.map(r => `${r.id} ${pct(r.idle)}/${(r.aim * 100).toFixed(1)}`).join(', ')}${off.map(r => `; OFF: ${r.id}`).join('')}`);
   const short = solo.filter(r => SHORT.includes(r.id));
   check(short.every(r => r.idle < r.aim && r.idle > 0.25 && r.events <= 5), `solo, the essentials-only missions sit below their targets but stay playable (> 25% idle): ${short.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters)`).join(', ')}`);

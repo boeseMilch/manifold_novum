@@ -277,7 +277,18 @@ function makeAsteroid(x, y, big, vx, vy) {
     crackA: Math.random() * TAU, flash: 0, seed: Math.floor(Math.random() * 1000), damage: [], damageRot: [],
   };
 }
-function spawnSwarmAsteroid() {
+// A swarm's big rock. Front: from 44 units ahead, aimed across the nose and wings (x 8..36). From a side ('port' /
+// 'star'): from 42 units out on that flank (the same time to the hull as from ahead), flying roughly sideways at that
+// flank (y 3..18: the cannon room and the top of the airlock room, the band the side cannon's view frames), at
+// the same speeds.
+const SIDE_SWARM_FROM = 42, SIDE_SWARM_Y = [1, 18], SIDE_SWARM_AIM = [3, 18];
+function spawnSwarmAsteroid(side = 'front') {
+  if (side === 'port' || side === 'star') {
+    const y = SIDE_SWARM_Y[0] + Math.random() * (SIDE_SWARM_Y[1] - SIDE_SWARM_Y[0]), ty = clamp(y + (Math.random() - 0.5) * 10, ...SIDE_SWARM_AIM);
+    const dir = side === 'port' ? 1 : -1, x = side === 'port' ? -SIDE_SWARM_FROM : SHIP_W + SIDE_SWARM_FROM;
+    const d = Math.hypot(SIDE_SWARM_FROM, ty - y), sp = 1.5 + Math.random() * 0.5;
+    return { ...makeAsteroid(x, y, true, dir * SIDE_SWARM_FROM / d * sp, (ty - y) / d * sp), side };
+  }
   const x = 6 + Math.random() * 32, tx = clamp(x + (Math.random() - 0.5) * 10, 8, 36);
   const y = -44, d = Math.hypot(tx - x, 0 - y), sp = 1.5 + Math.random() * 0.5;
   return makeAsteroid(x, y, true, (tx - x) / d * sp, -y / d * sp);

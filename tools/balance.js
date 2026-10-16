@@ -71,7 +71,7 @@ const A = {
   PIN_TIME: 6,            // s to type the vent PIN
   FLARE_COST: 8,          // crew-seconds per crew member to get off the upper deck and wait out a solar flare
   MINES: 2,               // limpet mines per drone (1-3)
-  LEECH_LATCH: 12,        // s until the whole leech swarm has latched on (then one shield burns them all off)
+  LEECH_LATCH: 12,        // s until the whole leech swarm has latched on (then they're pried off outside)
   BOARD_WALK: 24,         // units from our outer airlock to the far end of a docked ship (and back)
   DERELICT_EXTRA: 20,     // s inside a derelict: the jammed door, its fire, finding the box / the engineer
   S7_GRABS: 2,            // S-7 (the derelict's growth, js/culture.js): tendril grabs on the way in, before the cold (black box) …
@@ -143,7 +143,7 @@ const targetIdle = (id, n) => {
 // ===========================================================================
 // The game: constants and a seeded random (so results repeat)
 // ===========================================================================
-const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
+const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
   'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
   'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'SCRAPE_TIME', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
@@ -271,9 +271,10 @@ function calibrate(kind, W = 60, seeds = [1, 2, 3]) {
   const sum = { small: 0, large: 0, crewHits: 0, broken: 0 }, first = {};
   for (const seed of seeds) seeded(seed * 7919, () => {
     const G = loadGame(NAMES);
-    G.startMission('intro'); G.mission.events = []; G.mission.jumpAt = 1e9;
+    const side = G.EVENT_SIDES.swarm; G.EVENT_SIDES.swarm = () => 'front';   // (intro's swarm draws no side here: the measurements stay as before sides)
+    G.startMission('intro'); G.mission.events = []; G.mission.jumpAt = 1e9; G.EVENT_SIDES.swarm = side;
     Object.assign(G.me, { x: 22.2, y: 16.6 });           // the crew member waits in the middle of the reactor room
-    G.runEvent(G.makeEvent(kind, 0, G.SYSTEMS[0]));
+    G.runEvent(kind === 'swarm' ? { t: 0, kind, side: 'front' } : G.makeEvent(kind, 0, G.SYSTEMS[0]));   // (the swarm: measured from ahead, as before sides; no draw)
     let last = 'ok', f = {};
     const mark = (k, t) => { if (f[k] === undefined) f[k] = t; };
     for (let i = 0; i < 60 * W; i++) {
@@ -352,8 +353,9 @@ function jobsFor(ev, ctx) {
           } });
   } else if (k === 'swarm') {
     const per = 3 / A.HIT_RATE, shots = g.SWARM_SIZE * per, hitAt = calibrate('swarm').first.large ?? 24;
-    job({ label: 'asteroid swarm', trip: H('Front cannon'), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: 1, shots, gun: 'front' }],
-          swarm: { per: per * A.AIM_TIME, hitAt } });
+    // (from a side, 2026-10-16: the same job on that side's cannon and capacitor; its rocks take as long to the hull as from ahead)
+    job({ label: 'asteroid swarm', trip: H(gunOf(side)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[side], shots, gun: side }],
+          swarm: { per: per * A.AIM_TIME, hitAt, side } });
   } else if (k === 'intruder') {
     const fight = g.ALIEN_HP / A.LASER_HIT * A.LASER_SHOT;
     for (let i = 0; i < (ev.count || 1); i++)            // (several: one per deck, each its own fight)
@@ -404,9 +406,12 @@ function jobsFor(ev, ctx) {
     job({ label: 'grappler', trip: H(gunOf(side)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[side], shots, gun: side }],
           deadline: rip, late: () => ({ breach: 1 }) });
   } else if (k === 'leeches') {
-    const chew = calibrate('leeches').first.broken ?? A.LEECH_LATCH + g.LEECH_CHEW;
-    job({ label: 'leech swarm (shield)', trip: H(`${L(side)} shield button`), work: 1, notBefore: A.LEECH_LATCH, energy: [{ cap: CAP[side], units: 1, shield: true }],
-          deadline: chew, late: (j, done) => ({ breaks: 6 * Math.max(0, done - chew) / g.LEECH_CHEW + 1 }) });
+    // shields don't stop them (2026-10-16): shoot the six on the way in; any that latch are pried off on a spacewalk (1.5 s each)
+    const chew = calibrate('leeches').first.broken ?? A.LEECH_LATCH + g.LEECH_CHEW, shots = 6 / A.HIT_RATE;
+    const pry = () => { const e = evaTrip(side, g.HULL_SPOTS[side].slice(0, 3)); return { label: 'pry leeches off', prio: 1, trip: e.legs, work: e.extra + 3 * 1.5,
+      deadline: chew, late: (j, done) => ({ breaks: 6 * Math.max(0, done - chew) / g.LEECH_CHEW + 1 }) }; };
+    job({ label: 'leech swarm', trip: H(gunOf(side)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[side], shots, gun: side }],
+          deadline: A.LEECH_LATCH, late: () => ({ jobs: [pry()] }) });
   } else if (k === 'herd') {
     // the herd: its two encounters at once, from one side (each with its own jobs)
     for (const kind of ev.kinds || []) for (const j of jobsFor({ ...ev, kind }, ctx)) J.push({ ...j, label: `herd: ${j.label}` });
@@ -623,7 +628,7 @@ function schedule(build, waitByKey) {
     if (j.swarm) {                                            // each big asteroid: shot in time, or a big hit
       let c = since + A.CLIMB, hits = 0;
       for (let i = 0; i < g.SWARM_SIZE; i++) { c = Math.max(c, i * g.SWARM_INTERVAL) + j.swarm.per; if (c > j.swarm.hitAt + i * g.SWARM_INTERVAL) hits++; }
-      if (hits) { repairs(0, hits, j.release + j.swarm.hitAt, 'front', j.ev); lateList.push(j.label); }
+      if (hits) { repairs(0, hits, j.release + j.swarm.hitAt, j.swarm.side || 'front', j.ev); lateList.push(j.label); }
     }
     let wasLate = false, lost = false;
     if (j.late && j.deadline !== null && since > j.deadline) {

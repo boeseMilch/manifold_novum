@@ -25,7 +25,7 @@ function encounterPlates() {
     add('enemy' + uid(e), { icon: { stealth: 'interceptor', tractor: 'interceptor', grappler: 'spore', mother: 'spore', pirate: 'frigate', derelict: 'frigate' }[e.kind] || e.kind, title: e.D.name.toUpperCase(), sub: `${e.side === 'port' ? 'left' : 'right'} side · ${hit}/${e.pois.length} weak spots hit${e.charge >= 0 ? ' · HEAVY SHOT!' : ''}`, stripe: '#e2574c', red: true });
   }
   if (combat.swarm || combat.asteroids.length)
-    add('swarm', { icon: 'asteroid', title: 'ASTEROID SWARM', sub: `front · ${combat.asteroids.length} incoming${combat.swarm?.left ? `, ${combat.swarm.left} more` : ''}`, stripe: '#e2574c', red: true });
+    add('swarm', { icon: 'asteroid', title: 'ASTEROID SWARM', sub: `${swarmWhere()} · ${combat.asteroids.length} incoming${combat.swarm?.left ? `, ${combat.swarm.left} more` : ''}`, stripe: '#e2574c', red: true });
   for (const a of boarding.invaders) {
     const room = (id) => ROOMS.find(r => r.id === id)?.name.toLowerCase();
     const where = a.state === 'dormant' ? 'asleep on the derelict' : a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'
@@ -170,6 +170,11 @@ function drawSidebarHeader(y) {
   ctx.textAlign = 'left';
 }
 
+// Where the asteroids come from (the rocks in flight, then the ones still to come): 'front', 'left', 'left + front' ...
+function swarmWhere() {
+  const all = [...combat.asteroids.map(a => a.side || 'front'), ...(combat.swarm ? swarmSides(combat.swarm) : [])];
+  return [...new Set(all)].map(s => SIDE_LABEL[s].toLowerCase()).join(' + ') || 'front';
+}
 // The radar contact plates' icon per event kind (default: the kind itself).
 const EVENT_ICONS = { swarm: 'asteroid', intruder: 'alien', mines: 'mine', herd: 'spore', grappler: 'spore', leeches: 'spore', mother: 'spore', spores: 'spore' };
 // Little glyphs for the plates (drawn around cx, cy, ~14 px).

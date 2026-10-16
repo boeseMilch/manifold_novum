@@ -58,7 +58,7 @@ const hit = (G, e, id) => { const p = e.pois.find(p => p.id === id); G.hitPoi(e,
   const broken0 = G.SYSTEMS.filter(s => s.broken).length; tickN(G, 60 * 21);
   check(G.SYSTEMS.filter(s => s.broken && s.col === 2).length > 0 && G.SYSTEMS.filter(s => s.broken).length > broken0, 'latched leeches chew through parts on their side');
   G.SYSTEMS.forEach(s => { s.broken = false; }); G.CAPACITORS[2].charge = 2; G.withCrew(G.me, () => G.pressShield('star')); G.simTick(DT);   // (they may have chewed the shield button)
-  check(!G.org.leeches.some(l => l.state === 'latched'), 'raising the shield on that side burns them off');
+  check(G.org.leeches.some(l => l.state === 'latched'), 'shields don\'t stop leeches: raising the shield leaves them chewing');
   const G2 = fresh(); G2.spawnLeeches('port'); const l = G2.org.leeches[0];
   G2.combat.shells.push({ x: l.x, y: l.y, vx: 0, vy: 0, life: 1 }); G2.simTick(DT);
   check(!G2.org.leeches.includes(l), 'a cannon shell pops a leech on its way in');

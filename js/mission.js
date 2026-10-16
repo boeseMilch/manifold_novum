@@ -51,7 +51,7 @@ const SIDE_NAME = { port: 'left', star: 'right' };
 function eventLabel(ev) {
   if (ev.kind === 'interceptor') return `Interceptor — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'frigate') return `Frigate — ${SIDE_NAME[ev.side]}`;
-  if (ev.kind === 'swarm') return 'Asteroid swarm — front';
+  if (ev.kind === 'swarm') return `Asteroid swarm — ${SIDE_NAME[ev.side] || 'front'}`;
   if (ev.kind === 'intruder') return ev.count > 1 ? `${ev.count} intruders — both airlocks` : `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'saboteur') return `Saboteur — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'mines') return `Mine drone — ${SIDE_NAME[ev.side]}`;
@@ -70,7 +70,8 @@ const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {
   intro: {
     name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
-    crew: {events: [3, 3, 6, 7, 12, 13, 17, 17], cells: [3, 3, 4, 6, 8, 11, 12, 12], reactor: [1, 1, 1, 0.85, 1, 0.7, 0.85, 0.85]},   // --calibrate: 51% 74% 70% 73% 67% 69% 67% 72% idle for 1-8 players (aim 56.0% solo, 68.0% for 2-8)
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [3, 3, 6, 7, 12, 13, 17, 17], cells: [3, 3, 8, 11, 8, 11, 12, 12], reactor: [0.7, 0.7, 0.3, 0.25, 1, 0.7, 0.85, 0.85]},   // --calibrate: 51% 74% 70% 73% 67% 69% 67% 72% idle for 1-8 players (aim 56.0% solo, 68.0% for 2-8)
     build(target) {
       const s1 = randSide();
       return [
@@ -111,7 +112,8 @@ const MISSIONS = {
   },
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space.',
-    crew: {events: [3, 6, 11, 15, 19, 22, 24, 24], cells: [2, 2, 11, 14, 16, 16, 19, 19], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, a failing part at every crew size, 2026-10-16): 47% 67% 64% 66% 64% 70% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8); was 2/6/11/15/19/22/24/24
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [3, 6, 11, 15, 19, 22, 24, 24], cells: [2, 3, 11, 14, 16, 16, 19, 19], reactor: [1, 0.85, 0.7, 0.85, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, a failing part at every crew size, 2026-10-16): 47% 67% 64% 66% 64% 70% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8); was 2/6/11/15/19/22/24/24
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 4, 2026-10-16)
@@ -120,21 +122,24 @@ const MISSIONS = {
   },
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something over there is still alive — its freezer log says: KEEP S-7 FROZEN.',
-    crew: {events: [2, 3, 8, 11, 15, 17, 21, 23], cells: [2, 2, 3, 8, 13, 12, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 47% 64% 65% 66% 66% 66% 65% 68% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [2, 3, 8, 11, 15, 17, 21, 23], cells: [2, 3, 5, 10, 13, 12, 17, 17], reactor: [1, 0.7, 0.5, 0.7, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 47% 64% 65% 66% 66% 66% 65% 68% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
   },
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
-    crew: {events: [3, 4, 8, 11, 13, 17, 19, 24], cells: [2, 2, 3, 4, 5, 6, 7, 8]},   // --calibrate (S-7, 2026-10-16): 50% 65% 65% 63% 65% 65% 65% 67% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8)
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×3, ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [3, 4, 8, 11, 13, 17, 19, 24], cells: [2, 2, 3, 5, 5, 6, 7, 8], reactor: [1, 1, 0.85, 0.7, 1, 1, 1, 1]},   // --calibrate (S-7, 2026-10-16): 50% 65% 65% 63% 65% 65% 65% 67% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8)
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'A big asteroid drifts past in front: spacewalk out, drill two samples and haul them in while the front cannon holds off the small ones.',
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo)
-    crew: {events: [4, 4, 8, 12, 15, 18, 23, 23], cells: [2, 2, 4, 5, 7, 6, 8, 8], reactor: [1, 1, 0.85, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2 samples, a failing part at every crew size, 2026-10-16): 37% 68% 67% 66% 66% 67% 69% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8); was 4/4/8/12/15/18/23/23
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [4, 4, 8, 12, 15, 18, 23, 23], cells: [2, 2, 4, 5, 7, 6, 8, 8], reactor: [1, 1, 0.85, 0.5, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2 samples, a failing part at every crew size, 2026-10-16): 37% 68% 67% 66% 66% 67% 69% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8); was 4/4/8/12/15/18/23/23
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 6, 2026-10-16; the interceptor stays: a mining run in the lanes, not the Mire)
     rules: { breach: true }, objective: { kind: 'ore', count: 2 },
@@ -157,9 +162,11 @@ function shuffledTimeline(kinds, target, start, gap) {
   for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j], kinds[i]]; }
   return kinds.map((kind, i) => makeEvent(kind, start + i * gap, target));
 }
-function makeEvent(kind, t, target) {
+// sides: a mission's fixed side per kind ({ swarm: 'front' }: chapters 1-3 keep their repeats' swarms ahead, no draw)
+function makeEvent(kind, t, target, sides) {
   const ev = { t, kind };
-  if (['interceptor', 'frigate', 'intruder', 'saboteur', 'mines', 'spores', 'canister'].includes(kind) || EVENT_SIDES[kind]) ev.side = EVENT_SIDES[kind]?.() || randSide();
+  if (sides?.[kind]) ev.side = sides[kind];
+  else if (['interceptor', 'frigate', 'intruder', 'saboteur', 'mines', 'spores', 'canister'].includes(kind) || EVENT_SIDES[kind]) ev.side = EVENT_SIDES[kind]?.() || randSide();
   if (kind === 'maintenance') { ev.sys = target; ev.radar = false; }
   if (kind === 'debris') ev.gun = ['port', 'front', 'star'][Math.floor(Math.random() * 3)];
   if (kind === 'antenna' || kind === 'coolant' || kind === 'glitch') ev.radar = false;
@@ -167,6 +174,13 @@ function makeEvent(kind, t, target) {
   return ev;
 }
 const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
+// An asteroid swarm comes from ahead or from either flank (2026-10-16: "asteroids from the side"). A written swarm
+// without a side gets one at the mission start (fillSides); the approved chapters (1-3, 5) write side: 'front'.
+const SWARM_SIDES = ['front', 'port', 'star'];
+EVENT_SIDES.swarm = () => SWARM_SIDES[Math.floor(Math.random() * 3)];
+// Written events of these kinds that don't say their side get one (drawn after the build, so a mission that writes
+// every side draws nothing extra).
+function fillSides(written) { for (const e of written) if (e.kind === 'swarm' && !e.side) e.side = EVENT_SIDES.swarm(); return written; }
 
 // ---------------------------------------------------------------------------
 // Pacing: every mission lasts about MISSION_LENGTH (time to the jump) for any crew; a smaller crew gets
@@ -217,7 +231,7 @@ function selectEvents(id, written, n, target, easy = 0) {
   if ((objective.size || keep.some(e => e.opener)) && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind) || e.opener)) keep.push(optionalFight.e);
   const extra = [...new Set(written.map((e, i) => ({ e, i })).filter(o => !ess.has(o.e.kind) && !o.e.opener)   // repeats: most important optional kinds
     .sort((a, b) => dropRank(b.e) - dropRank(a.e) || a.i - b.i).map(o => o.e.kind))];                            // (and `always` ones), in turn
-  for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target), repeat: true });
+  for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target, M.sides), repeat: true });
   const kept = written.filter(e => keep.includes(e)), reps = keep.filter(e => e.repeat);
   if (kept.length && kept[kept.length - 1].finale) return kept.slice(0, -1).concat(reps, kept.slice(-1));   // (a written finale: finale: true, stays last)
   return kept.concat(reps);
@@ -311,7 +325,7 @@ function startMission(id = 'intro', opts = {}) {
     id, active: true, coilsChecked: false, autoPull: null, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
     crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
   });
-  mission.written = (MISSIONS[id] || MISSIONS.intro).build(null).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
+  mission.written = fillSides((MISSIONS[id] || MISSIONS.intro).build(null).map(({ sys, ...e }) => e));   // the timeline as written (no part refs: it's sent to browsers)
   layoutMission(id, crewSize());
   if (mission.objective?.kind === 'ore' && !ITEMS.some(i => i.kind === 'drill')) ITEMS.push({ kind: 'drill', x: 4.2, y: 21.8 });   // the mining drill, left airlock room
   power.reserve = 0; crewFuel(crewSize());              // (the crew's cells, then the ship's spare cell on top)
@@ -325,7 +339,7 @@ function startMission(id = 'intro', opts = {}) {
 function runEvent(ev) {
   ev.done = true;
   if (ev.kind === 'interceptor' || ev.kind === 'frigate') combatSpawn(ev.kind, ev.side);
-  else if (ev.kind === 'swarm') combatSpawn('swarm');
+  else if (ev.kind === 'swarm') combatSpawn('swarm', ev.side || 'front');
   else if (ev.kind === 'intruder') spawnIntruders(ev);
   else if (ev.kind === 'saboteur') spawnSaboteur(ev.side);
   else if (ev.kind === 'maintenance') { if (!ev.serviced && ev.sys && !ev.sys.broken) breakSystem(ev.sys); }
@@ -418,7 +432,7 @@ function updatePressure() {
   if (!mission.events.some(e => e.press && !e.done)) {   // queue the next extra encounter
     const last = mission.events.filter(e => e.press).pop();
     const t = last ? last.t + pressGap(p.n) : mission.t + PRESS_FIRST;
-    const ev = makeEvent(pressKind(), t, null);
+    const ev = makeEvent(pressKind(), t, null, MISSIONS[mission.id]?.sides);   // (chapters 1-3, 5: swarms from ahead here too)
     mission.events.push({ ...ev, id: Math.max(-1, ...mission.events.map(e => e.id)) + 1, done: false, radar: ev.radar !== false, press: true });
     p.n++;
   }

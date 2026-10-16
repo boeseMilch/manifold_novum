@@ -56,15 +56,20 @@ function drawFlip(p) {
   GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, p.z || 0, { layer: 'top', unlit: true, scale: p.size || 1 });
 }
 function combatBanner(text) { combat.banner = { text, t: 3 }; }
+// The sides of the asteroids a swarm still has to send (a swarm from before sides existed: all front).
+const swarmSides = (S) => (S.sides?.length === S.left ? S.sides : Array(S.left).fill(S.side || 'front'));
 
 // ---------------------------------------------------------------------------
 // Spawning (debug menu)
 // ---------------------------------------------------------------------------
 // replace: debug spawns swap out whatever is on that side; mission spawns line up behind it.
 function combatSpawn(kind, side, replace = false) {
-  if (kind === 'swarm') {
-    combat.swarm = combat.swarm ? { ...combat.swarm, left: combat.swarm.left + SWARM_SIZE } : { left: SWARM_SIZE, t: 0 };
-    combatBanner('Asteroid swarm ahead!'); return;
+  if (kind === 'swarm') {                                 // side: 'front' (ahead), 'port' or 'star' (from that flank)
+    side = side === 'port' || side === 'star' ? side : 'front';
+    const add = Array(SWARM_SIZE).fill(side);              // (sides: the side of each asteroid still to come, in order)
+    combat.swarm = combat.swarm ? { ...combat.swarm, sides: [...swarmSides(combat.swarm), ...add], left: combat.swarm.left + SWARM_SIZE }
+                                : { left: SWARM_SIZE, t: 0, side, sides: add };
+    combatBanner(side === 'front' ? 'Asteroid swarm ahead!' : `Asteroid swarm on the ${SIDE_LABEL[side].toLowerCase()} side!`); return;
   }
   if (replace) {
     combat.enemies.forEach(e => { if (e.side === side) e.stopCharge?.(); });
@@ -180,6 +185,7 @@ function enemyFire(e, mx, my, heavy, target) {
 }
 
 // Our side shields are a curved curtain a little outside the hull.
+const SIDE_SHIELD_Y0 = -0.5, SIDE_SHIELD_Y1 = 25.5;   // the side curtains' span (drawn there too)
 function shieldX(side, y) {
   const u = clamp((y + 0.5) / 26, 0, 1), bulge = 2.2 + 1.6 * 4 * u * (1 - u);
   return side === 'port' ? -bulge : SHIP_W + bulge;
@@ -277,7 +283,10 @@ function updateCombat(dt) {
   if (combat.swarm) {
     const S = combat.swarm;
     S.t -= dt;
-    if (S.left > 0 && S.t <= 0) { combat.asteroids.push(spawnSwarmAsteroid()); S.left--; S.t = SWARM_INTERVAL; }
+    if (S.left > 0 && S.t <= 0) {
+      const sides = swarmSides(S), side = sides.shift();
+      combat.asteroids.push(spawnSwarmAsteroid(side)); S.left--; S.sides = sides; S.side = sides[0] || side; S.t = SWARM_INTERVAL;
+    }
     if (S.left === 0 && !combat.asteroids.length) { combat.swarm = null; sfx.win(); combatBanner('Asteroid swarm cleared!'); }
   }
   for (const a of combat.asteroids) {
@@ -287,10 +296,22 @@ function updateCombat(dt) {
       a.dead = true; dust(a); shieldAbsorb({ heavy: a.big, vx: a.vx, vy: a.vy }, 'front', a.x, shieldYFront(a.x));
       continue;
     }
-    if (pointInPoly(a.x, a.y) || distToPoly(a.x, a.y) < a.r * 0.75) {
-      shipHit('front', a.x, a.y + a.r * 0.5, a.big); a.dead = true; dust(a);
+    // a raised side shield eats the asteroids that cross its curtain (within its span, like enemy shots)
+    let eaten = false;
+    for (const sd of ['port', 'star']) {
+      if (eaten || !(combat.shields[sd].up > 0) || a.y < SIDE_SHIELD_Y0 || a.y > SIDE_SHIELD_Y1) continue;
+      const sgn = sd === 'port' ? 1 : -1, lead = sgn * a.r * 0.6;   // (its leading edge)
+      const before = sgn * (a.x - a.vx * dt + lead - shieldX(sd, a.y - a.vy * dt)), after = sgn * (a.x + lead - shieldX(sd, a.y));
+      if (before < 0 && after >= 0) { eaten = true; a.dead = true; dust(a); shieldAbsorb({ heavy: a.big, vx: a.vx, vy: a.vy }, sd, shieldX(sd, a.y), a.y); }
     }
-    if (a.y > SHIP_H + 10) a.dead = true;
+    if (eaten) continue;
+    if (pointInPoly(a.x, a.y) || distToPoly(a.x, a.y) < a.r * 0.75) {
+      const side = a.side || 'front', off = a.r * 0.5;   // (the impact: the rock's hull-facing edge)
+      if (side === 'front') shipHit('front', a.x, a.y + off, a.big);
+      else shipHit(side, a.x + (side === 'port' ? off : -off), a.y, a.big);
+      a.dead = true; dust(a);
+    }
+    if (a.y > SHIP_H + 10 || a.y < -60 || a.x < -60 || a.x > SHIP_W + 60) a.dead = true;   // (flown past)
   }
 
   // our shells
@@ -371,8 +392,9 @@ function splitAsteroid(a) {
   const nx = -a.vy, ny = a.vx, n = Math.hypot(nx, ny) || 1;
   for (const s of [-1, 1]) {
     const k = 1.3;
-    combat.asteroids.push(makeAsteroid(a.x + s * nx / n * 1.2, a.y + s * ny / n * 1.2, false,
-                                       a.vx * 1.25 + s * nx / n * k, a.vy * 1.25 + s * ny / n * k));
+    const b = makeAsteroid(a.x + s * nx / n * 1.2, a.y + s * ny / n * 1.2, false, a.vx * 1.25 + s * nx / n * k, a.vy * 1.25 + s * ny / n * k);
+    if (a.side) b.side = a.side;                          // (the pieces hit the flank their rock came from)
+    combat.asteroids.push(b);
   }
 }
 

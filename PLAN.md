@@ -117,6 +117,18 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
     (with hot cracks), and so do 4 plain body hits (dark cracks spread from each impact).
     Any hit turns a small one to dust. Big asteroids that reach the ship are large hits,
     small ones are small hits.
+    - **From the side** (2026-10-16, "asteroids from the side" for variety): a swarm event has a side,
+      `front` / `port` / `star` (`EVENT_SIDES.swarm`: random; written swarms without a side get one at the mission
+      start, `fillSides`). A side swarm's rocks start 42 units out on that flank (about as long to the hull as from
+      ahead, ~23 s) and fly roughly sideways at it (y 3..18: the cannon room and the top of the airlock room, the band
+      the side cannon's view frames), same speeds; they hit that side (`shipHit(side, …)`), that side's shield eats
+      them (a crossing test on `shieldX` within y -0.5..25.5: 0/120 big rocks hit with it up), and that side's cannon
+      shoots them (tests/asteroids.js: 6/6 swarms cleared aiming only at what its view shows). Radar / sidebar /
+      banner say the side ("Asteroid swarm — left"); practice has left / right entries. Chapters 1, 2, 3 and 5 are
+      approved as built: their swarms say `side: 'front'`, and `MISSIONS[id].sides = { swarm: 'front' }` keeps their
+      repeats and hot-zone swarms ahead too (no extra random draws: their builds and ratings are unchanged).
+      Everything else draws. Balance model: the same job on that side's cannon and capacitor (the encounter
+      calibration still measures a front swarm).
 - **Enemy fire:** light shots hit a random spot on that side of the hull, or (40% of
   the time when someone is outside) aim at you. Hits are only recorded for now (small,
   large, crew), and they leave scorch marks on the hull.
@@ -124,7 +136,7 @@ or an asteroid swarm in front, teleports you to a cannon, or clears everything.
   the enemy plus an on-screen warning with a progress bar).
 - **Shields:** three big buttons on the lower deck: left, right, and front (reactor
   room wall, under the bridge; middle capacitor). The front shield is a hex arc around the
-  nose that eats asteroids.
+  nose that eats asteroids; the side shields eat the side swarms' asteroids.
   Each button: E raises that side's shield
   for 15 s (18 s with the shield capacitors upgrade), then it recharges for 5 s. It costs
   1 energy. (Was 2 s up / 10 s down with a hold-to-extend; too weak, so no extension now.) The shield is a
@@ -557,8 +569,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   repair kit). Weak spots (eye, ink sac, beak) heal 15 s after being hit unless all three are hit
   in time.
 - **Leech swarm** (`leeches`): 6 leeches fly in and latch on; each latched one breaks a part on
-  its side every 20 s. Shells pop them on the way in; a raised shield on that side burns them
-  off; spacewalkers can pry them off (1.5 s).
+  its side every 20 s. Shells pop them on the way in; spacewalkers can pry them off (1.5 s). Shields don't
+  stop them (2026-10-16, the user: like spores and mines they slip through; they used to burn them off).
 - **Spore mother** (`mother`): puffs spore clouds (barnacles) every 12 s; after each puff one of
   its three sacs opens for 3.5 s — the only time it can be hit.
 - **Leviathan** (`leviathan`): 30 s; every 4 s it bumps the next room in a sweep (red warning on

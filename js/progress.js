@@ -73,16 +73,18 @@ const CAMPAIGN = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
 Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 120, perPirate: 16, rep: 1, xp: 80 },
+    sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
     crew: {events: [3, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 55.5% solo, 67.5% for 2-8); 2026-10-16: + a failing part solo (always; 3 events): 49% solo
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: the first chapters too easy solo)
     objective: { kind: 'raiders', count: 2 }, rules: {},
     blurb: 'Destroy two pirate raiders in the trade lanes. $16 per pirate.',
     briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The job: destroy two raiders. Shoot them to scrap before they dock, or, if one docks, board it and jam its reactor: it blows up as it runs. The Guild pays $16 per pirate on top: raiders shot to scrap and boarders both count. A docked raider\'s crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
-    build: () => [evAt('pirates', 30, { side: randSide() }), evAt('interceptor', 85, { side: randSide() }), evAt('pirates', 145, { side: randSide() }), evAt('swarm', 205), evAt('maintenance', 255, { radar: false })],
+    build: () => [evAt('pirates', 30, { side: randSide() }), evAt('interceptor', 85, { side: randSide() }), evAt('pirates', 145, { side: randSide() }), evAt('swarm', 205, { side: 'front' }), evAt('maintenance', 255, { radar: false })],
   },
   c2: {
     name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 60, rep: 1, xp: 100 },
+    sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
     // events set by hand (the user's playtest: two aliens + opener + frigate, clearly harder than the model's aim); cells and
     // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players.
     // 2026-10-16: + a failing part solo and for 2 (always; 4 / 5 events), the reactor for 2 back in spec at ×0.4 (was 0.3):
@@ -97,12 +99,13 @@ Object.assign(MISSIONS, {
     // solo: the opener (an asteroid swarm; 2026-10-16: no more interceptor half the time, no pirates on this run), the two
     // aliens (the objective), the frigate (the finale); bigger crews add the mine drone, the maintenance failure, a jammed
     // cannon and the antenna (DROP_ORDER), then repeats
-    build: () => [evAt('swarm', 50, { opener: true }), evAt('intruder', 90, { side: randSide(), count: 2 }),
+    build: () => [evAt('swarm', 50, { side: 'front', opener: true }), evAt('intruder', 90, { side: randSide(), count: 2 }),
                   evAt('mines', 130, { side: randSide() }), evAt('debris', 160, { gun: ['port', 'front', 'star'][Math.floor(Math.random() * 3)] }),
                   evAt('maintenance', 190, { radar: false }), evAt('antenna', 220, { radar: false }), evAt('frigate', 250, { side: randSide() })],
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 80, rep: 2, xp: 140 },
+    sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
     crew: {events: [3, 3, 6, 9, 11, 13, 16, 18], cells: [2, 2, 2, 6, 9, 9, 11, 11], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 36% 64% 71% 67% 68% 67% 66% 67% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8); then + the failing part (always) solo and for 2: 3 / 3 events
     needs: {ship: ['cannons'], overcharge: true},
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
@@ -111,12 +114,13 @@ Object.assign(MISSIONS, {
     briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something in there is still alive. The station\'s freezer log has one line: KEEP S-7 FROZEN.',
     // a calm half minute, a mine drone the pirates left at the station (the opener; was an interceptor until 2026-10-16),
     // then the lab, then trouble on the way out
-    build: () => [evAt('mines', 30, { side: randSide(), opener: true }), evAt('derelict', 70, { side: randSide() }), evAt('mines', 110, { side: randSide() }), evAt('swarm', 150),
+    build: () => [evAt('mines', 30, { side: randSide(), opener: true }), evAt('derelict', 70, { side: randSide() }), evAt('mines', 110, { side: randSide() }), evAt('swarm', 150, { side: 'front' }),
                   evAt('maintenance', 190, { radar: false }), evAt('flare', 230)],
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 80, perPirate: 20, rep: 2, xp: 160 },
-    crew: {events: [4, 5, 11, 14, 18, 23, 23, 23], cells: [2, 2, 8, 11, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, a failing part at every crew size, 2026-10-16): 28% 68% 65% 66% 66% 68% 73% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/5/11/14/18/23/24/24 (46% 66% 65% 67% ...)
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×3 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [4, 5, 11, 14, 18, 23, 23, 23], cells: [2, 2, 12, 11, 14, 17, 17, 17], reactor: [1, 1, 0.5, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, a failing part at every crew size, 2026-10-16): 28% 68% 65% 66% 66% 68% 73% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/5/11/14/18/23/24/24 (46% 66% 65% 67% ...)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on)
@@ -129,6 +133,7 @@ Object.assign(MISSIONS, {
   },
   c5: {
     name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 120, rep: 3, xp: 200 },
+    sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
     // set by hand: the whole mission is the pirate base. A patrol interceptor (the opener), then we dock (once it's
     // gone: EVENT_RUNNERS.brig); the jump is due 240 s later (finaleLead), sooner once she's aboard and we've
     // detached (js/dock.js ESCAPE_SPOOL). A bigger crew gets more guards in the base, not more encounters
@@ -144,7 +149,8 @@ Object.assign(MISSIONS, {
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 120, rep: 3, xp: 220 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
-    crew: {events: [4, 5, 7, 12, 16, 19, 25, 25], cells: [3, 3, 5, 11, 14, 19, 24, 24], reactor: [1, 1, 1, 0.85, 0.7, 0.7, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the leech opener + a failing part, 2026-10-16): 35% 65% 65% 65% 67% 66% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 27 s at 235 s; was 4/5/8/11/14/18/24/24
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [4, 5, 7, 12, 16, 19, 25, 25], cells: [3, 3, 5, 14, 14, 19, 24, 24], reactor: [0.5, 0.5, 1, 0.5, 0.7, 0.7, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the leech opener + a failing part, 2026-10-16): 35% 65% 65% 65% 67% 66% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 27 s at 235 s; was 4/5/8/11/14/18/24/24
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores'],                    // (and the leeches: the opener, never dropped)
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
@@ -175,7 +181,8 @@ Object.assign(MISSIONS, {
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 200, rep: 5, xp: 400 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
-    crew: {events: [6, 6, 6, 7, 9, 9, 11, 16], cells: [4, 4, 4, 4, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
+    // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
+    crew: {events: [6, 6, 6, 7, 9, 9, 11, 16], cells: [4, 4, 4, 5, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     // at every crew size, solo too: the spore clouds, the spore mother, the grappler, two failing parts and the leviathan
     // (an essential kind); more players get herds, tides and leeches on top

@@ -6,7 +6,7 @@
 //                 tentacle while it heals), the beak (spits at spacewalkers; quiet while it heals). All
 //                 three hit at once: it's done for. Cannon and spacewalk work together.
 //   Leech swarm   small biters fly in and latch onto the hull, chewing parts in their column.
-//                 Shoot them on the way in; a raised shield on that side burns latched ones off.
+//                 Shoot them on the way in; shields don't stop them; latched ones are pried off on a spacewalk.
 //   Spore mother  far out, puffs spore clouds (barnacles!); after each puff one of its sacs opens
 //                 for a few seconds — that's when you can hit it.
 //   Leviathan     too big to kill. For 30 s it brushes along the ship, bumping one room after another
@@ -139,7 +139,7 @@ function spawnLeeches(side) {
     org.leeches.push({ uid: newUid(), side, x: (side === 'port' ? -16 : SHIP_W + 16) - (side === 'port' ? 1 : -1) * i * 2.2, y: ty + (Math.random() - 0.5) * 8,
                        tx: tx + (side === 'port' ? -0.15 : 0.15), ty: ty + (Math.random() - 0.5) * 0.6, state: 'fly', chew: 0, t: Math.random() * 10 });
   }
-  combatBanner(`Leech swarm on the ${SIDE_LABEL[side].toLowerCase()} side! Shoot them — or burn them off with the shield.`);
+  combatBanner(`Leech swarm on the ${SIDE_LABEL[side].toLowerCase()} side! Shoot them on the way in — shields don't stop them!`);
 }
 function startLeviathan() {
   const start = Math.floor(Math.random() * LEV_ORDER.length), dir = Math.random() < 0.5 ? 1 : -1;
@@ -190,10 +190,7 @@ function updateOrganic(dt) {
       const pool = SYSTEMS.filter(s => s.col === sideCol(l.side) && !s.broken);
       if (pool.length) { const s = pool[Math.floor(Math.random() * pool.length)]; breakSystem(s); combatBanner(`Leeches chewed through the ${s.name.toLowerCase()}!`); }
     }
-    if (combat.shields[l.side]?.up > 0 && (l.state === 'latched' || Math.abs(l.x - shieldX(l.side, l.y)) < 0.8)) {   // the shield burns them off
-      l.dead = true;
-      for (let i = 0; i < 8; i++) combatFx(l.x, l.y, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.5, '#9cd8ff', 0.08);
-    }
+    // (shields don't stop them: like spores and mines they slip through. The user, 2026-10-16. Shoot them on the way in, or pry them off outside.)
     if (l.dead) slimeBurst(l.x, l.y, 10);
   }
   combat.shells = combat.shells.filter(s => !s.dead);
@@ -600,7 +597,7 @@ function drawLeviathanWarning(t) {
 }
 function organicPlates(add) {
   const latched = org.leeches.filter(l => l.state === 'latched').length;
-  if (org.leeches.length) add('leeches', { icon: 'spore', title: 'LEECH SWARM', sub: `${org.leeches.length - latched} incoming, ${latched} chewing · shield burns them off`, stripe: '#ff6a7a', red: true });
+  if (org.leeches.length) add('leeches', { icon: 'spore', title: 'LEECH SWARM', sub: `${org.leeches.length - latched} incoming, ${latched} chewing · shoot them / pry them off outside`, stripe: '#ff6a7a', red: true });
   for (const e of combat.enemies) if (e.kind === 'grappler' && e.tent?.state === 'attached' && e.phase === 'fighting')
     add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} · acid ${Math.round(e.tent.acid / ACID_TIME * 100)}%${poiHit(e, 'sac') ? ' (paused)' : ''} · shoot it or hack it off`, stripe: '#c08aff', red: true });
   if (org.herd) add('herd', { icon: 'spore', title: 'THE HERD', sub: `${org.herd.kinds.map(k => HERD_NAMES[k] || k).join(' + ')} · together, ${SIDE_LABEL[org.herd.side].toLowerCase()} side`, stripe: '#4ad0b0', red: true });
