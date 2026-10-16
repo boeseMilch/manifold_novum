@@ -727,7 +727,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 
 ### 8h. Campaign and progression (`js/progress.js`)
 - **Campaign** (`c1`–`c8`), each with a briefing, objective and pay: First Contract (defeat pirates,
-  $40 each, no intruder) → Strange Cargo (the intruder appears) → The Empty Lab (black box from
+  $16 each, no intruder) → Strange Cargo (the intruder appears) → The Empty Lab (black box from
   Dr. Varga's drifting lab) → Red Comet Cove (pirates took her) → Rescue Dr. Varga (storm the
   pirate base) → Spore Season (living rock sample) → The Deep (coils + jump handle) → The Mother of All
   (the leviathan). Each finished chapter unlocks the next.
@@ -747,9 +747,9 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   reinforced hull (MAX_DAMAGE 5 → 6: the ship survives one more broken part; set per mission in
   `applyShipUpgrades`, so it reaches clients and doesn't leak into the next mission), sprinklers.
   Multiplayer: the union of everyone's upgrades.
-- **Gear** (money, `GEAR`) and **professions** (level 2+): general gear for anyone (gravity boots,
-  thrusters, first aid course, armor vest, stim pack); engineer and weapons specialist, each with a
-  gear track (see 8w, 8x). Suit
+- **Gear** (money, `GEAR`) and **professions** (level 2+, one for good: see "Specialize" below):
+  general gear for anyone (gravity boots, thrusters, first aid course, stim pack); engineer and
+  weapons specialist, each with a gear track (see 8w, 8x; the armor vest is weapons gear). Suit
   color is free, in the lobby. Sent to the server with `hello`.
 - **Profile:** versioned, cookie + localStorage, `migrateProfile()` reads any older version (see
   CLAUDE.md). Each browser credits its own player once per run (`mission.runId`).
@@ -1965,11 +1965,13 @@ exactly (same numbers as before for every mission).
 - **The kit** (`expectedKit(id)`, printed above the table, in `--calibrate` and `--detail`): a first-time campaign run,
   chapter by chapter: money = `rewards.money` + `perPirate` × 2 (`A.BOUNTY_PIRATES`, a modest bounty), reputation =
   `rewards.rep` + 1 (first clear), XP = `rewards.xp` → level. After each chapter it buys gear in `A.GEAR_ORDER` (boots,
-  first aid, thrusters, armor vest, stim pack) as soon as money and level allow, and ship upgrades in `A.SHIP_ORDER`
+  first aid, thrusters, stim pack; the armor vest was in the list until it became weapons gear) as soon as money and level allow, and ship upgrades in `A.SHIP_ORDER`
   (cannons, inserter, caps, spare cell, airlocks, shields, radar, hull, sprinklers, coffee: the prerequisites first, so
   a later chapter's needs aren't blocked), each in order (saving up rather than skipping). Plus the mission's `needs`
   (overcharge is the only profession perk counted: crews are mixed). Every player has it. Skirmish twins get their
   chapter's kit; intro / rush / practice none.
+
+  (The gear column below is from before the 40 % pay; the kit now: see "Specialize" below.)
 
   | Chapter | Earned before | Level | Gear | Ship (reputation) |
   |---|---|---|---|---|
@@ -2041,6 +2043,41 @@ exactly (same numbers as before for every mission).
   at 257 s), ×4 is back in spec.
 - tests/scaling.js: the own targets, the new out-of-spec list, SHORT = c1, HARD = c2 / c3 (solo > 20 % idle), the failing
   part at every crew size in chapters 1-3 (exactly one for 1-2 players, also on very easy), c2's solo timeline with it.
+
+### Specialize: one profession, armor vest to the weapons track, 40 % pay (2026-10-16)
+
+The user: "The engineer track is far superior to the weapon specialist track. Make the 'tank one extra shot' also part
+of the weapons specialist's track. Then make sure you can choose only one. Also give less gold per mission (40%?) so
+that you have to make a choice. [...] most missions should unlock about 0.6 things so that you have to specialize."
+- **Armor vest** (id `armor`, $220, level 3) is weapons-specialist gear now (`prof: 'weapons'`; `applyKit` sets
+  `c.armor` through `perk()`). Weapons track: own laser gun $120 → armor vest $220 → heavy blaster $300. Engineer
+  track: own repair kit $100 → toolbelt $200 → overcharge $300. General: boots $150, first aid $150 (now level 1),
+  thrusters $180, stim pack $250.
+- **One profession, for good** (`pickProfession`, `professionWhy`): picking one asks first, inside the locker ("Become
+  a Weapons specialist? You can't switch later", Yes / Not yet; no browser `confirm()`); after that the other is locked
+  ("You're a Weapons specialist — Start over to choose again"). Start over (lobby) gives a fresh profile and a new choice.
+- **Pay ×0.4** everywhere except chapter 1: c1 $120 + $16 per pirate (a first run with the two raiders: $152, so one
+  $150 item, boots or first aid); c2 $60, c3 $80, c4 $80 + $20 per pirate, c5 $120, c6 $120, c7 $140, c8 $200;
+  skirmishes without their own rewards $16 (was $40). Reputation and XP unchanged.
+
+  | After chapter | Money earned (2 bounty pirates) | Level | What one player can own (e.g.) |
+  |---|---|---|---|
+  | 1 | $152 | 1 | boots *or* first aid |
+  | 2 | $212 | 2 | + own laser gun or own repair kit (profession from level 2) |
+  | 3 | $292 | 3 | (saving) |
+  | 4 | $412 | 4 | + one more track item or general item |
+  | 5 | $532 | 4 | + one more |
+  | 6 | $652 | 4 | + one more |
+  | 7 | $792 | 5 | + one more |
+  | 8 | $992 | 6 | 5-6 items of the 10 open to one profession ($1330-1370 for all) |
+
+  After chapter 1 that's $840 over 7 chapters, at ~$190 an item about 0.6 items per chapter.
+- **Profile v4** (`migrateProfile`): a profile that owns the armor vest but isn't a weapons specialist gets the $220
+  back and loses the vest (it would be dead weight); everything else kept. `tests/progress.js`: engineer / no
+  profession / weapons specialist / v2 gunner with the vest, twice-migrated, the profession lock, c1 pay, ×0.4.
+- **Balance model** (`expectedKit`): follows the new pay; no armor vest (the model ignores professions). The kit now:
+  c2-c4 boots, c5 + first aid, c6-c7 + thrusters, c8 + stim pack. `tests/scaling.js` still passes with it (no
+  re-calibration needed).
 
 ### Difficulty slider
 
@@ -2369,6 +2406,37 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   (js/lights.js): the flicker, the swell as the fire nears flaring up / spreading (`f.t / f.period`: taller
   flames, more embers and smoke) and the foam smothering it (`foamOn`: flames shrink, the light dims, white steam
   bursts off). Smoke: the lit `fx/smoke_*` puffs, above the flames. ?classic: the same flames on the 2D canvas.
+
+### The jump drive in every mission; gravity tides; the herd (2026-10-16, feedback on "The Deep")
+
+The user: the coils are fixed in a minute and then nothing happens; coils and the jump handle only exist in
+that mission, so they're unintuitive, and they do nothing visible at the jump.
+- **Jump coils on every ship** (js/eva.js): the three coils (left, right, rear) are always on the hull, aligned
+  (green) unless the mission has the `coils` rule. `coilFx(c)` says what one shows: while the drive spools
+  (`jumpCharge`) aligned coils glow blue, their dials spin up (`spin`, up to ~24 rad/s), energy rings run out
+  of them and near full charge a beam reaches the engine bell; a misaligned one sputters red with sparks; at the
+  jump they flare (white-blue burst, `flare` 1 → 0 over 0.9 s). Drawing: `drawCoilEnergy` (js/mission.js, glow
+  layer). Each coil misaligned when the drive spools still adds 15 s.
+- **Jump handle at the helm in every mission** (js/minigames.js): without the `handle` rule the autopilot pulls
+  it AUTO_LEAD = 3 s before the drive spools (`mission.autoPull`, the handle moves over AUTO_PULL = 1.2 s, banner
+  "Autopilot: jump handle engaged"; the jump's timing is unchanged). With the rule (The Deep, The Mother of All)
+  it can't: "No nav fix out here — someone pull the jump handle!", and a person holds it (6 s, as before).
+  `handlePull()` is what the handle shows.
+- **Gravity tides** (js/encounters.js, event kind `tide`, `{ dir: 'port' | 'star' }` optional): a 5 s warning
+  (rumble `sfx.rumble`, a growing shake, a violet screen edge, banner "Gravity tide in 5 s", sidebar plate), then
+  a 1.6 s lurch (`sfx.lurch`, full screen shake, a wave across the screen): loose items on the floor slide up to
+  1.2 units towards that side (within their room, clear of furniture), spacewalkers are pushed away from the
+  hull (4.5 u/s², they can steer back), and with the `coils` rule one aligned coil is knocked off (red, sparks).
+  Rule `tides: <s>` (true: 60): a tide every ~that many seconds (×0.8–1.2).
+- **The herd** (js/organic.js, event kind `herd`, `{ kinds: [a, b], side }`; `makeEvent('herd')` draws two
+  different kinds of grappler / leeches / mother / spores): both encounters at once on one side, then a deep,
+  whale-like call (`sfx.whale`), banner "Something calls from the deep… they're coming together, LEFT side!",
+  a teal swell at that screen edge and a THE HERD plate for 8 s. Radar label "Herd: grappler + leech swarm — left".
+  It counts as a fight (COMBAT_KINDS) and as a hot-zone kind (PRESS_KINDS).
+- Practice: gravity tide, two herds, jump spool with the autopilot / pulling the handle yourself, a coils rule
+  toggle. Radar plates got icons for organic kinds and mine drones (EVENT_ICONS, js/sidebar.js).
+- Sprites: none new (hull/coil_*, hull/coil_dial, systems/jump_*); rings, beams, flares and the tide's wave are 2D.
+- Test: tests/jumpdrive.js.
 
 ## Sound
 

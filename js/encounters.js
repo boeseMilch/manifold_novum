@@ -3,15 +3,21 @@
 //   radar and security scrambled, full capacitors arc), coolant leak (the reactor overheats and
 //   scrams unless someone screws in a coolant canister), ship AI glitch (doors lock on their own until
 //   the security console is rebooted in the order the helm shows), the stealth fighter (only visible
-//   after a radar ping) and the tractor tug (freezes the jump countdown until its emitter is shot).
+//   after a radar ping), the tractor tug (freezes the jump countdown until its emitter is shot) and gravity
+//   tides (a warning rumble, then the ship lurches: loose items slide, spacewalkers are pushed off the hull,
+//   and, rule `coils`, one jump coil is knocked out of alignment).
 // Everything in `enc` is plain data.
 
-const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null };
+const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null };
 const FLARE_WARN = 10, FLARE_TIME = 8, STORM_TIME = 30, STORM_ARC = 10, COOLANT_RISE = 50, SCRAM_TIME = 30, COOLANT_FIX = 3, GLITCH_STEP = 3;
 const COOLANT_CRATE = { x: 11.4, y: 22.6 };
 const UPPER = new Set(['portGun', 'bridge', 'starGun']);
+// Gravity tides: TIDE_WARN s of warning, then TIDE_TIME s of lurch. Loose items slide up to TIDE_SLIDE units
+// (TIDE_SLIDE_SPEED u/s) towards one side; spacewalkers get TIDE_PUSH u/s² away from the hull while it lasts
+// (about 2 u/s outwards: they can steer back). Rule `tides: <s>` (true: TIDE_EVERY): a tide every ~that many s.
+const TIDE_WARN = 5, TIDE_TIME = 1.6, TIDE_SLIDE = 1.2, TIDE_SLIDE_SPEED = 1.5, TIDE_PUSH = 4.5, TIDE_EVERY = 60;
 
-function resetEncounters() { Object.assign(enc, { flare: null, storm: null, coolant: null, scram: 0, glitch: null }); }
+function resetEncounters() { Object.assign(enc, { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null }); }
 
 // ---------------------------------------------------------------------------
 // Starting them
@@ -35,6 +41,52 @@ function startGlitch() {
   enc.glitch = { t: 0, order, step: 0, locked: [] };
   combatBanner('Ship AI glitch — doors are locking on their own! Reboot it at the security console.'); sfx.say?.('I am. Fine. Everything. Is fine.');
 }
+// dir: -1 the tide pulls to the left (port), +1 to the right.
+function startTide(dir = Math.random() < 0.5 ? -1 : 1) {
+  enc.tide = { phase: 'warn', t: TIDE_WARN, dir, coil: null };
+  combatBanner(`Gravity tide in ${TIDE_WARN} s — hold on, it pulls ${dir < 0 ? 'left' : 'right'}!`); sfx.rumble?.(TIDE_WARN); sfx.say?.('Gravity tide incoming.');
+}
+function tideHit() {
+  const T0 = enc.tide;
+  T0.phase = 'lurch'; T0.t = TIDE_TIME;
+  combat.shake = 1; sfx.lurch?.();
+  for (const it of ITEMS) it.slide = TIDE_SLIDE;       // (updateTide moves them)
+  let text = 'Gravity tide! The ship lurches';
+  if (mission.rules?.coils) {
+    const c = knockCoil();
+    if (c) { T0.coil = c.name; text = `Gravity tide! It knocked the ${c.name} jump coil out of alignment`; }
+  }
+  combatBanner(text);
+}
+function updateTide(dt) {
+  const T0 = enc.tide;
+  if (mission.rules?.tides && mission.active && !mission.over) {   // the rule: a tide every so often
+    const every = mission.rules.tides === true ? TIDE_EVERY : +mission.rules.tides || TIDE_EVERY;
+    if (enc.tideNext == null) enc.tideNext = mission.t + every;
+    if (mission.t >= enc.tideNext) { enc.tideNext = mission.t + every * (0.8 + 0.4 * Math.random()); if (!enc.tide) startTide(); }
+  }
+  if (!T0) return;
+  T0.t -= dt;
+  if (T0.phase === 'warn') {
+    combat.shake = Math.max(combat.shake, 0.18 + 0.15 * (1 - T0.t / TIDE_WARN));   // a growing rumble
+    if (T0.t <= 0) tideHit();
+    return;
+  }
+  // the lurch: loose items slide towards the tide's side (staying in their room, clear of furniture)
+  for (const it of ITEMS) {
+    if (!(it.slide > 0)) continue;
+    const room = roomAt(it.x, it.y), step = Math.min(it.slide, TIDE_SLIDE_SPEED * dt), nx = it.x + T0.dir * step;
+    const clear = (x) => room && roomAt(x, it.y) === room && !SOLIDS.some(S => inRect(x, it.y, S, 0.05));
+    if (clear(nx) && clear(nx + T0.dir * 0.25)) { it.x = nx; it.slide -= step; } else it.slide = 0;
+  }
+  // spacewalkers: pushed away from the hull
+  for (const c of crew) {
+    if (c.mode !== 'eva') continue;
+    const r = evaReach(c.x, c.y);
+    c.vx += r.nx * TIDE_PUSH * dt; c.vy += r.ny * TIDE_PUSH * dt;
+  }
+  if (T0.t <= 0) { for (const it of ITEMS) delete it.slide; enc.tide = null; }
+}
 const exposed = (c) => c.mode === 'eva' || c.mode === 'gun' || c.mode === 'hatch' || (c.mode === 'inside' && UPPER.has(roomAt(c.x, c.y)?.id));
 function arcFullCaps() {
   CAPACITORS.forEach((c, i) => {
@@ -49,6 +101,7 @@ function arcFullCaps() {
 // Update
 // ---------------------------------------------------------------------------
 function updateEncounters(dt) {
+  updateTide(dt);
   const f = enc.flare;
   if (f) {
     f.t -= dt;
@@ -176,9 +229,11 @@ EVENT_RUNNERS.flare = () => startFlare();
 EVENT_RUNNERS.storm = () => startStorm();
 EVENT_RUNNERS.coolant = () => startCoolantLeak();
 EVENT_RUNNERS.glitch = () => startGlitch();
+EVENT_RUNNERS.tide = (ev) => startTide(ev.dir === 'port' || ev.dir < 0 ? -1 : ev.dir === 'star' || ev.dir > 0 ? 1 : undefined);
 EVENT_RUNNERS.stealth = (ev) => combatSpawn('stealth', ev.side);
 EVENT_RUNNERS.tractor = (ev) => combatSpawn('tractor', ev.side);
 Object.assign(EVENT_LABELS, {
+  tide: () => 'Gravity tide — everywhere',
   flare: () => 'Solar flare — everywhere', storm: () => 'Ion storm — everywhere', coolant: () => 'Coolant leak — reactor', glitch: () => 'AI glitch — doors',
   stealth: (ev) => `Stealth fighter — ${SIDE_NAME[ev.side]}`, tractor: (ev) => `Tractor tug — ${SIDE_NAME[ev.side]}`,
 });
@@ -210,6 +265,23 @@ function drawEncounterOverlay(view, t) {
   } else if (f?.phase === 'rad') {
     screenTint([255, 236, 190], 0.22 + 0.06 * Math.sin(t * 20));
   }
+  if (typeof drawHerdCall === 'function') drawHerdCall(t);   // (js/organic.js)
+  const td = enc.tide;
+  if (td) {                                            // the tide: a violet pulse at the edges while it builds, a wave sweeping across in the lurch
+    if (td.phase === 'warn') {
+      const k = 1 - td.t / TIDE_WARN, w = 0.6 + 0.4 * Math.sin(t * (5 + 10 * k));
+      screenGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.4, Math.hypot(VW, VH) / 2, [[0, [150, 100, 255], 0], [1, [150, 100, 255], (0.1 + 0.2 * k) * w]]);
+    } else {
+      const p = 1 - td.t / TIDE_TIME, x0 = td.dir > 0 ? p * VW * 1.3 - VW * 0.15 : VW * 1.15 - p * VW * 1.3;
+      ctx.save();
+      for (let i = 0; i < 3; i++) {
+        const x = x0 - td.dir * i * 70, a = (0.28 - i * 0.08) * (1 - p * 0.6), g = ctx.createLinearGradient(x - 90, 0, x + 90, 0);
+        g.addColorStop(0, 'rgba(170,130,255,0)'); g.addColorStop(0.5, `rgba(190,160,255,${a})`); g.addColorStop(1, 'rgba(170,130,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(x - 90, 0, 180, VH);
+      }
+      ctx.restore();
+    }
+  }
   if (enc.storm && me.mode === 'inside') {
     const sx = view.ox + L(me.x) * view.zoom, sy = view.oy + L(me.y - GFX.lift(0.9)) * view.zoom * (view.sy || 1), r = L(5.5) * view.zoom, a = me.face;
     ctx.save();
@@ -228,5 +300,6 @@ function shipEventPlates(add) {
   if (enc.storm) add('storm', { icon: 'surge', title: 'ION STORM', sub: `${Math.ceil(enc.storm.t)} s · full capacitors arc`, stripe: '#9cc4ff', red: true });
   if (enc.coolant) add('coolant', { icon: 'fire', title: 'COOLANT LEAK', sub: `reactor heat ${Math.round(enc.coolant.heat)}% · canister in the left airlock room`, stripe: '#4ac0e0', red: true });
   if (enc.scram) add('scram', { icon: 'fire', title: 'REACTOR SCRAM', sub: `no energy for ${Math.ceil(enc.scram)} s`, stripe: '#ff4a3a', red: true });
+  if (enc.tide) add('tide', { icon: 'tide', title: 'GRAVITY TIDE', sub: enc.tide.phase === 'warn' ? `in ${Math.ceil(enc.tide.t)} s · pulls ${enc.tide.dir < 0 ? 'left' : 'right'} · spacewalkers, hold on!` : enc.tide.coil ? `the ${enc.tide.coil} jump coil got knocked off` : 'the ship lurches', stripe: '#b58aff', red: true });
   if (enc.glitch) add('glitch', { icon: 'unknown', title: 'AI GLITCH', sub: 'doors lock themselves · reboot at security', stripe: '#c08aff', red: true });
 }

@@ -50,7 +50,7 @@ function encounterPlates() {
   if (dead.length) add('broken', { icon: 'wrench', title: dead.length > 1 ? `BROKEN (${dead.length})` : 'BROKEN', sub: dead.map(s => s.outside ? `${s.name} (outside)` : s.name).join(', '), stripe: '#e2574c', red: true, wrap: true });
   if (mission.active && !mission.over) {
     const { known } = radarList();
-    for (const e of known) if (!e.done) add('ev' + e.id, { icon: e.kind === 'swarm' ? 'asteroid' : e.kind === 'intruder' ? 'alien' : e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });
+    for (const e of known) if (!e.done) add('ev' + e.id, { icon: EVENT_ICONS[e.kind] || e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });
     // a maintenance pair seen at the helm, not yet orange: one panel per pair (names sorted: it doesn't say which one fails)
     for (const w of maintWarnings()) if (w.ev.seen && !w.orange) add('irr' + w.ev.id, { icon: 'wrench', title: 'IRREGULAR', sub: `${[w.sys, w.decoy].filter(s => s && !s.broken).map(s => s.name).sort().join(' or ')}`, stripe: '#ffd84a' });
   }
@@ -170,6 +170,8 @@ function drawSidebarHeader(y) {
   ctx.textAlign = 'left';
 }
 
+// The radar contact plates' icon per event kind (default: the kind itself).
+const EVENT_ICONS = { swarm: 'asteroid', intruder: 'alien', mines: 'mine', herd: 'spore', grappler: 'spore', leeches: 'spore', mother: 'spore', spores: 'spore' };
 // Little glyphs for the plates (drawn around cx, cy, ~14 px).
 function plateIcon(kind, cx, cy, t) {
   ctx.save(); ctx.translate(cx, cy);
@@ -226,6 +228,9 @@ function plateIcon(kind, cx, cy, t) {
   } else if (kind === 'ping') {
     rr(-8, -6, 16, 12, 3); ctx.fillStyle = '#4b5263'; ctx.fill(); stroke(1.5);
     ctx.strokeStyle = '#ffe08a'; ctx.lineWidth = 2; for (const r of [10, 14]) { ctx.beginPath(); ctx.arc(0, 0, r, -0.5, 0.5); ctx.stroke(); }
+  } else if (kind === 'tide') {                       // a gravity tide: three waves
+    ctx.strokeStyle = '#c8a8ff'; ctx.lineWidth = 2.5;
+    for (const dy of [-6, 0, 6]) { ctx.beginPath(); for (let x = -9; x <= 9; x++) { const y = dy + Math.sin(x * 0.6 + t * 4) * 2.2; x === -9 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); } ctx.stroke(); }
   } else if (kind === 'jump') {
     ctx.strokeStyle = '#7af0ff'; ctx.lineWidth = 3;
     for (const dy of [4, -2, -8]) { ctx.beginPath(); ctx.moveTo(-7, dy + 5); ctx.lineTo(0, dy); ctx.lineTo(7, dy + 5); ctx.stroke(); }

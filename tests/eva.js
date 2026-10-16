@@ -144,7 +144,7 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
   const m = me.input.mouse; m.wx = c.x; m.wy = c.y; m.down = true; tickN(G2, 60 * 3.2); m.down = false;
   check(c.ok, 'a spacewalker aligns a coil in 3 s');
   const G3 = fresh(); G3.startMission('intro');
-  check(!G3.evs.coils.length, 'the intro run has no jump coils');
+  check(G3.evs.coils.length === 3 && G3.evs.coils.every(c => c.ok), 'the intro run has the jump coils too, all aligned (no coils rule)');
 }
 // --- how far you may float: no wall near the hull; a soft edge that keeps the ship on screen
 {

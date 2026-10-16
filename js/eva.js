@@ -2,7 +2,8 @@
 //   Limpet mines (a drone sticks them on; pry them off or they blow a hole), hull barnacles
 //   (spore clouds seed them; scrape them off before they drill in), debris jamming a cannon's
 //   track, a crooked radar antenna, a fuel canister drifting past (optional loot), and the three
-//   jump coils that must be aligned before the jump (missions with the `coils` rule).
+//   jump coils: part of every ship's jump drive (they light up and spin while it spools, and flare at the
+//   jump); only missions with the `coils` rule start them misaligned (and a gravity tide can knock one off).
 // Everything in `evs` is plain data (sent to browsers as is).
 
 const evs = { mines: [], drones: [], barnacles: [], spores: [], jams: {}, antenna: true, canister: null, coils: [] };
@@ -27,7 +28,7 @@ const sideCol = (side) => side === 'port' ? 0 : side === 'star' ? 2 : 1;
 
 function resetEva(rules = {}) {
   Object.assign(evs, { mines: [], drones: [], barnacles: [], spores: [], jams: {}, antenna: true, canister: null,
-                       coils: rules.coils ? COIL_SPOTS.map(c => ({ ...c, ok: false, a: 0.6 + Math.random() * 1.6 })) : [] });
+                       coils: COIL_SPOTS.map(c => ({ ...c, ok: !rules.coils, a: rules.coils ? 0.6 + Math.random() * 1.6 : 1.4 })) });   // (always there; misaligned only with the rule; no random draw without it: missions' random builds stay as they were)
 }
 function freeHullSpot(side) {
   // mines sit just off the hull, barnacles on it (onHullPlating): compare the places along the hull
@@ -223,6 +224,26 @@ function coilDelay() {
   const n = evs.coils.filter(c => !c.ok).length;
   return n * COIL_DELAY;
 }
+// Knock one aligned coil out of alignment (a gravity tide, missions with the `coils` rule): red light, sparks.
+function knockCoil() {
+  const pool = evs.coils.filter(c => c.ok);
+  const c = pool[Math.floor(Math.random() * pool.length)];
+  if (!c) return null;
+  c.ok = false; c.a = 0.6 + Math.random() * 1.6;
+  for (let i = 0; i < 18; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.5, i % 2 ? '#ffe08a' : '#7af0ff', 0.08);
+  sfx.spark(); sfx.clank();
+  return c;
+}
+// What a coil shows (drawing only, also used by the tests): k, the jump drive's charge (jumpCharge: 0 at rest,
+// rising through the spool-up); spin, how fast its dial turns (rad/s: aligned coils spin up with the charge,
+// a misaligned one only jitters); sputter, a misaligned coil while the drive charges (red flicker, sparks);
+// flare, 1 → 0 over the first moments of the jump itself (the coils burst white-blue).
+const COIL_FLARE = 0.9;
+function coilFx(c) {
+  const k = typeof jumpCharge === 'function' ? jumpCharge() : 0, u = typeof jumpOutT === 'function' ? jumpOutT() : Infinity;
+  return { k, spin: c.ok && k > 0.02 ? 1.5 + 22 * k * k : 0, sputter: !c.ok && k > 0.05, flare: u < COIL_FLARE ? 1 - u / COIL_FLARE : 0 };
+}
+const coilSpin = { a: 0, t: null };                  // this browser's dial angle (a smooth spin while k changes)
 
 // ---------------------------------------------------------------------------
 // Drawing (outside the hull)
@@ -271,9 +292,17 @@ function drawEvaJobs(t) {
     const s = `hull/hatch_${h.side}`, n = broken(h) ? s + '_broken' : h.locked && h.open < 0.05 ? s + '_locked' : s;
     GFX.sprite(n, n === s ? Math.round(clamp(h.open, 0, 1) * 5) : 0, h.x, h.y, 0, { layer: 'wall', sortY: h.y + 1.16, emissive: 0.5 });
   }
-  // jump coils: a ring with a dial, red until aligned
+  // jump coils: a ring with a dial, red until aligned; the dials spin up while the drive spools (coilFx; the
+  // glow, energy rings and the flare at the jump are drawn in the glow layer: drawCoilEnergy, js/mission.js)
+  {
+    const ref = evs.coils.find(c => c.ok), sp = ref ? coilFx(ref).spin : 0;
+    if (coilSpin.t !== null && sp > 0) coilSpin.a = (coilSpin.a + clamp(t - coilSpin.t, 0, 0.1) * sp) % TAU;
+    else if (!sp) coilSpin.a = 0;
+    coilSpin.t = t;
+  }
   for (const c of evs.coils) {
-    const x = L(c.x), y = L(c.y), dial = c.ok ? -Math.PI / 2 : c.a + Math.sin(t * 2 + c.x) * 0.15;
+    const fx = coilFx(c), x = L(c.x), y = L(c.y);
+    const dial = c.ok ? -Math.PI / 2 + coilSpin.a : c.a + Math.sin(t * (fx.sputter ? 17 : 2) + c.x) * (fx.sputter ? 0.35 : 0.15);
     const cs = `hull/coil_${c.name === 'rear' ? 'stern' : c.name}`;   // (the rear coil's sprites are named 'stern')
     if (GFX.on && GFX.ready(`${cs}_ok`) && GFX.ready('hull/coil_dial')) {   // the coil on its bracket, the dial on top
       GFX.sprite(`${cs}_${c.ok ? 'ok' : 'bad'}`, 0, c.x, c.y, 0, { layer: 'decal', emissive: 0.6 });
@@ -283,7 +312,7 @@ function drawEvaJobs(t) {
     }
     ctx.beginPath(); ctx.arc(x, y, 12, 0, TAU); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(2);
     ctx.beginPath(); ctx.arc(x, y, 9, 0, TAU); ctx.strokeStyle = c.ok ? '#5fd6a0' : '#e2574c'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.save(); ctx.translate(x, y); ctx.rotate(c.ok ? -Math.PI / 2 : c.a + Math.sin(t * 2 + c.x) * 0.15);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(dial);
     ctx.fillStyle = '#e8ecf4'; ctx.fillRect(0, -1.5, 9, 3); ctx.restore();
     if (!c.ok) jobMarker(c.x, c.y, t, reach(c.x, c.y), '#7af0ff');
   }

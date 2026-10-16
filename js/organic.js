@@ -13,7 +13,7 @@
 //                 (the sidebar warns which); stay out of the room it's about to hit.
 // Grappler and spore mother are enemy kinds (ENEMY_TYPES); leeches and the leviathan live in `org`.
 
-const org = { leeches: [], lev: null };
+const org = { leeches: [], lev: null, herd: null };
 const HEAL_TIME = 20, TENTACLE_EVERY = 10, TENTACLE_COIL = 2, CUT_TIME = 3, ACID_TIME = 30, BEAK_EVERY = 3.5, BEAK_WIND = 0.7;
 const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 4.5, MOTHER_TOSSES = 2, TOSS_REACH = 0.55, TOSS_FLICK = 0.3, TOSS_REST = 0.25, LEV_TIME = 30, LEV_STEP = 4;
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
@@ -23,7 +23,7 @@ function slimeBurst(x, y, n = 14, size = 0.1, z = 0) {   // z: up on something (
   for (let i = 0; i < n; i++) { const a = Math.random() * TAU, sp = 1 + Math.random() * 4; combatFxAt(z, x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.8 + Math.random() * 0.6, ['#9cff5a', '#6ad13a', '#c8ff6e'][i % 3], size + Math.random() * size); }
   sfx.squelch?.();
 }
-function resetOrganic() { org.leeches = []; org.lev = null; }
+function resetOrganic() { org.leeches = []; org.lev = null; org.herd = null; }
 
 // ---------------------------------------------------------------------------
 // Grappler
@@ -147,7 +147,24 @@ function startLeviathan() {
   org.lev = { t: LEV_TIME, step: LEV_STEP, order, i: 0, x: 0 };
   combatBanner('LEVIATHAN — keep out of the rooms it\'s about to bump!'); sfx.say?.('Unidentified. Very large. Object.');
 }
+// The herd: two organic encounters at once, from one side, announced by a deep call through the hull
+// (event kind `herd`: { kinds: [a, b], side }; makeEvent('herd') draws a pair). org.herd is the call
+// (HERD_CALL s: the banner, the sidebar plate, a dark teal swell at that side of the screen).
+const HERD_KINDS = ['grappler', 'leeches', 'mother', 'spores'], HERD_CALL = 8;
+const HERD_NAMES = { grappler: 'grappler', leeches: 'leech swarm', mother: 'spore mother', spores: 'spore clouds' };
+function herdPair() {
+  const a = HERD_KINDS[Math.floor(Math.random() * HERD_KINDS.length)], rest = HERD_KINDS.filter(k => k !== a);
+  return [a, rest[Math.floor(Math.random() * rest.length)]];
+}
+function startHerd(kinds = herdPair(), side = randSide()) {
+  kinds = kinds.filter(k => HERD_KINDS.includes(k));
+  for (const k of kinds) runEvent({ t: mission.t, kind: k, side, herd: true });   // (each one's own banner first…)
+  org.herd = { side, kinds, t: HERD_CALL };
+  combatBanner(`Something calls from the deep… they're coming together, ${SIDE_LABEL[side].toUpperCase()} side!`);   // (…then the call)
+  sfx.whale?.(); combat.shake = Math.max(combat.shake, 0.4);
+}
 function updateOrganic(dt) {
+  if (org.herd && (org.herd.t -= dt) <= 0) org.herd = null;
   // grappler tentacles: one cannon hit cuts them
   for (const e of combat.enemies) {
     if (e.kind !== 'grappler' || e.tent?.state !== 'attached') continue;
@@ -221,9 +238,12 @@ EVENT_RUNNERS.grappler = (ev) => combatSpawn('grappler', ev.side);
 EVENT_RUNNERS.mother = (ev) => combatSpawn('mother', ev.side);
 EVENT_RUNNERS.leeches = (ev) => spawnLeeches(ev.side);
 EVENT_RUNNERS.leviathan = () => startLeviathan();
+EVENT_SIDES.herd = randSide;
+EVENT_RUNNERS.herd = (ev) => startHerd(ev.kinds?.length ? ev.kinds : herdPair(), ev.side || randSide());
 Object.assign(EVENT_LABELS, {
   grappler: (ev) => `Grappler — ${SIDE_NAME[ev.side]}`, leeches: (ev) => `Leech swarm — ${SIDE_NAME[ev.side]}`,
   mother: (ev) => `Spore mother — ${SIDE_NAME[ev.side]}`, leviathan: () => 'Leviathan — front',
+  herd: (ev) => `Herd: ${(ev.kinds || []).map(k => HERD_NAMES[k] || k).join(' + ') || 'organics'} — ${SIDE_NAME[ev.side]}`,
 });
 
 // ---------------------------------------------------------------------------
@@ -583,6 +603,7 @@ function organicPlates(add) {
   if (org.leeches.length) add('leeches', { icon: 'spore', title: 'LEECH SWARM', sub: `${org.leeches.length - latched} incoming, ${latched} chewing · shield burns them off`, stripe: '#ff6a7a', red: true });
   for (const e of combat.enemies) if (e.kind === 'grappler' && e.tent?.state === 'attached' && e.phase === 'fighting')
     add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} · acid ${Math.round(e.tent.acid / ACID_TIME * 100)}%${poiHit(e, 'sac') ? ' (paused)' : ''} · shoot it or hack it off`, stripe: '#c08aff', red: true });
+  if (org.herd) add('herd', { icon: 'spore', title: 'THE HERD', sub: `${org.herd.kinds.map(k => HERD_NAMES[k] || k).join(' + ')} · together, ${SIDE_LABEL[org.herd.side].toLowerCase()} side`, stripe: '#4ad0b0', red: true });
   const V = org.lev;
   if (V) add('lev', { icon: 'unknown', title: 'LEVIATHAN', sub: `next: ${V.order.slice(V.i, V.i + 3).map(id => roomById(id).name.toLowerCase()).join(' → ')}`, stripe: '#7af0ff', red: true });
 }
@@ -688,6 +709,15 @@ function drawLeviathanSprites(V, t) {
 }
 let levSpots = null;
 // On top (from drawCombatFront): the leviathan's glowing spots, pulsing down its body.
+// Screen space: the herd's call, a dark teal swell rolling in at that side of the screen (drawEncounterOverlay).
+function drawHerdCall(t) {
+  const H = org.herd;
+  if (!H) return;
+  const u = HERD_CALL - H.t, k = Math.min(1, u / 0.8) * Math.min(1, H.t / 3), w = 0.6 + 0.4 * Math.sin(u * 2.2), left = H.side === 'port';
+  const g = ctx.createLinearGradient(left ? 0 : VW, 0, left ? VW * 0.45 : VW * 0.55, 0);
+  g.addColorStop(0, `rgba(40,170,150,${0.42 * k * w})`); g.addColorStop(1, 'rgba(40,170,150,0)');
+  ctx.fillStyle = g; ctx.fillRect(left ? 0 : VW * 0.55, 0, VW * 0.45, VH);
+}
 function drawOutsideOverlays(t) {
   const S = levSpots; levSpots = null;
   if (!S || !org.lev) return;

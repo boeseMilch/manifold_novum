@@ -113,6 +113,29 @@ const sfx = (() => {
       if (muted || typeof speechSynthesis === 'undefined' || speechSynthesis.speaking) return;
       try { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; u.pitch = 0.6; u.volume = 0.8; speechSynthesis.speak(u); } catch (e) { /* no voice */ }
     },
+    // A gravity tide building (js/encounters.js): a low rumble swelling over dur s, groaning hull plates on top.
+    rumble(dur = 5) {
+      if (!ac) return;
+      const t0 = ac.currentTime, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      s.buffer = noiseBuf; s.loop = true; f.type = 'lowpass'; f.frequency.setValueAtTime(90, t0); f.frequency.linearRampToValueAtTime(220, t0 + dur);
+      g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.7, t0 + dur * 0.9); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.4);
+      s.connect(f); f.connect(g); g.connect(master); s.start(t0); s.stop(t0 + dur + 0.5);
+      tone('sine', 38, 52, dur, 0.35, 0, dur * 0.8);
+      for (let i = 1; i < 4; i++) tone('sawtooth', 70 + i * 13, 55 + i * 9, 0.7, 0.05 * i, dur * i / 4, 0.25);   // groaning plates
+    },
+    // The tide hits: a heavy lurch, the hull creaking, loose things rattling.
+    lurch() {
+      noise(1.1, 110, 0.9, 0.6); tone('sine', 60, 30, 1.0, 0.8); tone('sawtooth', 95, 60, 0.9, 0.08, 0.15, 0.2);
+      for (let i = 0; i < 5; i++) setTimeout(() => noise(0.09, 1800 + Math.random() * 2500, 0.18, 3), 200 + i * 110);
+    },
+    // A herd's call from the deep (js/organic.js): a long, low, whale-like moan sliding up and down, echoing.
+    whale() {
+      for (const [d, a] of [[0, 0.5], [0.9, 0.22], [1.8, 0.1]]) {
+        tone('sine', 70, 115, 1.3, a, d, 0.5); tone('sine', 115, 58, 1.6, a * 0.9, d + 1.2, 0.3);
+        tone('triangle', 140, 230, 1.3, a * 0.25, d, 0.5); tone('triangle', 230, 116, 1.6, a * 0.2, d + 1.2, 0.3);
+      }
+      noise(3.5, 90, 0.25, 0.4);
+    },
     // A wet, deflating squelch (organic things dying).
     squelch() { noise(0.35, 400, 0.45, 1.5); tone('sine', 220, 60, 0.45, 0.35); tone('triangle', 140, 50, 0.3, 0.2, 0.1); },
     crack() { noise(0.25, 300, 0.6); tone('triangle', 120, 60, 0.3, 0.4); },

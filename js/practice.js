@@ -21,6 +21,8 @@ const PRACTICE = [
   ['Organic', 'Spore mother (right)', () => combatSpawn('mother', 'star', true)],
   ['Organic', 'Leech swarm (right)', () => spawnLeeches('star')],
   ['Organic', 'Leviathan', () => startLeviathan()],
+  ['Organic', 'Herd: grappler + leeches (left)', () => startHerd(['grappler', 'leeches'], 'port')],
+  ['Organic', 'Herd: spore mother + spore clouds (right)', () => startHerd(['mother', 'spores'], 'star')],
   // outside
   ['Spacewalk jobs', 'Mine drone (left)', () => spawnMineDrone('port')],
   ['Spacewalk jobs', 'Spore clouds → barnacles (right)', () => spawnSpores('star')],
@@ -41,6 +43,7 @@ const PRACTICE = [
   ['Ship-wide', 'Ion storm', () => startStorm()],
   ['Ship-wide', 'Coolant leak', () => startCoolantLeak()],
   ['Ship-wide', 'AI glitch', () => startGlitch()],
+  ['Ship-wide', 'Gravity tide (knocks a jump coil with the coils rule)', () => startTide()],
   // ships
   ['Other ships', 'Pirates dock (left)', () => { dk.dock = null; dockShip('pirate', 'port'); }],
   ['Other ships', 'Derelict + black box (right)', () => { dk.dock = null; dockShip('derelict', 'star', { blackbox: true }); }],
@@ -54,12 +57,14 @@ const PRACTICE = [
   ['Stations', 'Radar scan', () => radarScan()],
   ['Stations', 'Helm diagnosis', () => openDiagnosis()],
   ['Mini-games', 'Patch board (arcs the left feed line)', () => { if (!surging('feed0')) hz.surges.push('feed0'); openPatch(); }],
-  ['Mini-games', 'Jump handle (spool the drive now)', () => { mission.rules.handle = true; mission.jumpAt = mission.t; mission.coilsChecked = true; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); }],
+  ['Mini-games', 'Jump spool: autopilot pulls the handle (jumps in 4 s)', () => { mission.rules.handle = false; mission.jump = null; mission.autoPull = null; mission.jumpAt = mission.t + AUTO_LEAD + 1; mission.coilsChecked = false; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); }],
+  ['Mini-games', 'Jump spool: no nav fix, pull the handle yourself', () => { mission.rules.handle = true; mission.jump = null; mission.jumpAt = mission.t; mission.coilsChecked = true; CAPACITORS[1].charge = Math.max(1, CAPACITORS[1].charge); }],
   // rules
   ['Rules', 'Toggle hull breaches', () => toggleRule('breach')],
   ['Rules', 'Toggle power surges', () => toggleRule('surge')],
   ['Rules', 'Toggle gravity failures', () => toggleRule('gravity')],
   ['Rules', 'Toggle plasma fires', () => toggleRule('plasma')],
+  ['Rules', 'Toggle jump coils (tides knock them off)', () => toggleRule('coils')],
   // tools
   ['Tools', 'Fill all capacitors', () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; })],
   ['Tools', 'Repair everything, put out fires', () => { SYSTEMS.forEach(s => { s.broken = false; }); fires.length = 0; hz.breaches = []; hz.surges = []; hz.noGrav = []; hz.hull = { port: 0, front: 0, star: 0 }; }],

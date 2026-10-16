@@ -1,7 +1,8 @@
 // Hands-on station mini-games. Each player's open mini-game lives in their ui.mini (sent to their
 // browser); actions arrive as commands ['mini', action, ...args], so solo and multiplayer work the same.
 //   patch board     next to the power lever: reroute which capacitor each lever output feeds
-//   jump handle     missions with the `handle` rule: someone pulls and holds it while the drive spools
+//   jump handle     at the helm in every mission: the autopilot pulls it before the jump (handlePull, js/mission.js);
+//                   with the `handle` rule it can't, and someone pulls and holds it while the drive spools
 //   treat pulse     treating someone: clicking on the heartbeat speeds it up
 //   held shields    keep holding the button for +2 s of shield (1 more energy)
 //   PIN pad         the airlock vent panel: type the admin password (it's on a sticky note right next to it)
@@ -84,8 +85,9 @@ function minigameClickTarget(mx, my) {
     if (!near(t.x, t.y)) return { ...t, text: 'Patch board — get closer', ok: false };
     return { ...t, ok: true, text: 'Click: open the patch board (reroute the lever outputs)', run: openPatch };
   }
-  if (mission.rules?.handle && at(JUMP_HANDLE, 0.45)) {
+  if (at(JUMP_HANDLE, 0.45)) {
     const t = { x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, r: 0.45 };
+    if (!mission.rules?.handle) return { ...t, text: mission.autoPull != null ? 'Jump handle — engaged by the autopilot' : 'Jump handle (the autopilot pulls it when the jump drive spools up)', ok: false };
     if (!mission.jump) return { ...t, text: 'Jump handle (pull it when the jump drive spools up)', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Jump handle — get closer', ok: false };
     return { ...t, ok: true, text: `Hold click: pull the jump handle and keep holding (${JUMP_PULL} s; faster with two)`, hold: { id: 'jumpHandle', time: 1e9, done() {} } };
@@ -243,10 +245,8 @@ function drawMinigameProps(t) {
   const x = L(PATCH_BOARD.x), y = L(PATCH_BOARD.y);
   if (spr(patchNeeded() ? 'systems/patch_live' : 'systems/patch_idle', 0, PATCH_BOARD.x, PATCH_BOARD.y, 0, { emissive: 0.8 })) {   // sprites (js/decor.js spr)
     ctx.fillStyle = 'rgba(232,236,244,0.7)'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('PATCH', x, y + 14);
-    if (mission.rules?.handle) {
-      const pull = mission.jump?.pull || 0;
-      spr(mission.jump ? `systems/jump_p${clamp(Math.floor(Math.min(1, pull / JUMP_PULL) * 5), 0, 4)}` : 'systems/jump_off', 0, JUMP_HANDLE.x, JUMP_HANDLE.y, 0, { emissive: 0.8, pick: [0.3, 1.2] });
-    }
+    const live = mission.rules?.handle ? !!mission.jump : mission.autoPull != null;   // (the autopilot's pull, or the crew's: handlePull)
+    spr(live ? `systems/jump_p${clamp(Math.floor(handlePull() * 5), 0, 4)}` : 'systems/jump_off', 0, JUMP_HANDLE.x, JUMP_HANDLE.y, 0, { emissive: 0.8, pick: [0.3, 1.2] });
     ctx.textAlign = 'left';
     return;
   }
@@ -254,10 +254,10 @@ function drawMinigameProps(t) {
   const live = patchNeeded();
   for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x - 9 + i * 9, y - 4, 2.5, 0, TAU); ctx.fillStyle = live ? ['#e2574c', '#e8c34f', '#3a8fc4'][i] : '#4a515e'; ctx.fill(); }
   ctx.fillStyle = 'rgba(232,236,244,0.7)'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('PATCH', x, y + 3);
-  if (mission.rules?.handle) {
-    const hx = L(JUMP_HANDLE.x), hy = L(JUMP_HANDLE.y), pull = mission.jump?.pull || 0;
+  {
+    const hx = L(JUMP_HANDLE.x), hy = L(JUMP_HANDLE.y), live = mission.rules?.handle ? !!mission.jump : mission.autoPull != null;
     rr(hx - 8, hy - 14, 16, 28, 4); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(2);
-    ctx.fillStyle = mission.jump ? '#7af0ff' : '#6b7486'; ctx.fillRect(hx - 3, hy + 10 - 22 * Math.min(1, pull / JUMP_PULL), 6, 4);
+    ctx.fillStyle = live ? '#7af0ff' : '#6b7486'; ctx.fillRect(hx - 3, hy + 10 - 22 * handlePull(), 6, 4);
     ctx.fillStyle = 'rgba(122,240,255,0.8)'; ctx.fillText('JUMP', hx, hy + 16);
   }
   ctx.textAlign = 'left';

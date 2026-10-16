@@ -15,13 +15,13 @@ const finaleLead = (id) => MISSIONS[id]?.finaleLead ?? JUMP_DELAY;
 // encounter PRESS_FIRST s later, then each gap PRESS_SHRINK × the last, down to PRESS_FLOOR s; and a part
 // gives out STRAIN_FIRST s after it's due, then each gap × PRESS_SHRINK, down to STRAIN_FLOOR s.
 const PRESS_FIRST = 30, PRESS_SHRINK = 0.8, PRESS_FLOOR = 6, STRAIN_FIRST = 40, STRAIN_FLOOR = 10;
-const PRESS_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'debris', 'leeches', 'grappler', 'stealth']);
+const PRESS_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'debris', 'leeches', 'grappler', 'stealth', 'herd']);
 const PRESS_BASE = ['interceptor', 'swarm', 'intruder', 'mines'];   // always in the pool (plus the mission's own kinds above)
 // The stalled jump (no energy in MID): the drive charges for STALL_RISE s, sputters out for STALL_SPUTTER s,
 // lies dead until STALL_CYCLE s, and tries again. Every sputter is a failed attempt (a banner and a cough).
 const STALL_RISE = 2.6, STALL_SPUTTER = 0.8, STALL_CYCLE = 4.5, STALL_PEAK = 0.78;
 let MAX_DAMAGE = 5;                         // broken parts at once the ship survives (6 with the reinforced hull: applyShipUpgrades, js/progress.js)
-const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig']);
+const COMBAT_KINDS = new Set(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'pirates', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'mines', 'leviathan', 'brig', 'herd']);
 let FIRE_TIME = 15;
 const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
 
@@ -159,6 +159,7 @@ function makeEvent(kind, t, target) {
   if (kind === 'maintenance') { ev.sys = target; ev.radar = false; }
   if (kind === 'debris') ev.gun = ['port', 'front', 'star'][Math.floor(Math.random() * 3)];
   if (kind === 'antenna' || kind === 'coolant' || kind === 'glitch') ev.radar = false;
+  if (kind === 'herd') ev.kinds = herdPair();          // (two organic kinds, js/organic.js; a mission may write its own: kinds: [a, b])
   return ev;
 }
 const EVENT_SIDES = {};                                // event kinds with their own side rule (front-only etc.)
@@ -300,7 +301,7 @@ function startMission(id = 'intro', opts = {}) {
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
-    id, active: true, coilsChecked: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
+    id, active: true, coilsChecked: false, autoPull: null, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
     crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
   });
   mission.written = (MISSIONS[id] || MISSIONS.intro).build(null).map(({ sys, ...e }) => e);   // the timeline as written (no part refs: it's sent to browsers)
@@ -342,10 +343,16 @@ function updateMission(dt) {
     const extra = coilDelay();
     if (extra) { mission.jumpAt += extra; combatBanner(`Jump coils misaligned — the jump drive needs ${extra} s longer!`); }
   }
+  // the jump handle at the helm: without the `handle` rule the autopilot pulls it, AUTO_LEAD s before the drive
+  // spools (you see it move; the jump's timing is unchanged). With the rule it can't: a person has to (minigames.js).
+  if (!mission.rules?.handle && mission.autoPull == null && (mission.jump || mission.t >= jumpDueAt() - AUTO_LEAD)) {
+    mission.autoPull = mission.t; combatBanner('Autopilot: jump handle engaged'); sfx.clank();
+  }
   if (mission.t >= mission.jumpAt && !mission.jump) {
     mission.jump = { t: 0, st: 0, fails: 0 };
     mission.press = MISSIONS[mission.id]?.practice ? null : { n: 0, strain: 0, strainAt: mission.t + STRAIN_FIRST };   // (practice's jump handle: no hot zone)
-    combatBanner('Jump drive spooling up — needs 1 energy in MID!'); sfx.say?.('Jump drive spooling up.');
+    if (mission.rules?.handle) { combatBanner('No nav fix out here — someone pull the jump handle!'); sfx.say?.('No navigation fix. Manual jump required.'); }
+    else { combatBanner('Jump drive spooling up — needs 1 energy in MID!'); sfx.say?.('Jump drive spooling up.'); }
   }
   if (mission.jump) {
     const j = mission.jump;
@@ -374,6 +381,15 @@ function updateMission(dt) {
   }
   const dmg = SYSTEMS.filter(s => s.broken).length;
   if (dmg > MAX_DAMAGE) endMission(false, mission.press ? `The ship fell apart waiting for the jump (${dmg} parts broken).` : `The ship fell apart (${dmg} parts broken at once).`);
+}
+// When the drive will spool up (mission time): jumpAt, plus the misaligned coils' delay while it isn't added yet.
+const jumpDueAt = () => mission.jumpAt + (!mission.coilsChecked && typeof coilDelay === 'function' ? coilDelay() : 0);
+// The autopilot engages the jump handle this long before the drive spools (and takes AUTO_PULL s to pull it).
+const AUTO_LEAD = 3, AUTO_PULL = 1.2;
+// How far the jump handle is pulled, 0..1 (what the helm's handle shows): the autopilot's pull, or the crew's.
+function handlePull() {
+  if (!mission.rules?.handle) return mission.autoPull == null ? 0 : clamp((mission.t - mission.autoPull) / AUTO_PULL, 0, 1);
+  return mission.jump ? clamp((mission.jump.pull || 0) / JUMP_PULL, 0, 1) : 0;
 }
 // Somebody is aboard for the jump (every mission): in a room, an airlock chamber or a cannon seat — not outside, not
 // over on a docked ship. (Down or out still counts: they're carried along.) Nobody aboard: the mission fails.
@@ -1093,7 +1109,7 @@ function jumpCharge() {
     return 0.6 + 0.35 * clamp(mission.jump.t / 6, 0, 1);    // (energy there, waiting for the handle)
   }
   if (!isFinite(mission.jumpAt)) return 0;
-  const at = mission.jumpAt + (!mission.coilsChecked && typeof coilDelay === 'function' ? coilDelay() : 0);   // (misaligned coils: later)
+  const at = jumpDueAt();
   return 0.6 * Math.pow(clamp(1 - (at - mission.t) / JUMP_PRESPOOL, 0, 1), 1.5);
 }
 // The starfield: { streak: px (the nearest stars), drift: extra px travelled }.
@@ -1140,12 +1156,49 @@ function drawJumpCrackle(t) {
     ctx.strokeStyle = hot ? `rgba(255,140,100,${0.7 * a})` : `rgba(150,215,255,${0.7 * a})`; ctx.lineWidth = 3; ctx.stroke();
     ctx.strokeStyle = hot ? `rgba(255,225,200,${a})` : `rgba(240,250,255,${a})`; ctx.lineWidth = 1.2; ctx.stroke();
   }
-  if (typeof COIL_SPOTS !== 'undefined') for (const c of COIL_SPOTS) {   // the jump coils on the hull glow
-    const rr0 = T * (0.5 + 0.5 * k) * (1 + 0.2 * Math.sin(t * (6 + 18 * k))), g = ctx.createRadialGradient(c.x * T, c.y * T, 0, c.x * T, c.y * T, rr0);
-    g.addColorStop(0, `rgba(230,245,255,${0.8 * k})`); g.addColorStop(0.35, `rgba(110,190,255,${0.5 * k})`); g.addColorStop(1, 'rgba(80,150,255,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x * T, c.y * T, rr0, 0, TAU); ctx.fill();
-  }
+  drawCoilEnergy(t, k);                                  // the jump coils on the hull come alive
   ctx.restore();
+}
+// The jump coils while the drive charges (glow layer, world px): aligned ones glow blue with energy rings
+// running out of them (faster and bigger with the charge) and, near full charge, beams to the engine bell;
+// a misaligned one flickers red and spits sparks. At the jump itself they flare (coilFx(c).flare): a white-blue
+// burst and a beam each to the engine. Looks only.
+function drawCoilEnergy(t, k) {
+  const coils = typeof evs !== 'undefined' && evs.coils?.length ? evs.coils : (typeof COIL_SPOTS !== 'undefined' ? COIL_SPOTS.map(c => ({ ...c, ok: true })) : []);
+  const ex = ENGINE.x * T, ey = (ENGINE.y + 1.4) * T;
+  for (const c of coils) {
+    const fx = typeof coilFx === 'function' ? coilFx(c) : { k, sputter: false, flare: 0 }, cx = c.x * T, cy = c.y * T;
+    if (fx.sputter) {                                   // misaligned: a red, coughing glow and stray sparks
+      const f = Math.sin(t * 31 + c.x) > 0.2 ? 1 : 0.35, rr0 = T * (0.45 + 0.25 * k);
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr0);
+      g.addColorStop(0, `rgba(255,200,170,${0.7 * k * f})`); g.addColorStop(0.4, `rgba(255,70,40,${0.45 * k * f})`); g.addColorStop(1, 'rgba(255,40,20,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rr0, 0, TAU); ctx.fill();
+      const r = rng(Math.floor(t * 12) * 13 + Math.round(c.x));
+      ctx.strokeStyle = `rgba(255,190,120,${0.8 * k})`; ctx.lineWidth = 1.5;
+      for (let i = 0; i < 3; i++) { const a = r() * TAU, d0 = T * 0.2, d1 = T * (0.4 + 0.4 * r()); ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * d0, cy + Math.sin(a) * d0); ctx.lineTo(cx + Math.cos(a + 0.3) * d1, cy + Math.sin(a + 0.3) * d1); ctx.stroke(); }
+      continue;
+    }
+    const rr0 = T * (0.5 + 0.5 * k) * (1 + 0.2 * Math.sin(t * (6 + 18 * k))), g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr0);
+    g.addColorStop(0, `rgba(230,245,255,${0.8 * k})`); g.addColorStop(0.35, `rgba(110,190,255,${0.5 * k})`); g.addColorStop(1, 'rgba(80,150,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rr0, 0, TAU); ctx.fill();
+    for (let i = 0; i < 3; i++) {                       // energy rings running out of the coil
+      const q = (t * (0.6 + 2.4 * k) + i / 3) % 1, r = T * (0.3 + (0.7 + 0.8 * k) * q);
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.strokeStyle = `rgba(150,215,255,${0.7 * k * (1 - q)})`; ctx.lineWidth = 1 + 2.5 * k * (1 - q); ctx.stroke();
+    }
+    const beam = Math.max(fx.flare, k > 0.8 ? (k - 0.8) / 0.2 * 0.5 * (0.6 + 0.4 * Math.sin(t * 40 + c.y)) : 0);
+    if (beam > 0.02) {                                  // near full charge (and at the flare): a beam to the engine bell
+      const r = rng(Math.floor(t * 20) + Math.round(c.x * 3)), pts = [];
+      for (let j = 0; j <= 8; j++) { const s = j / 8, w = j && j < 8 ? (r() - 0.5) * T * 0.5 : 0; pts.push([lerp(cx, ex, s) + w, lerp(cy, ey, s) + w]); }
+      ctx.beginPath(); pts.forEach(([x, y], j) => (j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = `rgba(110,190,255,${0.35 * beam})`; ctx.lineWidth = 8; ctx.stroke();
+      ctx.strokeStyle = `rgba(235,248,255,${0.9 * beam})`; ctx.lineWidth = 2; ctx.stroke();
+    }
+    if (fx.flare > 0) {                                 // the jump: the coil bursts
+      const R = T * (0.8 + 2.6 * (1 - fx.flare)), fg = ctx.createRadialGradient(cx, cy, 0, cx, cy, R);
+      fg.addColorStop(0, `rgba(255,255,255,${fx.flare})`); fg.addColorStop(0.3, `rgba(170,225,255,${0.8 * fx.flare})`); fg.addColorStop(1, 'rgba(90,160,255,0)');
+      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.fill();
+    }
+  }
 }
 // World: while the jump is stalled, a pulsing red ring and NO ENERGY over the middle capacitor (where the energy has to go).
 function drawJumpStallMark(view, t) {
