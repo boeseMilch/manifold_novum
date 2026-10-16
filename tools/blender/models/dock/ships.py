@@ -6,6 +6,8 @@
 Sprites (build/renders/dock/), origin = our airlock hatch on the ground (HATCHES[side].x, .y), see docklib.py:
   dock/pirate_<side>     the Red Comet raider docked (dk.dock.kind === 'pirate', no npc)
   dock/brig_<side>       the prison barge (EVENT_RUNNERS.brig: kind 'pirate' with contents.npc = Dr. Varga)
+                         Both are the flying raider (enemy/pirate_<side>) cut open: same black/gold hull, nacelles,
+                         canopy, turret (brig: a searchlight), flag and claw, see raider_exterior()
   dock/derelict_<side>   Dr. Varga's lab module (kind 'derelict'): airless and dark (the darkness is runtime
                          lighting; only emergency strips glow), frost, debris, dead screens, the intruder's nest
 Not in these sprites (separate, stateful): the tube (tube.py), the loot crate, the reactor / dead core, the
@@ -70,6 +72,7 @@ def materials(kind):
                  panel=worn('panel', '#7c848e', 0.45, 0.2, frost=0.9, grime=1.3), panel2=worn('panel2', '#9aa1aa', 0.4, 0.2, frost=0.9, grime=1.2),
                  lamp=M['lamp_dead'])
         shades = ['#6a6e76', '#666a72', '#6e727a', '#63676f']
+    if kind in RAIDERS: raider_mats(M, kind)
     M['plates'] = [worn(f'plate{i}', c, 0.5, 0.35, wear=0.5, grime=0.8, scale=1.5, rust=0.12 if not der else 0.0, frost=fr) for i, c in enumerate(shades)]
     M['tread'] = worn('tread', '#7f8794' if not der else '#6a6f78', 0.42, 0.55, wear=0.7, grime=1.0, scale=1.5, rust=0.08 if not der else 0, frost=fr)
     D.M_DARK[0] = M['black']
@@ -79,8 +82,9 @@ def materials(kind):
 # Common structure
 # ---------------------------------------------------------------------------------------------------
 def structure(kind, M, rng, out):
-    der = kind == 'derelict'
-    build_hull(M, out, M['hull'], M['hull'], M['hull2'])
+    der, raider = kind == 'derelict', kind in RAIDERS
+    if raider: raider_hull(M, out)
+    else: build_hull(M, out, M['hull'], M['hull'], M['hull2'])
     style = dict(plate_mats=M['plates'], tread_mat=M['tread'], tread=0.12, grille=0.08, missing=0.04 if der else 0.0,
                  wonky=0.12 if der else 0.05, lost_rivets=0.15 if der else 0.05)
     for name, r in ROOMS.items():
@@ -96,7 +100,7 @@ def structure(kind, M, rng, out):
     lamp_j = M['lamp'] if not der else M['lamp_dead']
     for i, (a, b) in enumerate(stubs):
         jamb(a, b, M, out, lamp=lamp_j)
-    wall_tops(M, out)
+    raider_wall_tops(M, out) if raider else wall_tops(M, out)
     # low-deck cut lips (steel edge where the deck is cut away above each room's south part)
     for r in ROOMS.values():
         out.append(ubox('lip_s', r[0] - 0.02, r[3], r[2] + 0.02, r[3] + 0.08, H_LOW - 0.02, H_LOW + 0.015, M['rim'], bevel=0.008))
@@ -109,13 +113,14 @@ def structure(kind, M, rng, out):
     # belly front face: hull plate seams and rivets, along the camera-facing south edge
     u0, v0, u1, v1 = HULLR
     x = u0 + 0.8
-    while x < u1 - 0.6:
+    while x < u1 - 0.6 and not raider:
         out.append(ubox('belly_seam', x - 0.012, v1 - 0.06, x + 0.012, v1 + 0.005, -0.5, 0.0, M['black'], bevel=0))
         for z in (-0.12, -0.42): out.append(face_rivet(x + 0.35, v1 - 0.04, z, M['steel']))
         x += 1.6
     # low-deck roof seams (south band) and rivets
-    for r in ROOMS.values():
+    for rn, r in ROOMS.items():
         a, c = r[0], r[2]
+        if raider: v0, v1 = -EDGE[rn], EDGE[rn]
         if v1 - r[3] > 0.5:
             out.append(ubox('roof_seam', a, (r[3] + v1) / 2 - 0.01, c, (r[3] + v1) / 2 + 0.01, H_LOW, H_LOW + 0.004, M['black'], bevel=0))
         x = a + 0.4
@@ -132,30 +137,386 @@ def structure(kind, M, rng, out):
 # ---------------------------------------------------------------------------------------------------
 # Pirate raider
 # ---------------------------------------------------------------------------------------------------
-def engines(M, out, glow_mat, v_list=(-2.6, 2.6), dead=False):
-    u0 = HULLR[0]
-    M['bell'] = worn('bell', '#8a929e', 0.45, 0.35, wear=0.4)
-    for v in v_list:
-        out.append(ucyl('eng_body', 0.75, 1.3, u0 + 0.6, v, 0.55, M['hull2'], axis='u', verts=32, bevel=0.04))
-        o = out[-1]; o.location = P(u0 + 0.6, v, 0.55) if S < 0 else P(u0 + 0.6, v, 0.55); o.rotation_euler = (0, -R90 * S, 0)
-        out.append(ucyl('eng_band', 0.78, 0.18, 0, v, 0.55, M['trim'], axis='u', verts=32, bevel=0.02))
-        o = out[-1]; o.location = P(u0 + 0.2, v, 0.55); o.rotation_euler = (0, -R90 * S, 0)
-        out.append(ucyl('eng_bell', 0.62, 0.55, 0, v, 0.55, M['bell'], axis='u', verts=32, bevel=0.03))
-        o = out[-1]; o.location = P(u0 - 0.65, v, 0.55); o.rotation_euler = (0, -R90 * S, 0)
-        if not dead:
-            out.append(ucyl('eng_glow', 0.5, 0.02, 0, v, 0.55, glow_mat, axis='u', verts=32, bevel=0))
-            o = out[-1]; o.location = P(u0 - 1.21, v, 0.55); o.rotation_euler = (0, -R90 * S, 0)
-        for k in range(6):
-            a = k * math.tau / 6
-            out.append(rivet(u0 - 0.1, v + math.cos(a) * 0.79, 0.55 + math.sin(a) * 0.79, M['steel'], 0.03))
+# ---------------------------------------------------------------------------------------------------
+# The Red Comet raider's hull (pirate + brig): the same ship that flies at us as enemy/pirate_<side>
+# (models/enemy/interceptor.py in variants.py's 'pirate' paint), cut open. Its design language, scaled up
+# around the rooms: a black / gunmetal hull with gold stripes and welded scrap patches, a nose that tapers
+# to the docking port with the glass cockpit canopy on a beak beside the tube, swept wings carrying the two
+# big engine nacelles, a centre engine at the stern (the core end), the turret on a sponson, the
+# jolly roger on a mast at the stern, the docking claw at the tube. The rooms, doors and floors are untouched.
+# ---------------------------------------------------------------------------------------------------
+RAIDERS = ('pirate', 'brig')
+# hull outline (port layout, u/v relative to our hatch): each room keeps a 0.7 wall band like before
+N_OUT = [(-25.7, -3.15), (-25.35, -3.5), (-19.8, -3.5), (-18.5, -4.7), (-10.3, -4.7), (-9.0, -3.1), (-5.3, -3.1),
+         (-3.5, -2.85), (-2.7, -2.0), (-2.8, -1.3), (-3.6, -0.95), (-4.9, -0.95)]
+S_OUT = [(-4.9, 1.55), (-7.4, 3.1), (-9.0, 3.1), (-10.3, 4.7), (-18.5, 4.7), (-19.8, 3.5), (-25.35, 3.5), (-25.7, 3.15)]
+OUTLINE = N_OUT + S_OUT
+EDGE = {'airlock': 3.1, 'cargo': 4.7, 'core': 3.5}                # |v| of the hull edge beside each room
+NAC_V, NAC_Z, NAC_R, NAC_U = 6.8, 0.2, 1.05, (-17.6, -23.6)      # engine nacelles (v = +-NAC_V)
+CAN = (-4.0, -1.9, 1.15, 0.75, 0.58)                              # canopy: centre u, v, half-sizes u, v, height
+TURRET = (-7.7, -3.55)
+
+def _xv(a, b, v):
+    t = (v - a[1]) / (b[1] - a[1]); return (a[0] + (b[0] - a[0]) * t, v)
+
+def clip_v(poly, vmax):
+    """The part of a polygon with v <= vmax (Sutherland-Hodgman against one half-plane)."""
+    out = []
+    for i in range(len(poly)):
+        a, b = poly[i - 1], poly[i]
+        ina, inb = a[1] <= vmax, b[1] <= vmax
+        if inb:
+            if not ina: out.append(_xv(a, b, vmax))
+            out.append(b)
+        elif ina: out.append(_xv(a, b, vmax))
+    return out
+
+def _area(pts):
+    return 0.5 * sum(pts[i - 1][0] * pts[i][1] - pts[i][0] * pts[i - 1][1] for i in range(len(pts)))
+
+def offset_line(pts, d, closed=False, inward_of=None):
+    """Miter offset of a polyline / polygon by d to the left of travel (or towards the inside of the polygon
+    `inward_of` when given)."""
+    sgn = 1.0
+    if inward_of is not None: sgn = 1.0 if _area(inward_of) > 0 else -1.0
+    n = len(pts); segs = range(n if closed else n - 1)
+    nrm = []
+    for i in segs:
+        a, b = pts[i], pts[(i + 1) % n]; L = math.hypot(b[0] - a[0], b[1] - a[1])
+        nrm.append((-sgn * (b[1] - a[1]) / L, sgn * (b[0] - a[0]) / L))
+    out = []
+    for i in range(n):
+        if closed: n1, n2 = nrm[i - 1], nrm[i % len(nrm)]
+        else: n1, n2 = nrm[max(0, i - 1)], nrm[min(i, len(nrm) - 1)]
+        k = 1.0 + n1[0] * n2[0] + n1[1] * n2[1]
+        out.append((pts[i][0] + d * (n1[0] + n2[0]) / k, pts[i][1] + d * (n1[1] + n2[1]) / k))
+    return out
+
+def north_edge(u):
+    pts = N_OUT[:N_OUT.index((-2.7, -2.0)) + 1]
+    for a, b in zip(pts, pts[1:]):
+        if a[0] <= u <= b[0]: return a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0])
+    return pts[0][1]
+
+def strip(name, line, d0, d1, z0, z1, m, bevel=0.0):
+    """A band between two offsets of an open polyline (offsets to the left of travel)."""
+    a, b = offset_line(line, d0), offset_line(line, d1)
+    return prism(name, a + b[::-1], z0, z1, m, bevel=bevel)
+
+def mirror_fix(objs):
+    """Objects modelled in port Blender coordinates (X = u, Y = -v): mirror them for starboard."""
+    if S > 0: return objs
+    for o in objs:
+        bpy.context.view_layer.update()
+        mw = o.matrix_world.copy(); o.data.transform(mw); o.matrix_world = o.matrix_world.__class__.Identity(4)
+        for v in o.data.vertices: v.co.x = -v.co.x
+        o.data.flip_normals(); o.data.update()
+    return objs
+
+def u_cone(name, u0, u1, v, z, r0, r1, m, verts=40, bevel=0.03, caps=True):
+    """A cylinder / cone along u from u0 (radius r0) to u1 (radius r1), axis at (v, z)."""
+    me = bpy.data.meshes.new(name); bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=caps, segments=verts, radius1=r0, radius2=r1, depth=abs(u1 - u0))
+    L = abs(u1 - u0); s = 1 if u1 > u0 else -1
+    for vt in bm.verts:
+        x, y, t = vt.co
+        vt.co = P((u0 + u1) / 2 + s * t, v + y, z + x)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me); bm.free()
+    o = mn.link(bpy.data.objects.new(name, me))
+    if bevel: mn.bev(o, bevel, 2)
+    mn.assign(o, m); return mn.smooth(o)
+
+def weld_patch(name, u, v, z, w, d, ang, M, out, rng):
+    """A welded-on scrap plate (variants.py pirate_extras): rusty plate, weld bead all round, two bolts, soot."""
+    c, s = math.cos(ang), math.sin(ang)
+    pts = [(u + a * c - b * s, v + a * s + b * c) for a, b in ((-w / 2, -d / 2), (w / 2, -d / 2), (w / 2, d / 2), (-w / 2, d / 2))]
+    out.append(prism(name, pts, z, z + 0.035, M['scrap'], bevel=0.008))
+    loop = [(x, y, z + 0.006) for x, y in pts]
+    out.append(pipe_uv(name + '_weld', loop + [loop[0]], 0.017, M['weld'], corner=0.03))
+    for q in (0, 2):
+        bx, by = pts[q][0] * 0.82 + u * 0.18, pts[q][1] * 0.82 + v * 0.18
+        out.append(mn.sphere('bolt', 0.03, loc=P(bx, by, z + 0.035), m=M['dark'], segs=10))
+    out.append(disc('soot', u + 0.08, v, z + 0.037, min(w, d) * 0.35, M['soot'], sv=0.6))
+
+# ---- the jolly roger (variants.py skull_image / flag_mat / build_flag, static and bigger) -------------
+def skull_image():
+    import numpy as np
+    W, H = 256, 136
+    img = bpy.data.images.new('skull', W, H, alpha=False)
+    y, x = np.mgrid[0:H, 0:W].astype(np.float32)
+    m = np.zeros((H, W), np.float32)
+    def seg(ax, ay, bx, by, r):
+        dx, dy = bx - ax, by - ay; k = np.clip(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy), 0, 1)
+        return np.hypot(x - ax - dx * k, y - ay - dy * k) < r
+    def circ(cx, cy, r): return np.hypot(x - cx, y - cy) < r
+    for (ax, ay, bx, by) in ((84, 22, 172, 96), (84, 96, 172, 22)):
+        m[seg(ax, ay, bx, by, 7)] = 1
+        for (px, py) in ((ax, ay), (bx, by)):
+            nx, ny = (bx - ax), (by - ay); L = math.hypot(nx, ny); nx, ny = -ny / L * 6, nx / L * 6
+            m[circ(px + nx, py + ny, 7)] = 1; m[circ(px - nx, py - ny, 7)] = 1
+    m[circ(128, 78, 30)] = 1
+    m[(abs(x - 128) < 17) & (y > 46) & (y < 66)] = 1
+    m[circ(116, 80, 8.5)] = 0; m[circ(140, 80, 8.5)] = 0
+    m[(abs(x - 128) < 3.5 - (y - 60) * 0.35) & (y > 60) & (y < 70)] = 0
+    for k in range(4): m[(abs(x - (119 + k * 6)) < 1.2) & (y > 46) & (y < 58)] = 0
+    rng = np.random.default_rng(3); m *= 0.85 + 0.15 * rng.random((H, W)).astype(np.float32)
+    px = np.ones((H, W, 4), np.float32); px[..., 0] = px[..., 1] = px[..., 2] = m
+    img.pixels.foreach_set(px.ravel()); img.pack()
+    return img
+
+def flag_mat():
+    m = bpy.data.materials.new('flag'); m.use_nodes = True; nt = m.node_tree; N = nt.nodes; Lk = nt.links.new
+    b = N['Principled BSDF']; b.inputs['Roughness'].default_value = 0.9
+    tx = N.new('ShaderNodeTexImage'); tx.image = skull_image(); tx.extension = 'CLIP'
+    uv = N.new('ShaderNodeUVMap'); Lk(uv.outputs[0], tx.inputs[0])
+    mx = N.new('ShaderNodeMix'); mx.data_type = 'RGBA'; Lk(tx.outputs['Color'], mx.inputs[0])
+    mx.inputs[6].default_value = (*mn.hex_rgb('#1a1a20'), 1); mx.inputs[7].default_value = (*lift('#e8e4dc'), 1)
+    Lk(mx.outputs[2], b.inputs['Base Color'])
+    return m
+
+def flag(mu, mv, z0, w, h, M):
+    """Cloth hanging off a mast at (mu, mv) towards -u, from z0 up, a frozen flutter."""
+    nu, nv = 28, 12
+    me = bpy.data.meshes.new('flag'); verts, faces = [], []
+    for j in range(nv + 1):
+        for i in range(nu + 1):
+            u, wv = i / nu, j / nv
+            wave = 0.16 * (0.25 + u) * math.sin(math.tau * (1.4 * u - 0.15) + 0.6 * wv)
+            z = z0 + wv * h - 0.18 * u * u
+            verts.append(tuple(P(mu - 0.04 - u * w, mv + wave, z)))
+    for j in range(nv):
+        for i in range(nu):
+            a = j * (nu + 1) + i; faces.append((a, a + 1, a + nu + 2, a + nu + 1))
+    me.from_pydata(verts, [], faces); me.update()
+    o = mn.link(bpy.data.objects.new('flag', me)); mn.assign(o, M['flag'])
+    uvl = me.uv_layers.new(name='UVMap')
+    for poly in me.polygons:
+        for li in poly.loop_indices:
+            vi = me.loops[li].vertex_index; i, j = vi % (nu + 1), vi // (nu + 1); u = i / nu
+            uvl.data[li].uv = ((1 - u) if S > 0 else u, j / nv)
+    sol = o.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.02; sol.offset = 0
+    return mn.smooth(o)
+
+# ---- parts ---------------------------------------------------------------------------------------------
+def raider_mats(M, kind):
+    M.update(hull=worn('hull', '#3a3a42', 0.45, 0.25, wear=0.6, grime=1.0),
+             hull2=worn('hull2', '#16161c', 0.5, 0.2, wear=0.5, grime=0.8),
+             pod=worn('pod', '#36302b', 0.4, 0.25, wear=0.6), pod2=worn('pod2', '#1c1814', 0.45, 0.25, wear=0.5),
+             stripe=worn('stripe', '#e8b42e', 0.45, 0.1, wear=0.7, grime=0.6), gun=worn('gun', '#4a515e', 0.4, 0.35, wear=0.6),
+             gunl=worn('gunl', '#6a7280', 0.45, 0.2, wear=0.6), clawsteel=worn('clawsteel', '#8a8f99', 0.35, 0.6, wear=0.6),
+             weld=worn('weld', '#8a8478', 0.4, 0.7, wear=0.4), shine=emit_mat('shine', '#ffffff', 1.2),
+             hot=emit_mat('hot', '#ffc070', 1.5, base='#ff9040'), hot2=emit_mat('hot2', '#ff9a40', 1.2, base='#401808'),
+             heat=emit_mat('heat', '#ff5a1a', 0.45, base='#2a1a12'),
+             hud=emit_mat('hud', '#ff8a3a', 1.2), flag=flag_mat(), sight=emit_mat('sight', '#ff4a3a', 1.5, base='#802018'),
+             navg=emit_mat('navg', '#5aff8a', 1.4, base='#2a7a4a'), navr=emit_mat('navr', '#ff5a4a', 1.4, base='#7a2a24'))
+
+def raider_hull(M, out):
+    rooms = list(ROOMS.values())
+    bel = prism('belly', offset_line(OUTLINE, 0.12, closed=True, inward_of=OUTLINE), -0.55, 0.02, M['hull2'], bevel=0.06)
+    low = mass('low_deck', OUTLINE, 0.0, H_LOW, rooms + DOORS + [(TUBE[0] - 0.01, TUBE[1], -4.0, TUBE[3])], M['hull'], bevel=0.03)
+    up = mass('upper', clip_v(OUTLINE, SPLIT), 0.0, H_FULL, [(r[0], r[1], r[2], 10.0) for r in rooms], M['hull'], bevel=0.03)
+    out += [bel, low, up]
+
+def raider_wall_tops(M, out, z=H_FULL):
+    for name in ('core', 'cargo', 'airlock'):
+        a, b, c, d = ROOMS[name]
+        tray(a - 0.3, b - 0.6, c + 0.3, b, z, M, out, 'u')
+    for a, b in wall_stubs()[:-1]:                                  # (the tube jamb's top is the canopy beak)
+        c = (a + b) / 2
+        tray(a, max(north_edge(c - 0.22), north_edge(c + 0.22)) + 0.1, b, SPLIT - 0.06, z, M, out, 'v')
+
+def wing(sv, M, out, rng):
+    """Swept wing out to the nacelle, low (below the deck top): leading-edge armour, gold stripe, slits."""
+    A, B, C, D = (-10.9, 4.3), (-17.0, 6.55), (-22.6, 6.55), (-23.4, 3.2)
+    f = lambda p: (p[0], sv * p[1])
+    pts = [f(p) for p in (A, B, C, D)]
+    o = prism('wing', pts, -0.22, 0.28, M['hull'], bevel=0.04); o['big'] = 1; out.append(o)
+    # leading-edge armour (dark) and the gold stripe parallel to it, like the interceptor's wings
+    out.append(strip('wing_le', [f(A), f((B[0] - 0.15, B[1] + 0.06))], 0.0, -0.22 * sv, -0.25, 0.3, M['hull2'], bevel=0.02))
+    dx, dy = B[0] - A[0], B[1] - A[1]; L = math.hypot(dx, dy); n = (-dy / L, dx / L)       # n: towards the trailing edge
+    Lp = lambda t, off: f((A[0] + dx * t + n[0] * off, A[1] + dy * t + n[1] * off))
+    out.append(prism('wing_stripe', [Lp(0.3, 0.3), Lp(0.95, 0.3), Lp(0.95, 0.95), Lp(0.55, 0.95)], 0.28, 0.292, M['stripe'], bevel=0.0))
+    for k in range(3):                                              # intake slits at the wing root
+        u = -20.6 + k * 0.45
+        out.append(cbox('wslit', u, sv * 5.25, 0.14, 0.75, 0.28, 0.02, M['black'], bevel=0.006))
+    for (u, vv) in ((-14.8, 5.2), (-18.3, 5.6), (-20.8, 4.6), (-21.6, 5.5), (-13.4, 4.95)):  # rivets
+        out.append(rivet(u, sv * vv, 0.28, M['steel'], 0.035))
+    # panel grooves
+    for (a, b) in (((-16.0, 5.3), (-21.8, 5.3)), ((-19.0, 4.2), (-19.0, 6.4))):
+        out.append(strip('groove', [f(a), f(b)], -0.012, 0.012, 0.28, 0.287, M['black']))
+
+def nacelle(sv, M, out):
+    v, z, r = sv * NAC_V, NAC_Z, NAC_R
+    u0, u1 = NAC_U
+    body = u_cone('nacelle', u1, u0, v, z, r, r, M['pod'], verts=48, bevel=0.04); body['big'] = 1; out.append(body)
+    nose = mn.sphere('nacelle_nose', 1.0, loc=P(u0, v, z), m=M['pod'], scale=(1.15, r, r), segs=48); out.append(nose)
+    for uc in (-19.3, -22.3):                                       # dark bands with rivet rows
+        out.append(u_cone('nac_band', uc - 0.22, uc + 0.22, v, z, r + 0.04, r + 0.04, M['pod2'], verts=48, bevel=0.015))
+        for k in range(7):
+            a = math.radians(20 + 20 * k)
+            out.append(rivet(uc, v + math.cos(a) * (r + 0.05), z + math.sin(a) * (r + 0.05), M['steel'], 0.032))
+    # nozzle: gunmetal cone, glowing rim and a hot spike in its throat (seen from the side, the glow shows)
+    out.append(u_cone('nozzle', u1 + 0.02, u1 - 0.55, v, z, r * 0.92, r * 0.85, M['gun'], verts=48, bevel=0.02))
+    out.append(u_cone('nozzle_hot', u1 - 0.55, u1 - 1.0, v, z, r * 0.85, r * 0.8, M['heat'], verts=48, bevel=0.01))
+    rim = u_cone('nozzle_rim', u1 - 0.98, u1 - 1.1, v, z, r * 0.84, r * 0.84, M['hot'], verts=48, bevel=0.0); rim['no_ol'] = 1; out.append(rim)
+    sp = u_cone('nozzle_spike', u1 - 0.8, u1 - 1.4, v, z, r * 0.5, 0.12, M['hot2'], verts=32, bevel=0.0); sp['no_ol'] = 1; out.append(sp)
+    inner = u_cone('nozzle_in', u1 - 1.0, u1 - 1.04, v, z, r * 0.74, r * 0.74, M['hot'], verts=48, bevel=0.0); inner['no_ol'] = 1; out.append(inner)
+    # intake scoop on top (dark hole), nav light on the nose
+    out.append(ucyl('intake', 0.45, 0.3, -18.5, v, z + r - 0.16, M['pod2'], verts=32, bevel=0.03))
+    o = ucyl('intake_hole', 0.32, 0.02, -18.5, v, z + r + 0.14, M['black'], verts=32, bevel=0.0); o['no_ol'] = 1; out.append(o)
+    out.append(mn.sphere('nav', 0.11, loc=P(u0 + 0.85, v + sv * 0.55, z + 0.45), m=M['navg'] if sv > 0 else M['navr'], segs=16))
+    # pylon fairing where the wing meets the pod
+    out.append(prism('pylon', [(-17.4, sv * 5.95), (-23.0, sv * 5.95), (-23.0, sv * 6.4), (-17.9, sv * 6.4)], -0.1, 0.55, M['hull2'], bevel=0.05))
+
+def centre_engine(M, out):
+    out.append(prism('eng_block', [(-25.4, -1.6), (-26.6, -1.35), (-26.6, 1.35), (-25.4, 1.6)], -0.45, 0.95, M['hull2'], bevel=0.08))
+    for k in range(4):                                              # rear-deck vents
+        vv = -0.6 + k * 0.4
+        out.append(cbox('vent', -26.0, vv, 0.75, 0.12, 0.95, 0.02, M['black'], bevel=0.006))
+    z = 0.25
+    out.append(u_cone('cnozzle', -26.55, -27.0, 0.0, z, 0.8, 0.75, M['gun'], verts=48, bevel=0.02))
+    out.append(u_cone('cnozzle_hot', -27.0, -27.45, 0.0, z, 0.75, 0.7, M['heat'], verts=48, bevel=0.01))
+    o = u_cone('cnozzle_rim', -27.43, -27.55, 0.0, z, 0.73, 0.73, M['hot'], verts=48, bevel=0.0); o['no_ol'] = 1; out.append(o)
+    o = u_cone('cnozzle_in', -27.45, -27.48, 0.0, z, 0.64, 0.64, M['hot'], verts=48, bevel=0.0); o['no_ol'] = 1; out.append(o)
+    o = u_cone('cnozzle_spike', -27.25, -27.85, 0.0, z, 0.38, 0.1, M['hot2'], verts=32, bevel=0.0); o['no_ol'] = 1; out.append(o)
+
+def canopy(M, out):
+    cu, cv, a, b, h = CAN
+    zr = H_FULL
+    def ell(name, sx, sy, sz, z, m, segs=64):
+        o = mn.sphere(name, 1.0, loc=P(cu, cv, z), m=m, scale=(sx, sy, sz), segs=segs); out.append(o); return o
+    ell('canopy_frame', a + 0.09, b + 0.08, h * 0.45, zr - 0.02, M['gun'], 48)
+    ell('canopy', a, b, h, zr, M['glass'], 96)
+    s = ell('canopy_strut', 0.07, b + 0.015, h + 0.015, zr, M['gun'], 48); s.location = P(cu - 0.35, cv, zr); s['no_ol'] = 1
+    g = mn.sphere('canopy_glint', 1.0, loc=P(cu + 0.45, cv - 0.25, zr + h * 0.86), m=M['shine'], scale=(0.32, 0.06, 0.02), segs=24)
+    g.rotation_euler = (0.0, -0.45 * S, -0.35 * S); g['no_ol'] = 1; out.append(g)
+    o = mn.sphere('hud', 0.07, loc=P(cu - 0.55, cv + 0.15, zr + 0.25), m=M['hud'], scale=(1.5, 0.6, 0.4), segs=12); o['no_ol'] = 1; out.append(o)
+    # dark nose cap on the beak tip with shark teeth (the interceptor's), and the canopy's kill marks
+    out.append(prism('nosecap', [(-3.15, -2.45), (-2.7, -2.0), (-2.8, -1.3), (-3.2, -1.12)], zr, zr + 0.06, M['hull2'], bevel=0.015))
+    for k in range(4):
+        t = 0.15 + k * 0.22
+        p = (-3.15 + (0.45) * t * 0.9, -2.45 + 0.45 * t * 0.9)
+        out.append(prism('tooth', [(p[0] - 0.02, p[1] + 0.06), (p[0] + 0.12, p[1] - 0.04), (p[0] - 0.08, p[1] - 0.07)], zr + 0.06, zr + 0.065, M['white'], bevel=0.0))
+    for k in range(5):
+        out.append(cbox('kill', -5.0 + k * 0.1, -1.04, 0.035, 0.14, zr, 0.008, M['white'], bevel=0.0))
+    o = mn.sphere('sensor', 0.08, loc=P(-2.85, -1.65, zr + 0.06), m=M['navr'], segs=12); out.append(o)
+
+def turret(M, out, u0, v0, z0, aim=-0.3, k=1.9):
+    """The interceptor's turret (interceptor.py render_turret), scaled up, on a sponson; barrel along aim."""
+    out.append(ucyl('sponson', 0.82, H_FULL, u0, v0, 0.0, M['hull'], verts=48, bevel=0.04)); out[-1]['big'] = 1
+    out.append(ucyl('turret_ring', 0.66, 0.12, u0, v0, z0, M['steel'], verts=48, bevel=0.02))
+    out.append(D.ring('tur_gold', 0.76, 0.1, 0.06, loc=P(u0, v0, z0), m=M['stripe']))
+    parts = []
+    gun, gun2 = M['gunl'], M['gun']
+    def lpr(name, pts, za, zb, m, bevel=0.02):
+        me = bpy.data.meshes.new(name); bm = bmesh.new()
+        vs = [bm.verts.new((x, -y, za)) for x, y in pts]; f = bm.faces.new(vs)
+        r = bmesh.ops.extrude_face_region(bm, geom=[f])
+        bmesh.ops.translate(bm, verts=[g for g in r['geom'] if isinstance(g, bmesh.types.BMVert)], vec=Vector((0, 0, zb - za)))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:]); bm.to_mesh(me); bm.free()
+        o = mn.link(bpy.data.objects.new(name, me))
+        if bevel: mn.bev(o, bevel)
+        mn.assign(o, m); return mn.smooth(o)
+    def xcyl(name, r, x0, x1, z, m, bevel=0.01, verts=24):
+        return mn.cyl(name, r, x1 - x0, loc=(x0, 0, z), m=m, verts=verts, bevel=bevel, rot=(0, R90, 0))
+    parts.append(lpr('tur_head', [(-0.22, -0.2), (0.14, -0.22), (0.28, -0.12), (0.28, 0.12), (0.14, 0.22), (-0.22, 0.2), (-0.27, 0.12), (-0.27, -0.12)], 0.04, 0.28, gun, 0.025))
+    parts.append(lpr('tur_plate', [(-0.16, -0.11), (0.1, -0.12), (0.1, 0.12), (-0.16, 0.11)], 0.27, 0.3, gun2, 0.008))
+    parts.append(mn.sphere('tur_sight', 0.035, loc=(0.06, 0.16, 0.25), m=M['sight'], segs=12))
+    parts.append(lpr('tur_mantlet', [(0.2, -0.12), (0.46, -0.12), (0.46, 0.12), (0.2, 0.12)], 0.07, 0.26, gun2, 0.03))
+    parts.append(xcyl('tur_sleeve', 0.1, 0.42, 0.88, 0.165, gun))
+    parts.append(xcyl('tur_barrel', 0.07, 0.86, 1.27, 0.165, M['steel']))
+    parts.append(xcyl('tur_muzzle', 0.11, 1.25, 1.45, 0.165, gun2, bevel=0.015, verts=8))
+    parts.append(xcyl('tur_bore', 0.045, 1.44, 1.455, 0.165, M['black'], bevel=0.0)); parts[-1]['no_ol'] = 1
+    parts.append(xcyl('tur_haz', 0.103, 0.7, 0.78, 0.165, M['hazard'], bevel=0.0)); parts[-1]['no_ol'] = 1
+    parts.append(lpr('tur_feed', [(-0.36, -0.12), (-0.2, -0.12), (-0.2, 0.12), (-0.36, 0.12)], 0.05, 0.2, gun2, 0.02))
+    for kk in range(2):
+        for sy in (1, -1): parts.append(mn.sphere('bolt', 0.02, loc=(-0.08 + kk * 0.14, 0.13 * sy, 0.22), m=M['steel'], segs=8))
+    # place: scale k, turn by aim (in the u, v plane), move onto the sponson, mirror for starboard
+    ca, sa = math.cos(aim), math.sin(aim)
+    for o in parts:
+        bpy.context.view_layer.update()
+        mw = o.matrix_world.copy(); o.data.transform(mw); o.matrix_world = o.matrix_world.__class__.Identity(4)
+        for vt in o.data.vertices:
+            a, b, z = vt.co.x * k, -vt.co.y * k, vt.co.z * k
+            vt.co = P(u0 + a * ca - b * sa, v0 + a * sa + b * ca, z0 + 0.06 + z)
+        if S < 0: o.data.flip_normals()
+        o.data.update()
+    out += parts
+
+def searchlight(M, out, u, v, z):
+    out.append(ucyl('tower', 0.18, 0.7, u, v, z, M['hull2'], verts=16, bevel=0.02))
+    out.append(cbox('lamp_box', u, v + 0.05, 0.46, 0.36, z + 0.7, 0.28, M['hull2'], bevel=0.04))
+    out.append(ubox('lamp_face', u - 0.16, v + 0.22, u + 0.16, v + 0.25, z + 0.73, z + 0.95, M['lamp'], bevel=0.01))
 
 def claw(M, out):
-    """Docking claw arms gripping round the tube collar on the near end."""
-    for sv in (-1, 1):
-        pts = [(-5.2, sv * 1.15, 0.3), (-4.4, sv * 1.15, 0.3), (-4.1, sv * 0.85, 0.3)]
-        out.append(pipe_uv('claw_arm', pts, 0.1, M['steel'], corner=0.25))
-        out.append(cbox('claw_tip', -4.05, sv * 0.78, 0.22, 0.16, 0.18, 0.24, M['hull2'], bevel=0.03))
-        out.append(ucyl('claw_hinge', 0.14, 0.32, -5.2, sv * 1.15, 0.14, M['hull2'], verts=16, bevel=0.03))
+    """The docking claw (variants.py build_claw's jaws, bigger): two hooked jaws on hydraulic mounts either
+    side of the nose, biting round the tube's collar."""
+    prof = [(0.0, 0.0), (0.38, 0.02), (0.54, 0.1), (0.6, 0.24), (0.5, 0.26), (0.44, 0.15), (0.32, 0.13), (0.04, 0.16)]
+    k = 1.6
+    for sv, hinge, z0, z1 in ((1, (-5.25, 1.3), 0.2, 0.4), (-1, (-4.6, -1.05), 0.2, 0.4)):
+        ang = math.atan2(-sv * 0.21, 1.0)                           # pointing +u, a bit towards the tube
+        c, s = math.cos(ang), math.sin(ang)
+        pts = [(hinge[0] + k * (u * c + sv * w * s), hinge[1] + k * (u * s - sv * w * c)) for u, w in prof]
+        out.append(prism('jaw', pts, z0, z1, M['clawsteel'], bevel=0.03))
+        tip = pts[3]
+        out.append(mn.sphere('jawtooth', 0.06, loc=P(tip[0], tip[1], (z0 + z1) / 2), m=M['gun'], segs=12))
+        band = [(hinge[0] + k * (u * c + sv * w * s), hinge[1] + k * (u * s - sv * w * c)) for u, w in ((0.1, 0.02), (0.2, 0.025), (0.2, 0.14), (0.1, 0.155))]
+        o = prism('jawband', band, z1, z1 + 0.008, M['hazard'], bevel=0.0); o['no_ol'] = 1; out.append(o)
+        out.append(ucyl('jawpin', 0.1, z1 - z0 + 0.1, hinge[0], hinge[1], z0 - 0.05, M['steel'], verts=16, bevel=0.015))
+        if sv > 0:
+            out.append(cbox('clawmount', -5.75, 1.75, 0.6, 0.5, H_LOW, 0.2, M['gun'], bevel=0.03))
+            o = cbox('clawhaz', -5.75, 1.75, 0.5, 0.36, H_LOW + 0.2, 0.006, M['hazard'], bevel=0.0); o['no_ol'] = 1; out.append(o)
+            out.append(pipe_uv('piston', [(-5.6, 1.6, H_LOW + 0.12), (-4.8, 1.12, 0.32)], 0.04, M['steel'], corner=0.01))
+
+def raider_exterior(M, rng, out, brig=False):
+    zr = H_FULL
+    for sv in (1, -1):
+        wing(sv, M, out, rng); nacelle(sv, M, out)
+    centre_engine(M, out)
+    canopy(M, out)
+    if brig: out.append(ucyl('sponson', 0.82, H_FULL, *TURRET, 0.0, M['hull'], verts=48, bevel=0.04)); searchlight(M, out, TURRET[0], TURRET[1], zr)
+    else: turret(M, out, *TURRET, zr)
+    # flag mast on the centre engine block (the flying raider flies its flag at the stern too)
+    mu, mv, mz = -26.2, -0.9, 0.95
+    out.append(ucyl('mast', 0.05, 3.0, mu, mv, mz, M['steel'], verts=12, bevel=0.01))
+    out.append(mn.sphere('mast_knob', 0.08, loc=P(mu, mv, mz + 3.05), m=M['gold'], segs=12))
+    out.append(ucyl('mast_foot', 0.11, 0.12, mu, mv, mz, M['gun'], verts=16, bevel=0.02))
+    out.append(flag(mu, mv, mz + 1.75, 2.0, 1.15, M))
+    # gold pinstripe round the south deck, like the stripes on the interceptor's wings
+    line = [(-7.4, 3.1)] + [p for p in S_OUT if -25.0 < p[0] < -7.4] + [(-25.0, 3.5)]   # (westwards: left = inboard)
+    out.append(strip('stripe_gold', line, 0.24, 0.34, H_LOW, H_LOW + 0.006, M['stripe']))
+    out[-1]['no_ol'] = 1
+    # name, registration, nav lights, kill marks, patches
+    v1 = EDGE['cargo']
+    text('name', 'RED COMET', -14.6, v1 - 0.47, H_LOW + 0.003, 0.3, M['gold'])
+    if brig: text('name2', 'PRISON BARGE 9', -21.6, EDGE['core'] - 0.47, H_LOW + 0.003, 0.2, M['white'])
+    else: text('reg', 'RC-13', -8.4, EDGE['airlock'] - 0.47, H_LOW + 0.003, 0.2, M['white'])
+    out.append(mn.sphere('navlamp', 0.08, loc=P(-25.2, EDGE['core'] - 0.14, H_LOW + 0.02), m=M['navr'], segs=16))
+    out.append(mn.sphere('navlamp', 0.08, loc=P(-7.6, EDGE['airlock'] - 0.14, H_LOW + 0.02), m=M['navg'], segs=16))
+    if brig:                                                        # the comet emblem on the near wing
+        cu, cv = -17.4, 5.05
+        out.append(disc('comet', cu + 0.5, cv, 0.285, 0.34, M['red']))
+        for kk in range(3):
+            out.append(cbox('tail', cu - 0.25 - kk * 0.18, cv - 0.09 + kk * 0.09, 1.05 - kk * 0.22, 0.09, 0.282, 0.004, M['red'], bevel=0))
+    else:
+        skull(-17.2, 4.95, 0.285, 0.95, M['white'], out, face=False)    # jolly roger stencil on the near wing
+    weld_patch('scrap', -15.5, 5.12, 0.28, 0.8, 0.5, 0.25, M, out, rng)
+    weld_patch('scrap', -24.0, 2.0 + 1.1, H_LOW, 0.6, 0.38, -0.2, M, out, rng)
+    weld_patch('scrap', -26.0, 0.9, 0.95, 0.5, 0.42, 0.3, M, out, rng)
+    weld_patch('scrap', -22.4, -5.0, 0.28, 0.7, 0.45, -0.2, M, out, rng)
+    tape(-15.3, 5.1, 0.32, 0.5, M['tape'], out, rotz=1.3)
+    # antenna (pirate) / second searchlight (brig) on the cargo roof
+    if brig: searchlight(M, out, -14.6, -4.35, zr)
+    else:
+        out.append(ucyl('antenna', 0.03, 1.1, -14.6, -4.45, zr, M['steel'], verts=10, bevel=0.005))
+        out.append(mn.sphere('ant_tip', 0.06, loc=P(-14.6, -4.45, zr + 1.12), m=M['lamp_red'], segs=12))
+    # rivets on the deck's south faces
+    for name, (u0, u1) in (('core', (-25.0, -20.2)), ('cargo', (-18.2, -10.6)), ('airlock', (-8.8, -7.6))):
+        x = u0 + 0.3
+        while x < u1:
+            out.append(face_rivet(x, EDGE[name] - 0.005, 0.2, M['steel'], 0.025)); x += 0.8
+    claw(M, out)
 
 def build_pirate(M, rng, out):
     der = False
@@ -213,48 +574,7 @@ def build_pirate(M, rng, out):
     out.append(ubox('warn', -21.95, v, -21.15, v + 0.02, 1.3, 1.5, M['sticker'], bevel=0.003))
     text('warn_t', "DON'T TOUCH", -21.55, v + 0.025, 1.4, 0.08, M['ink'], face=True)
     stain(-21.0, 1.6, 0.5, M['oil'], out, sv=0.6); stain(-24.6, -2.2, 0.3, M['rustd'], out)
-    # exterior: turret + flag on the airlock roof, radiators + exhaust stacks on the core roof
-    zr = H_FULL
-    tu, tv = -7.4, -3.7
-    out.append(ucyl('tur_base', 0.62, 0.14, tu, tv, zr, M['hull2'], verts=40, bevel=0.03))
-    out.append(D.ring('tur_ring', 0.66, 0.08, 0.08, loc=P(tu, tv, zr), m=M['gold']))
-    dome = mn.sphere('tur_dome', 0.5, loc=P(tu, tv, zr + 0.14), m=M['hull'], scale=(1, 1, 0.7), segs=32); out.append(dome)
-    for sv in (-0.12, 0.12):
-        out.append(ucyl('tur_barrel', 0.06, 1.0, tu + 0.35, tv + sv, zr + 0.36, M['black'], axis='u', verts=16, bevel=0.01))
-        out[-1].location = P(tu + 0.35, tv + sv, zr + 0.36) if S > 0 else P(tu + 1.35, tv + sv, zr + 0.36)
-    out.append(cbox('tur_slit', tu + 0.2, tv + 0.3, 0.32, 0.08, zr + 0.28, 0.08, M['lamp_red'], bevel=0.02))
-    mu, mv = -9.6, -3.9                                                # flag mast
-    out.append(ucyl('mast', 0.035, 1.3, mu, mv, zr, M['steel'], verts=12, bevel=0.008))
-    out.append(cbox('flag', mu - 0.4, mv, 0.72, 0.012, zr + 0.82, 0.42, M['black'], bevel=0.004))
-    skull(mu - 0.4, mv + 0.006, zr + 1.06, 0.45, M['white'], out, face=True)
-    for k in range(5):                                                 # radiator fins on the core roof
-        u = -24.6 + k * 0.6
-        out.append(ubox('fin', u - 0.05, -4.45, u + 0.05, -3.05, zr, zr + 0.4, M['steel'], bevel=0.015))
-    out.append(ubox('fin_bar', -24.75, -3.85, -21.95, -3.65, zr + 0.4, zr + 0.48, M['hull2'], bevel=0.02))
-    for u in (-20.9, -19.9):
-        out.append(ucyl('stack', 0.22, 0.75, u, -3.7, zr, M['hull2'], verts=24, bevel=0.03))
-        out.append(D.ring('stack_rim', 0.24, 0.06, 0.08, loc=P(u, -3.7, zr + 0.72), m=M['steel']))
-        out.append(ucyl('stack_hole', 0.17, 0.01, u, -3.7, zr + 0.74, M['soot'] if False else M['black'], verts=24, bevel=0))
-        out.append(disc('soot', u, -3.7 - 0.0, zr + 0.003, 0.5, M['soot']))
-    # cargo roof: scrap patches welded on, antenna
-    for (u, vv, w, d, a) in ((-16.8, -4.35, 0.8, 0.45, 8), (-12.4, -4.4, 0.6, 0.38, -12)):
-        out.append(cbox('patch', u, vv, w, d, zr, 0.04, M['scrap'], bevel=0.01, rotz=math.radians(a)))
-        for su in (-1, 1):
-            for sv in (-1, 1): out.append(rivet(u + su * (w / 2 - 0.07), vv + sv * (d / 2 - 0.06), zr + 0.04, M['steel'], 0.022))
-    out.append(ucyl('antenna', 0.03, 1.1, -14.6, -4.4, zr, M['steel'], verts=10, bevel=0.005))
-    out.append(mn.sphere('ant_tip', 0.06, loc=P(-14.6, -4.4, zr + 1.12), m=M['lamp_red'], segs=12))
-    # low south deck: gold stripe + red trim, name, nav lights, a scrap patch
-    v1 = HULLR[3]
-    out.append(ubox('stripe_gold', HULLR[0] + 0.5, v1 - 0.38, HULLR[2] - 0.5, v1 - 0.3, H_LOW, H_LOW + 0.004, M['gold'], bevel=0))
-    out.append(ubox('stripe_red', HULLR[0] + 0.3, v1 - 0.1, HULLR[2] - 0.3, v1 + 0.0, H_LOW - 0.05, H_LOW + 0.01, M['trim'], bevel=0.01))
-    text('name', 'RED COMET', -8.2, v1 - 0.03, -0.2, 0.26, M['gold'], face=True)
-    text('reg', 'RC-13', -14.6, v1 - 0.06, H_LOW + 0.003, 0.22, M['white'])
-    skull(-21.8, v1 - 0.035, -0.22, 0.42, M['white'], out, face=True)
-    for u, m in ((HULLR[0] + 0.45, M['lamp_red']), (HULLR[2] - 0.45, M['lamp_em'])):
-        out.append(mn.sphere('nav', 0.07, loc=P(u, v1 - 0.25, H_LOW + 0.02), m=m, segs=16))
-    out.append(cbox('patch', -18.2, v1 - 0.02, 0.7, 0.04, -0.4, 0.3, M['scrap'], bevel=0.01))
-    engines(M, out, emit_mat('eng_glow', '#ffb35c', 1.4, base='#ff9040'))
-    claw(M, out)
+    raider_exterior(M, rng, out, brig=False)
 
 # ---------------------------------------------------------------------------------------------------
 # Prison barge (the Red Comet's brig): pirate interior, Dr. Varga in the cargo hold
@@ -307,30 +627,7 @@ def build_brig(M, rng, out):
         out.append(mn.cyl('gface', 0.13, 0.02, loc=P(u, v + 0.08, 1.0), m=M['white'], rot=(R90, 0, 0), verts=24, bevel=0.004))
         out.append(D.ring('valve', 0.15, 0.035, 0.04, loc=P(u, v + 0.12, 0.55), m=M['red'], rot=(R90, 0, 0)))
     stain(-21.2, 1.7, 0.5, M['oil'], out, sv=0.6)
-    # exterior: two searchlight towers, a comet emblem, hazard trim, barred portholes on the belly
-    zr = H_FULL
-    for (u, vv) in ((-8.4, -3.6), (-21.8, -3.8)):
-        out.append(ucyl('tower', 0.18, 0.7, u, vv, zr, M['hull2'], verts=16, bevel=0.02))
-        out.append(cbox('lamp_box', u, vv + 0.05, 0.42, 0.34, zr + 0.7, 0.26, M['hull2'], bevel=0.04))
-        out.append(ubox('lamp_face', u - 0.15, vv + 0.2, u + 0.15, vv + 0.235, zr + 0.73, zr + 0.93, M['lamp'], bevel=0.01))
-    cu, cv = -14.6, -4.32                                             # comet emblem on the cargo roof
-    out.append(disc('comet', cu + 0.35, cv, zr + 0.003, 0.22, M['red']))
-    for k in range(3):
-        out.append(cbox('tail', cu - 0.15 - k * 0.12, cv - 0.06 + k * 0.06, 0.7 - k * 0.15, 0.06, zr + 0.002, 0.004, M['red'], bevel=0))
-    for k in range(5):
-        u = -24.6 + k * 0.6
-        out.append(ubox('fin', u - 0.05, -4.45, u + 0.05, -3.05, zr, zr + 0.35, M['steel'], bevel=0.015))
-    v1 = HULLR[3]
-    out.append(ubox('trim', HULLR[0] + 0.3, v1 - 0.12, HULLR[2] - 0.3, v1 + 0.0, H_LOW - 0.06, H_LOW + 0.01, M['trim'], bevel=0.01))
-    text('name', 'RED COMET  PRISON BARGE 9', -15.0, v1 - 0.03, -0.2, 0.22, M['white'], face=True)
-    for u in (-23.4, -20.6, -9.6, -6.6):                              # barred portholes on the belly face
-        out.append(mn.cyl('port', 0.17, 0.05, loc=P(u, v1 - 0.06, -0.22), m=M['steel'], rot=(R90, 0, 0), verts=24, bevel=0.015))
-        out.append(mn.cyl('port_glass', 0.13, 0.02, loc=P(u, v1 - 0.0, -0.22), m=M['lamp_amber'], rot=(R90, 0, 0), verts=24, bevel=0))
-        for k in (-0.06, 0.0, 0.06): out.append(ubox('pbar', u + k - 0.012, v1 - 0.0, u + k + 0.012, v1 + 0.03, -0.36, -0.08, M['black'], bevel=0))
-    for u, m in ((HULLR[0] + 0.45, M['lamp_red']), (HULLR[2] - 0.45, M['lamp_em'])):
-        out.append(mn.sphere('nav', 0.07, loc=P(u, v1 - 0.25, H_LOW + 0.02), m=m, segs=16))
-    engines(M, out, emit_mat('eng_glow', '#ffb35c', 1.2, base='#ff9040'), v_list=(-3.0, 0.0, 3.0))
-    claw(M, out)
+    raider_exterior(M, rng, out, brig=True)
 
 # ---------------------------------------------------------------------------------------------------
 # Derelict lab module (Dr. Varga's station)
@@ -452,8 +749,8 @@ def build(kind, side):
     structure(kind, M, rng, out)
     {'pirate': build_pirate, 'brig': build_brig, 'derelict': build_derelict}[kind](M, rng, out)
     out = [o for o in dict.fromkeys(out) if o is not None and o.type == 'MESH']
-    big = [o for o in out if o.name.startswith(('low_deck', 'upper', 'belly'))]
-    rest = [o for o in out if o not in big and not o.name.startswith(('stain', 'soot', 'hole_soot', 'tear_soot', 'em', 'paper', 'thr_hz', 'hz_floor'))]
+    big = [o for o in out if o.name.startswith(('low_deck', 'upper', 'belly')) or o.get('big')]
+    rest = [o for o in out if o not in big and not o.get('no_ol') and not o.name.startswith(('stain', 'soot', 'hole_soot', 'tear_soot', 'em', 'paper', 'thr_hz', 'hz_floor'))]
     mn.outline(big, thickness=0.02)
     mn.outline([o for o in rest if not o.name.startswith(('plate', 'lz', 'slat', 'grille', 'subfloor', 'rivet', 'frv', 'coin', 'tray', 'cable', 'strap', 'link'))], thickness=0.012)
     mn.outline([o for o in rest if o.name.startswith('plate')], thickness=0.008)
