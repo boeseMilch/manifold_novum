@@ -375,10 +375,12 @@ function drawS7Floor(d, g, t) {
   const s = d.s7;
   if (!s) return;
   const G = s7Geom(d.side), fl = d.side !== 'port';   // (the sprites are rendered for the port layout: mirrored on the starboard side)
+  // floor growth: in the 'wall' layer just above the derelict's own sprite (it carries the floor; 'decal' would be under it)
+  const fy = Math.min(...[...g.rooms, ...g.doors].map(q => q.y)) - 0.99, floor = (k) => ({ layer: 'wall', sortY: fy + k * 0.001, flip: fl });
   g.rooms.forEach((q, i) => {
     const cx = q.x + q.w / 2, cy = q.y + q.h / 2, husk = s.frozen[i], name = `dock/s7_mat_${S7_ROOMS[i]}${husk ? '_husk' : ''}`;
-    if (!s7Spr(name, 0, cx, cy, 0, { layer: 'decal', flip: fl })) s7MatDraw(q, i, husk, t);
-    if (s.cold[i] > 0.02 && !s7Spr(i % 2 ? 'dock/s7_frost_b' : 'dock/s7_frost_a', 0, cx, cy, 0, { layer: 'decal', alpha: s.cold[i], flip: fl })) s7FrostDraw(q, i, s.cold[i]);
+    if (!s7Spr(name, 0, cx, cy, 0, floor(i))) s7MatDraw(q, i, husk, t);
+    if (s.cold[i] > 0.02 && !s7Spr(i % 2 ? 'dock/s7_frost_b' : 'dock/s7_frost_a', 0, cx, cy, 0, { ...floor(5 + i), alpha: s.cold[i] })) s7FrostDraw(q, i, s.cold[i]);
   });
   // the freezer, J1, the cocoon
   const fz = s.freezer ? 'dock/s7_freezer_on' : 'dock/s7_freezer_off';
@@ -410,7 +412,7 @@ function drawS7Live(t) {
   if (C.d > 0.05) {
     const d0 = C.wrapped ? len : C.d;
     let all = true;
-    for (let k = 0.5; k < d0 - 0.4; k += 1) { const p = s7PointAt(G.creep, k); all = s7Spr('dock/s7_creep_seg', s7Frame('dock/s7_creep_seg', p.a), p.x, p.y, 0, { layer: 'decal', desat: C.dead ? 1 : 0, alpha: C.dead ? 0.6 : 1 }) && all; }
+    for (let k = 0.5; k < d0 - 0.4; k += 1) { const p = s7PointAt(G.creep, k); all = s7Spr('dock/s7_creep_seg', s7Frame('dock/s7_creep_seg', p.a), p.x, p.y, 0, { layer: 'wall', sortY: p.y - 0.5, desat: C.dead ? 1 : 0, alpha: C.dead ? 0.6 : 1 }) && all; }
     const tip = s7PointAt(G.creep, d0);
     all = s7Spr('dock/s7_creep_tip', s7Frame('dock/s7_creep_tip', tip.a, Math.floor(t * 8)), tip.x, tip.y, 0, { sortY: tip.y, desat: C.dead ? 1 : 0, emissive: C.dead ? 0 : 0.4 }) && all;
     if (!all) s7CreepDraw(G, C, d0, t);
