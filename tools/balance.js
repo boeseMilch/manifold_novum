@@ -152,7 +152,8 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY'];
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY',
+  'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -426,6 +427,28 @@ function jobsFor(ev, ctx) {
   } else if (k === 'leviathan') {
     const bumps = Math.floor(g.LEV_TIME / g.LEV_STEP);
     job({ label: 'leviathan', work: 0, prio: 3, fixed: { small: bumps, span: [0, g.LEV_TIME], crewHits: 0.5 } });
+  } else if (k === 'leviathan_boss') {
+    // chapter 8's infested leviathan (js/leviathan.js), roughly, as jobs on its own clock (rel: s after it arrives; the
+    // swims between its stations are the gaps). 1 the pass: the fin (front cannon), the left zones (left cannon), the right
+    // zones (right cannon), LEVB_ZONE_HP hits each; tail flicks (small hits) all along phases 1 and 3. 2 the gas: everyone
+    // in (like a flare). 3 the sides: eye + 2 zones in the window, each side with its cannon (late: a punishment, again).
+    // 4 behind: brood waves (laser fights) while someone gets MID to LEVB_NEED (a 'fight' on MID that uses LEVB_NEED
+    // energies: it waits for them like a cannon does) and holds the override at the stern; then it sinks (LEVB_SINK).
+    const nz = n >= 3 ? 3 : 2, zoneShots = shotsFor(nz * g.LEVB_ZONE_HP, 99), finShots = shotsFor(g.LEVB_FIN_HP, 99), sideShots = shotsFor(3, 99);
+    const gun = (sd, rel, shots, label, extra = {}) => job({ label: `leviathan: ${label}`, rel, trip: H(gunOf(sd)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[sd], shots, gun: sd }], ...extra });
+    gun('front', 8, finShots, 'fin');
+    gun('port', 30, zoneShots, 'left zones');
+    gun('star', 62, zoneShots, 'right zones');
+    const gasAt = 62 + A.CLIMB + fightTime(zoneShots, g) + 4;
+    for (let i = 0; i < n; i++) job({ label: 'leviathan: toxic gas, get inside', rel: gasAt, work: A.FLARE_COST, deadline: g.LEVB_GAS_WARN, late: () => ({ crewHits: 2 }) });
+    const p3 = gasAt + g.LEVB_GAS_WARN + g.LEVB_GAS + 8, win = g.LEVB_WINDOW[0];
+    ['port', 'star'].forEach((sd, i) => gun(sd, p3 + i * 28, sideShots, `${sd === 'port' ? 'left' : 'right'} eye + zones`,   // (a window missed: a punishment)
+      A.CLIMB + fightTime(sideShots, g) > win ? { fixed: { small: 0, span: [0, 1], crewHits: 0.5 } } : {}));
+    const fixedFlicks = Math.floor((gasAt + 60) / g.LEVB_FLICK);
+    job({ label: 'leviathan: tail flicks', work: 0, prio: 3, fixed: { small: fixedFlicks, span: [0, p3 + 60], crewHits: 0.3 * fixedFlicks } });
+    const p4 = p3 + 60, waves = 3, per = Math.min(6, 3 + n - 1), spe = KIT?.spe || g.SHOTS_PER_ENERGY;
+    for (let w = 0; w < waves; w++) job({ label: `leviathan: brood wave ${w + 1}`, rel: p4 + 5 + w * g.LEVB_WAVE, trip: H('reactor'), work: per / A.LASER_HIT * A.LASER_SHOT, crewHits: 0.15 * per });
+    job({ label: 'leviathan: MID to 3 + engine override', rel: p4, trip: H('reactor'), work: g.LEVB_OVERRIDE + A.LEVER_TURN, energy: [{ cap: 1, shots: g.LEVB_NEED * spe, gun: 'front' }] });
   } else if (k === 'derelict') {
     const ws = g.WALK_SPEED * walkMul(), walk = 2 * A.BOARD_WALK / ws, obj = ctx.objective?.kind;
     let work = walk + A.DERELICT_EXTRA + g.HATCH_TIME * 2;
@@ -974,7 +997,7 @@ const meanIdle = (rs) => rs.reduce((s, r) => s + r.idle, 0) / rs.length;
 // The event count for ~target idle (idle falls as events are added): binary search between the
 // essential minimum and twice the written list.
 function fitEvents(id, n, ship, oc, runs, minK = 1) {
-  const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(M.essential || []), ...(M.always || [])]);
+  const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', 'leviathan_boss', ...(M.essential || []), ...(M.always || [])]);
   const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind) || e.opener).length), max = Math.max(2 * wrote, wrote + 16);
   const at = (k) => meanIdle(evalAt(id, n, { events: k, cells: A.AMPLE_CELLS, overcharge: oc, reactor: 1 }, ship, runs));
   let lo = min, hi = max, vLo = at(lo);

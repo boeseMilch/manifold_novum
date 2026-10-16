@@ -182,22 +182,27 @@ Object.assign(MISSIONS, {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 200, rep: 5, xp: 400 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [6, 6, 6, 7, 9, 9, 11, 16], cells: [4, 4, 4, 5, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
+    // (2026-10-16, the infested leviathan's ~4 min fight: ×3 / ×4 need 7 / 9 cells (were 4 / 5) to stay in spec; counts kept.
+    //  Model with the boss: 1% 35% 57% 58% idle for 1-4)
+    crew: {events: [6, 6, 6, 7, 9, 9, 11, 16], cells: [4, 4, 7, 9, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     // at every crew size, solo too: the spore clouds, the spore mother, the grappler, two failing parts and the leviathan
     // (an essential kind); more players get herds, tides and leeches on top
     always: ['spores', 'mother', 'grappler', 'maintenance'],
-    finaleLead: 30,                           // the leviathan is the finale: its whole pass (LEV_TIME) before the jump
+    // the infested leviathan (js/leviathan.js) is the finale: the other events keep their spread (to 330 s, as with the old
+    // leviathan's finaleLead 30); the jump is due LEVB's fight later (length − finaleLead: an estimate, ~4 min) and never comes
+    // before the fight is over (it holds the drive, then spools it LEVB_SINK s after it's freed, like the base's ESCAPE_SPOOL)
+    length: 560, finaleLead: 230,
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 80 },
-    blurb: 'Meet the spore mother, the grappler and the leviathan itself. Survive until the jump.',
-    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing that spits spore pods at the hull (shoot its sac when it opens). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. The tides pull at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. Keep out of the rooms it\'s about to bump, hold the jump handle, and get us out.\n\nGood luck — and bring the cat.',
+    blurb: 'Meet the spore mother, the grappler and the leviathan itself. Find out what drives the swarms mad.',
+    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing that spits spore pods at the hull (shoot its sac when it opens). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. The tides pull at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have.\n\nGood luck — and bring the cat.',
     // 2026-10-16 (the user: "boring", never saw the spore mother): a fixed, escalating timeline instead of the shuffle,
     // no interceptors: spores, the mother, the grappler while a part breaks, then herds and tides, the leviathan last
     // (the mother on one side, the spores and the grappler on the other: one capacitor can't feed both big fights)
     build: () => { const s = randSide(), o = s === 'port' ? 'star' : 'port'; return [evAt('spores', 30, { side: o, opener: true }), evAt('mother', 60, { side: s }), 
                   evAt('grappler', 100, { side: o }), evAt('maintenance', 120, { radar: false }), evAt('herd', 130, { kinds: ['leeches', 'spores'], side: randSide() }), evAt('tide', 140), evAt('herd', 150, { kinds: ['grappler', 'leeches'], side: randSide() }),
                   evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false }), evAt('herd', 210, { kinds: ['mother', 'spores'], side: randSide() }),
-                  evAt('tide', 225), evAt('herd', 240, { kinds: herdPair(), side: randSide() }), evAt('leviathan', 270, { finale: true })]; },
+                  evAt('tide', 225), evAt('herd', 240, { kinds: herdPair(), side: randSide() }), evAt('leviathan_boss', 270, { finale: true })]; },
   },
   practice: {
     name: 'Practice', tier: 0, practice: true, rules: {}, objective: null,

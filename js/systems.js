@@ -383,7 +383,8 @@ function clickTarget(mx, my) {
   if (player.mode === 'eva') return evaClickTarget(mx, my);
   if (player.mode !== 'inside') return null;
   // broken systems first
-  const m = hazardClickTarget(mx, my) || dockClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my);
+  const m = hazardClickTarget(mx, my) || dockClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my)
+    || (typeof levClickTarget === 'function' && levClickTarget(mx, my));   // the boss fight's engine override (js/leviathan.js)
   if (m) return m;
   for (const s of SYSTEMS) {
     if (!s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;

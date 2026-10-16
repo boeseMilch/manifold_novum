@@ -1,0 +1,726 @@
+// The infested leviathan: chapter 8's final boss (event kind `leviathan_boss`; js/organic.js keeps the old 30 s
+// leviathan pass for Nightmare). Story: it isn't evil, it's sick. Leeches burrowed into its hide ("infested
+// zones") and the pain drove the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away.
+// ~130 units long, it swims round the ship one side at a time (front → left → right → … → behind):
+//   1 THE PASS   across the bow: its dorsal FIN (LEVB_FIN_HP front-cannon hits), then down the LEFT flank: its infested
+//                ZONES there (2 / 2 / 3+ players: 3) take LEVB_ZONE_HP left-cannon hits each, then round to the RIGHT
+//                flank, the same with the right cannon. It moves on when the side it shows is clean. Every ~LEVB_FLICK s
+//                a tail flick bumps a room on its side (a red warning on that floor LEVB_FLICK_WARN s ahead).
+//   2 TOXIC GAS  T-LEVB_GAS_WARN (big HUD number, banner, ship voice), then a cloud wraps the hull for LEVB_GAS s: anyone
+//                outside (spacewalk or cannon seat) when it arrives, or who goes out during it, goes down.
+//   3 THE SIDE   it parks on one side (random), its EYE opens and that side's zones regrow and glow: LEVB_WINDOW s (easy /
+//                very easy: longer) to hit the eye and every glowing zone once with that side's cannon. Too slow: a
+//                leech swarm on that side / a tail slam (room bump + a big hit), alternating, then a new window. In
+//                time: it flinches and swims to the other side. Both sides done → 4.
+//   4 BEHIND     out of every cannon's reach. Its BROOD crawls in through two engine vents in the reactor room (waves
+//                every LEVB_WAVE s: 3 crawlers solo, +1 per extra player, at most 6). Crawlers (one laser hit) head for
+//                the MID capacitor and drain 1 energy there, biting crew in their way. Charge MID to LEVB_NEED and hold
+//                the ENGINE OVERRIDE at the stern (LEVB_OVERRIDE s): the ENGINE BLAST burns the nest on its back →
+//                FREED: the last leeches drop off, its teal glow comes back, it sinks (LEVB_SINK s), then the jump
+//                drive spools (with c8's handle rule: someone pulls the handle). The jump never comes before that.
+// State: org.boss (plain data, synced with org). Geometry: a closed swim loop round the ship (levLoop); the body is a
+// chain of pieces hung back from the nose along it in SCREEN space (x, y·sin50), as the sprites are modelled
+// (levChain, 7 segments, ~125 units with the fluke). Targets and the shell tests use the same chain, in screen space. Drawing (tunable in one place):
+// levChainPieces / drawLevBody (sprites, else procedural), drawLevMarks (target rings, missing details),
+// drawLevGas, drawLevBlast, drawLevShip (vents, override panel, brood), drawLevBossScreen (T-10, window clock).
+
+const LEVB_FIN_HP = 2, LEVB_ZONE_HP = 2, LEVB_FLICK = 25, LEVB_FLICK_WARN = 4, LEVB_GAS_WARN = 10, LEVB_GAS = 15;
+const LEVB_WINDOW = [12, 16, 20], LEVB_PUNISH = 6, LEVB_SLAM_WARN = 3, LEVB_WAVE = 20, LEVB_WAVE_FIRST = 5, LEVB_SPAWN_GAP = 0.9;
+const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 3, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
+// The swim loop (world units): centre lines left / right / ahead / behind of the ship, corner radius.
+const LEVB_GEO = { X0: -19, X1: SHIP_W + 19, Y0: -22, Y1: 41, R: 16 };
+// The chain (screen units, the sprite contract): nose 22 ahead of the neck joint J0; segment k is 16·0.9^k long, drawn at
+// scale 0.9^k; the tail 26·0.9^7 long at scale 0.9^7, the fluke at its end (same scale). Half-width of the head W.
+const LEVB_HEAD = 22, LEVB_SEG = 16, LEVB_SEGS = 7, LEVB_TAIL = 26, LEVB_SHRINK = 0.9, LEVB_W = 10;
+// The infested zones and the nest are drawn (and hit) this much bigger than modelled (the boil is ~3 across at scale 1).
+const LEVB_ZONE_SCALE = 1.75;
+// Targets and details in piece-local screen units (x forward, -y = the creature's LEFT, which faces the ship).
+const LEVB_SPOTS = {
+  eye: { piece: 'head', at: [14, -5.5], r: 3 },
+  fin: { piece: 0, at: [-8, -3], r: 4.5 },
+  L1: { piece: 1, at: [-9, -4.5], r: 3.8 }, L2: { piece: 2, at: [-2.5, -4], r: 3.8 }, L3: { piece: 2, at: [-10.5, -4.5], r: 3.8 },
+  R1: { piece: 3, at: [-9, -4.5], r: 3.8 }, R2: { piece: 4, at: [-2.5, -4], r: 3.8 }, R3: { piece: 4, at: [-10.5, -4.5], r: 3.8 },
+  E1: { piece: 'head', at: [5, 5], r: 3.5 }, E2: { piece: 'head', at: [3, -3.5], r: 3.5 },   // (phase 3: zones regrow on its head, by the eye)
+  nest: { piece: 2, at: [-11, 1], r: 5 },
+};
+const LEVB_FIN_SEG = 0, LEVB_PEC = [2.0, -7.2];
+// Inside our ship: two engine vent grates near the stern of the reactor room, the override panel on the stern wall,
+// where the brood goes (in front of the middle capacitor).
+const LEVB_VENTS = [{ x: 24.8, y: 24.5 }, { x: 28.6, y: 24.3 }], LEVB_PANEL = { x: 26.6, y: 25.25 }, LEVB_CAP_AT = { x: 27.0, y: 16.45 };
+const LEVB_ENGINE = { x: 22.2, y: 26.1 };
+const LEVB_SPRITES = ['organic/levb_head', 'organic/levb_seg_a', 'organic/levb_seg_b', 'organic/levb_seg_tail', 'organic/levb_fluke'];
+
+const levEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
+const levSideName = (s) => (s === 'port' ? 'LEFT' : s === 'star' ? 'RIGHT' : s === 'front' ? 'FRONT' : 'BEHIND');
+
+// ---------------------------------------------------------------------------
+// Geometry
+// ---------------------------------------------------------------------------
+// The loop, counterclockwise on screen (the ship always on the creature's left): across the bow heading left,
+// down the left flank, across behind heading right, up the right flank. s: world arc length.
+const LEVB_LOOP = (() => {
+  const { X0, X1, Y0, Y1, R } = LEVB_GEO, LT = X1 - X0 - 2 * R, LS = Y1 - Y0 - 2 * R, C = Math.PI * R / 2;
+  const parts = [
+    { len: LT, at: (u) => [X1 - R - u, Y0, -1, 0] },
+    { len: C, arc: [X0 + R, Y0 + R, -Math.PI / 2] },
+    { len: LS, at: (u) => [X0, Y0 + R + u, 0, 1] },
+    { len: C, arc: [X0 + R, Y1 - R, Math.PI] },
+    { len: LT, at: (u) => [X0 + R + u, Y1, 1, 0] },
+    { len: C, arc: [X1 - R, Y1 - R, Math.PI / 2] },
+    { len: LS, at: (u) => [X1, Y1 - R - u, 0, -1] },
+    { len: C, arc: [X1 - R, Y0 + R, 0] },
+  ];
+  let s0 = 0; for (const p of parts) { p.s0 = s0; s0 += p.len; }
+  return { parts, P: s0 };
+})();
+// Point and heading on the loop: [x, y, tx, ty] (world).
+function levLoop(s) {
+  const P = LEVB_LOOP.P; s = ((s % P) + P) % P;
+  for (const p of LEVB_LOOP.parts) {
+    if (s > p.s0 + p.len) continue;
+    const u = s - p.s0;
+    if (p.at) return p.at(u);
+    const [cx, cy, a0] = p.arc, a = a0 - u / LEVB_GEO.R;          // (counterclockwise on screen: the angle falls)
+    return [cx + Math.cos(a) * LEVB_GEO.R, cy + Math.sin(a) * LEVB_GEO.R, Math.sin(a), -Math.cos(a)];
+  }
+  return LEVB_LOOP.parts[0].at(0);
+}
+// The body behind the nose leaves the loop and curls outward (it never wraps round the ship), a slow ripple runs
+// down it. v: world distance behind the nose along the loop.
+const levSpiral = (v) => (v > 70 ? 40 * ((v - 70) / 80) ** 2 : 0);
+function levPath(B, tt) {
+  const SIN = GFX.SIN, out = [], amp = B.parked ? 0.4 : 0.9;
+  let len = 0, px = 0, py = 0;
+  for (let v = 0; v <= 210; v += 1.5) {
+    const [x, y, tx, ty] = levLoop(B.s - v), ix = ty, iy = -tx;   // (inward: the creature's left)
+    const off = -(B.out || 0) - levSpiral(v) + amp * Math.sin(0.09 * v - 1.4 * tt) * Math.min(1, v / 25);
+    const sx = x + ix * off, sy = (y + iy * off) * SIN;
+    if (out.length) len += Math.hypot(sx - px, sy - py);
+    out.push([sx, sy, len]); px = sx; py = sy;
+  }
+  return out;
+}
+function levAlong(path, d) {                           // the path point d screen units behind the nose
+  for (let i = 1; i < path.length; i++) if (path[i][2] >= d || i === path.length - 1) {
+    const a = path[i - 1], b = path[i], k = clamp((d - a[2]) / ((b[2] - a[2]) || 1), 0, 1);
+    return [lerp(a[0], b[0], k), lerp(a[1], b[1], k)];
+  }
+  return [path[0][0], path[0][1]];
+}
+// The chain: pieces { name, x, y (screen), rot, scale, len } nose first. Pieces 0..5 the segments, 'head', 'tail', 'fluke'.
+function levChain(B, tt = B.t) {
+  const path = levPath(B, tt), J = [levAlong(path, LEVB_HEAD)], nose = levAlong(path, 0), dist = [LEVB_HEAD];
+  for (let k = 0; k <= LEVB_SEGS; k++) {
+    const l = k < LEVB_SEGS ? LEVB_SEG * LEVB_SHRINK ** k : LEVB_TAIL * LEVB_SHRINK ** LEVB_SEGS;
+    dist.push(dist[k] + l); J.push(levAlong(path, dist[k + 1]));
+  }
+  const dir = (a, b) => Math.atan2(a[1] - b[1], a[0] - b[0]);
+  const pieces = { head: { name: 'head', x: J[0][0], y: J[0][1], rot: dir(nose, J[0]), scale: 1 } };
+  for (let k = 0; k < LEVB_SEGS; k++) pieces[k] = { name: k % 2 ? 'seg_b' : 'seg_a', x: J[k][0], y: J[k][1], rot: dir(J[k], J[k + 1]), scale: LEVB_SHRINK ** k };
+  const ts = LEVB_SHRINK ** LEVB_SEGS;
+  pieces.tail = { name: 'seg_tail', x: J[LEVB_SEGS][0], y: J[LEVB_SEGS][1], rot: dir(J[LEVB_SEGS], J[LEVB_SEGS + 1]), scale: ts };
+  pieces.fluke = { name: 'fluke', x: J[LEVB_SEGS + 1][0], y: J[LEVB_SEGS + 1][1], rot: pieces.tail.rot, scale: ts };
+  return { path, nose, J, pieces };
+}
+// A piece-local point (screen units) → screen.
+function levLocal(pc, lx, ly) {
+  const c = Math.cos(pc.rot), s = Math.sin(pc.rot);
+  return [pc.x + (lx * c - ly * s) * pc.scale, pc.y + (lx * s + ly * c) * pc.scale];
+}
+function levSpotAt(ch, id) {
+  const S = LEVB_SPOTS[id], pc = ch.pieces[S.piece];
+  const [x, y] = levLocal(pc, S.at[0], S.at[1]);
+  return { x, y, r: S.r, wx: x, wy: y / GFX.SIN };
+}
+// Where it parks for each step: the loop position (head) that puts the step's targets where the cannon sees them.
+const levStationCache = new Map();
+function levStation(key, ids, want) {
+  const k = key + ids.join(); if (levStationCache.has(k)) return levStationCache.get(k);
+  const P = LEVB_LOOP.P, probe = { s: 0, out: 0, parked: true, t: 0 };
+  let best = 0, bd = Infinity;
+  const score = (s) => {
+    probe.s = s; const ch = levChain(probe, 0);
+    let x = 0, y = 0; for (const id of ids) { const p = levSpotAt(ch, id); x += p.wx; y += p.wy; }
+    return Math.hypot(x / ids.length - want[0], y / ids.length - want[1]);
+  };
+  for (let s = 0; s < P; s += 2) { const d = score(s); if (d < bd) { bd = d; best = s; } }
+  for (let s = best - 2; s <= best + 2; s += 0.1) { const d = score(s); if (d < bd) { bd = d; best = s; } }
+  levStationCache.set(k, best);
+  return best;
+}
+const levNext = (B, base) => { const P = LEVB_LOOP.P; let s = base; while (s < B.s - 0.5) s += P; return s; };
+const levZoneIds = (side, n) => (side === 'port' ? ['L1', 'L2', 'L3'] : ['R1', 'R2', 'R3']).slice(0, n);
+function levStationFor(B, step) {
+  const { X0, X1, Y0, Y1 } = LEVB_GEO;
+  if (step === 'fin') return levStation('front', ['fin'], [22.2, Y0]);
+  if (step === 'left') return levStation('left', levZoneIds('port', B.nz), [X0, 8.5]);
+  if (step === 'right') return levStation('right', levZoneIds('star', B.nz), [X1, 8.5]);
+  if (step === 'port' || step === 'star') return levStation(step, ['eye', 'E1', 'E2'], [step === 'port' ? X0 : X1, 8.5]);
+  return levStation('behind', ['nest'], [22.2, Y1]);
+}
+
+// ---------------------------------------------------------------------------
+// Starting it
+// ---------------------------------------------------------------------------
+// from: 1 (the whole fight), 2 (the gas), 3 (the sides, after the gas) or 4 (behind) — the practice panel's entries.
+function startLevBoss(from = 1) {
+  const n = crewSize(), nz = n >= 3 ? 3 : 2;
+  const B = org.boss = {
+    phase: 'p1', step: 'fin', s: 0, sTo: 0, out: 0, parked: false, t: 0, nz, fin: LEVB_FIN_HP, sink: 0,
+    zones: [...levZoneIds('port', nz), ...levZoneIds('star', nz)].map(id => ({ id, side: id[0] === 'L' ? 'port' : 'star', hp: LEVB_ZONE_HP })),
+    where: 'front', flick: { t: LEVB_FLICK, room: null }, slam: null, gas: null, p3: null,
+    brood: [], dead: [], wave: null, blast: 0, freed: 0, splat: 0,
+  };
+  if (from >= 2) { B.fin = 0; for (const z of B.zones) z.hp = 0; }
+  if (from === 2) { B.step = 'right'; B.where = 'star'; }
+  if (from === 4) { B.phase = 'p4'; B.p3 = { side: 'star', done: ['port', 'star'] }; B.step = 'behind'; }
+  else if (from === 3) { B.phase = 'p3'; levStartSide(B, randSide(), true); }
+  if (from === 2) levStartGas(B);
+  B.sTo = levStationFor(B, B.step === 'behind' ? 'behind' : B.phase === 'p3' ? B.p3.side : B.step);
+  B.s = B.sTo - 70; B.out = 40; B.arrive = true;
+  if (from === 1) {
+    combatBanner('THE LEVIATHAN — it\'s sick, leeches in its hide! Front cannon: hit its FIN');
+    sfx.say?.('Leviathan. Very large. It appears to be. Injured.');
+  } else combatBanner(`Leviathan (practice: from phase ${from})`);
+  sfx.whale?.(); combat.shake = Math.max(combat.shake, 0.6);
+}
+function levStartSide(B, side, first = false) {
+  B.p3 = { ...(B.p3 || { done: [] }), side, state: 'swim', win: 0, eye: false, glow: [], fails: B.p3?.fails || 0, t: 0 };
+  B.where = side; B.parked = false;
+  if (!first) combatBanner(`It flinches — and swims round to the ${levSideName(side)} side!`);
+}
+
+// ---------------------------------------------------------------------------
+// Update (from updateOrganic)
+// ---------------------------------------------------------------------------
+function updateLevBoss(dt) {
+  const B = org.boss;
+  if (!B) return;
+  B.t += dt; B.splat = Math.max(0, B.splat - dt);
+  // swimming along the loop; parked at its station
+  if (B.s < B.sTo - 0.02) {
+    const left = B.sTo - B.s;
+    B.s = Math.min(B.sTo, B.s + Math.min(LEVB_SWIM, 1.2 + left * 0.7) * dt); B.parked = false;
+    if (B.arrive) B.out = 40 * clamp((B.sTo - B.s) / 70, 0, 1);
+  } else { B.s = B.sTo; if (!B.parked) { B.parked = true; B.arrive = false; B.out = 0; levParked(B); } }
+  // the jump drive waits for the fight
+  if (B.phase !== 'freed' && !MISSIONS[mission.id]?.practice && isFinite(mission.jumpAt) && !mission.jump && mission.jumpAt < mission.t + LEVB_HOLD_JUMP) mission.jumpAt = mission.t + LEVB_HOLD_JUMP;
+  if (B.phase === 'freed') {
+    B.freed -= dt; B.sink = clamp(1 - B.freed / LEVB_SINK, 0, 1); B.out += dt * 3;
+    if (B.freed <= 0) { org.boss = null; }
+    return;
+  }
+  levShells(B);
+  // tail flicks (phases 1 and 3, not in the gas or behind)
+  if (B.phase === 'p1' || B.phase === 'p3') {
+    const F = B.flick;
+    F.t -= dt;
+    if (F.t <= LEVB_FLICK_WARN && !F.room) F.room = levRoomOn(B.where);
+    if (F.t <= 0) { levBump(F.room || levRoomOn(B.where), false); F.t = LEVB_FLICK; F.room = null; }
+  }
+  if (B.slam && (B.slam.t -= dt) <= 0) { levBump(B.slam.room, true, B.slam.side); B.slam = null; }
+  if (B.phase === 'gas') levUpdateGas(B, dt);
+  else if (B.phase === 'p3') levUpdateSide(B, dt);
+  else if (B.phase === 'p4') levUpdateBehind(B, dt);
+  else if (B.phase === 'blast') {
+    B.blast -= dt; combat.shake = Math.max(combat.shake, 0.5);
+    if (B.blast <= 0) levFree(B);
+  }
+  B.dead = B.dead.filter(d => (d.t -= dt) > 0);
+}
+const levRoomOn = (where) => {
+  const pool = where === 'port' ? ['portGun', 'portLock'] : where === 'star' ? ['starGun', 'starLock'] : where === 'front' ? ['bridge'] : ['reactor'];
+  return pool[Math.floor(Math.random() * pool.length)];
+};
+// A tail flick (small) or slam (large) on a room: crew inside get hurt, the hull takes the hit on that side.
+function levBump(id, large, side) {
+  const room = roomById(id), [cx, cy] = roomCenter(room);
+  side = side || (room.col === 0 ? 'port' : room.col === 2 ? 'star' : 'front');
+  combat.shake = 1; sfx.explosion();
+  for (const c of crew) if (c.mode === 'inside' && roomAt(c.x, c.y) === room) hurtCrew(c);
+  if (large) {
+    const y = side === 'front' ? hullTopY(cx) : cy, x = side === 'front' ? cx : hullEdgeX(cy, side);
+    shipHit(side, x, y, true); combatBanner(`TAIL SLAM on the ${room.name.toLowerCase()}!`);
+  } else { smallHit(side, cx, cy); combatBanner(`Its tail flicked the ${room.name.toLowerCase()}!`); }
+}
+// Arrived where the step wants it: phase 3 opens its eye, phase 4 opens the vents.
+function levParked(B) {
+  if (B.phase === 'p1') {
+    const where = { fin: 'front', left: 'port', right: 'star' }[B.step];
+    B.where = where;
+    if (B.step === 'left') combatBanner(`LEFT flank: ${B.zones.filter(z => z.side === 'port').length} infested zones — left cannon, 2 hits each!`);
+    if (B.step === 'right') combatBanner(`RIGHT flank: ${B.zones.filter(z => z.side === 'star').length} infested zones — right cannon, 2 hits each!`);
+  } else if (B.phase === 'p3') levOpenEye(B);
+  else if (B.phase === 'p4' && !B.wave) {
+    B.where = 'behind'; B.wave = { next: LEVB_WAVE_FIRST, queue: 0, spawn: 0, vent: 0, n: 0 };
+    combatBanner('It settled BEHIND us — out of every cannon\'s reach. Charge MID to 3, engine override at the stern!');
+    sfx.say?.('Manual engine override available. Charge the middle capacitor.'); sfx.whale?.();
+  }
+}
+function levOpenEye(B) {
+  const P = B.p3;
+  Object.assign(P, { state: 'open', win: LEVB_WINDOW[levEasy()], eye: false, glow: [{ id: 'E1', hit: false }, { id: 'E2', hit: false }] });
+  combatBanner(`Its EYE opens — ${levSideName(P.side)} cannon: the eye + the glowing zones in ${P.win} s!`); sfx.alarm?.();
+}
+// Our shells: the step's targets (only while it's parked), else a splat on its hide where they cross its back.
+function levTargets(B) {
+  if (!B.parked) return [];
+  if (B.phase === 'p1') {
+    if (B.step === 'fin') return B.fin > 0 ? ['fin'] : [];
+    return B.zones.filter(z => z.side === (B.step === 'left' ? 'port' : 'star') && z.hp > 0).map(z => z.id);
+  }
+  if (B.phase === 'p3' && B.p3.state === 'open') return [...(B.p3.eye ? [] : ['eye']), ...B.p3.glow.filter(g => !g.hit).map(g => g.id)];
+  return [];
+}
+function levShells(B) {
+  if (!combat.shells.length) return;
+  const ch = levChain(B), SIN = GFX.SIN, ids = levTargets(B), spots = ids.map(id => ({ id, ...levSpotAt(ch, id) }));
+  const body = [ch.nose, ...ch.J];
+  for (const s of combat.shells) {
+    if (s.dead) continue;
+    const dt = 1 / 60, x0 = s.x - s.vx * dt, y0 = (s.y - s.vy * dt) * SIN, x1 = s.x, y1 = s.y * SIN;
+    const hit = spots.find(p => segCircle(x0, y0, x1, y1, p.x, p.y, p.r));
+    if (hit) { s.dead = true; levHit(B, hit.id, hit); continue; }
+    for (let i = 1; i < body.length; i++) {               // across its back: a dull splat (shells don't fly through it)
+      const [ax, ay] = body[i - 1], [bx, by] = body[i], w = LEVB_W * 0.35 * (i < 2 ? 1 : LEVB_SHRINK ** (i - 2));
+      if (segDist(x1, y1, ax, ay, bx, by) < w) {
+        s.dead = true; B.splat = 0.3;
+        for (let k = 0; k < 6; k++) combatFx(s.x, s.y, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.5, k % 2 ? '#2a4a5e' : '#7ab0c0', 0.12);
+        sfx.clank?.(); break;
+      }
+    }
+  }
+  combat.shells = combat.shells.filter(s => !s.dead);
+}
+function levHit(B, id, p) {
+  sfx.squelch?.(); sfx.alienHurt?.();
+  for (let i = 0; i < 10; i++) combatFx(p.wx, p.wy, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.7, ['#c8ff6e', '#ff8aa0', '#9cff5a'][i % 3], 0.14);
+  combatFlip('fx/hit_spark', p.wx, p.wy, 1.4);
+  if (B.phase === 'p1') {
+    if (id === 'fin') {
+      B.fin--; combatBanner(B.fin > 0 ? `FIN hit (${LEVB_FIN_HP - B.fin}/${LEVB_FIN_HP})` : `FIN ${LEVB_FIN_HP}/${LEVB_FIN_HP} — it swims on, down your LEFT flank!`);
+      if (B.fin <= 0) { B.step = 'left'; B.parked = false; B.sTo = levNext(B, levStationFor(B, 'left')); combat.shake = Math.max(combat.shake, 0.4); sfx.whale?.(); }
+      return;
+    }
+    const z = B.zones.find(q => q.id === id); if (!z) return;
+    z.hp--; slimeBurst(p.wx, p.wy, z.hp ? 8 : 18);
+    const left = B.zones.filter(q => q.side === z.side && q.hp > 0).length;
+    combatBanner(z.hp ? 'Infested zone hit — once more!' : left ? `Zone blasted clean! ${left} left on this side` : `${levSideName(z.side)} flank clean!`);
+    if (!left) {
+      if (z.side === 'port') { B.step = 'right'; B.parked = false; B.sTo = levNext(B, levStationFor(B, 'right')); combatBanner('LEFT flank clean — it swims round to the RIGHT!'); sfx.whale?.(); }
+      else levStartGas(B);
+    }
+    return;
+  }
+  const P = B.p3;
+  if (id === 'eye') P.eye = true; else { const g = P.glow.find(q => q.id === id); if (g) g.hit = true; slimeBurst(p.wx, p.wy, 14); }
+  if (P.eye && P.glow.every(g => g.hit)) {
+    P.done.push(P.side); combat.shake = Math.max(combat.shake, 0.7); sfx.whale?.();
+    if (P.done.length >= 2) {
+      B.phase = 'p4'; B.step = 'behind'; P.state = 'swim'; B.parked = false; B.sTo = levNext(B, levStationFor(B, 'behind'));
+      combatBanner('It flinches and dives — it\'s swimming round BEHIND us!');
+    } else { levStartSide(B, P.side === 'port' ? 'star' : 'port'); B.sTo = levNext(B, levStationFor(B, P.side)); }
+  } else combatBanner(id === 'eye' ? 'Hit the EYE! Now the glowing zones' : 'Glowing zone hit!');
+}
+function levStartGas(B) {
+  B.phase = 'gas'; B.gas = { warn: LEVB_GAS_WARN, t: LEVB_GAS };
+  combatBanner('Its gills open — TOXIC GAS in 10 s! Everyone inside!'); sfx.alarm?.();
+  sfx.say?.('Toxic gas in ten seconds. Everyone inside.');
+}
+function levUpdateGas(B, dt) {
+  const G = B.gas;
+  if (G.warn > 0) {
+    G.warn -= dt;
+    if (G.warn <= 0) { combatBanner('TOXIC GAS round the hull — stay inside!'); sfx.rumble?.(); }
+    return;
+  }
+  for (const c of crew) if (isOutside(c) && standing(c)) levGasDown(c);
+  if ((G.t -= dt) <= 0) {
+    B.gas = null; combatBanner('The gas has cleared');
+    B.phase = 'p3'; levStartSide(B, randSide(), true); B.sTo = levNext(B, levStationFor(B, B.p3.side));
+    combatBanner(`The gas has cleared — it turns to the ${levSideName(B.p3.side)} side…`);
+  }
+}
+// The gas: out cold where you are (spacewalkers float, gunners slump in the seat); treated as usual afterwards.
+function levGasDown(c) {
+  const a = c.armor; c.armor = 0;                    // (a vest doesn't filter air)
+  hurtCrew(c, c.health === 'hurt' ? 1 : 2); c.armor = a;
+  combatBanner(`${c.name} breathed the gas — down!`);
+}
+function levUpdateSide(B, dt) {
+  const P = B.p3;
+  if (P.state === 'open') {
+    P.win -= dt;
+    if (P.win <= 0) {                                    // too slow: a leech swarm / a tail slam, alternating
+      const leeches = (P.fails++ % 2) === 0;
+      if (leeches) { spawnLeeches(P.side); combatBanner(`Too slow! It spits a LEECH SWARM at the ${levSideName(P.side)} side!`); }
+      else { B.slam = { t: LEVB_SLAM_WARN, room: levRoomOn(P.side), side: P.side }; combatBanner(`Too slow! Its tail rises — get out of the ${roomById(B.slam.room).name.toLowerCase()}!`); }
+      P.state = 'punish'; P.t = LEVB_PUNISH; P.glow = [];
+    }
+  } else if (P.state === 'punish' && (P.t -= dt) <= 0) levOpenEye(B);
+}
+function levUpdateBehind(B, dt) {
+  const W = B.wave;
+  if (W) {
+    if ((W.next -= dt) <= 0) { W.next = LEVB_WAVE; W.queue += Math.min(6, 3 + crewSize() - 1); W.n++; combatBanner('Brood in the reactor room! They\'re going for the MID capacitor'); sfx.squelch?.(); }
+    if (W.queue > 0 && (W.spawn -= dt) <= 0) {
+      const v = LEVB_VENTS[W.vent++ % LEVB_VENTS.length];
+      B.brood.push({ id: newUid(), x: v.x, y: v.y, hp: 1, t: Math.random() * 3, bite: 0, face: -Math.PI / 2 });
+      W.queue--; W.spawn = LEVB_SPAWN_GAP;
+    }
+  }
+  for (const w of B.brood) {
+    w.t += dt; w.bite = Math.max(0, w.bite - dt);
+    const victim = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - w.x, c.y - w.y) < 0.55);
+    if (victim && w.bite <= 0) { hurtCrew(victim, 1); w.bite = LEVB_BITE_CD; w.pause = 0.6; combatBanner(`A brood crawler bit ${victim.name}!`); sfx.spit?.(); }
+    if ((w.pause = Math.max(0, (w.pause || 0) - dt)) > 0) continue;
+    const dx = LEVB_CAP_AT.x - w.x, dy = LEVB_CAP_AT.y - w.y, d = Math.hypot(dx, dy);
+    w.face = Math.atan2(dy, dx);
+    if (d < 0.25) {
+      w.hp = 0; const cap = CAPACITORS[1];
+      if (cap.charge > 0) { cap.charge--; combatBanner(`A crawler drained the middle capacitor! MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`); }
+      slimeBurst(w.x, w.y, 10); sfx.spark?.();
+      continue;
+    }
+    const sp = LEVB_BROOD_SPEED * (0.85 + 0.3 * Math.abs(Math.sin(w.t * 5))) * dt;
+    w.x += dx / d * Math.min(d, sp); w.y += dy / d * Math.min(d, sp);
+  }
+  B.brood = B.brood.filter(w => w.hp > 0);
+}
+// Hand lasers / blasters / wrenches (js/invader.js boltHitsBody): the brood they can hit.
+const levBrood = () => (org.boss?.brood || []);
+function levHurtBrood(w, dmg = 1) {
+  w.hp -= dmg;
+  if (w.hp <= 0) { slimeBurst(w.x, w.y, 12); org.boss?.dead.push({ x: w.x, y: w.y, face: w.face, t: 6 }); }
+}
+// The engine override at the stern: hold click (or E) for LEVB_OVERRIDE s with LEVB_NEED energy in MID.
+function levClickTarget(mx, my) {
+  const P = LEVB_PANEL;
+  if (Math.hypot(mx - P.x, my - P.y) > 0.7) return null;
+  const t = { x: P.x, y: P.y, r: 0.7 }, B = org.boss, cap = CAPACITORS[1];
+  if (!near(P.x, P.y)) return { ...t, text: 'Engine manual override — get closer', ok: false };
+  if (!B || B.phase === 'freed') return { ...t, text: 'Engine manual override (for emergencies only)', ok: false };
+  if (B.phase === 'blast') return { ...t, text: 'The engine is firing!', ok: false };
+  if (B.phase !== 'p4' || !B.parked) return { ...t, text: 'Engine override — nothing behind us to burn', ok: false };
+  if (broken(cap)) return { ...t, text: 'Engine override — fix the middle capacitor first', ok: false };
+  if (cap.charge < LEVB_NEED) return { ...t, text: `Engine override — needs ${LEVB_NEED} energy in MID (now ${cap.charge}/${LEVB_NEED}): lever on MID`, ok: false };
+  return holdTarget('levOverride', LEVB_OVERRIDE, `Hold click: MANUAL OVERRIDE — fire the engine into its back (${LEVB_OVERRIDE} s, ${LEVB_NEED} MID energy)`, P.x, P.y, 0.7, () => levBlast());
+}
+function levBlast() {
+  const B = org.boss, cap = CAPACITORS[1];
+  if (!B || B.phase !== 'p4' || cap.charge < LEVB_NEED) return;
+  cap.charge -= LEVB_NEED; B.phase = 'blast'; B.blast = LEVB_BLAST;
+  combatBanner('ENGINE BLAST — burning the nest off its back!'); sfx.explosion(); sfx.whoosh?.(); combat.shake = 1;
+}
+function levFree(B) {
+  B.phase = 'freed'; B.freed = LEVB_SINK; B.wave = null; B.parked = true;
+  for (const w of B.brood) slimeBurst(w.x, w.y, 10);
+  B.brood = [];
+  const ch = levChain(B);
+  for (const id of ['nest', 'L1', 'L2', 'R1', 'R2', 'E1', 'E2']) { const p = levSpotAt(ch, id); for (let i = 0; i < 6; i++) combatFx(p.wx, p.wy, (Math.random() - 0.5) * 4, Math.random() * 3, 1.4, '#ff6a7a', 0.18); }
+  combatBanner('It\'s free.'); sfx.whale?.();
+  sfx.say?.('The creature is. Free.');
+  if (!MISSIONS[mission.id]?.practice && !mission.jump) mission.jumpAt = mission.t + LEVB_SINK;   // the drive spools once it's gone
+}
+
+// ---------------------------------------------------------------------------
+// Hooks into the mission
+// ---------------------------------------------------------------------------
+EVENT_RUNNERS.leviathan_boss = () => startLevBoss(1);
+EVENT_LABELS.leviathan_boss = () => 'Leviathan — front';
+ESSENTIAL_KINDS.add('leviathan_boss'); COMBAT_KINDS.add('leviathan_boss');
+
+// The sidebar plate: the phase and what to hit.
+function levBossPlates(add) {
+  const B = org.boss;
+  if (!B) return;
+  const cap = CAPACITORS[1], z = (side) => B.zones.filter(q => q.side === side && q.hp > 0).length;
+  let sub = '';
+  if (B.phase === 'p1') {
+    if (!B.parked) sub = B.step === 'fin' ? 'crossing the bow…' : `swimming to the ${B.step.toUpperCase()} flank…`;
+    else if (B.step === 'fin') sub = `Hit its FIN with the front cannon (${LEVB_FIN_HP - B.fin}/${LEVB_FIN_HP})`;
+    else sub = `${B.step.toUpperCase()} flank: ${z(B.step === 'left' ? 'port' : 'star')} infested zones left · ${B.step} cannon`;
+  } else if (B.phase === 'gas') sub = B.gas.warn > 0 ? `T-${Math.ceil(B.gas.warn)}: get inside!` : `toxic gas outside · ${Math.ceil(B.gas.t)} s · stay in`;
+  else if (B.phase === 'p3') {
+    const P = B.p3;
+    sub = P.state === 'swim' ? `swimming to the ${levSideName(P.side)} side…` : P.state === 'open' ? `Eye + zones in ${Math.ceil(P.win)} s · ${levSideName(P.side).toLowerCase()} cannon (${(P.eye ? 1 : 0) + P.glow.filter(g => g.hit).length}/${1 + P.glow.length})` : 'too slow — brace!';
+  } else if (B.phase === 'p4') sub = !B.parked ? 'swimming round behind us…' : `${B.brood.length ? 'Brood in the reactor room! · ' : ''}MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED} · engine override at the stern`;
+  else if (B.phase === 'blast') sub = 'ENGINE BLAST';
+  else sub = 'It\'s free.';
+  add('levboss', { icon: 'unknown', title: B.phase === 'freed' ? 'THE LEVIATHAN' : `LEVIATHAN · ${{ p1: 'THE PASS', gas: 'TOXIC GAS', p3: 'THE SIDE', p4: 'BEHIND', blast: 'BEHIND' }[B.phase] || ''}`, sub, stripe: B.phase === 'freed' ? '#4ad0b0' : '#c8ff6e', red: B.phase !== 'freed', wrap: true });
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+// Sprites: the pieces on the 'under' layer, nose last (in front); positions are screen-space chain points turned
+// back into world points (y / sin50). Without them: a procedural body in the same pieces (drawLevPieceFallback).
+function levState(B) {                                  // which zone sprites, the eye, the dorsal fin
+  const st = {};
+  for (const z of B.zones) st[z.id] = z.hp <= 0 ? 'scar' : z.hp < LEVB_ZONE_HP ? 'hit1' : 'zone';
+  if (B.phase === 'p3' && B.p3?.glow?.length) for (const g of B.p3.glow) st[g.id] = g.hit ? 'scar' : 'glow';
+  if (B.phase === 'p3' || B.phase === 'p4') { if (!st.E1) st.E1 = 'scar'; if (!st.E2) st.E2 = 'scar'; }
+  if (B.phase === 'blast' || B.phase === 'freed') for (const k in st) st[k] = 'scar';
+  st.eye = B.phase === 'p3' && B.p3?.state === 'open' ? (B.p3.eye ? 'hit' : 'open') : B.phase === 'freed' ? 'open' : 'closed';
+  st.fin = B.fin >= LEVB_FIN_HP ? 'ok' : B.fin > 0 ? 'hit1' : 'hit2';
+  st.nest = B.phase === 'freed' || (B.phase === 'blast' && B.blast < LEVB_BLAST / 2) ? 'burnt' : 'live';
+  return st;
+}
+let levFallbacks = [];                                  // details whose sprite isn't there: drawn by drawLevMarks
+function levSprite(name, frame, pc, lx, ly, o = {}) {
+  const [x, y] = levLocal(pc, lx, ly), B = org.boss, k = 1 - 0.35 * (B?.sink || 0);
+  return GFX.on && GFX.sprite(name, frame, x, y / GFX.SIN, 0, { layer: 'under', rot: pc.rot + (o.rotAdd || 0), scale: pc.scale * (o.scale || 1) * k, flip: o.flip, alpha: (o.alpha ?? 1) * (1 - (B?.sink || 0)), emissive: o.emissive, unlit: o.unlit });
+}
+function drawLevBody(t) {
+  const B = org.boss;
+  if (!B) return;
+  const ch = levChain(B, B.t), P = ch.pieces, st = levState(B);
+  levFallbacks = [];
+  const order = ['fluke', 'tail', 6, 5, 4, 3, 2, 1, 0, 'head'];
+  const sprites = GFX.on && LEVB_SPRITES.every(n => GFX.ready(n));
+  if (!sprites) { drawLevPieceFallback(P.fluke, 'fluke', t, B); drawLevBodyFallback(ch, t, B); }
+  else for (const k of order) levSprite(`organic/levb_${P[k].name}`, k === 'fluke' || k === 'head' ? Math.floor(t * 3) % 4 : 0, P[k], 0, 0, { emissive: 0.3 });   // (head: 4 frames, gills; fluke: 4)
+  // details: fins, zones, the nest, the eyes
+  const detail = (name, frame, pc, at, o, fb) => { if (!(sprites && levSprite(name, frame, pc, at[0], at[1], o))) (sprites ? levFallbacks : { push: (f) => f() }).push(fb); };
+  const fin = P[LEVB_FIN_SEG];
+  detail(`organic/levb_fin_dorsal_${st.fin}`, 0, fin, [-1, 0], {}, () => levFinFallback(fin, st.fin));
+  detail('organic/levb_fin_pec', Math.floor(t * 3) % 4, P.head, LEVB_PEC, {}, () => levPecFallback(P.head, -1, t));
+  detail('organic/levb_fin_pec', (Math.floor(t * 3) + 2) % 4, P.head, [LEVB_PEC[0], -LEVB_PEC[1]], { flip: true, rotAdd: Math.PI }, () => levPecFallback(P.head, 1, t));
+  for (const id of ['L1', 'L2', 'L3', 'R1', 'R2', 'R3', 'E1', 'E2']) {
+    if (!st[id]) continue;
+    const S = LEVB_SPOTS[id], pc = P[S.piece], look = st[id];
+    detail(`organic/levb_${look === 'scar' ? 'scar' : look === 'glow' ? 'zone_glow' : look === 'hit1' ? 'zone_hit1' : 'zone'}`, look === 'zone' || look === 'glow' ? Math.floor(t * 4) % 4 : 0, pc, S.at, { emissive: look === 'scar' ? 0.2 : 0.7, scale: LEVB_ZONE_SCALE }, () => levZoneFallback(pc, S.at, look, t));
+  }
+  const N = LEVB_SPOTS.nest;
+  if (B.phase === 'p4' || B.phase === 'blast' || B.phase === 'freed' || B.where === 'behind') detail(`organic/levb_nest${st.nest === 'burnt' ? '_burnt' : ''}`, 0, P[N.piece], N.at, { emissive: 0.5, scale: LEVB_ZONE_SCALE }, () => levNestFallback(P[N.piece], N.at, st.nest, t));
+  for (const f of [0, 1]) detail(`organic/levb_eye_${st.eye}`, f, P.head, [0, 0], { emissive: 0.6 }, () => levEyeFallback(P.head, f ? 1 : -1, st.eye));
+  levBodyState = { ch, st };
+}
+let levBodyState = null;
+// The procedural body: pieces in their own screen-space frame (ctx at the piece's world point, y unsquashed).
+function levPieceCtx(pc, fn, B = org.boss) {
+  const k = 1 - 0.35 * (B?.sink || 0);
+  ctx.save(); ctx.translate(L(pc.x), L(pc.y / GFX.SIN)); ctx.scale(1, 1 / GFX.SIN); ctx.rotate(pc.rot); ctx.scale(pc.scale * k, pc.scale * k);
+  ctx.globalAlpha *= 1 - (B?.sink || 0);
+  fn(); ctx.restore();
+}
+const LEVB_SKIN = ['#173446', '#24506a', '#2f6680'];
+// The procedural body: one smooth outline along the chain (head to tail tip), widths as the pieces' (W × their scale).
+function drawLevBodyFallback(ch, t, B) {
+  const end = LEVB_HEAD + LEVB_SEG * (1 - LEVB_SHRINK ** LEVB_SEGS) / (1 - LEVB_SHRINK) + LEVB_TAIL * LEVB_SHRINK ** LEVB_SEGS, tailAt = end - LEVB_TAIL * LEVB_SHRINK ** LEVB_SEGS;
+  const k = 1 - 0.35 * (B.sink || 0), cx = ch.J[LEVB_SEGS][0], cy = ch.J[LEVB_SEGS][1];
+  const width = (d) => (d < LEVB_HEAD ? LEVB_W * Math.max(0.25, Math.sqrt(d / LEVB_HEAD)) : LEVB_W * LEVB_SHRINK ** ((d - LEVB_HEAD) / LEVB_SEG)) * (1 - 0.7 * clamp((d - tailAt) / (end - tailAt), 0, 1));
+  const pts = [];
+  for (let d = 0; d <= end; d += 2) {
+    const [x, y] = levAlong(ch.path, d), [x2, y2] = levAlong(ch.path, d + 1), a = Math.atan2(y2 - y, x2 - x);   // (a: towards the tail)
+    pts.push({ x, y, nx: -Math.sin(a), ny: Math.cos(a), w: width(d) });
+  }
+  ctx.save(); ctx.scale(1, 1 / GFX.SIN);
+  ctx.translate(L(cx), L(cy)); ctx.scale(k, k); ctx.translate(-L(cx), -L(cy));      // (sinking: smaller)
+  ctx.globalAlpha *= 1 - (B.sink || 0);
+  const edge = (sd) => pts.map(p => [L(p.x + p.nx * p.w * sd), L(p.y + p.ny * p.w * sd)]);
+  const left = edge(1), right = edge(-1).reverse();
+  ctx.beginPath(); ctx.moveTo(...left[0]);
+  const all = [...left, ...right];
+  for (let i = 1; i < all.length - 1; i++) ctx.quadraticCurveTo(all[i][0], all[i][1], (all[i][0] + all[i + 1][0]) / 2, (all[i][1] + all[i + 1][1]) / 2);
+  ctx.closePath();
+  ctx.fillStyle = LEVB_SKIN[1]; ctx.fill(); stroke(3);
+  ctx.save(); ctx.clip();
+  ctx.lineCap = 'round';                                // a lighter back down the middle, dark flanks
+  for (const [w, col] of [[1.0, LEVB_SKIN[0]], [0.6, LEVB_SKIN[1]], [0.25, LEVB_SKIN[2]]]) {
+    ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(L(p.x), L(p.y)) : ctx.moveTo(L(p.x), L(p.y))));
+    ctx.strokeStyle = col; ctx.lineWidth = L(LEVB_W * 2 * w * 0.9); ctx.stroke();
+  }
+  const sick = B.phase !== 'freed';                    // photophores: dim while it's sick, its own teal glow once free
+  pts.forEach((p, i) => {
+    if (i % 2 || i < 3) return;
+    const a = sick ? 0.22 : 0.5 + 0.4 * Math.sin(t * 3 - i * 0.3);
+    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(L(p.x + p.nx * p.w * 0.45 * sd), L(p.y + p.ny * p.w * 0.45 * sd), L(0.4 + 0.15 * (i % 3)), 0, TAU); ctx.fillStyle = `rgba(122,240,255,${a})`; ctx.fill(); }
+  });
+  ctx.restore(); ctx.restore();
+}
+function drawLevPieceFallback(pc, k, t, B) {
+  levPieceCtx(pc, () => {
+    const sick = B.phase !== 'freed';
+    const body = (x0, x1, w0, w1) => {
+      ctx.beginPath(); ctx.moveTo(L(x0), 0);
+      ctx.bezierCurveTo(L(x0 - 1), -L(w0), L(x1 + 2), -L(w1), L(x1), 0);
+      ctx.bezierCurveTo(L(x1 + 2), L(w1), L(x0 - 1), L(w0), L(x0), 0); ctx.closePath();
+      const g = ctx.createLinearGradient(0, -L(Math.max(w0, w1)), 0, L(Math.max(w0, w1)));
+      g.addColorStop(0, LEVB_SKIN[2]); g.addColorStop(0.5, LEVB_SKIN[1]); g.addColorStop(1, LEVB_SKIN[0]);
+      ctx.fillStyle = g; ctx.fill(); stroke(3);
+    };
+    if (k === 'head') {
+      ctx.beginPath(); ctx.moveTo(-L(2.5), -L(9.5));
+      ctx.bezierCurveTo(L(8), -L(11), L(22), -L(7), L(22.5), 0); ctx.bezierCurveTo(L(22), L(7), L(8), L(11), -L(2.5), L(9.5)); ctx.closePath();
+      const g = ctx.createLinearGradient(0, -L(10), 0, L(10)); g.addColorStop(0, LEVB_SKIN[2]); g.addColorStop(1, LEVB_SKIN[0]);
+      ctx.fillStyle = g; ctx.fill(); stroke(3);
+      ctx.strokeStyle = 'rgba(200,230,240,0.35)'; ctx.lineWidth = 2;   // gill slits
+      for (let i = 0; i < 4; i++) for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(L(1 + i * 1.4), sd * L(6.5)); ctx.lineTo(L(0.4 + i * 1.4), sd * L(8.8)); ctx.stroke(); }
+    } else if (k === 'tail') body(1, -26, 7, 2.2);
+    else if (k === 'fluke') {
+      const sw = Math.sin(t * 1.3) * L(1.5);
+      for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(L(1), 0); ctx.quadraticCurveTo(-L(6), sd * L(4) + sw, -L(14), sd * L(12) + sw); ctx.quadraticCurveTo(-L(7), sd * L(3), -L(9), 0); ctx.closePath(); ctx.fillStyle = LEVB_SKIN[1]; ctx.fill(); stroke(3); }
+    } else body(2.5, -18, 10, 9);
+    // photophores down its back: dim where it's sick, its own teal glow once free
+    const glow = sick ? 0.25 : 0.55 + 0.4 * Math.sin(t * 3 - (typeof k === 'number' ? k : 0));
+    const n = k === 'head' ? 3 : k === 'fluke' ? 0 : 4, x0 = k === 'head' ? 4 : -2, step = k === 'tail' ? -6 : -4;
+    for (let i = 0; i < n; i++) for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(L(x0 + i * step), sd * L(2.6), L(0.45), 0, TAU); ctx.fillStyle = `rgba(122,240,255,${glow})`; ctx.fill(); }
+  }, B);
+}
+function levFinFallback(pc, look) {
+  levPieceCtx(pc, () => {                               // a curved dorsal fin, flopped to its left (towards the ship)
+    ctx.beginPath(); ctx.moveTo(L(-1), L(1.5)); ctx.bezierCurveTo(L(-3), -L(3), L(-6), -L(7), L(-12), -L(8));
+    ctx.bezierCurveTo(L(-10.5), -L(4.5), L(-13), -L(1), L(-16), L(1.5)); ctx.closePath();
+    ctx.fillStyle = look === 'ok' ? '#3a7a92' : look === 'hit1' ? '#55707a' : '#7a4a4a'; ctx.fill(); stroke(2.5);
+    ctx.strokeStyle = 'rgba(10,30,40,0.4)'; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(L(-3 - i * 3), L(1)); ctx.quadraticCurveTo(L(-5 - i * 3), -L(3), L(-8 - i * 1.2), -L(6.5 - i * 0.5)); ctx.stroke(); }
+    if (look !== 'ok') { ctx.strokeStyle = '#ff9a7a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(L(-6), -L(5.5)); ctx.lineTo(L(-8), -L(1.5)); if (look === 'hit2') { ctx.moveTo(L(-11), -L(6)); ctx.lineTo(L(-10), -L(2)); } ctx.stroke(); }
+  });
+}
+function levPecFallback(pc, sd, t) {
+  levPieceCtx(pc, () => {
+    ctx.translate(L(LEVB_PEC[0]), sd * -L(LEVB_PEC[1])); ctx.rotate(sd * -(2.3 + 0.15 * Math.sin(t * 0.9)));
+    ctx.beginPath(); ctx.ellipse(L(5), 0, L(6), L(1.8), 0, 0, TAU); ctx.fillStyle = LEVB_SKIN[1]; ctx.fill(); stroke(2.5);
+  });
+}
+function levZoneFallback(pc, at, look, t) {
+  levPieceCtx(pc, () => {
+    ctx.translate(L(at[0]), L(at[1])); ctx.rotate(-pc.rot);       // (upright on screen)
+    const r = L(1.5 * LEVB_ZONE_SCALE * 0.75);
+    if (look === 'scar') {
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.9, 0, TAU); ctx.fillStyle = '#d88a96'; ctx.fill(); stroke(2);
+      ctx.beginPath(); ctx.arc(0, 0, r * 0.5, 0, TAU); ctx.fillStyle = '#1a0c10'; ctx.fill();
+      return;
+    }
+    const pulse = 1 + 0.08 * Math.sin(t * 5), big = look === 'hit1' ? 0.7 : 1;
+    if (look === 'glow') { const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 2.4); g.addColorStop(0, 'rgba(220,255,120,0.75)'); g.addColorStop(1, 'rgba(200,255,90,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r * 2.4, 0, TAU); ctx.fill(); }
+    for (let i = 0; i < 7; i++) {                       // the leeches burrowed in, wriggling
+      const a = i / 7 * TAU + Math.sin(t * 2 + i) * 0.15;
+      ctx.save(); ctx.rotate(a); ctx.beginPath(); ctx.ellipse(r * 0.9 * big, 0, r * 0.75 * big, r * 0.22, 0, 0, TAU); ctx.fillStyle = '#d0606e'; ctx.fill(); stroke(1.5); ctx.restore();
+    }
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.75 * big * pulse, 0, TAU); ctx.fillStyle = look === 'glow' ? '#eaff8a' : '#b8e070'; ctx.fill(); stroke(2);
+  });
+}
+function levNestFallback(pc, at, look, t) {
+  levPieceCtx(pc, () => {
+    ctx.translate(L(at[0]), L(at[1]));
+    const r = L(2.6 * LEVB_ZONE_SCALE);
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fillStyle = look === 'burnt' ? '#2a1a14' : '#8a4a50'; ctx.fill(); stroke(2.5);
+    if (look !== 'burnt') for (let i = 0; i < 12; i++) { const a = i / 12 * TAU + t * 0.3; ctx.beginPath(); ctx.ellipse(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * 0.35, r * 0.12, a, 0, TAU); ctx.fillStyle = i % 2 ? '#e8d8a0' : '#d0606e'; ctx.fill(); }
+    else for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc((i - 2) * r * 0.3, Math.sin(i * 2) * r * 0.3, 2, 0, TAU); ctx.fillStyle = '#ff8a3a'; ctx.fill(); }
+  });
+}
+function levEyeFallback(pc, sd, look) {
+  levPieceCtx(pc, () => {
+    ctx.translate(L(LEVB_SPOTS.eye.at[0]), sd * -L(LEVB_SPOTS.eye.at[1]));
+    const rx = L(1.9), ry = L(look === 'closed' ? 0.35 : 1.2);
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, TAU); ctx.fillStyle = look === 'hit' ? '#a03030' : look === 'closed' ? '#3a5a68' : '#e8b84a'; ctx.fill(); stroke(2.5);
+    if (look === 'open') { ctx.beginPath(); ctx.ellipse(0, 0, L(0.35), ry * 0.85, 0, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }
+  });
+}
+// On top (GFX: from drawOutsideOverlays; classic: right after the body): details without sprites, target rings.
+function drawLevMarks(t) {
+  const B = org.boss;
+  if (!B || !levBodyState) return;
+  for (const f of levFallbacks) f();
+  levFallbacks = [];
+  const ch = levBodyState.ch;
+  for (const id of levTargets(B)) {
+    const p = levSpotAt(ch, id), k = 0.6 + 0.4 * Math.sin(t * 6);
+    ctx.save(); ctx.translate(L(p.wx), L(p.wy)); ctx.scale(1, 1 / GFX.SIN);
+    ctx.beginPath(); ctx.arc(0, 0, L(p.r) + 4, 0, TAU); ctx.strokeStyle = id === 'eye' ? `rgba(255,210,90,${k})` : `rgba(210,255,110,${k})`; ctx.lineWidth = 4; ctx.stroke();
+    if (B.phase === 'p1') {                              // hits left: pips
+      const hp = id === 'fin' ? B.fin : B.zones.find(z => z.id === id)?.hp || 0;
+      for (let i = 0; i < hp; i++) { ctx.beginPath(); ctx.arc((i - (hp - 1) / 2) * 14, -L(p.r) - 14, 5, 0, TAU); ctx.fillStyle = '#ffe08a'; ctx.fill(); stroke(1.5); }
+    }
+    ctx.restore();
+  }
+}
+// The gas: a sickly green cloud wrapping the hull (under the hull sprites: the inside stays clear).
+function drawLevGas(t) {
+  const G = org.boss?.gas;
+  if (!G) return;
+  const k = G.warn > 0 ? clamp(1 - G.warn / 3, 0, 1) * 0.5 : Math.min(1, G.t / 2);
+  if (k <= 0) return;
+  for (let i = 0; i < 26; i++) {
+    const a = i / 26 * TAU + t * 0.05, rx = SHIP_W / 2 + 6 + 3 * Math.sin(i * 1.7 + t * 0.6), ry = SHIP_H / 2 + 6 + 3 * Math.cos(i * 2.3 + t * 0.5);
+    const x = 22.2 + Math.cos(a) * rx, y = 11.5 + Math.sin(a) * ry;
+    if (GFX.on && GFX.sprite(`organic/levb_gas_${'abc'[i % 3]}`, 0, x, y, 0, { layer: 'under', unlit: true, alpha: k * 0.85, scale: 1.2 + 0.2 * Math.sin(i + t), rot: i + t * 0.1 })) continue;
+    const r = L(7 + 2 * Math.sin(i * 3.1)), g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), r);
+    g.addColorStop(0, `rgba(150,200,60,${0.4 * k})`); g.addColorStop(1, 'rgba(120,170,40,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), r, 0, TAU); ctx.fill();
+  }
+}
+// The engine blast: a huge exhaust flame from the bell into its back.
+function drawLevBlast(t) {
+  const B = org.boss;
+  if (!B || B.phase !== 'blast') return;
+  const k = Math.min(1, (LEVB_BLAST - B.blast) * 4, B.blast * 2), E = LEVB_ENGINE;
+  if (GFX.on && GFX.sprite('fx/engine_blast', Math.floor(t * 16) % 6, E.x, E.y, 0, { layer: 'top', unlit: true, alpha: k })) return;
+  const len = 17 * k, x = L(E.x), y = L(E.y);
+  const g = ctx.createLinearGradient(x, y, x, y + L(len));
+  g.addColorStop(0, `rgba(255,255,230,${k})`); g.addColorStop(0.3, `rgba(255,200,80,${0.9 * k})`); g.addColorStop(1, 'rgba(255,90,30,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - L(2.4), y);
+  ctx.quadraticCurveTo(x - L(4 + Math.sin(t * 30)), y + L(len * 0.5), x, y + L(len)); ctx.quadraticCurveTo(x + L(4 + Math.cos(t * 27)), y + L(len * 0.5), x + L(2.4), y); ctx.fill();
+}
+// From drawCombatBack (the 'back' layer / classic: before the hull): the body, the gas.
+function drawLevBossBack(t) {
+  if (!org.boss) return;
+  drawLevGas(t);
+  drawLevBody(t);
+  if (!GFX.on) { drawLevMarks(t); drawLevBlast(t); }
+}
+// From drawOutsideOverlays (sprites on: on top of everything outside).
+function drawLevBossTop(t) { if (org.boss) { drawLevMarks(t); drawLevBlast(t); } }
+// Inside the ship (from drawOrganicWorld, the 'mid' layer): the vents, the override panel, the brood, the flick's warning.
+function drawLevShip(t) {
+  const B = org.boss, p4 = B && (B.phase === 'p4' || B.phase === 'blast'), open = p4 && B.parked && !!B.wave;
+  for (const v of LEVB_VENTS) if (!spr(`systems/engine_vent_${open ? 'open' : 'closed'}`, 0, v.x, v.y, 0, { layer: 'decal' })) {
+    rr(L(v.x - 0.5), L(v.y - 0.35), L(1), L(0.7), 3); ctx.fillStyle = open ? '#1a0c10' : '#2b303a'; ctx.fill(); stroke(1.5);
+    ctx.strokeStyle = '#5a6272'; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(L(v.x - 0.4 + i * 0.27), L(v.y - 0.28)); ctx.lineTo(L(v.x - 0.4 + i * 0.27), L(v.y + 0.28)); ctx.stroke(); }
+    if (open) { ctx.fillStyle = `rgba(200,255,110,${0.3 + 0.2 * Math.sin(t * 4)})`; ctx.fillRect(L(v.x - 0.45), L(v.y - 0.3), L(0.9), L(0.6)); }
+  }
+  const P = LEVB_PANEL, cap = CAPACITORS[1], look = B?.phase === 'blast' ? 'active' : p4 && B.parked && cap.charge >= LEVB_NEED ? 'ready' : 'off';
+  if (!spr(`systems/engine_override_${look}`, 0, P.x, P.y, 0, { emissive: 0.8, sortY: P.y })) {
+    rr(L(P.x - 0.45), L(P.y - 0.35), L(0.9), L(0.45), 3); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);
+    ctx.fillStyle = look === 'active' ? '#ffb347' : look === 'ready' ? (Math.sin(t * 6) > 0 ? '#ff5a4a' : '#ffd0a0') : '#4a515e';
+    ctx.fillRect(L(P.x - 0.25), L(P.y - 0.28), L(0.5), L(0.18));
+    ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(232,236,244,0.7)';
+    ctx.fillText('OVERRIDE', L(P.x), L(P.y - 0.05)); ctx.textAlign = 'left';
+  }
+  if (!B) return;
+  for (const d of B.dead) if (!spr('organic/levb_brood_dead', GFX.frameIndex('organic/levb_brood_dead', d.face), d.x, d.y, 0, { layer: 'decal', alpha: Math.min(1, d.t) })) {
+    ctx.globalAlpha = Math.min(1, d.t); ctx.beginPath(); ctx.ellipse(L(d.x), L(d.y), L(0.3), L(0.15), d.face, 0, TAU); ctx.fillStyle = '#6a7a40'; ctx.fill(); ctx.globalAlpha = 1;
+  }
+  for (const w of B.brood) {
+    if (spr('organic/levb_brood', GFX.frameIndex('organic/levb_brood', w.face, w.t * 8), w.x, w.y, 0, { emissive: 0.4, sortY: w.y })) continue;
+    ctx.save(); ctx.translate(L(w.x), L(w.y)); ctx.rotate(w.face);
+    for (let i = 3; i >= 0; i--) { ctx.beginPath(); ctx.ellipse(-i * 6 + Math.sin(w.t * 8 + i) * 1.5, 0, 6 - i * 0.6, 5 - i * 0.6, 0, 0, TAU); ctx.fillStyle = i ? '#e8d8a0' : '#d0606e'; ctx.fill(); stroke(1.2); }
+    ctx.restore();
+  }
+}
+function drawLevWarning(t) {
+  const B = org.boss, room = B?.slam?.room || B?.flick?.room;
+  if (!room || !(B.phase === 'p1' || B.phase === 'p3' || B.slam)) return;
+  const r = roomById(room), k = (B.slam ? 0.18 : 0.12) * (0.6 + 0.4 * Math.sin(t * 10));
+  ctx.fillStyle = `rgba(255,40,30,${k + 0.06})`;
+  for (const q of r.rects) ctx.fillRect(L(q.x), L(q.y), L(q.w), L(q.h));
+}
+// Screen space (from drawEncounterOverlay): the gas countdown, the green air outside, the eye's window.
+function drawLevBossScreen(view, t) {
+  const B = org.boss;
+  if (!B) return;
+  const big = (text, col, y) => {
+    ctx.font = '900 64px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(text, VW / 2, y); ctx.fillStyle = col; ctx.fillText(text, VW / 2, y);
+    ctx.textAlign = 'left';
+  };
+  if (B.phase === 'gas') {
+    const G = B.gas;
+    if (G.warn > 0) { big(`T-${Math.ceil(G.warn)}`, Math.sin(t * 8) > 0 ? '#c8ff6e' : '#ff6a4a', HUD_H + 110); if (isOutside(me)) big('GET INSIDE!', '#ffe08a', HUD_H + 170); }
+    else screenTint([140, 200, 60], isOutside(me) ? 0.35 : 0.08);
+  } else if (B.phase === 'p3' && B.p3.state === 'open') big(`${Math.ceil(B.p3.win)}`, B.p3.win < 4 && Math.sin(t * 10) > 0 ? '#ff6a4a' : '#ffd25a', HUD_H + 110);
+  else if (B.phase === 'freed' && B.freed > LEVB_SINK - 3) big('It\'s free.', '#7af0e0', HUD_H + 110);
+}

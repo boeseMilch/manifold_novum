@@ -266,6 +266,7 @@ function drawEncounterOverlay(view, t) {
     screenTint([255, 236, 190], 0.22 + 0.06 * Math.sin(t * 20));
   }
   if (typeof drawHerdCall === 'function') drawHerdCall(t);   // (js/organic.js)
+  if (typeof drawLevBossScreen === 'function') drawLevBossScreen(view, t);   // the boss's gas countdown and eye window (js/leviathan.js)
   const td = enc.tide;
   if (td) {                                            // the tide: a violet pulse at the edges while it builds, a wave sweeping across in the lurch
     if (td.phase === 'warn') {

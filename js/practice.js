@@ -23,6 +23,10 @@ const PRACTICE = [
   ['Organic', 'Spore mother (right)', () => combatSpawn('mother', 'star', true)],
   ['Organic', 'Leech swarm (right)', () => spawnLeeches('star')],
   ['Organic', 'Leviathan', () => startLeviathan()],
+  ['Organic', 'Leviathan boss (from phase 1)', () => startLevBoss(1)],
+  ['Organic', 'Leviathan boss (from phase 2: toxic gas)', () => startLevBoss(2)],
+  ['Organic', 'Leviathan boss (from phase 3)', () => startLevBoss(3)],
+  ['Organic', 'Leviathan boss (from phase 4)', () => startLevBoss(4)],
   ['Organic', 'Herd: grappler + leeches (left)', () => startHerd(['grappler', 'leeches'], 'port')],
   ['Organic', 'Herd: spore mother + spore clouds (right)', () => startHerd(['mother', 'spores'], 'star')],
   // outside

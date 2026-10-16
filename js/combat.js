@@ -404,6 +404,7 @@ function splitAsteroid(a) {
 function drawCombatBack(t) {
   for (const e of combat.enemies) if (e.D.backdrop) drawEnemy(e, t);   // huge things behind everything else
   for (const e of combat.enemies) if (!e.D.backdrop) drawEnemy(e, t);
+  if (typeof drawLevBossBack === 'function') drawLevBossBack(t);   // chapter 8's infested leviathan and its gas (js/leviathan.js)
   for (const a of combat.asteroids) drawAsteroidBody(a, t);
 }
 

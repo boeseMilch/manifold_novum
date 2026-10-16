@@ -35,6 +35,7 @@ const essential = (id) => new Set([...G0.ESSENTIAL_KINDS, ...(G0.MISSIONS[id].es
 for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   const lens = [], counts = [];
   let prevKept = null, okAll = true, msg = '';
+  const L = G0.MISSIONS[id].length || G0.MISSION_LENGTH;   // (c8: its own length, the boss fight's estimate after the events: js/progress.js)
   for (const n of [1, 2, 4, 8]) {
     const G = withCrew(n, id), ev = G.mission.events, want = G.missionCrew(id, n).events;
     const written = G.mission.written, kept = ev.filter(e => !e.repeat).map(e => written.findIndex(w => w.t === e.t1 && w.kind === e.kind));
@@ -49,7 +50,7 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
     if (!ok) { okAll = false; msg += ` ×${n}: count ${ev.length}/${want} jump ${G.mission.jumpAt} even ${even} essentials ${hasEss} subset ${subset} reactor ${rate};`; }
     prevKept = kept; lens.push(G.mission.jumpAt); counts.push(ev.length);
   }
-  check(okAll, `${G0.MISSIONS[id].name}: 1 / 2 / 4 / 8 players get ${counts.join(' / ')} events, all jump at ${L} s, evenly spaced, essentials kept, a smaller crew's events a subset of a bigger one's, reactor ∝ gap${msg}`);
+  check(okAll, `${G0.MISSIONS[id].name}: 1 / 2 / 4 / 8 players get ${counts.join(' / ')} events, all jump at ${G0.MISSIONS[id].length || L} s, evenly spaced, essentials kept, a smaller crew's events a subset of a bigger one's, reactor ∝ gap${msg}`);
 }
 {
   const A = withCrew(1, 'c3', 3), B = withCrew(1, 'c3', 99);
@@ -141,12 +142,12 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
     const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(17); try { G.startMission('c8', { easy }); } finally { Math.random = keep; }
     const ev = [...G.mission.events].sort((a, b) => a.t - b.t), k = ev.map(e => e.kind), has = (x) => k.includes(x);
-    const good = k[0] === 'spores' && ['mother', 'grappler', 'leviathan'].every(has) && k.filter(x => x === 'maintenance').length >= 2
-      && k[k.length - 1] === 'leviathan' && k.indexOf('mother') < k.indexOf('grappler') && !has('interceptor') && !has('frigate') && (n < 4 || easy || has('herd'));
+    const good = k[0] === 'spores' && ['mother', 'grappler', 'leviathan_boss'].every(has) && k.filter(x => x === 'maintenance').length >= 2
+      && k[k.length - 1] === 'leviathan_boss' && k.indexOf('mother') < k.indexOf('grappler') && !has('interceptor') && !has('frigate') && (n < 4 || easy || has('herd'));
     if (!good) ok = false;
     if (!easy && (n === 1 || n === 4)) msg.push(`×${n}: ${k.join(', ')}`);
   }
-  check(ok, `The Mother of All: spores, the mother, the grappler, two failing parts and the leviathan last at every crew size, herds on top for 4+ (${msg.join(' · ')})`);
+  check(ok, `The Mother of All: spores, the mother, the grappler, two failing parts and the infested leviathan (the boss) last at every crew size, herds on top for 4+ (${msg.join(' · ')})`);
 }
 // --- the model builds the same timelines as the game
 {

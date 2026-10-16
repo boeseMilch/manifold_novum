@@ -13,7 +13,7 @@
 //                 (the sidebar warns which); stay out of the room it's about to hit.
 // Grappler and spore mother are enemy kinds (ENEMY_TYPES); leeches and the leviathan live in `org`.
 
-const org = { leeches: [], lev: null, herd: null };
+const org = { leeches: [], lev: null, herd: null, boss: null };   // boss: the infested leviathan (js/leviathan.js)
 const HEAL_TIME = 20, TENTACLE_EVERY = 10, TENTACLE_COIL = 2, CUT_TIME = 3, ACID_TIME = 30, BEAK_EVERY = 3.5, BEAK_WIND = 0.7;
 const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 4.5, MOTHER_TOSSES = 2, TOSS_REACH = 0.55, TOSS_FLICK = 0.3, TOSS_REST = 0.25, LEV_TIME = 30, LEV_STEP = 4;
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
@@ -23,7 +23,7 @@ function slimeBurst(x, y, n = 14, size = 0.1, z = 0) {   // z: up on something (
   for (let i = 0; i < n; i++) { const a = Math.random() * TAU, sp = 1 + Math.random() * 4; combatFxAt(z, x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.8 + Math.random() * 0.6, ['#9cff5a', '#6ad13a', '#c8ff6e'][i % 3], size + Math.random() * size); }
   sfx.squelch?.();
 }
-function resetOrganic() { org.leeches = []; org.lev = null; org.herd = null; }
+function resetOrganic() { org.leeches = []; org.lev = null; org.herd = null; org.boss = null; }
 
 // ---------------------------------------------------------------------------
 // Grappler
@@ -210,6 +210,7 @@ function updateOrganic(dt) {
     }
     if (V.t <= 0) { org.lev = null; combatBanner('The leviathan swims off into the dark'); }
   }
+  if (typeof updateLevBoss === 'function') updateLevBoss(dt);   // chapter 8's infested leviathan (js/leviathan.js)
 }
 
 // On a spacewalk: hack a tentacle off, pry a leech off.
@@ -519,6 +520,7 @@ function drawTongue(e, t, D, H, outside = false) {
   }
 }
 function drawOrganicWorld(t) {
+  if (typeof drawLevShip === 'function') drawLevShip(t);   // the boss fight's vents, override panel and brood (js/leviathan.js)
   for (const l of org.leeches) {                       // leeches: segmented, wriggling
     const ang = l.state === 'fly' ? Math.atan2(l.ty - l.y, l.tx - l.x) : (l.side === 'port' ? 0 : Math.PI);
     if (l.state === 'fly') for (let k = 1; k < 5; k++) {   // a glistening slime trail
@@ -589,6 +591,7 @@ function drawLeechChew(l, t) {                         // latched: how far it ha
 }
 // The room the leviathan will bump next: a red warning wash on its floor.
 function drawLeviathanWarning(t) {
+  if (typeof drawLevWarning === 'function') drawLevWarning(t);   // (the boss's tail flicks: js/leviathan.js)
   const V = org.lev;
   if (!V || V.i >= V.order.length) return;
   const r = roomById(V.order[V.i]), k = 0.12 + 0.12 * (1 - V.step / LEV_STEP) * (0.6 + 0.4 * Math.sin(t * 10));
@@ -602,6 +605,7 @@ function organicPlates(add) {
     add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} · acid ${Math.round(e.tent.acid / ACID_TIME * 100)}%${poiHit(e, 'sac') ? ' (paused)' : ''} · shoot it or hack it off`, stripe: '#c08aff', red: true });
   if (org.herd) add('herd', { icon: 'spore', title: 'THE HERD', sub: `${org.herd.kinds.map(k => HERD_NAMES[k] || k).join(' + ')} · together, ${SIDE_LABEL[org.herd.side].toLowerCase()} side`, stripe: '#4ad0b0', red: true });
   const V = org.lev;
+  if (typeof levBossPlates === 'function') levBossPlates(add);
   if (V) add('lev', { icon: 'unknown', title: 'LEVIATHAN', sub: `next: ${V.order.slice(V.i, V.i + 3).map(id => roomById(id).name.toLowerCase()).join(' → ')}`, stripe: '#7af0ff', red: true });
 }
 
@@ -716,6 +720,7 @@ function drawHerdCall(t) {
   ctx.fillStyle = g; ctx.fillRect(left ? 0 : VW * 0.55, 0, VW * 0.45, VH);
 }
 function drawOutsideOverlays(t) {
+  if (typeof drawLevBossTop === 'function') drawLevBossTop(t);   // the boss's target rings, missing details, the engine blast
   const S = levSpots; levSpots = null;
   if (!S || !org.lev) return;
   ctx.save(); ctx.globalCompositeOperation = 'lighter';

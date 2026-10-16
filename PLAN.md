@@ -574,7 +574,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - **Spore mother** (`mother`): puffs spore clouds (barnacles) every 12 s; after each puff one of
   its three sacs opens for 3.5 s — the only time it can be hit.
 - **Leviathan** (`leviathan`): 30 s; every 4 s it bumps the next room in a sweep (red warning on
-  that room's floor, the sidebar lists the next ones): crew inside get hurt, plus a small hit there.
+  that room's floor, the sidebar lists the next ones): crew inside get hurt, plus a small hit there. (Nightmare only now;
+  chapter 8 has the boss fight `leviathan_boss`, js/leviathan.js: see "The infested leviathan" below.)
 - Enemy weak spots can be `closed` and react `onHit`; enemy kinds marked `special` are left out of
   the reachability test. `node tests/organic.js`.
 
@@ -2521,6 +2522,63 @@ Mother of All "boring" (survive + a random draw; the spore mother never showed u
 - **Misses:** c8 solo 7 % / ×2 44 % (the fixed six are more than a small crew's target; tests/scaling.js `FIXED`; in spec
   and doable only with a ×0.35 reactor); c4 solo 28 % (5 encounters: opener, two raiders, the failing part, a finale
   fight; the extra event tightens the gaps 103 → 77 s); c7 solo 29 % (4 is the least: opener, 2 parts, the herd finale).
+
+### The infested leviathan: chapter 8's final boss (2026-10-16, `js/leviathan.js`)
+
+The user's design: the leviathan isn't evil, it's sick. Leeches burrowed into its hide ("infested zones") and the pain drove
+the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away. It replaces c8's old 30 s leviathan pass
+(new event kind `leviathan_boss`, still the written finale; Nightmare keeps the old `leviathan`).
+- **The body:** ~125 units, a chain of pieces (head, 7 segments at scale 0.9^k, tail and fluke at 0.9^7; dorsal + pectoral fins, zones,
+  the nest, the eyes attached) hung back from its nose along a closed swim loop round the ship (`levLoop`: across the bow
+  heading left, down the left flank, behind, up the right: the ship always on its left). Behind ~70 units the body curls
+  outward (`levSpiral`), so it never wraps round the ship. The chain is laid out in screen space (x, y·sin50) as the
+  sprites are modelled (`levChain`); targets and shell tests use the same chain. It parks at stations found by search
+  (`levStation`: the step's targets where that cannon's view is).
+- **1 The pass:** it crosses the bow: the dorsal FIN takes 2 front-cannon hits; then down the LEFT flank: its zones there
+  (2 solo / 2 for two / 3 for 3+) take 2 left-cannon hits each; then round behind to the RIGHT flank, the same with the right
+  cannon. It moves on when the side it shows is clean. Shells that miss splat on its back. Every 25 s a tail flick bumps a
+  room on its side (4 s red warning on the floor, crew there hurt, a small hit).
+- **2 Toxic gas:** T-10 (a big HUD number, banner, "Toxic gas in ten seconds. Everyone inside."), then 15 s of gas round the
+  hull: anyone outside (spacewalk or cannon seat) when it comes, or who goes out during it, goes down where they are (armor
+  doesn't help); treated as usual afterwards.
+- **3 The side:** it parks on one side (random), its EYE opens and two zones regrow on its head, glowing: 12 s (easy 16, very
+  easy 20) to hit the eye and both zones once with that side's cannon (a big countdown on screen). Too slow: a leech swarm on
+  that side, next time a tail slam (3 s warning, room bump + a big hit), alternating, then a new window. In time: it flinches
+  and swims to the other side. Both done → 4.
+- **4 Behind:** out of every cannon's reach. Its brood crawls in through two engine vents in the reactor room (24.8, 24.5) and
+  (28.6, 24.3): a wave every 20 s (3 crawlers solo, +1 per extra player, at most 6), one laser / blaster / wrench hit each,
+  slow; they head for the MID capacitor (drain 1 energy there) and bite crew in their way (one hurt step, 2 s cooldown).
+  Someone charges MID to 3 (fixed, also with bigger capacitors) and holds the ENGINE OVERRIDE panel on the stern wall
+  (26.6, 25.25) for 4 s (E or click; refused below 3 with the reason). The ENGINE BLAST (3 s) uses the 3 charges and burns
+  the nest on its back → FREED: the brood dies, its teal glow comes back, it sinks (8 s), banner "It's free.", then the jump
+  drive spools (c8's handle rule: someone pulls the handle; MID needs 1 energy again).
+- **The jump waits for it:** c8 has `length: 560, finaleLead: 230` (the other events keep their old spread to 330 s; the jump
+  is due ~4 min after the boss arrives, an estimate) and the fight holds the drive (`jumpAt ≥ t + 30` while it's alive); freed
+  sets it to `t + LEVB_SINK`, like the pirate base's ESCAPE_SPOOL.
+- **HUD:** a sidebar plate per phase ("Hit its FIN with the front cannon (1/2)", "LEFT flank: 2 infested zones left · left
+  cannon", "T-7: get inside!", "Eye + zones in 9 s", "Brood in the reactor room! · MID 2/3 · engine override at the stern"),
+  pulsing rings and hit pips on the current targets, banners at every step.
+- **Hooks:** `org.boss` (plain data, synced in the snapshot with `org`); updateOrganic → updateLevBoss; drawCombatBack →
+  drawLevBossBack (body, gas); drawOutsideOverlays → drawLevBossTop (rings, missing details, the blast); drawOrganicWorld →
+  drawLevShip (vents, panel, brood); drawLeviathanWarning → drawLevWarning; drawEncounterOverlay → drawLevBossScreen;
+  clickTarget → levClickTarget; invader.js boltHitsBody → the brood (BROOD_HIT); organicPlates → levBossPlates.
+- **Drawing:** sprite names first, procedural 2D when missing (whole body: `drawLevBodyFallback`; each detail on its own):
+  organic/levb_head, levb_seg_a/b, levb_seg_tail, levb_fluke, levb_eye_closed|open|hit (frame 0 left, 1 right),
+  levb_fin_dorsal_ok|_hit1|_hit2 (segment 0, local x −1), levb_fin_pec (head-local (2, −7.2); the right one flipped, +π),
+  levb_zone / _zone_glow / _zone_hit1 / levb_scar, levb_nest / _nest_burnt (zones and nest drawn ×1.75: LEVB_ZONE_SCALE), levb_brood (8 dirs × 4) / _brood_dead,
+  levb_gas_a|b|c (unlit), systems/engine_vent_closed|open, systems/engine_override_off|ready|active, fx/engine_blast
+  (origin at the bell, unlit). Placement constants in one place at the top of js/leviathan.js (LEVB_GEO, LEVB_SPOTS,
+  LEVB_PEC, LEVB_FIN_SEG, LEVB_VENTS, LEVB_PANEL). Not yet: lights for the blast, sounds of its own.
+- **Practice:** "Leviathan boss (from phase 1 / 2: toxic gas / 3 / 4)".
+- **Balance model** (tools/balance.js `leviathan_boss`): jobs on its own clock: the fin (front cannon), left zones, right
+  zones (their cannons and energy), the gas shelter (everyone, like a flare), two side windows (eye + 2 zones), tail flicks
+  (small hits), three brood waves (laser fights), MID to 3 (a 'fight' on MID that uses 3 energies, so it waits for them) +
+  the override. c8's encounter counts kept; ×3 / ×4 needed more fuel (cells 4 → 7, 5 → 9) to stay in spec over the longer
+  mission. Idle (expected kit): 1 % / 35 % / 57 % / 58 % for 1-4 players, 63 % for 8 (5-8 out of spec as before, waits
+  before the boss). Solo is far below its 37 % aim: the fixed six encounters plus the whole fight for one person (FIXED in
+  tests/scaling.js; the model says "tight", not impossible).
+- Test: tests/leviathan.js (each phase with simulated cannon hits, the gas, windows and punishments, the brood, the
+  override, freed → jump, the drive held during the fight, laser vs brood, snapshot sync, a solo run start to end).
 
 ## Sound
 
