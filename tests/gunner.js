@@ -119,4 +119,12 @@ for (const id of ['port', 'front', 'star']) {
   B.x = g.hatch[0]; B.y = g.hatch[1] - 0.2; G.simTick(DT);
   check(/^Click: climb into/.test(B.prompt?.text || ''), `the downed gunner disconnects: the cannon is free ("${B.prompt?.text}")`);
 }
+// --- the efficient cannons upgrade: 4 shots per energy, and every cannon starts the mission with 4 loaded
+{
+  const G = loadGame(['GUNS', 'startMission', 'SHOTS_PER_ENERGY']);
+  G.startMission('intro', { ship: { cannons: true } });
+  check(G.GUNS.every(g => g.shots === 4), `efficient cannons: every cannon starts with 4 shots (${G.GUNS.map(g => g.shots)})`);
+  G.GUNS[0].shots = 1; G.startMission('intro', {});
+  check(G.GUNS.every(g => g.shots === 3), `without the upgrade: 3 shots, a fresh load each mission (${G.GUNS.map(g => g.shots)})`);
+}
 process.exitCode = failed ? 1 : 0;

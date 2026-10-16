@@ -5,6 +5,7 @@
 //   node tools/travel.js reactor portGun     one trip, between rooms (ids: portGun bridge starGun portLock reactor starLock)
 //   node tools/travel.js "left capacitor" helm   between interactables (part / station names, any case)
 //   node tools/travel.js 7,19 "front cannon"  or from / to a point (x,y in layout units)
+//   node tools/travel.js reactor portGun --boots --airlocks   with gravity boots / the faster airlock pumps
 //
 // Each trip is walked twice: with every deck airlock open towards you (best) and towards the far side
 // (worst: you wait for a full cycle). "enter" is when you step into the target room, "at" when you're
@@ -13,7 +14,7 @@
 const { loadGame } = require('../tests/harness');
 const DT = 1 / 60;
 const NAMES = ['tick', 'player', 'ROOMS', 'SYSTEMS', 'STATIONS', 'DECK_LOCKS', 'NAV', 'NAV_SPOTS', 'navPath', 'nearestNav',
-  'ROOM_RECTS', 'DOORWAYS', 'roomAt', 'sysRooms', 'sabotageSpot', 'REACH', 'CREW_R', 'SPINE_Y0', 'SPINE_Y1', 'canStand'];
+  'ROOM_RECTS', 'DOORWAYS', 'roomAt', 'sysRooms', 'sabotageSpot', 'REACH', 'CREW_R', 'SPINE_Y0', 'SPINE_Y1', 'canStand', 'applyShipUpgrades'];
 
 // A target: { name, x, y (where to stand / the middle), room, reach (how close counts as there) }
 function resolve(G, spec) {
@@ -139,10 +140,13 @@ function walk(G, from, to, lockSide, limit = 90) {
 }
 
 // Best and worst case for one trip (fresh game each time, so nothing carries over).
-function travel(fromSpec, toSpec) {
+// opts: { boots } walks with gravity boots (the game's gearSpeed), { airlocks } with the faster airlock pumps.
+function travel(fromSpec, toSpec, opts = {}) {
   const out = {};
   for (const [k, side] of [['best', 'toward'], ['worst', 'away']]) {
     const G = loadGame(NAMES);
+    if (opts.airlocks) G.applyShipUpgrades({ airlocks: true });
+    if (opts.boots) G.player.kit = { gear: { boots: true }, profession: null };
     const from = resolve(G, fromSpec), to = resolve(G, toSpec);
     const [sx, sy] = standAt(G, from, [to.x, to.y]);
     const startDeck = sy < G.SPINE_Y0 ? 'top' : 'bottom';
@@ -155,9 +159,10 @@ function travel(fromSpec, toSpec) {
 
 const fmt = (v) => (v == null ? '  —  ' : v.toFixed(1).padStart(5));
 if (require.main === module) {
-  const args = process.argv.slice(2);
+  const all = process.argv.slice(2), args = all.filter(a => !a.startsWith('--'));
+  const opts = { boots: all.includes('--boots'), airlocks: all.includes('--airlocks') };
   if (args.length === 2) {
-    const r = travel(args[0], args[1]);
+    const r = travel(args[0], args[1], opts);
     console.log(`${r.from} → ${r.to}`);
     console.log(`  deck airlocks open towards you:   enter ${fmt(r.best.enter)} s   there ${fmt(r.best.at)} s`);
     console.log(`  deck airlocks open the other way: enter ${fmt(r.worst.enter)} s   there ${fmt(r.worst.at)} s`);

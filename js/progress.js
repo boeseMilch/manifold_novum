@@ -72,8 +72,9 @@ const CAMPAIGN = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
 Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 100, perPirate: 40, rep: 1, xp: 80 },
-    crew: {events: [2, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 55.5% solo, 67.5% for 2-8)
+    crew: {events: [3, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 55.5% solo, 67.5% for 2-8); 2026-10-16: + a failing part solo (always; 3 events): 49% solo
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
+    always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: the first chapters too easy solo)
     objective: { kind: 'raiders', count: 2 }, rules: {},
     blurb: 'Destroy two pirate raiders in the trade lanes. $40 per pirate.',
     briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The job: destroy two raiders. Shoot them to scrap before they dock, or, if one docks, board it and jam its reactor: it blows up as it runs. The Guild pays $40 per pirate on top: raiders shot to scrap and boarders both count. A docked raider\'s crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
@@ -82,9 +83,12 @@ Object.assign(MISSIONS, {
   c2: {
     name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 150, rep: 1, xp: 100 },
     // events set by hand (the user's playtest: two aliens + opener + frigate, clearly harder than the model's aim); cells and
-    // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players
-    crew: {events: [3, 4, 7, 7, 12, 15, 17, 19], cells: [3, 5, 5, 5, 17, 15, 15, 15], reactor: [0.25, 0.3, 0.7, 0.7, 0.12, 0.25, 0.25, 0.25]},
+    // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players.
+    // 2026-10-16: + a failing part solo and for 2 (always; 4 / 5 events), the reactor for 2 back in spec at ×0.4 (was 0.3):
+    // ~34% 59% 67% 75% idle for 1-4 players with the expected kit (boots); solo without them 2 of 8 builds wait at the finale
+    crew: {events: [4, 5, 7, 7, 12, 15, 17, 19], cells: [3, 5, 5, 5, 17, 15, 15, 15], reactor: [0.25, 0.4, 0.7, 0.7, 0.12, 0.25, 0.25, 0.25]},
     essential: ['intruder'],
+    always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     finaleLead: 70,                           // the frigate finale comes 70 s before the jump (not 22): time for its heavy shots to matter
     objective: { kind: 'intruder', count: 2 }, rules: {},
     blurb: 'Two somethings crawled out of the bonus salvage pod. Kill them both.',
@@ -97,8 +101,9 @@ Object.assign(MISSIONS, {
   },
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
-    crew: {events: [2, 2, 6, 8, 11, 13, 15, 17], cells: [2, 2, 2, 6, 9, 9, 11, 11], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (S-7, 2026-10-16): 34% 63% 70% 68% 66% 66% 67% 67% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8; solo: the opener + the lab alone); base ship: ×4: front cannon waits 39 s at 313 s
+    crew: {events: [3, 3, 6, 9, 11, 13, 16, 18], cells: [2, 2, 2, 6, 9, 9, 11, 11], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 36% 64% 71% 67% 68% 67% 66% 67% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8); then + the failing part (always) solo and for 2: 3 / 3 events
     needs: {ship: ['cannons'], overcharge: true},
+    always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     objective: { kind: 'blackbox' }, rules: { breach: true },
     blurb: 'Dr. Varga\'s lab went quiet. Bring back its black box.',
     briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something in there is still alive. The station\'s freezer log has one line: KEEP S-7 FROZEN.',
@@ -108,7 +113,7 @@ Object.assign(MISSIONS, {
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 200, perPirate: 50, rep: 2, xp: 160 },
-    crew: {events: [3, 4, 7, 13, 17, 23, 23, 23], cells: [2, 2, 2, 11, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 34% 68% 68% 65% 65% 67% 72% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); base ship: ×4: front cannon waits 27 s at 280 s
+    crew: {events: [3, 6, 11, 15, 21, 23, 24, 24], cells: [2, 2, 8, 11, 17, 17, 20, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 51% 67% 67% 66% 66% 69% 73% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     objective: { kind: 'raiders', count: 2 }, rules: { breach: true, surge: true },
@@ -134,7 +139,8 @@ Object.assign(MISSIONS, {
   },
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 300, rep: 3, xp: 220 },
-    crew: {events: [4, 5, 9, 11, 14, 18, 23, 24], cells: [3, 3, 9, 12, 17, 16, 24, 24], reactor: [1, 1, 0.7, 0.85, 0.7, 1, 0.7, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 40% 68% 66% 67% 67% 65% 65% 69% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8); base ship: ×3: star cannon waits 20 s at 292 s; ×4: port cannon waits 4 s at 223 s
+    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
+    crew: {events: [5, 5, 9, 12, 15, 18, 24, 24], cells: [3, 3, 9, 10, 18, 16, 23, 25], reactor: [1, 1, 0.7, 1, 0.7, 1, 0.85, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 43% 70% 67% 66% 66% 67% 67% 71% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×4 star cannon waits 5 s at 348 s; kit before new prerequisites: ×4: star cannon waits 5 s at 348 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores', 'leeches'],
     objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
@@ -146,7 +152,8 @@ Object.assign(MISSIONS, {
   },
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 350, rep: 3, xp: 260 },
-    crew: {events: [1, 1, 2, 8, 11, 15, 18, 23], cells: [2, 2, 2, 4, 6, 7, 7, 10], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 57% 63% 66% 64% 64% 63% idle for 1-8 players (aim 52.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 136 s at 44 s; ×4 star cannon waits 21 s at 84 s
+    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
+    crew: {events: [1, 1, 5, 9, 14, 16, 19, 25], cells: [2, 2, 3, 4, 7, 7, 8, 14], reactor: [1, 1, 1, 1, 0.7, 1, 1, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 67% 79% 64% 65% 65% 65% 65% 66% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 7 s at 125 s; ×4 star cannon waits 26 s at 85 s; kit before new prerequisites: ×3: port cannon waits 7 s at 125 s; ×4: star cannon waits 26 s at 85 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Fly into the deep beyond the Mire and get out alive.',
@@ -155,7 +162,8 @@ Object.assign(MISSIONS, {
   },
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 500, rep: 5, xp: 400 },
-    crew: {events: [2, 2, 3, 3, 4, 9, 9, 14], cells: [2, 2, 2, 2, 2, 4, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 52% 73% 70% 76% 61% 63% 62% 63% idle for 1-8 players (aim 52.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 72 s at 194 s; ×4 port cannon waits 72 s at 194 s
+    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
+    crew: {events: [3, 3, 4, 6, 7, 10, 10, 23], cells: [2, 2, 2, 3, 3, 4, 4, 8], reactor: [0.85, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 40% 61% 54% 69% 62% 62% 63% 65% idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); OUT OF SPEC: ×2 port cannon waits 63 s at 191 s; ×3 port cannon waits 39 s at 48 s; ×4 port cannon waits 44 s at 110 s; kit before new prerequisites: ×2: port cannon waits 63 s at 191 s; ×3: port cannon waits 39 s at 48 s; ×4: port cannon waits 44 s at 110 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     blurb: 'Sit next to the leviathan for five minutes. Survive.',
@@ -205,6 +213,7 @@ function applyShipUpgrades(ship = {}) {
 function shipStartExtras(ship = {}) {
   if (ship.spareCell) power.reserve += 1;
   power.inserter = ship.inserter ? { on: true, t: 0 } : null;
+  for (const g of GUNS) { g.shots = SHOTS_PER_ENERGY; g.reload = 0; }   // every cannon starts loaded: 4 shots with the efficient cannons (and a fresh load each mission)
 }
 // perk(c, id): a profession id, or a piece of gear (profession gear only counts in its profession).
 const perk = (c, id) => {

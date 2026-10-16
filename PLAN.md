@@ -1931,6 +1931,78 @@ History and the scheduler's details: 8z3.
   ramped target and within 4 on average, the four above listed as essentials-only; 2-4 players within 15 points, a
   mission's mean within 7), the early missions in spec on the base ship, and the out-of-spec list.
 
+### The expected kit; new targets for chapters 3-8 (2026-10-16)
+
+The user: "the model must assume the kit players can afford by then" (players buy upgrades; the gravity boots are
+very popular). `node tools/balance.js` and `--calibrate` now run with it by default; `--kit none` is the old model
+exactly (same numbers as before for every mission).
+- **The kit** (`expectedKit(id)`, printed above the table, in `--calibrate` and `--detail`): a first-time campaign run,
+  chapter by chapter: money = `rewards.money` + `perPirate` × 2 (`A.BOUNTY_PIRATES`, a modest bounty), reputation =
+  `rewards.rep` + 1 (first clear), XP = `rewards.xp` → level. After each chapter it buys gear in `A.GEAR_ORDER` (boots,
+  first aid, thrusters, armor vest, stim pack) as soon as money and level allow, and ship upgrades in `A.SHIP_ORDER`
+  (cannons, inserter, caps, spare cell, airlocks, shields, radar, hull, sprinklers, coffee: the prerequisites first, so
+  a later chapter's needs aren't blocked), each in order (saving up rather than skipping). Plus the mission's `needs`
+  (overcharge is the only profession perk counted: crews are mixed). Every player has it. Skirmish twins get their
+  chapter's kit; intro / rush / practice none.
+
+  | Chapter | Earned before | Level | Gear | Ship (reputation) |
+  |---|---|---|---|---|
+  | 1 | — | 1 | — | — |
+  | 2 | $180, ★2 | 1 | boots | — |
+  | 3 | $330, ★4 | 2 | + first aid | cannons |
+  | 4 | $530, ★7 | 3 | + thrusters | + inserter |
+  | 5 | $830, ★10 | 4 | + armor vest | (saving for caps) |
+  | 6 | $1130, ★14 | 4 | + stim pack | + caps, spare cell |
+  | 7 | $1430, ★18 | 5 | (all general gear) | + airlocks |
+  | 8 | $1780, ★22 | 6 | | + shields |
+- **Modelled:** boots (walking ×1.15: every trip measured in the game with them, `tools/travel.js --boots`; deck airlock
+  cycles unchanged; walks inside a docked ship / the derelict scaled), suit thrusters (spacewalks ×1.3), first aid /
+  stim pack (getting up 6 s / 3 s instead of 10 s, treating 1.2 s instead of 2 s: `CREW_HIT_COST` 8 = 4 s slowed + 0.4
+  downs × the time to get up, solo yourself, in a crew half by a crewmate: scaled by that ratio), armor vest (one crew
+  hit fewer per player), efficient cannons (fewer reloads in each fight, besides the energy runs), inserter / spare
+  cell / caps / shields / radar (the game's energy and radar code, as before), airlocks (trips measured with 0.7 s
+  cycles), reinforced hull (6 broken parts to lose), sprinklers (a fire counts 15/22 as much as an open problem).
+  **Not modelled:** the coffee machine, the boots in failing gravity. The kit barely moves the model: 1-4 points of
+  idle (the boots save ~7 % of a trip, most of it is doors and airlocks).
+- **Targets:** chapters 1, 2, 5 and their twins untouched (approved). Chapter 3 (and Black box) and chapter 4 (objective
+  now two raiders; and Pirate cove) re-fitted with the kit to their old ramped targets. **Chapters 6-8 solo 37 %** (the
+  user: 33-40 % is right solo; Ore run / Deep drift too), **Nightmare solo 25 %** (a challenge mission), 2-8 players
+  unchanged. A mission's own target: `MISSIONS[id].balance = { soloIdle, crewIdle }` (read by `targetIdle`, no ramp),
+  so later challenge missions can opt in.
+- **Calibration rule added:** a count that is out of spec and more than `SPEC_IDLE_SLACK` off its aim loses to a
+  neighbouring count in spec (c7 / Deep drift solo: 2 encounters would be 26 % / 18 % and out of spec, so 1 stays: 67 %).
+  The kit's spare cell is left out while fitting cells (the written cells must do without it).
+- **A failing part in chapters 1-3 at every crew size** (2026-10-16, "the first three missions are still too easy
+  solo"): `MISSIONS[id].always = ['maintenance']` (js/mission.js `selectEvents`: never dropped, also on easy, but not
+  an objective, and still repeated for big crews as before); the event count +1 where it was dropped (c1 solo, c2 / c3
+  solo and ×2), so it comes on top. c2 ×2's reactor ×0.3 → ×0.4 to stay in spec; c2 solo is in spec with the boots
+  (without them 2 of 8 builds wait at the finale).
+- **Results** (8 builds, with the kit; idle % for 1 / 2 / 3 / 4 / 8, * = energy out of spec; `--kit none` in brackets):
+
+  | Mission | Aim solo / 2+ | Encounters before → after | Idle with kit | (no kit) |
+  |---|---|---|---|---|
+  | c1 | 55.5 / 67.5 | 3/5/8/11/20 → 4/5/8/11/20 | 49 66 67 68 68 | (49 66 67 68 68) |
+  | c2 | 55 / 67 | 3/4/7/7/19 → 4/5/7/7/19 | 34 59 67 75 70* | (30* 58 66 74 70) |
+  | c3 | 54.5 / 66.5 | 3/3/6/8/17 → 4/4/6/9/18 | 23 65 71 67 67 | (22 64 70 66 66) |
+  | c4 | 54 / 66 | 4/4/7/13/23 → 4/6/11/15/24 | 51 67 67 66 76 | (49 66 65 64 74) |
+  | c5 | (by hand) | 2 everywhere | 56 77 84 88 94 | (52 74 83 87 94) |
+  | c6 | 37 / 65 | 5/5/9/11/24 → 5/5/9/12/24 | 43 70 67 66* 71 | (40 68 66 64 69) |
+  | c7 | 37 / 64.5 | 1/1/2/8/23 → 1/1/5/9/25 | 67 79 64* 65* 66 | (63 77 60 60 61) |
+  | c8 | 37 / 64 | 2/2/3/3/14 → 3/3/4/6/23 | 40 61* 54* 69* 65* | (36 57 51 65 62) |
+  | Black box | 54 / 66 | 2/2/7/11/23 → 2/3/8/11/23 | 47 64 65 66 68 | (46 63 63 65 66) |
+  | Pirate cove | 53.5 / 65.5 | 3/6/11/15/23 → 4/6/11/16/22 | 53 69 66 65 78 | (51 68 65 63 77) |
+  | Ore run | 37 / 66 | 3/5/8/12/23 → 4/7/11/12/24 | 40 62 63 68 73 | (37 59 60 66 70) |
+  | Deep drift | 37 / 64.5 | 1/1/2/2/23 → 1/1/5/8/27 | 67 79 66* 65* 65* | (63 77 61 61 60) |
+  | Nightmare | 25 / 64 | 2/2/3/4/13 → 3/3/3/4/16 | 28* 57* 72* 51* 65* | (25 54 70 49 61) |
+  | Stranded engineer, intro, rush | unchanged | unchanged | rescue 54 69 70 68 71 | (50 65 65 63 67) |
+- **Can't hit the target:** c7 / Deep drift solo (1 encounter 67 %, 2 out of spec and below 30 %); c3 solo is now 23 %
+  (the lab's S-7 work + the failing part; was 34 %), c1 solo 49 % (its essentials); c2 solo stays deliberately busier.
+  Out of spec with everything by then: c8 ×2-4 (×2 new: 3 encounters, as the solo target needs), Nightmare ×1-4 (solo /
+  ×2 new: 3 encounters for 25 %), c6 ×4 (a 5 s wait 12 s before the jump), c7 / Deep drift ×3-4 (now 5 encounters, waits
+  7-26 s instead of 136-147 s), Rush hour ×2-4.
+- tests/scaling.js: the own targets, the new out-of-spec list, SHORT = c1, HARD = c2 / c3 (solo > 20 % idle), the failing
+  part at every crew size in chapters 1-3 (exactly one for 1-2 players, also on very easy), c2's solo timeline with it.
+
 ### Difficulty slider
 
 Request: "a difficulty slider, just in case not everything is balanced perfectly … very easy, easy, normal".

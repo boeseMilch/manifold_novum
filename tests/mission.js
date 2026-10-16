@@ -34,7 +34,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
     if (!G.MISSIONS[id]) continue;
     if (full) G.MISSIONS[id].crew = null;              // (all written events; solo otherwise)
     G.startMission(id); const n0 = G.mission.events.length, pace = G.paceFactor(), jump = G.mission.jumpAt;
-    const ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(G.MISSIONS[id].essential || [])]);
+    const ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(G.MISSIONS[id].essential || []), ...(G.MISSIONS[id].always || [])]);
     // never dropped: the essentials and the opener, plus a finale fight if none of those may be the finale
     const core = G.mission.events.filter(e => ess.has(e.kind) || e.opener), obj = new Set(G.MISSIONS[id].essential || []);
     const essN = core.length + ((obj.size || core.some(e => e.opener)) && core.filter(e => G.COMBAT_KINDS.has(e.kind)).every(e => obj.has(e.kind) || e.opener) && n0 > core.length ? 1 : 0);

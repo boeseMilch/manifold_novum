@@ -4,6 +4,8 @@
 //   node tools/balance.js intro c3             just these missions
 //   node tools/balance.js --hit 0.5 --runs 20  other hit rate / more random builds per mission
 //   node tools/balance.js --ship caps,cannons  with ship upgrades (ids from SHIP_UPGRADES)
+//   node tools/balance.js --kit none           without the expected kit (gear and ship upgrades a first-time campaign
+//                                              run can afford by then, see expectedKit(); the default) — the old model
 //   node tools/balance.js --detail rush 2      one build, job by job (who does what when)
 //   From code: const { balance } = require('../tools/balance'); balance({ missions: ['intro'], players: [1, 2] })
 //
@@ -51,7 +53,12 @@ const A = {
   SAB_FIND: 8,            // s to find a cloaked saboteur once you're in its rooms
   SAB_PERIOD_EXTRA: 4,    // s per sabotage cycle on top of the sneak, fade and work (picking a part, walking)
   PIRATE_FIGHT_HITS: 0.6, // hits on the crew per pirate fought aboard
-  CREW_HIT_COST: 8,       // crew-seconds lost per hit on the crew (slowed while hurt, patching up when down)
+  CREW_HIT_COST: 8,       // crew-seconds lost per hit on the crew (slowed while hurt, patching up when down) …
+  HIT_SLOW: 4,            // … of which this is being slowed while hurt (the rest: patching up), …
+  HIT_DOWN: 0.4,          // … and this the share of hits that put you down (SELF_TREAT 10 s to get up: 4 + 0.4 × 10 = 8);
+                          // in a crew half the downs are treated by a crewmate instead (TREAT_TIME + TREAT_WALK). The kit
+                          // (first aid course, stim pack) scales CREW_HIT_COST by the ratio of these
+  TREAT_WALK: 4,          // s for a crewmate to come over and treat someone who's down
   INCIDENT_WORK: 4,       // s of work per small-hit incident (extinguish a fire ~1.3 s or repair a part 5 s)
   TOOL_FETCH: 4,          // s extra to fetch the extinguisher / repair kit for a repair
   BREAK_PER_LARGE: 1.3,   // parts broken per big hit (damageColumn: 1, 30% 2)
@@ -91,7 +98,13 @@ const A = {
   TARGET_IDLE: 0.56,      // --calibrate: the share of crew time the event counts aim to leave free, solo, on the first mission …
                           // (was 0.70: playtest 2026-10-14, chapter 1 solo felt right at the model's 51%, chapters 3 / 5 at 63% too easy)
   TARGET_IDLE_CREW: 0.68, // … and for 2-8 players (--target sets both)
-  TARGET_RAMP: 0.005,     // … minus this per step in PROGRESSION (a difficulty ramp: c8 solo aims at 66%)
+  TARGET_RAMP: 0.005,     // … minus this per step in PROGRESSION (a difficulty ramp: c8 solo aims at 52%);
+                          // a mission can set its own: MISSIONS[id].balance = { soloIdle, crewIdle } (no ramp then)
+  // the expected kit (expectedKit): what a first-time campaign run can afford by each chapter
+  BOUNTY_PIRATES: 2,      // pirates paid for in a mission with a bounty (rewards.perPirate): modest, the two raiders' worth
+  GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'armor', 'stim'],   // bought in this order, each as soon as money and level allow
+  SHIP_ORDER: ['cannons', 'inserter', 'caps', 'spareCell', 'airlocks', 'shields', 'radar', 'hull', 'sprinklers', 'coffee'],   // (reputation; the
+                          // prerequisites first, so a later chapter's needs aren't blocked by something bought before them)
   FUEL_MARGIN: 1,         // --calibrate: fuel cells on top of what the energy runs need
   AMPLE_CELLS: 30,        // --calibrate: 'plenty of fuel' while choosing the event count
   SPEC_IDLE_SLACK: 0.07,  // --calibrate: how far from the idle target a neighbouring event count may be to get the energy in spec
@@ -117,7 +130,12 @@ const SKIRMISH_ORDER = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 
 // sits with the chapter that comes up when it unlocks (ore / salvage after chapter 3 → step 4, pirate cove
 // after 4 → 5, rescue after 5 → 6, deep drift after 6 → 7, nightmare after 7 → 8). See unlockedMissions().
 const PROGRESSION = { intro: 0, c1: 1, c2: 2, rush: 2, c3: 3, ore: 4, salvage: 4, c4: 4, pirates: 5, c5: 5, rescue: 6, c6: 6, deep: 7, c7: 7, nightmare: 8, c8: 8 };
-const targetIdle = (id, n) => (n > 1 ? A.TARGET_IDLE_CREW : A.TARGET_IDLE) - A.TARGET_RAMP * (PROGRESSION[id] ?? 0);
+// A mission's own target (MISSIONS[id].balance: { soloIdle, crewIdle }) wins: chapters 6-8 solo 37% (the user: 33-40% is
+// right solo), challenge missions lower (Nightmare solo 25%).
+const targetIdle = (id, n) => {
+  const B = game().MISSIONS[id]?.balance || {}, own = n > 1 ? B.crewIdle : B.soloIdle;
+  return own ?? (n > 1 ? A.TARGET_IDLE_CREW : A.TARGET_IDLE) - A.TARGET_RAMP * (PROGRESSION[id] ?? 0);
+};
 
 // ===========================================================================
 // The game: constants and a seeded random (so results repeat)
@@ -131,7 +149,7 @@ const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'make
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY'];
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -143,12 +161,13 @@ const game = () => G0 || (G0 = loadGame(NAMES));
 // ===========================================================================
 // Walking (tools/travel.js, cached)
 // ===========================================================================
+// (with the kit's gravity boots / faster airlock pumps measured that way: KIT, set by runOne)
 const tripCache = new Map();
 function T(from, to) {                            // seconds from one place to another (airlocks blended by CYCLE)
   if (from === to) return 0;
-  const k = from + '→' + to;
+  const opts = { boots: !!KIT?.boots, airlocks: !!KIT?.airlocks }, k = from + '→' + to + (opts.boots ? '|boots' : '') + (opts.airlocks ? '|airlocks' : '');
   if (!tripCache.has(k)) {
-    const r = travel(from, to), b = r.best.at ?? r.best.enter ?? 15, w = r.worst.at ?? r.worst.enter ?? b + 3;
+    const r = travel(from, to, opts), b = r.best.at ?? r.best.enter ?? 15, w = r.worst.at ?? r.worst.enter ?? b + 3;
     tripCache.set(k, b + (w - b) * A.CYCLE);
   }
   return tripCache.get(k);
@@ -163,9 +182,81 @@ function evaTrip(side, pts) {
   let d = 0, [x, y] = h.outside;
   for (const [px, py] of pts) { d += Math.hypot(px - x, py - y); [x, y] = [px, py]; }
   d += Math.hypot(h.outside[0] - x, h.outside[1] - y);
-  return { legs: H(`${L(h.side)} outer airlock`), extra: 2 * g.HATCH_TIME + d * A.EVA_DETOUR / g.EVA_SPEED };
+  return { legs: H(`${L(h.side)} outer airlock`), extra: 2 * g.HATCH_TIME + d * A.EVA_DETOUR / (g.EVA_SPEED * evaMul()) };
 }
 const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
+
+// ===========================================================================
+// The expected kit: what a first-time campaign run can afford by then (the user: the model must assume it)
+// ===========================================================================
+// Money / reputation / XP from the chapters before (rewards: money + perPirate × A.BOUNTY_PIRATES, rep + 1 for
+// the first clear, xp: aboard and on your feet), spent after each chapter: gear in A.GEAR_ORDER as soon as money
+// and level allow, ship upgrades in A.SHIP_ORDER as soon as the reputation does (each in order: saving up for the
+// next rather than skipping it). Plus the mission's prerequisites (needs: the lobby recommends them; overcharge is
+// the only profession perk counted, professions are mixed in a crew). Every player is assumed to have it.
+// Skirmish twins (SKIRMISH_TWIN) get their chapter's kit; intro / rush / practice none.
+// Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; deck airlock cycles
+// unchanged), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 6 s / 3 s instead of 10 s,
+// treating 1.2 s instead of 2 s: CREW_HIT_COST scaled), armor vest (one crew hit fewer per player), and the ship:
+// cannons (4 shots per energy: the energy runs and the fights' reloads), inserter, spare cell, caps, shields, radar
+// (the energy runs / the radar range, from the game), airlocks (0.7 s cycles: trips measured with them), hull (6
+// broken parts to lose), sprinklers (fires burn their part a third slower: a fire counts less as an open problem).
+// Not modelled: the coffee machine; the boots' walking where gravity fails.
+let KIT = null;                                   // the effects of the kit of the build being run (kitEffects), or null
+const evaMul = () => (KIT?.thrusters ? 1.3 : 1);
+const walkMul = () => (KIT?.boots ? 1.15 : 1);    // (walking inside a docked ship / the derelict: not measured, scaled)
+const kitCache = new Map();
+function expectedKit(id) {
+  if (kitCache.has(id)) return kitCache.get(id);
+  const g = game(), ch = g.CAMPAIGN.includes(id) ? id : g.SKIRMISH_TWIN[id];
+  let kit = null;
+  if (ch) {
+    let money = 0, rep = 0, xp = 0, earned = 0, repEarned = 0;
+    const gear = [], ship = [];
+    for (const c of g.CAMPAIGN.slice(0, g.CAMPAIGN.indexOf(ch))) {
+      const R = g.MISSIONS[c].rewards || {}, m = (R.money || 0) + (R.perPirate || 0) * A.BOUNTY_PIRATES;
+      money += m; earned += m; rep += (R.rep || 0) + 1; repEarned += (R.rep || 0) + 1; xp += R.xp || 0;
+      for (const gid of A.GEAR_ORDER) {
+        if (gear.includes(gid)) continue;
+        const G1 = g.GEAR.find(x => x.id === gid);
+        if (money < G1.cost || g.levelOf(xp) < G1.level) break;
+        money -= G1.cost; gear.push(gid);
+      }
+      for (const u of A.SHIP_ORDER) {
+        if (ship.includes(u)) continue;
+        const cost = g.SHIP_UPGRADES.find(x => x.id === u).rep;
+        if (rep < cost) break;
+        rep -= cost; ship.push(u);
+      }
+    }
+    const N = g.MISSIONS[id].needs || {}, needs = (N.ship || []).filter(u => !ship.includes(u));
+    kit = { chapter: ch, earned, money, repEarned, rep, xp, level: g.levelOf(xp), gear, ship: [...ship, ...needs], bought: ship, needs, overcharge: !!N.overcharge };
+  }
+  kitCache.set(id, kit);
+  return kit;
+}
+// The kit as numbers the model uses (null: no kit — the old model, exactly).
+function kitEffects(kit, ship = {}) {
+  if (!kit) return null;
+  const g = game(), has = (x) => kit.gear.includes(x);
+  return { boots: has('boots'), thrusters: has('thrusters'), armor: has('armor'),
+           selfPatch: has('stim') ? 3 : has('firstAid') ? 6 : g.SELF_TREAT, treat: has('firstAid') ? 1.2 : g.TREAT_TIME,
+           spe: ship.cannons ? 4 : 3, airlocks: !!ship.airlocks, maxDamage: ship.hull ? 6 : 5, fireSlow: ship.sprinklers ? 15 / 22 : 1 };
+}
+// Crew-seconds per hit on the crew (A.CREW_HIT_COST, scaled by the kit's patching up)
+function hitCost(n) {
+  if (!KIT) return A.CREW_HIT_COST;
+  const g = game(), patch = (self, treat) => (n > 1 ? (self + treat + A.TREAT_WALK) / 2 : self);
+  return A.CREW_HIT_COST * (A.HIT_SLOW + A.HIT_DOWN * patch(KIT.selfPatch, KIT.treat)) / (A.HIT_SLOW + A.HIT_DOWN * patch(g.SELF_TREAT, g.TREAT_TIME));
+}
+const GEAR_SHORT = { boots: 'boots', firstAid: 'first aid', thrusters: 'thrusters', armor: 'armor vest', stim: 'stim pack' };
+function kitText(id) {
+  const k = expectedKit(id);
+  if (!k) return 'no kit';
+  const done = game().CAMPAIGN.indexOf(k.chapter);
+  return `${done > 1 ? `after chapters 1-${done}` : done ? 'after chapter 1' : 'first chapter, nothing yet'}: level ${k.level}, $${k.earned} earned ($${k.money} left), ★${k.repEarned} (${k.rep} left)`
+    + ` → gear: ${k.gear.map(x => GEAR_SHORT[x]).join(', ') || 'none'}; ship: ${k.bought.join(', ') || 'none'}${k.needs.length ? ` + needs ${k.needs.join(', ')}` : ''}${k.overcharge ? '; overcharge (needs)' : ''}`;
+}
 
 // ===========================================================================
 // Calibration: each encounter in the real game, nobody fighting back
@@ -213,7 +304,7 @@ function shotsFor(pois, wear) {                   // expected shots to knock out
   return pois / (p + viaHull);
 }
 const reloadTime = () => game().RELOAD_TIME / A.RELOAD_SPEED;
-const fightTime = (shots, g) => shots * A.AIM_TIME + Math.max(0, Math.ceil(shots / g.SHOTS_PER_ENERGY) - 1) * reloadTime();
+const fightTime = (shots, g) => shots * A.AIM_TIME + Math.max(0, Math.ceil(shots / (KIT?.spe || g.SHOTS_PER_ENERGY)) - 1) * reloadTime();   // (the kit's efficient cannons: fewer reloads)
 const rate = (kind) => { const c = calibrate(kind); return { small: c.smallRate, large: c.largeRate, from: c.first.small ?? 3 }; };
 
 function jobsFor(ev, ctx) {
@@ -305,17 +396,17 @@ function jobsFor(ev, ctx) {
     const bumps = Math.floor(g.LEV_TIME / g.LEV_STEP);
     job({ label: 'leviathan', work: 0, prio: 3, fixed: { small: bumps, span: [0, g.LEV_TIME], crewHits: 0.5 } });
   } else if (k === 'derelict') {
-    const walk = 2 * A.BOARD_WALK / g.WALK_SPEED, obj = ctx.objective?.kind;
+    const ws = g.WALK_SPEED * walkMul(), walk = 2 * A.BOARD_WALK / ws, obj = ctx.objective?.kind;
     let work = walk + A.DERELICT_EXTRA + g.HATCH_TIME * 2;
-    if (obj === 'blackbox') work += A.BOARD_WALK / g.WALK_SPEED * (1 / A.BOX_SLOW - 1);
-    if (obj === 'rescue') work += g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED - A.BOARD_WALK / g.WALK_SPEED;
+    if (obj === 'blackbox') work += A.BOARD_WALK / ws * (1 / A.BOX_SLOW - 1);
+    if (obj === 'rescue') work += g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED - A.BOARD_WALK / ws;
     // S-7: tendrils grab on the way in (freed by a shot, a spray or wriggling); the black box needs J1 patched, the
     // freezer on (drawing from our capacitor on that side every S7_DRAW s until the crew is back) and the core frozen;
     // the engineer is fought through to without it. Meanwhile the creep grows toward our airlock (its own job).
     const box = obj !== 'rescue', grabs = box ? A.S7_GRABS : A.S7_GRABS_RESCUE;
     work += grabs * A.S7_FREE;
     if (box) work += A.S7_PATCH + g.S7_FREEZER_HOLD + Math.max(0, g.S7_FREEZE[2] - A.S7_TO_CORE);
-    const freezerAt = A.BOARD_WALK * 0.6 / g.WALK_SPEED + g.HATCH_TIME + A.S7_PATCH + grabs * A.S7_FREE / 2;   // (s after arriving at our airlock)
+    const freezerAt = A.BOARD_WALK * 0.6 / ws + g.HATCH_TIME + A.S7_PATCH + grabs * A.S7_FREE / 2;   // (s after arriving at our airlock)
     job({ label: `derelict (${obj || 'explore'})`, prio: 1, trip: H(`${L(side)} outer airlock`), work, crewHits: grabs * A.S7_GRAB_HITS, objective: obj ? { [obj]: 1 } : null,
           freezer: box ? { cap: CAP[side], at: freezerAt, every: g.S7_DRAW[0] } : null });
     const reach = g.S7_CREEP_TIME * (n > 1 ? 1 : 1.5), lock = H(lockRoom(side));
@@ -333,7 +424,7 @@ function jobsFor(ev, ctx) {
 }
 function boarders(count, side) {                  // fight `count` pirates aboard with the laser
   const g = game(), fight = count * g.PIRATE_HP / A.LASER_HIT * A.LASER_SHOT;
-  return { trip: H('starLock') + T('starLock', lockRoom(side)), work: fight + 2 * A.BOARD_WALK / g.WALK_SPEED / 2, crewHits: count * A.PIRATE_FIGHT_HITS, prio: 0 };
+  return { trip: H('starLock') + T('starLock', lockRoom(side)), work: fight + 2 * A.BOARD_WALK / (g.WALK_SPEED * walkMul()) / 2, crewHits: count * A.PIRATE_FIGHT_HITS, prio: 0 };
 }
 function scrape(side, count, rel) {               // barnacles: scrape them off outside before they grow (then they drain power)
   const g = game(), e = evaTrip(side, game().HULL_SPOTS[side].slice(1, 1 + count));
@@ -430,7 +521,7 @@ function schedule(build, waitByKey) {
     const inc = small * A.INCIDENT_PER_SMALL, brk = large * A.BREAK_PER_LARGE;
     if (inc > 0) {
       const pl = rules.plasma ? A.PLASMA_SHARE : 0, work = (1 - pl) * A.INCIDENT_WORK + pl * (A.PIN_TIME + g.VENT_TIME);
-      push({ label: 'fire / damage', where: side, prio: 2, trip: H(roomOf(side)) + A.TOOL_FETCH, work: work * inc, weight: inc * A.OPEN_SMALL }, at, ev);
+      push({ label: 'fire / damage', where: side, prio: 2, trip: H(roomOf(side)) + A.TOOL_FETCH, work: work * inc, weight: inc * A.OPEN_SMALL * (KIT?.fireSlow ?? 1) }, at, ev);
     }
     if (brk > 0) push({ label: 'repair', where: side, prio: 2, trip: H(roomOf(side)) + A.TOOL_FETCH, work: g.REPAIR_TIME * brk, weight: brk }, at, ev);
     if (large > 0 && rules.breach) breach(0.7 * large, at, side, ev);     // (the first big hit on a side only dents it)
@@ -557,11 +648,12 @@ function finish(build, s, real, best) {
   let level = 0, peak = 0; for (const [, d] of marks) { level += d; peak = Math.max(peak, level); }
   peak += real.unmet.length > 0 ? A.BREAK_PER_LARGE * Math.min(1, real.unmet.length) : 0;      // a heavy shot that hit for want of a shield
   const ocTime = real.ocFires * (H('reactor') + A.TOOL_FETCH + A.INCIDENT_WORK);   // putting out the overcharged reactor's fires
-  const crewNeed = s.busy + extra + leverTime + fuelTime + ocTime + s.crewHits * A.CREW_HIT_COST + real.unmet.length * A.BREAK_PER_LARGE * (g.REPAIR_TIME + A.TOOL_FETCH + 6);
+  const crewHits = KIT?.armor ? Math.max(0, s.crewHits - n) : s.crewHits;   // (the armor vest: each player's first hit shrugged off)
+  const crewNeed = s.busy + extra + leverTime + fuelTime + ocTime + crewHits * hitCost(n) + real.unmet.length * A.BREAK_PER_LARGE * (g.REPAIR_TIME + A.TOOL_FETCH + 6);
   const crewHave = n * end;
   return { id: build.id, n, end, events: build.events.length, crewNeed, crewHave, load: crewNeed / crewHave, idle: 1 - crewNeed / crewHave,
            radarShare: s.radarBusy / crewHave, leverShare: leverTime / crewHave, fuelShare: fuelTime / crewHave,
-           peak, late: s.lateList.length, lateList: s.lateList, crewHits: s.crewHits, energy: real, best, objOk: objectiveMet(objective, s.got),
+           peak, late: s.lateList.length, lateList: s.lateList, crewHits, energy: real, best, objOk: objectiveMet(objective, s.got),
            got: s.got, jumpDelay: s.jumpDelay, done: s.done, factor: build.factor };
 }
 function objectiveMet(o, got) {
@@ -711,8 +803,8 @@ function energySim(build, plan, mode = 'real', dt = A.ENERGY_DT) {
            interval: G.ENERGY_TIME / G.reactorSpeed(), cells: build.energy.cells + (plan.bonusCells || 0) };
 }
 function verdictOf(r) {
-  const why = [], g = game();
-  if (r.peak > g.MAX_DAMAGE) why.push(`~${r.peak.toFixed(1)} problems open at once (more than ${g.MAX_DAMAGE} broken loses)`);
+  const why = [], maxD = r.maxDamage || game().MAX_DAMAGE;
+  if (r.peak > maxD) why.push(`~${r.peak.toFixed(1)} problems open at once (more than ${maxD} broken loses)`);
   if (!r.energy.jumpOk) why.push('no energy for the jump');
   if (!r.objOk) why.push('objective out of reach');
   if (r.load > A.MAX_LOAD) why.push(`crew needed ${Math.round(r.load * 100)}% of the time they have`);
@@ -731,9 +823,9 @@ function bestOf(r) {
   return 'ok';
 }
 function scoreOf(r) {
-  const S = A.SCORE, g = game();
+  const S = A.SCORE, maxD = r.maxDamage || game().MAX_DAMAGE;
   const energy = Math.min(1.5, r.energy.demand / Math.max(1, r.energy.supply)) + Math.min(0.5, r.energy.waited / 60);
-  return Math.round(S.load * Math.min(1.5, r.load) + S.open * Math.min(1.5, r.peak / g.MAX_DAMAGE) + S.energy * energy + S.late * Math.min(1.5, r.late / Math.max(1, r.events)));
+  return Math.round(S.load * Math.min(1.5, r.load) + S.open * Math.min(1.5, r.peak / maxD) + S.energy * energy + S.late * Math.min(1.5, r.late / Math.max(1, r.events)));
 }
 
 // In spec: the energy run (game code) has no shortfall — every reload, shield and the jump got its energy
@@ -750,11 +842,18 @@ function specOf(e) {
 // ===========================================================================
 // Running it
 // ===========================================================================
-const shipOf = (id, opts) => ({ ...(opts.prereq !== false ? Object.fromEntries((game().MISSIONS[id].needs?.ship || []).map(u => [u, true])) : {}), ...(opts.ship || {}) });
+// opts.kit: undefined = the expected kit (expectedKit), null = none (the old model); opts.kitShip false: not its upgrades
+const kitOf = (id, opts) => (opts.kit === undefined ? expectedKit(id) : opts.kit);
+const shipOf = (id, opts) => {
+  const kit = kitOf(id, opts), ids = [...(opts.prereq !== false ? game().MISSIONS[id].needs?.ship || [] : []), ...(kit && opts.kitShip !== false ? kit.ship : [])];
+  return { ...Object.fromEntries(ids.map(u => [u, true])), ...(opts.ship || {}) };
+};
 function runOne(id, n, k, opts = {}) {
   const over = opts.over ? opts.over(id, n) : {};
   const b = setup(id, n, shipOf(id, opts), A.SEED + k * 101 + n, over, opts.patch);
-  const r = seeded(A.SEED + k, () => simulate(b));
+  const keep = KIT; KIT = kitEffects(kitOf(id, opts), b.ship);
+  let r;
+  try { r = seeded(A.SEED + k, () => simulate(b)); r.maxDamage = KIT?.maxDamage; } finally { KIT = keep; }
   Object.assign(r, verdictOf(r)); r.score = scoreOf(r); r.bestVerdict = bestOf(r);
   r.spec = specOf(r.energy); r.bestSpec = specOf(r.best); r.events = b.events.length; r.cells = b.energy.cells; r.overcharge = b.overcharge; r.ship = b.ship;
   return r;
@@ -820,12 +919,13 @@ function upgradeSets(id) {                                       // cheapest fir
   for (const u of ENERGY_UPGRADES) for (const s0 of [...sets]) sets.push([...s0, u]);
   return sets.map(set => ({ set, rep: set.reduce((s, u) => s + cost(u), 0) })).filter(x => x.rep <= budget).sort((a, b) => a.rep - b.rep || a.set.length - b.set.length);
 }
-const evalAt = (id, n, over, ship, runs) => { const rs = []; for (let k = 0; k < runs; k++) rs.push(runOne(id, n, k, { over: () => over, ship, prereq: false })); return rs; };
+let FIT_KIT = null;                               // the kit fitMission calibrates with (its ship upgrades come in `ship`)
+const evalAt = (id, n, over, ship, runs) => { const rs = []; for (let k = 0; k < runs; k++) rs.push(runOne(id, n, k, { over: () => over, ship, prereq: false, kit: FIT_KIT, kitShip: false })); return rs; };
 const meanIdle = (rs) => rs.reduce((s, r) => s + r.idle, 0) / rs.length;
 // The event count for ~target idle (idle falls as events are added): binary search between the
 // essential minimum and twice the written list.
 function fitEvents(id, n, ship, oc, runs, minK = 1) {
-  const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(M.essential || [])]);
+  const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', ...(M.essential || []), ...(M.always || [])]);
   const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind) || e.opener).length), max = Math.max(2 * wrote, wrote + 16);
   const at = (k) => meanIdle(evalAt(id, n, { events: k, cells: A.AMPLE_CELLS, overcharge: oc, reactor: 1 }, ship, runs));
   let lo = min, hi = max, vLo = at(lo);
@@ -848,6 +948,77 @@ function fitCells(id, n, ship, oc, events, runs, reactor = 1) {
   return A.AMPLE_CELLS;
 }
 function fitMission(id, opts = {}) {
+  const keep = FIT_KIT; FIT_KIT = kitOf(id, opts);
+  try { return FIT_KIT ? fitWithKit(id, opts) : fitBase(id, opts); } finally { FIT_KIT = keep; }
+}
+// The event counts and cells per crew size for one ship / overcharge setting (see fitBase / fitWithKit).
+function fitAllFor(id, ship, oc, runs, log) {
+  const ns = [1, 2, 3, 4, 5, 6, 7, 8], per = {};
+  for (const n of ns) {
+    const minK = per[n - 1]?.events || 1;                         // (a bigger crew never gets fewer events)
+    const ev = fitEvents(id, n, ship, oc, runs, minK), aim = targetIdle(id, n);
+    let pick = null;
+    const tried = [];
+    const tryIt = (k, reactor) => {
+      const cells = fitCells(id, n, ship, oc, k, runs, reactor), rs = evalAt(id, n, { events: k, cells, overcharge: oc, reactor }, ship, runs);
+      return { events: k, cells, reactor, idle: meanIdle(rs), spec: rs.every(r => r.spec.ok), bestSpec: rs.every(r => r.bestSpec.ok), why: rs.find(r => !r.spec.ok)?.spec.why || '' };
+    };
+    for (const d of [0, -1, 1, -2, 2]) {
+      const k = ev.events + d;
+      if (k < minK) continue;
+      const p = tryIt(k, 1);
+      tried.push(p);
+      if (!pick) pick = p;
+      if (p.spec && Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK) { pick = p; break; }
+    }
+    if (!pick.spec) {
+      const ks = EARLY.includes(id) ? [0, -1, 1, -2, 2].map(d => ev.events + d).filter(k => k >= minK) : [ev.events];
+      let best = null;
+      for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {
+        for (const k of ks) { const p = tryIt(k, r); if (p.spec && (!best || Math.abs(p.idle - aim) < Math.abs(best.idle - aim))) best = p; }
+        if (best && Math.abs(best.idle - aim) <= A.SPEC_IDLE_SLACK) break;
+      }
+      if (best) pick = best;
+    }
+    // out of spec and more than A.SPEC_IDLE_SLACK off the aim too: a neighbouring count in spec, however far off, beats it
+    // (solo, one encounter more or less is 15-40 points: c7 / Deep drift solo, 2 encounters 26 % / 18 % and out of spec, 1: 63 %)
+    if (!pick.spec && Math.abs(pick.idle - aim) > A.SPEC_IDLE_SLACK) { const ok = tried.filter(p => p.spec).sort((a, b) => Math.abs(a.idle - aim) - Math.abs(b.idle - aim))[0]; if (ok) pick = ok; }
+    per[n] = { ...pick, aim };
+    log(`  ${id} ×${n}: ${per[n].events} events, ${per[n].cells} cells,${per[n].reactor !== 1 ? ` reactor ×${per[n].reactor},` : ''} idle ${Math.round(per[n].idle * 100)}%, ${per[n].spec ? 'in spec' : 'out of spec: ' + per[n].why}${oc ? ' (overcharged)' : ''}${Object.keys(ship).length ? ' [' + Object.keys(ship).join(', ') + ']' : ''}`);
+  }
+  return per;
+}
+// With the expected kit: fitted on the kit's ship (without the spare cell: the cells written must do without it)
+// and its overcharge (the mission's needs); out of spec for 1-4: more energy upgrades (cheapest first, within the
+// reputation by then) on top, then overcharge. The needs stay what they were plus what that adds.
+function fitWithKit(id, opts) {
+  const runs = opts.runs || A.CAL_RUNS, log = opts.log || (() => {}), kit = FIT_KIT, N = game().MISSIONS[id].needs || {};
+  const shipObj = (set) => Object.fromEntries(set.map(u => [u, true])), main = [1, 2, 3, 4], inSpec = (per) => main.every(n => per[n].spec);
+  const base = kit.ship.filter(u => u !== 'spareCell');
+  log(`  ${id}: kit ${kitText(id)}`);
+  let oc = kit.overcharge, ship = base, per = fitAllFor(id, shipObj(ship), oc, runs, log);
+  const why = main.filter(n => !per[n].spec).map(n => `×${n}: ${per[n].why}`).join('; ');
+  let added = [];
+  if (!inSpec(per) && !EARLY.includes(id)) {
+    let found = null;
+    for (const { set } of upgradeSets(id).filter(x => x.set.some(u => !base.includes(u)))) {
+      const s2 = shipObj([...base, ...set]);
+      const ok = main.every(n => { const ev = per[n]; return evalAt(id, n, { events: ev.events, cells: ev.cells, overcharge: oc, reactor: ev.reactor }, s2, runs).every(r => r.spec.ok); });
+      log(`  ${id}: with ${set.join(' + ')} on top of the kit: ${ok ? 'in spec' : 'still short'}`);
+      if (ok) { found = set.filter(u => !base.includes(u)); break; }
+    }
+    if (found) { added = found; ship = [...base, ...found]; per = fitAllFor(id, shipObj(ship), oc, runs, log); }
+    else if (!oc) {
+      const best = upgradeSets(id).reduce((a, x) => (x.set.length > a.length ? x.set : a), []);
+      added = best.filter(u => !base.includes(u)); ship = [...base, ...added]; oc = true;
+      per = fitAllFor(id, shipObj(ship), oc, runs, log);
+    }
+    if (!inSpec(per)) log(`  ${id}: still out of spec with the kit${added.length ? ' + ' + added.join(' + ') : ''}${oc ? ' + overcharge' : ''}`);
+  }
+  const needs = { ship: [...new Set([...(N.ship || []), ...added])], overcharge: !!(N.overcharge || oc) };
+  return { id, per, needs, baseWhy: why ? `kit before new prerequisites: ${why}` : '', added, kit: kitText(id) };
+}
+function fitBase(id, opts = {}) {
   const runs = opts.runs || A.CAL_RUNS, ns = [1, 2, 3, 4, 5, 6, 7, 8], log = opts.log || (() => {});
   const fitAll = (ship, oc) => {
     const per = {};
@@ -901,7 +1072,7 @@ function fitMission(id, opts = {}) {
       if (!inSpec(per)) log(`  ${id}: still out of spec with ${[...best, 'overcharge'].join(' + ')}`);
     }
   }
-  return { id, per, needs, baseWhy: why };
+  return { id, per, needs, baseWhy: why ? 'base ship: ' + why : '' };
 }
 function calibrateAll(opts = {}) {
   const g = game(), ids = opts.missions || [...SKIRMISH_ORDER.filter(id => g.MISSIONS[id]), ...g.CAMPAIGN];
@@ -920,6 +1091,7 @@ function main() {
     else if (args[i] === '--calibrate') opts.fit = true;
     else if (args[i] === '--target') A.TARGET_IDLE = A.TARGET_IDLE_CREW = +args[++i];
     else if (args[i] === '--base') opts.prereq = false;          // ignore the missions' prerequisites (base ship)
+    else if (args[i] === '--kit') { if (args[++i] === 'none') opts.kit = null; }   // --kit none: no gear / bought upgrades (the old model)
     else ids.push(args[i]);
   }
   if (opts.hit) A.HIT_RATE = opts.hit;
@@ -927,6 +1099,7 @@ function main() {
   if (ids.length) opts.missions = ids;
   if (opts.detail) {
     const [id, n] = opts.detail, r = runOne(id, n, 0, opts), b = setup(id, n, shipOf(id, opts), A.SEED + n);
+    console.log(`kit: ${opts.kit === null ? 'none (--kit none)' : kitText(id)}`);
     console.log(`${g.MISSIONS[id].name}, ${n} player(s): ${b.events.length} events every ${b.gap?.toFixed(0)} s, jump at ${b.jumpAt.toFixed(0)} s; energy every ${r.energy.interval.toFixed(1)} s, ${r.cells} cells${b.overcharge ? ', reactor overcharged' : ''}${Object.keys(b.ship).length ? `, ship: ${Object.keys(b.ship).join(', ')}` : ''}`);
     console.log('events: ' + b.events.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', '));
     for (const j of r.done.sort((a, b) => a.start - b.start)) console.log(`  P${j.who + 1} ${j.start.toFixed(0).padStart(4)}–${j.finish.toFixed(0).padStart(4)} s  ${j.label}${j.release !== undefined ? ` (from ${j.release.toFixed(0)})` : ''}`);
@@ -946,6 +1119,7 @@ function main() {
   }
   if (opts.fit) {
     console.log(`Calibrating: events and fuel cells per crew size for ${(A.TARGET_IDLE * 100).toFixed(1)}% idle solo / ${(A.TARGET_IDLE_CREW * 100).toFixed(1)}% for 2-8 on the first mission, −${(A.TARGET_RAMP * 100).toFixed(1)} points per step in the progression, in ${g.MISSION_LENGTH} s, then the energy prerequisites (hit rate ${A.HIT_RATE}, ${A.CAL_RUNS} builds each)...`);
+    console.log(opts.kit === null ? 'Without the kit (--kit none): the base ship plus prerequisites, no gear.' : 'With the expected kit (expectedKit: what a first-time campaign run affords by then; --kit none: without).');
     const fits = calibrateAll({ ...opts, log: (s) => console.log(s) });
     console.log('\nPaste into the mission definitions (MISSIONS[id].crew / .needs):');
     for (const f of fits) {
@@ -954,13 +1128,19 @@ function main() {
       if (ns.some(n => P[n].reactor !== 1)) crew.reactor = ns.map(n => P[n].reactor);
       if (f.needs.overcharge) crew.overcharge = ns.map(() => true);
       const needs = f.needs.ship.length || f.needs.overcharge ? `, needs: ${JSON.stringify(f.needs).replace(/"(\w+)":/g, '$1: ').replace(/"/g, "'")}` : '';
-      console.log(`  ${f.id}: crew: ${JSON.stringify(crew).replace(/"(\w+)":/g, '$1: ')}${needs}   // --calibrate: ${ns.map(n => `${Math.round(P[n].idle * 100)}%`).join(' ')} idle for 1-8 players (aim ${(P[1].aim * 100).toFixed(1)}% solo, ${(P[2].aim * 100).toFixed(1)}% for 2-8)${[1, 2, 3, 4].some(n => !P[n].spec) ? '; OUT OF SPEC: ' + [1, 2, 3, 4].filter(n => !P[n].spec).map(n => `×${n} ${P[n].why}`).join('; ') : ''}${f.baseWhy ? '; base ship: ' + f.baseWhy : ''}`);
+      console.log(`  ${f.id}: crew: ${JSON.stringify(crew).replace(/"(\w+)":/g, '$1: ')}${needs}   // --calibrate${f.kit ? ' (expected kit)' : ''}: ${ns.map(n => `${Math.round(P[n].idle * 100)}%`).join(' ')} idle for 1-8 players (aim ${(P[1].aim * 100).toFixed(1)}% solo, ${(P[2].aim * 100).toFixed(1)}% for 2-8)${[1, 2, 3, 4].some(n => !P[n].spec) ? '; OUT OF SPEC: ' + [1, 2, 3, 4].filter(n => !P[n].spec).map(n => `×${n} ${P[n].why}`).join('; ') : ''}${f.baseWhy ? '; ' + f.baseWhy : ''}`);
     }
     return;
   }
   console.log(`Assumptions: hit rate ${A.HIT_RATE}, ${A.AIM_TIME} s per shot, reaction ${A.REACT} s, ${opts.runs || A.RUNS} random builds each (top of tools/balance.js).`);
   console.log(`Missions last ${g.MISSION_LENGTH} s to the jump; the crew size sets the number of encounters; the reactor follows the gaps; capacitors hold ${g.CAP_MAX}, ${g.SHOTS_PER_ENERGY} shots per energy (base ship).\n`);
   const rows = balance(opts);
+  if (opts.kit === null) console.log('Kit: none (--kit none): the base ship plus each mission\'s prerequisites, no gear.\n');
+  else {
+    console.log('Kit (the default; --kit none: without): what a first-time campaign run can afford by then (expectedKit), every player:');
+    for (const id of [...new Set(rows.map(r => r.id))]) console.log(`  ${g.MISSIONS[id].name.padEnd(22)} ${kitText(id)}`);
+    console.log('');
+  }
   printRows(rows);
   for (const n of [...new Set(rows.map(r => r.n))]) {
     const rank = rows.filter(r => r.n === n).sort((a, b) => a.score - b.score);
@@ -977,4 +1157,4 @@ function printRows(rows) {
 }
 if (require.main === module) main();
 
-module.exports = { balance, runOne, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, setup, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };
+module.exports = { balance, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, setup, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };

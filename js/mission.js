@@ -99,7 +99,8 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. Breaches, plasma fires, failing gravity, things on the hull, and a fussy jump drive.',
-    crew: {events: [1, 1, 2, 2, 11, 17, 19, 23], cells: [2, 2, 2, 2, 4, 6, 8, 7], reactor: [1, 1, 1, 1, 1, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 63% 77% 66% 63% 65% 64% 65% 65% idle for 1-8 players (aim 52.5% solo, 64.5% for 2-8); OUT OF SPEC: ×3 star cannon waits 147 s at 44 s; ×4 port cannon waits 147 s at 44 s
+    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 7's twin: 33-40% is right solo)
+    crew: {events: [1, 1, 5, 8, 15, 18, 23, 27], cells: [2, 2, 3, 4, 6, 6, 8, 9], reactor: [1, 1, 1, 1, 1, 1, 0.85, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 67% 79% 66% 65% 65% 66% 65% 65% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×3 front cannon waits 13 s at 38 s; ×4 port cannon waits 17 s at 40 s; kit before new prerequisites: ×3: front cannon waits 13 s at 38 s; ×4: port cannon waits 17 s at 40 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
@@ -108,7 +109,7 @@ const MISSIONS = {
   },
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Destroy two pirate raiders. If one docks, its crew comes aboard to steal: board it back and jam its reactor.',
-    crew: {events: [3, 6, 11, 15, 18, 22, 23, 23], cells: [2, 2, 11, 14, 14, 16, 19, 19], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (two raiders): 54% 68% 65% 65% 67% 69% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8)
+    crew: {events: [4, 6, 11, 16, 19, 22, 22, 22], cells: [2, 2, 11, 14, 16, 16, 16, 16], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 53% 69% 66% 65% 66% 71% 75% 78% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     rules: { breach: true, surge: true }, objective: { kind: 'raiders', count: 2 },   // (like its twin, Red Comet Cove; the second raider took the interceptor's place)
@@ -116,7 +117,7 @@ const MISSIONS = {
   },
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something over there is still alive — its freezer log says: KEEP S-7 FROZEN.',
-    crew: {events: [2, 2, 7, 11, 14, 17, 20, 23], cells: [2, 2, 3, 8, 8, 12, 12, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (S-7, 2026-10-16): 46% 69% 68% 65% 67% 66% 66% 66% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); base ship: ×3: front cannon waits 23 s at 256 s; ×4: front cannon waits 15 s at 348 s
+    crew: {events: [2, 3, 8, 11, 15, 17, 21, 23], cells: [2, 2, 3, 8, 13, 12, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 47% 64% 65% 66% 66% 66% 65% 68% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
@@ -129,14 +130,16 @@ const MISSIONS = {
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'Spacewalk out and drill a big asteroid while the front cannon holds off the small ones.',
-    crew: {events: [3, 5, 8, 12, 16, 19, 23, 23], cells: [2, 5, 6, 9, 12, 11, 10, 10], reactor: [1, 0.85, 0.85, 0.85, 0.85, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 54% 68% 68% 66% 65% 66% 69% 73% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
+    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo)
+    crew: {events: [4, 7, 11, 12, 16, 20, 23, 24], cells: [4, 5, 7, 6, 8, 9, 8, 11], reactor: [0.7, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 40% 62% 63% 68% 66% 66% 70% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true }, objective: { kind: 'ore' },
     build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
   },
   nightmare: {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
-    crew: {events: [2, 2, 3, 4, 4, 4, 9, 13], cells: [2, 2, 2, 2, 2, 2, 4, 5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 47% 73% 70% 49% 61% 66% 60% 64% idle for 1-8 players (aim 52.0% solo, 64.0% for 2-8); OUT OF SPEC: ×3 port cannon waits 70 s at 194 s; ×4 star cannon waits 55 s at 36 s
+    balance: { soloIdle: 0.25 },              // the idle share tools/balance.js --calibrate aims for solo (a challenge mission: busier than the chapters)
+    crew: {events: [3, 3, 3, 4, 4, 11, 11, 16], cells: [2, 2, 2, 2, 2, 4, 4, 6], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 28% 57% 72% 51% 63% 63% 63% 65% idle for 1-8 players (aim 25.0% solo, 64.0% for 2-8); OUT OF SPEC: ×1 star cannon waits 81 s at 184 s; ×2 star cannon waits 71 s at 194 s; ×3 port cannon waits 71 s at 193 s; ×4 star cannon waits 57 s at 33 s; kit before new prerequisites: ×1: star cannon waits 81 s at 184 s; ×2: star cannon waits 71 s at 194 s; ×3: port cannon waits 71 s at 193 s; ×4: star cannon waits 57 s at 33 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {
@@ -165,7 +168,9 @@ const EVENT_SIDES = {};                                // event kinds with their
 // fewer encounters instead of longer gaps. Per mission and crew size, MISSIONS[id].crew says how many
 // events (crew.events[n - 1]) and fuel cells (crew.cells[n - 1]) — fitted by `node tools/balance.js
 // --calibrate` for a crew that's ~68% idle. Which events go: never the mission's essential ones
-// (MISSIONS[id].essential, plus ESSENTIAL_KINDS), then optional ones in DROP_ORDER (first dropped first),
+// (MISSIONS[id].essential, plus ESSENTIAL_KINDS), nor the kinds in MISSIONS[id].always (kept at every crew size
+// but not an objective: they may be the finale's neighbour and still come back as repeats, like chapters 1-3's
+// failing part), then optional ones in DROP_ORDER (first dropped first),
 // so a solo run of a chapter always has the same kind of content. More events than written: repeats
 // of the mission's most important optional kinds.
 //   The opener (a written event with opener: true, the first one) is never dropped either, and never the finale:
@@ -195,15 +200,17 @@ const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / miss
 const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
 function selectEvents(id, written, n, target, easy = 0) {
-  const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]);
+  const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]), always = new Set(M.always || []);
   const base = missionCrew(id, n).events ?? written.length, want = Math.min(base, Math.max(1, base - easy));   // (at least one: the finale)
-  const rank = (e) => (ess.has(e.kind) || e.opener ? Infinity : DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
+  const dropRank = (e) => (DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
+  const rank = (e) => (ess.has(e.kind) || e.opener || always.has(e.kind) ? Infinity : dropRank(e));
   const order = written.map((e, i) => ({ e, i })).sort((a, b) => rank(b.e) - rank(a.e) || a.i - b.i);   // most important first; ties: the earlier one
   const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(want, written.length))).map(o => o.e);
   // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump), nor the opener
   const objective = new Set(M.essential || []), optionalFight = order.find(o => rank(o.e) !== Infinity && COMBAT_KINDS.has(o.e.kind) && !keep.includes(o.e));
   if ((objective.size || keep.some(e => e.opener)) && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind) || e.opener)) keep.push(optionalFight.e);
-  const extra = [...new Set(order.filter(o => rank(o.e) !== Infinity).map(o => o.e.kind))];   // repeats: most important optional kinds, in turn
+  const extra = [...new Set(written.map((e, i) => ({ e, i })).filter(o => !ess.has(o.e.kind) && !o.e.opener)   // repeats: most important optional kinds
+    .sort((a, b) => dropRank(b.e) - dropRank(a.e) || a.i - b.i).map(o => o.e.kind))];                            // (and `always` ones), in turn
   for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target), repeat: true });
   return written.filter(e => keep.includes(e)).concat(keep.filter(e => e.repeat));
 }
