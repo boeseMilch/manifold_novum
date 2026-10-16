@@ -69,3 +69,12 @@ engineer · ★★★★ The Mother of All, Nightmare.
 - Shield frequency tuning (the "or" half of the shield idea)
 - Taped parts falling off on their own (only the next big hit breaks them now)
 - A second ship layout for the derelict / pirate interiors (they share one three-room template)
+
+## Docking encounters (concept pitches, 2026-10-16, awaiting the user's feedback)
+One lead concept and two alternatives per dockable ship, in `concepts/docking/` (the concept art is a
+mock-up rendered by `tools/blender/models/concepts/*.py`; images not in git):
+- Raider: **The Quota** (con their loot scale with ballast) · alts: hijack the raider, catnapping
+- Prison barge (unused today): **The Cell-O-Matic** (revolving cell drum, don't free the goat) · alts: searchlight stealth, cat swap
+- Derelict lab: **Lights Out** (Specimen 7 only moves in the dark; the lights run on our reactor) · alts: Hush, Tumble
+- Pirate base: **The Security Desk** (node tug-of-war with Captain Red Comet) · alts: Shift Change, Scuttle Protocol
+- Tractor tug (doesn't dock yet): **Final Notice** (repo tug: jam the winch, pay, dispute or overload) · alts: Jump Start, Grab the Wheel
