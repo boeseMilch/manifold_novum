@@ -274,8 +274,9 @@ function drawEvaJobs(t) {
   // jump coils: a ring with a dial, red until aligned
   for (const c of evs.coils) {
     const x = L(c.x), y = L(c.y), dial = c.ok ? -Math.PI / 2 : c.a + Math.sin(t * 2 + c.x) * 0.15;
-    if (GFX.on && GFX.ready(`hull/coil_${c.name}_ok`) && GFX.ready('hull/coil_dial')) {   // the coil on its bracket, the dial on top
-      GFX.sprite(`hull/coil_${c.name}_${c.ok ? 'ok' : 'bad'}`, 0, c.x, c.y, 0, { layer: 'decal', emissive: 0.6 });
+    const cs = `hull/coil_${c.name === 'rear' ? 'stern' : c.name}`;   // (the rear coil's sprites are named 'stern')
+    if (GFX.on && GFX.ready(`${cs}_ok`) && GFX.ready('hull/coil_dial')) {   // the coil on its bracket, the dial on top
+      GFX.sprite(`${cs}_${c.ok ? 'ok' : 'bad'}`, 0, c.x, c.y, 0, { layer: 'decal', emissive: 0.6 });
       GFX.sprite('hull/coil_dial', GFX.frameIndex('hull/coil_dial', dial), c.x, c.y, 0, { layer: 'decal' });
       if (!c.ok) jobMarker(c.x, c.y, t, reach(c.x, c.y), '#7af0ff');
       continue;
