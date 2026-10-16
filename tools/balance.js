@@ -83,6 +83,8 @@ const A = {
   S7_CREEP_WORK: 6,       // s at our airlock spraying S-7's creep back (plus clearing the wrap if it got there)
   S7_CREEP_SHARE: 0.5,    // share of runs where the creep reaches our airlock before the cold kills it (black box: the core freezes)
   BOX_SLOW: 0.7,          // walking speed carrying the black box
+  GRAB: 2,                // s to line up on something floating outside and grab it (an ore sample, a nav core)
+  NAV_BOARD_HITS: 0.3,    // hits on the crew boarding a docked raider for its nav core (the pirates shoot as usual)
   PANIC_OPEN: 1.5,        // broken parts' worth of problems open at which the crew fixes things before taking on new threats
   JUMP_PREP: 40,          // s before the jump someone pins the lever on MID if the middle capacitor is empty …
   JUMP_PREP_ENERGIES: 2,  // … or this many reactor intervals before it, if that's longer (a slow reactor needs more notice)
@@ -149,7 +151,7 @@ const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'make
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME'];
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -174,6 +176,7 @@ function T(from, to) {                            // seconds from one place to a
 }
 const H = (to) => A.HOME.reduce((s, h) => s + T(h, to), 0) / A.HOME.length;   // from where a free crew member waits
 const L = (side) => (side === 'port' ? 'Left' : 'Right');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const gunOf = (side) => (side === 'front' ? 'Front cannon' : `${L(side)} cannon`);
 const lockRoom = (side) => (side === 'port' ? 'portLock' : 'starLock');
 // A spacewalk: to the outer airlock, out, along the hull to (x, y), the job, and back in.
@@ -319,7 +322,18 @@ function jobsFor(ev, ctx) {
   else if (k === 'stealth') job(shipFight('stealth', A.STEALTH_SEEN));
   else if (k === 'pirates') {
     const f = shipFight('pirate', 1, 'pirate raider');
-    if (ev.letDock) job({ label: 'pirates aboard', rel: g.DOCK_TIME, ...boarders(2, side), objective: { pirates: 2 },
+    if (ctx.objective?.kind === 'navcore') {
+      // the nav core (chapter 4): shot to scrap, its core floats beside the hull for NAVCORE_LIFE s (a spacewalk fetch);
+      // docked, someone boards it (as well as fighting the boarders) and pulls it from the nav console. The first raider's
+      // core does it; the second raider's only if the first one's got lost.
+      const ws = g.WALK_SPEED * walkMul(), core = [side === 'port' ? -4.6 : 49.0, 9], e = evaTrip(side, [core]);
+      const fetch = { label: 'nav core (spacewalk fetch)', prio: 1, trip: e.legs, work: e.extra + A.GRAB, deadline: g.NAVCORE_LIFE - e.extra / 2,
+                      late: () => ({ lost: true, cancelAt: g.NAVCORE_LIFE }), objective: { navcore: 1 } };
+      const pull = { label: 'nav core (board the raider, pull it)', rel: g.DOCK_TIME + 6, prio: 1, trip: H(lockRoom(side)), crewHits: A.NAV_BOARD_HITS,
+                     work: 2 * A.BOARD_WALK / ws + g.NAVCORE_PULL, objective: { navcore: 1 } };
+      job({ ...f, deadline: g.DOCK_TIME, objective: { pirates: 1 }, after: (j, fin, late) => (late || ctx.got.navcore ? [] : [fetch]),
+            late: (j) => ({ jobs: [{ label: 'pirates aboard (docked)', rel: g.DOCK_TIME, ...boarders(2, side), objective: { pirates: 2 } }, ...(ctx.got.navcore ? [] : [pull])], cancelAt: g.DOCK_TIME }) });
+    } else if (ev.letDock) job({ label: 'pirates aboard', rel: g.DOCK_TIME, ...boarders(2, side), objective: { pirates: 2 },
                           fixed: { small: f.alive.small * (g.DOCK_TIME - f.alive.from), span: [f.alive.from - g.DOCK_TIME, 0] } });   // (the raider shoots until it docks)
     else job({ ...f, deadline: g.DOCK_TIME, objective: { pirates: 1 }, late: (j) => ({ jobs: [{ label: 'pirates aboard (docked)', rel: g.DOCK_TIME, ...boarders(2, side), objective: { pirates: 2 } }], cancelAt: g.DOCK_TIME }) });
   } else if (k === 'frigate') {
@@ -413,8 +427,19 @@ function jobsFor(ev, ctx) {
     job({ label: 'S-7 creep (push it back)', rel: reach, prio: 1, trip: lock, work: A.S7_CREEP_WORK * A.S7_CREEP_SHARE, deadline: reach * 0.4,
           late: () => ({ jobs: [{ label: 'S-7 wrap (clear our capacitor)', rel: reach * 1.4, prio: 1, trip: lock, work: (g.S7_WRAP_SPRAY + A.TOOL_FETCH) * A.S7_CREEP_SHARE }] }) });
   } else if (k === 'rock') {
-    const e = evaTrip('port', [[22.2, -7.6]]);
-    job({ label: 'drill the ore asteroid', prio: 1, trip: H('portLock') + T('portLock', 'Left outer airlock'), work: e.extra + g.DRILL_TIME + 2, objective: { ore: 1 } });
+    // the ore asteroid drifts past (js/dock.js updateRock): in reach from `from` to `until` s after the event. A drill trip
+    // per sample (the objective's count): out the hatch nearer the rock where it is then, drill, grab, back in (stowed).
+    // The first fetches the drill from the left airlock room; each next one is released when the last one is done.
+    const dir = ev.side === 'star' ? -1 : 1, v = g.ROCK_SPEED, x0 = dir > 0 ? g.ROCK_REACH[0] - g.ROCK_FROM : g.ROCK_REACH[1] + g.ROCK_FROM;
+    const from = g.ROCK_FROM / v, until = (g.ROCK_FROM + g.ROCK_REACH[1] - g.ROCK_REACH[0]) / v, need = ctx.objective?.kind === 'ore' ? ctx.objective.count || 1 : 1;
+    const xAt = (rel) => clamp(x0 + dir * v * rel, g.ROCK_REACH[0], g.ROCK_REACH[1]);
+    const trip = (i, rel, first) => {                  // rel: s after the event the trip starts (estimated: the rock's x then, + ~15 s out)
+      const x = xAt(rel + 15), hs = x < 22.2 ? 'port' : 'star', e = evaTrip(hs, [[x, g.ROCK_Y + g.ROCK_R]]);
+      const t = first ? H('portLock') + T('portLock', `${L(hs)} outer airlock`) : e.legs, work = e.extra + g.DRILL_TIME + A.GRAB;
+      return { label: `drill ore sample ${i}`, prio: 1, trip: t, work, objective: { ore: 1 }, deadline: until - rel - e.extra / 2, late: () => ({ lost: true, cancelAt: until - rel }),
+               after: (j, fin, late) => (i < need && !late ? [{ ...trip(i + 1, fin - ev.t, false) }] : []) };
+    };
+    job({ ...trip(1, from, true), rel: from });
   } else if (k === 'brig') {
     const b = boarders(2, side);
     job({ label: 'prison barge (rescue)', prio: 1, ...b, work: b.work + g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED, objective: { rescue: 1 } });
@@ -470,7 +495,7 @@ function simulate(build) {
 }
 function schedule(build, waitByKey) {
   const { n, events, jumpAt, rules, objective } = build, g = build.g;
-  const end = jumpAt + 2, ctx = { n, rules, objective };
+  const end = jumpAt + 2, got = {}, ctx = { n, rules, objective, got };   // (got: objectives reached so far, in schedule order: the nav core's / ore's follow-up jobs look)
   // pirate objective: let raiders dock when shooting them all down can't reach the count (2 pirates come aboard)
   if (objective?.kind === 'pirates') {
     let need = Math.max(0, objective.count - events.filter(e => e.kind === 'pirates').length);
@@ -511,7 +536,7 @@ function schedule(build, waitByKey) {
   }
   if (rules.handle) push({ label: 'jump handle', trip: H('Helm'), work: n > 1 ? g.JUMP_PULL_TWO : g.JUMP_PULL }, jumpAt - H('Helm'), { kind: 'handle', t: jumpAt });
 
-  const free = Array(n).fill(0), done = [], open = [], scrams = [], drains = [], storms = [], got = {}, lateList = [], scans = [];
+  const free = Array(n).fill(0), done = [], open = [], scrams = [], drains = [], storms = [], lateList = [], scans = [];
   const plan = { fights: [], shields: [], freezers: [], jumpAt, window: g.PRESS_FIRST, scrams, drains, storms, end };
   let crewHits = 0, bonusCells = 0, jumpDelay = 0, busy = 0, coilsDone = 0, radarBusy = 0;
   const roomOf = (side) => (side === 'front' ? 'bridge' : side === 'port' ? 'portGun' : 'starGun');
@@ -585,9 +610,10 @@ function schedule(build, waitByKey) {
       for (let i = 0; i < g.SWARM_SIZE; i++) { c = Math.max(c, i * g.SWARM_INTERVAL) + j.swarm.per; if (c > j.swarm.hitAt + i * g.SWARM_INTERVAL) hits++; }
       if (hits) { repairs(0, hits, j.release + j.swarm.hitAt, 'front', j.ev); lateList.push(j.label); }
     }
+    let wasLate = false, lost = false;
     if (j.late && j.deadline !== null && since > j.deadline) {
       const res = j.late(j, finish - j.release), at = j.release + j.deadline;
-      lateList.push(j.label);
+      lateList.push(j.label); wasLate = true; lost = !!res.lost;   // (lost: the objective it was for slipped away, e.g. the nav core drifted off)
       if (res.cancelAt !== undefined) finish = Math.max(start, Math.min(finish, j.release + res.cancelAt));   // (gone before anyone got there: no time spent)
       for (const nj of res.jobs || []) push({ ...nj, key: `${j.ev?.id}|${nj.label}` }, j.release + (nj.rel || 0), j.ev);
       if (res.breaks) repairs(0, res.breaks / A.BREAK_PER_LARGE, at, sideOf(j), j.ev);
@@ -626,7 +652,8 @@ function schedule(build, waitByKey) {
     if (j.freezer) plan.freezers.push({ key: j.key, cap: j.freezer.cap, t0: atJob + j.freezer.at, t1: finish, every: j.freezer.every });   // (S-7: Varga's freezer on our capacitor)
     if (j.storm) storms.push(j.release);
     if (j.radar) { scans.push(finish); radarBusy += finish - start; nextScan(finish); }
-    if (j.objective && finish < end) for (const k in j.objective) got[k] = (got[k] || 0) + j.objective[k];
+    if (j.objective && finish < end && !lost) for (const k in j.objective) got[k] = (got[k] || 0) + j.objective[k];
+    if (j.after) for (const nj of j.after(j, finish, wasLate)) push({ ...nj, key: `${j.ev?.id}|${nj.label}` }, finish + (nj.rel || 0), j.ev);   // (a follow-up: released when this one is done)
     free[who] = finish; busy += Math.max(0, Math.min(finish, end) - start);
     const entry = { ...j, start, atJob, finish, who };
     done.push(entry); cur[who] = entry;
@@ -658,6 +685,7 @@ function finish(build, s, real, best) {
 }
 function objectiveMet(o, got) {
   if (!o) return true;
+  if (o.kind === 'ore') return (got.ore || 0) >= (o.count || 1);
   if (o.kind === 'pirates' || o.kind === 'intruder') return (got[o.kind] || 0) >= o.count;
   if (o.kind === 'raiders') return (got.pirates || 0) >= o.count;   // (a raider per pirates event)
   return (got[o.kind] || 0) >= 1;

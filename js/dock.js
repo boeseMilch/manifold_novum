@@ -12,7 +12,7 @@
 //               the wall, and Dr. Varga in the brig. See "The pirate base" below.
 // Everything in `dk` is plain data.
 
-const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [] };   // ships: pirate raiders destroyed; bodies: fallen pirates { x, y, face, t } (purely visual)
+const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0 };   // ships: pirate raiders destroyed; bodies: fallen pirates { x, y, face, t } (purely visual); ore: samples stowed aboard
 const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9;
 // Pirates stop and aim: a faint laser sight tracks you right up to the shot — after PIRATE_AIM s a very fast shot
 // goes down that line, so get behind a wall (out of its sight) when you see it. Then a long cooldown: your window
@@ -21,7 +21,21 @@ const PIRATE_AIM = 1.7, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, 
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 const MAX_BODIES = 12, FALL_TIME = 0.6;               // fallen pirates kept lying around (oldest go first); how long the fall takes
-function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [] }); }
+function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0 }); }
+// The Red Comet's nav core (chapter 4's objective, kind 'navcore'): every raider's nav computer knows where their hideout is.
+// A docked raider: hold click NAVCORE_PULL s on the nav console beside its reactor. A raider shot to scrap: its core is flung
+// clear (hz.floating, kind 'navcore', with a drift and a `life`): NAVCORE_LIFE s to fetch it on a spacewalk before it's lost.
+const NAVCORE_PULL = 4, NAVCORE_LIFE = 60;
+const navcoreWanted = () => typeof mission !== 'undefined' && mission.objective?.kind === 'navcore' && !objectiveAboard('navcore');
+// The ore asteroid drifts past in front of the ship (EVENT_RUNNERS.rock): in from one side at ROCK_Y, out the other, at
+// ROCK_SPEED units/s (× ROCK_EASY on easy / very easy). Its centre between ROCK_REACH[0] and [1]: drillable on a spacewalk
+// (its near side within the spacewalk's reach, js/ship.js EVA_REACH; tests/dock.js checks it). ~160 s in reach at normal.
+const ROCK_Y = -7.6, ROCK_R = 2.2, ROCK_SPEED = 0.25, ROCK_EASY = [1, 0.8, 0.65], ROCK_REACH = [6.0, 45.0], ROCK_FROM = 5;
+const rockSpeed = () => ROCK_SPEED * ROCK_EASY[clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2)];
+const rockInReach = (r) => r.x >= ROCK_REACH[0] && r.x <= ROCK_REACH[1];
+// s until the rock's centre leaves the drillable stretch (0 once past it; before it: the whole stretch still ahead)
+const rockReachLeft = (r) => { const end = r.dir > 0 ? ROCK_REACH[1] : ROCK_REACH[0]; return Math.max(0, (end - r.x) * r.dir) / (r.v || ROCK_SPEED); };
+const oreNeeded = () => (typeof mission !== 'undefined' && mission.objective?.kind === 'ore' ? mission.objective.count || 1 : 1);
 
 // ---------------------------------------------------------------------------
 // Geometry (world coords; the port layout is mirrored for the starboard side)
@@ -40,7 +54,7 @@ function dockGeom(side) {
   const mx = (x) => side === 'port' ? x : SHIP_W - x;
   return {
     tube: M[0], rooms: [M[1], M[2], M[3]], doors: [M[4], M[5]], hatch: h, y,
-    crate: { x: mx(-14.6), y: y - 2.6 }, core: { x: mx(-23.6), y }, boxSpot: { x: mx(-22.4), y: y + 1.8 },
+    crate: { x: mx(-14.6), y: y - 2.6 }, core: { x: mx(-23.6), y }, nav: { x: mx(-20.4), y: y - 1.9 }, boxSpot: { x: mx(-22.4), y: y + 1.8 },
     npcSpot: { x: mx(-16.0), y: y + 2.4 }, fire: { x: mx(-14.6), y: y + 1.4 },
     entry: { x: mx(-7.9), y }, tubeMid: { x: mx(-2.5), y },
   };
@@ -71,7 +85,8 @@ function dockShip(kind, side, contents = {}) {
   if (dk.dock) return false;
   if (kind === 'base') return dockBase(side);
   // brig: the Red Comet's prison barge (EVENT_RUNNERS.brig: a pirate dock with a prisoner aboard) — looks, nothing else
-  dk.dock = { kind, side, brig: kind === 'pirate' && !!contents.npc, doors: kind === 'derelict' ? [true, false] : [false, false], crate: kind === 'pirate' ? ['fuel', 'fuel'] : [], detachT: null, overloaded: false, fires: [] };
+  dk.dock = { kind, side, brig: kind === 'pirate' && !!contents.npc, doors: kind === 'derelict' ? [true, false] : [false, false], crate: kind === 'pirate' ? ['fuel', 'fuel'] : [], detachT: null, overloaded: false, fires: [],
+              navcore: kind === 'pirate' && !contents.npc };   // (a raider's nav console still has its core: chapter 4 pulls it)
   const g = dockGeom(side);
   if (kind === 'pirate') {
     if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
@@ -111,7 +126,7 @@ function undock() {
 // The pirate raider: an enemy ship until it docks.
 ENEMY_TYPES.pirate = {
   ...ENEMY_TYPES.interceptor, name: 'Pirate raider', fire: [2.2, 3.4],
-  onHit(e) { if (e.pois.every(q => q.hit)) { dk.defeated++; dk.ships++; } },   // a raider shot to scrap: a pirate defeated and a ship destroyed
+  onHit(e) { if (e.pois.every(q => q.hit)) { dk.defeated++; dk.ships++; flingNavcore(e); } },   // a raider shot to scrap: a pirate defeated and a ship destroyed
   update(e, dt) {
     e.dockT = (e.dockT ?? DOCK_TIME) - dt;
     if (e.dockT <= 0 && !dk.dock && e.phase === 'fighting') { e.phase = 'gone'; dockShip('pirate', e.side); }
@@ -138,7 +153,43 @@ ENEMY_TYPES.pirate = {
 EVENT_SIDES.pirates = randSide; EVENT_SIDES.derelict = randSide;
 EVENT_RUNNERS.pirates = (ev) => combatSpawn('pirate', ev.side);
 EVENT_RUNNERS.derelict = (ev) => dockShip('derelict', ev.side, { blackbox: mission.objective?.kind === 'blackbox', npc: mission.objective?.kind === 'rescue' });
-EVENT_RUNNERS.rock = () => { dk.rock = { x: 22.2, y: -7.6, r: 2.2, seed: 4242 }; combatBanner('Ore asteroid ahead — drill it on a spacewalk!'); };
+// A raider shot to scrap (chapter 4, while no nav core is aboard yet): its nav core is flung clear, out where a spacewalker
+// can reach it (EVA_REACH: ~half way out beside the hull, at the wreck's height), drifting slowly away along the hull.
+function flingNavcore(e) {
+  if (!navcoreWanted()) return;
+  const dir = e.side === 'star' ? 1 : -1, x = (dir > 0 ? SHIP_W : 0) + dir * 4.6, y = clamp(e.y, 3.5, 21);
+  hz.floating.push({ uid: newUid(), kind: 'navcore', x, y, t: 0, vx: dir * 0.03, vy: y < 12 ? 0.08 : -0.08, life: NAVCORE_LIFE });
+  combatBanner(`The raider's nav core was flung clear, ${SIDE_LABEL[e.side].toLowerCase()} side — spacewalk out and grab it within ${NAVCORE_LIFE} s!`);
+}
+// A drifting nav core (hz.floating with a life): moves, then it's lost (js/hazards.js moves every floating thing).
+function navcoreLost(f) { combatBanner('The nav core drifted out of reach — it\'s lost.' + (navcoreWanted() ? ' Another raider\'s will do.' : '')); }
+EVENT_SIDES.rock = randSide;                              // the side the ore asteroid drifts in from (it leaves on the other)
+EVENT_RUNNERS.rock = (ev = {}) => {
+  const dir = (ev.side || randSide()) === 'star' ? -1 : 1, x = dir > 0 ? ROCK_REACH[0] - ROCK_FROM : ROCK_REACH[1] + ROCK_FROM;
+  dk.rock = { x, y: ROCK_Y, r: ROCK_R, seed: 4242, dir, v: rockSpeed(), reach: false, gone: false };
+  combatBanner(`Ore asteroid drifting in from the ${dir > 0 ? 'left' : 'right'} — it passes in front of us: drill it on a spacewalk!`);
+};
+// The rock drifts on; banners when it comes into reach and when it leaves; off screen it's gone.
+function updateRock(dt) {
+  const r = dk.rock;
+  if (!r) return;
+  if (r.dir === undefined) return;                        // (an old-style parked rock: practice, tests)
+  r.x += r.dir * (r.v || ROCK_SPEED) * dt;
+  const inR = rockInReach(r);
+  if (inR && !r.reach) { r.reach = true; combatBanner(`Ore asteroid drifting past: ${Math.round(rockReachLeft(r))} s left in reach — drill it!`); }
+  if (!inR && r.reach && !r.gone) { r.gone = true; combatBanner(dk.ore >= oreNeeded() ? 'The ore asteroid drifts off — we have our samples.' : 'The ore asteroid drifted out of reach.'); }
+  if (r.dir * (r.x - SHIP_W / 2) > SHIP_W / 2 + 14) dk.rock = null;
+}
+// An ore sample carried (or dropped) inside our ship is stowed: counted for the objective, hands free for the next trip.
+function stowOre() {
+  for (const c of crew) if (c.inv.item === 'ore' && c.mode === 'inside' && roomAt(c.x, c.y) && !inDock(c.x, c.y)) { c.inv.item = null; oreStowed(c.name); }
+  for (let i = ITEMS.length - 1; i >= 0; i--) if (ITEMS[i].kind === 'ore' && roomAt(ITEMS[i].x, ITEMS[i].y)) { ITEMS.splice(i, 1); oreStowed(); }
+}
+function oreStowed(who) {
+  dk.ore = (dk.ore || 0) + 1; sfx.poi();
+  const n = oreNeeded();
+  combatBanner(n > 1 ? `Ore sample stowed — ${Math.min(dk.ore, n)}/${n}${dk.ore < n ? (dk.rock && !dk.rock.gone ? ', go back for another!' : '') : ', that\'s all we need!'}` : 'Ore sample stowed aboard!');
+}
 Object.assign(EVENT_LABELS, { pirates: (ev) => `Pirate raider — ${SIDE_NAME[ev.side]}`, derelict: (ev) => `Derelict — ${SIDE_NAME[ev.side]}`, rock: () => 'Ore asteroid — front' });
 
 // ---------------------------------------------------------------------------
@@ -248,7 +299,7 @@ function updatePirate(p, dt) {
   if (p.mode) { basePirateMove(p, dt); return; }   // the pirate base's guards and the ones that rush us (below)
   // looting: grab something, carry it to their crate, PIRATE_LOOT times; then head home and stay there
   let goal = null;
-  const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox');
+  const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox' && it.kind !== 'navcore');   // (not the objective)
   if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.8, y: FUEL_CRATE.y, crate: true });
   if (!p.carry && !p.done && (p.loots >= PIRATE_LOOT || !loot.length)) { p.done = true; combatBanner('A pirate is done looting and heads back to their ship'); }
   if (leaving || p.carry || p.done) { if (g) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }
@@ -294,6 +345,8 @@ function updateDock(dt) {
   updateSentry(dt);
   updateNpc(dt);
   updateBase(dt);
+  updateRock(dt);
+  stowOre();
   for (const c of crew) c.slow = c.inv.item === 'blackbox' ? 0.6 : 1;   // the black box is heavy
 }
 // The engineer / Dr. Varga, once treated, makes her own way aboard ours: through the doors and the tube on the same
@@ -401,6 +454,14 @@ function dockClickTarget(mx, my) {
     return holdTarget('overload', OVERLOAD_TIME, `Hold click: jam their reactor into overload (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
                       () => { d.overloaded = true; d.detachT = DETACH_TIME; sfx.alarm(); combatBanner(`Their reactor is overloading — they'll cast off in ${DETACH_TIME} s! Get back aboard!`); });
   }
+  if (d.kind === 'pirate' && !d.brig && at(g.nav, 0.6)) {        // the nav console beside the reactor (chapter 4: pull its core)
+    const t = { x: g.nav.x, y: g.nav.y, r: 0.6 };
+    if (!d.navcore) return { ...t, text: 'Nav console — its core is already pulled', ok: false };
+    if (!navcoreWanted()) return { ...t, text: 'Nav console — the Red Comet\'s charts (nothing we need today)', ok: false };
+    if (!near(t.x, t.y)) return { ...t, text: 'Nav console — get closer', ok: false };
+    return holdTarget('navcore', NAVCORE_PULL, `Hold click: pull the nav core out of their console (${NAVCORE_PULL} s)`, t.x, t.y, 0.6,
+                      () => { d.navcore = false; grab('navcore'); sfx.poi(); combatBanner('Got the nav core — the Red Comet\'s hideout is on it. Bring it aboard!'); });
+  }
   return null;
 }
 // Jammed derelict door: a prompt like ours (manual override).
@@ -434,6 +495,7 @@ function dockSpots() {
   else if (g) {
     if (dk.dock.crate.length) out.push({ ...g.crate, r: 0.6 });
     if (dk.dock.kind === 'pirate' && !dk.dock.overloaded) out.push({ ...g.core, r: 0.9 });
+    if (dk.dock.kind === 'pirate' && dk.dock.navcore && navcoreWanted()) out.push({ ...g.nav, r: 0.5 });
     dk.dock.doors.forEach((locked, i) => { if (locked) { const q = g.doors[i]; out.push({ x: q.x + q.w / 2, y: q.y + q.h / 2, w: q.w + 0.3, h: q.h }); } });
     out.push(...s7Spots());
   }
@@ -515,6 +577,7 @@ function drawDock(t) {
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(`OVERLOAD ${Math.ceil(d.detachT)}`, 0, 0);
       ctx.fillStyle = Math.sin(t * 20) > 0 ? '#ffe08a' : '#ff7a6a'; ctx.fillText(`OVERLOAD ${Math.ceil(d.detachT)}`, 0, 0); ctx.textAlign = 'left';
     });
+    if (pir && !d.brig) drawNavConsole(d, g, t);
     for (const f of d.fires || []) {                   // derelict fire (the fire sprites like ours; else simple flames)
       if (GFX.on && drawFireSprite({ x: f.x, y: f.y, seed: f.x * 2.3 + f.y }, (0.55 + 0.45 * f.hp) * 1.6, t)) continue;
       for (let i = 0; i < 4; i++) { const h = L(0.6 + 0.3 * Math.sin(t * 9 + i)) * f.hp; ctx.beginPath(); ctx.ellipse(L(f.x) + (i - 1.5) * 8, L(f.y) - h / 2, 6, h / 2, 0, 0, TAU); ctx.fillStyle = i % 2 ? '#ff9a2e' : '#d8401c'; ctx.fill(); }
@@ -526,6 +589,35 @@ function drawDock(t) {
     GFX.sprite('enemy/ore_rock', 0, R.x, R.y, 0, { layer: 'under', scale: R.r / 2.2 });
     GFX.sprite('enemy/ore_rock_glow', 0, R.x, R.y, 0, { layer: 'under', scale: R.r / 2.2, emissive: 1, alpha: 0.6 + 0.3 * Math.sin(t * 2) });
   } else if (dk.rock) { drawLump(lumpShape(dk.rock.seed, 11, 0.3), L(dk.rock.x), L(dk.rock.y), L(dk.rock.r), 0.3, ['#8d8274', '#6e6359', '#4c433c'], true); for (let i = 0; i < 5; i++) { ctx.fillStyle = `rgba(122,240,255,${0.5 + 0.3 * Math.sin(t * 2 + i)})`; ctx.beginPath(); ctx.arc(L(dk.rock.x + Math.cos(i * 1.3) * 1.2), L(dk.rock.y + Math.sin(i * 1.3) * 1.1), 4, 0, TAU); ctx.fill(); } }
+}
+// The raider's nav console (beside the reactor, against the core room's back wall): dock/raider_navconsole (frame 0 with
+// its core in, 1 pulled; side-mirrored like the ship: frame + 2 for the starboard layout), else a 2D desk with a star map
+// screen and the core's glowing slot. The nav core adrift (hz.floating): items/navcore (16 spin frames), else 2D.
+function drawNavConsole(d, g, t) {
+  const S = 'dock/raider_navconsole', x = g.nav.x, y = g.nav.y, flip = d.side === 'port' ? 1 : -1;
+  if (GFX.on && GFX.info(S) && GFX.sprite(S, (d.navcore ? 0 : 1) + (flip < 0 && (GFX.info(S).f || []).length > 2 ? 2 : 0), x, y, 0, { layer: 'wall', sortY: y, emissive: 0.6 })) return;
+  const cx = L(x), cy = L(y);
+  ctx.save(); ctx.translate(cx, cy);
+  rr(-L(0.55), -L(0.42), L(1.1), L(0.84), 5); ctx.fillStyle = '#3a3238'; ctx.fill(); stroke(2.5);      // the desk
+  rr(-L(0.45), -L(0.36), L(0.62), L(0.44), 3); ctx.fillStyle = '#0e1a22'; ctx.fill(); stroke(1.5);      // the screen: a star map with a red blip
+  ctx.strokeStyle = 'rgba(120,230,255,0.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-L(0.4), -L(0.05)); ctx.lineTo(-L(0.25), -L(0.22)); ctx.lineTo(-L(0.05), -L(0.12)); ctx.lineTo(L(0.1), -L(0.28)); ctx.stroke();
+  for (const [px, py] of [[-0.36, -0.28], [-0.2, -0.04], [0.05, -0.25], [-0.02, -0.02]]) { ctx.fillStyle = '#cfe8ff'; ctx.fillRect(L(px), L(py), 2, 2); }
+  if (Math.sin(t * 5) > -0.3) { ctx.fillStyle = '#ff5a4a'; ctx.beginPath(); ctx.arc(L(0.1), -L(0.28), 3, 0, TAU); ctx.fill(); }
+  rr(L(0.24), -L(0.34), L(0.24), L(0.6), 3); ctx.fillStyle = '#1a1d24'; ctx.fill(); stroke(1.5);         // the core's slot
+  if (d.navcore) {
+    const p = 0.6 + 0.4 * Math.sin(t * 4), gl = ctx.createRadialGradient(L(0.36), -L(0.04), 0, L(0.36), -L(0.04), L(0.45));
+    gl.addColorStop(0, `rgba(120,230,255,${0.45 * p})`); gl.addColorStop(1, 'rgba(120,230,255,0)'); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(L(0.36), -L(0.04), L(0.45), 0, TAU); ctx.fill();
+    rr(L(0.28), -L(0.28), L(0.16), L(0.48), 2); ctx.fillStyle = `rgba(110,225,255,${0.6 + 0.3 * p})`; ctx.fill();
+    ctx.fillStyle = '#e84a3a'; ctx.beginPath(); ctx.arc(L(0.36), L(0.08), 2.5, 0, TAU); ctx.fill();
+  } else { ctx.strokeStyle = '#ffcf6b'; ctx.lineWidth = 1.2; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(L(0.3 + i * 0.05), -L(0.2)); ctx.lineTo(L(0.33 + i * 0.05), L(0.1)); ctx.stroke(); } }   // torn wires
+  ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('NAV', -L(0.14), L(0.32)); ctx.textAlign = 'left';
+  ctx.restore();
+}
+function drawNavcoreFloating(f, x, y, t) {
+  pickupHalo(L(x), L(y), T * 0.5, t, me.mode === 'eva' && Math.hypot(me.x - x, me.y - y) <= REACH, f.uid);
+  const S = 'items/navcore', n = (GFX.on && GFX.info(S)?.f?.length) || 0;
+  if (!(n && GFX.sprite(S, Math.floor(f.t * 2) % n, x, y, 0, { layer: 'main', emissive: 0.8 }))) { ctx.save(); ctx.translate(L(x), L(y)); ctx.rotate(Math.sin(f.t * 0.6) * 0.8); drawItemIcon('navcore', 0, 0, 1.9, t); ctx.restore(); }
+  if (f.life !== undefined) worldText(x, y - 0.8, 0, `${Math.ceil(f.life)} s`, `800 ${T * 0.3}px system-ui, sans-serif`, f.life < 20 ? '#ff9a8a' : '#cfeeff', { base: 'bottom', outline: 'rgba(10,12,18,0.85)', sortY: y + 0.01 });
 }
 // ---------------------------------------------------------------------------
 // Clutter and jokes on the other ships (purely visual, like js/decor.js): the props are our own clutter
@@ -730,7 +822,15 @@ function dockPlates(add) {
   if (dk.dock?.kind === 'derelict') add('derelict', { icon: 'frigate', title: 'DERELICT', sub: `tethered at the ${SIDE_LABEL[dk.dock.side].toLowerCase()} airlock · no air inside`, stripe: '#7a8396' });
   s7Plates(add);
   if (dk.npc && dk.npc.state !== 'safe') add('npc', { icon: 'ping', title: npcName().replace(/^the /, '').toUpperCase(), sub: dk.npc.state === 'down' ? 'hurt — treat them (hold click)' : dk.npc.waits && sentryLive() ? 'waiting in the brig — switch off the sentry gun' : 'on the way to our ship — cover them', stripe: '#ffe08a', red: dk.npc.state === 'down' });
-  if (dk.rock) add('rock', { icon: 'asteroid', title: 'ORE ASTEROID', sub: 'front · drill it on a spacewalk', stripe: '#7af0ff' });
+  if (dk.rock) {
+    const r = dk.rock, n = oreNeeded(), got = `${Math.min(dk.ore || 0, n)}/${n} aboard`;
+    const sub = r.dir === undefined ? 'front · drill it on a spacewalk'
+      : r.gone ? `drifting off · ${got}` : r.reach ? `${Math.ceil(rockReachLeft(r))} s in reach · ${got}` : `drifting in from the ${r.dir > 0 ? 'left' : 'right'} · ${got}`;
+    add('rock', { icon: 'asteroid', title: 'ORE ASTEROID', sub, stripe: '#7af0ff', red: !!r.reach && rockReachLeft(r) < 30 && (dk.ore || 0) < n });
+  }
+  for (const f of hz.floating) if (f.kind === 'navcore' && f.life !== undefined)
+    add('navcore' + f.uid, { icon: 'ping', title: 'NAV CORE ADRIFT', sub: `lost in ${Math.ceil(f.life)} s · ${f.x < SHIP_W / 2 ? 'left' : 'right'} side, outside`, stripe: '#7af0ff', red: f.life < 20 });
+  if (dk.dock?.kind === 'pirate' && dk.dock.navcore && navcoreWanted()) add('navconsole', { icon: 'ping', title: 'NAV CONSOLE', sub: 'by their reactor · pull its core', stripe: '#7af0ff' });
 }
 
 // ---------------------------------------------------------------------------

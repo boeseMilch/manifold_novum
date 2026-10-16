@@ -4,7 +4,8 @@ const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
   'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES',
-  's7Geom', 's7Holding', 's7Wrapped', 'attack', 'spray', 'useEnergy', 'S7_FREEZE', 'S7_DRAW', 'S7_RECOIL_SHOT', 'S7_RECOIL_SPRAY', 'S7_STRUGGLE_PRESSES', 'resetDock', 'SIDE_CAP'];
+  's7Geom', 's7Holding', 's7Wrapped', 'attack', 'spray', 'useEnergy', 'S7_FREEZE', 'S7_DRAW', 'S7_RECOIL_SHOT', 'S7_RECOIL_SPRAY', 'S7_STRUGGLE_PRESSES', 'resetDock', 'SIDE_CAP',
+  'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_Y', 'EVENT_RUNNERS', 'evaOk', 'evaReach', 'REACH', 'rockReachLeft'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -89,7 +90,7 @@ for (const hide of [false, true]) {
   G.dk.defeated = 0; G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }, { hit: true }] });
   check(G.dk.ships === 2 && G.dk.defeated === 1, 'a raider shot to scrap counts as a ship destroyed (and a pirate defeated)');
   G.mission.objective = G.MISSIONS.c1.objective;
-  check(G.MISSIONS.c1.objective.kind === 'raiders' && G.MISSIONS.c4.objective.kind === 'raiders' && G.objectiveStatus().done, 'First Contract and Red Comet Cove: destroy two pirate ships, done');
+  check(G.MISSIONS.c1.objective.kind === 'raiders' && G.MISSIONS.c4.objective.kind === 'navcore' && G.objectiveStatus().done, 'First Contract: destroy two pirate ships, done (Red Comet Cove wants a nav core now)');
 }
 // --- derelict
 {
@@ -286,6 +287,96 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   const me = G.me; me.mode = 'eva'; me.x = 22.2; me.y = -4.6; me.vx = me.vy = 0; G.withCrew(me, () => { G.inv.weapon = 'drill'; });
   const t = holdOn(G, 22.2, -6.0, () => G.hz.floating.some(f => f.kind === 'ore'));
   check(G.hz.floating.some(f => f.kind === 'ore') && t < 6.5, `drilling the asteroid on a spacewalk gives an ore sample (${t.toFixed(1)} s)`);
+}
+// --- chapter 4 / Pirate cove: bring a Red Comet nav core aboard (way 1: pull it from a docked raider's nav console)
+const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.active = false; G.combat.enemies.length = 0; return G; };
+{
+  const G = c4();
+  check(G.MISSIONS.c4.objective.kind === 'navcore' && G.MISSIONS.pirates.objective.kind === 'navcore' && G.MISSIONS.c1.objective.kind === 'raiders', 'Red Comet Cove and Pirate cove want a nav core; First Contract still two raiders');
+  check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Bring a Red Comet nav core aboard', `the objective: "${G.objectiveStatus().text}"`);
+  G.dockShip('pirate', 'port'); G.dk.pirates.length = 0;
+  const g = G.dockGeom('port'), me = G.me; me.x = 3; me.y = g.y;
+  check(G.dk.dock.navcore, 'a docked raider\'s nav console still has its core');
+  via(G, [[g.crate.x + 1, g.y], doorC(g.doors[1]), [g.nav.x + 0.6, g.nav.y + 0.9]]);
+  const t = holdOn(G, g.nav.x, g.nav.y, () => me.inv.item === 'navcore');
+  check(me.inv.item === 'navcore' && !G.dk.dock.navcore && Math.abs(t - G.NAVCORE_PULL) < 0.3, `holding click on the nav console pulls the nav core out (${t.toFixed(1)} s)`);
+  check(!G.objectiveStatus().done, 'not done while it is still over on their ship');
+  via(G, [[g.nav.x + 0.6, g.y], doorC(g.doors[1]), [g.crate.x + 1, g.y], doorC(g.doors[0]), [g.entry.x, g.y], [3, g.y]]);
+  check(G.roomAt(me.x, me.y) && !G.inDock(me.x, me.y) && G.objectiveStatus().done, 'carried aboard our ship: objective done');
+  const m = me.input.mouse; m.wx = g.nav.x; m.wy = g.nav.y; G.simTick(DT);
+}
+// way 2: a raider shot to scrap flings its core clear; a spacewalk fetches it; ~60 s, then it's lost
+{
+  const G = c4(), me = G.me;
+  G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }, { hit: true }], side: 'port', y: 9 });
+  const f = G.hz.floating.find(f => f.kind === 'navcore');
+  check(f && f.life === G.NAVCORE_LIFE && G.evaOk(f.x, f.y), `a raider shot to scrap flings its nav core clear, within spacewalk reach (${f && f.x.toFixed(1)}, ${f && f.y.toFixed(1)}), ${G.NAVCORE_LIFE} s to fetch it`);
+  const x0 = f.x, y0 = f.y; tickN(G, 60 * 40);
+  check(G.hz.floating.includes(f) && Math.hypot(f.x - x0, f.y - y0) > 1 && G.evaOk(f.x, f.y) && G.evaReach(f.x, f.y).e < 0.9, `it drifts slowly away (${Math.hypot(f.x - x0, f.y - y0).toFixed(1)} units in 40 s) and stays reachable`);
+  me.mode = 'eva'; me.x = f.x + 0.6; me.y = f.y; me.vx = me.vy = 0;
+  const m = me.input.mouse; m.wx = f.x + Math.sin(f.t * 0.7) * 0.3; m.wy = f.y + Math.cos(f.t * 0.5) * 0.3; m.click = true; G.simTick(DT);
+  check(me.inv.item === 'navcore' && !G.hz.floating.some(q => q.kind === 'navcore'), 'clicking it on a spacewalk grabs it');
+  check(!G.objectiveStatus().done, 'not done while you are still outside with it');
+  me.mode = 'inside'; me.x = 7.5; me.y = 19; G.simTick(DT);
+  check(G.objectiveStatus().done, 'brought inside: objective done');
+  G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'star', y: 9 });
+  check(!G.hz.floating.some(q => q.kind === 'navcore'), 'with a core aboard, the next raider\'s core isn\'t flung out');
+}
+{
+  const G = c4('pirates');
+  G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'star', y: 15 });
+  check(G.hz.floating.some(f => f.kind === 'navcore' && f.x > 44), 'Pirate cove too: on the right side when the raider was there');
+  tickN(G, 60 * 61);
+  check(!G.hz.floating.some(f => f.kind === 'navcore') && !G.objectiveStatus().done, 'nobody fetched it: after 60 s the core is lost (another raider\'s will do)');
+  const H = fresh(); H.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'port', y: 9 });
+  check(!H.hz.floating.some(f => f.kind === 'navcore'), 'no nav core flung out in a mission that doesn\'t want one');
+}
+{
+  const G = c4(); G.dockShip('pirate', 'star'); G.dk.dock.navcore = false;
+  G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'port', y: 9 }); G.hz.floating[0].life = 33;
+  const C = loadGame(NAMES); C.startMission('intro'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  const f = C.hz.floating.find(f => f.kind === 'navcore');
+  check(C.dk.dock?.navcore === false && f && f.life === 33 && f.vx, 'the snapshot carries the nav console\'s state and the drifting core (its life and drift)');
+}
+// --- the ore asteroid drifts past (Ore run, chapter 6): in from one side, past the front within reach, out the other
+{
+  const G = fresh(), reachable = (x) => {                  // a spot within the spacewalk's reach (e < 1) from where its near side is in REACH
+    for (let a = 0; a < 6.283; a += 0.05) { const sx = x + Math.cos(a) * 2.2, sy = G.ROCK_Y + Math.sin(a) * 2.2;
+      for (let d = 0.2; d < G.REACH - 0.1; d += 0.1) if (G.evaOk(sx + Math.cos(a) * d, sy + Math.sin(a) * d) && G.evaReach(sx + Math.cos(a) * d, sy + Math.sin(a) * d).e < 0.9) return true; }
+    return false;
+  };
+  check(reachable(G.ROCK_REACH[0]) && reachable(G.ROCK_REACH[1]) && reachable((G.ROCK_REACH[0] + G.ROCK_REACH[1]) / 2), `the rock is drillable on a spacewalk all along its stretch (x ${G.ROCK_REACH.join(' – ')})`);
+  for (const [side, easy] of [['port', 0], ['star', 0], ['port', 1]]) {
+    const H = fresh(); H.mission.easy = easy; H.EVENT_RUNNERS.rock({ side });
+    const r = H.dk.rock, x0 = r.x; let on = null, off = null, t = 0;
+    check(side === 'port' ? r.dir === 1 && x0 < H.ROCK_REACH[0] : r.dir === -1 && x0 > H.ROCK_REACH[1], `${side}: it comes in from the ${side === 'port' ? 'left' : 'right'}, out of reach`);
+    while (H.dk.rock && t < 400) { H.simTick(0.1); t += 0.1; if (H.dk.rock?.reach && on === null) on = t; if (H.dk.rock?.gone && off === null) off = t; }
+    const span = off - on;
+    check(on !== null && on < 30 && (easy ? span > 185 && span < 215 : span > 150 && span < 180), `${side}${easy ? ', easy' : ''}: in reach after ${on?.toFixed(0)} s, for ${span.toFixed(0)} s`);
+    check(!H.dk.rock && t < 400, `then it drifts off the other side and is gone (${t.toFixed(0)} s)`);
+  }
+}
+{
+  const G = fresh(); G.startMission('ore'); G.mission.active = false;
+  check(G.MISSIONS.ore.objective.count === 2 && G.MISSIONS.c6.objective.count === 2 && G.objectiveStatus().text === 'Bring 2 ore samples aboard (0/2)', `Ore run and Spore Season want 2 samples: "${G.objectiveStatus().text}"`);
+  G.EVENT_RUNNERS.rock({ side: 'port' }); const r = G.dk.rock; r.x = 16;
+  const me = G.me, m = me.input.mouse;
+  G.withCrew(me, () => { G.inv.weapon = 'drill'; });
+  for (let k = 1; k <= 2; k++) {
+    me.mode = 'eva'; me.x = r.x; me.y = -4.6; me.vx = me.vy = 0;
+    const x0 = r.x, t = holdOn(G, r.x, r.y + 1.2, () => G.hz.floating.some(f => f.kind === 'ore'));
+    check(G.hz.floating.some(f => f.kind === 'ore') && t > 5.8 && t < 6.5 && r.x > x0 + 1, `sample ${k}: drilled in ${t.toFixed(1)} s while the rock drifted on (${(r.x - x0).toFixed(1)} units)`);
+    const f = G.hz.floating.find(f => f.kind === 'ore'); me.x = f.x; me.y = f.y + 0.5;
+    m.wx = f.x + Math.sin(f.t * 0.7) * 0.3; m.wy = f.y + Math.cos(f.t * 0.5) * 0.3; m.click = true; G.simTick(DT);
+    check(me.inv.item === 'ore', `sample ${k}: grabbed`);
+    me.mode = 'inside'; me.x = 7.5; me.y = 19; G.simTick(DT);
+    check(G.dk.ore === k && !me.inv.item, `sample ${k}: carried inside it's stowed (${G.dk.ore} aboard, hands free for the next trip)`);
+    check(k === 1 ? !G.objectiveStatus().done && /\(1\/2\)/.test(G.objectiveStatus().text) : G.objectiveStatus().done, `objective after ${k}: ${G.objectiveStatus().done ? 'done' : G.objectiveStatus().text}`);
+  }
+  const C = loadGame(NAMES); C.startMission('intro'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  check(C.dk.ore === 2 && C.dk.rock && C.dk.rock.dir === 1 && Math.abs(C.dk.rock.x - r.x) < 1e-9, 'the snapshot carries the drifting rock and the samples aboard');
+  G.mission.objective = { kind: 'ore' }; G.dk.ore = 0; G.ITEMS.push({ kind: 'ore', x: 7.5, y: 19 }); G.simTick(DT);
+  check(G.objectiveStatus().done && G.objectiveStatus().text === 'Drill an ore sample and bring it aboard', 'an ore objective without a count still wants one sample');
 }
 // --- fallen pirates stay down (purely visual bodies, synced as part of dk)
 {

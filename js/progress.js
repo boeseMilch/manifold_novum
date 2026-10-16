@@ -113,12 +113,12 @@ Object.assign(MISSIONS, {
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 200, perPirate: 50, rep: 2, xp: 160 },
-    crew: {events: [3, 6, 11, 15, 21, 23, 24, 24], cells: [2, 2, 8, 11, 17, 17, 20, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 51% 67% 67% 66% 66% 69% 73% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
+    crew: {events: [3, 5, 11, 14, 18, 23, 24, 24], cells: [2, 2, 8, 11, 14, 17, 20, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, 2026-10-16): 46% 66% 65% 67% 66% 69% 72% 75% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/6/11/15/21/23/24/24 (two raiders destroyed)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
-    objective: { kind: 'raiders', count: 2 }, rules: { breach: true, surge: true },
-    blurb: 'Pirates took Dr. Varga. Hunt the Red Comet gang.',
-    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away.\n\nTheir raiders patrol the Cove. Destroy two of them. If one docks, board it back: its loot crate is full, and jamming its reactor sends it running, until the reactor blows. Power lines can arc now; splice them with the repair kit.',
+    objective: { kind: 'navcore' }, rules: { breach: true, surge: true },   // (was 'raiders' ×2 like chapter 1; 2026-10-16: no mission twice)
+    blurb: 'Pirates took Dr. Varga. Find the Red Comet\'s hideout: bring a raider\'s nav core aboard.',
+    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away. Where to? Nobody knows where their hideout is — but every one of their raiders does: it\'s in its nav computer.\n\nTheir raiders patrol the Cove. Get us a nav core. Let one dock and board it: the nav console sits beside its reactor, pull the core out (hold click) and carry it home. Or shoot one to scrap: its nav core gets flung clear — spacewalk out and fish it in before it drifts off (about a minute). The Guild\'s bounty still stands: $50 a pirate. Power lines can arc now; splice them with the repair kit.',
     // a calm half minute, a Red Comet scout (the opener), then the raiders; a part fails in between (bigger crews)
     build: () => [evAt('interceptor', 30, { side: 'star', opener: true }), evAt('pirates', 70, { side: 'port' }), evAt('maintenance', 110, { radar: false }), evAt('pirates', 150, { side: randSide() }),
                   evAt('mines', 190, { side: randSide() }), evAt('glitch', 230, { radar: false }), evAt('swarm', 270)],
@@ -140,14 +140,14 @@ Object.assign(MISSIONS, {
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 300, rep: 3, xp: 220 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
-    crew: {events: [5, 5, 9, 12, 15, 18, 24, 24], cells: [3, 3, 9, 10, 18, 16, 23, 25], reactor: [1, 1, 0.7, 1, 0.7, 1, 0.85, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 43% 70% 67% 66% 66% 67% 67% 71% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×4 star cannon waits 5 s at 348 s; kit before new prerequisites: ×4: star cannon waits 5 s at 348 s
+    crew: {events: [4, 5, 8, 11, 14, 18, 24, 24], cells: [3, 3, 7, 13, 17, 21, 23, 23], reactor: [1, 1, 1, 0.7, 0.7, 0.7, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the drifting rock, 2 samples, 2026-10-16): 33% 66% 65% 66% 66% 65% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 16 s at 257 s; kit before new prerequisites: ×3: star cannon waits 16 s at 257 s; was 5/5/9/12/15/18/24/24
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores', 'leeches'],
-    objective: { kind: 'ore' }, rules: { breach: true, surge: true, plasma: true },
-    blurb: 'Drill a sample of the living rock in the Mire Nebula.',
-    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs a sample of the living rock they grow on. One will drift right in front of us: take the mining drill (left airlock room), spacewalk out, drill a sample and bring it inside. The nebula will notice. Expect spores, barnacles and leeches.',
-    // a calm half minute, an interceptor (the opener), then the rock drifts in
-    build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('rock', 60), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
+    objective: { kind: 'ore', count: 2 }, rules: { breach: true, surge: true, plasma: true },
+    blurb: 'Drill two samples of the living rock in the Mire Nebula before it drifts past.',
+    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs two samples of the living rock they grow on. One will drift right past in front of us, and it won\'t wait: take the mining drill (left airlock room), spacewalk out, drill a sample, bring it inside, and go back for the second before the rock is out of reach. The nebula will notice. Expect spores, barnacles and leeches.',
+    // a calm half minute, an interceptor (the opener), then the rock drifts in (and past)
+    build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('rock', 60, { side: randSide() }), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
                   evAt('swarm', 215), evAt('coolant', 255, { radar: false }), evAt('grappler', 290, { side: randSide() })],
   },
   c7: {
@@ -429,7 +429,7 @@ const lobbyUI = {
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? ((obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Bring a Red Comet nav core aboard.' : '';
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
         ${missionRequirements(this.chosen).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}

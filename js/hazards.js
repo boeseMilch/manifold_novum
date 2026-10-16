@@ -141,7 +141,12 @@ function updateBreaches(dt) {
     // crew that's hurt doesn't recover in vacuum
     for (const c of crew) if (c.health === 'hurt' && c.mode === 'inside' && roomAt(c.x, c.y) === room) c.hurtT += dt;
   }
-  for (const f of hz.floating) f.t += dt;
+  for (const f of hz.floating) {
+    f.t += dt;
+    if (f.vx || f.vy) { f.x += (f.vx || 0) * dt; f.y += (f.vy || 0) * dt; }   // (a drifting one: a raider's nav core, js/dock.js)
+    if (f.life !== undefined && (f.life -= dt) <= 0) { f.lost = true; if (typeof navcoreLost === 'function' && f.kind === 'navcore') navcoreLost(f); }
+  }
+  if (hz.floating.some(f => f.lost)) hz.floating = hz.floating.filter(f => !f.lost);
   for (const it of ITEMS) if (it.suck && !vacuumRoom(roomAt(it.x, it.y)?.id)) it.suck = 0;
 }
 
@@ -551,6 +556,7 @@ function drawBreachesOutside(t) {                      // on the hull: the hole,
   for (const f of hz.floating) {                       // things that got sucked out, tumbling
     const [x, y] = floatPos(f);
     pickupHalo(L(x), L(y), T * 0.45, t, me.mode === 'eva' && Math.hypot(me.x - x, me.y - y) <= REACH, f.uid);
+    if (f.kind === 'navcore' && typeof drawNavcoreFloating === 'function') { drawNavcoreFloating(f, x, y, t); continue; }   // (js/dock.js: glow, sprite, countdown)
     ctx.save(); ctx.translate(L(x), L(y)); ctx.rotate(f.t * 0.8); drawItemIcon(f.kind, 0, 0, 1.1); ctx.restore();
   }
 }

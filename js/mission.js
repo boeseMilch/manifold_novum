@@ -108,11 +108,11 @@ const MISSIONS = {
     },
   },
   pirates: {
-    name: 'Pirate cove', tier: 2, blurb: 'Destroy two pirate raiders. If one docks, its crew comes aboard to steal: board it back and jam its reactor.',
-    crew: {events: [4, 6, 11, 16, 19, 22, 22, 22], cells: [2, 2, 11, 14, 16, 16, 16, 16], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 53% 69% 66% 65% 66% 71% 75% 78% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8)
+    name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space.',
+    crew: {events: [2, 6, 11, 15, 19, 22, 24, 24], cells: [2, 2, 11, 14, 16, 16, 19, 19], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, 2026-10-16): 50% 67% 65% 66% 65% 70% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8); was 4/6/11/16/19/22/22/22
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
-    rules: { breach: true, surge: true }, objective: { kind: 'raiders', count: 2 },   // (like its twin, Red Comet Cove; the second raider took the interceptor's place)
+    rules: { breach: true, surge: true }, objective: { kind: 'navcore' },   // (like its twin, Red Comet Cove: two raiders, two chances at a nav core)
     build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['pirates', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
   },
   salvage: {
@@ -129,11 +129,11 @@ const MISSIONS = {
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
-    name: 'Ore run', tier: 2, blurb: 'Spacewalk out and drill a big asteroid while the front cannon holds off the small ones.',
+    name: 'Ore run', tier: 2, blurb: 'A big asteroid drifts past in front: spacewalk out, drill two samples and haul them in while the front cannon holds off the small ones.',
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo)
-    crew: {events: [4, 7, 11, 12, 16, 20, 23, 24], cells: [4, 5, 7, 6, 8, 9, 8, 11], reactor: [0.7, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 40% 62% 63% 68% 66% 66% 70% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8)
+    crew: {events: [4, 4, 8, 12, 15, 18, 23, 23], cells: [5, 5, 4, 5, 7, 6, 8, 8], reactor: [0.7, 0.7, 0.85, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the drifting rock, 2 samples, 2026-10-16): 31% 67% 67% 66% 66% 67% 69% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8); was 4/7/11/12/16/20/23/24
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
-    rules: { breach: true }, objective: { kind: 'ore' },
+    rules: { breach: true }, objective: { kind: 'ore', count: 2 },
     build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
   },
   nightmare: {
@@ -412,7 +412,12 @@ function objectiveStatus() {
   if (!o) return { done: true };
   if (o.kind === 'blackbox') return { done: objectiveAboard('blackbox'), fail: 'without the black box', text: 'Bring the black box from the derelict aboard' };
   if (o.kind === 'rescue') return { done: dk.npc?.state === 'safe', fail: `without ${npcName()}`, text: `Rescue ${npcName()}` };
-  if (o.kind === 'ore') return { done: objectiveAboard('ore'), fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
+  if (o.kind === 'ore') {                                // samples carried inside are stowed (dk.ore, js/dock.js stowOre); count: how many (default 1)
+    const need = o.count || 1, n = Math.min(need, (dk.ore || 0) + (objectiveAboard('ore') ? 1 : 0));
+    if (need === 1) return { done: n >= 1, fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
+    return { done: n >= need, fail: `with only ${n}/${need} ore samples`, text: `Bring ${need} ore samples aboard (${n}/${need})` };
+  }
+  if (o.kind === 'navcore') return { done: objectiveAboard('navcore'), fail: 'without a nav core', text: 'Bring a Red Comet nav core aboard' };
   if (o.kind === 'intruder') {
     const k = Math.min(o.count, mission.kills || 0), left = o.count - k;
     if (!(o.count > 1)) return { done: k >= 1, fail: 'with the intruder still alive', text: 'Kill the intruder' };

@@ -208,8 +208,8 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
         && near(targetIdle('intro', 3), 0.68) && near(targetIdle('c8', 3), 0.64) && near(targetIdle('nightmare', 2), 0.64)
         && ALL.every(id => PROGRESSION[id] !== undefined), `the idle targets ramp down: intro 56%, chapters 1-8 ${camp.map(v => (v * 100).toFixed(1)).join(' ')}% solo (own targets: ${Object.entries(own).map(([id, v]) => `${id} ${v * 100}%`).join(', ')}); 68% for 2+ players on intro, same ramp`);
   // Out of spec even with every prerequisite the player can have by then (see the balance section in PLAN.md).
-  // (with the kit: c6 ×4 waits 5 s 12 s before the jump; c8 ×2 and Nightmare solo / ×2 have 3 encounters for the solo targets)
-  const OUT = { rush: [2, 3, 4], deep: [3, 4], nightmare: [1, 2, 3, 4], c6: [4], c7: [3, 4], c8: [2, 3, 4] };
+  // (with the kit: c6 ×3 waits 16 s at 257 s (the drifting rock's two drill trips, 2026-10-16; was ×4); c8 ×2 and Nightmare solo / ×2 have 3 encounters for the solo targets)
+  const OUT = { rush: [2, 3, 4], deep: [3, 4], nightmare: [1, 2, 3, 4], c6: [3], c7: [3, 4], c8: [2, 3, 4] };
   const early = rows.filter(r => ['intro', 'c1', 'c2'].includes(r.id));
   check(early.every(r => r.inSpec && !G0.MISSIONS[r.id].needs), `the early missions (intro, chapters 1-2) are in spec on the base ship for 1-4 players${early.filter(r => !r.inSpec).map(r => `; not ${r.name} ×${r.n}: ${r.specWhy}`).join('')}`);
   const out = rows.filter(r => !r.inSpec && !(OUT[r.id] || []).includes(r.n));
@@ -217,8 +217,9 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
   console.log(`      (out of spec with everything: ${rows.filter(r => !r.inSpec).map(r => `${r.name} ×${r.n}`).join(', ') || 'none'})`);
   // Solo: one encounter more or less moves a solo crew's idle by ~13-15 points (1 vs 2 encounters: ~76% vs ~62%), so
   // the nearest count lands within ~8 points of its target. SHORT: the essentials (+ the finale fight) alone keep a
-  // solo crew busier than the target (c1: two pirate raiders, a failing part + finale).
-  const SHORT = ['c1'];
+  // solo crew busier than the target (c1: two pirate raiders, a failing part + finale; c4: two raiders, the opener, a
+  // finale fight and the nav core's fetch: 4 encounters is the least a solo run gets, 46%).
+  const SHORT = ['c1', 'c4'];
   // HARD: set harder than the model's target on purpose, after a playtest (c2: two aliens + opener + frigate even solo,
   // 2026-10-16 a failing part too; c3: the opener + the lab, whose S-7 work is a long job solo, + a failing part)
   const HARD = ['c2', 'c3'];

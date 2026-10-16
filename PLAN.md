@@ -635,19 +635,45 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
     wraps, is sprayed / shot back; cast-off and the frozen core kill it; the snapshot carries S-7; no intruder).
 - **Objectives** (`mission.objective`, `objectiveStatus()`): `blackbox` (heavy: 60% speed, no
   weapon while carrying it), `rescue` (treat the engineer, they follow your footsteps, safe once
-  aboard; a hit downs them again), `ore` (a big asteroid parks in front; drill it on a spacewalk
-  with the mining drill, 6 s, bring the sample in), `pirates` (defeat N). Jumping without the
+  aboard; a hit downs them again), `ore` (a big asteroid drifts past in front; drill it on a spacewalk
+  with the mining drill, 6 s per sample, bring the samples in: see below), `pirates` (defeat N). Jumping without the
   objective done: survived, but the mission failed.
 - **No jumping while docked** (playtest 2026-10-14, `dockJumpHold()` / `releaseForJump()`): the jump waits with
   "Jump blocked: …" while a ship is docked. Once the jump is due, docked ships let go: pirates aboard ours drop
   everything and run home (their ship casts off when they're all back, at once if none is left alive); the
   derelict's tether releases after 8 s. Whoever is still over there is cast adrift as before.
 - **Destroy two pirate ships** (2026-10-16, user request; objective kind `raiders`, `dk.ships`, synced with `dk`): First
-  Contract, Red Comet Cove and its twin Pirate cove now want 2 raiders destroyed (was 2 / 3 pirates defeated). A raider
+  Contract, Red Comet Cove and its twin Pirate cove now want 2 raiders destroyed (chapter 4 and Pirate cove: a nav core instead since, below) (was 2 / 3 pirates defeated). A raider
   shot to scrap counts, and so does a docked one whose reactor we jammed: it blows apart as it casts off (big blast,
   banner). $40 / $50 per pirate is still paid as before. Pirate cove's interceptor became its second raider, re-calibrated
   (now needs cannons + inserter and the overcharge, like Red Comet Cove). `tools/balance.js` counts a raider per
   `pirates` event.
+- **Chapter 4: the nav core** (2026-10-16, user: "we should not give the same mission twice"; objective kind `navcore`, item
+  `navcore`, both new ids; 'raiders' stays for chapter 1): Red Comet Cove and its twin Pirate cove want "a Red Comet nav core
+  aboard" (the step before chapter 5's "We found the Red Comet's hideout"). Two ways, two raiders (essential at every crew size):
+  - **Board it:** a docked raider's core room has a nav console beside the reactor (`g.nav`, `dk.dock.navcore`): hold click
+    `NAVCORE_PULL` 4 s → the nav core in your item slot (light). The pirates shoot as usual. The brig barge has none.
+  - **Fish it out:** a raider shot to scrap (while no core is aboard yet, `flingNavcore`) flings its core clear: `hz.floating`
+    with a drift (`vx` 0.03 outwards, `vy` 0.08 along the hull) and a `life` of `NAVCORE_LIFE` 60 s, ~4.6 units out beside the
+    hull at the wreck's height (inside the spacewalk's reach); a countdown over it and a NAV CORE ADRIFT plate; then it's lost
+    ("Another raider's will do"). js/hazards.js moves / expires any floating thing with `vx`/`vy`/`life`.
+  - Done when a core is aboard our ship (`objectiveAboard`). Pirates don't loot it. $50 per pirate as before. Briefing / blurb
+    rewritten (the black box: the Red Comet took Varga; their hideout is in every raider's nav computer), lobby objective
+    "Bring a Red Comet nav core aboard.". Drawn in 2D (a console with a star-map screen and the core's glowing slot; a hex data
+    core with a red comet); sprites can come later as `dock/raider_navconsole` (frame 0 core in, 1 pulled, +2 starboard) and
+    `items/navcore` (spin frames), used as soon as `GFX.info` knows them.
+- **The ore asteroid drifts past; two samples** (2026-10-16; chapter 6 and Ore run, `objective { kind: 'ore', count: 2 }`, the
+  count defaults to 1): `EVENT_RUNNERS.rock` (the event now has a side) sends it in from that side at `ROCK_Y` −7.6, across the
+  front and out the other side at `ROCK_SPEED` 0.25 units/s (×0.8 easy, ×0.65 very easy). Drillable while its centre is in
+  `ROCK_REACH` x 6–45 (its near side within the spacewalk's reach; tests/dock.js checks the ends): ~20 s after it shows up, for
+  156 s (195 s easy, 240 s very easy), then it drifts off. Banner "Ore asteroid drifting past: N s left in reach", a plate
+  with the seconds left and the samples aboard. Each sample: drill 6 s (the drill spot follows the rock), grab it, carry it in:
+  inside our ship it's stowed (`dk.ore`, hands free for the next trip). Objective text "Bring 2 ore samples aboard (1/2)".
+- **Balance model:** the scheduler got follow-up jobs (`after(job, finish, late)`, released when a job is done) and lost
+  objectives (`late` → `{ lost }`). Nav core: the first raider shot down → a spacewalk fetch (deadline the core's life);
+  docked → boarding it for the console (4 s + the walk, 0.3 crew hits) besides the boarders; the second raider's core only
+  if none is in yet. Ore: one drill trip per sample (from the hatch nearer the rock where it will be), each released when the
+  last is done, lost once the rock is out of reach. Re-calibrated: see "The expected kit" below (nav core / drifting rock).
 - **Fallen pirates stay down** (`dk.bodies`, purely visual, synced with `dk`, at most 12): a short dazed
   stagger, then they lie where they died (`chars/pirate/down`). Nothing to pick up.
 - **Dr. Varga / the engineer walks properly** (`updateNpc`): once treated she makes her own way to our ship
@@ -2000,6 +2026,19 @@ exactly (same numbers as before for every mission).
   Out of spec with everything by then: c8 ×2-4 (×2 new: 3 encounters, as the solo target needs), Nightmare ×1-4 (solo /
   ×2 new: 3 encounters for 25 %), c6 ×4 (a 5 s wait 12 s before the jump), c7 / Deep drift ×3-4 (now 5 encounters, waits
   7-26 s instead of 136-147 s), Rush hour ×2-4.
+- **Nav core and the drifting rock** (2026-10-16, re-calibrated with the kit to the same targets; table counts are the
+  written `crew.events`, the game may add the finale's fight on top): idle % for 1 / 2 / 3 / 4 / 8 (`--kit none` in brackets)
+
+  | Mission | Encounters before → after | Idle with kit | (no kit) |
+  |---|---|---|---|
+  | c4 (nav core) | 3/6/11/15/23 → 3/5/11/14/24 | 46 66 65 67 75 | (44 64 63 65 74) |
+  | Pirate cove (nav core) | 4/6/11/16/22 → 2/6/11/15/24 | 50 67 65 66 76 | (48 65 63 64 74) |
+  | c6 (2 samples, drifting rock) | 5/5/9/12/24 → 4/5/8/11/24 | 33 65 65 66 70 | (25 63 63 64 68) |
+  | Ore run (2 samples) | 4/7/11/12/24 → 4/4/8/12/23 | 31 67 67 66 72 | (34 63 65 63 70) |
+
+  c4 solo can't reach 54 %: the two raiders, the opener, a finale fight and the nav core's fetch are the least a solo
+  run gets (4 encounters, 46 %): tests/scaling.js lists it with c1 (SHORT). c6 ×3 is now the out-of-spec one (a 16 s wait
+  at 257 s), ×4 is back in spec.
 - tests/scaling.js: the own targets, the new out-of-spec list, SHORT = c1, HARD = c2 / c3 (solo > 20 % idle), the failing
   part at every crew size in chapters 1-3 (exactly one for 1-2 players, also on very easy), c2's solo timeline with it.
 
@@ -2297,9 +2336,15 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
 - **Extinguisher foam** made light: its white particles went into the clustered particle lights (up to radius 7,
   intensity 3.2), lighting whole rooms white, worst in the dark with the helmet lamp. Foam (`p.foam`) is no light
   source now; only lit where a light falls on it.
-- **Asteroids turn smoothly:** the nearest of the 48 / 32 steps, turned on screen by the rest of the angle round
-  the rock's top (where the turning axis comes out), crossfaded with the next only around the switch. (Before:
-  a crossfade of two different angles all the time, which ghosted.)
+- **Asteroids turn smoothly** (redone 2026-10-16; the stepped version still jumped, ghosted in the crossfade and
+  re-laid the fissure every step): a rock now spins about the camera's view axis, so ONE picture per rock, turned
+  on screen, is the exact rotation at any angle. The beauty pass is lit only by a light from the camera (+ the
+  world), which that turn leaves unchanged; the directional light is the game's runtime sun / lamps on the normal
+  map, and `GFX.sprite`'s `rot` now turns normals (and heights) about the view axis, not world z, so the light
+  stays put (fixes the lighting of every screen-turned sprite). A big rock's fissure sits at screen angle 0 in its
+  sprite and the rock is turned to point it at where the hit circle `crackPos()` projects (`asteroidSpin`; within
+  0.19 of it), so hits are unchanged. Damage cracks are laid as the rock was turned when hit (`a.damageRot`) and
+  turn with it. Enemy atlas 6.7 MB / 2 pages -> 1.2 MB / 1 page (384 asteroid frames -> 9).
 - `tests/handweapons.js`: muzzle, wrench damage, lethal ship shots, the spacewalker blocking a shot.
 
 ### Thrown wrench sprite; steam, foam and fire redone (2026-10-14 playtest)
