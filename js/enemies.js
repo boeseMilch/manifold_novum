@@ -274,7 +274,7 @@ function makeAsteroid(x, y, big, vx, vy) {
   return {
     uid: newUid(), x, y, vx, vy, r, big, rot: Math.random() * TAU, vr: (Math.random() < 0.5 ? -1 : 1) * (big ? 0.55 + Math.random() * 0.4 : 0.8 + Math.random() * 0.8),   // always turning, so the crack comes around
     shapeSeed, shape: lumpShape(shapeSeed, big ? 11 : 8, 0.3),
-    crackA: Math.random() * TAU, flash: 0, seed: Math.floor(Math.random() * 1000), damage: [],
+    crackA: Math.random() * TAU, flash: 0, seed: Math.floor(Math.random() * 1000), damage: [], damageRot: [],
   };
 }
 function spawnSwarmAsteroid() {
@@ -808,37 +808,40 @@ function drawEnemyOverlays(t) {
   spritedEnemies.clear();
 }
 
-// Asteroids: asteroid_big<k> (+ _crack, the weak spot: both picked by the crack's angle rot + crackA, 48
-// steps) and asteroid_small<k> (32 steps), k from the shape seed. The nearest step, turned on screen (`rot`)
-// by what's left to the exact angle: the rock turns continuously instead of jumping step by step. The screen
-// turn pivots round the top of the rock (where the turning axis comes out, most of what you see), not its
-// centre, so it matches the real turn there. Only around the switch to the next step (the middle 30%) both
-// are drawn, each turned to the exact angle, and crossfaded (a screen turn isn't quite a turn in the tilted
-// view: crossfading all the time would ghost). The damage cracks and the hit flash stay 2D, on top
-// (drawAsteroidOverlays).
+// Asteroids: asteroid_big<k> (+ _crack, the weak spot) and asteroid_small<k>, k from the shape seed: one
+// picture each, turned on screen. In the sprite view a rock spins about the camera's view axis, so the turned
+// picture IS the exact rotation (smooth at any angle, no steps, no crossfade); GFX turns its normals and heights
+// with it, so the light stays put (the beauty pass is lit only by a light from the camera, which a turn about
+// the view axis leaves unchanged). A big rock's fissure sits at screen angle 0 in its sprite (CRACK_RHO from the
+// centre, tools/blender/models/enemy/asteroids.py), so it's turned to point where the hit circle crackPos()
+// projects to (asteroidSpin): the drawn fissure always covers it. The damage cracks and the hit flash stay 2D, on
+// top (drawAsteroidOverlays), turning with the sprite.
+const asteroidSpin = (a, rot = a.rot) => {
+  if (!a.big) return rot;                         // (small rocks: no weak spot, an even spin)
+  const q = rot + a.crackA;
+  return Math.atan2(Math.sin(q) * GFX.SIN, Math.cos(q));
+};
 function drawAsteroidSprite(a, t) {
   const k = a.shapeSeed % 3, n = a.big ? `enemy/asteroid_big${k}` : `enemy/asteroid_small${k}`, c = n + '_crack';
   if (!GFX.ready(n) || (a.big && !GFX.ready(c))) return false;
-  const step = TAU / (a.big ? 48 : 32), steps = a.big ? 48 : 32, u = (a.big ? a.rot + a.crackA : a.rot) / step, i0 = Math.floor(u);
-  const s = clamp((u - i0 - 0.35) / 0.3, 0, 1), w = s * s * (3 - 2 * s);   // the next step's share
-  for (const [i, al] of [[i0, 1 - w], [i0 + 1, w]].sort((p, q) => q[1] - p[1]).map(([i, al], j) => [i, j ? al : 1])) {   // (the main one opaque, the other faded in on top)
-    if (al < 0.03) continue;
-    const f = ((i % steps) + steps) % steps, rot = (u - i) * step;   // (index i shows the rock turned clockwise by i steps, like rot)
-    // turning the picture round the pivot h above the origin (screen units) = turning it round the origin and
-    // moving the origin by (-h sin, -h (1 - cos)) on screen (ground y: / SIN)
-    const h = 0.75 * a.r * GFX.COS, x = a.x - h * Math.sin(rot), y = a.y - h * (1 - Math.cos(rot)) / GFX.SIN;
-    GFX.sprite(n, f, x, y, 0, { layer: 'under', alpha: al, emissive: 0.5, rot });
-    if (a.big) GFX.sprite(c, f, x, y, 0, { layer: 'under', alpha: al, emissive: 0.9, rot });
-  }
+  const rot = asteroidSpin(a);
+  GFX.sprite(n, 0, a.x, a.y, 0, { layer: 'under', emissive: 0.5, rot });
+  if (a.big) GFX.sprite(c, 0, a.x, a.y, 0, { layer: 'under', emissive: 0.9, rot });
   spritedAsteroids.add(a);
   return true;
 }
 function drawAsteroidOverlays(t) {
   for (const a of spritedAsteroids) {
     if (!combat.asteroids.includes(a)) continue;
-    // damage cracks from plain hits, on the rock's upper surface (lifted to where the sphere is)
-    const P = (lx, ly) => { const d = Math.hypot(lx, ly), z = Math.sqrt(Math.max(0, a.r * a.r - d * d)) * 0.9, [u, v] = rot(lx, ly, a.rot); return [L(a.x + u), L(a.y + v - GFX.lift(z))]; };
+    // damage cracks from plain hits: laid on the rock's upper surface as it was turned when hit (a.damageRot),
+    // then turned on screen with the sprite since
     a.damage.forEach((ang, i) => {
+      const rotH = a.damageRot?.[i] ?? a.rot, d = asteroidSpin(a) - asteroidSpin(a, rotH), cd = Math.cos(d), sd = Math.sin(d);
+      const P = (lx, ly) => {
+        const r = Math.hypot(lx, ly), z = Math.sqrt(Math.max(0, a.r * a.r - r * r)) * 0.6, [u, v] = rot(lx, ly, rotH);
+        const sy = v * GFX.SIN - z * GFX.COS;      // screen offset (u, sy), turned with the sprite, back to ground y
+        return [L(a.x + u * cd - sy * sd), L(a.y + (u * sd + sy * cd) / GFX.SIN)];
+      };
       const r = rng(a.seed + i * 13);
       let x = Math.cos(ang) * a.r * 0.85, y = Math.sin(ang) * a.r * 0.85;
       ctx.beginPath(); ctx.moveTo(...P(x, y));

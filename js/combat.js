@@ -313,7 +313,7 @@ function updateCombat(dt) {
           for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.4, i % 2 ? '#ffd28a' : '#8d8274', 0.1);
           combatFlip('fx/hit_spark', s.x, s.y);
           // remember where it got hit (asteroid-local angle) so damage cracks show up there
-          a.damage.push(Math.atan2(s.y - a.y, s.x - a.x) - a.rot);
+          a.damage.push(Math.atan2(s.y - a.y, s.x - a.x) - a.rot); (a.damageRot ||= []).push(a.rot);   // (and how it was turned then: the sprite view draws the crack turning with the rock)
           if (a.damage.length >= ASTEROID_WEAR) splitAsteroid(a);
         }
       } else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 1.05)) { s.dead = true; a.dead = true; dust(a); sfx.crack(); }

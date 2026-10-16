@@ -1,22 +1,25 @@
 """Asteroids (js/enemies.js makeAsteroid / drawAsteroidBody, js/combat.js) and the ore asteroid (js/dock.js dk.rock).
 
-Sprites (build/renders/enemy/), origin = the asteroid's centre (a.x, a.y), z = 0 its middle plane:
-  asteroid_big<k>_d<i>        big rock k = 0..2 (game r = 2.2), 48 turn steps; i picks the angle i * 7.5 deg
-  asteroid_big<k>_crack_d<i>  its molten fissure (the weak spot), same steps, rock as holdout. The fissure sits at
-                              rock-local angle 0, so the game should pick BOTH sprites with i = round((a.rot + a.crackA)
-                              / 7.5 deg) mod 48 (the rock shape is random anyway; only the crack's angle matters). Each
-                              step has the fissure re-laid where the camera ray through the game's crack point
-                              crackPos() (r * 0.72 out, at z = 0) meets the rock, so it always covers the hit circle
-                              (r 0.4) on screen; the glow halo is in the beauty pass only.
-  asteroid_small<k>_d<i>      small rock k = 0..2 (game r = 1.0), 32 turn steps (i = round(a.rot / 11.25 deg)),
-                              shot through with glowing hot veins (rendered in, they turn with it)
+Sprites (build/renders/enemy/), origin = the asteroid's centre (a.x, a.y), z = 0 its middle plane. The rocks are
+ONE picture each (no turn steps): in the game they spin about the camera's view axis, so turning the sprite on
+screen (GFX.sprite rot, which turns the normals about the view axis too) IS the exact 3D rotation, smooth at
+any angle. For that the beauty pass is lit only by what a turn about the view axis leaves unchanged (view_light:
+a light from the camera and the uniform world; no key from the front right, which would turn with the rock):
+the directional light comes from the game's runtime lighting (sun + lamps) on the normal map.
+  asteroid_big<k>             big rock k = 0..2 (game r = 2.2)
+  asteroid_big<k>_crack       its molten fissure (the weak spot), rock as holdout: laid where the camera ray
+                              through the ground point (CRACK_RHO, 0, 0) meets the rock, i.e. at screen angle 0,
+                              CRACK_RHO from the centre. The game turns both sprites on screen so the fissure
+                              points at the projected crack point crackPos() (js/enemies.js drawAsteroidSprite);
+                              CRACK_RHO is the middle of that point's screen distance (0.72 r .. 0.72 r sin 50),
+                              so the drawn fissure stays within 0.19 of the hit circle (r 0.4). The glow halo is
+                              in the beauty pass only.
+  asteroid_small<k>           small rock k = 0..2 (game r = 1.0), shot through with glowing hot veins
   ore_rock                    the ore asteroid ("living rock", game r = 2.2, drawn at fixed angle 0.3): cyan ore
-                              crystals where the game draws its five glowing dots, lichen and moss
+                              crystals where the game draws its five glowing dots, lichen and moss (normal rig)
   ore_rock_glow               the crystals' glow alone (rock as holdout), for the game to pulse with alpha
 
-Turn direction: index i shows the rock turned by game angle +i*step (clockwise on screen, like ctx.rotate).
-Left to the game: the damage cracks from body hits (a.damage, random angles; draw them as now, but squashed by
-sin 50 deg in y and lifted to the rock's top, or skip them), the hit flash (tint the sprite), dust, the drop shadow.
+Left to the game: the damage cracks from body hits (2D, turned with the sprite), the hit flash, dust, shadow.
 
     blender -b --factory-startup --python tools/blender/models/enemy/asteroids.py [-- draft] [-- big|small|ore] [-- k0] [-- cracksonly]
 """
@@ -29,8 +32,16 @@ from mathutils import noise
 ARGS = el.ARGS
 WHAT = [w for w in ('big', 'small', 'ore') if w in ARGS] or ['big', 'small', 'ore']
 ONLY = [int(a[1:]) for a in ARGS if a.startswith('k') and a[1:].isdigit()]
-BIG_DIRS, SMALL_DIRS = 48, 32
-if 'draft' in ARGS and 'alldirs' not in ARGS: BIG_DIRS, SMALL_DIRS = 8, 8
+SIN_E = math.sin(math.radians(mn.ELEVATION))
+
+def view_light():
+    """Replace the shared rig by light that a turn about the view axis leaves unchanged: one sun shining
+    along the camera's view (no visible shadows) plus the uniform world. The rock can then be turned on
+    screen without its baked shading turning with it."""
+    for o in [o for o in bpy.context.scene.objects if o.type == 'LIGHT']: bpy.data.objects.remove(o, do_unlink=True)
+    d = bpy.data.lights.new('view', 'SUN'); d.energy = 3.4; d.color = (1.0, 0.97, 0.93); d.angle = 0.6
+    o = bpy.data.objects.new('view', d); o.rotation_euler = (math.radians(90 - mn.ELEVATION), 0, 0)
+    bpy.context.scene.collection.objects.link(o)
 
 BIG_PAL = ('#8d8274', '#6e6359', '#4c433c')
 SMALL_PAL = ('#9a8e80', '#776b5f', '#544a40')
@@ -148,62 +159,49 @@ def ribbon(name, pts, width, lift_, m, surf):
 
 CRACK = [(-0.55, -0.1), (-0.2, 0.12), (0.0, -0.15), (0.25, 0.1), (0.5, -0.05)]   # drawAsteroidBody, around cx = r * 0.72
 
+CRACK_RHO = 0.72 * 2.2 * (1 + SIN_E) / 2
+
 def render_big(k, seed):
-    mn.reset(); mn._mats.clear(); el.side('port')
+    mn.reset(); mn._mats.clear(); el.side('port'); view_light()
     r = 2.2
     rock = make_rock(f'big{k}', r, seed, rock_mat('rock', BIG_PAL), flat=0.66, lumps=0.15, craters=10, facets=8)
     mn.outline([rock], thickness=0.02)
-    root = mn.group('root', [rock])
     t0 = time.time()
-    if 'cracksonly' not in ARGS: mn.render(f'enemy/asteroid_big{k}', objs=[rock], root=root, dirs=BIG_DIRS)
+    if 'cracksonly' not in ARGS: mn.render(f'enemy/asteroid_big{k}', objs=[rock])
     print(f'[asteroids] big{k} rock: {time.time() - t0:.1f}s'); t0 = time.time()
-    # the fissure, re-laid for every turn step
+    # the fissure, at screen angle 0
     groove = el.emit_mat('crack_dark', '#3a1408', 0.4, base='#1a1614')
     lava = el.emit_mat('lava', '#ff5a10', 1.1, base='#c83a08')
     core = el.emit_mat('lava_core', '#ffb040', 2.2, base='#ffc060')
     halo = el.halo_mat('lava_halo', '#ff7a28', 1.6)
     rock.is_holdout = True
     rock.modifiers.remove(rock.modifiers['outline'])          # (its shell would cover the fissure at grazing angles)
+    bvh = el.make_bvh([rock])
+    def surf(x, y):
+        p, n = el.raycast_down_view(None, x, y, bvh)
+        return (p, n) if p is not None else (None, None)
+    def g(u, v):                                               # crack-frame (u along the radius) -> Blender ground
+        return Vector((CRACK_RHO + u, -v, 0))
     built = []
-    def setup_dir(d):
-        def setup(kind):
-            nonlocal built
-            if kind not in (None, 'beauty') and built:          # same geometry for the data passes: only hide the halo
-                built[-1].hide_render = True; return
-            el.delete(built); built = []
-            th = d * math.tau / BIG_DIRS
-            root.rotation_euler.z = -th; bpy.context.view_layer.update()
-            bvh = el.make_bvh([rock])
-            def surf(x, y):
-                p, n = el.raycast_down_view(None, x, y, bvh)
-                return (p, n) if p is not None else (None, None)
-            cx = r * 0.72
-            def g(u, v):                                       # crack-frame (u along the radius) -> Blender ground
-                gx, gy = math.cos(th) * (cx + u) - math.sin(th) * v, math.sin(th) * (cx + u) + math.cos(th) * v
-                return Vector((gx, -gy, 0))
-            pts = [g(u, v) for u, v in CRACK]
-            for nm, w, lf, m in (('crack_groove', 0.34, 0.012, groove), ('crack_lava', 0.2, 0.022, lava), ('crack_core', 0.08, 0.03, core)):
-                o = ribbon(nm, pts, w, lf, m, surf)
-                if o: built.append(o)
-            # a few short side fissures
-            for (u0, v0, u1, v1) in ((-0.2, 0.12, -0.12, 0.32), (0.25, 0.1, 0.38, 0.28), (0.0, -0.15, 0.1, -0.33)):
-                o = ribbon('crack_branch', [g(u0, v0), g(u1, v1)], 0.07, 0.024, lava, surf)
-                if o: built.append(o)
-            cp, cn = surf(*g(0, 0).xy)
-            hd = el.disc('halo', 0, 0, 0, 0.95, halo); hd.location = cp + cn * 0.05
-            hd.rotation_euler = cn.to_track_quat('Z', 'Y').to_euler(); built.append(hd)
-            hd.hide_render = kind not in (None, 'beauty')
-        return setup
-    el.render_states(f'enemy/asteroid_big{k}_crack', [(f'_d{d}', setup_dir(d)) for d in range(BIG_DIRS)], lambda: built, dirs=BIG_DIRS)
+    pts = [g(u, v) for u, v in CRACK]
+    for nm, w, lf, m in (('crack_groove', 0.34, 0.012, groove), ('crack_lava', 0.2, 0.022, lava), ('crack_core', 0.08, 0.03, core)):
+        o = ribbon(nm, pts, w, lf, m, surf)
+        if o: built.append(o)
+    for (u0, v0, u1, v1) in ((-0.2, 0.12, -0.12, 0.32), (0.25, 0.1, 0.38, 0.28), (0.0, -0.15, 0.1, -0.33)):   # short side fissures
+        o = ribbon('crack_branch', [g(u0, v0), g(u1, v1)], 0.07, 0.024, lava, surf)
+        if o: built.append(o)
+    cp, cn = surf(*g(0, 0).xy)
+    hd = el.disc('halo', 0, 0, 0, 0.95, halo); hd.location = cp + cn * 0.05
+    hd.rotation_euler = cn.to_track_quat('Z', 'Y').to_euler()
+    el.render_poi(f'enemy/asteroid_big{k}_crack', built, [rock], [hd])
     print(f'[asteroids] big{k} crack: {time.time() - t0:.1f}s')
 
 def render_small(k, seed):
-    mn.reset(); mn._mats.clear()
+    mn.reset(); mn._mats.clear(); view_light()
     rock = make_rock(f'small{k}', 1.0, seed, rock_mat('rock_s', SMALL_PAL, veins=True), flat=0.72, lumps=0.2, craters=4, facets=6, subdiv=5)
     mn.outline([rock], thickness=0.016)
-    root = mn.group('root', [rock])
     t0 = time.time()
-    mn.render(f'enemy/asteroid_small{k}', objs=[rock], root=root, dirs=SMALL_DIRS)
+    mn.render(f'enemy/asteroid_small{k}', objs=[rock])
     print(f'[asteroids] small{k}: {time.time() - t0:.1f}s')
 
 def render_ore():

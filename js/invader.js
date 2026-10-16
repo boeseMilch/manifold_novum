@@ -829,7 +829,7 @@ function drawSaboteurCorpses() {
 
 // A thrown wrench (sprite mode): items/wrench, 16 spin angles (dir i = turned to i * 22.5 deg), lying flat at
 // its flight height b.z, lit like the rest. The nearest angle, turned on screen by what's left to b.spin, so
-// it spins smoothly instead of in 22.5 deg steps (as the asteroids do, js/enemies.js drawAsteroidSprite).
+// it spins smoothly instead of in 22.5 deg steps. (The asteroids instead spin about the view axis: one picture, js/enemies.js drawAsteroidSprite.)
 function drawWrenchSprite(b) {
   if (!GFX.on || !GFX.ready('items/wrench')) return false;
   const step = TAU / 16, i = Math.round(b.spin / step);

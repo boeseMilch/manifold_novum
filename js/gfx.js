@@ -34,7 +34,8 @@
 //   emissive  0..1: how much the brightest pixels light themselves (screens, lamps)
 //   unlit     true: beauty as rendered, no lighting
 //   scale     size multiplier       flip   true: mirrored horizontally around the origin
-//   rot       screen rotation around the origin (rad, clockwise)   sx   stretch along the sprite's x
+//   rot       screen rotation around the origin (rad, clockwise) = the object turned about the view axis
+//             (normals and heights turn with it, so the lighting stays put)   sx   stretch along the sprite's x
 //   clip      [x0, y0, x1, y1, cz]: only the part of the sprite inside this world rectangle, taken
 //             at height cz (default 0) — for tiles (null / ±Infinity = open side)
 //   depthBias added to the pixel depth (+ = closer to the camera)   depthWrite  false: test only
@@ -711,7 +712,9 @@ void main() {
   float sc = vOrigin.z;
   float hz = textureGrad(uHeight, uv, gdx, gdy).r * uHR * sc;
   vec2 o = vec2(vFlip * (lp.x - vOrigin.x), lp.y - vOrigin.y) / vGround.w * sc;   // screen offset from the origin (units)
-  if (vRot != 0.0) o = vec2(o.x * cos(vRot) - o.y * sin(vRot), o.x * sin(vRot) + o.y * cos(vRot));
+  // a sprite turned on screen is the object turned about the camera's view axis: every pixel keeps its depth
+  // along the view, so its height changes with its screen y (and the normals turn about the view axis below)
+  if (vRot != 0.0) { float oy0 = o.y; o = vec2(o.x * cos(vRot) - o.y * sin(vRot), o.x * sin(vRot) + o.y * cos(vRot)); hz += (oy0 - o.y) * ${COS.toFixed(6)}; }
   if (mod(floor(vMisc.w * 0.5), 2.0) > 0.5) hz = -o.y / ${COS.toFixed(6)};   // billboard: an upright plane through the origin
   vec3 P = vec3(vGround.x + o.x, vGround.y + (o.y + hz * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, vGround.z + hz);
   float depth = P.y * ${COS.toFixed(6)} + P.z * ${SIN.toFixed(6)} + vOrigin.w;   // larger = closer to the camera
@@ -737,7 +740,11 @@ void main() {
   vec3 col = base;
   if (mod(vMisc.w, 2.0) < 0.5) {
     vec3 N = vec3(n.x * sign(vFlip), -n.y, n.z);
-    if (vRot != 0.0) N.xy = vec2(N.x * cos(vRot) - N.y * sin(vRot), N.x * sin(vRot) + N.y * cos(vRot));
+    if (vRot != 0.0) {                              // turn about the view axis (screen right, screen down, towards the camera)
+      float a = N.x, b = N.y * ${SIN.toFixed(6)} - N.z * ${COS.toFixed(6)}, c = N.y * ${COS.toFixed(6)} + N.z * ${SIN.toFixed(6)};
+      vec2 r = vec2(a * cos(vRot) - b * sin(vRot), a * sin(vRot) + b * cos(vRot));
+      N = vec3(r.x, r.y * ${SIN.toFixed(6)} + c * ${COS.toFixed(6)}, -r.y * ${COS.toFixed(6)} + c * ${SIN.toFixed(6)});
+    }
     N = normalize(N);
     float specK = 0.22;
     if (vLayout > 0.5 && uWear.x > 0.5) specK = floorWear(vec3(vGround.x + o.x, vGround.y + (o.y + 0.025 * ${COS.toFixed(6)}) / ${SIN.toFixed(6)}, 0.0), base, N, uHasMask > 0.5 ? textureGrad(uMask, uv, gdx, gdy).r : 1.0, gdx * uPage, gdy * uPage);
