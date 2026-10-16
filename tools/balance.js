@@ -548,6 +548,7 @@ function finish(build, s, real, best) {
 function objectiveMet(o, got) {
   if (!o) return true;
   if (o.kind === 'pirates' || o.kind === 'intruder') return (got[o.kind] || 0) >= o.count;
+  if (o.kind === 'raiders') return (got.pirates || 0) >= o.count;   // (a raider per pirates event)
   return (got[o.kind] || 0) >= 1;
 }
 

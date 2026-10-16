@@ -3,7 +3,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
-  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS'];
+  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -84,6 +84,11 @@ for (const hide of [false, true]) {
   check(G.dk.dock?.overloaded, 'jamming their reactor\'s overload with the repair kit makes them panic');
   tickN(G, 60 * 16);
   check(!G.dk.dock && me.mode === 'eva', 'they cast off 15 s later — and whoever is still aboard is left floating outside');
+  check(G.dk.ships === 1, 'their jammed reactor blows the raider apart as it pulls away: a pirate ship destroyed');
+  G.dk.defeated = 0; G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }, { hit: true }] });
+  check(G.dk.ships === 2 && G.dk.defeated === 1, 'a raider shot to scrap counts as a ship destroyed (and a pirate defeated)');
+  G.mission.objective = G.MISSIONS.c1.objective;
+  check(G.MISSIONS.c1.objective.kind === 'raiders' && G.MISSIONS.c4.objective.kind === 'raiders' && G.objectiveStatus().done, 'First Contract and Red Comet Cove: destroy two pirate ships, done');
 }
 // --- derelict
 {

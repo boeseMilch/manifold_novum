@@ -107,12 +107,12 @@ const MISSIONS = {
     },
   },
   pirates: {
-    name: 'Pirate cove', tier: 2, blurb: 'Defeat the pirates. If their raider docks, they come aboard to steal — board them back.',
-    crew: {events: [2, 4, 8, 12, 16, 19, 22, 23], cells: [2, 2, 5, 5, 6, 8, 8, 10]},   // --calibrate: 58% 67% 64% 67% 67% 65% 70% 72% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8)
-    needs: {ship: ['cannons', 'caps'], overcharge: false},
+    name: 'Pirate cove', tier: 2, blurb: 'Destroy two pirate raiders. If one docks, its crew comes aboard to steal: board it back and jam its reactor.',
+    crew: {events: [3, 6, 11, 15, 18, 22, 23, 23], cells: [2, 2, 11, 14, 14, 16, 19, 19], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (two raiders): 54% 68% 65% 65% 67% 69% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8)
+    needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
-    rules: { breach: true, surge: true }, objective: { kind: 'pirates', count: 2 },
-    build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['interceptor', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
+    rules: { breach: true, surge: true }, objective: { kind: 'raiders', count: 2 },   // (like its twin, Red Comet Cove; the second raider took the interceptor's place)
+    build(target) { return [makeEvent('pirates', 25, target), ...shuffledTimeline(['pirates', 'swarm', 'mines', 'maintenance', 'glitch'], target, 70, 40)]; },
   },
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something is asleep over there.',
@@ -411,6 +411,7 @@ function objectiveStatus() {
     if (!(o.count > 1)) return { done: k >= 1, fail: 'with the intruder still alive', text: 'Kill the intruder' };
     return { done: left <= 0, fail: `with ${left === 1 ? 'an intruder' : `${left} intruders`} still alive`, text: `Kill ${o.count === 2 ? 'both' : `all ${o.count}`} intruders (${k}/${o.count} dead)` };
   }
+  if (o.kind === 'raiders') { const n = dk.ships || 0; return { done: n >= o.count, fail: `with only ${n}/${o.count} pirate ships destroyed`, text: `Destroy ${o.count} pirate ships (${n} so far)` }; }
   if (o.kind === 'pirates') return { done: dk.defeated >= o.count, fail: `with only ${dk.defeated}/${o.count} pirates defeated`, text: `Defeat ${o.count} pirates (${dk.defeated} so far)` };
   return { done: true };
 }

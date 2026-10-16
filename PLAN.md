@@ -588,6 +588,12 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   "Jump blocked: …" while a ship is docked. Once the jump is due, docked ships let go: pirates aboard ours drop
   everything and run home (their ship casts off when they're all back, at once if none is left alive); the
   derelict's tether releases after 8 s. Whoever is still over there is cast adrift as before.
+- **Destroy two pirate ships** (2026-10-16, user request; objective kind `raiders`, `dk.ships`, synced with `dk`): First
+  Contract, Red Comet Cove and its twin Pirate cove now want 2 raiders destroyed (was 2 / 3 pirates defeated). A raider
+  shot to scrap counts, and so does a docked one whose reactor we jammed: it blows apart as it casts off (big blast,
+  banner). $40 / $50 per pirate is still paid as before. Pirate cove's interceptor became its second raider, re-calibrated
+  (now needs cannons + inserter and the overcharge, like Red Comet Cove). `tools/balance.js` counts a raider per
+  `pirates` event.
 - **Fallen pirates stay down** (`dk.bodies`, purely visual, synced with `dk`, at most 12): a short dazed
   stagger, then they lie where they died (`chars/pirate/down`). Nothing to pick up.
 - **Dr. Varga / the engineer walks properly** (`updateNpc`): once treated she makes her own way to our ship

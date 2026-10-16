@@ -12,7 +12,7 @@
 //               the wall, and Dr. Varga in the brig. See "The pirate base" below.
 // Everything in `dk` is plain data.
 
-const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, bodies: [] };   // bodies: fallen pirates { x, y, face, t } (purely visual)
+const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [] };   // ships: pirate raiders destroyed; bodies: fallen pirates { x, y, face, t } (purely visual)
 const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9;
 // Pirates stop and aim: a faint laser sight tracks you right up to the shot — after PIRATE_AIM s a very fast shot
 // goes down that line, so get behind a wall (out of its sight) when you see it. Then a long cooldown: your window
@@ -21,7 +21,7 @@ const PIRATE_AIM = 1.7, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, 
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 const MAX_BODIES = 12, FALL_TIME = 0.6;               // fallen pirates kept lying around (oldest go first); how long the fall takes
-function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, bodies: [] }); }
+function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [] }); }
 
 // ---------------------------------------------------------------------------
 // Geometry (world coords; the port layout is mirrored for the starboard side)
@@ -103,13 +103,17 @@ function undock() {
   if (dk.npc && inDock(dk.npc.x, dk.npc.y) && !npcAboard(dk.npc)) dk.npc = null;   // (left behind on their ship)
   dk.bodies = (dk.bodies || []).filter(B => !inDock(B.x, B.y) || roomAt(B.x, B.y));
   dk.dock = null;
-  combatBanner(d.kind === 'pirate' ? (d.overloaded ? 'The pirate ship cast off in a panic!' : 'The pirate ship cast off.') : 'The derelict drifts away.'); sfx.hatch();
+  if (d.kind === 'pirate' && d.overloaded) {   // the jammed reactor blows it apart as it pulls away: a raider destroyed
+    dk.ships++; combatFlip('fx/explosion_l', g.core.x, g.core.y, 2.2); sfx.explosion();
+    combatBanner('The pirate ship cast off in a panic — and its jammed reactor blew it apart!'); sfx.hatch(); return;
+  }
+  combatBanner(d.kind === 'pirate' ? 'The pirate ship cast off.' : 'The derelict drifts away.'); sfx.hatch();
 }
 
 // The pirate raider: an enemy ship until it docks.
 ENEMY_TYPES.pirate = {
   ...ENEMY_TYPES.interceptor, name: 'Pirate raider', fire: [2.2, 3.4],
-  onHit(e) { if (e.pois.every(q => q.hit)) dk.defeated++; },   // a raider shot to scrap counts as a pirate defeated
+  onHit(e) { if (e.pois.every(q => q.hit)) { dk.defeated++; dk.ships++; } },   // a raider shot to scrap: a pirate defeated and a ship destroyed
   update(e, dt) {
     e.dockT = (e.dockT ?? DOCK_TIME) - dt;
     if (e.dockT <= 0 && !dk.dock && e.phase === 'fighting') { e.phase = 'gone'; dockShip('pirate', e.side); }

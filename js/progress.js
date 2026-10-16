@@ -74,9 +74,9 @@ Object.assign(MISSIONS, {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 100, perPirate: 40, rep: 1, xp: 80 },
     crew: {events: [2, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 55.5% solo, 67.5% for 2-8)
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
-    objective: { kind: 'pirates', count: 2 }, rules: {},
-    blurb: 'Clear pirate raiders out of the trade lanes. $40 per pirate.',
-    briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The Guild pays $40 per pirate: raiders shot to scrap and boarders both count. If a raider docks, its crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
+    objective: { kind: 'raiders', count: 2 }, rules: {},
+    blurb: 'Destroy two pirate raiders in the trade lanes. $40 per pirate.',
+    briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The job: destroy two raiders. Shoot them to scrap before they dock, or, if one docks, board it and jam its reactor: it blows up as it runs. The Guild pays $40 per pirate on top: raiders shot to scrap and boarders both count. A docked raider\'s crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
     build: () => [evAt('pirates', 30, { side: randSide() }), evAt('interceptor', 85, { side: randSide() }), evAt('pirates', 145, { side: randSide() }), evAt('swarm', 205), evAt('maintenance', 255, { radar: false })],
   },
   c2: {
@@ -111,9 +111,9 @@ Object.assign(MISSIONS, {
     crew: {events: [3, 4, 7, 13, 17, 23, 23, 23], cells: [2, 2, 2, 11, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 34% 68% 68% 65% 65% 67% 72% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); base ship: ×4: front cannon waits 27 s at 280 s
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
-    objective: { kind: 'pirates', count: 3 }, rules: { breach: true, surge: true },
+    objective: { kind: 'raiders', count: 2 }, rules: { breach: true, surge: true },
     blurb: 'Pirates took Dr. Varga. Hunt the Red Comet gang.',
-    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away.\n\nTheir raiders patrol the Cove. Take them on — defeat at least three pirates. If they dock, board them back: their loot crate is full, and jamming their reactor sends them running. Power lines can arc now; splice them with the repair kit.',
+    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away.\n\nTheir raiders patrol the Cove. Destroy two of them. If one docks, board it back: its loot crate is full, and jamming its reactor sends it running, until the reactor blows. Power lines can arc now; splice them with the repair kit.',
     // a calm half minute, a Red Comet scout (the opener), then the raiders; a part fails in between (bigger crews)
     build: () => [evAt('interceptor', 30, { side: 'star', opener: true }), evAt('pirates', 70, { side: 'port' }), evAt('maintenance', 110, { radar: false }), evAt('pirates', 150, { side: randSide() }),
                   evAt('mines', 190, { side: randSide() }), evAt('glitch', 230, { radar: false }), evAt('swarm', 270)],
@@ -420,7 +420,7 @@ const lobbyUI = {
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'intruder' ? (obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? 'Drill an ore sample and bring it aboard.' : '';
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
         ${missionRequirements(this.chosen).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
