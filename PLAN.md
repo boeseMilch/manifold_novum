@@ -2215,8 +2215,8 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   phrase start. A threat adds one stage (at least 3, at most 5: the climax is saved for the end), and counts for
   20 s after it's gone, so flickering fights don't flip the arrangement. The other pieces build their own way (below).
 - **The jump:** while the drive spools (`setJump`), the spool chords (bVI-bVII) with a rising line, snare rolls
-  and a riser in 4-bar waves, for as long as the drive needs. `jumped()` cuts it, swells for 1.5 s into the
-  jump's boom (`sfx.jumpOut`) and lands on the home chord in major; then quiet until `rearm()`.
+  and a riser in 2-bar waves (were 4: see "the endless spool" below), for as long as the drive needs. `jumped()`
+  plans the cadence on the grid and lands on the home chord in major within one bar; then quiet until `rearm()`.
 - **One piece at a time:** one sequencer (one timer); switching fades the old piece's buses out and starts the
   new one on its first step; after the final hit a mission switch waits for `rearm()`. The music pauses while
   the browser tab is hidden, so two open tabs never play over each other (the game keeps running).
@@ -2356,6 +2356,33 @@ Request: "a difficulty slider, just in case not everything is balanced perfectly
   real game. M in the menus toggled mute every frame (keys were never cleared there): now cleared after each
   menu frame, and M also works while a tutorial message is open. `tests/music.js` checks the start on load,
   the start on any input, the calm menu stage and the switch to a mission's piece and back.
+- **The endless spool** (playtest: "the very last bit before the jump loops too often ... especially painful when
+  you actually do the jump"). The spool's waves (crash + riser, the rolls growing, Cargo Run's and Last Jump Home's
+  own spool hooks) are 2 bars instead of 4 (`x.cb` 0..1, `x.k` over 2 bars). `planEnding()` never adds a full
+  cadence bar: on the cadence chord → the next downbeat; first half of another bar → the cadence from the half bar;
+  later → the cadence from the next 8th still to come, the hit on the downbeat; in the bar's last 16th → the cadence
+  from the downbeat, the hit half a bar later. Tested at every 16th of two spool bars for every piece (216 jumps):
+  the hit comes at most one bar (plus the 0.15 s lookahead) after `jumped()`; the level check's hits now come
+  0.5-2.1 s after the jump (were up to 3.8 s). For a drive that keeps us waiting, the old 2-note "rising line" (the
+  chord's third on the lead) is replaced by a **Shepard scale**: the engine instrument `shepard(pc, t, len, vel)`
+  is six sines an octave apart (C2..C8) under a fixed raised-cosine bell over log-frequency, centre C5 (523 Hz),
+  6 octaves wide (one PeriodicWave per pitch class, so one oscillator a note); the six weights add up to exactly 1
+  for every pitch class. The line steps up the piece's natural minor (where the bVI-bVII live), one note a beat
+  in 4/4 (Held, Cargo, Signal, Bloom, Hull, Home: 1.4-1.9 notes a second), an 8th in 6/8 (Red Comet: 4.2 a
+  second), never resetting; on 1 and 3 a chord tone when the next step or the one after is one (else the
+  consonant 6th), passing tones between. Under it a **Shepard-Risset glissando** replaces the engine's noise riser:
+  the same bell, six sines sliding up an octave every 2 bars (4 bars where 2 are shorter than 4 s: Red Comet,
+  Pressure Hull), each entering silent at the bottom and leaving silent at the top (Cargo Run keeps its own riser
+  and scrape). Both sit ~13-17 dB under the spool's mix (line ~-35 dB, glissando ~-36 dB RMS against the spool's
+  -19..-24 dB; spool levels within 0.8 dB of before, peaks -3.1 dB or lower). `noEngine: ['shepard']` opts a
+  piece out (the noise riser comes back), `hooks.shepard(x)` gets the bar's notes (`x.line`) to play them itself,
+  `shepRate` sets the steps per note; the kit offers `K.shepard`, `K.gliss`, `K.shepPartials`. Verified by
+  offline renders in the browser (40 s per piece, isolated line and glissando, 4096-point FFTs): the strongest
+  pitch class of every line note is the written one (all 7 pieces, 513/513 notes) while its log-spectral centroid
+  stays at 507-529 Hz (±16-33 Hz); the glissando's chroma turns steadily upward at the expected rate (2.1-2.8
+  semitones a second, not one of 921 frames falling) while its centroid stays at 524 Hz ±12-19 and its RMS within
+  0.1 dB. `tests/music.js` checks the 2-bar waves, the one-bar ending at every 16th, the line rising 1-4 semitones
+  a note (mostly scale steps) without ever repeating a 2-4 note figure over 30 s, and the bell (weights, sum 1).
 - **Open (soundtrack):** Red Comet Gallop's climax makes ~268 new nodes a second (budget ~150) and has no
   full-mission render against the references yet. Engine requests from the song reworks: build/breakdown/drop
   flags on the `step` and `drums` hooks; a pad hook (replace the engine pad, keep its renewal rule); a cadence hook

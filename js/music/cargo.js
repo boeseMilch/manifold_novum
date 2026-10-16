@@ -123,8 +123,8 @@
         if (has('riff') && s % 2 === 0) {
           const { notes, c } = riffBar(x), n = notes.find(q => q.slot === s / 2);
           if (n) {
-            const [v, sub] = lvl(st, bk), cb = x.spool ? (b - spoolAt) % 4 : 0, len = n.len * 2 * sd * (x.spool ? 0.7 : 0.9);
-            twang(n.m, t, len, x.spool ? 0.11 + 0.01 * cb : v, x.spool ? 0.09 : sub, st <= 1 || bk >= 0);
+            const [v, sub] = lvl(st, bk), cb = x.spool ? (b - spoolAt) % 2 : 0, len = n.len * 2 * sd * (x.spool ? 0.7 : 0.9);
+            twang(n.m, t, len, x.spool ? 0.11 + 0.02 * cb : v, x.spool ? 0.09 : sub, st <= 1 || bk >= 0);
             if (me.walkLog) me.walkLog.push({ t, m: n.m, len, b, s, c: c.name, kind: 'note', sec: true });
             if (me.noteLog) me.noteLog.push({ t, m: n.m, len, b, c: c.name, kind: 'riff' });
           }
@@ -174,11 +174,11 @@
       buildSweep({ t, bd }) { riser(t, bd * 0.75, 0.09, 400, 6000); scrape(t + bd * 0.5, bd * 0.24, 0.16); return true; },
       dropHit() { return true; },                         // (the bar hook plays the drop)
       accent({ t, st, bi }) { if (bi === 0) crash(t, st >= 6 ? 0.18 : 0.12); else crash(t, 0.1); if (st >= 6 && bi === 0) boom(t, 0.35); return true; },
-      spoolWave({ t, bd }) { crash(t, 0.2); riser(t, bd * 4, 0.1, 300, 6000); scrape(t + bd * 3.7, bd * 0.3, 0.12); return true; },
+      spoolWave({ t, bd }) { crash(t, 0.2); riser(t, bd * 2, 0.1, 300, 6000); scrape(t + bd * 1.7, bd * 0.3, 0.12); return true; },   // (every 2 bars)
       spoolPerc({ s, t, cb, k, c }) {                     // the spool: four on the floor, backbeat, rolls into each wave
         if (s % 4 === 0) kick(t, 0.6);
         if (s === 4 || s === 12) { snare(t, 0.3); clap(t, 0.1); }
-        if (cb === 3 && s >= 8) snare(t, 0.08 + 0.04 * (s - 8));
+        if (cb === 1 && s >= 8) snare(t, 0.08 + 0.04 * (s - 8));
         if (s % 2 === 0) hat(t, s % 4 === 2 ? 0.07 : 0.04);
         if (s === 0 || s === 6) brass(c, t, stepDur() * 1.5, 0.03 + 0.01 * k, true);
         return true;

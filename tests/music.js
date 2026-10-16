@@ -199,14 +199,76 @@ for (const p of music.pieces) for (const [spoolFor, k] of [[7.3, 1], [9.9, 1], [
   music.jumped(); const e = music.ending; music.setJump(false);
   const bars = (e.T - e.startT) / e.barDur, wait = (e.T - e.jumpedAt) / e.barDur, lead = (e.T - e.from) / e.barDur;
   const cad = p.spool[p.spool.length - 1].name, okCad = e.cadence === cad || /^[A-G][#b]?$/.test(e.cadence);   // (bVII, or the V it was already on)
-  ends.push({ p: p.name, ok: Math.abs(bars - Math.round(bars)) < 1e-6 && wait >= 0 && wait * e.barDur <= 1.5 * e.barDur + 0.25 && lead >= 0.5 - 1e-6 && okCad, bars, wait, lead, cad: e.cadence });
+  const onBar = Math.abs(bars - Math.round(bars)) < 1e-6, onHalf = Math.abs(bars * 2 - Math.round(bars * 2)) < 1e-6;
+  ends.push({ p: p.name, ok: (onBar || (onHalf && Math.abs(lead - 0.5) < 1e-6)) && wait >= 0 && wait * e.barDur <= e.barDur + 0.2 && lead * e.meter >= 2 - 1e-6 && okCad, bars, wait, lead, cad: e.cadence });
   run(wait * e.barDur + 0.5);
   if (!music.ended) ends[ends.length - 1].ok = false;
   music.rearm();
 }
 const bad = ends.filter(e => !e.ok);
-check(!bad.length, `the final hit lands on a bar line after at least half a bar of cadence, at most 1.5 bars (plus the scheduler's lookahead) after the jump (${ends.length} endings; ${bad.map(e => `${e.p}: bar ${e.bars.toFixed(3)}, wait ${e.wait.toFixed(2)}, cadence ${e.cad} for ${e.lead.toFixed(2)} bars`).join('; ') || 'all fine'})`);
+check(!bad.length, `the final hit lands on a bar line (or, jumping in a bar's last 16th, half a bar on), after at least an 8th of cadence, at most ONE bar (plus the scheduler's lookahead) after the jump (${ends.length} endings; ${bad.map(e => `${e.p}: bar ${e.bars.toFixed(3)}, wait ${e.wait.toFixed(2)}, cadence ${e.cad} for ${e.lead.toFixed(2)} bars`).join('; ') || 'all fine'})`);
 check(ends.every(e => /^[A-G][#b]?$/.test(e.cad)), `the cadence chord is a major chord (bVII or V) resolving to the home chord in major (${[...new Set(ends.map(e => e.p + ' ' + e.cad))].join(', ')})`);
+
+// The jump at every 16th of a spool bar (two bars, both spool chords): the final hit never comes later than one bar
+// after jumped() (playtest: "the very last bit loops too often": no full extra cadence bar any more), on the grid.
+{
+  const late = [];
+  for (const p of music.pieces) {
+    const sd = 60 / p.bpm / 4;
+    for (let j = 0; j < 2 * p.meter; j++) {
+      music.setSong(p.name); music.setJump(false); music.reset(); music.setThreat(false); music.setIntensity(1); run(4);
+      music.setJump(true); run(8 + j * sd); music.jumped(); const e = music.ending; music.setJump(false);
+      const wait = e.T - e.jumpedAt, half = (e.T - e.startT) / (e.barDur / 2);
+      late.push({ p: p.name, j, wait, bd: e.barDur, ok: wait <= e.barDur + 0.2 && Math.abs(half - Math.round(half)) < 1e-6 });
+      run(wait + 0.4); if (!music.ended) late[late.length - 1].ok = false;
+      music.rearm();
+    }
+  }
+  const worst = music.pieces.map(p => { const w = late.filter(x => x.p === p.name); return `${p.name} ≤ ${Math.max(...w.map(x => x.wait / x.bd)).toFixed(2)} bars`; });
+  check(late.every(x => x.ok), `jumping at any 16th of the spool: the final hit within one bar, on the grid (${late.length} jumps; ${worst.join(', ')}${late.some(x => !x.ok) ? '; FAILING ' + late.filter(x => !x.ok).map(x => x.p + '@' + x.j).join(' ') : ''})`);
+}
+
+// The spool's waves are 2 bars (crash and riser; rolls growing over 2 bars), in every piece, its own hooks included.
+// And over it the Shepard line: through 30 s of spool its pitch classes keep rising (1-4 semitones a note, mostly
+// scale steps), never settling into a 2-4 note loop; chord tones (or the consonant 6th) on 1 and 3.
+{
+  const waves = [], lines = [];
+  for (const p of music.pieces) {
+    const w = [], cbs = new Set(), line = [], H = p.hooks, keep = { spoolWave: H.spoolWave, spoolPerc: H.spoolPerc, shepard: H.shepard };
+    H.spoolWave = (x) => { w.push(x.b); return keep.spoolWave?.(x); };
+    H.spoolPerc = (x) => { cbs.add(x.cb); return keep.spoolPerc?.(x); };
+    H.shepard = (x) => { for (const n of x.line) line.push({ ...n, c: x.c }); return keep.shepard?.(x); };
+    music.setSong(p.name); music.setJump(false); music.reset(); music.setThreat(false); music.setIntensity(1); run(4);
+    music.setJump(true); run(32); music.setJump(false); music.reset();
+    Object.assign(H, keep); for (const k of Object.keys(keep)) if (!keep[k]) delete H[k];
+    const gaps = w.slice(1).map((b, i) => b - w[i]);
+    waves.push({ p: p.name, ok: w.length >= 4 && gaps.every(g => g === 2) && [...cbs].sort().join() === '0,1', gaps, n: w.length });
+    const tl = line.filter(n => n.t <= line[0].t + 30), pcs = tl.map(n => n.pc), steps = pcs.slice(1).map((pc, i) => (pc - pcs[i] + 12) % 12);
+    let loop = 0;                                              // the longest stretch that repeats a 2-4 note figure
+    for (let P = 2; P <= 4; P++) { let run = 0; for (let i = P; i < pcs.length; i++) { run = pcs[i] === pcs[i - P] ? run + 1 : 0; loop = Math.max(loop, run); } }
+    const strongOff = tl.filter(n => n.strong && !n.c.pcs.includes(n.pc) && (n.pc - n.c.root + 12) % 12 !== 9).length;
+    const climb = steps.reduce((a, d) => a + d, 0) / 12;
+    lines.push({ p: p.name, ok: tl.length >= 30 && steps.every(d => d >= 1 && d <= 4) && steps.filter(d => d <= 2).length >= steps.length * 0.7 && loop < 3 && !strongOff,
+      info: `${p.name}: ${tl.length} notes, climbs ${climb.toFixed(1)} octaves, steps ${[...new Set(steps)].sort().join('/')}, longest repeat ${loop}${strongOff ? ', ' + strongOff + ' clashing strong notes' : ''}` });
+  }
+  check(waves.every(x => x.ok), `the spool moves in 2-bar waves, never the old 4 (${waves.map(x => `${x.p} ${x.n} waves${x.ok ? '' : ' gaps ' + x.gaps.join('/')}`).join(', ')})`);
+  check(lines.every(x => x.ok), `the spool's Shepard line keeps rising and never loops a short figure (${lines.map(x => x.info).join('; ')})`);
+}
+
+// The Shepard voices: six partials an octave apart, weighted by the fixed raised-cosine bell over log-frequency
+// (C2..C8, centre C5): for every pitch class the weights follow the bell and add up to exactly 1, so the line keeps
+// its loudness and brightness while it climbs.
+{
+  const K = music.kit, S = K.SHEP, bad = [];
+  for (let pc = 0; pc < 12; pc++) {
+    const P = K.shepPartials(pc), sum = P.reduce((a, q) => a + q.g, 0), cent = P.reduce((a, q) => a + q.g * q.m, 0) / sum;
+    if (P.length !== 6 || P.some((q, i) => i && q.m - P[i - 1].m !== 12)) bad.push(pc + ': not 6 octave-spaced partials');
+    P.forEach(q => { const x = (q.m - S.bottom) / (12 * S.octaves), want = (1 - Math.cos(2 * Math.PI * x)) / S.octaves; if (Math.abs(q.g - want) > 1e-9 || q.g < 0) bad.push(`${pc}: partial ${q.m} at ${q.g}`); });
+    if (Math.abs(sum - 1) > 1e-9) bad.push(`${pc}: sum ${sum}`);
+    if (Math.abs(cent - S.centre) > 6) bad.push(`${pc}: weighted centre ${cent.toFixed(1)}`);
+  }
+  check(!bad.length && S.centre === 72 && S.octaves === 6, `the Shepard partials follow the bell (6 octaves, centre midi ${S.centre} = 523 Hz), their weights add up to 1 for every pitch class (${bad.slice(0, 4).join('; ') || 'all 12'})`);
+}
 
 // Switching: one sequencer, the new piece starts on its first step.
 music.setMission('c1'); run(3);

@@ -57,7 +57,7 @@
     // stage 6, the climax: everything at once
     six: P(['vW - - - . x - -', 's - x^ - . t - z', 'x5 - s - . z - -', 't - x - . s^ - z^',
       'vW - - - . s - x', 'x - s^ - . t - z', 's - t5 - . x - -', 'z - x - z^ - x -']),
-    spool: P(['e - - - - - - -', 's - - - s^ - - -', 'x - - - x^ - - -', 'z - - - z^ - - -']),   // accelerating in 4-bar waves
+    spool: P(['s - - - s^ - - -', 'z - - - z^ - - -']),   // accelerating in 2-bar waves
     dist: P(['q - - - - - - -', 'q - - - - - - -', 'e - - - . e - -']),         // the breakdown: far away, coming back
   };
   // stage → [level, how far the filter opens, FM growl, formant width, sub level]
@@ -176,8 +176,8 @@
           segs = segsOf(PAT.dist[bk >= 6 ? 2 : bi % 2], t, e8);
           o = { ...o, vel: bk >= 6 ? 0.048 : 0.036, open: bk >= 6 ? 0.3 : 0.14, fm: 0.2, wide: 0.5, sub: 0.06 };
         } else if (spool) {
-          const cb = (b - spoolAt) % 4;
-          segs = segsOf(PAT.spool[cb], t, e8, { open: 0.6 + 0.13 * cb });
+          const cb = (b - spoolAt) % 2;
+          segs = segsOf(PAT.spool[cb], t, e8, { open: 0.73 + 0.26 * cb });
         } else {
           const pat = st >= 6 ? PAT.six[bi] : st === 5 ? PAT.five[bi] : st === 4 ? PAT.drop[bi] : st === 3 ? PAT.rise[bi % 4] : PAT.creep[0];
           segs = segsOf(pat, t, e8);
@@ -197,7 +197,7 @@
         if (b === buildBar) { if (s < 12) tick2(t, 0.06 + 0.1 * s / 12, s % 2 === 0); }   // the build: the clock races into the silence
         else if (has('tick') && s % 4 === 0) tick2(t, s === 0 ? 0.16 : 0.1, s % 8 === 0);
         const E = music.ending, bd = stepDur() * N;      // the cadence or the final fill takes over mid-bar: this bar's growl stops
-        if (E && cur && s === N / 2 && (Math.abs(E.from - t0) < 1e-6 || Math.abs(E.T - bd / 2 - t0) < 1e-6)) kill(cur, t0);
+        if (E && cur && s > 0 && (Math.abs(E.from - t0) < 1e-6 || Math.abs(E.T - bd / 2 - t0) < 1e-6)) kill(cur, t0);
       },
       // The kit: sparse half time. Kick on the 1 (not on a drop's 1: the sub hit is there), from the drop a snare and clap
       // on the 3; hats on the off-beats, 8ths from the drop, 16ths at the climax, whose last 2 bars of a phrase go double time.
@@ -229,12 +229,12 @@
         if (s === 0) kick(t, 0.6);
         if (s === 8) { snare(t, 0.36); clap(t, 0.14); }
         if (s % 4 === 2) hat(t, 0.05);
-        if (cb === 3 && s >= 12) snare(t, 0.08 + 0.05 * (s - 12));   // into the next wave
+        if (cb === 1 && s >= 12) snare(t, 0.08 + 0.05 * (s - 12));   // into the next wave
         return true;
       },
-      endFill({ s, t, c, N }) {                           // into the final hit: the growl climbs and speeds up, one snare flam at the end
+      endFill({ s, t, c, N, k }) {                           // into the final hit: the growl climbs and speeds up, one snare flam at the end
         const sd = stepDur();
-        if (s === N / 2) growl(c, [{ at: rt(t), dur: rt(t + 4 * sd) - rt(t), kind: 's', off: 0, open: 0.7 }, { at: rt(t + 4 * sd), dur: rt(t + 7.98 * sd) - rt(t + 4 * sd), kind: 'z', off: 12, open: 1 }],
+        if (k < 1e-6) growl(c, [{ at: rt(t), dur: rt(t + 4 * sd) - rt(t), kind: 's', off: 0, open: 0.7 }, { at: rt(t + 4 * sd), dur: rt(t + 7.98 * sd) - rt(t + 4 * sd), kind: 'z', off: 12, open: 1 }],
           { vel: 0.09, open: 1, fm: 0.9, wide: 1, sub: 0.07, vow: ['oh', 'ee'] });
         if (s === N - 1) { snare(t, 0.2); snare(t + 0.025, 0.32); }
         return true;

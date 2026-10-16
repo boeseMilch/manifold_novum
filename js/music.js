@@ -16,9 +16,14 @@
 // Stages (0..6) follow the mission progress (setIntensity, the time towards the jump); a threat pushes
 // it up one stage (held for a while after it's gone). Every piece reaches its climax at stage 6: the
 // theme doubled by strings an octave up, brass swells and stabs, full drums.
-//   7 the jump drive spools (setJump): the bVI-bVII spool chords, a rising line, snare rolls and a riser
-//     in 4-bar waves, for as long as it takes. jumped(): everything cuts, and 1.5 s later (with the
-//     jump's boom) the final hit lands on the home chord in MAJOR, then it rings out and stays quiet.
+//   7 the jump drive spools (setJump): the bVI-bVII spool chords (one a bar), snare rolls and a crash in
+//     2-bar waves, for as long as it takes. Over them an endless rise instead of a loop: a Shepard scale
+//     (shepard(): six octave-spaced sines under a fixed bell, C2..C8, centre C5) stepping up through the
+//     piece's natural minor, one note a beat (an 8th in 6/8), chord tones on 1 and 3, never resetting; under
+//     it a Shepard-Risset glissando (the same bell, six sines sliding up an octave every 2 bars, or 4 when
+//     2 bars are shorter than 4 s) in place of the noise riser. jumped(): the cadence chord takes over on
+//     the grid and the final hit lands within one bar on the home chord in MAJOR, then it rings out and
+//     stays quiet.
 // Stages only move on bar lines: up after a one-bar drum fill, down only at a phrase start.
 // Exactly one sequencer exists; switching pieces fades the old one out (tails included) and starts the
 // new one on its first step. The music pauses while the browser tab is hidden (two open tabs never play
@@ -39,11 +44,14 @@
 //               x.to (return 'skip' there: no fill into that stage, a normal bar), then per step (x.r, x.big)
 //   build       the build bar's roll before the beat of silence (per step, x.k 0..1); buildSweep: its riser
 //   dropHit     the drop's boom, crash, taiko;   accent: the phrase-start crashes / booms
-//   spoolWave   the spool's crash and 4-bar riser (per bar, x.cb);   spoolPerc: the spool's rolls (per step)
+//   spoolWave   the spool's crash and riser (every 2 bars, x.cb 0..1; the engine's riser is the Shepard glissando);
+//               spoolPerc: the spool's rolls (per step, x.cb, x.k 0..1 over the 2-bar wave)
+//   shepard     the spool's endless Shepard line (per bar; x.line: [{ s, t, pc, len, strong }] the notes it would play)
 //   endFill     the fill into the final hit (per step, x.k);   finalHit: the final hit's boom, crash, taikos
 //   cadence     the cadence voices into the final hit;   pad: the pad / choir renewal (hold your own with
 //               K.hold('pad', release) and the engine renews it)
-// Recipe switches: noEngine: [...] also takes 'drums' (the engine kit), 'stabs', and single engine instruments
+// Recipe switches: noEngine: [...] also takes 'shepard' (no Shepard line or glissando: the noise riser instead),
+// shepRate: steps per Shepard note (default 4 in 4/4, 2 in 6/8), 'drums' (the engine kit), 'stabs', and single engine instruments
 // inside the gestures ('taiko', 'kick', 'snare', 'clap', 'hat', 'crash', 'tom', 'boom', 'riser');
 // engineDrums: false = all engine drums off (risers stay); breakdownSkip: [...] keeps layers out of breakdowns;
 // groove: [...] comes back first in a breakdown's rebuild. The arc (beat of silence, drops, breakdowns) stays here.
@@ -138,7 +146,7 @@ const music = (() => {
   let ac = null, out = null, noiseBuf = null, bus = null, irBuf = null, timer = null;
   let song = SONGS[0], pb = null;          // pb: this piece's own buses {dry, wet, echo}, faded out on a switch
   let step = 0, nextT = 0, startT = 0, stage = 0, pending = null, spoolBar = 0, bar = null, repad = false;
-  let ending = null;
+  let ending = null, shepDeg = -1, gliss = null;   // the Shepard line's scale degree (it never resets in a spool), the glissando
   let arc = { dropped: 0, broke: false, mode: null, next: null, log: [] };   // the dynamic arc (drops, breakdown) of this run                       // the planned ending after jumped(): { T (the final downbeat), from (the cadence starts), cad }
   let intensity = 0, threat = false, threatT = null, jumpOn = false, ended = false, paused = false, hidden = false;
   let held = [];                           // sustained voices (pads, drone, choir, static): released on changes and switches
@@ -386,6 +394,54 @@ const music = (() => {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vel, t + dur); g.gain.linearRampToValueAtTime(0, t + dur + 0.04);
     n.connect(bp); bp.connect(g); route(g, true, false);
   }
+  // The Shepard voices (the spool's endless rise). Six sines an octave apart, from C2 up to C8, weighted by a fixed
+  // raised-cosine bell over log-frequency (centre C5 = 523 Hz, 6 octaves wide, zero at both edges). The six weights
+  // of any pitch class always add up to exactly 1 (cosines at six equally spaced phases cancel), so loudness and
+  // brightness stay put while the pitch class keeps climbing: each step up fades in a new partial at the bottom
+  // and lets one go at the top, and the ear hears a scale that rises forever.
+  const SHEP = { lo: 36, oct: 6 };                         // bottom: midi 36 (C2); 6 octaves; centre midi 72 (C5)
+  const shepW = (m) => { const x = (m - SHEP.lo) / (12 * SHEP.oct); return x <= 0 || x >= 1 ? 0 : (1 - Math.cos(2 * Math.PI * x)) / SHEP.oct; };
+  const shepPartials = (pc) => Array.from({ length: SHEP.oct }, (_, k) => { const m = SHEP.lo + ((pc % 12) + 12) % 12 + 12 * k; return { m, f: hz(m), g: shepW(m) }; });
+  let shepWaves = null;                                    // one PeriodicWave per pitch class (per audio context): one oscillator a note
+  function shepard(pc, t, len, vel, p = 0) {
+    const P = shepPartials(pc), g = vca(), end = t + len + 0.8;
+    if (ac.createPeriodicWave) {
+      if (!shepWaves || shepWaves.ac !== ac) shepWaves = { ac, w: [] };
+      const i = ((pc % 12) + 12) % 12;
+      if (!shepWaves.w[i]) {                               // harmonics 1, 2, 4, ... 32 of the bottom partial, at the bell's weights
+        const n = 2 ** (SHEP.oct - 1) + 1, re = new Float32Array(n), im = new Float32Array(n);
+        P.forEach((q, k) => { im[2 ** k] = q.g; });
+        shepWaves.w[i] = ac.createPeriodicWave(re, im, { disableNormalization: true });
+      }
+      const o = osc('sine', P[0].f, t, end); o.setPeriodicWave(shepWaves.w[i]); o.connect(g);
+    } else for (const q of P) if (q.g > 1e-4) { const pg = ac.createGain(); pg.gain.value = q.g; osc('sine', q.f, t, end).connect(pg); pg.connect(g); }
+    env(g, t, 0.03, vel, Math.max(0, len - 0.03), 0.09);
+    route(p ? pan(g, p) : g, true, false);
+    return { g, at: t };
+  }
+  // The Shepard-Risset glissando (the spool's riser): the same bell, its six sines sliding up one octave every P
+  // seconds. Each sine enters silent at the bottom, climbs the six octaves and leaves silent at the top; a new one
+  // enters every P, so six always sound. A held voice (tag 'gliss'): released with everything else.
+  function glissVoice(t0, x0) {
+    const P = gliss.P, dur = (SHEP.oct - x0) * P, f0 = hz(SHEP.lo), o = ac.createOscillator(), g = vca();
+    o.type = 'sine'; o.frequency.setValueAtTime(f0 * 2 ** x0, t0); o.frequency.exponentialRampToValueAtTime(f0 * 2 ** SHEP.oct, t0 + dur);
+    const w = (x) => shepW(SHEP.lo + 12 * x);
+    g.gain.setValueAtTime(w(x0), t0);
+    for (let i = Math.floor(x0 * 8) + 1; i <= SHEP.oct * 8; i++) g.gain.linearRampToValueAtTime(w(i / 8), t0 + (i / 8 - x0) * P);
+    o.connect(g); g.connect(gliss.g); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function glissKeep(t, until, P, vel) {                   // start it (fading in), then a new voice at the bottom every P
+    if (!gliss) {
+      const g = vca(); g.gain.setValueAtTime(0, t); g.gain.setTargetAtTime(vel, t, P / 6); route(g, true, false);
+      gliss = { g, P, next: t };
+      for (let x0 = 1; x0 < SHEP.oct; x0++) glissVoice(t, x0);
+      const me = gliss;
+      hold('gliss', (r) => { g.gain.cancelScheduledValues(r); g.gain.setTargetAtTime(0, r, 0.15); if (gliss === me) gliss = null; });
+    }
+    while (gliss.next < until - 1e-6) { glissVoice(gliss.next, 0); gliss.next += gliss.P; }
+  }
+  const MINOR = [0, 2, 3, 5, 7, 8, 10];                    // (every piece is in minor: the spool's bVI-bVII live in its natural minor)
+  const scalePc = (d) => (song.tonic + MINOR[((d % 7) + 7) % 7]) % 12;
 
   // ---------------------------------------------------------------- the engine's gestures (overridable per piece)
   // Every percussion / transition gesture the engine plays goes through gesture(name, x, play): the piece's hook of
@@ -399,8 +455,8 @@ const music = (() => {
     hat: (...a) => hat(...a), crash: (...a) => crash(...a), tom: (...a) => tom(...a), boom: (...a) => boom(...a), riser: (...a) => riser(...a) })) E[n] = (...a) => (engineOff(n) ? undefined : f(...a));
   function gesture(name, x, play) {
     const r = song.hooks[name]?.(x);
-    if (r === true || r === 'handled' || r === 'skip' || song.noEngine.has(name)) return;
-    play();
+    if (r === true || r === 'handled' || r === 'skip' || song.noEngine.has(name)) return false;
+    play(); return true;
   }
 
   // ---------------------------------------------------------------- the sequencer
@@ -411,7 +467,7 @@ const music = (() => {
   function hold(tag, r) { r.tag = tag; held.push(r); }
   function begin(s) {                      // start a piece from its first step (one sequencer, always)
     song = s; step = 0; ended = false; ending = null; arc = { dropped: 0, broke: false, mode: null, next: null, log: [] }; pending = null; bar = null; threatT = null;
-    stage = jumpOn ? 7 : target(); spoolBar = 0;
+    stage = jumpOn ? 7 : target(); spoolBar = 0; shepDeg = -1; gliss = null;
     if (!ac) return;
     const t = now();
     releaseHeld(t); fadeBuses(pb, t); pb = makeBuses();
@@ -433,17 +489,20 @@ const music = (() => {
   function shift(d) { nextT += d; startT += d; if (ending) { ending.T += d; ending.from += d; } }   // (the grid moves along)
 
   // The ending, planned on the grid when the ship jumps (the jump comes at game time, so it can't be known
-  // ahead): a cadence on the piece's bVII (the spool's last chord) or its V, then the final hit on a downbeat.
+  // ahead): a cadence on the piece's bVII (the spool's last chord) or its V, then the final hit, never more than
+  // one bar after the jump (playtest: "the very last bit loops too often", a whole extra bar hurt):
   //  - already on the cadence chord: resolve on the next downbeat;
-  //  - in the first half of another chord: the cadence chord takes over from the half bar;
-  //  - later than that: one full cadence bar, then the hit.
+  //  - in the first half of another chord: the cadence chord takes over from the half bar, the hit on the downbeat;
+  //  - later: the cadence chord from the next 8th still to come (at least an 8th before the downbeat), hit on the downbeat;
+  //  - in the bar's last 16th: the cadence chord from the downbeat, the hit half a bar later (on the half-bar grid).
   function planEnding() {
-    const bd = stepDur() * song.meter, cad = song.spool[song.spool.length - 1];
+    const sd = stepDur(), N = song.meter, bd = sd * N, cad = song.spool[song.spool.length - 1];
     const dom = bar.c.name === cad.name || (bar.c.root === (song.tonic + 7) % 12 && bar.c.third === 4);
-    const T1 = bar.t + bd, mid = bar.t + bd / 2;
+    const T1 = bar.t + bd, j0 = Math.max(0, Math.round((nextT - bar.t) / sd));   // (the first step of this bar not yet scheduled)
+    const j = j0 <= N / 2 ? N / 2 : j0 + (j0 % 2);
     if (dom) ending = { T: T1, from: bar.t, cad: bar.c };
-    else if (mid >= nextT + 0.005) ending = { T: T1, from: mid, cad };
-    else ending = { T: T1 + bd, from: T1, cad };
+    else if (j <= N - 2) ending = { T: T1, from: bar.t + j * sd, cad };
+    else ending = { T: T1 + bd / 2, from: T1, cad };
     ending.jumpedAt = now(); ending.bd = bd;
     song.hooks.endingPlanned?.({ T: ending.T, from: ending.from, cad: ending.cad, bd, notes: bar.notes, hush: (tm) => hush(tm) });   // (e.g. cut the piece's own queued notes)
   }
@@ -534,7 +593,7 @@ const music = (() => {
   function barStart(b, t) {
     const want = target(), ph = b % 8;
     let drop = false;
-    if (jumpOn) { if (stage !== 7) { stage = 7; spoolBar = b; pending = null; arc.mode = null; arc.next = null; } }
+    if (jumpOn) { if (stage !== 7) { stage = 7; spoolBar = b; pending = null; arc.mode = null; arc.next = null; shepDeg = -1; } }
     else { const S = { stage, pending, arc }; drop = arcStep(S, b, want, song.classic); stage = S.stage; pending = S.pending; }
     const st = stage, spool = st === 7, bi = b % 8, B = Math.floor(b / 8) % 2 === 1;
     const bk = arc.mode === 'breakdown' ? ph : -1, build = !song.classic && !spool && ph === 7 && arc.next !== null;
@@ -552,6 +611,7 @@ const music = (() => {
       if (prev && prev.c.name === c.name && ending.from < t - 1e-6) return;   // (already swelling on it)
       releaseHeld(t); cadenceVoices(t, ending.T - t, has); return;
     }
+    if (!spool && gliss) releaseHeld(t, 'gliss');                // (the spool called off without a jump)
     const changed = repad || !prev || prev.c.name !== c.name || prev.spool !== spool || (song.classic ? Math.abs(prev.st - st) >= 2 : prev.st !== st || prev.bk !== bk) || bi === 0;
     if (changed) {                                               // held harmony: pad, choir (and the brass swell)
       repad = false;
@@ -586,10 +646,29 @@ const music = (() => {
       if (has('strings') || (call && !mine && has('theme'))) ns.push(lead(n.midi + 12, at, len, call ? 0.06 : 0.045, 'strings'));
       song.hooks.theme?.(x, n, at, len);                          // the piece's own voices for the theme (a radio horn, a music box)
     }
-    if (spool) {                                                 // the spool: a rising line and waves of tension
-      const cb = (b - spoolBar) % 4, m = inRange((c.root + c.third) % 12, 69);
-      bar.notes.push(lead(m, t, bd * 0.97, song.classic ? 0.08 : LEAD_VEL[song.lead], song.lead), lead(m + 12, t, bd * 0.97, 0.05, 'strings'));
-      if (cb === 0) gesture('spoolWave', { ...x, cb }, () => { E.crash(t, 0.2); E.riser(t, bd * 4, 0.12, 300, 6000); });   // a wave every 4 bars
+    if (spool) {                                                 // the spool: an endless Shepard rise and 2-bar waves of tension
+      const cb = (b - spoolBar) % 2, sd = stepDur(), shep = !song.noEngine.has('shepard');
+      const P = 2 * bd < 4 ? 4 * bd : 2 * bd;                    // the glissando: an octave every 2 bars (4 when 2 bars are short)
+      if (cb === 0) {
+        const eng = gesture('spoolWave', { ...x, cb }, () => {   // a wave every 2 bars: a crash, and the glissando (or the noise riser)
+          E.crash(t, 0.2);
+          if (!shep) E.riser(t, bd * 2, 0.12, 300, 6000);
+          else if (!engineOff('riser')) glissKeep(t, t + bd, P, 0.12);
+        });
+        if (!eng && gliss) releaseHeld(t, 'gliss');
+      } else if (gliss) glissKeep(t, t + bd, P, 0.12);
+      // The Shepard line: up the natural minor one note a beat (an 8th in 6/8), never resetting; on 1 and 3 (1 and 4 in
+      // 6/8) a chord tone when the next step or the one after is one (else the consonant 6th), passing tones between.
+      const r = song.shepRate || (N === 12 ? 2 : 4), line = [];
+      for (let s = 0; s < N; s += r) {
+        const strong = s % (N / 2) === 0;
+        shepDeg++;
+        if (strong && !c.pcs.includes(scalePc(shepDeg)) && c.pcs.includes(scalePc(shepDeg + 1))) shepDeg++;
+        line.push({ s, t: t + s * sd + swing(s), pc: scalePc(shepDeg), len: r * sd * 0.92, strong });
+      }
+      gesture('shepard', { ...x, cb, line }, () => {
+        for (const n of line) bar.notes.push(shepard(n.pc, n.t, n.len, n.strong ? 0.16 : 0.13, n.s % (2 * r) ? 0.2 : -0.2));
+      });
     }
   }
 
@@ -598,7 +677,7 @@ const music = (() => {
   function playStep(t0) {
     const N = song.meter, s = step % N, b = Math.floor(step / N);
     if (s === 0) barStart(b, t0);
-    if (ending && s === N / 2 && Math.abs(t0 - ending.from) < 1e-6) cadenceAt(t0);
+    if (ending && s > 0 && Math.abs(t0 - ending.from) < 1e-6) cadenceAt(t0);
     const { c, st, voice, spool, has } = bar, t = t0 + swing(s);
     if (bar.build && s >= N * 3 / 4) { if (s === N * 3 / 4) { hush(t0); repad = true; } return; }   // the beat of silence before the drop
     const fill = bar.fill !== null && s >= N / 2, big = fill && bar.fill >= 5, late = fill && s >= N * 3 / 4;
@@ -639,11 +718,11 @@ const music = (() => {
       return;
     }
     if (bar.bk >= 0 && bar.bk < 6) return;                          // the breakdown: no drums yet
-    if (spool) {                                                   // the spool: rolls growing in 4-bar waves
-      const cb = (b - spoolBar) % 4, k2 = (cb * N + s) / (4 * N);
+    if (spool) {                                                   // the spool: rolls growing in 2-bar waves
+      const cb = (b - spoolBar) % 2, k2 = (cb * N + s) / (2 * N);
       gesture('spoolPerc', { ...x, cb, k: k2 }, () => {
         if (s % 2 === 0) E.taiko(t, 0.42 + 0.25 * k2, s % 4 === 0 ? 1 : 1.2);
-        if (cb < 2 ? s % 2 === 0 : true) E.snare(t, 0.06 + 0.22 * k2);
+        if (cb < 1 ? s % 2 === 0 : true) E.snare(t, 0.06 + 0.22 * k2);
         E.hat(t, s % 4 === 2 ? 0.07 : 0.04);
         if (s % 4 === 0 && !song.noEngine.has('stabs')) brass(c, t, stepDur() * 1.5, 0.035, true);
       });
@@ -711,7 +790,9 @@ const music = (() => {
   const kit = { get ac() { return ac; }, get song() { return song; }, get noise() { return noiseBuf; },
     get ending() { return endingInfo(); },
     gain: vca, hz, inRange, bassRoot, padVoicing, osc, filt, noiseSrc, pan, route, env, holder, hold, releaseHeld, hush: (tm) => hush(tm), hash, stepDur, swing, now,
-    pluck, pad, choir, drone, bell, bass, lead, brass, taiko, kick, snare, clap, hat, crash, tom, boom, riser, LEAD_VEL, BRIGHT };
+    pluck, pad, choir, drone, bell, bass, lead, brass, taiko, kick, snare, clap, hat, crash, tom, boom, riser, shepard, shepPartials, scalePc, LEAD_VEL, BRIGHT,
+    gliss: (t, until, P, vel) => glissKeep(t, until, P, vel),   // (the Shepard glissando from t, voices scheduled up to until: a piece's own riser)
+    SHEP: { bottom: SHEP.lo, octaves: SHEP.oct, centre: SHEP.lo + 6 * SHEP.oct } };
 
   const info = (s) => ({ name: s.name, title: s.title, bpm: s.bpm, key: s.key + ' minor' /* (every piece is in minor and ends in major) */,
     meter: s.meter === 12 ? '6/8' : s.swing ? '4/4 swing' : '4/4', lead: s.lead, mood: s.mood, missions: s.missions.slice() });
