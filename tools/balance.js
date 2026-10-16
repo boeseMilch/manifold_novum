@@ -104,7 +104,8 @@ const A = {
                           // a mission can set its own: MISSIONS[id].balance = { soloIdle, crewIdle } (no ramp then)
   // the expected kit (expectedKit): what a first-time campaign run can afford by each chapter
   BOUNTY_PIRATES: 2,      // pirates paid for in a mission with a bounty (rewards.perPirate): modest, the two raiders' worth
-  GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'armor', 'stim'],   // bought in this order, each as soon as money and level allow
+  GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'stim'],   // bought in this order, each as soon as money and level allow (general
+                          // gear only: the armor vest is weapons-specialist gear since 2026-10-16, and the model ignores professions)
   SHIP_ORDER: ['cannons', 'inserter', 'caps', 'spareCell', 'airlocks', 'shields', 'radar', 'hull', 'sprinklers', 'coffee'],   // (reputation; the
                           // prerequisites first, so a later chapter's needs aren't blocked by something bought before them)
   FUEL_MARGIN: 1,         // --calibrate: fuel cells on top of what the energy runs need
@@ -200,7 +201,7 @@ const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
 // Skirmish twins (SKIRMISH_TWIN) get their chapter's kit; intro / rush / practice none.
 // Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; deck airlock cycles
 // unchanged), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 6 s / 3 s instead of 10 s,
-// treating 1.2 s instead of 2 s: CREW_HIT_COST scaled), armor vest (one crew hit fewer per player), and the ship:
+// treating 1.2 s instead of 2 s: CREW_HIT_COST scaled), armor vest (one crew hit fewer per player; not in the expected kit: weapons specialists only), and the ship:
 // cannons (4 shots per energy: the energy runs and the fights' reloads), inserter, spare cell, caps, shields, radar
 // (the energy runs / the radar range, from the game), airlocks (0.7 s cycles: trips measured with them), hull (6
 // broken parts to lose), sprinklers (fires burn their part a third slower: a fire counts less as an open problem).

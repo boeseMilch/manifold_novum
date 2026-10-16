@@ -16,9 +16,16 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const G = loadGame(NAMES);
   const won = { jumped: true, objective: true, pirates: 3 };
   const r = G.computeRewards('c1', won, true, true);
-  check(r.money === 100 + 3 * 40 && r.xp === 80 && r.rep === 2, `First Contract: $100 + $40 per pirate, 80 XP, reputation (+1 first clear) → $${r.money}, ${r.xp} XP, ★${r.rep}`);
+  check(r.money === 120 + 3 * 16 && r.xp === 80 && r.rep === 2, `First Contract: $120 + $16 per pirate, 80 XP, reputation (+1 first clear) → $${r.money}, ${r.xp} XP, ★${r.rep}`);
+  const two = G.computeRewards('c1', { jumped: true, objective: true, pirates: 2 }, true, true).money;
+  const cheap = G.GEAR.filter(g => g.level <= G.levelOf(80) && !g.prof && g.cost <= two);
+  check(two >= 150 && two < 300 && cheap.length >= 2, `a first chapter 1 run ($${two}) buys one $150 item, with a choice (${cheap.map(g => g.id).join(', ')})`);
   const down = G.computeRewards('c1', won, false, false);
-  check(down.xp === 0 && down.money === 220, 'not back aboard on your feet: no XP (the crew still gets paid)');
+  check(down.xp === 0 && down.money === 168, 'not back aboard on your feet: no XP (the crew still gets paid)');
+  const old = { c2: 150, c3: 200, c4: 200, c5: 300, c6: 300, c7: 350, c8: 500 };   // (the pay before 2026-10-16: ×0.4 now, so you have to choose)
+  check(Object.entries(old).every(([id, m]) => G.MISSIONS[id].rewards.money === m * 0.4) && G.MISSIONS.c4.rewards.perPirate === 20 && G.MISSIONS.c2.rewards.rep === 1 && G.MISSIONS.c8.rewards.rep === 5,
+    'chapters 2-8 pay 40% of the old money (bounty too), reputation unchanged');
+  check(G.computeRewards('rush', { jumped: true, objective: false, pirates: 0 }, true, false).money === 16, 'a skirmish pays $16 (was $40)');
   const lost = G.computeRewards('c1', { jumped: false, objective: false, pirates: 1 }, false, false);
   check(lost.money === 0 && lost.xp === 0, 'the ship didn\'t make it: nothing');
   const half = G.computeRewards('c3', { jumped: true, objective: false, pirates: 0 }, true, false);
@@ -34,10 +41,10 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
     return G;
   };
   const R1 = credit('c1', { jumped: true, objective: true, pirates: 2 });
-  check(R1.profile.money === 100 + 2 * 40 && R1.profile.rep === 2 && R1.profile.xp === 80 && R1.profile.done.c1 === 1 && R1.unlockedMissions(R1.profile).has('c2') && R1.lastReward.unlocked && !R1.lastReward.objFailed,
+  check(R1.profile.money === 120 + 2 * 16 && R1.profile.rep === 2 && R1.profile.xp === 80 && R1.profile.done.c1 === 1 && R1.unlockedMissions(R1.profile).has('c2') && R1.lastReward.unlocked && !R1.lastReward.objFailed,
     'success (jumped, objective done): paid, reputation (+1 first clear), XP, finished, next chapter unlocked');
   const R2 = credit('c1', { jumped: true, objective: false, pirates: 1 });
-  check(R2.profile.money === 100 + 40 && R2.profile.rep === 0 && R2.profile.xp === 80 && !R2.profile.done.c1 && !R2.unlockedMissions(R2.profile).has('c2'),
+  check(R2.profile.money === 120 + 16 && R2.profile.rep === 0 && R2.profile.xp === 80 && !R2.profile.done.c1 && !R2.unlockedMissions(R2.profile).has('c2'),
     'jumped without the objective: base pay + per pirate and XP, but no reputation, not finished, next chapter stays locked');
   check(R2.lastReward.objFailed && R2.lastReward.locked === R2.MISSIONS.c2.name && !R2.lastReward.unlocked, '…and the end screen says so (objective failed, next chapter locked)');
   const R3 = credit('c7', { jumped: true, objective: false, pirates: 0 });
@@ -50,13 +57,24 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 {
   const G = loadGame(NAMES);
   const p = G.migrateProfile({ xp: '120', money: 30, ship: { cannons: true }, someFutureField: 7 });
-  check(p.xp === 120 && p.v === 3 && p.ship.cannons && p.gear && p.done && p.someFutureField === 7, 'an old save is migrated: numbers fixed, missing fields added, unknown ones kept');
+  check(p.xp === 120 && p.v === 4 && p.ship.cannons && p.gear && p.done && p.someFutureField === 7, 'an old save is migrated: numbers fixed, missing fields added, unknown ones kept');
   const v1 = G.migrateProfile({ v: 1, gear: { paint: true, boots: true }, paint: '#3a8fc4', ship: { kit2: true, autodoc: true, caps: true }, profession: 'security' });
   check(!v1.gear.paint && v1.gear.boots && v1.paint === '#3a8fc4' && !v1.ship.kit2 && !v1.ship.autodoc && v1.ship.caps && v1.profession === 'weapons',
     'v1 → v2: paint is free (color kept), auto-doc and second kit dropped, Security is now Weapons specialist');
   const v2a = G.migrateProfile({ v: 2, profession: 'gunner', gear: { trauma: true, stim: true } }), v2b = G.migrateProfile({ v: 2, profession: 'medic', gear: {} });
-  check(v2a.profession === 'weapons' && !v2a.gear.trauma && v2a.gear.stim && v2b.profession === null && v2b.gear.firstAid && v2a.v === 3,
+  check(v2a.profession === 'weapons' && !v2a.gear.trauma && v2a.gear.stim && v2b.profession === null && v2b.gear.firstAid && v2a.v === 4,
     'v2 → v3: Gunner becomes Weapons specialist, a medic gets the first aid course, trauma kit dropped, stim pack kept');
+  const eng = G.migrateProfile({ v: 3, xp: 500, money: 40, profession: 'engineer', gear: { armor: true, boots: true, toolbelt: true }, done: { c1: 1 }, futureThing: 'x' });
+  check(!eng.gear.armor && eng.money === 260 && eng.gear.boots && eng.gear.toolbelt && eng.profession === 'engineer' && eng.xp === 500 && eng.done.c1 === 1 && eng.futureThing === 'x' && eng.v === 4,
+    'v3 → v4: an engineer with the armor vest (weapons gear now) gets its $220 back, everything else kept');
+  const none = G.migrateProfile({ v: 3, money: 0, profession: null, gear: { armor: true } });
+  check(!none.gear.armor && none.money === 220 && none.profession === null, '…so does a player without a profession');
+  const wpn = G.migrateProfile({ v: 3, money: 10, profession: 'weapons', gear: { armor: true, ownLaser: true } });
+  check(wpn.gear.armor && wpn.money === 10 && wpn.gear.ownLaser, '…a weapons specialist keeps the vest (no refund)');
+  const gun = G.migrateProfile({ v: 2, money: 5, profession: 'gunner', gear: { armor: true } });
+  check(gun.gear.armor && gun.money === 5 && gun.profession === 'weapons', '…as does a v2 gunner (a weapons specialist since v3)');
+  const again = G.migrateProfile(eng);
+  check(again.money === 260 && !again.gear.armor, 'migrating twice refunds nothing twice');
   check(G.migrateProfile(null).xp === 0 && G.migrateProfile('garbage').money === 0, 'a broken save gives a fresh profile instead of crashing');
   const u = G.unlockedMissions({ ...G.defaultProfile(), done: { c1: 1, c2: 1 } });
   check(u.has('c3') && !u.has('c4') && u.has('practice'), 'finishing a chapter unlocks the next one');
@@ -64,10 +82,16 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 // --- gear, professions
 {
   const G = loadGame(NAMES); const me = G.me;
-  G.applyKit(me, { gear: { armor: true, boots: true }, profession: 'engineer' });
+  G.applyKit(me, { gear: { boots: true }, profession: 'engineer' });
   check(!me.inv.weapon, 'an engineer alone doesn\'t start with a repair kit');
-  G.applyKit(me, { gear: { armor: true, boots: true, ownKit: true }, profession: 'engineer' });
+  G.applyKit(me, { gear: { boots: true, ownKit: true }, profession: 'engineer' });
   check(me.inv.weapon === 'repair', '…the first track upgrade gives them their own');
+  G.applyKit(me, { gear: { armor: true }, profession: 'engineer' });
+  check(me.armor === 0 && G.GEAR.find(g => g.id === 'armor').prof === 'weapons', 'the armor vest is weapons-specialist gear: an engineer gets nothing from it');
+  me.inv.weapon = null; G.applyKit(me, { gear: { armor: true, boots: true }, profession: 'weapons' });
+  check(me.armor === 1, '…a weapons specialist wears it');
+  check(G.GEAR.filter(g => g.prof === 'weapons').map(g => g.id).join() === 'ownLaser,armor,heavy' && G.GEAR.find(g => g.id === 'firstAid').level === 1,
+    'weapons track: own laser gun, armor vest, heavy blaster; the first aid course from level 1');
   G.hurtCrew(me);
   check(me.health === 'ok' && me.armor === 0, 'the armor vest shrugs off the first hit');
   G.hurtCrew(me);
@@ -91,6 +115,20 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G.applyKit(me, { profession: 'engineer', gear: { toolbelt: true } });
   check(eng === 1.2 && Math.abs(G.repairSpeed(me) - 1.5) < 1e-9, 'repairs: an engineer 20% faster, with the toolbelt 50%');
   check(!G.GEAR.some(g => g.id === 'paint') && G.GEAR.filter(g => g.prof).every(g => ['engineer', 'weapons'].includes(g.prof)), 'suit paint is no gear any more; engineer and weapons tracks');
+}
+// --- one profession, for good (Start over gives a fresh profile, and a new choice)
+{
+  const G = loadGame(['pickProfession', 'professionWhy', 'PROFESSIONS', 'defaultProfile']);
+  const [E, W] = ['engineer', 'weapons'].map(id => G.PROFESSIONS.find(x => x.id === id));
+  const p = { ...G.defaultProfile(), xp: 50 };
+  check(!G.pickProfession(p, 'engineer') && p.profession === null && /level 2/.test(G.professionWhy(p, 1, E)), 'no profession below level 2');
+  p.xp = 200;
+  check(G.professionWhy(p, 2, E) === '' && G.professionWhy(p, 2, W) === '' && !G.pickProfession(p, 'pilot'), 'level 2: both open (an unknown id is refused)');
+  check(G.pickProfession(p, 'weapons') && p.profession === 'weapons', 'pick the weapons specialist');
+  check(!G.pickProfession(p, 'engineer') && p.profession === 'weapons', '…and it sticks: no switching to engineer');
+  check(G.professionWhy(p, 2, W) === '' && /You're a Weapons specialist — Start over/.test(G.professionWhy(p, 2, E)), '…the locker says why (Start over to choose again)');
+  const fresh = { ...G.defaultProfile(), xp: 200 };
+  check(G.pickProfession(fresh, 'engineer') && fresh.profession === 'engineer', 'a fresh profile (Start over) chooses again');
 }
 // --- gravity boots where the gravity failed
 {

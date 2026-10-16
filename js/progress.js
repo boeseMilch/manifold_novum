@@ -10,7 +10,7 @@
 // PROFILES ARE SAVED IN PLAYERS' BROWSERS: keep loadProfile() able to read every older version
 // (bump PROFILE_VERSION and add a migration step; never rename or drop fields without one).
 
-const PROFILE_VERSION = 3;
+const PROFILE_VERSION = 4;
 const XP_LEVELS = [0, 100, 250, 450, 700, 1000, 1400, 1900, 2500, 3200, 4000];
 const levelOf = (xp) => { let l = 1; while (l < XP_LEVELS.length && xp >= XP_LEVELS[l]) l++; return l; };
 
@@ -41,18 +41,19 @@ function missionRequirements(id) {
 }
 // ---------------------------------------------------------------------------
 // Personal gear (money): general gear for anyone, and a track of gear per profession (level 2+;
-// only usable in that profession).
+// only usable in that profession). One profession per profile, for good (Start over to choose again):
+// with money tight (rewards) you specialize.
 // ---------------------------------------------------------------------------
 const GEAR = [
   { id: 'boots', name: 'Gravity boots', cost: 150, level: 1, desc: 'Walk 15% faster, and keep walking where gravity fails.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, level: 2, desc: 'Spacewalk 30% faster.' },
-  { id: 'firstAid', name: 'First aid course', cost: 150, level: 2, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s.' },
-  { id: 'armor', name: 'Armor vest', cost: 220, level: 3, desc: 'Shrugs off the first hit you take each mission.' },
+  { id: 'firstAid', name: 'First aid course', cost: 150, level: 1, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s.' },
   { id: 'stim', name: 'Stim pack', cost: 250, level: 4, desc: 'Down? Patch yourself up in 3 s.' },
   { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, level: 2, desc: 'Start every mission with your own repair kit (on top of the ship\'s).' },
   { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, level: 3, desc: 'Repairs go another 25% faster.' },
   { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, level: 4, desc: 'Overcharge the reactor (at the reactor): double speed, 10% fire risk per energy.' },
   { id: 'ownLaser', prof: 'weapons', name: 'Own laser gun', cost: 120, level: 2, desc: 'Start every mission with your own laser gun (on top of the ship\'s).' },
+  { id: 'armor', prof: 'weapons', name: 'Armor vest', cost: 220, level: 3, desc: 'Shrugs off the first hit you take each mission.' },   // (general gear before v4)
   { id: 'heavy', prof: 'weapons', name: 'Heavy blaster', cost: 300, level: 3, desc: 'Start with a heavy blaster: harder hits, slower fire. Hold to charge a blast that hits like a cannon. Heavy: slows you down, a lot while charging.' },
 ];
 const PROFESSIONS = [
@@ -71,17 +72,17 @@ const evAt = (kind, t, more = {}) => ({ t, kind, ...more });
 const CAMPAIGN = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8'];
 Object.assign(MISSIONS, {
   c1: {
-    name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 100, perPirate: 40, rep: 1, xp: 80 },
+    name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 120, perPirate: 16, rep: 1, xp: 80 },
     crew: {events: [3, 5, 8, 11, 14, 14, 17, 20], cells: [3, 3, 7, 8, 12, 12, 15, 18], reactor: [0.5, 0.7, 0.7, 0.85, 0.6, 0.6, 0.5, 0.4]},   // --calibrate: 51% 66% 68% 70% 66% 72% 71% 70% idle for 1-8 players (aim 55.5% solo, 67.5% for 2-8); 2026-10-16: + a failing part solo (always; 3 events): 49% solo
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: the first chapters too easy solo)
     objective: { kind: 'raiders', count: 2 }, rules: {},
-    blurb: 'Destroy two pirate raiders in the trade lanes. $40 per pirate.',
-    briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The job: destroy two raiders. Shoot them to scrap before they dock, or, if one docks, board it and jam its reactor: it blows up as it runs. The Guild pays $40 per pirate on top: raiders shot to scrap and boarders both count. A docked raider\'s crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
+    blurb: 'Destroy two pirate raiders in the trade lanes. $16 per pirate.',
+    briefing: 'Congratulations on your new (used) ship! The Manifold Novum is held together by duct tape, optimism and one very large cat.\n\nFirst job, from the Tollgate Trade Guild: pirate raiders are robbing freighters in the Kessler lanes. The job: destroy two raiders. Shoot them to scrap before they dock, or, if one docks, board it and jam its reactor: it blows up as it runs. The Guild pays $16 per pirate on top: raiders shot to scrap and boarders both count. A docked raider\'s crew comes over to steal. Make them regret it.\n\nTip: shoot the glowing blue bits.',
     build: () => [evAt('pirates', 30, { side: randSide() }), evAt('interceptor', 85, { side: randSide() }), evAt('pirates', 145, { side: randSide() }), evAt('swarm', 205), evAt('maintenance', 255, { radar: false })],
   },
   c2: {
-    name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 150, rep: 1, xp: 100 },
+    name: '2 · Strange Cargo', tier: 1, campaign: 2, rewards: { money: 60, rep: 1, xp: 100 },
     // events set by hand (the user's playtest: two aliens + opener + frigate, clearly harder than the model's aim); cells and
     // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players.
     // 2026-10-16: + a failing part solo and for 2 (always; 4 / 5 events), the reactor for 2 back in spec at ×0.4 (was 0.3):
@@ -100,7 +101,7 @@ Object.assign(MISSIONS, {
                   evAt('maintenance', 190, { radar: false }), evAt('antenna', 220, { radar: false }), evAt('frigate', 250, { side: randSide() })],
   },
   c3: {
-    name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 200, rep: 2, xp: 140 },
+    name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 80, rep: 2, xp: 140 },
     crew: {events: [3, 3, 6, 9, 11, 13, 16, 18], cells: [2, 2, 2, 6, 9, 9, 11, 11], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 36% 64% 71% 67% 68% 67% 66% 67% idle for 1-8 players (aim 54.5% solo, 66.5% for 2-8); then + the failing part (always) solo and for 2: 3 / 3 events
     needs: {ship: ['cannons'], overcharge: true},
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
@@ -112,19 +113,19 @@ Object.assign(MISSIONS, {
                   evAt('maintenance', 190, { radar: false }), evAt('flare', 230)],
   },
   c4: {
-    name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 200, perPirate: 50, rep: 2, xp: 160 },
+    name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 80, perPirate: 20, rep: 2, xp: 160 },
     crew: {events: [3, 5, 11, 14, 18, 23, 24, 24], cells: [2, 2, 8, 11, 14, 17, 20, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, 2026-10-16): 46% 66% 65% 67% 66% 69% 72% 75% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/6/11/15/21/23/24/24 (two raiders destroyed)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     objective: { kind: 'navcore' }, rules: { breach: true, surge: true },   // (was 'raiders' ×2 like chapter 1; 2026-10-16: no mission twice)
     blurb: 'Pirates took Dr. Varga. Find the Red Comet\'s hideout: bring a raider\'s nav core aboard.',
-    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away. Where to? Nobody knows where their hideout is — but every one of their raiders does: it\'s in its nav computer.\n\nTheir raiders patrol the Cove. Get us a nav core. Let one dock and board it: the nav console sits beside its reactor, pull the core out (hold click) and carry it home. Or shoot one to scrap: its nav core gets flung clear — spacewalk out and fish it in before it drifts off (about a minute). The Guild\'s bounty still stands: $50 a pirate. Power lines can arc now; splice them with the repair kit.',
+    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away. Where to? Nobody knows where their hideout is — but every one of their raiders does: it\'s in its nav computer.\n\nTheir raiders patrol the Cove. Get us a nav core. Let one dock and board it: the nav console sits beside its reactor, pull the core out (hold click) and carry it home. Or shoot one to scrap: its nav core gets flung clear — spacewalk out and fish it in before it drifts off (about a minute). The Guild\'s bounty still stands: $20 a pirate. Power lines can arc now; splice them with the repair kit.',
     // a calm half minute, a Red Comet scout (the opener), then the raiders; a part fails in between (bigger crews)
     build: () => [evAt('interceptor', 30, { side: 'star', opener: true }), evAt('pirates', 70, { side: 'port' }), evAt('maintenance', 110, { radar: false }), evAt('pirates', 150, { side: randSide() }),
                   evAt('mines', 190, { side: randSide() }), evAt('glitch', 230, { radar: false }), evAt('swarm', 270)],
   },
   c5: {
-    name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 300, rep: 3, xp: 200 },
+    name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 120, rep: 3, xp: 200 },
     // set by hand: the whole mission is the pirate base. A patrol interceptor (the opener), then we dock (once it's
     // gone: EVENT_RUNNERS.brig); the jump is due 240 s later (finaleLead), sooner once she's aboard and we've
     // detached (js/dock.js ESCAPE_SPOOL). A bigger crew gets more guards in the base, not more encounters
@@ -138,7 +139,7 @@ Object.assign(MISSIONS, {
     build: () => [evAt('interceptor', 25, { side: randSide(), opener: true }), evAt('brig', 60, { side: randSide() })],
   },
   c6: {
-    name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 300, rep: 3, xp: 220 },
+    name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 120, rep: 3, xp: 220 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
     crew: {events: [4, 5, 8, 11, 14, 18, 24, 24], cells: [3, 3, 7, 13, 17, 21, 23, 23], reactor: [1, 1, 1, 0.7, 0.7, 0.7, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the drifting rock, 2 samples, 2026-10-16): 33% 66% 65% 66% 66% 65% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 16 s at 257 s; kit before new prerequisites: ×3: star cannon waits 16 s at 257 s; was 5/5/9/12/15/18/24/24
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
@@ -151,7 +152,7 @@ Object.assign(MISSIONS, {
                   evAt('swarm', 215), evAt('coolant', 255, { radar: false }), evAt('grappler', 290, { side: randSide() })],
   },
   c7: {
-    name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 350, rep: 3, xp: 260 },
+    name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 140, rep: 3, xp: 260 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
     crew: {events: [1, 1, 5, 9, 14, 16, 19, 25], cells: [2, 2, 3, 4, 7, 7, 8, 14], reactor: [1, 1, 1, 1, 0.7, 1, 1, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 67% 79% 64% 65% 65% 65% 65% 66% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 7 s at 125 s; ×4 star cannon waits 26 s at 85 s; kit before new prerequisites: ×3: port cannon waits 7 s at 125 s; ×4: star cannon waits 26 s at 85 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
@@ -161,7 +162,7 @@ Object.assign(MISSIONS, {
     build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 30, 18),
   },
   c8: {
-    name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 500, rep: 5, xp: 400 },
+    name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 200, rep: 5, xp: 400 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
     crew: {events: [3, 3, 4, 6, 7, 10, 10, 23], cells: [2, 2, 2, 3, 3, 4, 4, 8], reactor: [0.85, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 40% 61% 54% 69% 62% 62% 63% 65% idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); OUT OF SPEC: ×2 port cannon waits 63 s at 191 s; ×3 port cannon waits 39 s at 48 s; ×4 port cannon waits 44 s at 110 s; kit before new prerequisites: ×2: port cannon waits 63 s at 191 s; ×3: port cannon waits 39 s at 48 s; ×4: port cannon waits 44 s at 110 s
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
@@ -227,7 +228,7 @@ const isPaint = (p) => typeof p === 'string' && /^#[0-9a-f]{6}$/i.test(p);
 function applyKit(c, kit) {
   c.kit = kit ? { gear: { ...(kit.gear || {}) }, profession: kit.profession || null, paint: isPaint(kit.paint) ? kit.paint : null } : { gear: {}, profession: null };
   if (c.kit.paint) c.color = c.kit.paint;
-  c.armor = c.kit.gear.armor ? 1 : 0;
+  c.armor = perk(c, 'armor') ? 1 : 0;                                                 // (weapons specialists only, since v4)
   if (perk(c, 'ownKit') && !c.inv.weapon) c.inv.weapon = 'repair';                     // (on top of the ship's own items)
   if (perk(c, 'heavy') && (!c.inv.weapon || c.inv.weapon === 'laser')) c.inv.weapon = 'heavy';
   else if (perk(c, 'ownLaser') && !c.inv.weapon) c.inv.weapon = 'laser';
@@ -262,7 +263,7 @@ const missionSuccess = (id, results) => !!results?.jumped && (!!results.objectiv
 // Rewards for one player from a mission's results. Jumped out = the crew gets paid (base + per pirate)
 // and XP for whoever is aboard and on their feet, objective or not; reputation only for a success.
 function computeRewards(id, results, survived, firstClear) {
-  const M = MISSIONS[id] || {}, R = M.rewards || { money: 40, rep: 0, xp: 50 };
+  const M = MISSIONS[id] || {}, R = M.rewards || { money: 16, rep: 0, xp: 50 };   // (money: 2026-10-16 ×0.4 everywhere but chapter 1, so you have to choose)
   if (!results.jumped) return { xp: 0, money: 0, rep: 0 };
   const money = (R.money || 0) + (R.perPirate || 0) * (results.pirates || 0);
   const rep = missionSuccess(id, results) ? (R.rep || 0) + (firstClear ? 1 : 0) : 0;
@@ -314,6 +315,9 @@ function migrateProfile(p) {
     if (out.profession === 'gunner') out.profession = 'weapons';
     if (out.profession === 'medic') { out.profession = null; out.gear.firstAid = true; }
     delete out.gear.trauma; delete out.gear.painkillers;
+  }
+  if (!(p.v >= 4)) {                       // v4: the armor vest is weapons-specialist gear: anyone else gets its $220 back
+    if (out.gear.armor && out.profession !== 'weapons') { delete out.gear.armor; out.money += 220; }
   }
   out.v = PROFILE_VERSION;
   return out;
@@ -386,14 +390,26 @@ const shopItem = (data, name, desc, { own, ownTag = 'OWNED', price = '', why = '
   return `<button class="item ${state}" ${data} ${own || why ? 'disabled' : ''}${why ? ` title="Locked: ${escapeHtml(why)}"` : ''}>`
     + `<b>${name}${tag}</b><span>${desc}</span>${why ? `<i class="why"><i class="padlock" aria-hidden="true"></i>${escapeHtml(why)}</i>` : ''}</button>`;
 };
+const aAn = (name) => (/^[aeiou]/i.test(name) ? 'an ' : 'a ') + name;
+// One profession per profile, for good: why profession x is closed to profile p at level lv ('' = open), and
+// picking one (only while you have none; Start over in the lobby gives a fresh profile).
+const professionWhy = (p, lv, x) => {
+  const mine = PROFESSIONS.find(y => y.id === p.profession);
+  return mine ? (mine.id === x.id ? '' : `You're ${aAn(mine.name)} — Start over to choose again`) : lv < 2 ? 'Unlocks at level 2' : '';
+};
+function pickProfession(p, id) {
+  if (p.profession || levelOf(p.xp) < 2 || !PROFESSIONS.some(x => x.id === id)) return false;
+  p.profession = id;
+  return true;
+}
 const lobbyUI = {
-  union: null, onPick: null, onProfile: null,
+  union: null, askProf: null, onPick: null, onProfile: null,
   el: (id) => document.getElementById(id),
   init(onPick, onProfile) {
     this.onPick = onPick; this.onProfile = onProfile;
     this.el('lobby-locker').onclick = () => this.shop('locker');
     this.el('lobby-shipyard').onclick = () => this.shop('shipyard');
-    this.el('shop-close').onclick = () => { this.el('shop').hidden = true; };
+    this.el('shop-close').onclick = () => { this.el('shop').hidden = true; this.askProf = null; };
   },
   available() { const u = unlockedMissions(); if (this.union) for (const id of this.union) u.add(id); return u; },
   render(chosen) {
@@ -441,11 +457,15 @@ const lobbyUI = {
     this.el('shop-title').textContent = kind === 'locker' ? `LOCKER — $${p.money} · level ${lv}` : `SHIPYARD — ★ ${p.rep} reputation`;
     let html = '';
     if (kind === 'locker') {
-      html += `<h4>Profession${lv < 2 ? ' (from level 2)' : ''}</h4><div class="grid">` + PROFESSIONS.map(x => shopItem(`data-prof="${x.id}"`, x.name, x.desc,
-        { own: p.profession === x.id, ownTag: 'YOURS', why: lv < 2 ? 'Unlocks at level 2' : '' })).join('') + '</div>';
+      // One profession, for good: once picked the others are closed (Start over in the lobby resets the profile).
+      const mine = PROFESSIONS.find(x => x.id === p.profession), ask = !mine && lv >= 2 && PROFESSIONS.find(x => x.id === this.askProf);
+      html += `<h4>Profession${lv < 2 ? ' (from level 2)' : mine ? '' : ' (choose one: for good)'}</h4><div class="grid">` + PROFESSIONS.map(x => shopItem(`data-prof="${x.id}"`, x.name, x.desc,
+        { own: p.profession === x.id, ownTag: 'YOURS', why: professionWhy(p, lv, x) })).join('') + '</div>';
+      if (ask) html += `<div class="confirm" id="prof-confirm"><p><b>Become ${aAn(ask.name)}?</b> You can't switch later (only Start over, back to level 1, lets you choose again).</p>`
+        + `<div class="row"><button data-prof-yes="${ask.id}">Yes, become ${aAn(ask.name)}</button><button data-prof-no>Not yet</button></div></div>`;
       const gearButtons = (list) => '<div class="grid">' + list.map(g => {
         const pr = g.prof && PROFESSIONS.find(x => x.id === g.prof);
-        const why = pr && p.profession !== g.prof ? `${pr.name}s only${lv < 2 ? ' · profession from level 2' : ' · pick the profession above'}`
+        const why = pr && p.profession !== g.prof ? `${pr.name}s only${lv < 2 ? ' · profession from level 2' : p.profession ? '' : ' · pick the profession above'}`
           : lv < g.level ? `Unlocks at level ${g.level} (you: ${lv})` : p.money < g.cost ? `Need $${g.cost - p.money} more` : '';
         return shopItem(`data-gear="${g.id}"`, g.name, g.desc, { own: p.gear[g.id], price: `$${g.cost}`, why }); }).join('') + '</div>';
       html += '<h4>General</h4>' + gearButtons(GEAR.filter(g => !g.prof));
@@ -459,7 +479,9 @@ const lobbyUI = {
       html += '<p class="note">In multiplayer, the ship gets every upgrade anyone in the crew has bought.</p>';
     }
     box.innerHTML = html;
-    box.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => { p.profession = b.dataset.prof; this.saved(kind); });
+    box.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => { if (!p.profession) { this.askProf = b.dataset.prof; this.shop(kind); } });
+    box.querySelectorAll('[data-prof-yes]').forEach(b => b.onclick = () => { pickProfession(p, b.dataset.profYes); this.askProf = null; this.saved(kind); });
+    box.querySelectorAll('[data-prof-no]').forEach(b => b.onclick = () => { this.askProf = null; this.shop(kind); });
     box.querySelectorAll('[data-gear]').forEach(b => b.onclick = () => { const g = GEAR.find(x => x.id === b.dataset.gear); if (p.money >= g.cost) { p.money -= g.cost; p.gear[g.id] = true; this.saved(kind); } });
     box.querySelectorAll('[data-ship]').forEach(b => b.onclick = () => { const u = SHIP_UPGRADES.find(x => x.id === b.dataset.ship); if (p.rep >= u.rep) { p.rep -= u.rep; p.ship[u.id] = true; this.saved(kind); } });
     this.el('shop').hidden = false;

@@ -53,6 +53,9 @@
   #shop .item b { display: block; font-size: 14px; margin-bottom: 3px; } #shop .item span { font-size: 12px; color: #c9ced8; }
   #shop .item.chosen { background: #1d4a36; border-color: #5fd6a0; } #shop .item:disabled { opacity: 0.5; cursor: default; }
   #shop .item.chosen:disabled { opacity: 1; }
+  #shop .confirm { margin: 10px 0 4px; padding: 10px 12px; border-radius: 8px; border: 2px solid #e8c34f; background: rgba(58, 52, 32, 0.85); }
+  html.metal-gl #shop .confirm { background: transparent; }   /* (the metal buttons are drawn underneath, js/menugl.js) */
+  #shop .confirm p { margin: 0 0 8px; font-size: 13px; } #shop .confirm .row { display: flex; gap: 10px; }   /* (.row: the lobby's metal buttons) */
   /* three states (shopItem() in js/progress.js): owned (latched, LED, "OWNED"), available (price tag), locked (dark, padlock, why) */
   #shop .item b { display: flex; align-items: baseline; gap: 10px; }
   #shop .item .tag { margin-left: auto; flex: none; font: 800 12px system-ui, sans-serif; font-style: normal; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 4px; text-shadow: none; }
