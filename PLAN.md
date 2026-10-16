@@ -729,8 +729,8 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - **Campaign** (`c1`–`c8`), each with a briefing, objective and pay: First Contract (defeat pirates,
   $16 each, no intruder) → Strange Cargo (the intruder appears) → The Empty Lab (black box from
   Dr. Varga's drifting lab) → Red Comet Cove (pirates took her) → Rescue Dr. Varga (storm the
-  pirate base) → Spore Season (living rock sample) → The Deep (coils + jump handle) → The Mother of All
-  (the leviathan). Each finished chapter unlocks the next.
+  pirate base) → Spore Season (living rock sample) → The Deep (gravity tides, coils, jump handle, herds) → The Mother of All
+  (spores, the spore mother, the grappler, herds, the leviathan; a fixed escalating timeline since 2026-10-16). Each finished chapter unlocks the next.
 - **Success** (`missionSuccess`): the ship jumped out AND the objective is done (missions without
   one: the jump is enough). Only a success earns reputation (+1 the first time), counts as finished
   (`profile.done`, the ✔ in the lobby) and unlocks the next chapter.
@@ -2437,6 +2437,51 @@ that mission, so they're unintuitive, and they do nothing visible at the jump.
   toggle. Radar plates got icons for organic kinds and mine drones (EVENT_ICONS, js/sidebar.js).
 - Sprites: none new (hull/coil_*, hull/coil_dial, systems/jump_*); rings, beams, flares and the tide's wave are 2D.
 - Test: tests/jumpdrive.js.
+
+### The Deep and The Mother of All rebuilt; interceptors only where the pirates are (2026-10-16)
+
+The user: The Deep "far too easy and unclear" (coils fixed in a minute, then nothing; "not enough new things"); The
+Mother of All "boring" (survive + a random draw; the spore mother never showed up).
+- **The Deep (c7):** a fixed list instead of the shuffle, no pirate ships at all: a spore cloud (opener), then herds
+  (grappler + leeches, spore mother + spore clouds, then random pairs), two failing parts (`always: ['maintenance']`, two
+  written), asteroids, an alien, leeches, an ion storm, the grappler, a coolant leak, the mother. Rule `tides: 70`: a
+  tide every ~70 s that knocks an aligned coil out, so the coils are a spacewalk job all mission long. Solo: spores, 2
+  failing parts, a herd (the finale). Briefing says what's out there (tides that pull at the ship and the coils,
+  creatures that come in pairs as if steered, no nav fix → the handle). Deep drift (its twin): the same rules, a shuffled
+  pool without interceptor / frigate / stealth fighter / saboteur, with 3 herds and 2 failing parts (`always`).
+- **The Mother of All (c8):** a fixed escalating timeline, no pirates: spore clouds (opener, on the far side from the
+  mother) → the spore mother → the grappler (the mother's other side: one capacitor can't feed both) → a failing part →
+  herds and explicit tides → leeches → another failing part → more herds → the leviathan (`finale: true`, always last:
+  `selectEvents` puts repeats before a written finale; `finaleLead` 30 so its whole 30 s pass comes before the jump).
+  `always: ['spores', 'mother', 'grappler', 'maintenance']` + the leviathan (essential): solo and every crew size get
+  those six; 4+ players get herds, tides, leeches on top. Rule `tides: 80`. Briefing names the spore mother, the
+  grappler and the leviathan. Nightmare (its twin) keeps "everything" (pirates included; herd and tide added to its pool).
+- **Interceptors only where the story has pirates:** c1, c4 (the Red Comet scout), c5 (the base's patrol). c2 opens
+  with the asteroid swarm always (was swarm or interceptor), c3 with a mine drone the pirates left at the lab, c6 with a
+  leech swarm (the Mire; leeches no longer `essential` there: the opener is never dropped). Skirmishes not tied to the
+  story keep theirs: intro, Rush hour, Nightmare, Ore run (a mining run in the lanes), Black box, Stranded engineer.
+- **More failing parts:** `always: ['maintenance']` in c4 / Pirate cove, c6 (+ a written one) / Ore run, c7 / Deep drift
+  and c8 (two written). DROP_ORDER gained `tide` (after flare) and `herd` (after swarm: kept before other optional fights).
+- **Balance model:** a herd = its two encounters' jobs at once (same side); a tide (event or the `tides` rule's clock,
+  every `rules.tides` s) = everyone holds on through the 1.6 s lurch + with the coils rule one coil re-alignment spacewalk
+  (prio 3, not optional); misaligned coils at the jump = coil jobs − done (≤ 3) × COIL_DELAY.
+- **Calibration** (8 builds, expected kit; idle % for 1 / 2 / 3 / 4 / 8, * = energy out of spec):
+
+  | Mission | Encounters | Idle | Aim solo / 2+ |
+  |---|---|---|---|
+  | c2 (opener swap only) | unchanged | 35 59 66 75 70 | 55 / 67 (in spec, approved numbers kept) |
+  | c3 (opener swap only) | unchanged | 27 66 72 68 67 | 54.5 / 66.5 (in spec, kept) |
+  | c4 | 3/5/11/14/24 → 4/5/11/14/23 | 28 68 65 66 76 | 54 / 66 |
+  | Pirate cove | 2/6/11/15/24 → 3/6/11/15/24 | 47 67 64 66 76 | 53.5 / 65.5 |
+  | c6 | 4/5/8/11/24 → 4/5/7/12/25 | 35 65 65* 65 70 | 37 / 65 |
+  | Ore run | unchanged | 37 68 67 66 73 | 37 / 66 |
+  | c7 | 1/1/5/9/25 → 3/3/4/5/15 | 29 55 69 71* 63* | 37 / 64.5 |
+  | Deep drift | 1/1/5/8/27 → 2/2/3/4/12 | 33 63 70 66* 63 | 37 / 64.5 |
+  | c8 (by hand, reactor ×0.35 for 1-6) | 3/3/4/6/23 → 6/6/6/7/16 | 7 44 64 64 65* | 37 / 64 |
+  | Nightmare | 3/3/3/4/16 → 3/3/3/4/11 | 25* 56* 72* 52* 65* | 25 / 64 |
+- **Misses:** c8 solo 7 % / ×2 44 % (the fixed six are more than a small crew's target; tests/scaling.js `FIXED`; in spec
+  and doable only with a ×0.35 reactor); c4 solo 28 % (5 encounters: opener, two raiders, the failing part, a finale
+  fight; the extra event tightens the gaps 103 → 77 s); c7 solo 29 % (4 is the least: opener, 2 parts, the herd finale).
 
 ## Sound
 

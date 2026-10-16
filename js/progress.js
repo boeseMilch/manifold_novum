@@ -94,9 +94,10 @@ Object.assign(MISSIONS, {
     objective: { kind: 'intruder', count: 2 }, rules: {},
     blurb: 'Two somethings crawled out of the bonus salvage pod. Kill them both.',
     briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nTwo somethings with too many legs are loose on the ship: one prowls the upper deck, the other the lower. They force their way around, room by room, hunting whoever they can find. Lock them in with the security console, get a weapon, and kill them both, one at a time if you can. The Xenobiology Institute will pay for the remains.',
-    // solo: the opener (asteroids or an interceptor, at random), the two aliens (the objective), the frigate (the finale);
-    // bigger crews add the mine drone, the maintenance failure, a jammed cannon and the antenna (DROP_ORDER), then repeats
-    build: () => [Math.random() < 0.5 ? evAt('swarm', 50, { opener: true }) : evAt('interceptor', 50, { side: randSide(), opener: true }), evAt('intruder', 90, { side: randSide(), count: 2 }),
+    // solo: the opener (an asteroid swarm; 2026-10-16: no more interceptor half the time, no pirates on this run), the two
+    // aliens (the objective), the frigate (the finale); bigger crews add the mine drone, the maintenance failure, a jammed
+    // cannon and the antenna (DROP_ORDER), then repeats
+    build: () => [evAt('swarm', 50, { opener: true }), evAt('intruder', 90, { side: randSide(), count: 2 }),
                   evAt('mines', 130, { side: randSide() }), evAt('debris', 160, { gun: ['port', 'front', 'star'][Math.floor(Math.random() * 3)] }),
                   evAt('maintenance', 190, { radar: false }), evAt('antenna', 220, { radar: false }), evAt('frigate', 250, { side: randSide() })],
   },
@@ -108,15 +109,17 @@ Object.assign(MISSIONS, {
     objective: { kind: 'blackbox' }, rules: { breach: true },
     blurb: 'Dr. Varga\'s lab went quiet. Bring back its black box.',
     briefing: 'The Institute wants to talk to the only expert on those things: Dr. Ilse Varga. Her research station went quiet a week ago.\n\nWhen you arrive, the lab module is drifting — dark, airless, its door jammed. We\'ll tether to it. Get inside, find the station\'s black box and carry it home (it\'s heavy). Watch the hull: big hits can tear holes in it now.\n\nAnd something in there is still alive. The station\'s freezer log has one line: KEEP S-7 FROZEN.',
-    // a calm half minute, a scavenger at the station (the opener), then the lab, then trouble on the way out
-    build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('derelict', 70, { side: randSide() }), evAt('mines', 110, { side: randSide() }), evAt('swarm', 150),
+    // a calm half minute, a mine drone the pirates left at the station (the opener; was an interceptor until 2026-10-16),
+    // then the lab, then trouble on the way out
+    build: () => [evAt('mines', 30, { side: randSide(), opener: true }), evAt('derelict', 70, { side: randSide() }), evAt('mines', 110, { side: randSide() }), evAt('swarm', 150),
                   evAt('maintenance', 190, { radar: false }), evAt('flare', 230)],
   },
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 80, perPirate: 20, rep: 2, xp: 160 },
-    crew: {events: [3, 5, 11, 14, 18, 23, 24, 24], cells: [2, 2, 8, 11, 14, 17, 20, 20], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, 2026-10-16): 46% 66% 65% 67% 66% 69% 72% 75% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/6/11/15/21/23/24/24 (two raiders destroyed)
+    crew: {events: [4, 5, 11, 14, 18, 23, 23, 23], cells: [2, 2, 8, 11, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, a failing part at every crew size, 2026-10-16): 28% 68% 65% 66% 66% 68% 73% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/5/11/14/18/23/24/24 (46% 66% 65% 67% ...)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
+    always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on)
     objective: { kind: 'navcore' }, rules: { breach: true, surge: true },   // (was 'raiders' ×2 like chapter 1; 2026-10-16: no mission twice)
     blurb: 'Pirates took Dr. Varga. Find the Red Comet\'s hideout: bring a raider\'s nav core aboard.',
     briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away. Where to? Nobody knows where their hideout is — but every one of their raiders does: it\'s in its nav computer.\n\nTheir raiders patrol the Cove. Get us a nav core. Let one dock and board it: the nav console sits beside its reactor, pull the core out (hold click) and carry it home. Or shoot one to scrap: its nav core gets flung clear — spacewalk out and fish it in before it drifts off (about a minute). The Guild\'s bounty still stands: $20 a pirate. Power lines can arc now; splice them with the repair kit.',
@@ -141,35 +144,53 @@ Object.assign(MISSIONS, {
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 120, rep: 3, xp: 220 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
-    crew: {events: [4, 5, 8, 11, 14, 18, 24, 24], cells: [3, 3, 7, 13, 17, 21, 23, 23], reactor: [1, 1, 1, 0.7, 0.7, 0.7, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the drifting rock, 2 samples, 2026-10-16): 33% 66% 65% 66% 66% 65% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 16 s at 257 s; kit before new prerequisites: ×3: star cannon waits 16 s at 257 s; was 5/5/9/12/15/18/24/24
+    crew: {events: [4, 5, 7, 12, 16, 19, 25, 25], cells: [3, 3, 5, 11, 14, 19, 24, 24], reactor: [1, 1, 1, 0.85, 0.7, 0.7, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the leech opener + a failing part, 2026-10-16): 35% 65% 65% 65% 67% 66% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 27 s at 235 s; was 4/5/8/11/14/18/24/24
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
-    essential: ['spores', 'leeches'],
+    essential: ['spores'],                    // (and the leeches: the opener, never dropped)
+    always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     objective: { kind: 'ore', count: 2 }, rules: { breach: true, surge: true, plasma: true },
     blurb: 'Drill two samples of the living rock in the Mire Nebula before it drifts past.',
     briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs two samples of the living rock they grow on. One will drift right past in front of us, and it won\'t wait: take the mining drill (left airlock room), spacewalk out, drill a sample, bring it inside, and go back for the second before the rock is out of reach. The nebula will notice. Expect spores, barnacles and leeches.',
-    // a calm half minute, an interceptor (the opener), then the rock drifts in (and past)
-    build: () => [evAt('interceptor', 30, { side: randSide(), opener: true }), evAt('rock', 60, { side: randSide() }), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
-                  evAt('swarm', 215), evAt('coolant', 255, { radar: false }), evAt('grappler', 290, { side: randSide() })],
+    // a calm half minute, a leech swarm (the opener: the Mire's own; was an interceptor until 2026-10-16), then the rock
+    // drifts in (and past); a part fails on the way (every crew size)
+    build: () => [evAt('leeches', 30, { side: randSide(), opener: true }), evAt('rock', 60, { side: randSide() }), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
+                  evAt('swarm', 215), evAt('maintenance', 235, { radar: false }), evAt('coolant', 255, { radar: false }), evAt('grappler', 290, { side: randSide() })],
   },
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 140, rep: 3, xp: 260 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
-    crew: {events: [1, 1, 5, 9, 14, 16, 19, 25], cells: [2, 2, 3, 4, 7, 7, 8, 14], reactor: [1, 1, 1, 1, 0.7, 1, 1, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 67% 79% 64% 65% 65% 65% 65% 66% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×3 port cannon waits 7 s at 125 s; ×4 star cannon waits 26 s at 85 s; kit before new prerequisites: ×3: port cannon waits 7 s at 125 s; ×4: star cannon waits 26 s at 85 s
+    crew: {events: [3, 3, 4, 5, 6, 7, 9, 15], cells: [3, 3, 3, 3, 4, 5, 6, 9], reactor: [0.7, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, tides + herds, 2026-10-16): 29% 55% 69% 71% 62% 63% 66% 63% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 star cannon waits 23 s at 121 s; (solo: 3 written + the finale herd is the least: the opener, two failing parts)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
-    objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
-    blurb: 'Fly into the deep beyond the Mire and get out alive.',
-    briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in and survive. Out there the jump drive is fussy: align the three jump coils on the hull (spacewalk), and when it spools up, someone holds the jump handle at the helm.',
-    build: (target) => shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'mines', 'spores', 'antenna', 'flare', 'storm', 'stealth', 'tractor', 'grappler', 'leeches'], target, 30, 18),
+    always: ['maintenance'],                  // two parts fail at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on)
+    objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 70 },
+    blurb: 'Fly into the deep beyond the Mire, where the tides pull and the creatures hunt together. Get out alive.',
+    briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in and survive. No pirates out there, nobody at all — only what lives there. Every minute or so a gravity tide rolls through: the ship lurches, loose things slide, anyone outside gets thrown off the hull, and it knocks the jump coils out of line. Keep spacewalking out to turn them back (green), or the jump takes longer. There is no nav fix out there either: when the drive spools up, someone holds the jump handle at the helm.\n\nAnd the creatures don\'t come one by one any more. They come in pairs, from one side, as if something were steering them. Listen for the call.',
+    // 2026-10-16 (the user: "far too easy", "not enough new things"): no interceptors (no pirates beyond the Mire); the tides
+    // (rule) keep knocking the coils out; the creatures come as herds; two parts fail. A spore cloud first, then the herds.
+    build: () => [evAt('spores', 30, { side: randSide(), opener: true }), evAt('herd', 70, { kinds: ['grappler', 'leeches'], side: randSide() }), evAt('maintenance', 100, { radar: false }),
+                  evAt('herd', 130, { kinds: ['mother', 'spores'], side: randSide() }), evAt('swarm', 150), evAt('maintenance', 170, { radar: false }), evAt('intruder', 190, { side: randSide() }),
+                  evAt('leeches', 210, { side: randSide() }), evAt('storm', 230), evAt('herd', 250, { kinds: herdPair(), side: randSide() }), evAt('grappler', 270, { side: randSide() }),
+                  evAt('coolant', 285, { radar: false }), evAt('mother', 300, { side: randSide() }), evAt('herd', 315, { kinds: herdPair(), side: randSide() })],
   },
   c8: {
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 200, rep: 5, xp: 400 },
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo)
-    crew: {events: [3, 3, 4, 6, 7, 10, 10, 23], cells: [2, 2, 2, 3, 3, 4, 4, 8], reactor: [0.85, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 40% 61% 54% 69% 62% 62% 63% 65% idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); OUT OF SPEC: ×2 port cannon waits 63 s at 191 s; ×3 port cannon waits 39 s at 48 s; ×4 port cannon waits 44 s at 110 s; kit before new prerequisites: ×2: port cannon waits 63 s at 191 s; ×3: port cannon waits 39 s at 48 s; ×4: port cannon waits 44 s at 110 s
+    crew: {events: [6, 6, 6, 7, 9, 9, 11, 16], cells: [4, 4, 4, 4, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
-    objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
-    blurb: 'Sit next to the leviathan for five minutes. Survive.',
-    briefing: 'Varga\'s theory: the swarms answer to one creature. To prove it, someone has to sit right next to it for five minutes and survive.\n\nThat someone is you. Everything out there will come for the ship at once. Good luck — and bring the cat.',
-    build: (target) => [...shuffledTimeline(['interceptor', 'frigate', 'swarm', 'intruder', 'saboteur', 'maintenance', 'mines', 'spores', 'debris', 'flare', 'storm', 'coolant', 'glitch', 'stealth', 'tractor', 'grappler', 'leeches', 'mother', 'pirates'], target, 30, 13), evAt('leviathan', 150)],
+    // at every crew size, solo too: the spore clouds, the spore mother, the grappler, two failing parts and the leviathan
+    // (an essential kind); more players get herds, tides and leeches on top
+    always: ['spores', 'mother', 'grappler', 'maintenance'],
+    finaleLead: 30,                           // the leviathan is the finale: its whole pass (LEV_TIME) before the jump
+    objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 80 },
+    blurb: 'Meet the spore mother, the grappler and the leviathan itself. Survive until the jump.',
+    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing that spits spore pods at the hull (shoot its sac when it opens). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. The tides pull at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. Keep out of the rooms it\'s about to bump, hold the jump handle, and get us out.\n\nGood luck — and bring the cat.',
+    // 2026-10-16 (the user: "boring", never saw the spore mother): a fixed, escalating timeline instead of the shuffle,
+    // no interceptors: spores, the mother, the grappler while a part breaks, then herds and tides, the leviathan last
+    // (the mother on one side, the spores and the grappler on the other: one capacitor can't feed both big fights)
+    build: () => { const s = randSide(), o = s === 'port' ? 'star' : 'port'; return [evAt('spores', 30, { side: o, opener: true }), evAt('mother', 60, { side: s }), 
+                  evAt('grappler', 100, { side: o }), evAt('maintenance', 120, { radar: false }), evAt('herd', 130, { kinds: ['leeches', 'spores'], side: randSide() }), evAt('tide', 140), evAt('herd', 150, { kinds: ['grappler', 'leeches'], side: randSide() }),
+                  evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false }), evAt('herd', 210, { kinds: ['mother', 'spores'], side: randSide() }),
+                  evAt('tide', 225), evAt('herd', 240, { kinds: herdPair(), side: randSide() }), evAt('leviathan', 270, { finale: true })]; },
   },
   practice: {
     name: 'Practice', tier: 0, practice: true, rules: {}, objective: null,

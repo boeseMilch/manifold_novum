@@ -152,7 +152,7 @@ const NAMES = ['MISSIONS', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'make
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME'];
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -407,6 +407,17 @@ function jobsFor(ev, ctx) {
     const chew = calibrate('leeches').first.broken ?? A.LEECH_LATCH + g.LEECH_CHEW;
     job({ label: 'leech swarm (shield)', trip: H(`${L(side)} shield button`), work: 1, notBefore: A.LEECH_LATCH, energy: [{ cap: CAP[side], units: 1, shield: true }],
           deadline: chew, late: (j, done) => ({ breaks: 6 * Math.max(0, done - chew) / g.LEECH_CHEW + 1 }) });
+  } else if (k === 'herd') {
+    // the herd: its two encounters at once, from one side (each with its own jobs)
+    for (const kind of ev.kinds || []) for (const j of jobsFor({ ...ev, kind }, ctx)) J.push({ ...j, label: `herd: ${j.label}` });
+  } else if (k === 'tide') {
+    // a gravity tide (an event, or the `tides` rule's clock): everyone holds on through the lurch (TIDE_WARN s after the
+    // warning), and with the coils rule it knocks one coil out: a spacewalk to turn it back (or the jump takes COIL_DELAY longer)
+    for (let i = 0; i < n; i++) job({ label: 'gravity tide: hold on', rel: g.TIDE_WARN, work: g.TIDE_TIME });
+    if (rules.coils) {
+      const c = g.COIL_SPOTS[(ctx.tides = (ctx.tides || 0) + 1) % g.COIL_SPOTS.length], e = evaTrip(nearSide(c.x), [[c.x, c.y]]);
+      job({ label: `jump coil (${c.name}, re-align)`, rel: g.TIDE_WARN + g.TIDE_TIME, prio: 3, coil: true, trip: e.legs, work: e.extra + g.ALIGN_TIME });
+    }
   } else if (k === 'leviathan') {
     const bumps = Math.floor(g.LEV_TIME / g.LEV_STEP);
     job({ label: 'leviathan', work: 0, prio: 3, fixed: { small: bumps, span: [0, g.LEV_TIME], crewHits: 0.5 } });
@@ -510,7 +521,10 @@ function schedule(build, waitByKey) {
     if (same) { same.work += job.work; same.weight = (same.weight || 0) + (job.weight || 0); return; }
     queue.push(job);
   };
-  for (const ev of events) for (const j of jobsFor(ev, ctx)) {
+  // the `tides` rule: a tide every ~rules.tides s (the game draws ×0.8-1.2 each time; the model takes the mean)
+  const tideEvs = [];
+  if (rules.tides) { const every = rules.tides === true ? g.TIDE_EVERY : +rules.tides || g.TIDE_EVERY; for (let t = every, i = 0; t < jumpAt; t += every, i++) tideEvs.push({ id: `tide${i}`, t, kind: 'tide', radar: false }); }
+  for (const ev of [...events, ...tideEvs]) for (const j of jobsFor(ev, ctx)) {
     j.key = `${ev.id}|${j.label}`;
     if (waitByKey[j.key]) j.work += waitByKey[j.key];              // (pass 2: the fight waited this long for energy)
     j.radarable = ev.radar !== false && j.rel >= 0 && j.prio <= 1;  // the radar can tell what's coming
@@ -661,7 +675,8 @@ function schedule(build, waitByKey) {
     if (j.openRef) { j.openRef.b = finish; entry.openRef = j.openRef; }
     else if (j.weight) open.push(entry.openRef = { a: j.release, b: finish, w: j.weight });
   }
-  if (rules.coils) jumpDelay += (g.COIL_SPOTS.length - coilsDone) * g.COIL_DELAY;   // (not modelled further: more time under fire)
+  const coilJobs = done.filter(j => j.coil).length + queue.filter(j => j.coil && j.release < end).length;   // (the first alignment + one per tide)
+  if (rules.coils) jumpDelay += clamp(coilJobs - coilsDone, 0, g.COIL_SPOTS.length) * g.COIL_DELAY;   // (not modelled further: more time under fire)
   plan.bonusCells = bonusCells;
   return { done, queue, open, plan, crewHits, busy, radarBusy, lateList, got, jumpDelay, end, overTime };
 }
