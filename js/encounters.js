@@ -267,6 +267,7 @@ function drawEncounterOverlay(view, t) {
   }
   if (typeof drawHerdCall === 'function') drawHerdCall(t);   // (js/organic.js)
   if (typeof drawLevBossScreen === 'function') drawLevBossScreen(view, t);   // the boss's gas countdown and eye window (js/leviathan.js)
+  if (typeof drawCaptainScreen === 'function') drawCaptainScreen(view, t);   // Captain Red Comet's health bar (js/captain.js)
   const td = enc.tide;
   if (td) {                                            // the tide: a violet pulse at the edges while it builds, a wave sweeping across in the lurch
     if (td.phase === 'warn') {

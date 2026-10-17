@@ -223,22 +223,36 @@ function gameLighting(t) {
   if (typeof dk !== 'undefined' && dk.dock && typeof DG === 'function') {
     const g = DG(), pir = dk.dock.kind !== 'derelict', S = Lt.strip;   // (the pirate base: lit like their ship)
     if (dk.dock.tube !== 'detached') areas.push({ x: g.tube.x, y: g.tube.y - 0.3, w: g.tube.w, h: g.tube.h + 0.6, color: pir ? [0.4, 0.34, 0.32] : [0.18, 0.18, 0.2], sun: 0 });
-    for (const q of [...g.rooms, ...g.doors]) areas.push({ x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6, color: pir ? [0.36, 0.26, 0.25] : [0.09, 0.09, 0.105], sun: 0 });
+    const s7c = !pir && dk.dock.s7 ? dk.dock.s7.cold : null;   // the derelict: a cool, grey dimness (the clutter and S-7 still read), bluer as the cold spreads
+    [...g.rooms, ...g.doors].forEach((q, i) => {
+      const c = s7c && i < 3 ? s7c[i] : 0;
+      areas.push({ x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6, color: pir ? [0.36, 0.26, 0.25] : [0.3 + 0.06 * c, 0.33 + 0.1 * c, 0.4 + 0.18 * c], sun: 0 });
+    });
     g.rooms.forEach((q, i) => {
       if (pir) {                                      // (the pirate base's bigger rooms: a lamp per ~6 units)
         const nx = Math.max(1, Math.round(q.w / 6)), ny = Math.max(1, Math.round(q.h / 6));
-        for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) add({ x: q.x + q.w * (i + 0.5) / nx, y: q.y + q.h * (j + 0.5) / ny, z: 1.8, color: [1.0, 0.62, 0.45], radius: 6, intensity: 0.9, shadow: true });
+        const red = q === g.rooms[5] && dk.boss?.red;   // (Captain Red Comet's quarters in comet mode: red alert, js/captain.js)
+        for (let i = 0; i < nx; i++) for (let j = 0; j < ny; j++) add({ x: q.x + q.w * (i + 0.5) / nx, y: q.y + q.h * (j + 0.5) / ny, z: 1.8, color: red ? [1.0, 0.16 + 0.06 * Math.sin(t * 3), 0.1] : [1.0, 0.62, 0.45], radius: 6, intensity: red ? 1.1 : 0.9, shadow: true });
         return;
       }
-      const dying = hash01(Math.floor(t * 7) + i * 13) < 0.08 ? 0.15 : 1;   // a strip on its last legs
+      const dying = hash01(Math.floor(t * 7) + i * 13) < 0.08 ? 0.15 : 1;   // a strip on its last legs (red accents, no longer the room's only light)
       for (const y of [q.y + 0.12, q.y + q.h - 0.12])
-        add({ x: q.x + 0.3, y, z: S.z, x2: q.x + q.w - 0.3, y2: y, z2: S.z, color: S.color, radius: 5.5, intensity: 0.7 * dying, wrap: 0.05, shadow: true });
+        add({ x: q.x + 0.3, y, z: S.z, x2: q.x + q.w - 0.3, y2: y, z2: S.z, color: S.color, radius: 3.2, intensity: 0.35 * dying, wrap: 0.05, shadow: true });
+      // a cold grey fill from above (a dying ceiling panel), tinted by S-7's violet glow while it lives, icy once frozen
+      const c = s7c ? s7c[i] : 0, live = s7c ? 1 - c : 0, flick = hash01(Math.floor(t * 5) + i * 31) < 0.03 ? 0.6 : 1;
+      add({ x: q.x + q.w / 2, y: q.y + q.h * 0.45, z: 2.6, color: [0.62 + 0.25 * live - 0.1 * c, 0.68 - 0.08 * live + 0.12 * c, 0.9 + 0.1 * c], radius: Math.max(q.w, q.h) * 0.85, intensity: 0.55 * flick, wrap: 0.3, shadow: true });
     });
     const s7 = dk.dock.s7;                            // S-7 (js/culture.js): the heart's pink pulse, the running freezer's cold blue
     if (s7 && typeof s7Geom === 'function') {
       const G = s7Geom(dk.dock.side);
       if (!s7.heartOpen) add({ x: G.heart.x, y: G.heart.y, z: 0.6, color: [1.0, 0.35, 0.85], radius: 3.2, intensity: 0.5 + 0.3 * Math.sin(t * 4) });
-      if (s7.freezer) add({ x: G.freezer.x, y: G.freezer.y + 0.6, z: 1.0, color: [0.6, 0.85, 1.0], radius: 4, intensity: 0.7 });
+      if (s7.freezer) add({ x: G.freezer.x, y: G.freezer.y + 0.6, z: 1.0, color: [0.6, 0.85, 1.0], radius: 4 + 5 * s7.cold[1], intensity: 0.7 + 0.3 * s7.cold[1] });   // (the cold spreads with it)
+      g.rooms.forEach((q, i) => { if (s7.cold[i] > 0.05) add({ x: q.x + q.w / 2, y: q.y + q.h / 2, z: 0.4, color: [0.55, 0.8, 1.0], radius: Math.max(q.w, q.h) * 0.7, intensity: 0.45 * s7.cold[i], wrap: 0.4 }); });
+    }
+    if (!pir) {                                       // the lab's own battery-backed glows: the sample rack on the airlock bench, the monitor on the core bench (js/dock.js DOCK_DECOR.derelict)
+      const mx = (x) => dk.dock.side === 'port' ? x : SHIP_W - x;
+      add({ x: mx(-9.4), y: g.y - 1.6, z: 1.1, color: [0.45, 1.0, 0.7], radius: 2.6, intensity: 0.45 + 0.05 * Math.sin(t * 3) });
+      add({ x: mx(-21.6), y: g.y - 1.9, z: 1.2, color: [0.5, 0.75, 1.0], radius: 2.6, intensity: 0.4 * (hash01(Math.floor(t * 9)) < 0.05 ? 0.3 : 1) });
     }
   }
 

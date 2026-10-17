@@ -3,12 +3,13 @@
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
-  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES',
+  'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES', 'inRect',
   's7Geom', 's7Holding', 's7Wrapped', 'attack', 'spray', 'useEnergy', 'S7_FREEZE', 'S7_DRAW', 'S7_RECOIL_SHOT', 'S7_RECOIL_SPRAY', 'S7_STRUGGLE_PRESSES', 'resetDock', 'SIDE_CAP',
   'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_Y', 'EVENT_RUNNERS', 'evaOk', 'evaReach', 'REACH', 'rockReachLeft'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
+const inside = (o, q) => q.x >= o.x && q.y >= o.y && q.x + q.w <= o.x + o.w && q.y + q.h <= o.y + o.h;
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
 const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
 function holdOn(G, x, y, done, max = 20) { const m = G.me.input.mouse; m.wx = x; m.wy = y; m.down = true; let t = 0; while (!done() && t < max) { G.simTick(DT); t += DT; } m.down = false; return t; }
@@ -464,15 +465,25 @@ for (const side of ['port', 'star']) {
         `${side}: two pirates rush out of the bay, five guards hold the rooms, a repair kit lies in the bay`);
   check(guards.every(p => G.canStand(p.x, p.y, G.walkRects())) && G.canStand(G.dk.npc.x, G.dk.npc.y, G.walkRects()) && G.canStand(g.terminal.x + (side === 'port' ? 0.6 : -0.6), g.terminal.y + 0.6, G.walkRects()),
         `${side}: guards, Dr. Varga and the terminal's spot are all on the floor`);
-  check(!d.doors[0] && d.doors[1] && d.doors[2] && !G.walkRects().includes(g.doors[1]) && !G.walkRects().includes(g.doors[2]), `${side}: the barracks and the brig doors start locked (no walking through)`);
+  check(!d.doors[0] && d.doors[1] && d.doors[2] && d.doors[4] && [1, 2, 4].every(i => !G.walkRects().includes(g.doors[i])), `${side}: the barracks, the captain's quarters' and the brig doors start locked (no walking through)`);
+  // the captain's quarters: 12 x 10 between the gun corridor and the brig; its cover blocks walking and shots; the
+  // pirates' blast door in its side wall stays bolted (no walking through, no way to open it)
+  const Qr = g.rooms[5], B = g.blast, bx = B.x + B.w / 2, by = B.y + B.h / 2, out = side === 'port' ? 1 : -1;
+  check(Qr.w === 12 && Qr.h === 10 && G.canStand(Qr.x + 1, Qr.y + 5, G.walkRects()) && G.canStand(Qr.x + 11, Qr.y + 8, G.walkRects()), `${side}: the captain's quarters (12 x 10) are walkable`);
+  check(Object.values(g.qcover).every(q => inside(Qr, q) && !G.canStand(q.x + q.w / 2, q.y + q.h / 2, G.walkRects()) && !G.freeAt(q.x + q.w / 2, q.y + q.h / 2)),
+        `${side}: its cover (desk, chest, pillar) can't be walked through and stops shots`);
+  me.x = bx - out * 1.0; me.y = by; G.simTick(DT);
+  check(!G.canStand(bx, by, G.walkRects()) && !G.canStand(bx + out * 0.8, by, G.walkRects()) && /CREW ONLY/.test(me.prompt?.text || '') && !me.prompt?.run && d.blast === 'closed',
+        `${side}: the pirates' blast door is bolted from their side ("${me.prompt?.text}")`);
+  me.x = 37; me.y = 5;
   // every room reachable along the chain once the doors are open (Dr. Varga walks it home on her own)
-  d.doors = [false, false, false, false]; G.dk.pirates.length = 0;
+  d.doors = [false, false, false, false, false]; G.dk.pirates.length = 0;
   const N = G.dk.npc; N.state = 'follow';
   tickN(G, 60 * 5);
   check(N.state === 'follow' && G.inBase(N.x, N.y) && Math.hypot(N.x - g.npcSpot.x, N.y - g.npcSpot.y) < 3 && G.sentryLive(), `${side}: with the sentry gun still live, she waits in the brig (Varga safe)`);
   d.sentry.state = 'off';
   let t = 0; while (N.state !== 'safe' && t < 40) { G.simTick(DT); t += DT; }
-  check(N.state === 'safe' && G.roomAt(N.x, N.y), `${side}: once it's off, she walks from the brig down the gun corridor (past the cover), through the rooms and the tube into our airlock room (${t.toFixed(1)} s)`);
+  check(N.state === 'safe' && G.roomAt(N.x, N.y), `${side}: once it's off, she walks from the brig through the captain's quarters, down the gun corridor (past the cover), through the rooms and the tube into our airlock room (${t.toFixed(1)} s)`);
 }
 {
   const G = baseFresh(), g = G.baseGeom('port'), me = G.me, p = G.dk.pirates.find(p => p.mode === 'hunt');
@@ -493,15 +504,25 @@ for (const side of ['port', 'star']) {
   check(d.terminal === 'fixed' && d.doors[1], 'repaired: still locked');
   holdOn(G, g.terminal.x, g.terminal.y, () => d.terminal === 'hacked');
   check(d.terminal === 'hacked' && !d.doors[1], 'hacked: the barracks door slides open');
-  // the brig door: its keypad wants the code from the barracks wall
+  // the door to the captain's quarters: its keypad wants the code from the barracks wall
   const q = g.doors[2]; me.x = q.x + q.w / 2; me.y = q.y + q.h + 0.6; G.simTick(DT);
-  check(/door code/.test(me.prompt?.text || ''), `at the brig door: "${me.prompt?.text}"`);
-  G.withCrew(me, () => G.openBasePad());
+  check(/door code/.test(me.prompt?.text || ''), `at the quarters' door: "${me.prompt?.text}"`);
+  G.withCrew(me, () => G.openBasePad(2));
   const type = (code) => { G.withCrew(me, () => { for (const ch of code) G.miniCommand('pin', 'key', +ch); G.miniCommand('pin', 'ok'); }); for (let i = 0; i < 60; i++) G.simTick(DT); };
   type(d.code === '1234' ? '4321' : '1234');
   check(d.doors[2] && me.ui.panel === 'mini', 'a wrong code: ACCESS DENIED, still locked');
   type(d.code);
-  check(!d.doors[2] && !me.ui.panel, `the right code (${d.code}): the brig door opens`);
+  check(!d.doors[2] && d.doors[4] && !me.ui.panel, `the right code (${d.code}): the quarters' door opens (the brig door stays shut)`);
+  // the brig door behind the captain: in lockdown while Captain Red Comet holds his quarters (no code opens it: js/captain.js,
+  // tests/captain.js); once he's fled (or in a base without him) its own keypad takes the same code
+  const qb = g.doors[4]; me.x = qb.x + qb.w / 2; me.y = qb.y + qb.h + 0.6; G.withCrew(me, () => { G.inv.weapon = null; }); G.simTick(DT);
+  check(!/brig door code/.test(me.prompt?.text || '') && !me.prompt?.run, `at the brig door (in the quarters' back wall) while the captain's there: no keypad ("${me.prompt?.text}")`);
+  G.withCrew(me, () => G.openBasePad(4)); type(d.code); G.withCrew(me, () => { me.ui.panel = null; });
+  check(d.doors[4], 'the code doesn\'t open it while the captain holds the quarters');
+  G.dk.boss = null; G.simTick(DT);
+  check(/brig door code/.test(me.prompt?.text || ''), `without the captain: "${me.prompt?.text}"`);
+  G.withCrew(me, () => G.openBasePad(4)); type(d.code);
+  check(!d.doors[4] && !me.ui.panel && G.walkRects().includes(qb), `...the same code opens the brig door`);
 }
 {
   // the engine is off while docked; detach (once she's aboard) → free; someone left over there → off again
@@ -538,7 +559,7 @@ for (const side of ['port', 'star']) {
 }
 {
   // a stray shot downs her on the way; the snapshot carries the base's state (multiplayer)
-  const G = baseFresh(), N = G.dk.npc; G.dk.dock.doors = [false, false, false]; N.state = 'follow';
+  const G = baseFresh(), N = G.dk.npc; G.dk.dock.doors = [false, false, false, false, false]; N.state = 'follow';
   G.boarding.bolts.push({ x: N.x + 0.1, y: N.y, vx: 0, vy: 0, life: 1, owner: 'pirate' }); G.simTick(DT);
   check(N.state === 'down', 'shot on her way out, she goes down again (treat her again)');
   G.dk.dock.terminal = 'fixed'; G.dk.dock.tube = 'detached';
@@ -639,6 +660,8 @@ for (const side of ['port', 'star']) {
   const G = baseFresh('star'), g = G.baseGeom('star');
   const gunGuard = G.dk.pirates.find(p => p.mode === 'guard' && p.room === 4);
   check(gunGuard && Math.hypot(gunGuard.x - g.sentry.x, gunGuard.y - g.sentry.y) < 3, 'a pirate guards the gun\'s end of the corridor');
+  const big = baseFresh('port', 4), bg = big.baseGeom('port'), qGuard = big.dk.pirates.find(p => p.mode === 'guard' && p.room === 5);
+  check(qGuard && G.inRect(qGuard.x, qGuard.y, bg.rooms[5]) && big.canStand(qGuard.x, qGuard.y, big.walkRects()), 'a big crew: a second guard holds the captain\'s quarters');
   check(g.sentry.dir === Math.PI && g.sentry.muzzle.x < g.sentry.x && G.canStand(g.sentry.muzzle.x - 4, g.y - 8.5, G.walkRects()), 'starboard: the gun faces the other way, down its own corridor');
 }
 {

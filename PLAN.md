@@ -705,6 +705,31 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   MUTINY: 3", "LICK IT. WE DARE YOU.", "PLUNDER RESPONSIBLY". Prison barge: "VISITING HOURS: NEVER", "THE BRIG
   IS NOT A HOTEL", tally marks by Varga, bucket and bedroll. Varga's lab: papers, a dead plant, cold coffee,
   "TO DO: 1. CURE IT 2. NAME IT 3. DON'T GET EATEN", "SPECIMEN 7 — DO NOT FEED", "DAYS SINCE LAST INCIDENT: ?".
+  - **Story-telling sprite clutter** (2026-10-17; `DOCK_DECOR[*].sprites`, drawn by `drawDockClutter`, GFX only: the
+    classic view keeps its 2D props), after the concept art (culture / derelict / raider key art). Varga's lab tells
+    the fight: the Red Comet's boarding claw bitten into the roof over the lab (`dock/lab_claw`), the defenders'
+    barricade at the core door with the carbine they dropped, scorch blots and laser burns, drag marks and one of
+    Varga's clogs on the way to the airlock (they took her), S-7's smashed tank, a tank knocked over ("OOPS"), a
+    tipped chair, a bench with the sample rack in the airlock and one with a monitor in the core, Varga's red-string
+    notes board, Gerald the dead plant, mugs, papers and sticky notes ("ALSO DO NOT LOOK AWAY", "DO NOT FEED",
+    "BACK IN 5 MIN"). The two benches glow (js/lights.js), and the derelict's ambient went up a little so the clutter
+    reads in the dark. Raider: the robot parrot on its perch (idle loop) under "TODAY'S PLUNDER", the stuffed parrot's
+    cage, the space anchor (decorative), sandbags, "QUOTA OR KEELHAUL", the ship's-wheel card table with rum, oil /
+    not-rum drums and the spares hook (eyepatch, hat, hook) in the airlock, the treasure map by the nav console, a
+    hammock in the reactor room, and the sprite "DAYS WITHOUT A MUTINY" board in place of the canvas plaque (`replaces`).
+    The barge reuses the card table, rum, drums, hook, mutiny board and a skull stencil. Flat pieces go in the 'wall'
+    layer just over the ship sprite and under S-7's mats (`dockFloorBand`: 'decal' would be under the ship's floor).
+    Port layout, mirrored for starboard (`flip` for pieces with no writing, `_l`/`_r` drag marks). Not used: the lab's
+    broken freezer and frost (S-7's freezer is the real one), the shelf, the other tank variants, the blank plunder
+    board, the mutiny board on 0. tests/clutter.js checks the standing pieces keep out of the walking line and off the
+    crate, reactor, nav console, fire, engineer and S-7's freezer, J1, cocoon, heart, extinguisher and tendrils.
+  - **The lab's look, closer to the concept** (2026-10-17): S-7's mats are emissive (the green nodules glow); long
+    decorative floor tendrils (`S7_VINES` in js/culture.js, chains of `dock/s7_creep_seg` with a tip) run from the heart
+    through the doorways across the lab to the airlock, up to the cocooned pirate, round the core and from J1's corner,
+    grey husks where a room is frozen. The cold shows as a frost field (`s7FrostField`: many frost blots fading in from
+    the freezer's side as each room's cold rises, then a haze). Light (js/lights.js): a cool grey ambient, bluer with
+    each room's cold, a dim flickering grey-violet fill per room (icy once frozen), the red emergency strips cut to
+    accents, the running freezer's blue light growing with the lab's cold and a cold glow per chilled room.
 - **The pirate base** (chapter 5, the user's design, 2026-10-14; `dockBase` and "The pirate base" in js/dock.js, event
   kind still `brig`): the whole mission is the base. A patrol interceptor (the opener, 25 s), then at 60 s we dock
   (waits until the patrol is gone). Rooms in a row (`baseGeom`, port layout mirrored): docking bay → server
@@ -715,7 +740,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   room's security terminal is broken: repair it (kit, 5 s), then hack it (5 s) → the barracks door opens. The brig
   door's keypad (the PIN pad, `ui.mini.door`) wants a random 4-digit code, stuck on the barracks' back wall ("DO NOT
   WRITE DOWN"). Dr. Varga lies in the brig: treated, she runs home on her own; shot, she goes down again. Shots stop
-  at the base's walls (`dockSolid` in `freeAt`). Drawn in 2D (hull, floors, terminal, keypad, cell bars, plaques:
+  at the base's walls (`dockSolid` in `freeAt`). Drawn in 2D at first (now sprites, below; hull, floors, terminal, keypad, cell bars, plaques:
   "RED COMET BASE", "CHORE WHEEL", "BRIG RULES"), lit warm like the raider.
   - **The gun corridor** (2026-10-14, user feedback): 12 units between the barracks and the brig (the brig moved
     off its far end; the code door is now in the corridor's wall right beside the gun). A sentry gun (`updateSentry`,
@@ -738,6 +763,70 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
     up in 15 s (`ESCAPE_SPOOL`); otherwise the jump is due at 300 s (`length: 300, finaleLead: 240`) with the usual
     hot-zone pressure. A bigger crew gets more guards, not more encounters (`crew.events` 2 for all).
   - All of it lives in `dk` (tube, terminal, door code, guards), so the snapshot carries it.
+  - **The captain's quarters** (2026-10-17, from the boss concept; the boss fight itself comes later): a 12 x 10 room
+    between the gun corridor and the brig (`baseGeom`: rooms are now [bay, server room, barracks, brig, gun corridor,
+    quarters], port coords relative to the hatch y: quarters R(-40, -20.7, -28, -10.7), brig moved to R(-37, -29.1, -29,
+    -21.3), npcSpot (-35.9, -25.2), cell bars at x -34.6). Doors: [0 bay–server, 1 server–barracks (hacked), 2 gun
+    corridor–quarters (the old code door, keypad `g.keypad`), 3 barracks–corridor, 4 quarters–brig R(-33.4, -21.3,
+    -31.8, -20.7) (its keypad `g.brigPad` (-31.2, -20.6), on the quarters' back wall)]; `d.doors` starts [F, T, T, F, T].
+    The barracks code opens door 2; door 4 takes the same code for now (`openBasePad(i)`, `baseCodeOk(i)`, `ui.mini.door`
+    = 2 | 4) so chapter 5 stays winnable until the boss step locks it. The pirates' blast door `g.blast` R(-28, -19.3,
+    -27.3, -17.3) in the quarters' side wall: not a door rect, never walkable, bolted ("CREW ONLY · REST OF BASE", a
+    prompt without an action); `d.blast` 'closed' (the sprites also have 'alarm' / 'open' for the reinforcements later).
+    Cover in the quarters (`g.qcover`, floor holes like the corridor's crates, shots stop at them): the overturned desk
+    R(-38.6, -14.2, -36.2, -13.4), the chest R(-31.3, -13.35, -29.9, -12.45), a pillar R(-31.8, -17.85, -30.9, -16.95).
+    For a big crew the second guard of the gun group holds the quarters (room 5) instead of the brig. The chain runs
+    brig → brig door → quarters → corridor door.
+  - **Drawn with its Blender sprites** (2026-10-17, `drawBaseSprites`; group `base`, packed by `tools/sprites/pack.py base`,
+    preloaded at docking): floors, open doorway floors, hull and walls (screen tiles at the hatch), the doors (locked /
+    sliding open, client-side frames), the brig door with its keypad, the blast door and its floor decal, terminal (3
+    states, animated), keypad, docking control, cell bars (closed until the brig door opens, then the cell door hangs
+    open), the corridor's cover stacks and the sentry pedestal (+ our hull gun on top), the code note with the code in
+    note_digits, plaques (`DOCK_DECOR.base.spriteSigns`), and the furniture and clutter in `BASE_PROPS` (CCTV wall, rack
+    bank and rack, cables, GROG machine, captain's chair, taped chair, bunks, lockers, card table, bedrolls, dartboard,
+    pizza, bottles, escape pod, throne, cat bed, grog barrel, wanted poster, portrait, trophies, map table, loot piles,
+    desk / chest / pillar, stencils, bucket, tally marks, casings, doormat). The rug is part of the quarters' floor render
+    (base/rug and base/desk upright are unused). Still 2D on top: the "SERVER ROOM" plaque (canvas sign), the floor
+    stencils of `DOCK_DECOR.base`, the sentry's fan and tag, the tube stubs once detached; and everything in the classic
+    view or while the pages load (2D quarters: crates for the cover, a hazard-striped blast door, the brig keypad).
+  - **The boss: Captain Red Comet** (2026-10-17, the user's approved design; js/captain.js, tests/captain.js). He waits on his
+    throne in the quarters (`dk.boss`, synced with `dk`) and starts when someone walks in ("Who let you in here?!"); with nobody
+    standing in there for 3 s he walks back to his throne (no healing). ~1.4x a pirate (chars/captain, 0.9 footprint, never
+    leaves the quarters). A shield generator on his back projects a FRONT shield: our bolts (`captainBoltTest` in
+    `boltHitsBody`) hit either the generator (0.55 behind his centre, r 0.42, at its height) or his body; the body from the
+    front ripples off (fx/boss_shield_hit), from behind it clanks off his armour. HP 24 solo, +12 per extra crew member (up to 4).
+    - Phase 1 (100-50 %), repeating: BUCKSHOT x3 (turns to his target, the last one who hit him or the nearest; a laser-sight
+      cone for 0.6 s, then 7 pellets in a ±0.5 rad spread, 12 u/s; cover stops them) → SPIN (0.45 s planted, a ring on the
+      floor; 1.5 turns at 5 rad/s, a 2-armed spiral of bolts from the cannon 33° right of his facing, on 0.34 s / off 0.16 s
+      gaps; his generator sweeps past) → CATCH BREATH 3.5 s (facing a wall closely, he steps back off it first).
+      At 75 %: ALL HANDS (he whistles; the blast door 'alarm' → 'open' → 'closed'; 1 / 2 / 3 pirates by crew size, minus the
+      difficulty step, never below 1; at most 3 door pirates alive; they're room-5 guards).
+    - At 50 %: the transition, 2.4 s: the full bubble (invulnerable), "ROAAAR!", p1_coat_off (coat_floor dropped at 1.3 s),
+      the quarters' lights go red (js/lights.js), a pirate wave. Then COMET MODE.
+    - Phase 2, repeating: BUCKSHOT x2 (0.45 s telegraph) → DASH (fx/boss_dash_line from him through his target to 2.5 units
+      past them, max 11, cut at the first wall / cover; 0.8 s of rising whine, then 15 u/s along it, fire patches every 0.7
+      units that burn 5 s and hurt (every 1.5 s per person; the extinguisher puts them out: a new one in the barracks);
+      anyone in the path takes a hit and is knocked 1.2 units aside). Line ended at a wall or cover → DAZED 2.5 s (no shield,
+      double damage from any side); in the open → straight into a 3-armed spin at 6.5 rad/s → CATCH BREATH 2.5 s. One more
+      door pirate every 30 s (max 3 alive).
+    - At 0: the generator bursts (fx/boss_gen_burst), he staggers (p2_defeated_stagger) to his escape pod (base/pod_open,
+      closed, launched; `BASE_PROPS` draws `dk.boss.pod`), "THIS ISN'T OVER!", it launches; the brig door's LOCKDOWN lifts
+      (door 4 opens; before that no code opens it: `baseBrigLockdown`). He never dies.
+    - Easy / very easy: telegraphs x1.35 / x1.7, breath +1 / +2 s, daze +0.7 / +1.5 s.
+    - Drawn: his sprites (both phases, 8 dirs), the shield in a back and a front half around him, the bubble, the muzzle blast,
+      pellets and spin bolts (`drawCaptainBolt`), the dash line, the fire trail, the dazed stars, the coat; the buckshot cone
+      and the spin ring on the floor; name tag + state; a health bar on screen while the fight is on (75 % and 50 % ticks);
+      a sidebar plate with his cycle state. 2D fallback: a bigger red crew figure, a blue shield arc, a blue generator box.
+    - **The raider twist** (2+ players only, never solo): 6 s after the fight first starts (or 150 s after docking with someone
+      in the base) a Red Comet raider docks at our OTHER airlock (`dk.raid`: only its tube is walkable, `raidRects` in
+      `dockRects`; its ship, reactor and loot crate drawn like a docked raider's). Its two pirates (`p.raid`,
+      `raidPirateMove`) take fuel cells from our crate (twice each), shoot whoever they see, and cast off once both are home
+      (or down: empty-handed), or when the jump comes. Whoever stayed aboard has to stop them.
+    - Practice: "Captain Red Comet (phase 1 / phase 2)" (the base docked, the rooms cleared, the sentry off, at his door).
+    - Balance model (tools/balance.js, the 'brig' event): the fight as jobs for up to 3 crew (hits on the generator in the
+      breath windows and, phase 2, half the dashes' dazes; 0.8 hits per 0.95 s shot), his door pirates, the raider for 2+.
+      c5's idle, solo / 2 / 3 / 4 / 8: 54 / 75 / 83 / 87 / 94 % before → 5 / 33 / 46 / 55 / 77 % with him (solo "tight": the
+      model's horizon is the 300 s jump, which in the game waits while we're docked). Encounter counts unchanged.
 - **Nobody aboard at the jump = failed** (every mission, `crewAboard` in js/mission.js): the ship jumps out empty
   (everyone on a spacewalk or over on a docked ship): mission failed, no pay. A cannon seat or an airlock counts as
   aboard; down or out too (they're carried along).

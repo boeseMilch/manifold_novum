@@ -78,6 +78,15 @@ const A = {
   S7_GRABS_RESCUE: 3,     // … and when fighting through to the engineer without the freezer
   S7_FREE: 3,             // s per grab to get free (a shot, a spray, or wriggling) and step past
   S7_GRAB_HITS: 0.3,      // hits on the crew per grab (squeezed before they're free)
+  CAPT_REACH: 70,         // Captain Red Comet (chapter 5's base, js/captain.js): s from docking until the crew walks into his quarters (guards,
+                          // the terminal, the sentry, the code) …
+  CAPT_BEHIND: 1.2,       // … s of each catch-breath window spent walking round behind him (the rest: shots at the generator) …
+  CAPT_SPIN_HITS: 0.3,    // … generator hits per player as it sweeps past in a spin …
+  CAPT_DAZE_SHARE: 0.5,   // … share of his dashes that end in a wall or cover (dazed: double damage from any side), the rest end in a spin …
+  CAPT_CYCLE_HITS: 0.25,  // … hits on the crew per cycle per player fighting him (buckshot, the spin's bolts, the dash, the fire trail) …
+  CAPT_FIGHTERS: 3,       // … at most this many fight him at once (more get in each other's way, or mind the door pirates and Dr. Varga) …
+  CAPT_HIT: 0.8,          // … hand-laser hits on his generator (a big target, standing still while he pants) …
+  CAPT_SHOT: 0.95,        // … s per shot at it (LASER_COOLDOWN, nothing to dodge in the window)
   S7_PATCH: 8,            // s at junction J1: open it, the patch-board mini-game
   S7_TO_CORE: 8,          // s from switching the freezer on to standing at the core (then waiting for its cold)
   S7_CREEP_WORK: 6,       // s at our airlock spraying S-7's creep back (plus clearing the wrap if it got there)
@@ -153,7 +162,8 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
   'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY',
-  'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE'];
+  'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE',
+  'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -483,6 +493,26 @@ function jobsFor(ev, ctx) {
   } else if (k === 'brig') {
     const b = boarders(2, side);
     job({ label: 'prison barge (rescue)', prio: 1, ...b, work: b.work + g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED, objective: { rescue: 1 } });
+    // Captain Red Comet in the base's quarters (js/captain.js), roughly: his HP is shared by up to CAPT_FIGHTERS crew, who hit the
+    // generator in his catch-breath windows (and, phase 2, his daze); a cycle's length and hits from his own constants. His door
+    // pirates (75 %, 50 %, one every CAPT_TRICKLE s in phase 2) are fought too; 2+ players: his raider at our other airlock.
+    const nf = Math.min(n, A.CAPT_FIGHTERS), hp = g.captMaxHp(n), wave = Math.min(3, n), shot = A.CAPT_SHOT, hit = A.CAPT_HIT, fight = boarders(0, side);
+    const buck = (ph, k) => k * (0.4 + g.CAPT_TEL[ph] + g.CAPT_RECOVER[ph]), spin = (ph) => g.CAPT_PLANT[ph] + g.CAPT_SPIN_TURNS * 2 * Math.PI / g.CAPT_SPIN_W[ph];
+    const c1 = buck(0, 3) + spin(0) + g.CAPT_BREATH[0], h1 = Math.max(0, g.CAPT_BREATH[0] - A.CAPT_BEHIND) / shot * hit + A.CAPT_SPIN_HITS;
+    const dz = A.CAPT_DAZE_SHARE, c2 = buck(1, 2) + g.CAPT_DASH_TEL + 0.6 + dz * g.CAPT_DAZE + (1 - dz) * spin(1) + g.CAPT_BREATH[1];
+    const h2 = Math.max(0, g.CAPT_BREATH[1] - A.CAPT_BEHIND) / shot * hit + dz * 2 * g.CAPT_DAZE / shot * hit + (1 - dz) * A.CAPT_SPIN_HITS;
+    const n1 = hp / 2 / (h1 * nf), n2 = hp / 2 / (h2 * nf), t1 = n1 * c1, t2 = n2 * c2 + g.CAPT_TRANSITION;
+    for (let i = 0; i < nf; i++) {
+      job({ label: 'captain red comet: phase 1', prio: 1, rel: A.CAPT_REACH, trip: fight.trip, work: t1 + g.CAPT_WHISTLE, crewHits: n1 * A.CAPT_CYCLE_HITS });
+      job({ label: 'captain red comet: comet mode', prio: 1, rel: A.CAPT_REACH + t1, trip: 0, work: t2, crewHits: n2 * A.CAPT_CYCLE_HITS });
+    }
+    const pf = g.PIRATE_HP / A.LASER_HIT * A.LASER_SHOT;
+    for (const [rel, cnt, label] of [[A.CAPT_REACH + t1 * 0.5, wave, 'all hands'], [A.CAPT_REACH + t1, wave, 'the 50 % wave'], ...Array.from({ length: Math.floor(t2 / g.CAPT_TRICKLE) }, (_, i) => [A.CAPT_REACH + t1 + (i + 1) * g.CAPT_TRICKLE, 1, 'another door pirate'])])
+      job({ label: `captain's door pirates: ${label}`, prio: 0, rel, trip: 0, work: cnt * pf, crewHits: cnt * A.PIRATE_FIGHT_HITS });
+    if (n >= 2) {                                    // his raider at our other airlock (never solo)
+      const r = boarders(2, side === 'port' ? 'star' : 'port');
+      job({ label: 'captain\'s raider (2 boarders after our fuel)', ...r, rel: A.CAPT_REACH + g.CAPT_RAID_DELAY, deadline: 25, late: () => ({}) });
+    }
   }
   for (const j of J) j.ev = ev;
   return J;

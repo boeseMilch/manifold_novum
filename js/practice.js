@@ -57,6 +57,8 @@ const PRACTICE = [
   ['Other ships', 'Derelict: S-7\'s creep at our airlock (right)', () => { dk.dock = null; dockShip('derelict', 'star', { blackbox: true }); dk.dock.s7.creep.d = 7.5; }],
   ['Other ships', 'Derelict: J1 patched, freezer on (right)', () => { dk.dock = null; dockShip('derelict', 'star', { blackbox: true }); Object.assign(dk.dock.s7, { j1: true, freezer: true }); CAPACITORS[2].charge = CAP_MAX; }],
   ['Other ships', 'Pirate base + Dr. Varga (left)', () => { dk.dock = null; dk.pirates = []; dockShip('base', 'port'); }],
+  ['Other ships', 'Captain Red Comet (phase 1)', () => captainPractice(1)],
+  ['Other ships', 'Captain Red Comet (phase 2)', () => captainPractice(2)],
   ['Other ships', 'Cast off the docked ship', () => undock()],
   ['Other ships', 'Ore asteroid + drill', () => { EVENT_RUNNERS.rock(); give('drill'); }],
   // mini-games

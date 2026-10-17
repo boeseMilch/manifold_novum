@@ -499,6 +499,7 @@ function boltHitsBody(b, x0, y0) {
   for (const a of boarding.invaders) if (a.state !== 'entering' && a.mode === 'inside') test(a, a.kind === 'saboteur' ? HUMAN_HIT : ALIEN_HIT, () => hurtInvader(a, boltDamage(b), boltStun(b)));
   if (typeof dk !== 'undefined') for (const p of dk.pirates) if (!p.dead) test(p, HUMAN_HIT, () => hurtPirate(p, boltDamage(b), boltStun(b), b));
   if (typeof levBrood === 'function') for (const w of levBrood()) if (w.hp > 0) test(w, BROOD_HIT, () => levHurtBrood(w, boltDamage(b)));   // the leviathan's brood (js/leviathan.js)
+  if (typeof captainBoltTest === 'function') { const C = captainBoltTest(b, x0, y0); if (C && C.k < bk && freeAt(x0 + (b.x - x0) * C.k, y0 + (b.y - y0) * C.k)) { bk = C.k; best = C.hit; } }   // Captain Red Comet: his generator / his shield (js/captain.js)
   if (!best) { if (typeof s7BoltHit === 'function' && s7BoltHit(b, x0, y0)) { b.dead = true; return true; } return false; }   // (S-7's tendrils and creep: js/culture.js)
   b.dead = true; best(); return true;
 }
@@ -850,7 +851,8 @@ function drawBoarding(t) {
   for (const b of boarding.bolts) {
     const by = b.y - GFX.lift(b.z || 0);           // (our shots fly at the height of the muzzle they left: b.z)
     if (b.wrench) { if (!drawWrenchSprite(b)) wrench(L(b.x), L(by), b.spin); continue; }
-    const crew = b.owner === 'crew' || b.owner === 'pirate' || b.owner === 'sentry', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
+    if (b.owner === 'captain' && typeof drawCaptainBolt === 'function' && drawCaptainBolt(b)) continue;   // (his pellets and spin bolts: js/captain.js)
+    const crew = b.owner === 'crew' || b.owner === 'pirate' || b.owner === 'sentry' || b.owner === 'captain', sp = Math.hypot(b.vx, b.vy), dx = b.vx / sp, dy = b.vy / sp;
     if (crew) {                                      // laser bolt: bright red streak (a pirate's fast shot: a long one)
       // (the streak's tail: no further back than where it left the muzzle)
       const len0 = b.fast ? 2.2 : 0.7, len = b.ox != null ? Math.min(len0, Math.hypot(b.x - b.ox, b.y - b.oy)) : len0, w = b.heavy ? 2.2 : b.dmg === 2 ? 1.5 : 1;   // heavy blaster: fatter (a charged blast: blue-white)

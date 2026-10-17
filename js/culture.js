@@ -379,9 +379,10 @@ function drawS7Floor(d, g, t) {
   const fy = Math.min(...[...g.rooms, ...g.doors].map(q => q.y)) - 0.99, floor = (k) => ({ layer: 'wall', sortY: fy + k * 0.001, flip: fl });
   g.rooms.forEach((q, i) => {
     const cx = q.x + q.w / 2, cy = q.y + q.h / 2, husk = s.frozen[i], name = `dock/s7_mat_${S7_ROOMS[i]}${husk ? '_husk' : ''}`;
-    if (!s7Spr(name, 0, cx, cy, 0, floor(i))) s7MatDraw(q, i, husk, t);
-    if (s.cold[i] > 0.02 && !s7Spr(i % 2 ? 'dock/s7_frost_b' : 'dock/s7_frost_a', 0, cx, cy, 0, { ...floor(5 + i), alpha: s.cold[i] })) s7FrostDraw(q, i, s.cold[i]);
+    if (!s7Spr(name, 0, cx, cy, 0, { ...floor(i), emissive: husk ? 0.05 : 0.45 })) s7MatDraw(q, i, husk, t);   // (live: the nodules glow in the dark)
   });
+  s7VinesDraw(d, g, s, G, t, floor(3));
+  s7FrostField(g, s, G, floor);
   // the freezer, J1, the cocoon
   const fz = s.freezer ? 'dock/s7_freezer_on' : 'dock/s7_freezer_off';
   if (!s7Spr(fz, s.freezer ? Math.floor(t * 8) : 0, G.freezer.x, G.freezer.y, 0, { layer: 'wall', sortY: G.freezer.y, flip: fl, emissive: s.freezer ? 0.8 : 0.2 })) s7FreezerDraw(G.freezer, s, t);
@@ -392,6 +393,59 @@ function drawS7Floor(d, g, t) {
   const boxIn = ITEMS.some(it => it.kind === 'blackbox' && Math.hypot(it.x - G.heart.x, it.y - G.heart.y) < 1.5);
   const hn = !s.heartOpen ? 'dock/s7_heart' : boxIn ? 'dock/s7_heart_open' : 'dock/s7_heart_husk';
   if (!s7Spr(hn, s.heartOpen ? 0 : Math.floor(t * 10), G.heart.x, G.heart.y, 0, { layer: 'main', sortY: G.heart.y + 0.3, flip: fl, emissive: s.heartOpen ? 0.05 : 0.6 })) s7HeartDraw(G.heart, s, t);
+}
+// The long floor tendrils (decor: the grabbing ones are s.tendrils): S7_VINES as chains of the creep's segment sprite, a
+// tip at the end, grey husks where the room is frozen. Port layout (y off g.y), mirrored for starboard.
+const S7_VINES = [
+  [[-21.6, 0.9], [-20.2, 0.2], [-18.7, 0.35], [-17.0, 0.95], [-15.3, 0.45], [-13.3, -0.25], [-11.5, 0.15], [-10.5, -0.2], [-9.4, -0.75], [-8.3, -0.45]],   // heart → lab → airlock
+  [[-16.9, 0.85], [-16.4, -0.6], [-16.2, -2.0], [-15.5, -3.1]],                                   // up to the cocooned pirate
+  [[-24.6, -1.7], [-24.5, 0.4], [-23.5, 1.5]],                                                    // the core's back corner round to the heart
+  [[-18.3, 1.95], [-16.9, 1.6], [-15.7, 1.9]],                                                  // along the lab's front, to the fire's warmth
+  [[-6.3, -1.9], [-7.6, -1.35], [-9.8, -1.15], [-10.4, -0.5]],                                    // the airlock: from J1's corner to the lab door
+];
+function s7VinesDraw(d, g, s, G, t, band) {
+  const SEG = 'dock/s7_creep_seg', TIP = 'dock/s7_creep_tip';
+  if (!GFX.on || !GFX.info(SEG) || !GFX.info(TIP)) return;
+  const mx = (x) => d.side === 'port' ? x : SHIP_W - x;
+  const roomOf = (x, y) => { let best = 0, bd = Infinity; g.rooms.forEach((q, i) => { const dd = Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h)); if (dd < bd) { bd = dd; best = i; } }); return best; };
+  S7_VINES.forEach((path, v) => {
+    const P = path.map(([x, y]) => ({ x: mx(x), y: g.y + y })), pts = [];
+    for (let i = 0; i < P.length - 1; i++) {                      // Catmull-Rom through the points
+      const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+      for (let k = 0; k < 8; k++) { const u = k / 8, u2 = u * u, u3 = u2 * u;
+        const f = (a, b, c, e) => 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - e) * u2 + (-a + 3 * b - 3 * c + e) * u3);
+        pts.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) }); }
+    }
+    pts.push(P[P.length - 1]);
+    const at = s7PointAt.bind(null, pts), len = s7Len(pts);
+    for (let k = 0.45; k < len - 0.5; k += 0.8) {
+      const p = at(k), husk = s.frozen[roomOf(p.x, p.y)];
+      s7Spr(SEG, s7Frame(SEG, p.a), p.x, p.y, 0, { ...band, flip: false, scale: 1.25, desat: husk ? 1 : 0, alpha: husk ? 0.75 : 1, emissive: husk ? 0 : 0.4 });
+    }
+    const e = at(len - 0.3), husk = s.frozen[roomOf(e.x, e.y)];
+    s7Spr(TIP, s7Frame(TIP, e.a, husk ? 0 : Math.floor(t * 6 + v * 2)), e.x, e.y, 0, { ...band, flip: false, scale: 1.25, desat: husk ? 1 : 0, alpha: husk ? 0.75 : 1, emissive: husk ? 0 : 0.45 });
+  });
+}
+// The cold, as frost spreading over the floor from the freezer's side of each room (storyboard 3): many frost blots,
+// each fading in once the room's cold has reached it. 2D: a wash per room.
+function s7FrostField(g, s, G, floor) {
+  const NAMES = ['dock/s7_frost_a', 'dock/s7_frost_b', 'dock/lab_frost_a', 'dock/lab_frost_c', 'dock/lab_frost_b'];
+  g.rooms.forEach((q, i) => {
+    const k = s.cold[i];
+    if (k <= 0.02) return;
+    if (!GFX.on || !GFX.info(NAMES[0])) { s7FrostDraw(q, i, k); return; }
+    const n = Math.round(q.w * q.h / 1.8), spots = [];
+    for (let j = 0; j < n; j++) {
+      const h = (m) => { const v = Math.sin((i * 97 + j * 13.7 + m * 5.1) * 12.9898) * 43758.5453; return v - Math.floor(v); };
+      spots.push({ x: q.x + q.w * (0.08 + 0.84 * h(1)), y: q.y + q.h * (0.1 + 0.82 * h(2)), name: NAMES[j % NAMES.length], sc: 1.4 + 0.8 * h(3) });
+    }
+    const dist = (p) => Math.hypot(p.x - G.freezer.x, p.y - G.freezer.y), d0 = Math.min(...spots.map(dist)), d1 = Math.max(...spots.map(dist));
+    spots.forEach((p, j) => {
+      const a = clamp(k * 2.5 - 1.3 * (dist(p) - d0) / Math.max(1, d1 - d0), 0, 1);
+      if (a > 0.02) s7Spr(p.name, 0, p.x, p.y, 0, { ...floor(5 + j * 0.05), alpha: a * 0.9, scale: p.sc, emissive: 0.15, depthBias: 0.12 });
+    });
+    if (k > 0.3) for (const [fx, fy2] of [[0.3, 0.35], [0.7, 0.65]]) s7Spr(i % 2 ? 'dock/s7_frost_b' : 'dock/s7_frost_a', 0, q.x + q.w * fx, q.y + q.h * fy2, 0, { ...floor(8), alpha: 0.8 * k, scale: q.w / 2.2, depthBias: 0.12 });   // (a frosty haze over it all)
+  });
 }
 // Tendrils, the creep, the wrap and the tether line (drawn with the actors: on our ship too). (In drawDockActors.)
 function drawS7Live(t) {

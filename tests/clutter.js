@@ -103,5 +103,51 @@ for (const { k, r } of boxes) {
   check(free && Math.hypot(p.x - r.x - r.w / 2, p.y - r.y - r.h / 2) < 1.6, `dropped on the ${k}: lands on free floor next to it (${p.x.toFixed(2)}, ${p.y.toFixed(2)})`);
 }
 
+// 6. The docked ships' sprite clutter (js/dock.js DOCK_DECOR[*].sprites: the derelict lab's aftermath, the raider's
+//    and the prison barge's pirate junk): purely visual, but nothing standing may sit in a room's walking line (the
+//    doors' band along g.y), stick out of its room, or stand on the crate, reactor, nav console, fire, the engineer,
+//    or S-7's freezer, J1, cocoon, heart, extinguisher and tendrils. Checked as drawn, on both sides.
+{
+  const D = loadGame(['GFX', 'DOCK_DECOR', 'dockGeom', 's7Geom', 'drawDockDecor', 'inRect']);
+  const SIZE = {   // half footprints (x, y) of the standing pieces
+    lab_tank_smashed_s7: [0.5, 0.45], lab_tank_over_s2: [0.9, 0.45], lab_barricade: [1.1, 0.55], lab_carbine: [0.5, 0.2], lab_gerald: [0.2, 0.2],
+    lab_mug: [0.1, 0.1], lab_bench_a: [1.0, 0.4], lab_bench_b: [1.0, 0.4], lab_mug_spilled: [0.2, 0.2], lab_chair_tipped: [0.4, 0.4], lab_shoe: [0.15, 0.1],
+    raider_parrot: [0.25, 0.25], raider_birdcage: [0.25, 0.25], raider_anchor: [0.5, 0.25], raider_sandbags: [0.6, 0.4], raider_wheel_table: [0.65, 0.65],
+    raider_rum: [0.3, 0.22], raider_barrel_yellow: [0.25, 0.25], raider_barrel_red: [0.25, 0.25], raider_hammock: [1.1, 0.4],
+  };
+  let n = 0, unknown = new Set();
+  for (const [kind, brig] of [['derelict', false], ['pirate', false], ['pirate', true]]) for (const side of ['port', 'star']) {
+    const g = D.dockGeom(side), d = { kind, side, brig, doors: [true, false], crate: [], fires: [] }, drawn = [];
+    D.GFX.on = true; D.GFX.info = () => ({ f: [0, 0, 0, 0] }); D.GFX.frameIndex = () => 0; D.GFX.canvasSprite = () => null;
+    D.GFX.sprite = (name, f, x, y, z = 0, o = {}) => { drawn.push({ name, x, y, layer: o.layer || 'main' }); return true; };
+    D.drawDockDecor(d, g, 0);
+    D.GFX.on = false;
+    const tag = `${brig ? 'brig' : kind} (${side})`;
+    const spots = [['crate', g.crate, 0.6], ['core', g.core, 1.2], ...(kind === 'pirate' && !brig ? [['nav console', g.nav, 0.7]] : []),
+      ...(kind === 'derelict' ? [['fire', g.fire, 0.6], ['black box', g.boxSpot, 1.0]] : []), ...(kind === 'derelict' || brig ? [['engineer', g.npcSpot, 0.2]] : [])];
+    if (kind === 'derelict') {
+      const S = D.s7Geom(side);
+      spots.push(['freezer', S.freezer, 0.8], ['J1', S.j1, 0.4], ['cocoon', S.cocoon, 0.7], ['heart', S.heart, 1.2], ['extinguisher', S.extinguisher, 0.4],
+                 ...S.tendrils.flatMap((T, i) => [[`tendril ${i} root`, T.root, 0.2], [`tendril ${i} head`, T.head, 0.3]]));
+    }
+    const bad = [];
+    for (const s of drawn.filter(s => /^dock\/(lab|raider)_/.test(s.name) && s.layer === 'main')) {
+      const key = s.name.slice(5), hs = SIZE[key];
+      if (!hs) { unknown.add(key); continue; }
+      n++;
+      const r = { x: s.x - hs[0], y: s.y - hs[1], w: hs[0] * 2, h: hs[1] * 2 };
+      if (!g.rooms.some(q => r.x >= q.x - 1e-6 && r.y >= q.y - 1e-6 && r.x + r.w <= q.x + q.w + 1e-6 && r.y + r.h <= q.y + q.h + 1e-6)) bad.push(`${key} sticks out of its room`);
+      if (r.y < g.y + 0.8 && r.y + r.h > g.y - 0.8) bad.push(`${key} stands in the walking line`);
+      for (const [what, p, rad] of spots) {
+        const dx = Math.max(r.x - p.x, 0, p.x - r.x - r.w), dy = Math.max(r.y - p.y, 0, p.y - r.y - r.h);
+        if (Math.hypot(dx, dy) < rad) bad.push(`${key} is on the ${what}`);
+      }
+    }
+    check(!bad.length, `${tag}: the sprite clutter keeps clear of the walking line and the things to use${bad.length ? ': ' + bad.join(', ') : ''}`);
+  }
+  check(!unknown.size, `every standing dock clutter sprite has a footprint in this test${unknown.size ? ' (missing: ' + [...unknown].join(', ') + ')' : ''}`);
+  check(n >= 40, `checked ${n} standing dock clutter sprites`);
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nall clutter checks passed');
 process.exit(failed ? 1 : 0);

@@ -7,7 +7,7 @@
 //   Derelict    a dark, airless wreck on a tether (Dr. Varga's lab): S-7, the growth that took it over (js/culture.js),
 //               a jammed door, a fire, and (depending on the mission) the black box to bring home or an engineer to rescue.
 //   Mining      not a ship: a big asteroid parked in front; drill it on a spacewalk for an ore sample.
-//   Base        the Red Comet's base (chapter 5): rooms in a row (docking bay, server room, barracks, gun corridor, brig),
+//   Base        the Red Comet's base (chapter 5): rooms in a row (docking bay, server room, barracks, gun corridor, the captain's quarters, brig),
 //               guards in each, a sentry gun down the corridor, a broken security terminal to repair and hack, a door code someone wrote on
 //               the wall, and Dr. Varga in the brig. See "The pirate base" below.
 // Everything in `dk` is plain data.
@@ -21,7 +21,7 @@ const PIRATE_AIM = 1.7, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, 
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 const MAX_BODIES = 12, FALL_TIME = 0.6;               // fallen pirates kept lying around (oldest go first); how long the fall takes
-function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0 }); }
+function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0, boss: null, raid: null }); }   // (boss, raid: Captain Red Comet and his raider, js/captain.js)
 // The Red Comet's nav core (chapter 4's objective, kind 'navcore'): every raider's nav computer knows where their hideout is.
 // A docked raider: hold click NAVCORE_PULL s on the nav console beside its reactor. A raider shot to scrap: its core is flung
 // clear (hz.floating, kind 'navcore', with a drift and a `life`): NAVCORE_LIFE s to fetch it on a spacewalk before it's lost.
@@ -65,7 +65,7 @@ const DG = () => dk.dock && (dk.dock.kind === 'base' ? baseGeom(dk.dock.side) : 
 function dockRects() {
   const g = DG();
   if (!g) return [];
-  return [...(dk.dock.tube === 'detached' ? [] : [g.tube]), ...(g.floor || g.rooms), ...g.doors.filter((d, i) => !dk.dock.doors[i])];
+  return [...(dk.dock.tube === 'detached' ? [] : [g.tube]), ...(g.floor || g.rooms), ...g.doors.filter((d, i) => !dk.dock.doors[i]), ...(typeof raidRects === 'function' ? raidRects() : [])];   // (raidRects: the captain's raider's tube, js/captain.js)
 }
 const inDock = (x, y) => { const g = DG(); return !!g && [g.tube, ...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
 // A spacewalker can't float through the docked ship's (or the pirate base's) rooms; over the tube is fine.
@@ -296,6 +296,7 @@ function updatePirate(p, dt) {
     const foe = crew.filter(sees).sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
     if (foe) { p.target = foe.id; p.aim = dt; p.lost = 0; p.face = Math.atan2(foe.y - p.y, foe.x - p.x); return; }
   }
+  if (p.raid) { raidPirateMove(p, dt); return; }   // the captain's raider at our other airlock (js/captain.js)
   if (p.mode) { basePirateMove(p, dt); return; }   // the pirate base's guards and the ones that rush us (below)
   // looting: grab something, carry it to their crate, PIRATE_LOOT times; then head home and stay there
   let goal = null;
@@ -345,6 +346,7 @@ function updateDock(dt) {
   updateSentry(dt);
   updateNpc(dt);
   updateBase(dt);
+  if (typeof updateCaptain === 'function') updateCaptain(dt);   // Captain Red Comet, in the base's quarters (js/captain.js)
   updateRock(dt);
   stowOre();
   for (const c of crew) c.slow = c.inv.item === 'blackbox' ? 0.6 : 1;   // the black box is heavy
@@ -423,6 +425,7 @@ function sprayDock(a, dt) {                           // the extinguisher works 
     if (d < SPRAY_RANGE && off < 0.45) f.hp -= SPRAY_RATE * dt;
   }
   s7Spray(a, dt);
+  if (typeof captainSpray === 'function') captainSpray(a, dt);   // (the captain's fire trail: js/captain.js)
 }
 
 // ---------------------------------------------------------------------------
@@ -541,7 +544,7 @@ function drawDockSprites(d, g, t) {
 }
 function drawDock(t) {
   const d = dk.dock, g = DG();
-  if (d?.kind === 'base') drawBase(d, g, t);
+  if (d?.kind === 'base') { drawBase(d, g, t); if (typeof drawCaptainFloor === 'function') drawCaptainFloor(d, g, t); }   // (the captain's coat, fire trail, telegraphs; his raider: js/captain.js)
   else if (d) {
     const pir = d.kind === 'pirate', all = [...g.rooms, ...g.doors], sprited = drawDockSprites(d, g, t);
     if (!sprited) {
@@ -649,13 +652,21 @@ function dockSign(key, x, wallY, z, w, lines, bg, fg) {
 const DOCK_DECOR = {
   // the Red Comet's raider: pizza, soda, a duck that joined the crew, and a wanted poster for OUR cat
   pirate: {
-    props: [['props/pizza', pizza, -12.2, 3.0, 0.4], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#c0392b'), -11.6, 2.2, 1.2], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#e8c34f'), -17.4, 3.1, -0.6],
-            ['props/stool', null, -17.3, -3.0, 0], ['props/magazine', null, -12.0, -3.2, 0.3, true], ['props/duck', duck, -24.2, -2.0, 2.4], ['props/wrench', wrench, -20.0, 2.2, 0.9],
-            ['props/wrapper', (x, y, a) => wrapper(x, y, a, '#e2574c', 3), -8.6, 1.8, 0.2, true], ['props/tape_roll', tapeRoll, -9.6, -1.9, 0]],
+    props: [['props/pizza', pizza, -12.8, 3.6, 0.4], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#c0392b'), -11.1, 3.4, 1.2], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#e8c34f'), -16.1, 2.5, -0.6],
+            ['props/stool', null, -11.3, 1.9, 0], ['props/magazine', null, -13.4, -1.7, 0.3, true], ['props/duck', duck, -24.2, -2.0, 2.4], ['props/wrench', wrench, -23.9, 2.4, 0.9],
+            ['props/wrapper', (x, y, a) => wrapper(x, y, a, '#e2574c', 3), -8.6, 1.4, 0.2, true], ['props/tape_roll', tapeRoll, -9.6, -1.9, 0]],
     signs: [[1, -14.6 + 2.0, 'wanted', 1.5, [['WANTED', 0.16], ['ONE SHIP CAT', 0.11], ['10,000 CR · ALIVE', 0.085, 700]], '#e8dcb8', '#3a2418'],
             [2, -22.0, 'mutiny', 1.5, [['DAYS WITHOUT', 0.12], ['A MUTINY:  3', 0.15]], '#2b303a', '#ffcf6b'],
             [0, -7.9, 'refunds', 1.4, [['NO REFUNDS', 0.14], ['NO RETURNS · NO MERCY', 0.075, 700]], '#7a1f1a', '#ffe0d0']],
-    stencils: [[-14.6, 3.4, 'PLUNDER RESPONSIBLY', 0.18], [-22.0, 2.1, 'LICK IT. WE DARE YOU.', 0.15], [-7.9, 1.4, 'WIPE YOUR BOOTS', 0.15]],
+    stencils: [[-14.6, -1.3, 'PLUNDER RESPONSIBLY', 0.18], [-23.4, 1.6, 'LICK IT. WE DARE YOU.', 0.15], [-7.9, 1.0, 'WIPE YOUR BOOTS', 0.15]],
+    // the sprite clutter (tools/blender/models/dock/raider_decor.py; the skull, the barrels by the loot and the
+    // MINE crate are painted into the ship sprite): see drawDockClutter for the entries
+    sprites: [['dock/raider_plunder_board', -16.4, 1, 'w'], ['dock/raider_parrot', -16.4, -3.15, 'p', { seq: [0, 0, 0, 0, 1, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 3, 0, 0], fps: 5, em: 0.3 }],
+              ['dock/raider_birdcage', -11.25, -3.25, 'p'], ['dock/raider_anchor', -17.3, 2.1, 'p'], ['dock/raider_sandbags', -17.1, 3.35, 'p'],
+              ['dock/raider_quota_stencil', -14.4, 3.0, 'f'], ['dock/raider_wheel_table', -12.1, 2.6, 'p', { em: 0.3 }], ['dock/raider_rum', -13.2, 2.2, 'p'],
+              ['dock/raider_eyepatch_hook', -9.3, 0, 'w'], ['dock/raider_treasure_map', -19.5, 2, 'w'],   // (by the nav console: the X is YOUR SHIP)
+              ['dock/raider_barrel_yellow', -9.75, 1.95, 'p'], ['dock/raider_barrel_red', -9.15, 2.1, 'p'],
+              ['dock/raider_mutiny_board', -23.8, 2, 'w', { replaces: 'mutiny' }], ['dock/raider_hammock', -21.0, 2.2, 'p']],
   },
   // the prison barge: the hold where they keep Dr. Varga
   brig: {
@@ -664,42 +675,101 @@ const DOCK_DECOR = {
     signs: [[1, -12.4, 'visiting', 1.5, [['VISITING HOURS:', 0.11], ['NEVER', 0.17]], '#2b303a', '#ff9a8a', 1.0],
             [2, -22.0, 'mutiny', 1.5, [['DAYS WITHOUT', 0.12], ['A MUTINY:  3', 0.15]], '#2b303a', '#ffcf6b'],
             [0, -7.9, 'refunds', 1.4, [['NO REFUNDS', 0.14], ['NO RETURNS · NO MERCY', 0.075, 700]], '#7a1f1a', '#ffe0d0']],
-    stencils: [[-14.6, -1.3, 'THE BRIG IS NOT A HOTEL', 0.16], [-18.0, 2.2, '|||| |||| ||', 0.16, 'rgba(232,236,244,0.35)'], [-22.0, 2.1, 'LICK IT. WE DARE YOU.', 0.15]],
+    stencils: [[-14.6, -1.3, 'THE BRIG IS NOT A HOTEL', 0.16], [-18.0, 2.2, '|||| |||| ||', 0.16, 'rgba(232,236,244,0.35)'], [-23.4, 1.6, 'LICK IT. WE DARE YOU.', 0.15]],
+    sprites: [['dock/raider_skull_stencil', -14.6, 0.9, 'f'], ['dock/raider_wheel_table', -21.0, 2.0, 'p', { em: 0.3 }], ['dock/raider_rum', -19.9, 2.4, 'p'],   // (the guards' card game)
+              ['dock/raider_eyepatch_hook', -9.3, 0, 'w'], ['dock/raider_barrel_yellow', -9.75, 1.95, 'p'], ['dock/raider_barrel_red', -9.15, 2.1, 'p'],
+              ['dock/raider_mutiny_board', -23.8, 2, 'w', { replaces: 'mutiny' }]],
   },
-  // the Red Comet's base (positions for the port side, like all of these; rooms: bay, server room, barracks, brig, gun corridor)
+  // the Red Comet's base (positions for the port side, like all of these; rooms: bay, server room, barracks, brig, gun corridor,
+  // captain's quarters). With sprites most of the base is drawn by drawBaseSprites (BASE_PROPS); these are the small extras
+  // on top (props: our clutter sprites) and, in the 2D view, everything. spriteSigns: plaques that have a base/ sprite.
   base: {
     props: [['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#c0392b'), -7.0, 2.4, 1.2], ['props/wrapper', (x, y, a) => wrapper(x, y, a, '#e2574c', 5), -10.2, -2.2, 0.2, true],
-            ['props/pizza', pizza, -14.0, 3.2, 0.4], ['props/stool', null, -19.4, -2.2, 0], ['props/papers_bridge', (x, y) => papers(x, y, 73), -19.4, 3.2, 0, true],
-            ['props/sleeping_bag', sleepingBag, -13.2, -11.4, 0], ['props/sleeping_bag', sleepingBag, -20.6, -11.4, 0], ['props/magazine', null, -12.6, -5.4, 0.3, true], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#e8c34f'), -21.6, -5.4, -0.6],
-            ['props/bucket', bucket, -37.2, -17.6, 0], ['props/duck', duck, -30.8, -11.4, 2.4], ['props/stool', null, -31.2, -17.6, 0]],
+            ['props/pizza', pizza, -14.0, 3.2, 0.4], ['props/stool', null, -15.4, 1.6, 0], ['props/papers_bridge', (x, y) => papers(x, y, 73), -19.4, 3.2, 0, true],
+            ['props/sleeping_bag', sleepingBag, -13.2, -11.4, 0, false, true], ['props/sleeping_bag', sleepingBag, -20.6, -11.4, 0, false, true], ['props/magazine', null, -12.6, -5.4, 0.3, true], ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#e8c34f'), -21.6, -5.4, -0.6],
+            ['props/bucket', bucket, -36.4, -23.7, 0, false, true], ['props/duck', duck, -29.8, -23.6, 2.4], ['props/stool', null, -30.2, -28.2, 0],
+            ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#2e7dc9'), -35.6, -11.4, 0.5], ['props/papers_bridge', (x, y) => papers(x, y, 74), -36.4, -12.6, 0.4, true],
+            ['props/wrench', wrench, -26.0, -7.3, 0.9], ['props/tape_roll', tapeRoll, -29.4, -9.8, 0], ['props/magazine', null, -38.8, -11.4, -0.4, true]],
     signs: [[0, -9.0, 'base_welcome', 1.8, [['RED COMET BASE', 0.13], ['NO VISITORS · NO REFUNDS', 0.075, 700]], '#7a1f1a', '#ffe0d0'],
             [1, -15.0, 'server', 1.6, [['SERVER ROOM', 0.12], ['DO NOT FEED THE HAMSTER', 0.07, 700]], '#2b303a', '#9cd8ff'],
             [2, -19.4, 'chores', 1.6, [['CHORE WHEEL', 0.12], ['DISHES: NOBODY', 0.08, 700], ['MUTINY: TUESDAY', 0.08, 700]], '#e8dcb8', '#3a2418'],
-            [3, -32.6, 'brig_rules', 1.6, [['BRIG RULES', 0.12], ['1. NO ESCAPING', 0.08, 700], ['2. SEE RULE 1', 0.08, 700]], '#2b303a', '#ff9a8a']],
-    stencils: [[-9.0, 2.6, 'WIPE YOUR BOOTS', 0.15], [-17.2, 3.4, 'AUTHORIZED PIRATES ONLY', 0.14], [-14.0, -5.2, 'LIGHTS OUT AT NEVER', 0.14], [-32.6, -16.6, 'THE BRIG IS NOT A HOTEL', 0.14]],
+            [3, -31.4, 'brig_rules', 1.6, [['BRIG RULES', 0.12], ['1. NO ESCAPING', 0.08, 700], ['2. SEE RULE 1', 0.08, 700]], '#2b303a', '#ff9a8a']],
+    spriteSigns: { base_welcome: 'base/sign_red_comet', chores: 'base/plaque_chores', brig_rules: 'base/plaque_brig_rules' },
+    stencils: [[-9.0, 2.6, 'WIPE YOUR BOOTS', 0.15], [-17.2, 3.4, 'AUTHORIZED PIRATES ONLY', 0.14], [-14.0, -5.2, 'LIGHTS OUT AT NEVER', 0.14], [-31.4, -27.4, 'THE BRIG IS NOT A HOTEL', 0.14]],
   },
   // Dr. Varga's lab module: left in a hurry, overgrown by S-7 (js/culture.js; its freezer, J1, the heart and the cocooned
   // pirate are drawn there; Varga's own extinguisher by the tube is a real item now, s7Dock)
   derelict: {
-    props: [['props/papers_bridge', (x, y) => papers(x, y, 81), -12.0, -3.0, 0, true], ['props/papers_maptable', (x, y) => papers(x, y, 82), -17.2, 3.2, 0, true], ['props/plant', plant, -11.4, 3.2, 0],
-            ['props/coffee_empty', coffee, -18.0, 3.4, 0], ['props/sticky_yellow', stickyNote, -12.6, 2.4, 0.3], ['props/duck', duck, -20.0, 2.3, 0.6]],
+    props: [['props/duck', duck, -20.0, 2.3, 0.6], ['props/papers_bridge', (x, y) => papers(x, y, 81), -12.0, -3.0, 0, true, true], ['props/papers_maptable', (x, y) => papers(x, y, 82), -17.2, 3.2, 0, true, true],
+            ['props/plant', plant, -11.4, 3.2, 0, false, true], ['props/coffee_empty', coffee, -18.0, 3.4, 0, false, true], ['props/sticky_yellow', stickyNote, -12.6, 2.4, 0.3, false, true]],   // (2D only: the sprites below)
     signs: [[1, -11.7, 'todo', 1.6, [['TO DO', 0.13], ['1. CURE IT', 0.09, 700], ['2. NAME IT', 0.09, 700], ['3. DON\'T GET EATEN', 0.09, 700]], '#e8ecf0', '#2a2d35'],
             [1, -15.4, 'keepfrozen', 1.3, [['S-7:', 0.12], ['KEEP FROZEN.', 0.11], ['I MEAN IT. — I.V.', 0.08, 700]], '#ffe95c', '#26324f'],
-            [2, -20.6, 'specimen', 1.5, [['SPECIMEN 7', 0.15], ['DO NOT FEED', 0.11, 700], ['(IT FEEDS ITSELF)', 0.075, 700]], '#e8c34f', '#2a2d35'],
+            [2, -21.6, 'specimen', 1.5, [['SPECIMEN 7', 0.15], ['DO NOT FEED', 0.11, 700], ['(IT FEEDS ITSELF)', 0.075, 700]], '#e8c34f', '#2a2d35'],
             [0, -7.9, 'lab', 1.6, [['VARGA LAB', 0.14], ['PLEASE WIPE YOUR SPORES', 0.075, 700]], '#2d5f82', '#e8f4ff']],
-    stencils: [[-14.6, -1.4, 'DAYS SINCE LAST INCIDENT: 0', 0.15], [-7.9, 1.5, 'DECON →', 0.16], [-8.6, -1.6, 'IF GRABBED: WIGGLE', 0.13, 'rgba(232,236,244,0.4)'],
-               [-22.0, -2.0, 'WARM IN HERE, ISN\'T IT', 0.13, 'rgba(196,106,216,0.45)']],
+    stencils: [[-14.6, -1.4, 'DAYS SINCE LAST INCIDENT: 0', 0.15], [-7.9, 1.5, 'DECON →', 0.16], [-8.0, -1.1, 'IF GRABBED: WIGGLE', 0.13, 'rgba(232,236,244,0.4)'],
+               [-21.0, -1.0, 'WARM IN HERE, ISN\'T IT', 0.13, 'rgba(196,106,216,0.45)']],
+    // the fight's aftermath (tools/blender/models/dock/aftermath.py): the Red Comet's claw bitten into the roof over the
+    // lab, the defenders' barricade at the core door, the carbine they dropped, scorch and laser burns, the drag
+    // marks and Varga's clog on the way to the airlock (they took her with them), the tanks (S-7's smashed), her
+    // notes, benches, Gerald, mugs and notes. Clear of the walking line, S-7's roots, freezer, J1, cocoon and
+    // heart, the crate, the fire and the engineer's spot. (The two tanks at the lab's back wall are in the ship sprite.)
+    sprites: [
+      // decals (under S-7's mats)
+      ['dock/lab_scorch_c', -16.1, 0.2, 'f', { flip: 1 }], ['dock/lab_scorch_b', -8.9, -0.5, 'f', { flip: 1 }], ['dock/lab_scorch_a', -12.0, 1.4, 'f', { flip: 1 }],
+      ['dock/lab_burn_a', -13.3, -0.6, 'f', { flip: 1 }], ['dock/lab_burn_b', -17.0, -1.3, 'f', { flip: 1 }], ['dock/lab_burn_c', -11.6, -1.0, 'f', { flip: 1 }],
+      ['dock/lab_burn_b', -6.7, -1.2, 'f', { flip: 1 }], ['dock/lab_burn_c', -21.2, 0.9, 'f', { flip: 1 }],
+      ['dock/lab_drag_b_r', -12.6, 0.45, 'f', { star: 'dock/lab_drag_b_l' }], ['dock/lab_drag_a_r', -8.0, 0.55, 'f', { star: 'dock/lab_drag_a_l' }],
+      ['dock/lab_papers_a', -13.3, -1.7, 'f', { flip: 1 }], ['dock/lab_papers_b', -13.1, 2.5, 'f', { flip: 1 }], ['dock/lab_papers_c', -9.3, 1.2, 'f', { flip: 1 }],
+      ['dock/lab_papers_a', -20.3, 1.5, 'f', { flip: 1 }], ['dock/lab_papers_c', -15.2, 3.4, 'f', { flip: 1 }],
+      ['dock/lab_sticky_look', -12.7, -1.9, 'f'], ['dock/lab_sticky_feed', -20.7, 1.0, 'f'], ['dock/lab_sticky_back', -6.9, -1.0, 'f'],
+      // on the back walls
+      ['dock/lab_claw', -13.9, 1, 'w', { em: 0.3 }], ['dock/lab_notes_board', -23.7, 2, 'w', { em: 0.25 }], ['dock/lab_scorch_wall', -19.8, 2, 'w', { flip: 1 }],
+      // standing
+      ['dock/lab_tank_smashed_s7', -17.4, -2.45, 'p', { em: 0.3 }], ['dock/lab_tank_over_s2', -12.7, 3.4, 'p', { em: 0.2 }],
+      ['dock/lab_barricade', -17.25, 3.2, 'p', { flip: 1 }], ['dock/lab_carbine', -15.2, 2.75, 'p', { dir: 2.6 }],
+      ['dock/lab_gerald', -11.3, -3.35, 'p'], ['dock/lab_chair_tipped', -17.6, -1.4, 'p', { flip: 1 }], ['dock/lab_mug', -11.75, -2.55, 'p'],
+      ['dock/lab_bench_a', -9.1, -1.95, 'p', { em: 0.35 }], ['dock/lab_mug_spilled', -7.6, -1.5, 'p'], ['dock/lab_chair_tipped', -9.6, 1.75, 'p', { flip: 1 }],
+      ['dock/lab_shoe', -6.5, 0.95, 'p'],
+      ['dock/lab_bench_b', -21.6, -2.3, 'p', { em: 0.35 }]],
   },
 };
 function drawDockDecor(d, g, t) {
   const set = DOCK_DECOR[d.kind === 'derelict' ? 'derelict' : d.kind === 'base' ? 'base' : d.brig ? 'brig' : 'pirate'], mx = (x) => d.side === 'port' ? x : SHIP_W - x;
   for (const [x, y, text, size, col] of set.stencils) stencil(L(mx(x)), L(g.y + y), text, 0, size, col || 'rgba(210,166,46,0.5)');
-  for (const [name, draw, x, y, a, flat] of set.props) {
+  for (const [name, draw, x, y, a, flat, classic] of set.props) {
+    if (classic && GFX.on) continue;                   // (2D view only: the sprite view has its own: BASE_PROPS)
     const wx = mx(x), wy = g.y + y;
-    if (GFX.on ? spr(name, 0, wx, wy, 0, flat ? { layer: 'decal' } : undefined) : false) continue;
+    if (GFX.on ? spr(name, 0, wx, wy, 0, flat ? (d.kind === 'base' ? { layer: 'decal' } : dockFloorBand(g, 0.009)) : undefined) : false) continue;   // (a docked ship's sprite carries its floor: 'decal' would be under it)
     if (draw && !GFX.on) draw(L(wx), L(wy), d.side === 'port' ? a : Math.PI - a);
   }
-  for (const [room, x, key, w, lines, bg, fg, out = 0] of set.signs) dockSign(key, mx(x), g.rooms[room].y + 0.02 + out, WALL_SIGN_Z + 0.15 - out * 0.3, w, lines, bg, fg);   // (out: hung in front of the cell bars)
+  const replaced = drawDockClutter(d, g, t, set.sprites);
+  for (const [room, x, key, w, lines, bg, fg, out = 0] of set.signs) if (!replaced.has(key) && !(GFX.on && set.spriteSigns?.[key] && GFX.sprite(set.spriteSigns[key], 0, mx(x), g.rooms[room].y + 0.02, WALL_SIGN_Z + 0.15, { billboard: true, layer: 'wall', sortY: g.rooms[room].y + 0.02, depthBias: 0.05, emissive: 0.25 }))) dockSign(key, mx(x), g.rooms[room].y + 0.02 + out, WALL_SIGN_Z + 0.15 - out * 0.3, w, lines, bg, fg);   // (out: hung in front of the cell bars)
+}
+// Flat things on a docked ship's floor: in the 'wall' layer just above the ship's sprite (sortY y0 - 1) and under
+// S-7's mats (y0 - 0.99 on, js/culture.js drawS7Floor); k (0..0.01) orders them among themselves.
+const dockFloorBand = (g, k = 0) => ({ layer: 'wall', sortY: Math.min(...[...g.rooms, ...g.doors].map(q => q.y)) - 0.9995 + k * 0.0009, depthBias: 0.06 });   // (bias: over the floor plates, 0.035 up)
+// The sprite clutter of DOCK_DECOR[*].sprites (GFX only; the classic view keeps its 2D props). An entry:
+//   [name, x, y, mode, o]   x: the port layout's x (mirrored for starboard); mode 'f': flat on the floor (decals,
+//   papers; y off g.y), 'p': standing on the floor (y off g.y), 'w': a wall piece at the foot of room y's back wall
+//   (origin there: its height is baked in). o: flip (mirror it on the starboard side: nothing written on it),
+//   star (the starboard side's sprite instead), dir (facing, 8-way sprites), seq + fps (an idle loop), em (emissive),
+//   replaces (the canvas sign it stands in for). Returns the replaced signs' keys.
+function drawDockClutter(d, g, t, list) {
+  const out = new Set();
+  if (!GFX.on || !list) return out;
+  const port = d.side === 'port';
+  list.forEach(([name0, x, y, mode, o = {}], k) => {
+    const name = !port && o.star ? o.star : name0, info = GFX.info(name);
+    if (!info) return;
+    const wx = port ? x : SHIP_W - x, flip = !port && !!o.flip, n = (info.f || []).length || 1;
+    const f = o.seq ? o.seq[Math.floor(t * o.fps) % o.seq.length] % n : o.dir !== undefined ? GFX.frameIndex(name, port ? o.dir : Math.PI - o.dir, 0) : 0;
+    let ok;
+    if (mode === 'w') { const ry = g.rooms[y].y; ok = GFX.sprite(name, f, wx, ry, 0, { layer: 'wall', sortY: ry + 0.04, flip, emissive: o.em ?? 0.15 }); }
+    else if (mode === 'f') ok = GFX.sprite(name, f, wx, g.y + y, 0, { ...dockFloorBand(g, k / list.length * 0.008), flip, emissive: o.em ?? 0.05 });
+    else ok = GFX.sprite(name, f, wx, g.y + y, 0, { flip, emissive: o.em ?? 0.12 });
+    if (ok && o.replaces) out.add(o.replaces);
+  });
+  return out;
 }
 // A fallen pirate: crumples (dazed for a moment), then lies there for good. Purely visual (dk.bodies).
 function drawBody(B) {
@@ -734,6 +804,7 @@ function drawDockActors(t) {
   for (const B of dk.bodies || []) drawBody(B);
   if (dk.dock?.kind === 'base') drawSentryFx(dk.dock, DG(), t);
   for (const p of dk.pirates) drawPirate(p, t);
+  if (typeof drawCaptain === 'function') drawCaptain(t);   // Captain Red Comet (js/captain.js)
   drawS7Live(t);                                       // S-7's tendrils, its creep, the tether line (js/culture.js)
   const N = dk.npc;
   if (N) {
@@ -835,12 +906,13 @@ function dockPlates(add) {
 
 // ---------------------------------------------------------------------------
 // The pirate base (chapter 5, "Hold On, Dr. Varga"; event kind 'brig'). It docks to one of our outer
-// airlocks; rooms in a row: docking bay → server room → barracks → gun corridor → brig (the gun corridor: a sentry
-// gun at its far end beside the brig door, stacks of crates as cover along it; see updateSentry). Two pirates rush out of
+// airlocks; rooms in a row: docking bay → server room → barracks → gun corridor → captain's quarters → brig (the gun corridor: a sentry
+// gun at its far end beside the quarters' door, stacks of crates as cover along it; see updateSentry). Two pirates rush out of
 // the bay as soon as we dock (they drop their carbines when they fall: pick-up laser guns for whoever
 // storms in); guards hold each room (more for a bigger crew, fewer on easy: baseGuards). A repair kit
 // lies in the bay. The server room's security terminal is broken: repair it, then hack it (hold click)
-// to open the barracks door. The brig door wants a 4-digit code, written on the barracks wall. Dr. Varga
+// to open the barracks door. The quarters' door wants a 4-digit code, written on the barracks wall (the brig door behind
+// the captain's throne is in lockdown until Captain Red Comet flees: js/captain.js; his pirate-only blast door in the quarters' side wall stays bolted for us). Dr. Varga
 // lies in the brig: treated, she runs for our ship on her own (updateNpc) once the sentry gun is off (until then
 // she waits in the brig); shot, she goes down again.
 // While we're docked, or while anyone is still over there, the engine stays off (no jump:
@@ -858,33 +930,41 @@ function baseGeom(side) {
     R(-12.4, y - 3.0, -5.6, y + 3.0),             // docking bay
     R(-21.4, y - 4.0, -13.0, y + 4.0),            // server room
     R(-22.4, y - 12.4, -11.6, y - 4.6),           // barracks
-    R(-38.0, y - 18.5, -30.0, y - 10.7),          // brig (off the gun corridor's far end)
+    R(-37.0, y - 29.1, -29.0, y - 21.3),          // brig (behind the captain's quarters)
     R(-35.0, y - 10.1, -23.0, y - 6.9),           // the gun corridor (the sentry gun at its far end)
+    R(-40.0, y - 20.7, -28.0, y - 10.7),          // the captain's quarters (12 x 10, the boss room)
     R(-13.0, y - 0.8, -12.4, y + 0.8),            // door bay–server room
     R(-18.0, y - 4.6, -16.4, y - 4.0),            // door server room–barracks (the hacked one)
-    R(-34.6, y - 10.7, -33.0, y - 10.1),          // door gun corridor–brig (the code)
+    R(-34.6, y - 10.7, -33.0, y - 10.1),          // door gun corridor–quarters (the code)
     R(-23.0, y - 9.3, -22.4, y - 7.7),            // door barracks–gun corridor (open)
+    R(-33.4, y - 21.3, -31.8, y - 20.7),          // door quarters–brig (its own keypad; for now the same code)
+    R(-28.0, y - 19.3, -27.3, y - 17.3),          // the pirate-only blast door in the quarters' side wall (never walkable for us)
   ];
   // the gun corridor's cover (shelves and crates, alternately against either wall) and the sentry gun's base:
   // holes in its floor (no walking through them; shots and sight lines stop at them: js/invader.js freeAt)
   const H = [R(-25.4, y - 8.3, -24.4, y - 6.9), R(-28.4, y - 10.1, -27.4, y - 8.7), R(-31.2, y - 8.3, -30.2, y - 6.9), R(-35.0, y - 9.1, -34.0, y - 7.9)];
+  // the quarters' cover (tools/blender/models/base/quarters.py footprints): his desk kicked over (2.4 x 0.8), the
+  // treasure chest (1.4 x 0.9), a pillar (0.9 x 0.9); holes like the corridor's crates
+  const Q = [R(-38.6, y - 14.2, -36.2, y - 13.4), R(-31.3, y - 13.35, -29.9, y - 12.45), R(-31.8, y - 17.85, -30.9, y - 16.95)];
   const mr = (q) => side === 'port' ? q : R(SHIP_W - q.x - q.w, q.y, SHIP_W - q.x, q.y + q.h);
-  const M = P.map(mr), holes = H.map(mr);
+  const M = P.map(mr), holes = H.map(mr), qholes = Q.map(mr);
   const pt = (x, dy) => ({ x: side === 'port' ? x : SHIP_W - x, y: y + dy });
-  const rooms = M.slice(1, 6);
+  const rooms = M.slice(1, 7);                     // [bay, server room, barracks, brig, gun corridor, quarters]
   return (BASE_GEOM[side] = {
-    tube: M[0], rooms, doors: M.slice(6, 10), hatch: h, y,
-    floor: [...rooms.slice(0, 4), ...floorMinus(rooms[4], holes)],   // (walkable: the corridor without its cover)
+    tube: M[0], rooms, doors: M.slice(7, 12), blast: M[12], hatch: h, y,
+    floor: [...rooms.slice(0, 4), ...floorMinus(rooms[4], holes), ...floorMinus(rooms[5], qholes)],   // (walkable: the corridor and the quarters without their cover)
     cover: holes.slice(0, 3), sentry: { ...pt(-34.5, -8.5), base: holes[3], dir: side === 'port' ? 0 : Math.PI, muzzle: pt(-33.75, -8.5) },
+    qcover: { desk: qholes[0], chest: qholes[1], pillar: qholes[2] },
     entry: pt(-7.6, 0), tubeMid: pt(-2.5, 0),
     console: pt(-6.3, -2.4), toolbox: pt(-11.6, 2.3), terminal: pt(-20.4, -3.2), keypad: pt(-32.4, -9.85), note: pt(-14.2, 0),
-    npcSpot: pt(-36.9, -14.6), cellX: pt(-35.6, 0).x, cellGap: [y - 15.5, y - 13.7],
+    brigPad: pt(-31.2, -20.6),                     // the brig door's keypad (on the quarters' back wall, right of the door: models/base/doors.py)
+    npcSpot: pt(-35.9, -25.2), cellX: pt(-34.6, 0).x, cellGap: [y - 26.1, y - 24.3],
     spew: [pt(-9.6, -1.0), pt(-8.6, 1.0)],
     // guard posts per group [bay, server room, barracks, the gun's end]; room: the one they hold (default: the group's)
     posts: [[], [pt(-19.6, 2.6), pt(-14.4, -2.6), pt(-15.2, 2.8)], [pt(-13.6, -10.6), pt(-20.2, -6.2), pt(-16.0, -11.0), pt(-12.8, -6.0)],
-            [{ ...pt(-32.7, -7.5), room: 4 }, { ...pt(-32.4, -14.2), room: 3 }]],
+            [{ ...pt(-32.7, -7.5), room: 4 }, { ...pt(-34.6, -15.4), room: 5 }]],
     // the walking line, brig → our airlock (dockRoute): the rooms are in a row, so a chain does (zig-zagging past the cover)
-    chain: [pt(-35.0, -14.6), pt(-33.8, -11.8), pt(-33.8, -10.4), pt(-33.3, -9.6), pt(-30.7, -9.4), pt(-27.9, -7.6), pt(-24.9, -9.4), pt(-22.7, -8.5),
+    chain: [pt(-34.0, -25.2), pt(-32.6, -22.4), pt(-32.6, -21.0), pt(-32.6, -19.4), pt(-33.8, -12.0), pt(-33.8, -10.4), pt(-33.3, -9.6), pt(-30.7, -9.4), pt(-27.9, -7.6), pt(-24.9, -9.4), pt(-22.7, -8.5),
             pt(-17.2, -8.5), pt(-17.2, -4.3), pt(-17.2, 0), pt(-12.7, 0), pt(-9.0, 0), pt(-2.5, 0), { x: h.inside[0], y: h.inside[1] }],
   });
 }
@@ -899,7 +979,7 @@ function floorMinus(q, holes) {
   }
   return out;
 }
-// Guards per room [bay, server room, barracks, the gun's end (and the brig)]: solo 0/2/2/1; each extra crew member (up to 4) one more,
+// Guards per room [bay, server room, barracks, the gun's end (and the captain's quarters)]: solo 0/2/2/1; each extra crew member (up to 4) one more,
 // each easier difficulty step one fewer (barracks first, never below one a room).
 function baseGuards(n, easy = 0) {
   const k = [0, 2, 2, 1];
@@ -909,17 +989,19 @@ function baseGuards(n, easy = 0) {
 }
 function dockBase(side) {
   const g = baseGeom(side), n = typeof crewSize === 'function' ? crewSize() : 1;
-  dk.dock = { kind: 'base', side, doors: [false, true, true, false], crate: [], detachT: null, overloaded: false, fires: [], tube: 'docked',
+  dk.dock = { kind: 'base', side, doors: [false, true, true, false, true], blast: 'closed', crate: [], detachT: null, overloaded: false, fires: [], tube: 'docked',
               terminal: 'broken', code: String(1000 + Math.floor(Math.random() * 9000)), sentry: { state: 'idle', t: 0, shotT: 0, shots: 0 } };
   dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
   ITEMS.push({ kind: 'repair', x: g.toolbox.x, y: g.toolbox.y });
+  if (typeof GFX !== 'undefined' && GFX.on) GFX.preload(['base', 'dock']);   // (its sprites: drawBaseSprites)
   const pirate = (p, more) => ({ uid: newUid(), x: p.x, y: p.y, face: side === 'port' ? 0 : Math.PI, walk: 0, hp: PIRATE_HP, carry: null, state: 'guard', cd: 1, aim: 0, route: [], stuck: 0, stun: 0, flash: 0, post: { x: p.x, y: p.y }, ...more });
   g.spew.forEach((p, i) => dk.pirates.push(pirate(p, { mode: 'hunt', room: 0, drops: 'laser', cd: 1.5 + i })));
+  if (typeof captainDock === 'function') captainDock(g, n);   // the captain on his throne in the quarters (js/captain.js)
   baseGuards(n, mission.easy || 0).forEach((k, r) => g.posts[r].slice(0, k).forEach(p => dk.pirates.push(pirate({ x: p.x, y: p.y }, { mode: 'guard', room: p.room ?? r, cd: 0.5 }))));
   combatBanner(`Docked to the pirate base at the ${side === 'port' ? 'left' : 'right'} airlock — two pirates are rushing out!`); sfx.explosion();
   return true;
 }
-const BASE_ROOMS = ['Docking bay', 'Server room', 'Barracks', 'Brig', 'Gun corridor'];
+const BASE_ROOMS = ['Docking bay', 'Server room', 'Barracks', 'Brig', 'Gun corridor', 'Captain\'s quarters'];
 const inBase = (x, y) => { const g = dk.dock?.kind === 'base' && DG(); return !!g && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
 const baseCrew = () => crew.filter(c => (c.mode === 'inside' || c.mode === 'hatch') && inBase(c.x, c.y));
 // The base's walls stop shots (projectile space outside our hull is otherwise free: js/invader.js freeAt).
@@ -1006,11 +1088,15 @@ function baseDetach() {
   combatBanner(left.length ? `Detached — but ${left.map(c => c.name).join(', ')} ${left.length > 1 ? 'are' : 'is'} still over there! Dock again to pick them up.` : 'Detached from the pirate base — the engine is free.');
 }
 function baseRedock() { dk.dock.tube = 'docked'; sfx.hatch(); combatBanner('Docked to the pirate base again — the tube is open.'); }
-function openBasePad() { ui.panel = 'mini'; ui.mini = { kind: 'pin', door: true, pin: dk.dock.code, typed: '', flash: null, flashT: 0 }; }
-function baseCodeOk() {                            // (js/minigames.js: ACCESS GRANTED on the brig door's keypad)
-  const d = dk.dock;
-  if (d?.kind !== 'base' || !d.doors[2]) return;
-  d.doors[2] = false; sfx.hatch(); combatBanner('ACCESS GRANTED — the brig door slides open.');
+// The keypads: door 2 (gun corridor → the captain's quarters) and door 4 (the brig, behind the captain). The brig door is
+// in LOCKDOWN while Captain Red Comet holds his quarters (js/captain.js): no code opens it; it unlocks when he flees in his pod.
+// (A base without a captain, an old snapshot: the barracks code opens it too.)
+const baseBrigLockdown = () => !!dk.boss && !dk.boss.fled;
+function openBasePad(door = 2) { ui.panel = 'mini'; ui.mini = { kind: 'pin', door, pin: dk.dock.code, typed: '', flash: null, flashT: 0 }; }
+function baseCodeOk(door = 2) {                    // (js/minigames.js: ACCESS GRANTED on a base keypad)
+  const d = dk.dock, i = door === 4 ? 4 : 2;
+  if (d?.kind !== 'base' || !d.doors[i] || (i === 4 && baseBrigLockdown())) return;
+  d.doors[i] = false; sfx.hatch(); combatBanner(i === 4 ? 'ACCESS GRANTED — the brig door slides open.' : 'ACCESS GRANTED — the door to the captain\'s quarters slides open.');
 }
 // Clicking: the security terminal (repair kit, then a hack).
 function baseClickTarget(mx, my) {
@@ -1041,36 +1127,135 @@ function baseAct() {
     act(d.tube === 'detached' ? { text: 'Click: signal our ship to dock again', at, run: baseRedock } : { text: 'Docking control — our ship is docked', at });
     return true;
   }
-  for (let i = 1; i < 3; i++) {
+  for (const i of [1, 2, 4]) {
     if (!d.doors[i]) continue;
     const q = g.doors[i], c = { x: q.x + q.w / 2, y: q.y + q.h / 2 };
     if (!close(c, 1.5)) continue;
     if (i === 1) act({ text: 'Locked security door — repair and hack the security terminal in this room', at: { ...c, r: 1.2 } });
-    else act({ text: 'Click: type the brig door code (keypad)', at: { ...c, r: 1.2 }, run: openBasePad });
+    else if (i === 2) act({ text: 'Click: type the door code (keypad) — the captain\'s quarters', at: { ...c, r: 1.2 }, run: () => openBasePad(2) });
+    else if (baseBrigLockdown()) act({ text: 'Brig door: LOCKDOWN — only the captain can lift it. Beat him!', at: { ...c, r: 1.2 } });
+    else act({ text: 'Click: type the brig door code (keypad)', at: { ...c, r: 1.2 }, run: () => openBasePad(4) });
     return true;
   }
+  const B = g.blast, bc = { x: B.x + B.w / 2, y: B.y + B.h / 2 };   // the pirates' blast door: bolted on their side
+  if (close(bc, 1.6)) { act({ text: 'Blast door: CREW ONLY · REST OF BASE — bolted from their side, no way through', at: { ...bc, r: 1.1 } }); return true; }
   return false;
 }
 function baseSpots(g) {
   const d = dk.dock, out = [];
   if (d.terminal !== 'hacked') out.push({ x: g.terminal.x, y: g.terminal.y, r: 0.6 });
   if (d.doors[2]) out.push({ x: g.keypad.x, y: g.keypad.y, r: 0.45 });
+  if (d.doors[4]) out.push({ x: g.brigPad.x, y: g.brigPad.y, r: 0.45 });
   if (d.sentry && d.sentry.state !== 'off') out.push({ x: g.sentry.x, y: g.sentry.y, r: 0.55 });
   if (d.tube === 'detached') out.push({ x: g.console.x, y: g.console.y, r: 0.5 });
   return out;
 }
 function basePlates(add) {
-  const d = dk.dock, inside = dk.pirates.filter(p => inBase(p.x, p.y)).length, out = dk.pirates.length - inside, left = baseCrew();
+  const d = dk.dock, inside = dk.pirates.filter(p => inBase(p.x, p.y)).length, out = dk.pirates.filter(p => !p.raid).length - inside, left = baseCrew();
   if (out) add('pirates', { icon: 'frigate', title: 'PIRATES ABOARD', sub: `${out} · rushed out of the base — fight them off`, stripe: '#e2574c', red: true });
   const sub = d.tube === 'detached' ? (left.length ? `detached · ${left.map(c => c.name).join(', ')} still inside — dock again!` : 'detached · engine free')
     : `${SIDE_LABEL[d.side].toLowerCase()} airlock · ${inside} pirate${inside === 1 ? '' : 's'} inside · engine off while docked`;
   add('base', { icon: 'frigate', title: 'PIRATE BASE', sub, stripe: '#e8c34f', red: !!left.length && d.tube === 'detached' });
   const S = d.sentry;
+  if (typeof captainPlates === 'function') captainPlates(add);   // the captain and his raider (js/captain.js)
   if (S && S.state !== 'off' && !d.doors[1]) add('sentry', { icon: 'frigate', title: 'SENTRY GUN', sub: S.state === 'spool' ? 'spooling up — take cover!' : S.state === 'fire' ? 'firing down the corridor — stay behind cover' : 'gun corridor · get beside it and switch it off', stripe: '#e2574c', red: S.state === 'spool' || S.state === 'fire' });
 }
-// Drawing (2D, also under the sprites): a blocky, patched hull around each room, the tube (or its two
-// stubs once detached), floors, the locked doors, the terminal, the keypad, the cell bars and the code.
+// The base's furniture and clutter in sprites (port positions, x absolute and y relative to the hatch like baseGeom;
+// mirrored for starboard, not flipped: their lettering must read; `flip` for the one that's built for the port side).
+// [name, x, dy, opts]  opts: flat (decal layer), wall (a plate on room `wall`'s back wall: z = its sign height,
+// billboard), hang (quarters.py wall pieces: origin on the back wall's face at floor level), fps (frame loop), em (emissive)
+const BASE_PROPS = [
+  // docking bay
+  ['base/doormat', -6.6, 0.0, { flat: true }], ['base/pizza_stack', -11.6, -2.3], ['base/bottles', -8.2, 2.6],
+  // server room: the CCTV wall behind the terminal, the rack bank right of the barracks door, the cables between, the GROG machine
+  ['base/cctv_wall', -19.75, -3.82, { fps: 2, em: 0.7 }], ['base/server_racks', -14.75, -3.6, { fps: 3, em: 0.6 }], ['base/server_rack', -13.45, -2.4, { fps: 3, em: 0.6 }],
+  ['base/server_cables', -17.5, -1.4, { flat: true, flip: true }], ['base/grog_machine', -13.5, 3.05, { fps: 1.5, em: 0.6 }],
+  ['base/chair_capt', -19.3, -2.3], ['base/chair_taped', -20.6, 3.1],
+  // barracks
+  ['base/bunk_a', -21.6, -11.4], ['base/bunk_b', -12.4, -11.4], ['base/lockers', -16.6, -12.17], ['base/card_table', -14.3, -6.6],
+  ['base/bedroll', -14.2, -9.6], ['base/pizza_stack', -21.2, -6.5], ['base/bottles', -19.0, -11.9], ['base/bottle', -12.1, -8.1],
+  ['base/dartboard', -18.2, 0, { wall: 2 }],
+  // gun corridor (the cover and the pedestal: drawGunCorridor)
+  ['base/casings', -32.0, -8.4, { flat: true }],
+  // the captain's quarters (concepts2/boss2 key art): escape pod, throne, cat bed, grog barrel along the back wall,
+  // the map table by the blast door, loot piles in the corners, the cover (desk, chest, pillar: at g.qcover)
+  ['base/pod_closed', -38.9, -19.95, { em: 0.4 }], ['base/throne', -36.2, -20.0, { em: 0.2 }], ['base/catbed', -34.4, -19.6], ['base/grog', -37.65, -19.45],
+  ['base/wanted', -37.65, 0, { hang: 5 }], ['base/portrait', -34.4, 0, { hang: 5 }], ['base/trophies', -29.4, 0, { hang: 5 }],
+  ['base/map_table', -29.4, -15.2, { fps: 2, em: 0.7 }], ['base/loot_gold', -39.2, -18.0], ['base/loot_crates', -39.2, -16.3], ['base/loot_coffee', -38.9, -11.9],
+  ['base/loot_gold', -28.9, -19.95], ['base/stencil_knock', -33.8, -11.2, { flat: true }], ['base/stencil_right', -36.2, -18.6, { flat: true }],
+  // brig: Dr. Varga's cell (the bars: drawBaseSprites)
+  ['base/bucket', -36.4, -23.7], ['base/bedroll', -35.8, -27.6], ['base/tally_floor', -36.0, -24.4, { flat: true }], ['base/tally_wall', -35.8, 0, { wall: 3 }],
+];
+// The doors in sprites: per door index the sprite set (doors.py), and its doorway floor (structure.py) while it's open.
+const BASE_DOORS = [['base/door_v', 'bay_server'], ['base/door_h', 'server_barracks'], ['base/door_hl', 'corridor_quarters'], ['base/door_v', 'barracks_corridor'], [null, 'quarters_brig']];
+const baseDoorAnim = { dock: null, t: [] };          // when each door was last seen unlocked (local, for the slide-open frames)
+function baseDoorFrame(d, i, t) {
+  if (baseDoorAnim.dock !== d) { baseDoorAnim.dock = d; baseDoorAnim.t = d.doors.map(l => l ? null : -99); }
+  const A = baseDoorAnim.t;
+  if (d.doors[i]) { A[i] = null; return 'locked'; }
+  if (A[i] == null) A[i] = t;
+  return 'f' + clamp(Math.floor((t - A[i]) / 0.09), 0, 5);
+}
+function drawBaseSprites(d, g, t) {
+  if (!GFX.on) return false;
+  const side = d.side, port = side === 'port', h = g.hatch, mx = (x) => port ? x : SHIP_W - x, idx = GFX.info(`base/walls_${side}`);
+  const floors = ['bay', 'server', 'barracks', 'corridor', 'quarters', 'brig'].map(r => `base/floor_${r}_${side}`);
+  const need = [...floors, ...(idx?.tiles || []), `dock/tube_${side}`, 'base/terminal_broken', 'base/keypad_locked', 'base/console_docked', 'base/cell_bars_closed', 'base/door_h_locked', `base/brig_${side}_locked`];
+  if (!idx || !need.every(n => GFX.ready(n))) { GFX.preload(['base', 'dock']); return false; }
+  const y0 = Math.min(...g.rooms.map(q => q.y)) - 1, frameOf = (n, fps) => { const k = GFX.info(n)?.frames || 1; return k > 1 ? Math.floor(t * fps) % k : 0; };
+  // floors, the open doorways, the hull and walls (screen tiles), the tube
+  for (const n of floors) GFX.sprite(n, 0, h.x, h.y, 0, { layer: 'ground', emissive: 0.12 });
+  BASE_DOORS.forEach(([, key], i) => { if (!d.doors[i]) GFX.sprite(`base/door_${key}_${side}`, 0, h.x, h.y, 0, { layer: 'ground', emissive: 0.12 }); });
+  for (const n of idx.tiles) GFX.sprite(n, 0, h.x, h.y, 0, { layer: 'wall', sortY: y0, emissive: 0.2 });
+  if (d.tube !== 'detached') GFX.sprite(`dock/tube_${side}`, 0, h.x, h.y, 0, { layer: 'wall', sortY: g.tube.y, emissive: 0.3 });
+  else {                                               // detached: a stub on each side (2D)
+    const tq = g.tube;
+    for (const [x, w] of port ? [[tq.x, 0.9], [tq.x + tq.w - 1.3, 1.3]] : [[tq.x, 1.3], [tq.x + tq.w - 0.9, 0.9]]) { rr(L(x), L(tq.y) - 6, L(w), L(tq.h) + 12, 10); ctx.fillStyle = '#5a6272'; ctx.fill(); stroke(3); }
+  }
+  // the doors: locked (red), sliding open once unlocked; the brig door has its keypad built in
+  BASE_DOORS.forEach(([set], i) => {
+    const q = g.doors[i], f = baseDoorFrame(d, i, t), name = `${set || `base/brig_${side}`}_${f}`;
+    GFX.sprite(GFX.has(name) ? name : `${set}_f5`, 0, q.x + q.w / 2, q.y + q.h / 2, 0, { layer: 'wall', sortY: q.y + q.h / 2, emissive: 0.45 });
+  });
+  const B = g.blast, bx = B.x + B.w / 2, by = B.y + B.h / 2, bs = d.blast || 'closed';   // the pirates' blast door: bolted (later: alarm / open)
+  GFX.sprite(bs === 'closed' ? `base/blast_${side}_closed` : `base/blast_${side}_${bs}_f${Math.floor(t * 6) % 4}`, 0, bx, by, 0, { layer: 'wall', sortY: by, emissive: 0.5 });
+  GFX.sprite(`base/blast_floor_${side}`, 0, bx, by, 0, { layer: 'decal' });
+  // the interactive props: terminal, keypad, docking control, cell bars
+  const tm = `base/terminal_${d.terminal}`;
+  GFX.sprite(tm, frameOf(tm, d.terminal === 'broken' ? 9 : 2), g.terminal.x, g.terminal.y, 0, { layer: 'wall', sortY: g.terminal.y, emissive: 0.7 });
+  GFX.sprite(d.doors[2] ? 'base/keypad_locked' : 'base/keypad_open', 0, g.keypad.x, g.keypad.y, 0, { layer: 'wall', sortY: g.keypad.y, emissive: 0.6 });
+  const cn = d.tube === 'detached' ? 'base/console_detached' : 'base/console_docked';
+  GFX.sprite(cn, frameOf(cn, 3), g.console.x, g.console.y, 0, { layer: 'wall', sortY: g.console.y, emissive: 0.6 });
+  const cellY = g.rooms[3].y + g.rooms[3].h / 2;
+  GFX.sprite(d.doors[4] ? 'base/cell_bars_closed' : `base/cell_bars_open_${side}`, 0, g.cellX, cellY, 0, { layer: 'wall', sortY: cellY, emissive: 0.2 });
+  // the quarters' cover
+  const Q = g.qcover, mid = (q) => [q.x + q.w / 2, q.y + q.h / 2];
+  for (const [n, q] of [['base/desk_cover', Q.desk], ['base/chest_closed', Q.chest], ['base/pillar', Q.pillar]]) { const [x, y] = mid(q); GFX.sprite(n, 0, x, y, 0, { layer: 'wall', sortY: y, emissive: 0.15 }); }
+  // furniture and clutter
+  for (const [n0, x, dy, o = {}] of BASE_PROPS) {
+    const n = n0 === 'base/pod_closed' && dk.boss?.pod ? `base/pod_${dk.boss.pod}` : n0;   // (the escape pod: closed / open / launched, js/captain.js)
+    const wx = mx(x), f = o.fps ? frameOf(n, o.fps) : 0;
+    if (o.flat) GFX.sprite(n, f, wx, g.y + dy, 0, { layer: 'decal', flip: !port && o.flip });
+    else if (o.wall != null) { const wy = g.rooms[o.wall].y + 0.02; GFX.sprite(n, f, wx, wy, WALL_SIGN_Z + 0.15, { billboard: true, layer: 'wall', sortY: wy, depthBias: 0.05, emissive: 0.2 }); }
+    else if (o.hang != null) { const wy = g.rooms[o.hang].y; GFX.sprite(n, f, wx, wy, 0, { layer: 'wall', sortY: wy + 0.05, emissive: o.em ?? 0.2 }); }
+    else GFX.sprite(n, f, wx, g.y + dy, 0, { layer: 'wall', sortY: g.y + dy, emissive: o.em ?? 0.15, flip: !port && o.flip });
+  }
+  // the door code note: its four digits in the same marker
+  const wy = g.rooms[2].y + 0.02, nz = WALL_SIGN_Z + 0.15;
+  if (GFX.sprite('base/note_code', 0, g.note.x, wy, nz, { billboard: true, layer: 'wall', sortY: wy, depthBias: 0.05, emissive: 0.25 }))
+    [...d.code].forEach((c, i) => GFX.sprite('base/note_digits', +c, g.note.x + (i - 1.5) * 0.2, wy, nz - 0.03, { billboard: true, layer: 'wall', sortY: wy + 0.001, depthBias: 0.06, emissive: 0.25 }));
+  else dockSign('code' + d.code, g.note.x, wy, nz, 1.3, [['BRIG DOOR CODE', 0.1], [d.code, 0.22], ['(DO NOT WRITE DOWN)', 0.07, 700]], '#ffe95c', '#26324f');
+  drawDockDecor(d, g, t);                              // (our clutter sprites, the plaques, the stencils)
+  drawGunCorridor(d, g, t);
+  return true;
+}
+// Drawing. With sprites (GFX.on and the 'base' group loaded): drawBaseSprites, the Blender base
+// (tools/blender/models/base/: structure.py floors / walls / doorway floors, doors.py doors, props.py and quarters.py
+// props and furniture). Otherwise (classic view, or while its pages load) the 2D version: a blocky, patched hull
+// around each room, the tube (or its two stubs once detached), floors, the locked doors, the terminal, the keypads,
+// the cell bars and the code.
 function drawBase(d, g, t) {
+  if (drawBaseSprites(d, g, t)) return;
   const docked = d.tube !== 'detached', port = d.side === 'port', mx = (x) => port ? x : SHIP_W - x;
   for (const q of g.rooms) { rr(L(q.x - 0.7), L(q.y - 0.7), L(q.w + 1.4), L(q.h + 1.4), 16); ctx.fillStyle = '#41383c'; ctx.fill(); stroke(4); }
   for (const q of g.doors) { ctx.fillStyle = '#41383c'; ctx.fillRect(L(q.x - 0.2), L(q.y - 0.2), L(q.w + 0.4), L(q.h + 0.4)); }
@@ -1116,6 +1301,16 @@ function drawBase(d, g, t) {
   rr(L(C.x) - 14, L(C.y) - 10, 28, 20, 4); ctx.fillStyle = '#3a404d'; ctx.fill(); stroke(2);
   ctx.fillStyle = docked ? '#5fd6a0' : (Math.sin(t * 6) > 0 ? '#ffd84a' : '#8a7a2a'); ctx.fillRect(L(C.x) - 10, L(C.y) - 6, 20, 6);
   ctx.fillStyle = 'rgba(232,236,244,0.75)'; ctx.font = `800 ${T * 0.08}px system-ui, sans-serif`; ctx.fillText('DOCK', L(C.x), L(C.y) + 5);
+  // the brig door's own keypad (on the quarters' back wall beside it)
+  const k2 = g.brigPad;
+  rr(L(k2.x) - 9, L(k2.y) - 12, 18, 24, 3); ctx.fillStyle = '#3a404d'; ctx.fill(); stroke(2);
+  for (let i = 0; i < 9; i++) { ctx.fillStyle = '#c9ced8'; ctx.fillRect(L(k2.x) - 6 + (i % 3) * 5, L(k2.y) - 4 + Math.floor(i / 3) * 5, 3, 3); }
+  ctx.fillStyle = d.doors[4] ? '#ff5a4a' : '#5fd6a0'; ctx.fillRect(L(k2.x) - 6, L(k2.y) - 9, 12, 3);
+  // the captain's quarters: his overturned desk, the chest and the pillar (cover), the pirates' blast door
+  const Q = g.qcover;
+  for (const [q, col, label] of [[Q.desk, '#6a4028', 'DESK'], [Q.chest, '#8a6030', 'LOOT'], [Q.pillar, '#5a5e66', '']]) crate(L(q.x + q.w / 2), L(q.y + q.h / 2), L(q.w), L(q.h), 0, col, label);
+  const Bd = g.blast;
+  hazardStripe(L(Bd.x), L(Bd.y), L(Bd.w), L(Bd.h)); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.strokeRect(L(Bd.x), L(Bd.y), L(Bd.w), L(Bd.h));
   ctx.textAlign = 'left';
   // the door code: on a sticky note on the barracks' back wall, of course
   dockSign('code' + d.code, g.note.x, g.rooms[2].y + 0.02, WALL_SIGN_Z + 0.15, 1.3, [['BRIG DOOR CODE', 0.1], [d.code, 0.22], ['(DO NOT WRITE DOWN)', 0.07, 700]], '#ffe95c', '#26324f');
@@ -1137,13 +1332,16 @@ function drawGunCorridor(d, g, t) {
   stencil(L(C.x + C.w / 2), L(C.y + C.h - 0.35), 'KEEP OUT OF THE LINE OF FIRE', 0, 0.14, 'rgba(232,90,70,0.45)');
   g.cover.forEach((q, i) => {                          // the cover: crates stacked two deep, one more on top
     const cx = q.x + q.w / 2, ys = [q.y + 0.38, q.y + q.h - 0.38], names = ['props/crate_misc', 'props/crate_tape', 'props/crate_blank_port', 'props/crate_snax'];
+    if (GFX.on && GFX.sprite(`base/cover_${i}`, 0, cx, q.y + q.h / 2, 0, { layer: 'wall', sortY: q.y + q.h / 2, emissive: 0.15 })) return;   // (models/base/props.py)
     if (GFX.on && ys.every((y, j) => spr(names[(i + j) % 4], 0, cx, y, 0)) && spr(names[(i + 2) % 4], 0, cx, (ys[0] + ys[1]) / 2, 0.72)) return;
     for (const [j, y] of ys.entries()) crate(L(cx), L(y), L(q.w), L(q.h / 2 - 0.04), 0, j ? '#7a6248' : '#8a6a4a', j ? '' : 'COVER');
   });
   // the pedestal
   const b = G.base;
-  rr(L(b.x - 0.05), L(b.y - 0.05), L(b.w + 0.1), L(b.h + 0.1), 6); ctx.fillStyle = '#2b2e36'; ctx.fill(); stroke(3);
-  hazardStripe(L(b.x + 0.08), L(b.y + b.h - 0.22), L(b.w - 0.16), L(0.14));
+  if (!(GFX.on && GFX.sprite(S.state === 'off' ? 'base/sentry_pedestal_off' : 'base/sentry_pedestal', 0, b.x + b.w / 2, b.y + b.h / 2, 0, { layer: 'wall', sortY: b.y + b.h / 2, emissive: 0.2 }))) {
+    rr(L(b.x - 0.05), L(b.y - 0.05), L(b.w + 0.1), L(b.h + 0.1), 6); ctx.fillStyle = '#2b2e36'; ctx.fill(); stroke(3);
+    hazardStripe(L(b.x + 0.08), L(b.y + b.h - 0.22), L(b.w - 0.16), L(0.14));
+  }
   if (GFX.on && GFX.ready(S.state === 'off' ? 'hull/gun_broken' : 'hull/gun')) {
     const name = S.state === 'off' ? 'hull/gun_broken' : 'hull/gun', kick = S.state === 'fire' && Math.sin(t * 60) > 0 ? 0.05 : 0;
     GFX.sprite(name, GFX.frameIndex(name, G.dir), G.x - Math.cos(G.dir) * kick, G.y, 0.3, { scale: 0.8, sortY: G.y + 0.4, emissive: 0.3 });
