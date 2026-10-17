@@ -10,7 +10,8 @@
 //                outside (spacewalk or cannon seat) when it arrives, or who goes out during it, goes down.
 //   3 THE SIDE   it parks on one side (random), its EYE opens and that side's zones regrow and glow: LEVB_WINDOW s (easy /
 //                very easy: longer) to hit the eye and every glowing zone once with that side's cannon. Too slow: a
-//                leech swarm on that side / a tail slam (room bump + a big hit), alternating, then a new window. In
+//                leech swarm on that side (LEVB_LEECHES: 2 solo … 6 with 4+; never while its last swarm is still on the
+//                hull, then a slam instead) / a tail slam (room bump + a big hit), alternating, then a new window. In
 //                time: it flinches and swims to the other side. Both sides done → 4.
 //   4 BEHIND     out of every cannon's reach. Its BROOD crawls in through two engine vents in the reactor room (waves
 //                every LEVB_WAVE s: 3 crawlers solo, +1 per extra player, at most 6). Crawlers (one laser hit) head for
@@ -26,6 +27,8 @@
 
 const LEVB_FIN_HP = 2, LEVB_ZONE_HP = 2, LEVB_FLICK = 25, LEVB_FLICK_WARN = 4, LEVB_GAS_WARN = 10, LEVB_GAS = 15;
 const LEVB_WINDOW = [12, 16, 20], LEVB_PUNISH = 6, LEVB_SLAM_WARN = 3, LEVB_WAVE = 20, LEVB_WAVE_FIRST = 5, LEVB_SPAWN_GAP = 0.9;
+// Phase 3's leech swarm: how many, by crew size (solo, 2, 3, 4+); the regular swarm event is 6.
+const LEVB_LEECHES = [2, 3, 4, 6];
 const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 3, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
 // The swim loop (world units): centre lines left / right / ahead / behind of the ship, corner radius.
 const LEVB_GEO = { X0: -16, X1: SHIP_W + 16, Y0: -22, Y1: 41, R: 16 };
@@ -386,8 +389,8 @@ function levUpdateSide(B, dt) {
   if (P.state === 'open') {
     P.win -= dt;
     if (P.win <= 0) {                                    // too slow: a leech swarm / a tail slam, alternating
-      const leeches = (P.fails++ % 2) === 0;
-      if (leeches) { spawnLeeches(P.side); combatBanner(`Too slow! It spits a LEECH SWARM at the ${levSideName(P.side)} side!`); }
+      const leeches = (P.fails++ % 2) === 0 && !org.leeches.length;   // (no second swarm on top of the first)
+      if (leeches) { spawnLeeches(P.side, LEVB_LEECHES[Math.min(crewSize(), LEVB_LEECHES.length) - 1]); combatBanner(`Too slow! It spits a LEECH SWARM at the ${levSideName(P.side)} side!`); }
       else { B.slam = { t: LEVB_SLAM_WARN, room: levRoomOn(P.side), side: P.side }; combatBanner(`Too slow! Its tail rises — get out of the ${roomById(B.slam.room).name.toLowerCase()}!`); }
       P.state = 'punish'; P.t = LEVB_PUNISH; P.glow = [];
     }

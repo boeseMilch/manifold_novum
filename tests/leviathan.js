@@ -3,7 +3,7 @@
 // Run: node tests/leviathan.js
 const { loadGame } = require('./harness');
 const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'levStationFor', 'levClickTarget', 'combat', 'simTick', 'crew', 'me', 'makeCrew', 'CAPACITORS',
-  'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'netSerialize', 'netApply',
+  'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'LEVB_LEECHES', 'netSerialize', 'netApply',
   'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk'];
 const DT = 1 / 60;
 let failed = 0;
@@ -82,7 +82,7 @@ const inView = (G, gun, id) => {           // the target is inside that cannon's
   check(B(G).p3.state === 'open' && T0.includes('eye') && T0.length === 3 && T0.every(id => inView(G, side === 'port' ? 'port' : 'star', id)) && Math.abs(B(G).p3.win - G.LEVB_WINDOW[0]) < 0.1,
         `it parks on the ${side} side, its eye opens: the eye + 2 glowing zones in that cannon's view, ${G.LEVB_WINDOW[0]} s`);
   tick(G, G.LEVB_WINDOW[0] + 0.1, () => keepSafe(G));
-  check(B(G).p3.state === 'punish' && G.org.leeches.length === 6 && G.org.leeches[0].side === side, 'too slow: a leech swarm on that side');
+  check(B(G).p3.state === 'punish' && G.org.leeches.length === G.LEVB_LEECHES[0] && G.org.leeches[0].side === side, `too slow: a leech swarm on that side (${G.LEVB_LEECHES[0]} solo)`);
   tick(G, 6.2, () => keepSafe(G)); G.org.leeches = [];
   check(B(G).p3.state === 'open', 'then a new window');
   const large0 = G.combat.hits.large; tick(G, G.LEVB_WINDOW[0] + 3.5, () => keepSafe(G));
@@ -95,6 +95,13 @@ const inView = (G, gun, id) => {           // the target is inside that cannon's
   check(G.levTargets(B(G)).every(id => inView(G, other, id)), `it parks on the ${other} side: the eye + zones in the ${other === 'port' ? 'left' : 'right'} cannon's view`);
   for (const id of G.levTargets(B(G))) shoot(G, id);
   check(B(G).phase === 'p4', 'both sides done: it heads behind us');
+  // the swarm grows with the crew; a swarm still on the hull: the next miss is a slam, never a second swarm
+  const F = fresh(4); F.startLevBoss(3); parked(F);
+  tick(F, F.LEVB_WINDOW[0] + 0.1, () => keepSafe(F));
+  check(F.org.leeches.length === F.LEVB_LEECHES[3], `4 players: ${F.LEVB_LEECHES[3]} leeches`);
+  B(F).p3.fails = 2; const n0 = F.org.leeches.length, l0 = F.combat.hits.large;
+  tick(F, 6.2 + F.LEVB_WINDOW[0] + 3.5, () => keepSafe(F));
+  check(F.org.leeches.length <= n0 && F.combat.hits.large > l0, 'leeches still on the hull: the next miss is a tail slam, not another swarm');
   const E = fresh(1); E.mission.easy = 2; E.startLevBoss(3); parked(E);
   check(Math.abs(B(E).p3.win - 20) < 0.1, 'very easy: a 20 s window');
 }

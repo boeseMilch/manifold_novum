@@ -133,8 +133,8 @@ ENEMY_TYPES.mother = {
 // ---------------------------------------------------------------------------
 // Leeches and the leviathan
 // ---------------------------------------------------------------------------
-function spawnLeeches(side) {
-  for (let i = 0; i < 6; i++) {
+function spawnLeeches(side, n = 6) {
+  for (let i = 0; i < n; i++) {
     const [tx, ty] = HULL_SPOTS[side][i % HULL_SPOTS[side].length];
     org.leeches.push({ uid: newUid(), side, x: (side === 'port' ? -16 : SHIP_W + 16) - (side === 'port' ? 1 : -1) * i * 2.2, y: ty + (Math.random() - 0.5) * 8,
                        tx: tx + (side === 'port' ? -0.15 : 0.15), ty: ty + (Math.random() - 0.5) * 0.6, state: 'fly', chew: 0, t: Math.random() * 10 });

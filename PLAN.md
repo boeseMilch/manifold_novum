@@ -2640,7 +2640,9 @@ the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away
 - **3 The side:** it parks on one side (random), its EYE opens and two zones regrow on its head, glowing: 12 s (easy 16, very
   easy 20) to hit the eye and both zones once with that side's cannon (a big countdown on screen). Too slow: a leech swarm on
   that side, next time a tail slam (3 s warning, room bump + a big hit), alternating, then a new window. In time: it flinches
-  and swims to the other side. Both done → 4.
+  and swims to the other side. Both done → 4. The swarm scales with the crew (2026-10-17, the user: solo it was unwinnable
+  once the leeches came): 2 leeches solo, 3 with two, 4 with three, 6 with four or more (`LEVB_LEECHES`; the regular swarm
+  event stays at 6), and never a second swarm while leeches are still on the hull (that miss is a tail slam instead).
 - **4 Behind:** out of every cannon's reach. Its brood crawls in through two engine vents in the reactor room (24.8, 24.5) and
   (28.6, 24.3): a wave every 20 s (3 crawlers solo, +1 per extra player, at most 6), one laser / blaster / wrench hit each,
   slow; they head for the MID capacitor (drain 1 energy there) and bite crew in their way (one hurt step, 2 s cooldown).
