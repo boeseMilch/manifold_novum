@@ -56,8 +56,9 @@ const LEVB_SPOTS = {
 };
 // The dorsal sail sits on segment 0 (its origin 3 behind the neck joint); the left pectoral's root on the head (x, -y).
 const LEVB_FIN_SEG = 0, LEVB_FIN_AT = [-3, 0], LEVB_PEC = [7, -8.65];
-// The hide, fins and fluke are drawn this much desaturated: the exterior light makes the rendered teal a flat cyan.
-const LEVB_DESAT = 0.4;
+// The hide, fins and fluke: desaturation (0: the renders' teal is already tuned for the cold light outside) and how much the
+// brightest pixels (the wet sheen down its back) light themselves.
+const LEVB_DESAT = 0, LEVB_EMISSIVE = 0.12;
 // Inside our ship: two engine vent grates near the stern of the reactor room, the override panel on the stern wall,
 // where the brood goes (in front of the middle capacitor).
 const LEVB_VENTS = [{ x: 24.8, y: 24.5 }, { x: 28.6, y: 24.3 }], LEVB_PANEL = { x: 26.6, y: 25.25 }, LEVB_CAP_AT = { x: 27.0, y: 16.45 };
@@ -512,7 +513,7 @@ function drawLevBody(t) {
   const order = ['fluke', 'tail', 5, 4, 3, 2, 1, 0, 'head'];
   const sprites = GFX.on && LEVB_SPRITES.every(n => GFX.ready(n));
   if (!sprites) { drawLevPieceFallback(P.fluke, 'fluke', t, B); drawLevBodyFallback(ch, t, B); }
-  else for (const k of order) levSprite(`organic/levb_${P[k].name}`, k === 'fluke' || k === 'head' ? Math.floor(t * 3) % 4 : 0, P[k], 0, 0, { emissive: 0.3, desat: LEVB_DESAT });   // (head: 4 frames, gills; fluke: 4)
+  else for (const k of order) levSprite(`organic/levb_${P[k].name}`, k === 'fluke' || k === 'head' ? Math.floor(t * 3) % 4 : 0, P[k], 0, 0, { emissive: LEVB_EMISSIVE, desat: LEVB_DESAT });   // (head: 4 frames, gills; fluke: 4)
   // details: fins, zones, the nest, the eyes
   const detail = (name, frame, pc, at, o, fb) => { if (!(sprites && levSprite(name, frame, pc, at[0], at[1], o))) (sprites ? levFallbacks : { push: (f) => f() }).push(fb); };
   const fin = P[LEVB_FIN_SEG];

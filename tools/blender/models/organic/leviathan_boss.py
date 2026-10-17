@@ -57,7 +57,8 @@ CHAIN (drawing order: pectorals and fluke first, then tail -> segments 5..0 -> h
   22..35 deg further back): ~140 units nose to fluke tips.
 
     blender -b --factory-startup --python tools/blender/models/organic/leviathan_boss.py -- [quick] [preview] [piece ...]
-pieces: body (head, eyes, segments, tail) fluke fin_pec fin_dorsal zone nest brood gas vent override blast (default all)
+pieces: body (head, eyes, segments, tail) fluke fin_pec fin_dorsal zone nest brood gas vent override blast (default all);
+  look: a preview only (the front 58 units in one window, to judge the hide's look)
 preview: renders at 24 px/unit (ppu=N) into $MN_PREVIEW (not build/renders, its own manifest).
 """
 import sys, os, math, random, time, json
@@ -141,32 +142,58 @@ def setup(view=True):
     return s
 
 def view_light():
-    """Light that a turn about the view axis leaves unchanged (as models/enemy/asteroids.py): a sun along the view
-    (diffuse only: its specular would be a streak along the spine), a teal deep-sea world."""
+    """Light that a turn about the view axis leaves unchanged (as models/enemy/asteroids.py): a soft sun along the view
+    (its sheen sits where the hide faces the camera: the middle of the back, at any rot), and a deep-sea world bright
+    enough to give real occlusion (creases, round barnacles, under fins)."""
     for o in [o for o in bpy.context.scene.objects if o.type == 'LIGHT']: bpy.data.objects.remove(o, do_unlink=True)
-    d = bpy.data.lights.new('view', 'SUN'); d.energy = 2.8; d.color = (1.0, 0.97, 0.93); d.angle = 0.3; d.specular_factor = 0.0
+    d = bpy.data.lights.new('view', 'SUN'); d.energy = VIEW_SUN; d.color = (1.0, 0.98, 0.94); d.angle = math.radians(24); d.specular_factor = VIEW_SPEC
     o = bpy.data.objects.new('view', d); o.rotation_euler = (math.radians(90 - mn.ELEVATION), 0, 0)
-    o.visible_glossy = False                        # (its mirror image would wash out everything facing the camera)
     bpy.context.scene.collection.objects.link(o)
     w = bpy.context.scene.world.node_tree.nodes['Background']
-    w.inputs[0].default_value = (0.16, 0.26, 0.3, 1); w.inputs[1].default_value = 0.45
+    w.inputs[0].default_value = (0.2, 0.3, 0.3, 1); w.inputs[1].default_value = WORLD_K
+VIEW_SUN, VIEW_SPEC, WORLD_K = 2.2, 0.22, 0.9
+
+def shade(m, facing=0.65, power=1.4, band=0.0, band_w=0.06):
+    """Rotation-invariant volume on top of a material's base colour: darker towards the silhouette (facing ratio), and
+    optionally a darker band down the spine (object-space normal straight up)."""
+    nt = m.node_tree; N = nt.nodes; Lk = nt.links.new; b = N['Principled BSDF']
+    src = b.inputs['Base Color'].links[0].from_socket
+    def mth(op, a, bb=None, clamp=False):
+        n = N.new('ShaderNodeMath'); n.operation = op; n.use_clamp = clamp
+        for i, v in enumerate((a, bb)):
+            if v is None: continue
+            if isinstance(v, (int, float)): n.inputs[i].default_value = v
+            else: Lk(v, n.inputs[i])
+        return n.outputs[0]
+    lw = N.new('ShaderNodeLayerWeight'); lw.inputs['Blend'].default_value = 0.5
+    k = mth('SUBTRACT', 1.0, mth('MULTIPLY', mth('POWER', lw.outputs['Facing'], power), facing), clamp=True)
+    if band:
+        tc = N.new('ShaderNodeTexCoord'); sz = N.new('ShaderNodeSeparateXYZ'); Lk(tc.outputs['Normal'], sz.inputs[0])
+        bd = N.new('ShaderNodeMapRange'); bd.inputs['From Min'].default_value = 1 - band_w * 2; bd.inputs['From Max'].default_value = 1 - band_w * 0.3
+        bd.inputs['To Max'].default_value = band; Lk(sz.outputs['Z'], bd.inputs['Value'])
+        k = mth('MULTIPLY', k, mth('SUBTRACT', 1.0, bd.outputs[0]))
+    mx = N.new('ShaderNodeVectorMath'); mx.operation = 'SCALE'; Lk(src, mx.inputs[0]); Lk(k, mx.inputs['Scale'])
+    Lk(mx.outputs[0], b.inputs['Base Color'])
+    return m
+
+SKIN = ('#04161a', '#256a6a', '#3f9696', '#a2c6c0')     # dark, light (mottling), veins, speckles: deep teal leaning green (the game's light is cold)
 
 def mats():
     M = dict(
-        skin=O.flesh('lb_skin', '#0d2230', '#2a5a70', c2='#04090e', veins='#3a8a9a', vein_k=0.3, scale=0.12, rough=0.5, coat=0.35,
-                     sss=0.05, bump=0.6, mottle=1.4, speckle=('#8aa6b0', 7.0, 0.14, 0.5)),
-        fin=O.flesh('lb_fin', '#0e2434', '#2a5a72', c2='#050a10', veins='#48a8c0', vein_k=0.45, scale=0.3, coat=0.7, mottle=1.2,
-                    speckle=('#8aa6b0', 1.0, 0.12, 0.4)),
-        ray=O.emit_mat('lb_ray', '#5ae0ff', 0.9, base='#2a7a90'),
-        spot=O.emit_mat('lb_spot', '#7af0ff', 1.5, base='#3ac0d8', coat=1.0),
+        skin=shade(O.flesh('lb_skin', SKIN[0], SKIN[1], c2='#030807', veins=SKIN[2], vein_k=0.35, scale=0.16, rough=0.48, coat=0.25,
+                           sss=0.05, bump=0.8, mottle=2.2, speckle=(SKIN[3], 9.0, 0.16, 0.55)), facing=0.72, band=0.3),
+        fin=shade(O.flesh('lb_fin', SKIN[0], SKIN[1], c2='#030807', veins=SKIN[2], vein_k=0.45, scale=0.3, rough=0.55, coat=0.15, mottle=1.8,
+                          speckle=(SKIN[3], 1.6, 0.12, 0.45)), facing=0.75, power=1.2),
+        ray=shade(O.flesh('lb_ray', '#2a6a7c', '#4a90a0', c2='#030807', scale=0.8, rough=0.35, coat=0.7, mottle=0.8), facing=0.6),
+        spot=O.emit_mat('lb_spot', '#b4dcdc', 0.22, base='#94b8bc', rough=0.55, coat=0.1),
         gill=O.emit_mat('lb_gill', '#7af0ff', 1.2, base='#3ac0d8', coat=1.0),
-        barn=O.flesh('lb_barn', '#8a9486', '#c8ccbc', c2='#3a4038', scale=2, rough=0.7, coat=0.1, bump=1.0),
+        barn=O.flesh('lb_barn', '#a4aea6', '#dfe2d6', c2='#4a5048', scale=2, rough=0.6, coat=0.2, bump=1.0),
         barn_in=O.plain('lb_barn_in', '#1a1e1a', 0.8),
         scar=O.plain('lb_scar', '#8aa0ae', 0.5, coat=0.3),
         lip=O.plain('lb_lip', '#071018', 0.5, coat=0.4),
         socket=O.plain('lb_socket', '#05080c', 0.6),
         glint=O.emit_mat('lb_glint', '#fff8d0', 1.2),
-        lid=O.flesh('lb_lid', '#123040', '#2e5a70', c2='#050a10', scale=0.5, coat=0.7),
+        lid=shade(O.flesh('lb_lid', SKIN[0], SKIN[1], c2='#030807', scale=0.5, rough=0.45, coat=0.25, mottle=1.4), facing=0.6),
         lid_hit=O.flesh('lb_lid_hit', '#3a1a28', '#7a4050', c2='#14060a', veins='#ff6a6a', vein_k=0.5, scale=0.8, coat=0.8),
         rim=O.flesh('lb_rim', '#4a1424', '#a8444a', c2='#1a0408', veins='#f0ff50', vein_k=0.75, scale=1.2, rough=0.3, coat=0.9,
                     sss=0.3, sss_col=(1.0, 0.4, 0.3), bump=0.8, mottle=1.3),
@@ -260,60 +287,68 @@ def frame_at(n, T=Vector((1, 0, 0))):
     return Matrix((t, b, n)).transposed()
 
 def spots(M, body, d0, d1, seed, avoid=()):
-    """Photophores in two loose bands either side of the spine, small companions; a dashed lateral line."""
+    """Photophores: rows of small pale lights either side of the spine (two per side), a few bigger ones in pairs and
+    threes, and a dashed lateral line along each flank."""
     rnd = random.Random(seed); objs = []
     def free(x, y): return not any((Vector((x, y)) - Vector(a[:2])).length < a[2] for a in avoid)
-    d = d0 + rnd.uniform(0.5, 2.0)
+    def put(x, y, rr, sx=1.0):
+        loc, n = surf(body, x, y)
+        if loc is None: return
+        s_ = mn.sphere('lb_spot', rr, loc=loc - n * 0.03, m=M['spot'], scale=(sx, 1, 0.25), segs=12)
+        s_.rotation_mode = 'QUATERNION'; s_.rotation_quaternion = n.to_track_quat('Z', 'Y'); objs.append(s_)
+    for row, k in ((0.24, 0.8), (0.46, 1.0)):              # the rows
+        for sd in (1, -1):
+            d = d0 + rnd.uniform(0, 1.0)
+            while d < d1:
+                w = hw(d); x, y = -d, sd * w * (row + rnd.uniform(-0.03, 0.03))
+                if rnd.random() > 0.15 and free(x, y): put(x, y, rnd.uniform(0.11, 0.2) * k * (0.6 + 0.4 * w / 11.4))
+                d += rnd.uniform(0.9, 1.5) * (0.6 + 0.4 * w / 11.4)
+    d = d0 + rnd.uniform(1, 3)                            # bigger ones, in little groups
     while d < d1:
         w = hw(d)
         for sd in (1, -1):
-            if rnd.random() < 0.3: continue
-            x, y = -d, sd * w * rnd.uniform(0.36, 0.56)
+            if rnd.random() < 0.45: continue
+            x, y = -d, sd * w * rnd.uniform(0.1, 0.75)
             if not free(x, y): continue
-            loc, n = surf(body, x, y)
-            if loc is None: continue
-            rr = (0.32 + 0.4 * rnd.random()) * (0.55 + 0.45 * w / 11.4)
-            s = mn.sphere('lb_spot', rr, loc=loc - n * 0.05, m=M['spot'], scale=(1, 1, 0.5), segs=16)
-            s.rotation_mode = 'QUATERNION'; s.rotation_quaternion = n.to_track_quat('Z', 'Y'); objs.append(s)
-            if rnd.random() < 0.4:
-                l2, n2 = surf(body, x - rnd.uniform(0.6, 1.0), y + rnd.uniform(-0.5, 0.5))
-                if l2 is not None: objs.append(mn.sphere('lb_spot', rr * 0.5, loc=l2 - n2 * 0.03, m=M['spot'], scale=(1, 1, 0.5), segs=12))
-        d += rnd.uniform(2.6, 4.6) * (0.6 + 0.4 * w / 11.4)
-    d = d0 + 1.0                                          # the lateral line: short glowing dashes along each flank
+            for g in range(rnd.choice((1, 2, 2, 3))):
+                put(x + rnd.uniform(-0.8, 0.8), y + rnd.uniform(-0.6, 0.6), rnd.uniform(0.25, 0.55) * (0.6 + 0.4 * w / 11.4))
+        d += rnd.uniform(1.4, 2.6)
+    d = d0 + 1.0                                          # the lateral line: short pale dashes along each flank
     while d < d1:
         w = hw(d)
         for sd in (1, -1):
             x, y = -d, sd * w * 0.86
-            if rnd.random() < 0.4 or not free(x, y): continue
-            loc, n = surf(body, x, y)
-            if loc is None: continue
-            objs.append(mn.sphere('lb_spot', 0.17 * (0.5 + 0.5 * w / 11.4), loc=loc - n * 0.03, m=M['spot'], scale=(2.6, 1, 0.5), segs=12))
-        d += rnd.uniform(1.4, 2.4)
+            if rnd.random() < 0.35 or not free(x, y): continue
+            put(x, y, 0.13 * (0.5 + 0.5 * w / 11.4), sx=2.4)
+        d += rnd.uniform(1.2, 2.0)
     return objs
 
 def barnacles(M, body, d0, d1, seed, n=6, scars=3, avoid=()):
+    """Clusters of small barnacles (each ~0.1-0.25 across, clusters ~0.5-1.5) crusting the back and upper flanks;
+    pale scars."""
     rnd = random.Random(seed); objs = []
     for c in range(n):
-        cd = rnd.uniform(d0, d1); cy = rnd.choice((1, -1)) * hw(cd) * rnd.uniform(0.15, 0.8)
+        cd = rnd.uniform(d0, d1); w = hw(cd)
+        cy = rnd.choice((1, -1)) * w * min(0.85, abs(rnd.gauss(0, 0.42)))
         if any((Vector((-cd, cy)) - Vector(a[:2])).length < a[2] for a in avoid): continue
-        k_ = 0.55 + 0.45 * hw(cd) / 11.4
-        for k in range(rnd.randint(5, 13)):
-            loc, nn = surf(body, -cd + rnd.uniform(-1.2, 1.2) * k_, cy + rnd.uniform(-0.9, 0.9) * k_)
+        k_ = 0.6 + 0.4 * w / 11.4; spread = rnd.uniform(0.3, 0.8) * k_
+        for k in range(rnd.randint(4, 16)):
+            loc, nn = surf(body, -cd + rnd.gauss(0, spread), cy + rnd.gauss(0, spread * 0.8))
             if loc is None: continue
-            r = rnd.uniform(0.2, 0.48) * k_
-            cone = mn.cyl('lb_barn', r, r * 0.9, loc=(0, 0, 0), m=M['barn'], verts=10, bevel=0.0)
+            r = rnd.uniform(0.1, 0.27) * k_ * (1.35 if rnd.random() < 0.15 else 1.0)
+            cone = mn.cyl('lb_barn', r, r * 0.9, loc=(0, 0, 0), m=M['barn'], verts=8, bevel=0.0)
             for v in cone.data.vertices:
                 if v.co.z > 0.01: v.co.x *= 0.45; v.co.y *= 0.45
-            cone.matrix_world = Matrix.Translation(loc - nn * 0.08) @ nn.to_track_quat('Z', 'Y').to_matrix().to_4x4(); O.apply_tf(cone)
+            cone.matrix_world = Matrix.Translation(loc - nn * 0.05) @ nn.to_track_quat('Z', 'Y').to_matrix().to_4x4(); O.apply_tf(cone)
             objs.append(cone)
-            objs.append(mn.sphere('lb_barnin', r * 0.4, loc=loc + nn * r * 0.82, m=M['barn_in'], scale=(1, 1, 0.3), segs=8))
+            objs.append(mn.sphere('lb_barnin', r * 0.4, loc=loc + nn * r * 0.82, m=M['barn_in'], scale=(1, 1, 0.3), segs=6))
     for c in range(scars):
-        cd = rnd.uniform(d0 + 2, d1 - 2); cy = rnd.uniform(-0.6, 0.6) * hw(cd); a = rnd.uniform(-0.6, 0.6) + (math.pi / 2 if rnd.random() < 0.4 else 0)
-        pts = []
-        for t in range(9):
-            loc, nn = surf(body, -cd + t * 0.35 * math.cos(a), cy + t * 0.35 * math.sin(a))
-            if loc is not None: pts.append(loc - nn * 0.04)
-        if len(pts) > 4: objs.append(O.tube('lb_scar', pts, [0.12] * len(pts), m=M['scar'], res=2, segs=6))
+        cd = rnd.uniform(d0 + 2, d1 - 2); cy = rnd.uniform(-0.65, 0.65) * hw(cd); a = rnd.uniform(-0.7, 0.7) + (math.pi / 2 if rnd.random() < 0.35 else 0)
+        L_ = rnd.uniform(1.2, 3.2); pts = []
+        for t in range(10):
+            loc, nn = surf(body, -cd + t / 9 * L_ * math.cos(a), cy + t / 9 * L_ * math.sin(a))
+            if loc is not None: pts.append(loc - nn * 0.03)
+        if len(pts) > 4: objs.append(O.tube('lb_scar', pts, [0.05 + 0.03 * math.sin(math.pi * i / (len(pts) - 1)) for i in range(len(pts))], m=M['scar'], res=2, segs=6))
     return objs
 
 def barn_outline(objs, t=0.02):
@@ -341,6 +376,17 @@ for p in a['paths']:
         al = np.clip((al - 3.0) * 255.0 / 252.0, 0, 255)
         col = np.where(al[..., None] > 0, np.clip(rgb * 255.0 / np.maximum(rgb.max(axis=2), 1)[..., None], 0, 255), 0)
         im = np.dstack([col, al])
+    elif a['op'] == 'tone':                        # the hide's beauty for the game's cold light: gain, a soft knee on the
+        rgb = im[..., :3] / 255 * a['gain']        # sheen, more saturation, the highlights tinted back towards the teal
+        W = np.array([0.2126, 0.7152, 0.0722], np.float32)
+        lum = (rgb * W).sum(-1, keepdims=True)
+        tl = np.where(lum > a['knee'], a['knee'] + (lum - a['knee']) * a['slope'], lum)
+        rgb = rgb * (tl / np.maximum(lum, 1e-4))
+        l2 = (rgb * W).sum(-1, keepdims=True); rgb = l2 + (rgb - l2) * a['sat']
+        teal = np.array([0.42, 1.0, 1.0]); teal = teal / (teal * W).sum()
+        t = np.clip((l2 - a['knee'] * 0.8) / 0.18, 0, 1) * 0.55
+        rgb = rgb * (1 - t) + (l2 * teal) * t
+        im[..., :3] = np.clip(rgb, 0, 1) * 255
     elif a['op'] == 'alpha':
         im[..., 3] *= a['k']
     Image.fromarray(im.round().clip(0, 255).astype(np.uint8), 'RGBA').save(p)
@@ -351,6 +397,12 @@ def post(op, name, **kw):
     with open(mn.MANIFEST) as f: e = json.load(f)[name]
     paths = [os.path.join(mn.OUT_DIR, fl + '.png') for fl in e['files']]
     subprocess.run(['python3', '-I', '-c', POST, json.dumps(dict(op=op, paths=paths, ox=e['ox'], ppu=mn.PPU, **kw))], check=True)
+
+TONE = dict(gain=0.9, knee=0.34, slope=0.4, sat=1.15)
+
+def tone(name):
+    """The hide / fins' beauty, toned for the game's cold light (see POST 'tone'). Not the eyes."""
+    post('tone', name, **TONE)
 
 def feather(name, x_core0, x_core1, x_lo, x_hi):
     """Fade the beauty alpha to 0 over the overhangs: from the joint (x_core0 / x_core1) to x_lo / x_hi."""
@@ -376,6 +428,7 @@ def emission(m): return m.node_tree.nodes['Principled BSDF'].inputs['Emission St
 # ---------------------------------------------------------------------------------------------------
 # body pieces: one creature, rendered as windows
 # ---------------------------------------------------------------------------------------------------
+BARN_N, SCAR_N = 150, 30
 OUT_T = 0.06            # the body's outline (a huge creature: thicker than a prop's)
 
 EYE_D = 9.0
@@ -465,12 +518,13 @@ def dcenter(o):
     bb = [o.matrix_world @ Vector(c) for c in o.bound_box]
     return -sum(v.x for v in bb) / 8
 
-def creature(M):
+def creature(M, dmax=BODY_L + STUMP):
     """The whole hide (a reference for placing details; not rendered) and its details, in creature coordinates."""
-    ref = loft_d('lb_ref', 0.0, BODY_L + STUMP, m=M['skin']); ref.hide_render = True
+    ref = loft_d('lb_ref', 0.0, dmax, m=M['skin']); ref.hide_render = True
+    f = min(1.0, dmax / BODY_L)
     det = head_details(M, ref)
-    det += spots(M, ref, 3.0, BODY_L - 1.0, 41, avoid=HEAD_AVOID)
-    det += barnacles(M, ref, 6.0, BODY_L - 12, 9, n=26, scars=14, avoid=HEAD_AVOID)
+    det += spots(M, ref, 3.0, min(dmax, BODY_L) - 1.0, 41, avoid=HEAD_AVOID)
+    det += barnacles(M, ref, 4.0, min(dmax, BODY_L - 6), 9, n=int(BARN_N * f), scars=int(SCAR_N * f), avoid=HEAD_AVOID)
     mn.outline([o for o in det if o.name.startswith('lb_eye_rim')], 0.03); barn_outline(det)
     return ref, det
 
@@ -507,7 +561,7 @@ def piece_body():
                  length=HEAD_L, pec=[round(HEAD_L - PEC_D, 2), round(hw(PEC_D) * 0.78, 2)], eye=[HEAD_L - EYE_D, round(hw(EYE_D) * 0.74, 2)],
                  note='origin = the neck joint J0 on the spine; nose at x = +length (units); head towards +x at rot 0; scale 1; '
                       'eyes: levb_eye_* at the same origin; left pectoral root at (pec[0], -pec[1]), right (pec[0], +pec[1])'))
-    feather(name, -0.0, 99, -OVER, None)
+    feather(name, -0.0, 99, -OVER, None); tone(name)
     # the eyes (over the head: the head and its details as a holdout)
     for o in [o for s_ in sets for o in s_]: bpy.data.objects.remove(o, do_unlink=True)
     b.is_holdout = True
@@ -530,7 +584,7 @@ def piece_body():
         show_range(d0 - 0.3, d1)
         name = f'organic/levb_seg_{k}'
         piece_window(name, b, d0, d1 + OVER, True, d0, extra=dict(note('segment', d0, d1), length=d1 - d0))
-        feather(name, -(d1 - d0), 99, -(d1 - d0) - OVER, None)
+        feather(name, -(d1 - d0), 99, -(d1 - d0) - OVER, None); tone(name)
         bpy.data.objects.remove(b, do_unlink=True)
     # the tail stock (its end: a rounded stump over the fluke's root)
     d0 = JOINTS[-1]
@@ -538,6 +592,22 @@ def piece_body():
     show_range(d0 - 0.3, BODY_L + 2)
     piece_window('organic/levb_seg_tail', b, d0, BODY_L + STUMP + 0.3, True, d0, extra=dict(note('tail', d0, BODY_L), length=TAIL_L,
                  note='origin = its front joint J6 on the spine; the fluke\'s root at x = -length; scale 1'))
+    tone('organic/levb_seg_tail')
+
+def piece_look():
+    """Preview only: the front 58 units in one window (hide, details, the sail, the pectorals, closed eyes)."""
+    setup(); M = mats(); M['eyeball_l'] = M['eyeball']; M['eyeball_r'] = LV.eye_mat(-1)
+    ref, det = creature(M, 60.0); ref.hide_render = False
+    fin, deco = dorsal(M, ref, 0)
+    pecs = []
+    for sd in (1, -1):
+        for o in pec_fin(M, 52, 0.0):
+            if sd < 0: o.scale.y = -1; O.apply_tf(o)
+            o.location = (-PEC_D, sd * hw(PEC_D) * 0.78, -0.6); O.apply_tf(o); pecs.append(o)
+    eyes = eye_ball(M, ref, 1, 'closed') + eye_ball(M, ref, -1, 'closed')
+    mn.outline([ref] + fin + pecs, OUT_T)
+    tilt_all([ref] + det + fin + deco + pecs + eyes)
+    window('organic/levb_look', -58, 0.5, -14, 14, extra=dict(note='preview'))
 
 # ---------------------------------------------------------------------------------------------------
 # fins
@@ -558,7 +628,12 @@ def fluke(M, root_a, tip_a, span=14.5, k=1.35):
             parts.append((pitch(p, t), 2.6 * k * (1 - 0.62 * t) * 0.85, (1, 1, 0.22)))
     for j in range(6):                                     # the stock into the fluke
         parts.append((pitch(Vector((-0.4 - j * 0.9, 0, 0)), j / 20), 1.4 - 0.05 * j, (1, 1, 0.55)))
-    return [O.blob('lb_fluke', parts, m=M['fin'], res=0.14)]
+    fin = O.blob('lb_fluke', parts, m=M['fin'], res=0.14)
+    ribs = []
+    for sd in (-1, 1):                                      # ribs fanning out to each tip
+        ribs += fin_ribs(M, fin, lambda t, o, sd=sd: pitch(Vector((-(1.0 + 5.0 * t ** 1.4) * k - o * 2.2 * k * (1 - 0.6 * t), sd * span * 0.97 * t, 0.3 * t)), t),
+                         (-0.3, 0.15, 0.55), r0=0.15)
+    return [fin] + ribs
 
 def piece_fluke():
     setup(); M = mats(); sets = []
@@ -569,6 +644,7 @@ def piece_fluke():
     x0, x1, y0, y1 = O.screen_bounds(allo)
     window('organic/levb_fluke', x0 - 0.2, x1 + 0.2, y0 - 0.2, y1 + 0.2, frames=F, extra=dict(chain='fluke', loop=True,
            note="origin = root = the tail stock's end (tail-local x = -length of levb_seg_tail); draw before the tail; scale 1"))
+    tone('organic/levb_fluke')
 
 PEC_POSES = [(42, 1.6), (52, 0.0), (64, -1.6), (52, 0.0)]  # (sweep back from straight out, deg; tip lift): a rowing paddle
 
@@ -583,7 +659,23 @@ def pec_fin(M, sweep, lift, span=18.0):
         t = (k + 1) / 9
         p = dirv * (span * t) - back * (1.9 * (1 - 0.6 * t)) + Z * (lift * t * t - 0.4 * t + 0.15)
         parts.append((p, 0.75 * (1 - 0.4 * t), (1, 1, 0.7)))
-    return [O.blob('lb_pect', parts, m=M['fin'], res=0.13)]
+    fin = O.blob('lb_pect', parts, m=M['fin'], res=0.13)
+    perp = Z.cross(dirv).normalized()                       # (towards the leading edge)
+    return [fin] + fin_ribs(M, fin, lambda t, o: dirv * (span * 0.95 * t) + back * (1.5 * t * t) + perp * (o * 3.0 * (1 - 0.6 * t)),
+                            (-0.62, -0.25, 0.12, 0.48))
+
+def fin_ribs(M, fin, path, offs, r0=0.17):
+    """Raised ribs on a fin's top face: path(t, o) -> a flat-frame point, t 0..1 root -> tip, o across; projected onto the fin."""
+    bpy.context.view_layer.update(); out = []
+    for o in offs:
+        pts = []
+        for i in range(16):
+            t = 0.04 + 0.9 * i / 15; q = path(t, o)
+            hit, loc, n, _ = fin.ray_cast(Vector((q.x, q.y, q.z + 20)), Vector((0, 0, -1)))
+            if hit: pts.append(loc - n * 0.02 if n.z > 0 else loc)
+        if len(pts) > 5:
+            out.append(O.tube('lb_rib', pts, [r0 * (1 - 0.65 * i / (len(pts) - 1)) for i in range(len(pts))], m=M['ray'], res=2, segs=8))
+    return out
 
 def piece_fin_pec():
     setup(); M = mats(); sets = [pec_fin(M, s, l) for s, l in PEC_POSES]
@@ -593,26 +685,51 @@ def piece_fin_pec():
     x0, x1, y0, y1 = O.screen_bounds(allo)
     window('organic/levb_fin_pec', x0 - 0.2, x1 + 0.2, y0 - 0.2, y1 + 0.2, frames=F, extra=dict(chain='pec', loop=True,
            note='LEFT pectoral, origin = its root: at head-local (pec[0], -pec[1]); the right one: flip + rot + PI at (pec[0], +pec[1]); draw before the head'))
+    tone('organic/levb_fin_pec')
 
 LEAN = math.radians(62)                                   # the sail flops over to the left (+Y)
 
+RIBS = 11                                                 # the sail's ribs (pleats)
+
 def dorsal(M, body, holes=0, H=8.0):
+    """The tall dorsal sail (the FIN target): a pleated membrane with thickness, flopped over to the left (so the camera
+    sees its face), a rib along every crest, a rounded rim, the trailing edge scalloped between the ribs."""
     up = Vector((0, math.sin(LEAN), math.cos(LEAN))); nrm = Vector((0, -math.cos(LEAN), math.sin(LEAN)))  # nrm: the face towards the camera
     T = Vector((-1, 0, 0))
     def basept(t):
         x = -(DORSAL_D0 + DORSAL_L * t); loc, n = surf(body, x, 0.0); return loc
     def hgt(t): return H * math.sin(math.pi * min(1, t ** 0.75)) ** 0.8 * (1 - 0.25 * t)
     eul = Matrix((T, nrm, up)).transposed().to_euler()
-    parts = []; rays = []
-    for k in range(24):
-        t = k / 23; loc = basept(t); ht = hgt(t)
-        for j in range(7):
-            v = j / 6
-            parts.append((loc + up * (ht * v - 0.3) + T * (ht * 0.55 * v * v), 1.8 * (1 - 0.5 * v) + 0.3, (1.0, 0.32, 1.0), tuple(eul)))
-        if k % 3 == 1 and ht > 1:
-            rays.append([loc + up * (ht * v - 0.2) + T * (ht * 0.55 * v * v) for v in (0.05, 0.3, 0.6, 0.85)])
-    fin = O.blob('lb_dorsal', parts, m=M['fin'], res=0.12)
+    NT, NV = 220, 28
+    def P(t, v, lift=0.0):
+        ht = hgt(t) * (1 - 0.07 * (1 - math.cos(math.tau * RIBS * t)) * v ** 3)      # scalloped between the ribs, at the edge
+        pleat = 0.32 * math.cos(math.tau * RIBS * t) * (0.25 + 0.75 * v) * min(1, 6 * t) * min(1, 6 * (1 - t))
+        return basept(t) + up * (ht * v - 0.45) + T * (ht * 0.55 * v * v) + nrm * (pleat + lift)
+    bases = [basept(i / NT) for i in range(NT + 1)]
+    me = bpy.data.meshes.new('lb_dorsal'); bm = bmesh.new(); grid = []
+    for i in range(NT + 1):
+        t = i / NT; row = []
+        for j in range(NV + 1):
+            row.append(bm.verts.new(P(t, j / NV)))
+        grid.append(row)
+    for i in range(NT):
+        for j in range(NV): bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces); bm.to_mesh(me); bm.free()
+    fin = mn.link(bpy.data.objects.new('lb_dorsal', me)); mn.smooth(fin); mn.assign(fin, M['fin'])
+    sol = fin.modifiers.new('thick', 'SOLIDIFY'); sol.thickness = 0.3; sol.offset = 0.0; sol.use_even_offset = True
+    fin = O.bake(fin)
+    rays = []
+    for r in range(RIBS + 1):                                # the ribs: on every crest, both faces
+        t = (r + 0.0) / RIBS
+        if t < 0.04 or t > 0.97: continue
+        ht = hgt(t)
+        if ht < 1.0: continue
+        rays.append([t, [(j / 12) for j in range(13)]])
+    rim = [P(i / 60, 1.0) for i in range(61)] + []          # the rounded rim along the top edge
+    lead = [P(0.0, j / 20) for j in range(21)]
     out = [fin]; deco = []
+    deco.append(O.tube('lb_rim', rim, [0.14 + 0.08 * math.sin(math.pi * i / 60) for i in range(61)], m=M['fin'], res=1, segs=8))
+    deco.append(O.tube('lb_rim', lead, [0.2] * 21, m=M['fin'], res=1, segs=8))
     hp = []
     for h in range(holes):
         t = 0.32 + 0.3 * h; loc = basept(t); ht = hgt(t)
@@ -622,9 +739,10 @@ def dorsal(M, body, holes=0, H=8.0):
         cut.matrix_world = Matrix.Translation(c_) @ nrm.to_track_quat('Z', 'Y').to_matrix().to_4x4(); O.apply_tf(cut)
         fin = O.boolean(fin, cut); bpy.data.objects.remove(cut, do_unlink=True)
     out = [fin]
-    for pts in rays:
+    for t, vs in rays:
         for sgn in (1, -1):
-            r = O.tube('lb_ray', [p + nrm * sgn * 0.55 for p in pts], [0.14, 0.12, 0.1, 0.06], m=M['ray'], res=3, segs=6)
+            pts = [P(t, v, sgn * 0.17) for v in vs if v > 0.04]
+            r = O.tube('lb_ray', pts, [0.2 * (1 - 0.6 * i / (len(pts) - 1)) for i in range(len(pts))], m=M['ray'], res=2, segs=8)
             for c_ in hp:                                  # rays end at a hole
                 if any(((p - c_) - nrm * nrm.dot(p - c_)).length < 1.3 for p in pts): r.hide_render = True
             deco.append(r)
@@ -643,17 +761,21 @@ def dorsal(M, body, holes=0, H=8.0):
 def piece_fin_dorsal():
     for holes, st in ((0, 'ok'), (1, 'hit1'), (2, 'hit2')):
         setup(); M = mats()
-        b = loft_d('lb_body', DORSAL_D0 - 8, DORSAL_D0 + DORSAL_L + 8, m=M['skin'])     # (the hide under it: a holdout)
+        b = loft_d('lb_body', DORSAL_D0 - 8, DORSAL_D0 + DORSAL_L + 8, m=M['skin'])     # (the hide under it: catches its shadow)
         fin, deco = dorsal(M, b, holes)
-        b.is_holdout = True
-        mn.outline(fin, 0.05); mn.outline([o for o in deco if o.name.startswith('lb_burnrim')], 0.02)
+        mn.outline(fin, 0.05); mn.outline([o for o in deco if o.name.startswith(('lb_burnrim', 'lb_rim'))], 0.02)
         allo = fin + deco
         tilt_all([b] + allo)
         if st == 'ok': BND[0] = O.screen_bounds(fin)
         x0, x1, y0, y1 = BND[0]
-        window(f'organic/levb_fin_dorsal_{st}', x0 - 0.3, x1 + 0.3, y0 - 0.3, y1 + 0.3, origin=(-DORSAL_D0, 0, 0), extra=dict(chain='dorsal', length=DORSAL_L,
-               at=[JOINTS[0] - DORSAL_D0, 0], note='origin = front end of the base on the spine: segment 0\'s local (at[0], 0) (3 behind its front joint), '
-                    'its rot, scale 1; flops to the left; to the right: flip + rot + PI'))
+        args = (f'organic/levb_fin_dorsal_{st}', x0 - 1.2, x1 + 1.2, y0 - 1.2, y1 + 1.2)
+        kw = dict(origin=(-DORSAL_D0, 0, 0), extra=dict(chain='dorsal', length=DORSAL_L,
+                  at=[JOINTS[0] - DORSAL_D0, 0], note='origin = front end of the base on the spine: segment 0\'s local (at[0], 0) (3 behind its front joint), '
+                       'its rot, scale 1; flops to the left; to the right: flip + rot + PI. The beauty pass carries its soft shadow on the hide.'))
+        b.is_shadow_catcher = True                         # the beauty: the sail's occlusion on the hide (translucent dark)
+        window(*args, passes=('beauty',), **kw); tone(args[0])
+        b.is_shadow_catcher = False; b.is_holdout = True   # the maps: the sail alone
+        window(*args, passes=('normal', 'height'), **kw)
 BND = [None]
 
 # ---------------------------------------------------------------------------------------------------
@@ -1089,7 +1211,7 @@ def piece_blast():
     post('glowify', name)
 
 # ---------------------------------------------------------------------------------------------------
-PIECES = dict(body=piece_body,
+PIECES = dict(body=piece_body, look=lambda: piece_look(),
               fluke=piece_fluke, fin_pec=piece_fin_pec, fin_dorsal=piece_fin_dorsal, zone=piece_zone, nest=piece_nest,
               brood=piece_brood, gas=piece_gas, vent=piece_vent, override=piece_override, blast=piece_blast)
 
