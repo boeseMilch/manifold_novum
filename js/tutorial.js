@@ -195,25 +195,14 @@ const TUT_STEPS = {
     objective: () => `Scan with the radar: the map table in the middle of the bridge (${tutC('click it', 'E')})`,
     marker: () => ({ x: 22.2, y: 6.4 }),
     allow: (w, t) => w === 'target' && t?.run === radarScan,
-    tick() {
-      if (mission.lastScan === null) return;
-      tutSay([
-        `The radar shows everything that comes at us in the next ${RADAR_RANGE} seconds. And: nothing. Good! You are in a *safe part of space*. We picked it specially for training.`,
-        'Scan again, just to be sure. (Always scan twice. Company policy.)',
-      ], () => {
-        mission.events.push({ id: 1, kind: 'interceptor', side: 'port', t: mission.t + 30, t1: mission.t + 30, radar: true, done: false });
-        tutGo('radar2');
-      });
+    enter() {                                      // the interceptor is out there already: the first scan finds it
+      tut.d.ev = { id: 1, kind: 'interceptor', side: 'port', t: mission.t + 30, t1: mission.t + 30, radar: true, done: false };
+      mission.events.push(tut.d.ev);
     },
-  },
-  radar2: {
-    objective: () => `Scan again (${tutC('click', 'E')} the radar table)`,
-    marker: () => ({ x: 22.2, y: 6.4 }),
-    allow: (w, t) => w === 'target' && t?.run === radarScan,
-    enter() { tut.d.scan = mission.lastScan; },
     tick() {
-      if (mission.lastScan === tut.d.scan) return;
+      if (mission.lastScan === null) { tut.d.ev.t = tut.d.ev.t1 = mission.t + 30; return; }   // (30 s out whenever you scan)
       tutSay([
+        `The radar shows everything that comes at us in the next ${RADAR_RANGE} seconds. We picked a *safe part of space* specially for training, so: nothing. Except…`,
         { text: 'Ah. A *pirate interceptor*, coming in on the *left*. Contacts the radar found show up in the list on the left of the screen, with the time until they arrive.', mark: () => ({ x: -12, y: 8 }) },
         'So, not that safe after all. Statistically, it never is. Pirates don\'t negotiate, so let\'s get you to a gun.',
         `Go to the *left cannon room* and climb into the cannon at its ladder (${tutC('click the ladder', 'press *E* at the ladder')}).`,

@@ -57,9 +57,7 @@ function toKill(G, controls, failBlock) {
   check(!G.me.ui.panel && !!G.tut.msg, 'Esc closes the panel; on to the radar');
   skip(G);
   Object.assign(G.me, { x: 22.2, y: 7.4 }); clickAt(G, 22.2, 6.4);
-  check(G.tut.msg && /safe part of space/.test(allText(G)), 'first scan: nothing, a safe part of space');
-  skip(G); G.simTick(DT); clickAt(G, 22.2, 6.4);
-  check(G.tut.msg && /pirate interceptor/.test(allText(G)) && G.mission.revealed.size === 1, 'second scan: the interceptor shows up on the radar');
+  check(G.tut.msg && /pirate interceptor/.test(allText(G)) && G.mission.revealed.size === 1 && !/scan twice/i.test(allText(G)), 'the first scan finds the interceptor');
   skip(G);
   tickUntil(G, () => false, 40);
   check(!foe(G), 'it doesn\'t arrive on its own while you walk');

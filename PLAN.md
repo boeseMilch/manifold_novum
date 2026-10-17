@@ -1659,7 +1659,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   `shipHit` / `crewHit` ask `tutorialHit`: just the flash and sparks).
 - Steps (data in `TUT_STEPS`, each `{ objective, marker, allow, enter, tick }`, `tutGo(id)` moves on):
   welcome (RAIDER intro, you, a tour of the decks) → helm (the two yellow readings, orange = service it) →
-  radar (nothing: a safe part of space; scan again: an interceptor on the left) → climb into the left cannon
+  radar (the first scan finds an interceptor on the left; since 2026-10-17, before: nothing, "always scan twice", which read as a rule for real missions) → climb into the left cannon
   (spawns it; it holds its fire) → shoot the windshield (a miss gives the shot back; any other weak spot or hull
   wear is fixed at once) → advantages (the interceptor's weak spots and effects from `ENEMY_TYPES`, frigate
   examples, hull wear) → reload (the last energy) → block (one scripted shot; paused mid-air until you hold
