@@ -10,30 +10,29 @@ specular, plus a teal world); the directional light comes from the game's runtim
 (GFX turns normals and heights with rot). The creature swims "in the screen plane": all lengths below are
 SCREEN units (1 unit = 1 game unit across the screen); place joints by screen distance (see CHAIN).
 
-Every body piece at rot 0: the head is towards +x (screen right), the creature's LEFT side is screen up.
-Origins are on the spine (the creature's centre line), at the JOINTS:
+Every body piece is drawn at SCALE 1; at rot 0 the head is towards +x (screen right), the creature's LEFT side is
+screen up. d = distance behind the nose along the spine (screen units). The whole creature is modelled once (the
+approved concept's whale profile, hw(d): a blunt rounded snout, widest 11.4 at d ~28, a long taper to a slender stock)
+and each piece is a window of it, so hide, lumps, spots and barnacles carry on across the joints:
 
-  organic/levb_head            f0..f3 breathing loop (gills flare and glow, blowholes open). Nose at +HEAD_L,
-                               origin = the neck joint J0 (where the first segment joins); a 2.5-unit feathered
-                               overhang behind it (x -2.5..0). Eye sockets left for the eye sprites.
-  organic/levb_eye_closed|open|hit  f0 = the LEFT eye (screen up at rot 0), f1 = the RIGHT eye. Same origin,
-                               scale and rot as the head: draw over the head. hit = squeezed shut (flinch).
-  organic/levb_seg_a, levb_seg_b    body segments, LSEG = 16 long from the origin (front joint, x = 0) to the
-                               rear joint (x = -16), plus a feathered overhang of 2.5 past each joint. Each
-                               tapers by TAPER (half-width W = 10 at the front, W * TAPER at the rear), so the
-                               k-th segment behind the head is drawn at scale TAPER^k: the joints then match.
-  organic/levb_seg_tail        the tapering tail stock: front joint at 0 (half-width W), TAIL_L long, ending in
-                               a rounded stump at -TAIL_L (the fluke's root). Scale TAPER^n after n segments.
-  organic/levb_fluke           f0..f3 stroke loop (up, level, down, level), origin = its root = the tail's end
-                               (tail-local x = -TAIL_L); spreads to -x. Same scale and rot as the tail.
-  organic/levb_fin_pec         f0..f3 paddle loop: the LEFT pectoral fin, origin = its root. Root on the head at
-                               head-local (PEC_X, -PEC_Y) screen units (x forward, y down) = left side. The right
-                               fin: the same sprite with flip: true and rot + PI at (PEC_X, +PEC_Y).
-  organic/levb_fin_dorsal_ok|hit1|hit2   the tall dorsal sail, flopped over to the creature's LEFT (so the
-                               camera sees its face), origin = the front end of its base on the spine; it runs
-                               back to x = -DORSAL_L. Put it on the spine of the 1st segment (front at
-                               segment-local x = -1), at that segment's scale. To flop it to the right: flip: true
-                               and rot + PI. hit1/hit2: one / two scorched holes.
+  JOINTS (d)  J0 26 (neck) | J1 41 | J2 55 | J3 69 | J4 82 | J5 95 | J6 107 | the fluke's root 128
+  organic/levb_head            f0..f3 breathing loop (gills flare and glow, blowholes open). Origin = J0, nose at x = +26.
+                               A 3-unit feathered overhang behind J0 (x -3..0) lies over segment 0. Eye sockets left for
+                               the eye sprites. Manifest: pec (left pectoral root at head-local (pec[0], -pec[1])).
+  organic/levb_eye_closed|open|hit  f0 = the LEFT eye (screen up at rot 0), f1 = the RIGHT eye. Same origin and rot as the
+                               head: draw over the head. hit = squeezed shut (flinch).
+  organic/levb_seg_0 .. _5     the body segments J_k -> J_k+1 (15, 14, 14, 13, 13, 12 long). Origin = the front joint J_k;
+                               rear joint at x = -length. Rear: a 3-unit feathered overhang over the next piece. Front: a
+                               round cap (radius = the half-width at J_k) ahead of the joint, drawn UNDER the piece in front:
+                               it fills the outer side of a bent joint like a ball joint (any bend up to ~35 deg holds).
+  organic/levb_seg_tail        the tail stock J6 -> 128 (21 long), the same front cap, a rounded stump at x = -21.
+  organic/levb_fluke           f0..f3 stroke loop (up, level, down, level), origin = its root = the tail's end (tail-local
+                               x = -21); a big crescent (~29 across) spreading to -x.
+  organic/levb_fin_pec         f0..f3 paddle loop: the LEFT pectoral fin, origin = its root, at head-local (7, -8.65) (x forward,
+                               y down = left). The right fin: the same sprite with flip: true and rot + PI at (7, +8.65).
+  organic/levb_fin_dorsal_ok|hit1|hit2   the tall dorsal sail (d 29..44), flopped over to the creature's LEFT, origin = the
+                               front end of its base on the spine = segment 0's local (-3, 0); it runs back to x = -15. To flop
+                               it to the right: flip: true and rot + PI. hit1/hit2: one / two scorched holes.
   organic/levb_zone            f0..f3 squirm loop: an infested zone (a glowing boil, leeches latched on, glowing
   organic/levb_zone_glow       f0..f3 the same, glowing hot (targeted, phase 3)     veins). Origin = its centre,
   organic/levb_zone_hit1       half blasted (2 leeches left, charred half, embers)  ~3 across (+ veins to ~7).
@@ -52,13 +51,13 @@ Origins are on the spine (the creature's centre line), at the JOINTS:
                                origin = the engine bell's: game (22.2, 26.1); blasts down the screen (+y).
                                Unlit, alpha = brightness (like hull/engine_flame_*).
 
-CHAIN (drawing order: fins and fluke first, then tail -> segments -> head, then overlays, then the eyes):
-  J0 = head origin; segment k (k = 0..n-1) origin J_k, scale TAPER^k, length LSEG * TAPER^k:
-  J_{k+1} = J_k + LSEG * TAPER^k * (-forward_k); tail origin J_n at scale TAPER^n; fluke at
-  J_n + TAIL_L * TAPER^n * (-forward_tail). n = 7 gives ~125 units nose to fluke tips (n = 6: ~117).
+CHAIN (drawing order: pectorals and fluke first, then tail -> segments 5..0 -> head, then overlays, then the eyes):
+  J0 = head origin; segment k at J_k with its rot; J_k+1 = J_k - length_k * (cos rot_k, sin rot_k); tail at J6, fluke at the
+  tail's end. js/leviathan.js levChain lays it out from the head back, each joint bent at most LEVB_BEND (14 deg at the neck,
+  22..35 deg further back): ~140 units nose to fluke tips.
 
     blender -b --factory-startup --python tools/blender/models/organic/leviathan_boss.py -- [quick] [preview] [piece ...]
-pieces: head eyes seg_a seg_b tail fluke fin_pec fin_dorsal zone nest brood gas vent override blast (default all)
+pieces: body (head, eyes, segments, tail) fluke fin_pec fin_dorsal zone nest brood gas vent override blast (default all)
 preview: renders at 24 px/unit (ppu=N) into $MN_PREVIEW (not build/renders, its own manifest).
 """
 import sys, os, math, random, time, json
@@ -84,41 +83,54 @@ Z = Vector((0, 0, 1))
 E = math.radians(mn.ELEVATION)
 TILT = math.radians(90 - mn.ELEVATION)          # flat build -> facing the camera (rotation about X)
 
-# --- the chain (screen units, scale 1) ---
-W = 10.0          # half-width at the neck joint
-LSEG = 16.0       # segment length, joint to joint
-TAPER = 0.9       # rear / front half-width of a segment (and the scale step from one segment to the next)
-OVER = 2.5        # feathered overhang past each joint
-HEAD_L = 22.0     # neck joint to nose
-TAIL_L = 26.0     # tail stock: front joint to the fluke's root
-TIP = 1.4         # tail stock half-width at its end
-PEC_X, PEC_Y = 2.0, 7.2
-DORSAL_L = 15.0
-HH = 0.6          # dorsal height / half-width
+# --- the creature (screen units; every piece is drawn at scale 1) ---
+# d = distance behind the nose along the spine. Everything is built in ONE frame, "creature coordinates": x = -d (nose at
+# x = 0, head towards +x), back = +Z, the creature's left = +Y. Each piece renders a window of it with its own origin (its
+# front joint), so the hide's lumps, mottling, spots and barnacles carry on exactly across the joints.
+BODY_L = 128.0                                          # nose to the fluke's root
+JOINTS = [26.0, 41.0, 55.0, 69.0, 82.0, 95.0, 107.0]    # J0 = the neck, J1..J6; the tail stock runs J6 -> BODY_L
+HEAD_L = JOINTS[0]
+SEG_L = [b - a for a, b in zip(JOINTS, JOINTS[1:])]     # [15, 14, 14, 13, 13, 12]
+TAIL_L = BODY_L - JOINTS[-1]                            # 21
+OVER = 3.0                                              # the feathered rear overhang (lies on top of the next piece)
+STEP = 0.25                                             # the shared ring grid (all joints are multiples of it)
+PEC_D = 19.0                                            # the pectoral fins' roots (d), at 0.78 x the half-width
+DORSAL_D0, DORSAL_L = 29.0, 15.0                        # the dorsal sail's base: d 29 .. 44 (on segment 0)
+HH = 0.6                                                # back height / half-width
+# The half-width (the approved concept's profile, models/concepts/leviathan_boss.py, on a 128-unit body): a blunt rounded
+# snout, the bulk right behind the head (widest, 11.4, ~28 behind the nose), then a long taper to a slender tail stock.
+NOSE_D, NOSE_W = 8.0, 9.6
+PROF = [(NOSE_D, NOSE_W), (15.4, 10.8), (28.2, 11.4), (46.0, 10.8), (64.0, 9.2), (82.0, 6.6), (100.0, 4.0), (115.0, 2.3),
+        (124.0, 1.45), (BODY_L, 1.1)]
+STUMP = 1.1                                             # the tail stock ends in a rounded stump (the fluke's root under it)
+
+def _slopes(P):                                         # monotone cubic (Fritsch-Carlson): no overshoot between the knots
+    xs, ys = [p[0] for p in P], [p[1] for p in P]; n = len(P)
+    h = [xs[i + 1] - xs[i] for i in range(n - 1)]; dl = [(ys[i + 1] - ys[i]) / h[i] for i in range(n - 1)]
+    m = [0.0] * n; m[-1] = dl[-1]                       # (m[0] = 0: joins the snout's curve smoothly)
+    for i in range(1, n - 1):
+        if dl[i - 1] * dl[i] <= 0: continue
+        w1, w2 = 2 * h[i] + h[i - 1], h[i] + 2 * h[i - 1]
+        m[i] = (w1 + w2) / (w1 / dl[i - 1] + w2 / dl[i])
+    return m
+_M = _slopes(PROF)
+
+def hw(d):
+    """Half-width of the hide d behind the nose."""
+    if d <= 0: return 0.0
+    if d < NOSE_D: return NOSE_W * math.sqrt(max(0.0, 1 - (1 - d / NOSE_D) ** 2.2))      # the blunt, rounded snout
+    if d > BODY_L:
+        c = (d - BODY_L) / STUMP
+        return PROF[-1][1] * math.sqrt(max(0.0, 1 - c * c))
+    for i in range(len(PROF) - 1):
+        x0, y0 = PROF[i]; x1, y1 = PROF[i + 1]
+        if d <= x1:
+            hh_ = x1 - x0; t = (d - x0) / hh_
+            return ((2 * t ** 3 - 3 * t * t + 1) * y0 + (t ** 3 - 2 * t * t + t) * hh_ * _M[i]
+                    + (-2 * t ** 3 + 3 * t * t) * y1 + (t ** 3 - t * t) * hh_ * _M[i + 1])
+    return PROF[-1][1]
 
 def smooth(t): t = max(0.0, min(1.0, t)); return t * t * (3 - 2 * t)
-
-def interp(x, xs, vs):
-    if x <= xs[0]: return vs[0]
-    for i in range(1, len(xs)):
-        if x <= xs[i]:
-            t = smooth((x - xs[i - 1]) / (xs[i] - xs[i - 1])); return vs[i - 1] + (vs[i] - vs[i - 1]) * t
-    return vs[-1]
-
-def hw_seg(x): return W * TAPER ** (-x / LSEG)          # x <= 0: behind the front joint (any segment, scale 1)
-
-def hw_head(x):
-    if x <= 0: return hw_seg(x)
-    d = HEAD_L - x                                        # distance from the nose
-    if d <= 0: return 0.0
-    return interp(d, [0, 0.9, 3.4, 8.0, 14.0, HEAD_L], [0.6, 3.8, 7.2, 9.4, 10.15, W])
-
-def hw_tail(x):
-    if x >= 0: return hw_seg(x)
-    t = -x / TAIL_L
-    if t <= 1: return TIP + (W - TIP) * (0.5 + 0.5 * math.cos(math.pi * t)) ** 0.85
-    c = (-x - TAIL_L) / (TIP * 1.3)                      # rounded stump
-    return TIP * math.sqrt(max(0.0, 1 - c * c)) if c < 1 else 0.0
 
 # ---------------------------------------------------------------------------------------------------
 # scene, light, materials
@@ -193,38 +205,51 @@ def tilt_all(objs):
 # ---------------------------------------------------------------------------------------------------
 # the body: a lofted tube along X (head towards +X), back = +Z, left side = +Y
 # ---------------------------------------------------------------------------------------------------
-def loft(name, x0, x1, hwf, nx, nr=64, joints=(), seed=0, m=None, hh=HH, xoff=0.0):
+def loft_d(name, d0, d1, cap=False, nr=64, m=None, shift=0.0):
+    """The creature's hide from d0 to d1, in creature coordinates (x = -d + shift). Rings on the shared grid (multiples of
+    STEP), and the noise is the creature's (object coordinates): overlapping pieces are the same hide.
+    cap: a round front end of radius hw(d0) ahead of d0 (a ball joint: it fills the outer side of a bend, hidden under the
+    piece in front otherwise) instead of the hide ahead."""
+    ds = []
+    if cap:
+        w0 = hw(d0)
+        for i in range(1, 24):
+            ph = math.pi / 2 * (1 - i / 24); ds.append((d0 - w0 * math.sin(ph), w0 * math.cos(ph)))
+    elif d0 <= 0:
+        ds += [(0.0, 0.0)] + [(x, hw(x)) for x in (0.005, 0.02, 0.05, 0.1, 0.17)]
+    k = math.ceil(max(d0, 0.25 if d0 <= 0 else d0) / STEP - 1e-9)
+    while k * STEP <= d1 + 1e-9:
+        ds.append((k * STEP, hw(k * STEP))); k += 1
+    if d1 > BODY_L:                                     # the stump: finer rings round its end
+        ds = [p for p in ds if p[0] <= BODY_L]
+        for i in range(1, 13):
+            dd = BODY_L + STUMP * math.sin(math.pi / 2 * i / 12); ds.append((dd, hw(dd)))
     me = bpy.data.meshes.new(name); bm = bmesh.new(); rings = []
-    xs = [x0 + (x1 - x0) * i / nx for i in range(nx + 1)]
-    for x in xs:
-        w = max(hwf(x), 0.03); h = w * hh; d = 0.5 * w
-        row = []
+    for d, w in ds:
+        w = max(w, 0.02); h = w * HH; dp = 0.5 * w; row = []
         for i in range(nr):
             th = i / nr * math.tau; cs, sn = math.cos(th), math.sin(th)
             y = w * math.copysign(abs(cs) ** 0.9, cs)
-            z = h * abs(sn) ** 0.85 if sn >= 0 else -d * abs(sn) ** 0.9
+            z = h * abs(sn) ** 0.85 if sn >= 0 else -dp * abs(sn) ** 0.9
             if sn > 0: z += 0.05 * w * math.exp(-((th - math.pi / 2) / 0.16) ** 2)       # a low dorsal ridge
-            row.append(bm.verts.new((x + xoff, y, z)))
+            row.append(bm.verts.new((-d + shift, y, z)))
         rings.append(row)
     for j in range(len(rings) - 1):
         for i in range(nr):
             bm.faces.new((rings[j][i], rings[j][(i + 1) % nr], rings[j + 1][(i + 1) % nr], rings[j + 1][i]))
-    for row, x in ((rings[0], xs[0]), (rings[-1], xs[-1])):
-        c = bm.verts.new((x + xoff, 0, 0))
+    for row, (d, _) in ((rings[0], ds[0]), (rings[-1], ds[-1])):
+        c = bm.verts.new((-d + shift, 0, 0))
         for i in range(nr): bm.faces.new((row[i], row[(i + 1) % nr], c))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me); bm.free()
     o = mn.link(bpy.data.objects.new(name, me)); mn.smooth(o)
     o = O.subdiv(o, 1)
-    def wt(co):                                         # no lumps near the joints: the pieces must match there
-        dmin = min([abs(co.x - xoff - j) for j in joints] or [99])
-        return smooth((dmin - OVER - 0.5) / 3.0)
-    O.noise_displace(o, [(0.45, 0.09, 11 + seed), (0.1, 0.7, 12 + seed)], weight=wt)
+    O.noise_displace(o, [(0.45, 0.09, 11), (0.1, 0.7, 12)])
     if m: mn.assign(o, m)
     return o
 
 def surf(body, x, y, lift=0.0):
-    """Point and normal on the body's top surface above (x, y) (flat frame)."""
+    """Point and normal on the body's top surface above (x, y) (flat frame, body's own coordinates)."""
     hit, loc, n, _ = body.ray_cast(Vector((x, y, 30)), Vector((0, 0, -1)))
     if not hit: return None, None
     if n.z < 0: n = -n
@@ -234,43 +259,48 @@ def frame_at(n, T=Vector((1, 0, 0))):
     t = (T - n * n.dot(T)).normalized(); b = n.cross(t)
     return Matrix((t, b, n)).transposed()
 
-def spots(M, body, x0, x1, hwf, seed, avoid=()):
+def spots(M, body, d0, d1, seed, avoid=()):
     """Photophores in two loose bands either side of the spine, small companions; a dashed lateral line."""
     rnd = random.Random(seed); objs = []
-    x = x1 - rnd.uniform(0.5, 2.0)
-    while x > x0:
+    def free(x, y): return not any((Vector((x, y)) - Vector(a[:2])).length < a[2] for a in avoid)
+    d = d0 + rnd.uniform(0.5, 2.0)
+    while d < d1:
+        w = hw(d)
         for sd in (1, -1):
-            if rnd.random() < 0.2: continue
-            w = hwf(x); y = sd * w * rnd.uniform(0.38, 0.55)
-            if any((Vector((x, y)) - Vector(a[:2])).length < a[2] for a in avoid): continue
+            if rnd.random() < 0.3: continue
+            x, y = -d, sd * w * rnd.uniform(0.36, 0.56)
+            if not free(x, y): continue
             loc, n = surf(body, x, y)
             if loc is None: continue
-            rr = (0.32 + 0.4 * rnd.random()) * (0.6 + 0.4 * w / W)
+            rr = (0.32 + 0.4 * rnd.random()) * (0.55 + 0.45 * w / 11.4)
             s = mn.sphere('lb_spot', rr, loc=loc - n * 0.05, m=M['spot'], scale=(1, 1, 0.5), segs=16)
             s.rotation_mode = 'QUATERNION'; s.rotation_quaternion = n.to_track_quat('Z', 'Y'); objs.append(s)
             if rnd.random() < 0.4:
                 l2, n2 = surf(body, x - rnd.uniform(0.6, 1.0), y + rnd.uniform(-0.5, 0.5))
                 if l2 is not None: objs.append(mn.sphere('lb_spot', rr * 0.5, loc=l2 - n2 * 0.03, m=M['spot'], scale=(1, 1, 0.5), segs=12))
-        x -= rnd.uniform(1.6, 3.0)
-    x = x1 - 1.0                                          # the lateral line: short glowing dashes along each flank
-    while x > x0:
+        d += rnd.uniform(2.6, 4.6) * (0.6 + 0.4 * w / 11.4)
+    d = d0 + 1.0                                          # the lateral line: short glowing dashes along each flank
+    while d < d1:
+        w = hw(d)
         for sd in (1, -1):
-            w = hwf(x); y = sd * w * 0.86
-            if rnd.random() < 0.3: continue
+            x, y = -d, sd * w * 0.86
+            if rnd.random() < 0.4 or not free(x, y): continue
             loc, n = surf(body, x, y)
             if loc is None: continue
-            objs.append(mn.sphere('lb_spot', 0.16 * (0.5 + 0.5 * w / W), loc=loc - n * 0.03, m=M['spot'], scale=(2.6, 1, 0.5), segs=12))
-        x -= rnd.uniform(1.0, 1.6)
+            objs.append(mn.sphere('lb_spot', 0.17 * (0.5 + 0.5 * w / 11.4), loc=loc - n * 0.03, m=M['spot'], scale=(2.6, 1, 0.5), segs=12))
+        d += rnd.uniform(1.4, 2.4)
     return objs
 
-def barnacles(M, body, x0, x1, hwf, seed, n=6, scars=3):
+def barnacles(M, body, d0, d1, seed, n=6, scars=3, avoid=()):
     rnd = random.Random(seed); objs = []
     for c in range(n):
-        cx = rnd.uniform(x0, x1); cy = rnd.choice((1, -1)) * hwf(cx) * rnd.uniform(0.15, 0.8)
+        cd = rnd.uniform(d0, d1); cy = rnd.choice((1, -1)) * hw(cd) * rnd.uniform(0.15, 0.8)
+        if any((Vector((-cd, cy)) - Vector(a[:2])).length < a[2] for a in avoid): continue
+        k_ = 0.55 + 0.45 * hw(cd) / 11.4
         for k in range(rnd.randint(5, 13)):
-            loc, nn = surf(body, cx + rnd.uniform(-1.2, 1.2), cy + rnd.uniform(-0.9, 0.9))
+            loc, nn = surf(body, -cd + rnd.uniform(-1.2, 1.2) * k_, cy + rnd.uniform(-0.9, 0.9) * k_)
             if loc is None: continue
-            r = rnd.uniform(0.2, 0.48) * (0.6 + 0.4 * hwf(cx) / W)
+            r = rnd.uniform(0.2, 0.48) * k_
             cone = mn.cyl('lb_barn', r, r * 0.9, loc=(0, 0, 0), m=M['barn'], verts=10, bevel=0.0)
             for v in cone.data.vertices:
                 if v.co.z > 0.01: v.co.x *= 0.45; v.co.y *= 0.45
@@ -278,10 +308,10 @@ def barnacles(M, body, x0, x1, hwf, seed, n=6, scars=3):
             objs.append(cone)
             objs.append(mn.sphere('lb_barnin', r * 0.4, loc=loc + nn * r * 0.82, m=M['barn_in'], scale=(1, 1, 0.3), segs=8))
     for c in range(scars):
-        cx = rnd.uniform(x0 + 2, x1 - 2); cy = rnd.uniform(-0.6, 0.6) * hwf(cx); a = rnd.uniform(-0.6, 0.6) + (math.pi / 2 if rnd.random() < 0.4 else 0)
+        cd = rnd.uniform(d0 + 2, d1 - 2); cy = rnd.uniform(-0.6, 0.6) * hw(cd); a = rnd.uniform(-0.6, 0.6) + (math.pi / 2 if rnd.random() < 0.4 else 0)
         pts = []
         for t in range(9):
-            loc, nn = surf(body, cx + t * 0.35 * math.cos(a), cy + t * 0.35 * math.sin(a))
+            loc, nn = surf(body, -cd + t * 0.35 * math.cos(a), cy + t * 0.35 * math.sin(a))
             if loc is not None: pts.append(loc - nn * 0.04)
         if len(pts) > 4: objs.append(O.tube('lb_scar', pts, [0.12] * len(pts), m=M['scar'], res=2, segs=6))
     return objs
@@ -326,9 +356,9 @@ def feather(name, x_core0, x_core1, x_lo, x_hi):
     """Fade the beauty alpha to 0 over the overhangs: from the joint (x_core0 / x_core1) to x_lo / x_hi."""
     post('feather', name, c0=x_core0, c1=x_core1, lo=x_lo, hi=x_hi)
 
-def window(name, x0, x1, y0, y1, frames=None, extra=None, passes=('beauty', 'normal', 'height')):
+def window(name, x0, x1, y0, y1, frames=None, extra=None, passes=('beauty', 'normal', 'height'), origin=(0, 0, 0)):
     """An exact window in flat-frame units (= screen units after the tilt: x right, y up)."""
-    return O.render_window(name, x0, x1, y0, y1, frames=frames, extra=extra, passes=passes)
+    return O.render_window(name, x0, x1, y0, y1, frames=frames, extra=extra, passes=passes, origin=origin)
 
 def frames_hide(sets, frames):
     """sets[i] shown only on scene frame frames[i]."""
@@ -344,43 +374,20 @@ def key(sock, f, v):
 def emission(m): return m.node_tree.nodes['Principled BSDF'].inputs['Emission Strength']
 
 # ---------------------------------------------------------------------------------------------------
-# body pieces
+# body pieces: one creature, rendered as windows
 # ---------------------------------------------------------------------------------------------------
 OUT_T = 0.06            # the body's outline (a huge creature: thicker than a prop's)
-HWIN = 10.9             # half-height of the body windows (max half-width + lumps + outline)
 
-def seg_body(M, seed, xoff=0.0):
-    return loft('lb_body', -LSEG - OVER - 3, OVER + 3, hw_seg, 90, joints=(0.0, -LSEG), seed=seed, m=M['skin'], xoff=xoff)
-
-def piece_segment(variant):
-    setup(); M = mats(); seed = {'a': 1, 'b': 2}[variant]
-    b = seg_body(M, seed)
-    det = spots(M, b, -LSEG - 1.0, 1.0, hw_seg, seed * 7) + barnacles(M, b, -LSEG + 1, -1, hw_seg, seed * 5, n=4 if variant == 'a' else 5,
-                                                                         scars=2 if variant == 'a' else 4)
-    mn.outline([b], OUT_T); barn_outline(det)
-    tilt_all([b] + det)
-    name = f'organic/levb_seg_{variant}'
-    window(name, -LSEG - OVER, OVER, -HWIN, HWIN, extra=dict(chain='segment', length=LSEG, taper=TAPER, over=OVER, halfwidth=W,
-           note='origin = front joint on the spine; rear joint at x = -length (units); head towards +x at rot 0; scale TAPER^k for the k-th segment'))
-    feather(name, -LSEG, 0.0, -LSEG - OVER, OVER)
-
-def piece_tail():
-    setup(); M = mats()
-    b = loft('lb_body', -TAIL_L - TIP * 1.3, OVER + 3, hw_tail, 110, joints=(0.0,), seed=3, m=M['skin'])
-    det = spots(M, b, -TAIL_L + 2, 1.0, hw_tail, 33) + barnacles(M, b, -TAIL_L * 0.7, -2, hw_tail, 17, n=3, scars=2)
-    mn.outline([b], OUT_T); barn_outline(det)
-    tilt_all([b] + det)
-    name = 'organic/levb_seg_tail'
-    window(name, -TAIL_L - TIP * 1.3 - 0.3, OVER, -HWIN, HWIN, extra=dict(chain='tail', length=TAIL_L, over=OVER, halfwidth=W, tip=TIP,
-           note='origin = front joint on the spine; the fluke root at x = -length; scale TAPER^n after n segments'))
-    feather(name, -TAIL_L - 99, 0.0, None, OVER)
-
-EYE_X = 13.0
-EYE_SC = (3.0, 2.15, 0.95)
+EYE_D = 9.0
+EYE_SC = (3.4, 2.4, 1.0)
+GILL_D = (13.5, 15.0, 16.5, 18.0)
+BLOW_D = 12.5
+BREATH = [(0.75, 0.55), (1.0, 0.85), (1.25, 1.0), (1.0, 0.75)]      # per frame: gill opening, blowhole opening
+HEAD_AVOID = [(-EYE_D, 7.2, 4.6), (-EYE_D, -7.2, 4.6), (-BLOW_D, 0, 2.4), (-15.8, 9.0, 3.2), (-15.8, -9.0, 3.2), (-PEC_D, 9.4, 2.5), (-PEC_D, -9.4, 2.5)]
 
 def eye_place(body, side):
-    ye = side * hw_head(EYE_X) * 0.74
-    loc, n = surf(body, EYE_X, ye)
+    ye = side * hw(EYE_D) * 0.74
+    loc, n = surf(body, -EYE_D, ye)
     axis = (n + Z * 0.9).normalized()
     T = Vector((side, 0, 0))                              # (the right eye's frame mirrored: its local y points outwards too)
     fw = (T - axis * axis.dot(T)).normalized(); yl = axis.cross(fw)
@@ -390,7 +397,7 @@ def eye_place(body, side):
 def eye_socket(M, body, side):
     """Head side: the lid-coloured rim and a dark socket (covered by the eye sprite)."""
     c, q = eye_place(body, side); R = q.to_matrix(); sc = EYE_SC
-    rim = [(c + R @ Vector((math.cos(a) * sc[0] * 1.07, math.sin(a) * sc[1] * 1.09, 0.08)), 0.7, (1, 1, 0.75)) for a in (k / 40 * math.tau for k in range(40))]
+    rim = [(c + R @ Vector((math.cos(a) * sc[0] * 1.07, math.sin(a) * sc[1] * 1.09, 0.08)), 0.75, (1, 1, 0.75)) for a in (k / 40 * math.tau for k in range(40))]
     r = O.blob('lb_eye_rim', rim, m=M['lid'], res=0.1)
     s = mn.sphere('lb_socket', 1.0, loc=c - (R @ Vector((0, 0, 0.25))), m=M['socket'], scale=sc, segs=48)
     s.rotation_mode = 'QUATERNION'; s.rotation_quaternion = q
@@ -405,8 +412,8 @@ def eye_ball(M, body, side, state):
         zz = sc[2] * math.sqrt(max(0.0, 1 - (a / sc[0]) ** 2 - (b / sc[1]) ** 2))
         return c + R @ Vector((a, b, zz + lift))
     if state == 'open':
-        objs.append(mn.sphere('lb_glint', 0.38, loc=on_ball(-0.8, -0.7, -0.02), m=M['glint'], scale=(1, 0.8, 0.25), segs=16))
-        objs.append(mn.sphere('lb_glint', 0.16, loc=on_ball(-0.2, -1.05, -0.01), m=M['glint'], scale=(1, 0.8, 0.25), segs=12))
+        objs.append(mn.sphere('lb_glint', 0.42, loc=on_ball(-0.9, -0.8, -0.02), m=M['glint'], scale=(1, 0.8, 0.25), segs=16))
+        objs.append(mn.sphere('lb_glint', 0.18, loc=on_ball(-0.2, -1.15, -0.01), m=M['glint'], scale=(1, 0.8, 0.25), segs=12))
     else:
         dd = 0.0 if state == 'closed' else -0.15
         for sd in (1, -1):
@@ -422,25 +429,17 @@ def eye_ball(M, body, side, state):
             objs.append(lid)
     return objs
 
-def head_body(M):
-    return loft('lb_body', -OVER - 3, HEAD_L, hw_head, 120, nr=72, joints=(0.0,), seed=0, m=M['skin'])
-
 def head_details(M, b):
     det = []
     for side in (1, -1): det += eye_socket(M, b, side)
-    pts = []                                             # the mouth: a dark lip line round the snout, just above the rim
-    for k in range(41):
-        t = -1 + 2 * k / 40; d = 0.35 + 7.5 * abs(t) ** 1.3; x = HEAD_L - d
-        y = math.copysign(hw_head(x) * 0.95, t) if abs(t) > 0.02 else 0.0
-        loc, n = surf(b, x, y)
-        if loc is not None: pts.append(loc + n * 0.02)
-    det.append(O.tube('lb_mouth', pts, [0.2] * len(pts), m=M['lip'], res=2, segs=8))
-    det += spots(M, b, 0.5, HEAD_L - 9, hw_head, 41, avoid=[(EYE_X, 7.4, 4.0), (EYE_X, -7.4, 4.0), (9.5, 0, 2.0)])
-    det += barnacles(M, b, 9, HEAD_L - 2, hw_head, 9, n=4, scars=2)
+    for side in (1, -1):                                  # the mouth: a long dark lip line down each side of the snout
+        pts = []
+        for k in range(26):
+            d = 0.25 + 10.0 * (k / 25) ** 1.25
+            loc, n = surf(b, -d, side * hw(d) * (0.93 if d > 1 else 0.6 + 0.33 * d))
+            if loc is not None: pts.append(loc + n * 0.02)
+        det.append(O.tube('lb_mouth', pts, [0.24 * (1 - 0.5 * k / 25) for k in range(len(pts))], m=M['lip'], res=2, segs=8))
     return det
-
-GILL_X = (7.6, 6.2, 4.8, 3.4)
-BREATH = [(0.75, 0.55), (1.0, 0.85), (1.25, 1.0), (1.0, 0.75)]      # per frame: gill opening, blowhole opening
 
 def head_breath(M, b):
     """Per-frame parts: gill slits (opening, glow), blowholes (dilating)."""
@@ -448,64 +447,117 @@ def head_breath(M, b):
     for gk, bk in BREATH:
         objs = []
         for side in (1, -1):
-            for x in GILL_X:
+            for d in GILL_D:
                 pts = []
                 for j in range(6):
-                    loc, n = surf(b, x - 0.06 * j, side * hw_head(x) * (0.72 + 0.05 * j))
+                    loc, n = surf(b, -d - 0.06 * j, side * hw(d) * (0.72 + 0.05 * j))
                     if loc is not None: pts.append(loc + n * 0.02)
                 rr = [0.1, 0.17, 0.2, 0.2, 0.17, 0.1]
                 objs.append(O.tube('lb_gill', pts, [r * gk for r in rr], m=M['gill'], res=2, segs=6))
                 objs.append(O.tube('lb_gill_lip', [p + Vector((0.28 * gk, 0, 0.12)) for p in pts], [r * 0.9 for r in rr], m=M['lip'], res=2, segs=6))
         for sd in (1, -1):
-            loc, n = surf(b, 9.5, sd * 1.0)
-            objs.append(mn.sphere('lb_blow', 0.6, loc=loc + n * 0.02, m=M['lip'], scale=(1.5, 0.75 * bk + 0.12, 0.3), segs=16))
+            loc, n = surf(b, -BLOW_D, sd * 1.0)
+            objs.append(mn.sphere('lb_blow', 0.65, loc=loc + n * 0.02, m=M['lip'], scale=(1.5, 0.75 * bk + 0.12, 0.3), segs=16))
         sets.append(objs)
     return sets
 
-def piece_head():
-    setup(); M = mats()
-    b = head_body(M); det = head_details(M, b); sets = head_breath(M, b)
+def dcenter(o):
+    bb = [o.matrix_world @ Vector(c) for c in o.bound_box]
+    return -sum(v.x for v in bb) / 8
+
+def creature(M):
+    """The whole hide (a reference for placing details; not rendered) and its details, in creature coordinates."""
+    ref = loft_d('lb_ref', 0.0, BODY_L + STUMP, m=M['skin']); ref.hide_render = True
+    det = head_details(M, ref)
+    det += spots(M, ref, 3.0, BODY_L - 1.0, 41, avoid=HEAD_AVOID)
+    det += barnacles(M, ref, 6.0, BODY_L - 12, 9, n=26, scars=14, avoid=HEAD_AVOID)
+    mn.outline([o for o in det if o.name.startswith('lb_eye_rim')], 0.03); barn_outline(det)
+    return ref, det
+
+def piece_window(name, b, d0, d1, cap, origin_d, frames=None, extra=None, passes=('beauty', 'normal', 'height'), x_lo=None, x_hi=None):
+    ws = [hw(d0 + (d1 - d0) * i / 40) for i in range(41)]
+    ym = max(ws) + 0.9
+    xl = -d1 if x_lo is None else x_lo
+    xh = (-d0 + (hw(d0) if cap else 0.0) + 0.4) if x_hi is None else x_hi
+    return window(name, xl, xh, -ym, ym, frames=frames, extra=extra, passes=passes, origin=(-origin_d, 0, 0))
+
+def piece_body():
+    """head (4 breathing frames), eyes (closed / open / hit, 2 frames: left, right), the 6 segments, the tail stock."""
+    setup(); M = mats(); M['eyeball_l'] = M['eyeball']; M['eyeball_r'] = LV.eye_mat(-1)
+    ref, det = creature(M)
+    tilt = tilt_all([ref] + det)
+    def show_range(lo, hi):
+        for o in det: o.hide_render = not (lo <= dcenter(o) <= hi)
+    def new_piece(d0, d1, cap):
+        b = loft_d('lb_body', d0, d1, cap=cap, m=M['skin']); mn.outline([b], OUT_T); b.parent = tilt; return b
+    def note(kind, d0, d1):
+        return dict(chain=kind, d0=d0, d1=d1, halfwidth=[round(hw(d0), 2), round(hw(d1), 2)], over=OVER,
+                    note='origin = the piece\'s front joint on the spine (head: the neck joint J0); head towards +x at rot 0; scale 1; '
+                         'rear joint at x = -(d1 - d0) units; front end: a round cap (radius = the half-width there), drawn under the piece in front')
+    # the head
+    b = new_piece(0.0, HEAD_L + OVER + 1.5, False)
+    sets = head_breath(M, ref)
+    for s_ in sets:
+        for o in s_: o.parent = tilt
     F = [1, 2, 3, 4]; frames_hide(sets, F)
     for f, v in zip(F, (0.8, 1.2, 1.6, 1.1)): key(emission(M['gill']), f, v)        # the gills glow with the breath
-    mn.outline([b], OUT_T); barn_outline(det); mn.outline([o for o in det if o.name.startswith('lb_eye_rim')], 0.03)
-    tilt_all([b] + det + [o for s in sets for o in s])
+    show_range(-1, HEAD_L)
     name = 'organic/levb_head'
-    window(name, -OVER, HEAD_L + 0.4, -HWIN, HWIN, frames=F, extra=dict(chain='head', length=HEAD_L, over=OVER, halfwidth=W, loop=True,
-           pec=[PEC_X, PEC_Y], note='origin = the neck joint on the spine; nose at x = +length (units); head towards +x at rot 0; '
-                                    'eyes: levb_eye_* at the same origin; left pectoral root at (pec[0], -pec[1]) screen units, right (pec[0], +pec[1])'))
-    feather(name, 0.0, HEAD_L + 9, -OVER, None)
-
-def piece_eyes():
+    piece_window(name, b, 0.0, HEAD_L + OVER, False, HEAD_L, frames=F, x_hi=0.5, extra=dict(note('head', 0.0, HEAD_L), loop=True,
+                 length=HEAD_L, pec=[round(HEAD_L - PEC_D, 2), round(hw(PEC_D) * 0.78, 2)], eye=[HEAD_L - EYE_D, round(hw(EYE_D) * 0.74, 2)],
+                 note='origin = the neck joint J0 on the spine; nose at x = +length (units); head towards +x at rot 0; scale 1; '
+                      'eyes: levb_eye_* at the same origin; left pectoral root at (pec[0], -pec[1]), right (pec[0], +pec[1])'))
+    feather(name, -0.0, 99, -OVER, None)
+    # the eyes (over the head: the head and its details as a holdout)
+    for o in [o for s_ in sets for o in s_]: bpy.data.objects.remove(o, do_unlink=True)
+    b.is_holdout = True
+    for o in det: o.is_holdout = True
     for st in ('closed', 'open', 'hit'):
-        setup(); M = mats(); M['eyeball_l'] = M['eyeball']; M['eyeball_r'] = LV.eye_mat(-1)
-        b = head_body(M); det = head_details(M, b)
-        sets = [eye_ball(M, b, 1, st), eye_ball(M, b, -1, st)]
-        mn.outline([o for s_ in sets for o in s_ if o.name.startswith('lb_lid')], 0.03)
-        F = [1, 2]; frames_hide(sets, F)
-        for o in [b] + det: o.is_holdout = True
-        tilt_all([b] + det + [o for s_ in sets for o in s_])
-        window(f'organic/levb_eye_{st}', 8.0, 18.0, -HWIN, HWIN, frames=F,
-               extra=dict(chain='eye', note='same origin / scale / rot as levb_head; f0 = left eye (screen up at rot 0), f1 = right eye'))
+        es = [eye_ball(M, ref, 1, st), eye_ball(M, ref, -1, st)]
+        mn.outline([o for s_ in es for o in s_ if o.name.startswith('lb_lid')], 0.03)
+        for s_ in es:
+            for o in s_: o.parent = tilt
+        frames_hide(es, [1, 2])
+        piece_window(f'organic/levb_eye_{st}', b, 0.0, HEAD_L, False, HEAD_L, frames=[1, 2], x_lo=-EYE_D - EYE_SC[0] - 1.0, x_hi=-EYE_D + EYE_SC[0] + 1.0,
+                     extra=dict(chain='eye', note='same origin / scale / rot as levb_head; f0 = left eye (screen up at rot 0), f1 = right eye'))
+        for o in [o for s_ in es for o in s_]: bpy.data.objects.remove(o, do_unlink=True)
+    for o in det: o.is_holdout = False
+    bpy.data.objects.remove(b, do_unlink=True)
+    # the segments
+    for k in range(len(SEG_L)):
+        d0, d1 = JOINTS[k], JOINTS[k + 1]
+        b = new_piece(d0, d1 + OVER + 1.5, True)
+        show_range(d0 - 0.3, d1)
+        name = f'organic/levb_seg_{k}'
+        piece_window(name, b, d0, d1 + OVER, True, d0, extra=dict(note('segment', d0, d1), length=d1 - d0))
+        feather(name, -(d1 - d0), 99, -(d1 - d0) - OVER, None)
+        bpy.data.objects.remove(b, do_unlink=True)
+    # the tail stock (its end: a rounded stump over the fluke's root)
+    d0 = JOINTS[-1]
+    b = new_piece(d0, BODY_L + STUMP, True)
+    show_range(d0 - 0.3, BODY_L + 2)
+    piece_window('organic/levb_seg_tail', b, d0, BODY_L + STUMP + 0.3, True, d0, extra=dict(note('tail', d0, BODY_L), length=TAIL_L,
+                 note='origin = its front joint J6 on the spine; the fluke\'s root at x = -length; scale 1'))
 
 # ---------------------------------------------------------------------------------------------------
 # fins
 # ---------------------------------------------------------------------------------------------------
 FLUKE_POSES = [(22, 34), (0, 14), (-22, -34), (0, -14)]     # (root, tip) pitch in degrees: up, level (going down), down, level
 
-def fluke(M, root_a, tip_a, span=17.0, k=1.8):
+def fluke(M, root_a, tip_a, span=14.5, k=1.35):
     """The tail fluke at scale 1 (the game draws it at the tail's scale): root at the origin, spreading to -x.
     The stroke pitches it about the lateral axis (towards / away from the camera) and bends the tips."""
     def pitch(p, t):
         a = math.radians(root_a + (tip_a - root_a) * t)
         return Matrix.Rotation(-a, 3, 'Y') @ p             # (+a lifts the trailing part towards +Z: the camera)
-    parts = [(Vector((-0.6, 0, 0)), 1.7, (1.2, 1, 0.5))]
+    parts = [(Vector((-0.6, 0, 0)), 1.5, (1.2, 1, 0.5))]
     for sd in (-1, 1):
         for j in range(40):
             t = (j + 1) / 40
             p = Vector((-(1.0 + 5.0 * t ** 1.4) * k, sd * span * t, 0.3 * t))
             parts.append((pitch(p, t), 2.6 * k * (1 - 0.62 * t) * 0.85, (1, 1, 0.22)))
     for j in range(6):                                     # the stock into the fluke
-        parts.append((pitch(Vector((-0.4 - j * 0.9, 0, 0)), j / 20), 1.6 - 0.05 * j, (1, 1, 0.55)))
+        parts.append((pitch(Vector((-0.4 - j * 0.9, 0, 0)), j / 20), 1.4 - 0.05 * j, (1, 1, 0.55)))
     return [O.blob('lb_fluke', parts, m=M['fin'], res=0.14)]
 
 def piece_fluke():
@@ -516,17 +568,17 @@ def piece_fluke():
     mn.outline(allo, OUT_T); tilt_all(allo)
     x0, x1, y0, y1 = O.screen_bounds(allo)
     window('organic/levb_fluke', x0 - 0.2, x1 + 0.2, y0 - 0.2, y1 + 0.2, frames=F, extra=dict(chain='fluke', loop=True,
-           note="origin = root = the tail's end (tail-local x = -TAIL_L); draw before the tail, same scale / rot"))
+           note="origin = root = the tail stock's end (tail-local x = -length of levb_seg_tail); draw before the tail; scale 1"))
 
 PEC_POSES = [(42, 1.6), (52, 0.0), (64, -1.6), (52, 0.0)]  # (sweep back from straight out, deg; tip lift): a rowing paddle
 
-def pec_fin(M, sweep, lift, span=17.0):
+def pec_fin(M, sweep, lift, span=18.0):
     a = math.radians(sweep); dirv = Vector((-math.sin(a), math.cos(a), 0))          # left side (+Y), swept back
     back = Vector((-1, 0, 0)); parts = []
     for k in range(18):
         t = k / 17
         p = dirv * (span * t) + back * (1.5 * t * t) + Z * (lift * t * t - 0.4 * t)
-        parts.append((p, 3.4 * (1 - 0.62 * t), (1, 1, 0.25)))
+        parts.append((p, 3.7 * (1 - 0.6 * t), (1, 1, 0.25)))
     for k in range(8):                                      # knobs on the leading edge (humpback tubercles)
         t = (k + 1) / 9
         p = dirv * (span * t) - back * (1.9 * (1 - 0.6 * t)) + Z * (lift * t * t - 0.4 * t + 0.15)
@@ -548,7 +600,7 @@ def dorsal(M, body, holes=0, H=8.0):
     up = Vector((0, math.sin(LEAN), math.cos(LEAN))); nrm = Vector((0, -math.cos(LEAN), math.sin(LEAN)))  # nrm: the face towards the camera
     T = Vector((-1, 0, 0))
     def basept(t):
-        x = -DORSAL_L * t; loc, n = surf(body, x, 0.0); return loc
+        x = -(DORSAL_D0 + DORSAL_L * t); loc, n = surf(body, x, 0.0); return loc
     def hgt(t): return H * math.sin(math.pi * min(1, t ** 0.75)) ** 0.8 * (1 - 0.25 * t)
     eul = Matrix((T, nrm, up)).transposed().to_euler()
     parts = []; rays = []
@@ -591,7 +643,7 @@ def dorsal(M, body, holes=0, H=8.0):
 def piece_fin_dorsal():
     for holes, st in ((0, 'ok'), (1, 'hit1'), (2, 'hit2')):
         setup(); M = mats()
-        b = seg_body(M, 1, xoff=1.0)                       # the 1st segment: its local x = -1 is our origin
+        b = loft_d('lb_body', DORSAL_D0 - 8, DORSAL_D0 + DORSAL_L + 8, m=M['skin'])     # (the hide under it: a holdout)
         fin, deco = dorsal(M, b, holes)
         b.is_holdout = True
         mn.outline(fin, 0.05); mn.outline([o for o in deco if o.name.startswith('lb_burnrim')], 0.02)
@@ -599,9 +651,9 @@ def piece_fin_dorsal():
         tilt_all([b] + allo)
         if st == 'ok': BND[0] = O.screen_bounds(fin)
         x0, x1, y0, y1 = BND[0]
-        window(f'organic/levb_fin_dorsal_{st}', x0 - 0.3, x1 + 0.3, y0 - 0.3, y1 + 0.3, extra=dict(chain='dorsal', length=DORSAL_L,
-               note='origin = front end of the base on the spine: at the 1st segment\'s local (-1, 0), its scale and rot; flops to the left; '
-                    'to the right: flip + rot + PI'))
+        window(f'organic/levb_fin_dorsal_{st}', x0 - 0.3, x1 + 0.3, y0 - 0.3, y1 + 0.3, origin=(-DORSAL_D0, 0, 0), extra=dict(chain='dorsal', length=DORSAL_L,
+               at=[JOINTS[0] - DORSAL_D0, 0], note='origin = front end of the base on the spine: segment 0\'s local (at[0], 0) (3 behind its front joint), '
+                    'its rot, scale 1; flops to the left; to the right: flip + rot + PI'))
 BND = [None]
 
 # ---------------------------------------------------------------------------------------------------
@@ -716,7 +768,7 @@ NW = 9.0        # nest canvas
 
 def zone_piece(name, R, state, seed, frames, nest=False, win=ZW):
     setup(); M = mats()
-    b = seg_body(M, 4, xoff=8.0)                            # a patch of back (segment-local x = -8 under the zone)
+    b = loft_d('lb_body', 50.0 - 14, 50.0 + 14, m=M['skin'], shift=50.0)    # a patch of back (d ~50) under the zone
     sets, hals = [], []
     for i in range(frames):
         o, l, h = zone_build(M, b, R, state, seed, phase=i / frames * math.tau, frame=i, nest=nest)
@@ -1037,7 +1089,7 @@ def piece_blast():
     post('glowify', name)
 
 # ---------------------------------------------------------------------------------------------------
-PIECES = dict(head=piece_head, eyes=piece_eyes, seg_a=lambda: piece_segment('a'), seg_b=lambda: piece_segment('b'), tail=piece_tail,
+PIECES = dict(body=piece_body,
               fluke=piece_fluke, fin_pec=piece_fin_pec, fin_dorsal=piece_fin_dorsal, zone=piece_zone, nest=piece_nest,
               brood=piece_brood, gas=piece_gas, vent=piece_vent, override=piece_override, blast=piece_blast)
 

@@ -579,6 +579,13 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
 - Enemy weak spots can be `closed` and react `onHit`; enemy kinds marked `special` are left out of
   the reachability test. `node tests/organic.js`.
 
+- **The whale rework (2026-10-17, the user: 'make it nicer, the head looks like it's falling off'):** the model now follows the
+  concept's whale profile (a blunt head, widest ~28 behind the nose, a long taper, a crescent fluke, broad pectorals), modelled once and
+  cut into windows so skin detail runs across the joints (pieces levb_head, levb_seg_0..5, levb_seg_tail, levb_fluke; all at scale 1;
+  joints in the manifest). The chain is laid out from the head back with a bend limit per joint (LEVB_BEND: 14° at the neck), so the
+  head stays on. Checked in the cannon views players actually see. Fixed: after the first eye phase it parked on the side it had just
+  finished (stale P.side).
+
 ### 8g. Other ships (`js/dock.js`)
 - **Docking:** a ribbed tube from one of our outer airlocks to a three-room ship (airlock, cargo,
   core). While docked its rooms are part of `walkRects()`, the camera and HUD know them, and the

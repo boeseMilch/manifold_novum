@@ -92,6 +92,7 @@ const inView = (G, gun, id) => {           // the target is inside that cannon's
   const other = side === 'port' ? 'star' : 'port';
   check(B(G).p3.side === other && B(G).p3.state === 'swim' && B(G).p3.done.includes(side), 'eye + zones in time: it flinches and swims to the other side');
   parked(G);
+  check(G.levTargets(B(G)).every(id => inView(G, other, id)), `it parks on the ${other} side: the eye + zones in the ${other === 'port' ? 'left' : 'right'} cannon's view`);
   for (const id of G.levTargets(B(G))) shoot(G, id);
   check(B(G).phase === 'p4', 'both sides done: it heads behind us');
   const E = fresh(1); E.mission.easy = 2; E.startLevBoss(3); parked(E);

@@ -20,7 +20,7 @@
 //                drive spools (with c8's handle rule: someone pulls the handle). The jump never comes before that.
 // State: org.boss (plain data, synced with org). Geometry: a closed swim loop round the ship (levLoop); the body is a
 // chain of pieces hung back from the nose along it in SCREEN space (x, y·sin50), as the sprites are modelled
-// (levChain, 7 segments, ~125 units with the fluke). Targets and the shell tests use the same chain, in screen space. Drawing (tunable in one place):
+// (levChain: head, 6 segments, tail stock, fluke; ~140 units nose to fluke tips, joints bent at most LEVB_BEND). Targets and the shell tests use the same chain, in screen space. Drawing (tunable in one place):
 // levChainPieces / drawLevBody (sprites, else procedural), drawLevMarks (target rings, missing details),
 // drawLevGas, drawLevBlast, drawLevShip (vents, override panel, brood), drawLevBossScreen (T-10, window clock).
 
@@ -28,27 +28,41 @@ const LEVB_FIN_HP = 2, LEVB_ZONE_HP = 2, LEVB_FLICK = 25, LEVB_FLICK_WARN = 4, L
 const LEVB_WINDOW = [12, 16, 20], LEVB_PUNISH = 6, LEVB_SLAM_WARN = 3, LEVB_WAVE = 20, LEVB_WAVE_FIRST = 5, LEVB_SPAWN_GAP = 0.9;
 const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 3, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
 // The swim loop (world units): centre lines left / right / ahead / behind of the ship, corner radius.
-const LEVB_GEO = { X0: -19, X1: SHIP_W + 19, Y0: -22, Y1: 41, R: 16 };
-// The chain (screen units, the sprite contract): nose 22 ahead of the neck joint J0; segment k is 16·0.9^k long, drawn at
-// scale 0.9^k; the tail 26·0.9^7 long at scale 0.9^7, the fluke at its end (same scale). Half-width of the head W.
-const LEVB_HEAD = 22, LEVB_SEG = 16, LEVB_SEGS = 7, LEVB_TAIL = 26, LEVB_SHRINK = 0.9, LEVB_W = 10;
+const LEVB_GEO = { X0: -16, X1: SHIP_W + 16, Y0: -22, Y1: 41, R: 16 };
+// The chain (screen units, the sprite contract, tools/blender/models/organic/leviathan_boss.py): every piece at scale 1.
+// d = distance behind the nose: the neck joint J0 at d 26 (the head's origin), segment k from J_k to J_k+1 (its origin = its
+// front joint), the tail stock J6 → d 128, the fluke's root there. Half-width levHW(d): the concept's whale (blunt snout,
+// widest 11.4 at d ~28, a long taper to a slender stock). Each joint bends at most LEVB_BEND[i] degrees (head→seg 0 first,
+// …, tail→fluke last): the body follows the swim path where it can and swings wide on tight turns, the head stays on.
+const LEVB_JOINTS = [26, 41, 55, 69, 82, 95, 107], LEVB_BODY = 128, LEVB_HEAD = LEVB_JOINTS[0], LEVB_SEGS = 6;
+const LEVB_BEND = [14, 22, 24, 26, 28, 30, 32, 35];
+const LEVB_PROFILE = [[0, 0], [0.3, 2.7], [1, 4.8], [2.5, 7.2], [5, 9.0], [8, 9.6], [15.4, 10.8], [28.2, 11.4], [46, 10.8], [64, 9.2], [82, 6.6], [100, 4.0], [115, 2.3], [124, 1.45], [128, 1.1]];
+function levHW(d) {                                    // the half-width d behind the nose (linear between the profile's knots)
+  const P = LEVB_PROFILE;
+  if (d <= 0 || d >= P[P.length - 1][0] + 1) return 0;
+  for (let i = 1; i < P.length; i++) if (d <= P[i][0]) return lerp(P[i - 1][1], P[i][1], (d - P[i - 1][0]) / (P[i][0] - P[i - 1][0]));
+  return P[P.length - 1][1];
+}
 // The infested zones and the nest are drawn (and hit) this much bigger than modelled (the boil is ~3 across at scale 1).
-const LEVB_ZONE_SCALE = 1.75;
+const LEVB_ZONE_SCALE = 1.5;
 // Targets and details in piece-local screen units (x forward, -y = the creature's LEFT, which faces the ship).
 const LEVB_SPOTS = {
-  eye: { piece: 'head', at: [14, -5.5], r: 3 },
-  fin: { piece: 0, at: [-8, -3], r: 4.5 },
-  L1: { piece: 1, at: [-9, -4.5], r: 3.8 }, L2: { piece: 2, at: [-2.5, -4], r: 3.8 }, L3: { piece: 2, at: [-10.5, -4.5], r: 3.8 },
-  R1: { piece: 3, at: [-9, -4.5], r: 3.8 }, R2: { piece: 4, at: [-2.5, -4], r: 3.8 }, R3: { piece: 4, at: [-10.5, -4.5], r: 3.8 },
-  E1: { piece: 'head', at: [5, 5], r: 3.5 }, E2: { piece: 'head', at: [3, -3.5], r: 3.5 },   // (phase 3: zones regrow on its head, by the eye)
-  nest: { piece: 2, at: [-11, 1], r: 5 },
+  eye: { piece: 'head', at: [17, -7.1], r: 3.2 },
+  fin: { piece: 0, at: [-10, -3], r: 4.5 },
+  L1: { piece: 1, at: [-8, -6.2], r: 3.8 }, L2: { piece: 2, at: [-2, -5.9], r: 3.8 }, L3: { piece: 2, at: [-10, -5.4], r: 3.8 },
+  R1: { piece: 3, at: [-2, -5], r: 3.8 }, R2: { piece: 3, at: [-9.5, -4.4], r: 3.8 }, R3: { piece: 4, at: [-4, -3.6], r: 3.6 },
+  E1: { piece: 'head', at: [10, 4.5], r: 3.4 }, E2: { piece: 'head', at: [7.5, -3.5], r: 3.4 },   // (phase 3: zones regrow on its head, by the eye)
+  nest: { piece: 2, at: [-11, -3], r: 5 },
 };
-const LEVB_FIN_SEG = 0, LEVB_PEC = [2.0, -7.2];
+// The dorsal sail sits on segment 0 (its origin 3 behind the neck joint); the left pectoral's root on the head (x, -y).
+const LEVB_FIN_SEG = 0, LEVB_FIN_AT = [-3, 0], LEVB_PEC = [7, -8.65];
+// The hide, fins and fluke are drawn this much desaturated: the exterior light makes the rendered teal a flat cyan.
+const LEVB_DESAT = 0.4;
 // Inside our ship: two engine vent grates near the stern of the reactor room, the override panel on the stern wall,
 // where the brood goes (in front of the middle capacitor).
 const LEVB_VENTS = [{ x: 24.8, y: 24.5 }, { x: 28.6, y: 24.3 }], LEVB_PANEL = { x: 26.6, y: 25.25 }, LEVB_CAP_AT = { x: 27.0, y: 16.45 };
 const LEVB_ENGINE = { x: 22.2, y: 26.1 };
-const LEVB_SPRITES = ['organic/levb_head', 'organic/levb_seg_a', 'organic/levb_seg_b', 'organic/levb_seg_tail', 'organic/levb_fluke'];
+const LEVB_SPRITES = ['organic/levb_head', 'organic/levb_seg_0', 'organic/levb_seg_1', 'organic/levb_seg_2', 'organic/levb_seg_3', 'organic/levb_seg_4', 'organic/levb_seg_5', 'organic/levb_seg_tail', 'organic/levb_fluke'];
 
 const levEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
 const levSideName = (s) => (s === 'port' ? 'LEFT' : s === 'star' ? 'RIGHT' : s === 'front' ? 'FRONT' : 'BEHIND');
@@ -107,20 +121,30 @@ function levAlong(path, d) {                           // the path point d scree
   }
   return [path[0][0], path[0][1]];
 }
-// The chain: pieces { name, x, y (screen), rot, scale, len } nose first. Pieces 0..5 the segments, 'head', 'tail', 'fluke'.
+// The chain: pieces { name, x, y (screen), rot, scale } nose first: 'head', 0..5 the segments, 'tail', 'fluke'.
+// Laid out from the head back: the head points along the path ahead of its neck joint (averaged with the body's way, so
+// it never kinks away from it); each next piece aims at where the path puts its rear joint, but bends at most LEVB_BEND
+// from the piece in front, and its rear joint is where that leaves it (the pieces stay joined, it swings wide in turns).
 function levChain(B, tt = B.t) {
-  const path = levPath(B, tt), J = [levAlong(path, LEVB_HEAD)], nose = levAlong(path, 0), dist = [LEVB_HEAD];
-  for (let k = 0; k <= LEVB_SEGS; k++) {
-    const l = k < LEVB_SEGS ? LEVB_SEG * LEVB_SHRINK ** k : LEVB_TAIL * LEVB_SHRINK ** LEVB_SEGS;
-    dist.push(dist[k] + l); J.push(levAlong(path, dist[k + 1]));
+  const path = levPath(B, tt), nose = levAlong(path, 0), D = [...LEVB_JOINTS, LEVB_BODY];
+  const ang = (a, b) => Math.atan2(a[1] - b[1], a[0] - b[0]);        // the heading from b towards a
+  const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const J = [levAlong(path, D[0])];
+  const ahead = ang(nose, J[0]), body = ang(J[0], levAlong(path, D[1]));
+  const rots = [ahead + 0.35 * wrap(body - ahead)];
+  for (let k = 0; k < D.length - 1; k++) {
+    const want = ang(J[k], levAlong(path, D[k + 1])), lim = LEVB_BEND[k] * Math.PI / 180;
+    const r = rots[k] + clamp(wrap(want - rots[k]), -lim, lim), L = D[k + 1] - D[k];
+    rots.push(r); J.push([J[k][0] - Math.cos(r) * L, J[k][1] - Math.sin(r) * L]);
   }
-  const dir = (a, b) => Math.atan2(a[1] - b[1], a[0] - b[0]);
-  const pieces = { head: { name: 'head', x: J[0][0], y: J[0][1], rot: dir(nose, J[0]), scale: 1 } };
-  for (let k = 0; k < LEVB_SEGS; k++) pieces[k] = { name: k % 2 ? 'seg_b' : 'seg_a', x: J[k][0], y: J[k][1], rot: dir(J[k], J[k + 1]), scale: LEVB_SHRINK ** k };
-  const ts = LEVB_SHRINK ** LEVB_SEGS;
-  pieces.tail = { name: 'seg_tail', x: J[LEVB_SEGS][0], y: J[LEVB_SEGS][1], rot: dir(J[LEVB_SEGS], J[LEVB_SEGS + 1]), scale: ts };
-  pieces.fluke = { name: 'fluke', x: J[LEVB_SEGS + 1][0], y: J[LEVB_SEGS + 1][1], rot: pieces.tail.rot, scale: ts };
-  return { path, nose, J, pieces };
+  const n = LEVB_SEGS, head = rots[0], lim = LEVB_BEND[n + 1] * Math.PI / 180;
+  const pieces = { head: { name: 'head', x: J[0][0], y: J[0][1], rot: head, scale: 1 } };
+  for (let k = 0; k < n; k++) pieces[k] = { name: 'seg_' + k, x: J[k][0], y: J[k][1], rot: rots[k + 1], scale: 1 };
+  pieces.tail = { name: 'seg_tail', x: J[n][0], y: J[n][1], rot: rots[n + 1], scale: 1 };
+  const flk = rots[n + 1] + clamp(wrap(ang(J[n + 1], levAlong(path, LEVB_BODY + 8)) - rots[n + 1]), -lim, lim);
+  pieces.fluke = { name: 'fluke', x: J[n + 1][0], y: J[n + 1][1], rot: flk, scale: 1 };
+  const hc = Math.cos(head), hs = Math.sin(head);
+  return { path, nose: [J[0][0] + hc * LEVB_HEAD, J[0][1] + hs * LEVB_HEAD], J, pieces };
 }
 // A piece-local point (screen units) → screen.
 function levLocal(pc, lx, ly) {
@@ -134,14 +158,21 @@ function levSpotAt(ch, id) {
 }
 // Where it parks for each step: the loop position (head) that puts the step's targets where the cannon sees them.
 const levStationCache = new Map();
-function levStation(key, ids, want) {
+// frame: [w, h] (world) of a cannon's view centred on want: then every target is kept as far inside it as it can be (the
+// worst one's distance from the centre, as a fraction of the half-frame), not just their average on the centre.
+function levStation(key, ids, want, frame) {
   const k = key + ids.join(); if (levStationCache.has(k)) return levStationCache.get(k);
   const P = LEVB_LOOP.P, probe = { s: 0, out: 0, parked: true, t: 0 };
   let best = 0, bd = Infinity;
   const score = (s) => {
     probe.s = s; const ch = levChain(probe, 0);
-    let x = 0, y = 0; for (const id of ids) { const p = levSpotAt(ch, id); x += p.wx; y += p.wy; }
-    return Math.hypot(x / ids.length - want[0], y / ids.length - want[1]);
+    let x = 0, y = 0, worst = 0;
+    for (const id of ids) {
+      const p = levSpotAt(ch, id); x += p.wx; y += p.wy;
+      if (frame) worst = Math.max(worst, Math.abs(p.wx - want[0]) / (frame[0] / 2), Math.abs(p.wy - want[1]) / (frame[1] / 2));
+    }
+    const mean = Math.hypot(x / ids.length - want[0], y / ids.length - want[1]);
+    return frame ? worst + 0.01 * mean : mean;
   };
   for (let s = 0; s < P; s += 2) { const d = score(s); if (d < bd) { bd = d; best = s; } }
   for (let s = best - 2; s <= best + 2; s += 0.1) { const d = score(s); if (d < bd) { bd = d; best = s; } }
@@ -153,10 +184,12 @@ const levZoneIds = (side, n) => (side === 'port' ? ['L1', 'L2', 'L3'] : ['R1', '
 function levStationFor(B, step) {
   const { X0, X1, Y0, Y1 } = LEVB_GEO;
   if (step === 'fin') return levStation('front', ['fin'], [22.2, Y0]);
-  if (step === 'left') return levStation('left', levZoneIds('port', B.nz), [X0, 8.5]);
-  if (step === 'right') return levStation('right', levZoneIds('star', B.nz), [X1, 8.5]);
-  if (step === 'port' || step === 'star') return levStation(step, ['eye', 'E1', 'E2'], [step === 'port' ? X0 : X1, 8.5]);
-  return levStation('behind', ['nest'], [22.2, Y1]);
+  // the side steps: every target inside that cannon's frame, clear of the HUD in its top corners (the middle 75 %, 1.5 low)
+  const view = (id) => { const [cx, cy, w] = GUNS.find(g => g.id === id).view; return [[cx, cy + 1.5], [w * 0.75, w * 0.62 * 0.75]]; };
+  if (step === 'left') return levStation('left', levZoneIds('port', B.nz), ...view('port'));
+  if (step === 'right') return levStation('right', levZoneIds('star', B.nz), ...view('star'));
+  if (step === 'port' || step === 'star') return levStation(step, ['eye', 'E1', 'E2'], ...view(step));
+  return levStation('behind', ['nest'], [LEVB_ENGINE.x, Y1 + 4], [4, 22]);    // (the nest right down the engine's exhaust, inside its reach)
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +315,7 @@ function levShells(B) {
     const hit = spots.find(p => segCircle(x0, y0, x1, y1, p.x, p.y, p.r));
     if (hit) { s.dead = true; levHit(B, hit.id, hit); continue; }
     for (let i = 1; i < body.length; i++) {               // across its back: a dull splat (shells don't fly through it)
-      const [ax, ay] = body[i - 1], [bx, by] = body[i], w = LEVB_W * 0.35 * (i < 2 ? 1 : LEVB_SHRINK ** (i - 2));
+      const [ax, ay] = body[i - 1], [bx, by] = body[i], w = 0.35 * levHW(i < 2 ? LEVB_HEAD * 0.6 : LEVB_JOINTS[Math.min(i - 2, LEVB_SEGS)] ?? LEVB_BODY);
       if (segDist(x1, y1, ax, ay, bx, by) < w) {
         s.dead = true; B.splat = 0.3;
         for (let k = 0; k < 6; k++) combatFx(s.x, s.y, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.5, k % 2 ? '#2a4a5e' : '#7ab0c0', 0.12);
@@ -319,7 +352,7 @@ function levHit(B, id, p) {
     if (P.done.length >= 2) {
       B.phase = 'p4'; B.step = 'behind'; P.state = 'swim'; B.parked = false; B.sTo = levNext(B, levStationFor(B, 'behind'));
       combatBanner('It flinches and dives — it\'s swimming round BEHIND us!');
-    } else { levStartSide(B, P.side === 'port' ? 'star' : 'port'); B.sTo = levNext(B, levStationFor(B, P.side)); }
+    } else { levStartSide(B, P.side === 'port' ? 'star' : 'port'); B.sTo = levNext(B, levStationFor(B, B.p3.side)); }   // (B.p3: the new side's)
   } else combatBanner(id === 'eye' ? 'Hit the EYE! Now the glowing zones' : 'Glowing zone hit!');
 }
 function levStartGas(B) {
@@ -469,23 +502,23 @@ function levState(B) {                                  // which zone sprites, t
 let levFallbacks = [];                                  // details whose sprite isn't there: drawn by drawLevMarks
 function levSprite(name, frame, pc, lx, ly, o = {}) {
   const [x, y] = levLocal(pc, lx, ly), B = org.boss, k = 1 - 0.35 * (B?.sink || 0);
-  return GFX.on && GFX.sprite(name, frame, x, y / GFX.SIN, 0, { layer: 'under', rot: pc.rot + (o.rotAdd || 0), scale: pc.scale * (o.scale || 1) * k, flip: o.flip, alpha: (o.alpha ?? 1) * (1 - (B?.sink || 0)), emissive: o.emissive, unlit: o.unlit });
+  return GFX.on && GFX.sprite(name, frame, x, y / GFX.SIN, 0, { layer: 'under', rot: pc.rot + (o.rotAdd || 0), scale: pc.scale * (o.scale || 1) * k, flip: o.flip, alpha: (o.alpha ?? 1) * (1 - (B?.sink || 0)), emissive: o.emissive, unlit: o.unlit, desat: o.desat });
 }
 function drawLevBody(t) {
   const B = org.boss;
   if (!B) return;
   const ch = levChain(B, B.t), P = ch.pieces, st = levState(B);
   levFallbacks = [];
-  const order = ['fluke', 'tail', 6, 5, 4, 3, 2, 1, 0, 'head'];
+  const order = ['fluke', 'tail', 5, 4, 3, 2, 1, 0, 'head'];
   const sprites = GFX.on && LEVB_SPRITES.every(n => GFX.ready(n));
   if (!sprites) { drawLevPieceFallback(P.fluke, 'fluke', t, B); drawLevBodyFallback(ch, t, B); }
-  else for (const k of order) levSprite(`organic/levb_${P[k].name}`, k === 'fluke' || k === 'head' ? Math.floor(t * 3) % 4 : 0, P[k], 0, 0, { emissive: 0.3 });   // (head: 4 frames, gills; fluke: 4)
+  else for (const k of order) levSprite(`organic/levb_${P[k].name}`, k === 'fluke' || k === 'head' ? Math.floor(t * 3) % 4 : 0, P[k], 0, 0, { emissive: 0.3, desat: LEVB_DESAT });   // (head: 4 frames, gills; fluke: 4)
   // details: fins, zones, the nest, the eyes
   const detail = (name, frame, pc, at, o, fb) => { if (!(sprites && levSprite(name, frame, pc, at[0], at[1], o))) (sprites ? levFallbacks : { push: (f) => f() }).push(fb); };
   const fin = P[LEVB_FIN_SEG];
-  detail(`organic/levb_fin_dorsal_${st.fin}`, 0, fin, [-1, 0], {}, () => levFinFallback(fin, st.fin));
-  detail('organic/levb_fin_pec', Math.floor(t * 3) % 4, P.head, LEVB_PEC, {}, () => levPecFallback(P.head, -1, t));
-  detail('organic/levb_fin_pec', (Math.floor(t * 3) + 2) % 4, P.head, [LEVB_PEC[0], -LEVB_PEC[1]], { flip: true, rotAdd: Math.PI }, () => levPecFallback(P.head, 1, t));
+  detail(`organic/levb_fin_dorsal_${st.fin}`, 0, fin, LEVB_FIN_AT, { desat: LEVB_DESAT }, () => levFinFallback(fin, st.fin));
+  detail('organic/levb_fin_pec', Math.floor(t * 3) % 4, P.head, LEVB_PEC, { desat: LEVB_DESAT }, () => levPecFallback(P.head, -1, t));
+  detail('organic/levb_fin_pec', (Math.floor(t * 3) + 2) % 4, P.head, [LEVB_PEC[0], -LEVB_PEC[1]], { flip: true, rotAdd: Math.PI, desat: LEVB_DESAT }, () => levPecFallback(P.head, 1, t));
   for (const id of ['L1', 'L2', 'L3', 'R1', 'R2', 'R3', 'E1', 'E2']) {
     if (!st[id]) continue;
     const S = LEVB_SPOTS[id], pc = P[S.piece], look = st[id];
@@ -507,13 +540,13 @@ function levPieceCtx(pc, fn, B = org.boss) {
 const LEVB_SKIN = ['#173446', '#24506a', '#2f6680'];
 // The procedural body: one smooth outline along the chain (head to tail tip), widths as the pieces' (W × their scale).
 function drawLevBodyFallback(ch, t, B) {
-  const end = LEVB_HEAD + LEVB_SEG * (1 - LEVB_SHRINK ** LEVB_SEGS) / (1 - LEVB_SHRINK) + LEVB_TAIL * LEVB_SHRINK ** LEVB_SEGS, tailAt = end - LEVB_TAIL * LEVB_SHRINK ** LEVB_SEGS;
-  const k = 1 - 0.35 * (B.sink || 0), cx = ch.J[LEVB_SEGS][0], cy = ch.J[LEVB_SEGS][1];
-  const width = (d) => (d < LEVB_HEAD ? LEVB_W * Math.max(0.25, Math.sqrt(d / LEVB_HEAD)) : LEVB_W * LEVB_SHRINK ** ((d - LEVB_HEAD) / LEVB_SEG)) * (1 - 0.7 * clamp((d - tailAt) / (end - tailAt), 0, 1));
+  const end = LEVB_BODY, k = 1 - 0.35 * (B.sink || 0), cx = ch.J[LEVB_SEGS][0], cy = ch.J[LEVB_SEGS][1];
+  const D = [0, ...LEVB_JOINTS, LEVB_BODY], C = [ch.nose, ...ch.J];
+  const at = (d) => { let i = 1; while (i < D.length - 1 && d > D[i]) i++; const u = (d - D[i - 1]) / (D[i] - D[i - 1]); return [lerp(C[i - 1][0], C[i][0], u), lerp(C[i - 1][1], C[i][1], u)]; };
   const pts = [];
-  for (let d = 0; d <= end; d += 2) {
-    const [x, y] = levAlong(ch.path, d), [x2, y2] = levAlong(ch.path, d + 1), a = Math.atan2(y2 - y, x2 - x);   // (a: towards the tail)
-    pts.push({ x, y, nx: -Math.sin(a), ny: Math.cos(a), w: width(d) });
+  for (let d = 0.3; d <= end; d += 2) {
+    const [x, y] = at(d), [x2, y2] = at(Math.min(end, d + 1)), a = Math.atan2(y2 - y, x2 - x);   // (a: towards the tail)
+    pts.push({ x, y, nx: -Math.sin(a), ny: Math.cos(a), w: Math.max(0.6, levHW(d)) });
   }
   ctx.save(); ctx.scale(1, 1 / GFX.SIN);
   ctx.translate(L(cx), L(cy)); ctx.scale(k, k); ctx.translate(-L(cx), -L(cy));      // (sinking: smaller)
@@ -529,7 +562,7 @@ function drawLevBodyFallback(ch, t, B) {
   ctx.lineCap = 'round';                                // a lighter back down the middle, dark flanks
   for (const [w, col] of [[1.0, LEVB_SKIN[0]], [0.6, LEVB_SKIN[1]], [0.25, LEVB_SKIN[2]]]) {
     ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(L(p.x), L(p.y)) : ctx.moveTo(L(p.x), L(p.y))));
-    ctx.strokeStyle = col; ctx.lineWidth = L(LEVB_W * 2 * w * 0.9); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = L(16 * w); ctx.stroke();
   }
   const sick = B.phase !== 'freed';                    // photophores: dim while it's sick, its own teal glow once free
   pts.forEach((p, i) => {
