@@ -113,7 +113,7 @@ const A = {
                           // a mission can set its own: MISSIONS[id].balance = { soloIdle, crewIdle } (no ramp then)
   // the expected kit (expectedKit): what a first-time campaign run can afford by each chapter
   BOUNTY_PIRATES: 2,      // pirates paid for in a mission with a bounty (rewards.perPirate): modest, the two raiders' worth
-  GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'stim'],   // bought in this order, each as soon as money and level allow (general
+  GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'stim'],   // bought in this order, each as soon as the money allows (general
                           // gear only: the armor vest is weapons-specialist gear since 2026-10-16, and the model ignores professions)
   SHIP_ORDER: ['cannons', 'inserter', 'caps', 'spareCell', 'airlocks', 'shields', 'radar', 'hull', 'sprinklers', 'coffee'],   // (reputation; the
                           // prerequisites first, so a later chapter's needs aren't blocked by something bought before them)
@@ -161,7 +161,7 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'XP_LEVELS', 'levelOf', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY',
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY',
   'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE',
   'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -204,10 +204,9 @@ const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
 // ===========================================================================
 // The expected kit: what a first-time campaign run can afford by then (the user: the model must assume it)
 // ===========================================================================
-// Money / reputation / XP from the chapters before (rewards: money + perPirate × A.BOUNTY_PIRATES, rep + 1 for
-// the first clear, xp: aboard and on your feet), spent after each chapter: gear in A.GEAR_ORDER as soon as money
-// and level allow, ship upgrades in A.SHIP_ORDER as soon as the reputation does (each in order: saving up for the
-// next rather than skipping it). Plus the mission's prerequisites (needs: the lobby recommends them; overcharge is
+// Money / reputation from the chapters before (rewards: money + perPirate × A.BOUNTY_PIRATES, rep + 1 for
+// the first clear), spent after each chapter: gear in A.GEAR_ORDER as soon as the money allows, ship upgrades
+// in A.SHIP_ORDER as soon as the reputation does (each in order: saving up for the next rather than skipping it). Plus the mission's prerequisites (needs: the lobby recommends them; overcharge is
 // the only profession perk counted, professions are mixed in a crew). Every player is assumed to have it.
 // Skirmish twins (SKIRMISH_TWIN) get their chapter's kit; intro / rush / practice none.
 // Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; deck airlock cycles
@@ -226,15 +225,15 @@ function expectedKit(id) {
   const g = game(), ch = g.CAMPAIGN.includes(id) ? id : g.SKIRMISH_TWIN[id];
   let kit = null;
   if (ch) {
-    let money = 0, rep = 0, xp = 0, earned = 0, repEarned = 0;
+    let money = 0, rep = 0, earned = 0, repEarned = 0;
     const gear = [], ship = [];
     for (const c of g.CAMPAIGN.slice(0, g.CAMPAIGN.indexOf(ch))) {
       const R = g.MISSIONS[c].rewards || {}, m = (R.money || 0) + (R.perPirate || 0) * A.BOUNTY_PIRATES;
-      money += m; earned += m; rep += (R.rep || 0) + 1; repEarned += (R.rep || 0) + 1; xp += R.xp || 0;
+      money += m; earned += m; rep += (R.rep || 0) + 1; repEarned += (R.rep || 0) + 1;
       for (const gid of A.GEAR_ORDER) {
         if (gear.includes(gid)) continue;
         const G1 = g.GEAR.find(x => x.id === gid);
-        if (money < G1.cost || g.levelOf(xp) < G1.level) break;
+        if (money < G1.cost) break;
         money -= G1.cost; gear.push(gid);
       }
       for (const u of A.SHIP_ORDER) {
@@ -245,7 +244,7 @@ function expectedKit(id) {
       }
     }
     const N = g.MISSIONS[id].needs || {}, needs = (N.ship || []).filter(u => !ship.includes(u));
-    kit = { chapter: ch, earned, money, repEarned, rep, xp, level: g.levelOf(xp), gear, ship: [...ship, ...needs], bought: ship, needs, overcharge: !!N.overcharge };
+    kit = { chapter: ch, earned, money, repEarned, rep, gear, ship: [...ship, ...needs], bought: ship, needs, overcharge: !!N.overcharge };
   }
   kitCache.set(id, kit);
   return kit;
@@ -269,7 +268,7 @@ function kitText(id) {
   const k = expectedKit(id);
   if (!k) return 'no kit';
   const done = game().CAMPAIGN.indexOf(k.chapter);
-  return `${done > 1 ? `after chapters 1-${done}` : done ? 'after chapter 1' : 'first chapter, nothing yet'}: level ${k.level}, $${k.earned} earned ($${k.money} left), ★${k.repEarned} (${k.rep} left)`
+  return `${done > 1 ? `after chapters 1-${done}` : done ? 'after chapter 1' : 'first chapter, nothing yet'}: $${k.earned} earned ($${k.money} left), ★${k.repEarned} (${k.rep} left)`
     + ` → gear: ${k.gear.map(x => GEAR_SHORT[x]).join(', ') || 'none'}; ship: ${k.bought.join(', ') || 'none'}${k.needs.length ? ` + needs ${k.needs.join(', ')}` : ''}${k.overcharge ? '; overcharge (needs)' : ''}`;
 }
 

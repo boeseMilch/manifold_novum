@@ -4,7 +4,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['missionCrew', 'GUNS', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
   'applyKit', 'perk', 'hurtCrew', 'SHOTS_PER_ENERGY', 'CAP_MAX', 'power', 'ITEMS', 'dk', 'combat', 'combatSpawn', 'hitPoi', 'enemyToWorld', 'objectiveStatus',
-  'PRACTICE', 'runCommand', 'withCrew', 'CAPACITORS', 'levelOf', 'treatInfo', 'netServer', 'SHIELD_UP_TIME', 'endMission', 'boarding', 'spawnInvader', 'hurtInvader',
+  'PRACTICE', 'runCommand', 'withCrew', 'CAPACITORS', 'treatInfo', 'netServer', 'SHIELD_UP_TIME', 'endMission', 'boarding', 'spawnInvader', 'hurtInvader',
   'gearSpeed', 'creditMission', 'profile', 'lastReward', 'missionSuccess', 'MAX_DAMAGE', 'failGravity', 'ENERGY_TIME', 'REACTOR', 'clickTarget', 'fires', 'SYSTEMS', 'GEAR', 'BLASTER_CHARGE', 'inv', 'evs', 'repairSpeed'];
 const DT = 1 / 60;
 let failed = 0;
@@ -16,21 +16,21 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const G = loadGame(NAMES);
   const won = { jumped: true, objective: true, pirates: 3 };
   const r = G.computeRewards('c1', won, true, true);
-  check(r.money === 120 + 3 * 16 && r.xp === 80 && r.rep === 2, `First Contract: $120 + $16 per pirate, 80 XP, reputation (+1 first clear) → $${r.money}, ${r.xp} XP, ★${r.rep}`);
+  check(r.money === 120 + 3 * 16 && r.rep === 2 && !('xp' in r), `First Contract: $120 + $16 per pirate, reputation (+1 first clear), no XP → $${r.money}, ★${r.rep}`);
   const two = G.computeRewards('c1', { jumped: true, objective: true, pirates: 2 }, true, true).money;
-  const cheap = G.GEAR.filter(g => g.level <= G.levelOf(80) && !g.prof && g.cost <= two);
+  const cheap = G.GEAR.filter(g => !g.prof && g.cost <= two);
   check(two >= 150 && two < 300 && cheap.length >= 2, `a first chapter 1 run ($${two}) buys one $150 item, with a choice (${cheap.map(g => g.id).join(', ')})`);
   const down = G.computeRewards('c1', won, false, false);
-  check(down.xp === 0 && down.money === 168, 'not back aboard on your feet: no XP (the crew still gets paid)');
+  check(down.money === 168, 'not back aboard on your feet: the crew still gets paid');
+  check(G.GEAR.every(g => !('level' in g)) && Object.values(G.MISSIONS).every(m => !('xp' in (m.rewards || {}))), 'no levels on gear, no XP in the rewards: money is all the locker asks for');
   const old = { c2: 150, c3: 200, c4: 200, c5: 300, c6: 300, c7: 350, c8: 500 };   // (the pay before 2026-10-16: ×0.4 now, so you have to choose)
   check(Object.entries(old).every(([id, m]) => G.MISSIONS[id].rewards.money === m * 0.4) && G.MISSIONS.c4.rewards.perPirate === 20 && G.MISSIONS.c2.rewards.rep === 1 && G.MISSIONS.c8.rewards.rep === 5,
     'chapters 2-8 pay 40% of the old money (bounty too), reputation unchanged');
   check(G.computeRewards('rush', { jumped: true, objective: false, pirates: 0 }, true, false).money === 16, 'a skirmish pays $16 (was $40)');
   const lost = G.computeRewards('c1', { jumped: false, objective: false, pirates: 1 }, false, false);
-  check(lost.money === 0 && lost.xp === 0, 'the ship didn\'t make it: nothing');
+  check(lost.money === 0 && lost.rep === 0, 'the ship didn\'t make it: nothing');
   const half = G.computeRewards('c3', { jumped: true, objective: false, pirates: 0 }, true, false);
-  check(half.money === G.MISSIONS.c3.rewards.money && half.xp === G.MISSIONS.c3.rewards.xp && half.rep === 0, 'jumped without the objective: paid and full XP, but no reputation');
-  check(G.levelOf(0) === 1 && G.levelOf(100) === 2 && G.levelOf(260) === 3, 'levels: 100 XP → level 2, 250 → level 3');
+  check(half.money === G.MISSIONS.c3.rewards.money && half.rep === 0, 'jumped without the objective: paid, but no reputation');
 }
 // --- success needs the objective: pay either way, reputation / finished / unlock only with it
 {
@@ -41,17 +41,17 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
     return G;
   };
   const R1 = credit('c1', { jumped: true, objective: true, pirates: 2 });
-  check(R1.profile.money === 120 + 2 * 16 && R1.profile.rep === 2 && R1.profile.xp === 80 && R1.profile.done.c1 === 1 && R1.unlockedMissions(R1.profile).has('c2') && R1.lastReward.unlocked && !R1.lastReward.objFailed,
-    'success (jumped, objective done): paid, reputation (+1 first clear), XP, finished, next chapter unlocked');
+  check(R1.profile.money === 120 + 2 * 16 && R1.profile.rep === 2 && R1.profile.xp === 0 && R1.profile.done.c1 === 1 && R1.unlockedMissions(R1.profile).has('c2') && R1.lastReward.unlocked && !R1.lastReward.objFailed && R1.lastReward.profession,
+    'success (jumped, objective done): paid, reputation (+1 first clear), finished, next chapter unlocked, professions open (no XP)');
   const R2 = credit('c1', { jumped: true, objective: false, pirates: 1 });
-  check(R2.profile.money === 120 + 16 && R2.profile.rep === 0 && R2.profile.xp === 80 && !R2.profile.done.c1 && !R2.unlockedMissions(R2.profile).has('c2'),
-    'jumped without the objective: base pay + per pirate and XP, but no reputation, not finished, next chapter stays locked');
+  check(R2.profile.money === 120 + 16 && R2.profile.rep === 0 && !R2.profile.done.c1 && !R2.unlockedMissions(R2.profile).has('c2') && !R2.lastReward.profession,
+    'jumped without the objective: base pay + per pirate, but no reputation, not finished, next chapter stays locked');
   check(R2.lastReward.objFailed && R2.lastReward.locked === R2.MISSIONS.c2.name && !R2.lastReward.unlocked, '…and the end screen says so (objective failed, next chapter locked)');
   const R3 = credit('c7', { jumped: true, objective: false, pirates: 0 });
   check(R3.missionSuccess('c7', { jumped: true, objective: false }) && R3.profile.done.c7 === 1 && R3.profile.rep === R3.MISSIONS.c7.rewards.rep + 1 && R3.unlockedMissions(R3.profile).has('c8') && !R3.lastReward.objFailed,
     'a mission without an objective: surviving the jump is a success (finished, reputation, next chapter)');
   const R4 = credit('c1', { jumped: false, objective: true, pirates: 2 });
-  check(R4.profile.money === 0 && R4.profile.xp === 0 && R4.profile.rep === 0 && !R4.profile.done.c1, 'the ship didn\'t jump out: nothing, even with the objective');
+  check(R4.profile.money === 0 && R4.profile.rep === 0 && !R4.profile.done.c1, 'the ship didn\'t jump out: nothing, even with the objective');
 }
 // --- profiles: old and odd saves still load
 {
@@ -90,8 +90,8 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(me.armor === 0 && G.GEAR.find(g => g.id === 'armor').prof === 'weapons', 'the armor vest is weapons-specialist gear: an engineer gets nothing from it');
   me.inv.weapon = null; G.applyKit(me, { gear: { armor: true, boots: true }, profession: 'weapons' });
   check(me.armor === 1, '…a weapons specialist wears it');
-  check(G.GEAR.filter(g => g.prof === 'weapons').map(g => g.id).join() === 'ownLaser,armor,heavy' && G.GEAR.find(g => g.id === 'firstAid').level === 1,
-    'weapons track: own laser gun, armor vest, heavy blaster; the first aid course from level 1');
+  check(G.GEAR.filter(g => g.prof === 'weapons').map(g => g.id).join() === 'ownLaser,armor,heavy' && !G.GEAR.find(g => g.id === 'firstAid').prof,
+    'weapons track: own laser gun, armor vest, heavy blaster; the first aid course is general gear');
   G.hurtCrew(me);
   check(me.health === 'ok' && me.armor === 0, 'the armor vest shrugs off the first hit');
   G.hurtCrew(me);
@@ -120,14 +120,16 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 {
   const G = loadGame(['pickProfession', 'professionWhy', 'PROFESSIONS', 'defaultProfile']);
   const [E, W] = ['engineer', 'weapons'].map(id => G.PROFESSIONS.find(x => x.id === id));
-  const p = { ...G.defaultProfile(), xp: 50 };
-  check(!G.pickProfession(p, 'engineer') && p.profession === null && /level 2/.test(G.professionWhy(p, 1, E)), 'no profession below level 2');
-  p.xp = 200;
-  check(G.professionWhy(p, 2, E) === '' && G.professionWhy(p, 2, W) === '' && !G.pickProfession(p, 'pilot'), 'level 2: both open (an unknown id is refused)');
+  const p = { ...G.defaultProfile() };
+  check(!G.pickProfession(p, 'engineer') && p.profession === null && /after chapter 1/.test(G.professionWhy(p, E)), 'no profession before chapter 1 is finished');
+  const old = { ...G.defaultProfile(), xp: 120 };
+  check(G.professionWhy(old, E) === '', '…but a save that reached level 2 (100 XP) before XP went away keeps it open');
+  p.done.c1 = 1;
+  check(G.professionWhy(p, E) === '' && G.professionWhy(p, W) === '' && !G.pickProfession(p, 'pilot'), 'chapter 1 finished: both open (an unknown id is refused)');
   check(G.pickProfession(p, 'weapons') && p.profession === 'weapons', 'pick the weapons specialist');
   check(!G.pickProfession(p, 'engineer') && p.profession === 'weapons', '…and it sticks: no switching to engineer');
-  check(G.professionWhy(p, 2, W) === '' && /You're a Weapons specialist — Start over/.test(G.professionWhy(p, 2, E)), '…the locker says why (Start over to choose again)');
-  const fresh = { ...G.defaultProfile(), xp: 200 };
+  check(G.professionWhy(p, W) === '' && /You're a Weapons specialist — Start over/.test(G.professionWhy(p, E)), '…the locker says why (Start over to choose again)');
+  const fresh = { ...G.defaultProfile(), done: { c1: 1 } };
   check(G.pickProfession(fresh, 'engineer') && fresh.profession === 'engineer', 'a fresh profile (Start over) chooses again');
 }
 // --- gravity boots where the gravity failed

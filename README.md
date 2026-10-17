@@ -94,14 +94,13 @@ The prompt above you always says what a click (or E) will do.
 
 - **Campaign:** eight chapters with a story (pirates, a stowaway alien, a kidnapped scientist, the
   spore nebula, the deep). Each has a briefing and an objective; finishing one unlocks the next.
-- **Rewards:** if the ship jumps out, the crew gets paid (some chapters also pay per pirate). XP
-  only if you're back aboard and on your feet at the end. The mission only counts as completed
-  (reputation, next chapter unlocked) if the objective is done too.
+- **Rewards:** if the ship jumps out, the crew gets paid (some chapters also pay per pirate). The
+  mission only counts as completed (reputation, next chapter unlocked) if the objective is done too.
 - **Suit color:** pick it in the lobby (free).
 - **Locker** (money): general gear for anyone (gravity boots, suit thrusters, first aid course,
-  armor vest, stim pack); from level 2 a profession (engineer or weapons specialist) and its track:
-  engineer (own repair kit, toolbelt, reactor overcharge), weapons specialist (own laser gun, heavy
-  blaster).
+  armor vest, stim pack); once chapter 1 is finished, a profession (engineer or weapons
+  specialist) and its track: engineer (own repair kit, toolbelt, reactor overcharge), weapons
+  specialist (own laser gun, heavy blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
   bigger capacitors, longer shields, reinforced hull, sprinklers, … In multiplayer the
   ship gets every upgrade anyone in the crew has bought.

@@ -93,7 +93,7 @@ function lobbyState(g) {
   const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
   const host = hostOf(g);
   return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, unlocked, host: host && host.id, max: MAX_PLAYERS,
-    players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), level: c.level || 1, host: c === host, away: !c.alive || undefined })) };
+    players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), host: c === host, away: !c.alive || undefined })) };
 }
 function gameList() {
   return { t: 'games', max: MAX_PLAYERS, games: [...games.values()].map(g => {
@@ -184,7 +184,6 @@ function onMessage(c, m) {
     if (m.kit && typeof m.kit === 'object') c.kit = m.kit;                  // the player's gear and profession (from their own saved profile)
     if (m.ship && typeof m.ship === 'object') c.ship = m.ship;              // ship upgrades they bought
     if (Array.isArray(m.unlocked)) c.unlocked = m.unlocked.map(String).slice(0, 50);
-    c.level = +m.level || 1;
     if (g?.run) { const cr = g.run.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; }
     changed(g);
   }

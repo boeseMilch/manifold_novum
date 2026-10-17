@@ -844,19 +844,18 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   one: the jump is enough). Only a success earns reputation (+1 the first time), counts as finished
   (`profile.done`, the ✔ in the lobby) and unlocks the next chapter.
 - **Rewards** (`computeRewards`): if the ship jumped, the crew gets paid (base pay plus per pirate),
-  objective or not; XP (full, objective or not) only if you're inside the ship and standing at the
-  end. Jumped without the objective: the end screen says "objective failed", shows the pay and
+  objective or not. (XP and levels are gone since 2026-10-17: see "No more XP" at the end.) Jumped without the objective: the end screen says "objective failed", shows the pay and
   that the next chapter stays locked. (Before: no base pay and half XP without the objective.)
   `profile.done` always meant "completed with the objective", so no save migration. Each browser
   credits its own player from the synced `mission.over.results` (`creditMission`), so multiplayer
-  follows the same rule. Levels at 100/250/450/… XP.
+  follows the same rule.
 - **Ship upgrades** (reputation, `SHIP_UPGRADES`): spare cell, coffee machine, fuel inserter (with a
   handle to scooch the cells out of its reach), efficient cannons (4 shots), faster airlocks,
   long-range radar, longer shields (3 s; shown as "Longer shields", id `shields`), bigger capacitors (4),
   reinforced hull (MAX_DAMAGE 5 → 6: the ship survives one more broken part; set per mission in
   `applyShipUpgrades`, so it reaches clients and doesn't leak into the next mission), sprinklers.
   Multiplayer: the union of everyone's upgrades.
-- **Gear** (money, `GEAR`) and **professions** (level 2+, one for good: see "Specialize" below):
+- **Gear** (money only, `GEAR`) and **professions** (once chapter 1 is finished, one for good: see "Specialize" below):
   general gear for anyone (gravity boots, thrusters, first aid course, stim pack); engineer and
   weapons specialist, each with a gear track (see 8w, 8x; the armor vest is weapons gear). Suit
   color is free, in the lobby. Sent to the server with `hello`.
@@ -2769,3 +2768,19 @@ dummy canvas):
 
 - Capacitor capacity: 3 for now everywhere. Should the reactor's be bigger?
 - Should the airlock open automatically as now, or only on E?
+
+### No more XP: the locker asks for money only (2026-10-17)
+
+The user: "missions still give XP, but I don't think there is anything that you can do with it?" XP only
+gated gear (levels 1-4) and the profession (level 2), and money already limited every purchase (the balance
+model's expected kit is the same with and without the levels). So XP is gone:
+- Missions give money and reputation only (`computeRewards` returns `{ money, rep }`; `rewards.xp` and
+  `XP_LEVELS` / `levelOf` removed). The end screen shows the pay and the reputation; finishing chapter 1 the
+  first time adds "Professions are open: pick one in the locker".
+- Gear has no level (`GEAR[].level` removed): buy it when you can afford it.
+- A profession opens once chapter 1 is finished (`professionOpen`: `done.c1`, or a save that already had
+  100 XP, i.e. level 2, so nobody loses access).
+- The lobby plate shows the profession (or "No profession yet"), money and reputation, no level or XP bar;
+  the multiplayer lobby no longer shows "lv N" (the server ignores an old client's `level`). Start over no
+  longer says "level 1".
+- Saves: `xp` stays in the profile (kept and number-fixed as before, never increased), so no version bump.

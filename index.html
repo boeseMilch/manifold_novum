@@ -34,8 +34,6 @@
   #lobby-start:disabled { cursor: default; background: #4a3430; border-color: #7a5a54; color: #d8c6c2; letter-spacing: 1px; font-size: 16px; }
   .plate { max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box; }
   #lobby-profile { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: #dfe4ec; margin-top: 6px; }
-  #lobby-profile .bar { width: 120px; height: 8px; border-radius: 4px; background: #1c2028; border: 1px solid #14161b; overflow: hidden; }
-  #lobby-profile .bar i { display: block; height: 100%; background: #5fd6a0; }
   .row button { flex: 1; padding: 8px; font: 700 13px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
   .row { display: flex; gap: 8px; margin-top: 12px; }
   #lobby-missions { grid-template-columns: 1fr; gap: 8px; max-height: calc(100vh - 230px); min-height: 220px; overflow-y: auto; padding-right: 6px; scrollbar-color: #4a5262 transparent; }
@@ -171,10 +169,8 @@
   #lobby label { margin: 22px 0 10px; font-size: 12px; letter-spacing: 1.5px; }
   #lobby input { padding: 14px 18px; font-size: 17px; border-radius: 8px; }
   #lobby-profile { display: grid; grid-template-columns: 1fr auto; gap: 10px 16px; margin-top: 18px; font-size: 14px; }
-  #lobby-profile > b { grid-area: 1 / 1; } #lobby-profile > span:nth-of-type(2) { grid-area: 1 / 2; text-align: right; }
-  #lobby-profile .bar { grid-area: 2 / 1 / 3 / 3; width: auto; height: 12px; border-radius: 6px; padding: 2px; box-sizing: border-box; }
-  #lobby-profile .bar i { border-radius: 4px; box-shadow: 0 0 6px rgba(95, 214, 160, 0.6); }
-  #lobby-profile > span:nth-of-type(3) { grid-area: 3 / 1; } #lobby-profile > span:nth-of-type(4) { grid-area: 3 / 2; text-align: right; }
+  #lobby-profile > b { grid-area: 1 / 1 / 2 / 3; }
+  #lobby-profile > span:nth-of-type(1) { grid-area: 2 / 1; } #lobby-profile > span:nth-of-type(2) { grid-area: 2 / 2; text-align: right; }
   .paints { gap: 10px; } .paint { width: 30px; height: 30px; }
   #lobby .row { gap: 14px; margin-top: 28px; }
   #lobby .row button, #shop-close { min-height: 56px; padding: 10px 12px; font-size: 13px; letter-spacing: 1.5px; border-radius: 8px; }
@@ -249,7 +245,6 @@
   html.metal-css :is(#lobby, #shop) :is(#menu-games, #lobby-brief, #lobby-missions) { background: none; border-color: transparent;
     border-image: url(assets/ui/inset.png) 32 fill / 16px stretch; }
   html.metal-css #lobby input { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 9px stretch; }
-  html.metal-css #lobby-profile .bar { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 5px stretch; }
   html.metal-css .paint { border: none; background-image: url(assets/ui/swatch.png) !important; background-size: 100% 100% !important; background-blend-mode: multiply; }
   html.metal-css .paint.chosen { background-image: url(assets/ui/swatch_down.png) !important; box-shadow: 0 0 0 2px rgba(240, 244, 255, 0.9), 0 0 8px 3px var(--c, #fff), 0 0 18px 5px var(--c, #fff); }   /* (a white rim, so black reads as chosen too) */
   html.metal-css :is(.mission, #shop .item)::after { content: ''; position: absolute; right: 15px; top: 50%; width: 16px; height: 16px; margin-top: -8px;
@@ -328,7 +323,7 @@
         <label>SUIT COLOR</label>
         <div id="lobby-paint" class="paints"></div>
         <div class="row"><button id="lobby-locker">LOCKER <small>gear</small></button><button id="lobby-shipyard">SHIPYARD <small>upgrades</small></button><button id="lobby-music" onclick="window.open('music.html', '_blank')">♪ MUSIC</button></div>
-        <div class="row"><button id="lobby-reset" title="Back to level 1: XP, money, reputation, gear, profession, ship upgrades and chapters">START OVER <small>back to level 1 · keeps name and suit</small></button></div>
+        <div class="row"><button id="lobby-reset" title="Back to the start: money, reputation, gear, profession, ship upgrades and chapters">START OVER <small>from scratch · keeps name and suit</small></button></div>
       </section>
       <section class="plate" id="menu-play">
         <h2>PLAY</h2>

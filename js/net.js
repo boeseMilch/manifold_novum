@@ -185,14 +185,14 @@ function netClientMain() {
   const missionName = (id) => MISSIONS[id]?.name || id;
 
   // profile, mission cards, briefing, locker and shipyard (progress.js)
-  const hello = () => sendWs({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()], level: levelOf(profile.xp) });
+  const hello = () => sendWs({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()] });
   const pick = (id) => { if (!solo && !isHost) return; chosen = id; if (!solo) sendWs({ t: 'mission', id }); };
   lobbyUI.init(pick, hello);
   $('room-locker').onclick = () => lobbyUI.shop('locker');
   // Start over (e.g. to play the progression again with friends): a fresh profile, keeping the name and suit
   // color; the old one is kept in localStorage 'mn-profile-backup' in case it was a misclick.
   $('lobby-reset').onclick = () => {
-    if (!confirm('Start over at level 1?\n\nThis resets your XP, money, reputation, gear, profession, ship upgrades and finished chapters. Your name and suit color stay.')) return;
+    if (!confirm('Start over?\n\nThis resets your money, reputation, gear, profession, ship upgrades and finished chapters. Your name and suit color stay.')) return;
     try { localStorage.setItem('mn-profile-backup', JSON.stringify(profile)); } catch (e) { /* no storage */ }
     profile = Object.assign(defaultProfile(), { paint: profile.paint });
     saveProfile(profile);
@@ -256,7 +256,7 @@ function netClientMain() {
     $('room-host').textContent = solo ? 'Just you and the ship.' : !L ? 'Joining…' : isHost ? 'You are the host: you pick the mission and start it.'
       : `${host ? host.name : 'The host'} is the host: they pick the mission and start it.`;
     $('lobby-players').innerHTML = solo || !L ? `<li style="color:${profile.paint || '#c4683a'}">${escapeHtml(nameBox.value || 'You')} <small>(you)</small></li>`
-      : L.players.map(p => `<li style="color:${p.color}"${p.away ? ' class="away"' : ''}>${p.host ? '<span class="crown" title="host">HOST</span> ' : ''}${escapeHtml(p.name)} <small>lv ${p.level || 1}${p.id === myId ? ' · you' : ''}${p.away ? ' · coming back…' : ''}</small></li>`).join('');
+      : L.players.map(p => `<li style="color:${p.color}"${p.away ? ' class="away"' : ''}>${p.host ? '<span class="crown" title="host">HOST</span> ' : ''}${escapeHtml(p.name)}${p.id === myId || p.away ? ` <small>${[p.id === myId && 'you', p.away && 'coming back…'].filter(Boolean).join(' · ')}</small>` : ''}</li>`).join('');
     $('room-count').textContent = solo ? '' : L ? `${L.players.length}/${L.max || maxPlayers}` : '';
     const start = $('lobby-start');
     start.disabled = !canPick || (!solo && L?.phase === 'game');
