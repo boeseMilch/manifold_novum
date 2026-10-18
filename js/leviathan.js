@@ -8,7 +8,7 @@
 //                a tail flick bumps a room on its side (a red warning on that floor LEVB_FLICK_WARN s ahead).
 //   2 TOXIC GAS  T-LEVB_GAS_WARN (big HUD number, banner, ship voice), then a cloud wraps the hull for LEVB_GAS s: anyone
 //                outside (spacewalk or cannon seat) when it arrives, or who goes out during it, goes down.
-//   3 THE SIDE   it parks on one side (random), its EYE opens and that side's zones regrow and glow: LEVB_WINDOW s (easy /
+//   3 THE SIDE   it parks on the LEFT (then the RIGHT), its EYE opens and that side's zones regrow and glow: LEVB_WINDOW s (easy /
 //                very easy: longer) to hit the eye and every glowing zone once with that side's cannon. Too slow: a
 //                leech swarm on that side (LEVB_LEECHES: 2 solo … 6 with 4+; never while its last swarm is still on the
 //                hull, then a slam instead) / a tail slam (room bump + a big hit), alternating, then a new window. In
@@ -55,7 +55,7 @@ const LEVB_SPOTS = {
   L1: { piece: 1, at: [-8, -6.2], r: 3.8 }, L2: { piece: 2, at: [-2, -5.9], r: 3.8 }, L3: { piece: 2, at: [-10, -5.4], r: 3.8 },
   R1: { piece: 3, at: [-2, -5], r: 3.8 }, R2: { piece: 3, at: [-9.5, -4.4], r: 3.8 }, R3: { piece: 4, at: [-4, -3.6], r: 3.6 },
   E1: { piece: 'head', at: [10, 4.5], r: 3.4 }, E2: { piece: 'head', at: [7.5, -3.5], r: 3.4 },   // (phase 3: zones regrow on its head, by the eye)
-  nest: { piece: 2, at: [-11, -3], r: 5 },
+  nest: { piece: 3, at: [-10, -3], r: 5 },   // (far enough back that its station behind comes just after phase 3's right-side one: no extra lap)
 };
 // The dorsal sail sits on segment 0 (its origin 3 behind the neck joint); the left pectoral's root on the head (x, -y).
 const LEVB_FIN_SEG = 0, LEVB_FIN_AT = [-3, 0], LEVB_PEC = [7, -8.65];
@@ -211,7 +211,7 @@ function startLevBoss(from = 1) {
   if (from >= 2) { B.fin = 0; for (const z of B.zones) z.hp = 0; }
   if (from === 2) { B.step = 'right'; B.where = 'star'; }
   if (from === 4) { B.phase = 'p4'; B.p3 = { side: 'star', done: ['port', 'star'] }; B.step = 'behind'; }
-  else if (from === 3) { B.phase = 'p3'; levStartSide(B, randSide(), true); }
+  else if (from === 3) { B.phase = 'p3'; levStartSide(B, 'port', true); }
   if (from === 2) levStartGas(B);
   B.sTo = levStationFor(B, B.step === 'behind' ? 'behind' : B.phase === 'p3' ? B.p3.side : B.step);
   B.s = B.sTo - 70; B.out = 40; B.arrive = true;
@@ -299,19 +299,29 @@ function levOpenEye(B) {
   Object.assign(P, { state: 'open', win: LEVB_WINDOW[levEasy()], eye: false, glow: [{ id: 'E1', hit: false }, { id: 'E2', hit: false }] });
   combatBanner(`Its EYE opens — ${levSideName(P.side)} cannon: the eye + the glowing zones in ${P.win} s!`); sfx.alarm?.();
 }
-// Our shells: the step's targets (only while it's parked), else a splat on its hide where they cross its back.
-function levTargets(B) {
-  if (!B.parked) return [];
+// Our shells: the step's targets, else a splat on its hide where they cross its back. Phase 1's fin and zones count as
+// soon as they're out on their side of the ship and in that cannon's view, also while it's still swimming into place (you
+// see them coming, so a hit counts: 2026-10-17, the user couldn't hit the right flank's zones as they swam up); the eye
+// only once parked.
+function levTargets(B, ch) {
   if (B.phase === 'p1') {
-    if (B.step === 'fin') return B.fin > 0 ? ['fin'] : [];
-    return B.zones.filter(z => z.side === (B.step === 'left' ? 'port' : 'star') && z.hp > 0).map(z => z.id);
+    const ids = B.step === 'fin' ? (B.fin > 0 ? ['fin'] : []) : B.zones.filter(z => z.side === (B.step === 'left' ? 'port' : 'star') && z.hp > 0).map(z => z.id);
+    if (B.parked || !ids.length) return ids;
+    ch = ch || levChain(B);
+    const g = GUNS.find(q => q.id === { fin: 'front', left: 'port', right: 'star' }[B.step]), [cx, cy, w] = g.view;
+    const out = (id) => {
+      const p = levSpotAt(ch, id);
+      return (B.step === 'fin' ? p.wy < -6 : B.step === 'left' ? p.wx < -3 : p.wx > SHIP_W + 3) && Math.abs(p.wx - cx) < w / 2 && Math.abs(p.wy - cy) < w * 0.31;
+    };
+    return ids.filter(out);
   }
+  if (!B.parked) return [];
   if (B.phase === 'p3' && B.p3.state === 'open') return [...(B.p3.eye ? [] : ['eye']), ...B.p3.glow.filter(g => !g.hit).map(g => g.id)];
   return [];
 }
 function levShells(B) {
   if (!combat.shells.length) return;
-  const ch = levChain(B), SIN = GFX.SIN, ids = levTargets(B), spots = ids.map(id => ({ id, ...levSpotAt(ch, id) }));
+  const ch = levChain(B), SIN = GFX.SIN, ids = levTargets(B, ch), spots = ids.map(id => ({ id, ...levSpotAt(ch, id) }));
   const body = [ch.nose, ...ch.J];
   for (const s of combat.shells) {
     if (s.dead) continue;
@@ -374,7 +384,7 @@ function levUpdateGas(B, dt) {
   for (const c of crew) if (isOutside(c) && standing(c)) levGasDown(c);
   if ((G.t -= dt) <= 0) {
     B.gas = null; combatBanner('The gas has cleared');
-    B.phase = 'p3'; levStartSide(B, randSide(), true); B.sTo = levNext(B, levStationFor(B, B.p3.side));
+    B.phase = 'p3'; levStartSide(B, 'port', true); B.sTo = levNext(B, levStationFor(B, B.p3.side));   // (left first, then right: the way it swims)
     combatBanner(`The gas has cleared — it turns to the ${levSideName(B.p3.side)} side…`);
   }
 }
@@ -663,7 +673,7 @@ function drawLevMarks(t) {
   for (const f of levFallbacks) f();
   levFallbacks = [];
   const ch = levBodyState.ch;
-  for (const id of levTargets(B)) {
+  for (const id of levTargets(B, ch)) {
     const p = levSpotAt(ch, id), k = 0.6 + 0.4 * Math.sin(t * 6);
     ctx.save(); ctx.translate(L(p.wx), L(p.wy)); ctx.scale(1, 1 / GFX.SIN);
     ctx.beginPath(); ctx.arc(0, 0, L(p.r) + 4, 0, TAU); ctx.strokeStyle = id === 'eye' ? `rgba(255,210,90,${k})` : `rgba(210,255,110,${k})`; ctx.lineWidth = 4; ctx.stroke();

@@ -4,7 +4,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'levStationFor', 'levClickTarget', 'combat', 'simTick', 'crew', 'me', 'makeCrew', 'CAPACITORS',
   'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'LEVB_LEECHES', 'netSerialize', 'netApply',
-  'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk'];
+  'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -53,6 +53,65 @@ const inView = (G, gun, id) => {           // the target is inside that cannon's
   check(B(G).phase === 'gas' && B(G).gas.warn > 9, 'right flank clean: TOXIC GAS in 10 s');
   const G3 = fresh(3); G3.startLevBoss(1);
   check(B(G3).zones.filter(z => z.side === 'port').length === 3, '3 players: 3 zones per side');
+}
+// --- the order round the ship (2026-10-17, the user: "it constantly swims left and right"): front → left → right, the gas,
+// left → right, behind, each stop reached by swimming on round the loop less than once (no extra laps on the way)
+{
+  const G = fresh(1); G.startLevBoss(1);
+  const stops = [], P = G.LEVB_LOOP.P; let swims = [], from = B(G).s, t = 0;
+  while (B(G) && B(G).phase !== 'blast' && t < 400) {
+    keepSafe(G); G.org.leeches = [];
+    const b = B(G);
+    if (b.parked && (stops.at(-1)?.s !== b.s || stops.at(-1)?.phase !== b.phase)) {
+      stops.push({ s: b.s, phase: b.phase, where: b.phase === 'p3' ? b.p3.side : b.where }); swims.push(b.s - from); from = b.s;
+      if (b.phase === 'p4') break;
+      for (const id of G.levTargets(b)) while (B(G).phase === b.phase && G.levTargets(B(G)).includes(id)) shoot(G, id);
+    }
+    G.simTick(DT); t += DT;
+  }
+  const seq = stops.map(q => `${q.phase === 'gas' ? 'gas' : q.where}`).join(' → ');
+  check(seq === 'front → port → star → gas → port → star → behind', `a scripted win goes front → left → right, the gas, left → right, behind (${seq})`);
+  check(swims.every(d => d < P), `each move is less than one lap round the ship (${swims.map(d => d.toFixed(0)).join(', ')} of ${P.toFixed(0)})`);
+  check(swims.at(-1) < 15, `from the right side (phase 3) it settles behind with a short glide, not another lap (${swims.at(-1).toFixed(1)})`);
+}
+// --- every weak spot, at every stop, can be hit by that side's cannon: aimed at it (within the cannon's arc), fired for real,
+// several times while it sways; a shell that splats on its back first doesn't count
+for (const n of [1, 3]) {
+  const G = fresh(n); G.startLevBoss(1);
+  const gunFor = { fin: 'front', left: 'port', right: 'star', port: 'port', star: 'star' }, bad = [], seen = [];
+  const state = () => JSON.stringify([B(G).fin, B(G).zones.map(z => z.hp), B(G).p3?.eye, B(G).p3?.glow]);
+  for (let guard = 0; guard < 12 && B(G) && B(G).phase !== 'p4'; guard++) {
+    parked(G, 90);
+    const b = B(G);
+    if (b.phase === 'gas') { while (B(G).phase === 'gas') G.simTick(DT); continue; }
+    const step = b.phase === 'p3' ? b.p3.side : b.step, g = G.GUNS.find(q => q.id === gunFor[step]);
+    for (const id of G.levTargets(b)) {
+      seen.push(`${step}:${id}`);
+      for (let k = 0; k < 4; k++) {
+        tick(G, 0.4, () => keepSafe(G));
+        if (b.p3?.state === 'open') b.p3.win = 10;
+        const save = JSON.parse(JSON.stringify({ fin: b.fin, zones: b.zones, p3: b.p3, phase: b.phase, step: b.step, sTo: b.sTo, parked: b.parked, gas: b.gas }));
+        const p = G.levSpotAt(G.levChain(b), id), want = Math.atan2(p.wy - g.y, p.wx - g.x), d = Math.atan2(Math.sin(want - g.a), Math.cos(want - g.a)), arc = G.gunArc(g);
+        g.aim = g.a + Math.max(-arc, Math.min(arc, d)); g.cd = 0; g.shots = 3; g.reload = 0;
+        const s0 = state(); G.fireCannon(g); let hit = false;
+        for (let i = 0; i < 100 && G.combat.shells.length; i++) { G.simTick(DT); if (state() !== s0) { hit = true; break; } }
+        G.combat.shells = []; Object.assign(b, save);
+        if (!hit || Math.abs(d) > arc) { bad.push(`${step}:${id}`); break; }
+      }
+    }
+    for (const id of G.levTargets(B(G))) while (G.levTargets(B(G)).includes(id)) shoot(G, id);
+  }
+  check(!bad.length && seen.length === 1 + 2 * B(G).nz + 6, `${n} player(s): all ${seen.length} weak spots hit by their side's cannon, aimed and fired (${bad.length ? 'missed: ' + bad.join(', ') : seen.join(' ')})`);
+}
+// --- phase 1's zones count as soon as they're out on their side, while it's still swimming into place
+{
+  const G = fresh(1); G.startLevBoss(2); B(G).phase = 'p1'; B(G).gas = null; B(G).step = 'right'; B(G).parked = false;
+  for (const z of B(G).zones) if (z.side === 'star') z.hp = 2;
+  B(G).s = 140; B(G).sTo = G.levStationFor(B(G), 'right') + G.LEVB_LOOP.P; B(G).out = 0; B(G).arrive = false;
+  let early = null; for (let i = 0; i < 60 * 20 && !early; i++) { G.simTick(DT); keepSafe(G); if (!B(G).parked && G.levTargets(B(G)).length) early = G.levTargets(B(G))[0]; }
+  check(early && G.levSpotAt(G.levChain(B(G)), early).wx > G.SHIP_W && inView(G, 'star', early), `swimming up the right flank: its zones count once they're off the right side, in the right cannon's view (${early})`);
+  if (early) { shoot(G, early); check(B(G).zones.find(z => z.id === early).hp === 1 && !B(G).parked, 'a hit there counts before it has parked'); }
+  check(G.levTargets({ ...B(G), s: 150, parked: false }).length === 0, 'but not while they\'re still behind the ship');
 }
 // --- tail flicks while it passes: a warning on a room's floor, then a bump
 {

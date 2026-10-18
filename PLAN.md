@@ -2636,7 +2636,7 @@ the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away
 - **2 Toxic gas:** T-10 (a big HUD number, banner, "Toxic gas in ten seconds. Everyone inside."), then 15 s of gas round the
   hull: anyone outside (spacewalk or cannon seat) when it comes, or who goes out during it, goes down where they are (armor
   doesn't help); treated as usual afterwards.
-- **3 The side:** it parks on one side (random), its EYE opens and two zones regrow on its head, glowing: 12 s (easy 16, very
+- **3 The side:** it parks on the left, then the right (since 2026-10-17; was a random side first), its EYE opens and two zones regrow on its head, glowing: 12 s (easy 16, very
   easy 20) to hit the eye and both zones once with that side's cannon (a big countdown on screen). Too slow: a leech swarm on
   that side, next time a tail slam (3 s warning, room bump + a big hit), alternating, then a new window. In time: it flinches
   and swims to the other side. Both done → 4. The swarm scales with the crew (2026-10-17, the user: solo it was unwinnable
@@ -3025,3 +3025,45 @@ next target in the turning direction. tests/systems.js checks it never steps bac
   proximity prompts in js/game.js `act`; `nearbyTarget` ranks repair targets first). Before, from some sides of the
   cannons, the middle capacitor, the reactor and the deck airlocks, E pressed the button / forced the door instead.
   tests/controls.js tries every inside part from 8 sides.
+- **The Deep: one encounter more ("deep space … too chill"):** the alien (`intruder`, was written at 190 s and only in
+  4+ player runs' later half) now comes second, 50 s (before the first herd), and is kept at every crew size
+  (`MISSIONS.c7.always: ['maintenance', 'intruder']`). `crew.events` 3/3/4/5/6/7/9/15 → 5/5/5/6/7/8/10/16, set by hand:
+  solo-3 used to get 4 (the opener, two failing parts and the finale herd the game adds), now 5 (+ the alien), 4+ one
+  more as well. Written before the herd so a small crew's herd stays the finale: a second herd mid-mission (what the
+  count alone would add, by DROP_ORDER) put 1-3 players out of spec (one side cannon for both creatures; "impossible"
+  solo / ×2, and no cells / reactor fixed it). Easy / very easy now drop the herd before the alien for small crews.
+  Cells refitted like `--calibrate` (fewest that do as well as plenty + 1, reactor 1 where no faster one gets in spec;
+  solo keeps its ×0.7): 3/3/3/3/4/5/6/9 → 3/3/3/4/5/5/6/9. Balance model (expected kit, 8 builds; the one-tide rule and
+  3 mines in place), idle % for 1-8 players, before → after: 39 67 77 70* 63 63 64 62 → 40 63 74 72* 65 64 62 57
+  (* out of spec: ×4 "star cannon waits 37 s" → 9 s, energy waits ×4 100 → 48 s). Solo ~unchanged by the model (the
+  shorter gaps speed the reactor up: the finale herd no longer waits for energy), 2-3 players busier. With one tide
+  per mission (same day) c7 solo moved above its 37 % target, so it left tests/scaling.js's BELOW list (within the fit).
+  tests/scaling.js checks the alien (once, before the herds) and the event count at 1 / 2 / 4 / 8 players.
+
+### Leviathan: one way round, no extra laps; zones count as they swim into view (2026-10-17, js/leviathan.js)
+
+Playtest: "Isn't it supposed to go front → left → right → back? It constantly swims left and right and you cannot
+even hit all the spots from the right." Found (headless sim of a scripted win, the head's side logged over time):
+- **Extra laps:** it only swims forward round its loop (front → left → behind → right → front), and every stop is a
+  fixed loop position. Phase 3's first side was random, and the stops came out of order: after phase 1's right stop
+  (its head across the bow) a random RIGHT meant a whole lap (front, left, behind) to come back to the same side, and
+  phase 4's stop behind (s 216) lay just *before* phase 3's right stop (227), so from the right it swam one more full
+  lap past the front and the left to get behind. A scripted win swam 2.9 laps, passing each flank 4-5 times.
+- **"Can't hit them from the right":** every weak spot at every stop *is* hittable by its cannon (a real-cannon sim: aim
+  within the arc, fire, 12 tries each, 1 and 3 players: all hits, no splats on its back). But targets only counted once
+  it had parked, and parking comes at the end of a long, slowing glide: on the right flank the zones swim up into the
+  right cannon's view and every shot at them splatted for several seconds; during the extra laps the zones and old scars
+  passed both flanks again and again, never hittable.
+Fixed (no numbers changed; the fight's steps, HP, windows and timings are the same):
+- Phase 3 goes LEFT first, then RIGHT (the way it swims on from phase 1's right stop): `levStartSide(B, 'port')`.
+- The nest sits on segment 3 (was 2, `LEVB_SPOTS.nest`), so the stop behind (the nest in the engine's exhaust) comes
+  2 units after phase 3's right stop: from the right it settles behind with a short glide. Order now: front → left →
+  right → gas → left → right → behind, each move less than a lap; a scripted win swims ~2 laps (was 2.9) and is ~25 s
+  shorter.
+- Phase 1's fin / zones count as soon as they're out on their side and inside that cannon's view, also while it's still
+  swimming into place (`levTargets(B, ch)`, rings drawn from then on); the eye windows still open only once parked.
+- tests/leviathan.js: the side order over a scripted win (and every move < 1 lap, the last glide < 15 units), every
+  weak spot at every stop hit by its side's cannon for real (1 and 3 players), zones counting while swimming up.
+Open (story, the user: "why do we need to shoot its eye? I thought we're trying to heal it?"): the eye (and the dorsal
+fin, phase 1) are targets that hurt the creature; see the report's options (leech over the eye / a third regrown
+zone instead of the eye; a leech clump on the fin).
