@@ -36,6 +36,8 @@ Tick off what works; note what doesn't.
 - [ ] Phase 3: the eye plus two glowing spots on the head, all three hittable from both side cannons (E1 is now behind the eye).
 - [ ] Missing a window: fewer leeches solo (2), and no new swarm while leeches are still on the hull.
 - [ ] Only one gravity wave.
+- [ ] **Phase 4 solo race:** you end phase 3 in the right cannon and it's behind the ship at once. The first crawlers reach MID about 14 s later; climbing down, walking to the stern panel and the 4 s hold takes about 13.5 s. Bring the laser and shoot the first crawlers. Does it feel fair?
+- [ ] **Energy:** if crawlers keep draining MID below 3, the override can't run and the jump stays held. Watch whether you get stuck.
 
 ## Mines (any mission with a mine drone)
 - [ ] The drone always lays 3 mines.
@@ -50,4 +52,5 @@ Tick off what works; note what doesn't.
 - The leviathan eye (A: a big leech on its eye · B: a third glowing spot instead · C: drop it) and its fin.
 - Keep the leviathan's second round of left and right?
 - Build the new leeches/spores/mines set?
+- Leviathan phase 4: start the first crawler wave later (or smaller solo)? And a way out if energy runs dry (the jump hold gives up after a few minutes, crawlers can't drain the last energy, or the override takes energy from any capacitor)?
 - Chapter 4 timing (5 min, 6 min, or the second raider earlier), and whether solo chapter 4 may stay that busy.
