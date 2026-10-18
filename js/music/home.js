@@ -7,9 +7,12 @@
 // breakdown), the ending, the mix and the shared instruments; everything that makes this piece itself lives here.
 // Loaded after js/music.js (index.html, music.html, tests/music.js, tests/harness.js).
 // (The opening, stages 0-1: clock and music box, plays exactly as before the dubstep rework, call for call.)
-(() => {
+// music.homePiece(V) defines it; V.deep (js/music/homedeep.js, only in music.html to compare) is a variant whose
+// growl dives into the deep: octave-down wobbles (suffix _), half-bar dives (D), a louder sub, more low body.
+music.homePiece = (V = {}) => {
+  const DEEP = !!V.deep;
   const K = music.kit;
-  const { hz, osc, filt, noiseSrc, pan, route, env, inRange, bassRoot, stepDur, hash, pluck, lead, bass, taiko, kick, snare, clap, hat, tom, crash, brass, LEAD_VEL } = K;
+  const { hz, osc, filt, noiseSrc, pan, route, env, inRange, bassRoot, stepDur, hash, pluck, lead, bass, taiko, kick, snare, clap, hat, crash, brass, LEAD_VEL } = K;
   // A music-box tine: pure and high, with a bright octave click at the start.
   function tine(m, t, vel, p) {
     const f = hz(m), g = K.ac.createGain(), g2 = K.ac.createGain();
@@ -31,7 +34,8 @@
   // any other. Wobble patterns: one bar in 8 slots (8ths): a letter starts a segment, '-' holds it, '.' rests.
   //   q 1/4  e 1/8  t 1/8 triplet  s 1/16  x 1/16 triplet  z 1/32 stutter (chopped)  W one slow "waaah" opening  H one "yowww"
   //   prefix v: dives in from an octave up; suffix ^ an octave up, 5 the fifth.
-  const DIV = { q: 1, e: 2, t: 3, s: 4, x: 6, z: 8, W: 0, H: 0 };
+  //   (deep only: D one long dive, the pitch falling an octave, sub too; suffix _ an octave down, sub too.)
+  const DIV = { q: 1, e: 2, t: 3, s: 4, x: 6, z: 8, W: 0, H: 0, D: 0 };
   const VOW = { oo: [300, 780], oh: [460, 880], uh: [560, 1040], ah: [780, 1250], ae: [660, 1720], ee: [360, 2150] };
   const VPAIRS = [['oo', 'ah'], ['oh', 'ee'], ['uh', 'ae'], ['oo', 'ee'], ['oh', 'ah']];
   const parsePat = (str) => {
@@ -39,8 +43,8 @@
     str.trim().split(/\s+/).forEach((tok, i) => {
       if (tok === '-') { if (cur) cur.len++; return; }
       cur = null; if (tok === '.') return;
-      const m = /^(v?)([qetsxzWH])([\^5]?)$/.exec(tok); if (!m) throw new Error('home: bad wobble ' + tok);
-      cur = { slot: i, len: 1, glide: !!m[1], kind: m[2], off: m[3] === '^' ? 12 : m[3] === '5' ? 7 : 0 }; out.push(cur);
+      const m = /^(v?)([qetsxzWHD])([\^5_]?)$/.exec(tok); if (!m) throw new Error('home: bad wobble ' + tok);
+      cur = { slot: i, len: 1, glide: !!m[1], kind: m[2], off: m[3] === '^' ? 12 : m[3] === '5' ? 7 : m[3] === '_' ? -12 : 0 }; out.push(cur);
     });
     return out;
   };
@@ -60,9 +64,18 @@
     spool: P(['s - - - s^ - - -', 'z - - - z^ - - -']),   // accelerating in 2-bar waves
     dist: P(['q - - - - - - -', 'q - - - - - - -', 'e - - - . e - -']),         // the breakdown: far away, coming back
   };
+  if (DEEP) Object.assign(PAT, {                         // the deep variant: octave-down wobbles, and every 4th bar a long dive
+    drop: P(['vW - - - . e - -', 'e_ - s - . t - -', 'q5 - e - . s_ - .', 'D - - - . z - z^',
+      'H - - - . e_ - -', 's - e^ - . t_ - -', 'e - t - . s - z', 'D - - - x_ - - -']),
+    five: P(['vW - - - . s_ - -', 'e - x - . t^ - -', 's5 - e_ - . z - -', 'D - - - . x - z^',
+      'vH - - - . e_ - s', 'x_ - e - . t5 - -', 's - t - . s^ - z', 'D - - - s_ - z^ -']),
+    six: P(['vW - - - . x_ - -', 's - x^ - . t_ - z', 'x5 - s_ - . z - -', 'D - - - . s^ - z^',
+      'vW - - - . s_ - x', 'x_ - s^ - . t - z', 's - t5 - . x_ - -', 'D - - - z_ - x -']),
+  });
   // stage → [level, how far the filter opens, FM growl, formant width, sub level]
   const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.11],
     5: [0.18, 0.95, 0.9, 1, 0.11], 6: [0.186, 1, 1, 1, 0.115], 7: [0.18, 0.8, 0.9, 1, 0.11] };
+  if (DEEP) for (const [st, sub] of [[2, 0.06], [3, 0.075], [4, 0.16], [5, 0.16], [6, 0.165], [7, 0.15]]) LOOK[st] = [...LOOK[st].slice(0, 4), sub];
   const zg = () => { const g = K.ac.createGain(); g.gain.value = 0; return g; };   // (an enveloped gain starts silent: no click before its first event)
   let curve = null;
   function shaper() {                                    // saturation (where the browser has it), a little lopsided: 2nd and 3rd harmonics
@@ -78,7 +91,7 @@
     const mod = osc('sine', hz(m0), t, stop), mg = zg(), pre = K.ac.createGain();
     mod.connect(mg); saws.forEach(s => { mg.connect(s.frequency); s.connect(pre); }); sq.connect(pre);
     pre.gain.value = 0.5;
-    const sh = shaper(), lp = filt('lowpass', 200, 5), hp = filt('highpass', 150, 0.7), f1 = filt('bandpass', 400, 6), f2 = filt('bandpass', 1000, 8);
+    const sh = shaper(), lp = filt('lowpass', 200, 5), hp = filt('highpass', DEEP ? 90 : 150, 0.7), f1 = filt('bandpass', 400, 6), f2 = filt('bandpass', 1000, 8);
     if (sh) { pre.connect(sh); sh.connect(lp); } else pre.connect(lp);
     const g = zg(), b1 = K.ac.createGain(), b2 = K.ac.createGain(), kg = K.ac.createGain();
     b1.gain.value = 4.3; b2.gain.value = 4;                  // (the formants, against the body through the highpass)
@@ -86,7 +99,7 @@
     pan(b1, -0.7 * o.wide).connect(g); pan(b2, 0.7 * o.wide).connect(g);
     // the deep body: the saturated saws and square (with their low overtones) through a gentle lowpass, below the
     // formants' highpass, centred; and a detuned unison pair, left and right, for width in the low mids
-    const low = filt('lowpass', 300, 0.9), bl = K.ac.createGain(); bl.gain.value = 1.3;
+    const low = filt('lowpass', 300, 0.9), bl = K.ac.createGain(); bl.gain.value = DEEP ? 1.9 : 1.3;
     (sh || pre).connect(low); low.connect(bl); bl.connect(g);
     const gu = zg(), uni = [-23, 23].map(d => { const u = osc('sawtooth', hz(m0), t, stop, d), ul = filt('lowpass', 300, 2); mg.connect(u.frequency); u.connect(ul); pan(ul, d < 0 ? -0.6 : 0.6).connect(gu); return [u, ul]; });
     const sub = osc('sine', hz(bassRoot(c)), t, stop), sg = zg();
@@ -94,9 +107,10 @@
     const [v0, v1] = o.vow.map(v => VOW[v]);
     for (const S of segs) {
       const f = hz(m0 + S.off), end = rt(S.at + S.dur), op = o.open * (S.open || 1), hi = 170 + 3400 * op;
-      for (const [p, ff] of [[saws[0].frequency, f], [saws[1].frequency, f], [sq.frequency, f / 2], [mod.frequency, f], [uni[0][0].frequency, f], [uni[1][0].frequency, f], [sub.frequency, hz(bassRoot(c) + (S.off === 7 ? 7 : 0))]]) {
+      for (const [p, ff] of [[saws[0].frequency, f], [saws[1].frequency, f], [sq.frequency, f / 2], [mod.frequency, f], [uni[0][0].frequency, f], [uni[1][0].frequency, f], [sub.frequency, hz(bassRoot(c) + (S.off === 7 || S.off === -12 ? S.off : 0))]]) {
         if (S.glide) { p.setValueAtTime(ff * 2, S.at); p.exponentialRampToValueAtTime(ff, S.at + Math.min(0.3, S.dur * 0.5)); }
         else p.setValueAtTime(ff, S.at);
+        if (S.kind === 'D') p.exponentialRampToValueAtTime(ff / 2, rt(end - 0.01));   // (the dive: down an octave by its end)
       }
       // the gate (the sub plays the segment through, smooth; the growl is chopped on z)
       const att = S.att || 0.006, rel = S.rel || 0.018;
@@ -108,8 +122,8 @@
         } else { P.setValueAtTime(0, S.at); P.linearRampToValueAtTime(v, S.at + att); P.linearRampToValueAtTime(v, end - rel); P.linearRampToValueAtTime(0, end); }
       }
       // the wobble: filter, both formants and the growl's FM depth, one cycle per wobble (k: where it is most open)
-      const k = S.kind === 'W' ? 0.8 : S.kind === 'H' ? 0.12 : S.kind === 'z' ? 0.05 : S.kind === 's' || S.kind === 'x' ? 0.35 : 0.45;
-      const sweeps = [[lp.frequency, 200 + 450 * op, hi, false], [low.frequency, 180, 180 + 380 * op, false],
+      const k = S.kind === 'W' ? 0.8 : S.kind === 'D' ? 0.2 : S.kind === 'H' ? 0.12 : S.kind === 'z' ? 0.05 : S.kind === 's' || S.kind === 'x' ? 0.35 : 0.45;
+      const sweeps = [[lp.frequency, 200 + 450 * op, hi, false], [low.frequency, DEEP ? 140 : 180, DEEP ? 160 + 600 * op : 180 + 380 * op, false],
         ...uni.map(([, ul]) => [ul.frequency, 200 + 300 * op, 300 + 1500 * op, false]), [f1.frequency, v0[0], v0[0] + (v1[0] - v0[0]) * op, false], [f2.frequency, v0[1], v0[1] + (v1[1] - v0[1]) * op, false], [mg.gain, 0, f * 1.1 * o.fm, true]];
       for (const [p, lo, top, lin] of sweeps) {
         const ramp = lin ? 'linearRampToValueAtTime' : 'exponentialRampToValueAtTime';
@@ -128,6 +142,7 @@
   function subHit(c, t, vel, len) {
     const f = hz(bassRoot(c)), o = osc('sine', f * 2, t, t + len + 0.2), g = zg();
     o.frequency.setValueAtTime(f * 2, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.14);
+    if (DEEP) o.frequency.exponentialRampToValueAtTime(f / 2, t + len * 0.8);   // (deep: on down to the floor, an octave under the root)
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.03); g.gain.linearRampToValueAtTime(vel * 0.85, t + len * 0.5); g.gain.linearRampToValueAtTime(0, t + len);
     o.connect(g); route(g, false, false);
   }
@@ -141,8 +156,8 @@
 
   let cur = null, buildBar = -1, spoolAt = 0, dropBar = -1;   // this bar's growl, the last build bar, the spool's first bar, this bar if it drops
 
-  music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8', 'nightmare'],
-    mood: 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
+  music.define({ name: V.name || 'home', title: V.title || 'Last Jump Home', bpm: 112, key: 'C', missions: V.missions || ['c8', 'nightmare'],
+    mood: (DEEP ? 'DEEP VARIANT (not in the game): octave-down wobbles, dives, more sub. ' : '') + 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
     lead: 'saw', ostInst: 'pluck', drums: 'dub',
     engineDrums: false,                                   // (the engine's rolls, fills, drop hits and spool percussion are off: the growl carries the rhythm, over a sparse kit of its own)
     parts: { tick: [0, 3], tines: [0, 3], pad: 1, wobble: 2, drums: 3, hats: 3, snare: 4, theme: 4, choir: 5, brass: 5, stabs: 6, strings: 6 },
@@ -214,11 +229,7 @@
         if (has('snare') && s === 8) { snare(t, 0.4); clap(t, 0.16); }
         if (has('hats')) { if (st >= 6) hat(t, s % 4 === 2 ? 0.07 : 0.03); else if (st >= 4 ? s % 2 === 0 : s % 4 === 2) hat(t, s % 4 === 2 ? 0.06 : 0.03); }
       },
-      fill(x) {                                          // no drum fill into the growl's stages: it fades in, stages just change on the bar line
-        if (x.r === -1) return x.to >= 2 ? 'skip' : undefined;
-        if (x.r !== 1) tom(x.t, x.big ? 0.5 : 0.36, 230 - x.r * 18);   // (into stage 1: the opening's own little tom fill, as it always was)
-        if (x.big) snare(x.t, 0.06 + x.r * 0.03);
-      },
+      fill(x) { if (x.r === -1) return 'skip'; },        // no drum fills at all (2026-10-17: not even the tom fill into stage 1): stages just change on the bar line
       build({ s, t, k }) {                                // the build: kicks on 1 and 3, snare 8ths tightening to 16ths into the silence (the growl climbs over it)
         if (s === 0 || s === 8) kick(t, 0.55);
         if (s >= 8 || s % 2 === 0) snare(t, 0.06 + 0.3 * k * k);
@@ -247,4 +258,5 @@
       },
     },
   });
-})();
+};
+music.homePiece();

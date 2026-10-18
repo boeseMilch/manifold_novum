@@ -2784,3 +2784,19 @@ model's expected kit is the same with and without the levels). So XP is gone:
   the multiplayer lobby no longer shows "lv N" (the server ignores an old client's `level`). Start over no
   longer says "level 1".
 - Saves: `xp` stays in the profile (kept and number-fixed as before, never increased), so no version bump.
+
+### Last Jump Home (deep): a variant to compare, music.html only (2026-10-17)
+
+The user: "the wobble bass could have way more in terms of really deep notes … add the new one as another song in
+music.html without actually putting it in". js/music/home.js is now `music.homePiece(V)` (called once with no
+options: Last Jump Home, call for call as before, the opening hash unchanged); js/music/homedeep.js calls it with
+`deep: true` as "Last Jump Home (deep)" (`homedeep`, no missions). Only music.html loads it (the game doesn't).
+The deep growl: octave-down wobbles (suffix `_`, the sub too, down to ~33 Hz in C), a half-bar dive `D` (pitch and
+sub fall an octave) closing every 4-bar phrase in stages 4-6, a louder sub (0.11 → 0.16), the body's highpass at
+90 Hz (was 150), the deep-body layer louder and sweeping lower, and the drop's sub hit falling on an octave under
+the root. Offline (music.html?check): climax RMS -18.8 dB (original -21.6), peaks -5.4 dB (original -6.1).
+tests/music.js's "own opening / own build-up" checks skip pieces without missions (variants).
+- Also (same day): music.html's spool is 2 bars of the chosen piece (was the last 15 s, ~5-7 bars): the player
+  counts the spool's bars and jumps after the second, then the cadence and final hit (in the game the spool runs as
+  long as the jump is delayed, as before). Last Jump Home (both versions) plays no drum fill at all now: the tom
+  fill into stage 1 is gone (the user: off topic for the dubstep piece); tests/music.js's opening hash re-pinned.

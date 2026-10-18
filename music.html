@@ -61,6 +61,7 @@
 <script src="js/music/bloom.js"></script>
 <script src="js/music/hull.js"></script>
 <script src="js/music/home.js"></script>
+<script src="js/music/homedeep.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   const NAMES = { intro: 'Intro run', rush: 'Rush hour', c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', salvage: 'Black box', c4: 'Ch. 4', pirates: 'Pirate cove', c5: 'Ch. 5', rescue: 'Stranded engineer',
@@ -75,10 +76,13 @@
     b.onclick = () => { chosen = s.name; music.setSong(s.name); restart(); mark(); };
     list.appendChild(b);
   }
-  const mark = () => { list.querySelectorAll('.song').forEach(b => b.classList.toggle('on', b.dataset.name === chosen)); drawMarks(); };
+  // The spool: SPOOL_BARS bars of the chosen piece before the jump (in the game it runs as long as the jump is delayed).
+  const SPOOL_BARS = 2;
+  let SP = 15, spoolFrom = null;                         // (SP: the spool's length in seconds, set per piece in mark())
+  const mark = () => { SP = SPOOL_BARS * music.plan(60).barDur; list.querySelectorAll('.song').forEach(b => b.classList.toggle('on', b.dataset.name === chosen)); drawMarks(); };
   // The arc of the chosen piece over the mission, marked on the bar: drops, the breakdown, the climax, the spool.
   function drawMarks() {
-    const len = +$('len').value, P = music.plan(len - 15), box = $('marks'); box.innerHTML = '';
+    const len = +$('len').value, P = music.plan(len - SP), box = $('marks'); box.innerHTML = '';
     const add = (kind, x, w) => { const m = document.createElement('i'); m.className = 'mk ' + kind; m.style.left = `${x / len * 100}%`; if (w) m.style.width = `${w / len * 100}%`; box.appendChild(m); };
     let bd = false, cl = false;
     for (const B of P.bars) {
@@ -86,15 +90,16 @@
       if (B.breakdown && !bd) { bd = true; add('breakdown', B.t); }
       if (B.stage === 6 && !cl) { cl = true; add('climax', B.t); }
     }
-    add('spoolz', len - 15, 15);
+    add('spoolz', len - SP, SP);
   }
-  function restart() { t = 0; jumped = false; music.setJump(false); music.rearm(); music.reset(); }
+  function restart() { t = 0; jumped = false; spoolFrom = null; music.setJump(false); music.rearm(); music.reset(); }
   function seekTo(x) {                                     // put the arrangement where it would be at second x, from the next bar line
     const len = +$('len').value;
     jumped = false; music.setJump(false); music.rearm();
-    t = x >= len - 15 ? x : music.seek(x, len - 15);       // (in the spool: the drive takes over on the next bar)
+    spoolFrom = null;
+    t = x >= len - SP ? x : music.seek(x, len - SP);       // (in the spool: the drive takes over on the next bar)
   }
-  mark(); music.setSong(chosen);
+  music.setSong(chosen); mark();
   const prog = $('prog'); let dragging = false;
   const at = (e) => clamp((e.clientX - prog.getBoundingClientRect().left) / prog.clientWidth, 0, 1);
   prog.onpointerdown = (e) => { dragging = true; prog.setPointerCapture(e.pointerId); $('cursor').hidden = false; $('cursor').style.left = `${at(e) * 100}%`; };
@@ -106,18 +111,19 @@
     if (playing && jumped && music.ended) restart();
   };
   $('restart').onclick = restart;
-  $('spool').onclick = () => seekTo(+$('len').value - 15);
+  $('spool').onclick = () => seekTo(+$('len').value - SP);
   $('jump').onclick = () => { if (!jumped) { jumped = true; music.setJump(false); music.jumped(); } };   // the ending, now
   $('threat').onchange = () => music.setThreat($('threat').checked);
   function frame(now) {
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     const len = +$('len').value;
     if (playing && !jumped) t += dt * +$('speed').value;
-    const k = t / len, spool = k >= 1 - 15 / len && k < 1;      // (the last 15 s: the jump drive spools)
+    const k = t / len, spool = t >= len - SP;                  // (the last SPOOL_BARS bars: the jump drive spools)
     if ($('manual').checked) music.setIntensity($('k').value / 100);
-    else music.setIntensity(Math.pow(clamp(t / (len - 15), 0, 1), 1.3));   // (as in the game: the climax lands where the spool begins)
+    else music.setIntensity(Math.pow(clamp(t / (len - SP), 0, 1), 1.3));   // (as in the game: the climax lands where the spool begins)
     music.setJump(playing && spool && !jumped);
-    if (playing && k >= 1 && !jumped) { jumped = true; music.jumped(); }
+    if (spool && spoolFrom === null && music.section === 'spool') spoolFrom = music.bar.b;   // (the spool starts on a bar line:
+    if (playing && !jumped && spoolFrom !== null && music.bar.b >= spoolFrom + SPOOL_BARS) { jumped = true; music.jumped(); }   // jump after SPOOL_BARS full bars of it)
     $('prog').firstElementChild.style.width = `${clamp(k, 0, 1) * 100}%`;
     $('lvl').firstElementChild.style.width = `${music.level * 100}%`;
     const s = Math.floor(Math.min(t, len)); $('clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} / ${len / 60}:00`;
