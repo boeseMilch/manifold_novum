@@ -2,7 +2,7 @@
 // treats you fills it at 1/self time + 1/their time (each with their own gear). Letting go briefly keeps
 // it, everyone letting go starts it over, and every browser sees the same bar. Run: node tests/treat.js
 const { loadGame } = require('./harness');
-const NAMES = ['crew', 'hurtCrew', 'netServer', 'netSerialize', 'netApply', 'simTick', 'mission', 'me', 'workProgress', 'SELF_TREAT', 'TREAT_TIME'];
+const NAMES = ['crew', 'hurtCrew', 'netServer', 'netSerialize', 'netApply', 'simTick', 'mission', 'me', 'workProgress', 'SELF_TREAT', 'TREAT_TIME', 'SOLO_TREAT'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -88,6 +88,18 @@ for (const [what, mouse] of [['E, mouse far away', 'far'], ['E, mouse held down 
   const { G, A, B } = setup(); let t = 0;
   while (A.health === 'down' && t < 5) { holdKeys(G, 2, ['KeyE'], { wx: B.x + 6, wy: B.y - 5 }); G.simTick(DT); t += DT; }
   check(A.health === 'hurt' && near(t, G.TREAT_TIME), `E next to a downed crewmate treats them (${t.toFixed(2)} s)`); }
+
+// OUT (a crawl only while nobody else stands): a crawl already going isn't lost when a crewmate gets up somewhere
+// else (2026-10-17 playtest), and it adds up with their treatment once they come over
+{ const { G, A, B } = setup(); G.hurtCrew(A); G.hurtCrew(B); G.hurtCrew(B); B.x = A.x + 9;   // A out, B down far off
+  for (let i = 0; i < 60 * 4; i++) { holdKeys(G, 1, ['KeyE'], { wx: A.x, wy: A.y - 5 }); holdKeys(G, 2, ['KeyE'], { wx: B.x, wy: B.y - 5 }); G.simTick(DT); }
+  const before = A.heal; let t = 0;
+  while (B.health === 'down' && t < 12) { holdKeys(G, 1, ['KeyE'], { wx: A.x, wy: A.y - 5 }); holdKeys(G, 2, ['KeyE'], { wx: B.x, wy: B.y - 5 }); G.simTick(DT); t += DT; }
+  for (let i = 0; i < 60; i++) { holdKeys(G, 1, ['KeyE'], { wx: A.x, wy: A.y - 5 }); holdKeys(G, 2, [], { wx: B.x, wy: B.y - 5 }); G.simTick(DT); }
+  check(A.health === 'out' && before > 0.15 && A.heal > before, `out and crawling while your crewmate gets up elsewhere: the crawl goes on (${before?.toFixed(2)} → ${A.heal?.toFixed(2)})`);
+  B.x = A.x + 0.8; B.y = A.y; t = 0; const left = 1 - A.heal;
+  while (A.health === 'out' && t < 10) { holdKeys(G, 1, ['KeyE'], { wx: A.x, wy: A.y - 5 }); holdOn(G, 2, A); G.simTick(DT); t += DT; }
+  check(A.health === 'hurt' && near(t, left / (1 / G.SOLO_TREAT + 1 / G.TREAT_TIME), 0.15), `…and their treatment adds to the same bar (${t.toFixed(2)} s for the last ${(left * 100).toFixed(0)}%)`); }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');
 process.exit(failed ? 1 : 0);

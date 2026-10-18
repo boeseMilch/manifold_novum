@@ -505,7 +505,9 @@ function treatInfo(who) {
   if (!who || standing(who) && who.health !== 'hurt') return null;
   if (who === player) {
     if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 6 : SELF_TREAT, label: 'get up' };
-    if (who.health === 'out' && crew.every(c => c === who || !standing(c))) return { time: SOLO_TREAT, label: 'crawl back up' };
+    // out: only while nobody else is standing (someone has to treat you) — or to keep up a crawl, or join a
+    // treatment, that's already going (who.heal): it adds up with a crewmate's and isn't lost when they get up
+    if (who.health === 'out' && (who.heal != null || crew.every(c => c === who || !standing(c)))) return { time: SOLO_TREAT, label: 'crawl back up' };
     return null;
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
@@ -525,7 +527,7 @@ function updateTreat(dt, target, holding, click = mouse.click) {   // (click: a 
   let add = dt;
   if (click && player.treat.t > 0.1) {               // a click (or E pressed again) right on the heartbeat speeds it up
     const off = Math.abs(((player.treat.t + BEAT / 2) % BEAT) - BEAT / 2);
-    if (off < 0.15) { player.treat.t += 0.5; add += 0.5; player.treat.beat = 1; sfx.poi(); }
+    if (off < 0.15) { player.treat.t += 0.5; add += 0.5; player.treat.beat = 1; sfxFor(player, 'poi'); }
   }
   player.treat.up = 0; player.treat.beat = Math.max(0, (player.treat.beat || 0) - dt * 3);
   player.treat.t += dt;

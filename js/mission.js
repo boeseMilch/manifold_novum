@@ -481,12 +481,12 @@ function endMission(won, reason, survived = won) {
 // Radar: reveals everything coming in the next RADAR_RANGE seconds, for the whole crew.
 function radarScan() {
   mission.scanT = mission.t; mission.lastScan = mission.t;
-  if (!evs.antenna) { sfx.empty(); combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return; }
-  if (enc.storm) { sfx.empty(); combatBanner('Radar: nothing but static — ion storm'); return; }
+  if (!evs.antenna) { sfxFor(player, 'empty'); combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return; }
+  if (enc.storm) { sfxFor(player, 'empty'); combatBanner('Radar: nothing but static — ion storm'); return; }
   for (const e of combat.enemies) if (e.D.stealth) e.reveal = 3;           // the ping lights up cloaked ships for a moment
   let n = 0;
   for (const ev of mission.events) if (ev.radar && !ev.done && ev.t - mission.t <= radarReach(ev) && !mission.revealed.has(ev.id)) { mission.revealed.add(ev.id); n++; }
-  sfx.poi();
+  sfxFor(player, 'poi');                              // (only the one at the radar hears it: the banner tells everyone)
   combatBanner(n ? `Radar: ${n} contact${n > 1 ? 's' : ''} in the next ${RADAR_RANGE} s` : `Radar: nothing in the next ${RADAR_RANGE} s`);
 }
 

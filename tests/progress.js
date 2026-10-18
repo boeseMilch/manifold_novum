@@ -27,6 +27,10 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(Object.entries(old).every(([id, m]) => G.MISSIONS[id].rewards.money === m * 0.4) && G.MISSIONS.c4.rewards.perPirate === 20 && G.MISSIONS.c2.rewards.rep === 1 && G.MISSIONS.c8.rewards.rep === 5,
     'chapters 2-8 pay 40% of the old money (bounty too), reputation unchanged');
   check(G.computeRewards('rush', { jumped: true, objective: false, pirates: 0 }, true, false).money === 16, 'a skirmish pays $16 (was $40)');
+  const clean = (damage, maxDamage = 5) => G.computeRewards('c1', { ...won, damage, maxDamage }, true, false);
+  check(clean(0).money === 168 + 25 && clean(0).clean === 25 && clean(2).clean === 15 && clean(4).clean === 5 && clean(5).clean === 0 && clean(5, 6).clean === 4 && clean(0).rep === 1,
+    `up to $25 for bringing the ship back in one piece: 0/5 damage $${clean(0).clean}, 2/5 $${clean(2).clean}, 4/5 $${clean(4).clean}, 5/5 $${clean(5).clean} (reinforced 5/6: $${clean(5, 6).clean})`);
+  check(G.computeRewards('c1', { jumped: false, objective: false, pirates: 0, damage: 0, maxDamage: 5 }, false, false).money === 0, '…and nothing if the ship didn\'t jump');
   const lost = G.computeRewards('c1', { jumped: false, objective: false, pirates: 1 }, false, false);
   check(lost.money === 0 && lost.rep === 0, 'the ship didn\'t make it: nothing');
   const half = G.computeRewards('c3', { jumped: true, objective: false, pirates: 0 }, true, false);

@@ -139,12 +139,12 @@ Object.assign(MISSIONS, {
     name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 120, rep: 3 },
     sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
     // set by hand: the whole mission is the pirate base. A patrol interceptor (the opener), then we dock (once it's
-    // gone: EVENT_RUNNERS.brig); the jump is due 240 s later (finaleLead), sooner once she's aboard and we've
+    // gone: EVENT_RUNNERS.brig); the jump is due 360 s later (finaleLead), sooner once she's aboard and we've
     // detached (js/dock.js ESCAPE_SPOOL). A bigger crew gets more guards in the base, not more encounters
     // (stationGuards); easy / very easy take guards out (and give luck: nothing here to drop).
     crew: {events: [2, 2, 2, 2, 2, 2, 2, 2], cells: [3, 3, 4, 4, 5, 5, 6, 6], overcharge: [true, true, true, true, true, true, true, true]},
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
-    length: 300, finaleLead: 240,
+    length: 420, finaleLead: 360,             // 7 min (2026-10-17 playtest: "mission time is probably good at 7min"; was 300 / 240)
     objective: { kind: 'rescue', npc: 'Dr. Varga' }, rules: { breach: true, surge: true, gravity: true },
     blurb: 'Storm the Red Comet\'s base, room by room, and get Dr. Varga out.',
     briefing: 'We found the Red Comet\'s hideout: a rusty base out in the Cove. Dr. Varga is locked up somewhere inside — hurt, by the sound of her distress ping.\n\nDeal with their patrol, then we dock. Grab a weapon first: they\'ll rush out the moment the tube opens (and drop their guns when they fall). Fight through the base room by room: a busted security terminal (repair it, then hack it) and a door code somebody surely wrote down.\n\nPatch her up (hold click or E on her) and she runs for our ship on her own. Cover her: if she\'s hit, she goes down again. The engine stays off while we\'re docked or anyone is still over there: once she\'s aboard, detach at our airlock and jump.',
@@ -291,6 +291,7 @@ function missionResults(jumped) {
   const obj = objectiveStatus();
   return {
     jumped, objective: !!obj.done && !!mission.objective, pirates: dk.defeated, kills: mission.kills || 0,
+    damage: SYSTEMS.filter(s => s.broken).length, maxDamage: MAX_DAMAGE,   // (the ship's state at the jump: the clean-ship bonus)
     crew: crew.map(c => ({ id: c.id, survived: jumped && (c.mode === 'gun' || c.mode === 'inside' && !inDock(c.x, c.y)) && standing(c) })),
   };
 }
@@ -299,12 +300,16 @@ function missionResults(jumped) {
 const missionSuccess = (id, results) => !!results?.jumped && (!!results.objective || !MISSIONS[id]?.objective);
 // Rewards for one player from a mission's results. Jumped out = the crew gets paid (base + per pirate),
 // objective or not; reputation only for a success. (No XP since 2026-10-17: `survived` is unused.)
+// Plus up to CLEAN_BONUS for bringing the ship back in one piece: all of it with nothing broken at the jump,
+// nothing at MAX_DAMAGE broken parts (5/5), in between in proportion (2026-10-17 playtest).
+const CLEAN_BONUS = 25;
+const cleanBonus = (results) => (results.maxDamage ? Math.max(0, Math.round(CLEAN_BONUS * (1 - (results.damage || 0) / results.maxDamage))) : 0);
 function computeRewards(id, results, survived, firstClear) {
   const M = MISSIONS[id] || {}, R = M.rewards || { money: 16, rep: 0 };   // (money: 2026-10-16 ×0.4 everywhere but chapter 1, so you have to choose)
-  if (!results.jumped) return { money: 0, rep: 0 };
-  const money = (R.money || 0) + (R.perPirate || 0) * (results.pirates || 0);
+  if (!results.jumped) return { money: 0, rep: 0, clean: 0 };
+  const clean = cleanBonus(results), money = (R.money || 0) + (R.perPirate || 0) * (results.pirates || 0) + clean;
   const rep = missionSuccess(id, results) ? (R.rep || 0) + (firstClear ? 1 : 0) : 0;
-  return { money, rep };
+  return { money, rep, clean };
 }
 
 // The inserter: an arm from the fuel crate to the reactor's slot (and a handle to scooch the cells).
@@ -401,7 +406,7 @@ function creditMission() {
   profile.lastRun = mission.runId;
   saveProfile(profile);
   const next = CAMPAIGN[CAMPAIGN.indexOf(mission.id) + 1], nextName = next && CAMPAIGN.includes(mission.id) ? MISSIONS[next].name : null;
-  lastReward = { ...r, guestOf: guestOf && ok ? guestOf : null, profession: first && mission.id === 'c1' && !profile.profession, unlocked: first ? nextName : null,
+  lastReward = { ...r, damage: o.results.damage || 0, maxDamage: o.results.maxDamage || MAX_DAMAGE, guestOf: guestOf && ok ? guestOf : null, profession: first && mission.id === 'c1' && !profile.profession, unlocked: first ? nextName : null,
     objFailed: !!o.results.jumped && !ok, locked: !ok && !profile.done[mission.id] && nextName && !unlockedMissions().has(next) ? nextName : null };
 }
 // The rewards block on the end screen.
@@ -411,6 +416,7 @@ function drawRewards(cx, y) {
   ctx.textAlign = 'center'; ctx.font = '700 16px system-ui, sans-serif'; ctx.fillStyle = '#ffe08a';
   ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : r.guestOf ? `+$${r.money}  ·  the reputation goes to ${r.guestOf} (it's their ship)` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
   let dy = 26;
+  if (r.money) { ctx.fillStyle = '#c8cfdc'; ctx.font = '600 13px system-ui, sans-serif'; ctx.fillText(r.clean ? `incl. $${r.clean} for bringing the ship back in one piece (${r.damage}/${r.maxDamage} damage)` : `no bonus for the ship: ${r.damage}/${r.maxDamage} damage`, cx, y + dy - 4); dy += 18; }
   if (r.profession) { ctx.fillStyle = '#7af0b0'; ctx.font = '800 18px system-ui, sans-serif'; ctx.fillText('Professions are open: pick one in the locker.', cx, y + dy); dy += 24; }
   if (r.unlocked) { ctx.fillStyle = '#9cd8ff'; ctx.font = '600 14px system-ui, sans-serif'; ctx.fillText(`Unlocked: ${r.unlocked}`, cx, y + dy); }
   else if (r.objFailed) { ctx.fillStyle = '#ffb0a0'; ctx.font = '600 14px system-ui, sans-serif'; ctx.fillText(r.locked ? `Not completed: ${r.locked} stays locked until you complete the objective.` : 'Objective failed: this run doesn\'t count as completed.', cx, y + dy); }

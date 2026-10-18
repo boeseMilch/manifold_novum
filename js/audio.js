@@ -158,3 +158,6 @@ const sfx = (() => {
     },
   };
 })();
+// A sound only crew member c hears (their own action at a console, e.g. the radar's ping): solo it just
+// plays; on the server js/net.js netCaptureSfx sets sfx.forCrew, which tags it for c's browser only.
+function sfxFor(c, k, ...a) { if (sfx.forCrew) sfx.forCrew(c?.id, k, a); else sfx[k]?.(...a); }

@@ -124,11 +124,13 @@ function netCaptureSfx() {
     if (k === 'charge') sfx[k] = (dur) => { const id = ++chargeId; events.push(['charge', [dur, id]]); return () => events.push(['chargeStop', [id]]); };
     else sfx[k] = (...a) => { events.push([k, a]); };
   }
+  sfx.forCrew = (id, k, a) => events.push([k, a, id]);   // (sfxFor: only that crew member's browser plays it)
   return events;
 }
 const chargeStops = new Map();
 function netPlaySfx(events) {
-  for (const [k, a] of events) {
+  for (const [k, a, to] of events) {
+    if (to !== undefined && to !== me?.id) continue;  // (someone else's own sound: sfxFor)
     if (k === 'charge') chargeStops.set(a[1], sfx.charge(a[0]));
     else if (k === 'chargeStop') { chargeStops.get(a[0])?.(); chargeStops.delete(a[0]); }
     else sfx[k]?.(...a);

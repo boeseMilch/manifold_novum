@@ -3002,3 +3002,18 @@ has a frame for every step the code uses.
 Then the handle was made to turn clockwise only: lever.py renders a full turn (36 frames, 10° apart; RIGHT → LEFT
 carries on round the bottom), and `animateLever` keeps the angle within one turn past LEFT and always aims at the
 next target in the turning direction. tests/systems.js checks it never steps back or jumps.
+
+## Playtest 2026-10-17 (2)
+
+- **OUT and crawling:** an OUT crew member may crawl back up only while nobody else stands; when a crewmate got up
+  elsewhere, the crawl was cancelled and its progress lost. Now a crawl (or a treatment) already going on you keeps
+  going (`treatInfo`: `who.heal != null`), and a crewmate treating you adds to the same bar. tests/treat.js.
+- **Sounds only you hear:** `sfxFor(c, kind)` (js/audio.js): solo it plays; on the server `sfx.forCrew` tags the
+  event with c's id and only that browser plays it (js/net.js netPlaySfx). The radar's ping/garble and the
+  heartbeat click while treating use it. tests/sfxfor.js.
+- **Clean-ship bonus:** up to $25 (`CLEAN_BONUS`) for bringing the ship back in one piece: $25 × (1 − broken parts
+  at the jump / MAX_DAMAGE), so 0/5 = $25, 5/5 = $0. `missionResults` records `damage` / `maxDamage`; the end screen
+  shows it. tests/progress.js.
+- **Chapter 5 (Rescue Dr. Varga) is 7 minutes:** `length 420, finaleLead 360` (the jump is due 360 s after the
+  docking at 60 s instead of 240). The 7 minutes asked for in the first playtest were meant for this mission (the
+  captain's), not chapter 4; chapter 4 keeps its 420 s for now.
