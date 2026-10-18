@@ -96,6 +96,7 @@ function steamPlume(g, ox, oy, s, t, P, k0 = 1) {
 function steamWisps(kind, x, y, z, t, k = 1, sortY = y + 0.05) {
   const P = STEAM_KINDS[kind];
   if (GFX.on) {
+    if (!GFX.onScreen(x, y, z, (P.w + P.h) * k / T)) return;      // off screen: no redraw, no upload
     const S = 2, W = P.w * k * S, H = P.h * k * S, D = GFX.canvasSprite('steam_' + kind, W, H, { ppu: T * S, ox: W / 2, oy: H - 2 * S });
     if (D) {
       D.ctx.setTransform(1, 0, 0, 1, 0, 0); D.ctx.clearRect(0, 0, D.w, D.h);
@@ -216,7 +217,7 @@ function mapTable(x, y, t) {
   const r = T * 1.1;
   const off = typeof CAPACITORS !== 'undefined' && (CAPACITORS[1].charge <= 0 || broken(CAPACITORS[1]));
   if (spr(off ? 'systems/maptable_off' : 'systems/maptable', 0, x / T, y / T, 0, { emissive: off ? 0 : 0.8, pick: [1.1, 1.3] })) {
-    const D = !off && GFX.canvasSprite('map_sweep', 112, 112 * GFX.SIN, { ppu: 96 });
+    const D = !off && GFX.onScreen(x / T, y / T, TABLE_Z, 2) && GFX.canvasSprite('map_sweep', 112, 112 * GFX.SIN, { ppu: 96 });   // (off screen: no redraw, no upload)
     if (D) {                                         // the radar sweep, lying on the table's screen (a flat sprite at its height)
       const g = D.ctx, a = t * 0.6, R = 0.72 * 1.1 * 48;
       g.setTransform(1, 0, 0, GFX.SIN, D.w / 2, D.h / 2); g.clearRect(-D.w, -D.h / GFX.SIN, 2 * D.w, 2 * D.h / GFX.SIN);

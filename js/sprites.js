@@ -87,9 +87,10 @@ function buildWalls() {
   return { hRuns, vRuns, J };
 }
 
-// Tiles a sprite along x from x0 to x1 (period `per`, origin at each tile's left end), clipped at both ends.
-function tileX(name, x0, x1, y, per, o) {
-  for (let x = x0; x < x1 - 1e-4; x += per) GFX.sprite(name, 0, x, y, 0, { layer: 'wall', ...o, clip: [x0, null, x1, null] });
+// Tiles a sprite along x from x0 to x1 (period `per`, origin at each tile's left end), clipped at both ends:
+// adds [name, x, y, options] to `out`.
+function tileX(out, name, x0, x1, y, per, o) {
+  for (let x = x0; x < x1 - 1e-4; x += per) out.push([name, x, y, { layer: 'wall', ...o, clip: [x0, null, x1, null] }]);
 }
 // The pieces set into a wall run (junction squares, the step down to the low height, door and hatch frames
 // with their panels) overlap the run's wall tiles at the same height: with equal depths the depth test picked
@@ -97,33 +98,47 @@ function tileX(name, x0, x1, y, per, o) {
 // under the hull's corner posts, the pipes under the outer airlocks, blinking as you moved past). PIECE_BIAS
 // (depth units, a cm or two: well under the gap to anything in front of a wall): the piece always wins.
 const PIECE_BIAS = 0.02;
+// The walls don't change: their pieces ([name, x, y, sprite options], in drawing order) are worked out once.
+let wallPieces = null;
 function drawWallSprites() {
   if (!WALLS) WALLS = buildWalls();
+  if (!wallPieces) wallPieces = buildWallPieces();
+  for (const [name, x, y, o] of wallPieces) GFX.sprite(name, 0, x, y, 0, o);
+}
+function buildWallPieces() {
+  const out = [];
   const hInfo = GFX.info('ship/wall_h'), hLowInfo = GFX.info('ship/wall_h_low'), vInfo = GFX.info('ship/wall_v');
   const PV = (vInfo && vInfo.pitch) || 1.00625;
   for (const h of WALLS.hRuns) {
     const back = h.kind === 'back', y = back ? h.y : h.y + WALL_T, name = back ? 'ship/wall_h' : 'ship/wall_h_low';
     const per = ((back ? hInfo : hLowInfo)?.tile || [1])[0] || 1;
-    tileX(name, h.x0, h.x1, y, per, { layer: 'wall', sortY: back ? h.y - 0.3 : h.y + 0.3 });
+    tileX(out, name, h.x0, h.x1, y, per, { layer: 'wall', sortY: back ? h.y - 0.3 : h.y + 0.3 });
   }
   for (const v of WALLS.vRuns) {
     const step = clamp(v.step, v.y0, v.y1);
     // full height north of the step, low south of it; tiles are the top strip, clipped at the ends
     for (const [name, a, b, hz] of [['ship/wall_v', v.y0, step, 1.6], ['ship/wall_v_low', step, v.y1, H_LOW]]) {
-      for (let y = a; y < b - 1e-4; y += PV) GFX.sprite(name, 0, v.x, y, 0, { layer: 'wall', clip: [null, y, null, Math.min(y + PV, b), hz], sortY: y + PV / 2 });
+      for (let y = a; y < b - 1e-4; y += PV) out.push([name, v.x, y, { layer: 'wall', clip: [null, y, null, Math.min(y + PV, b), hz], sortY: y + PV / 2 }]);
     }
-    if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) GFX.sprite('interior/wall_v_step', 0, v.x, v.step, 0, { layer: 'wall', sortY: v.step + 0.01, depthBias: PIECE_BIAS });
+    if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) out.push(['interior/wall_v_step', v.x, v.step, { layer: 'wall', sortY: v.step + 0.01, depthBias: PIECE_BIAS }]);
   }
   // (the junction square is also covered by the wall tiles running through it: PIECE_BIAS)
   for (const j of WALLS.J) {
     const name = `interior/wall_j_${j.low ? 'low_' : ''}${j.arms}`;
-    if (j.arms && GFX.has(name)) GFX.sprite(name, 0, j.x, j.y, 0, { layer: 'wall', sortY: j.y - 0.3 + 0.002, depthBias: PIECE_BIAS });
+    if (j.arms && GFX.has(name)) out.push([name, j.x, j.y, { layer: 'wall', sortY: j.y - 0.3 + 0.002, depthBias: PIECE_BIAS }]);
   }
+  return out;
 }
 
 // The spine between the decks (interior/spine_a/b, 2 units per tile, origin at y = SPINE_Y1), with
 // the deck airlocks cut out (their sprites bring the spine ends next to the shaft); the deck stencils on top.
+let spinePieces = null;                               // (worked out once, like the walls')
 function drawSpineSprites() {
+  if (!spinePieces) spinePieces = buildSpinePieces();
+  for (const [name, x, y, o] of spinePieces) GFX.sprite(name, 0, x, y, 0, o);
+}
+function buildSpinePieces() {
+  const out = [];
   const gaps = DECK_LOCKS.map(L => [L.x - 0.6, L.x + L.w + 0.6]).sort((a, b) => a[0] - b[0]);
   let x = 0;
   const segs = [];
@@ -132,15 +147,16 @@ function drawSpineSprites() {
   for (const [a, b] of segs) {
     for (let t = Math.floor(a / 2) * 2; t < b - 1e-4; t += 2) {
       const name = hash2(t, 7) < 0.5 ? 'interior/spine_a' : 'interior/spine_b';
-      GFX.sprite(name, 0, t, SPINE_Y1, 0, { layer: 'wall', clip: [Math.max(a, t), null, Math.min(b, t + 2), null], sortY: SPINE_Y1 - 0.3 });
+      out.push([name, t, SPINE_Y1, { layer: 'wall', clip: [Math.max(a, t), null, Math.min(b, t + 2), null], sortY: SPINE_Y1 - 0.3 }]);
     }
     // one DECK 2 stencil on the top per segment (interior/spine_label), mid-segment and clear of the wall
     // lamps and the toilet sign below its front edge (never cut by an airlock gap)
     if (b - a < 3) continue;
     const busy = [...WALL_LAMPS.filter(([, wy]) => wy === SPINE_Y1).map(([lx]) => [lx, 0.8]), [12.45, 1.5]];
     const mid = (a + b) / 2, lx = [0, -1, 1, -2, 2, -3, 3].map(d => mid + d).find(x => x > a + 0.8 && x < b - 0.8 && busy.every(([bx, r]) => Math.abs(x - bx) >= r));
-    if (lx != null) GFX.sprite('interior/spine_label', 0, lx, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.3 + 0.001, depthBias: 0.02 });
+    if (lx != null) out.push(['interior/spine_label', lx, SPINE_Y1, { layer: 'wall', sortY: SPINE_Y1 - 0.3 + 0.001, depthBias: 0.02 }]);
   }
+  return out;
 }
 
 // Deck airlocks: the shaft (base: lamps and beacons by state) and its two doors on top.
@@ -210,21 +226,30 @@ function floorWear(base, x, y) {
   return Math.min(w, 2.6);
 }
 const floorCache = new Map();
+// Each floor rect's plates, worked out once (the rects don't change): [name, tx, ty, sprite options] each.
+function floorTiles(r) {
+  let tiles = floorCache.get(r);
+  if (tiles) return tiles;
+  const small = Math.min(r.w, r.h) < 3, zone = zoneAtX(r.x + 0.01).name;
+  const room = ROOMS.find(R => R.rects.includes(r)), base = room ? FLOOR_ROOM_WEAR[room.id] || 1 : 1.5;
+  floorCache.set(r, tiles = []);
+  for (let ty = Math.floor(r.y / 2) * 2; ty < r.y + r.h - 1e-4; ty += 2) for (let tx = Math.floor(r.x / 2) * 2; tx < r.x + r.w - 1e-4; tx += 2) {
+    const h = hash2(tx, ty);
+    const name = small ? 'interior/floor_tread' : h < 0.08 ? (h < 0.04 ? 'ship/floor' : 'ship/floor_b') : h < 0.54 ? `interior/floor_${zone}_a` : `interior/floor_${zone}_b`;
+    const floor = [FLOOR_LAYOUT[name] || (name.endsWith('_b') ? 2 : 1), floorWear(base, tx, ty), floorWear(base, tx + 2, ty), floorWear(base, tx, ty + 2), floorWear(base, tx + 2, ty + 2)];
+    tiles.push([name, tx, ty, { layer: 'ground', floor, clip: [Math.max(r.x, tx), Math.max(r.y, ty), Math.min(r.x + r.w, tx + 2), Math.min(r.y + r.h, ty + 2)] }]);
+  }
+  return tiles;
+}
 function drawFloorSprites() {
   if (!GFX.ready('interior/floor_white_a')) return false;
-  const rects = [...ROOM_RECTS, ...DOORWAYS];
-  for (const r of rects) {
-    const small = Math.min(r.w, r.h) < 3, zone = zoneAtX(r.x + 0.01).name;
-    let base = floorCache.get(r);
-    if (base == null) { const room = ROOMS.find(R => R.rects.includes(r)); base = room ? FLOOR_ROOM_WEAR[room.id] || 1 : 1.5; floorCache.set(r, base); }
-    for (let ty = Math.floor(r.y / 2) * 2; ty < r.y + r.h - 1e-4; ty += 2) for (let tx = Math.floor(r.x / 2) * 2; tx < r.x + r.w - 1e-4; tx += 2) {
-      const h = hash2(tx, ty);
-      const name = small ? 'interior/floor_tread' : h < 0.08 ? (h < 0.04 ? 'ship/floor' : 'ship/floor_b') : h < 0.54 ? `interior/floor_${zone}_a` : `interior/floor_${zone}_b`;
-      const key = base + ':' + tx + ':' + ty;
-      let floor = floorCache.get(key);
-      if (!floor) floorCache.set(key, floor = [FLOOR_LAYOUT[name] || (name.endsWith('_b') ? 2 : 1), floorWear(base, tx, ty), floorWear(base, tx + 2, ty), floorWear(base, tx, ty + 2), floorWear(base, tx + 2, ty + 2)]);
-      if (floor.length === 5 && GFX.pathScratches && typeof walkFieldPacked === 'function') floor.push(walkFieldPacked(tx, ty), walkFieldPacked(tx + 1, ty), walkFieldPacked(tx, ty + 1), walkFieldPacked(tx + 1, ty + 1));   // + where the crew walk (js/walkfield.js)
-      GFX.sprite(name, 0, tx, ty, 0, { layer: 'ground', floor, clip: [Math.max(r.x, tx), Math.max(r.y, ty), Math.min(r.x + r.w, tx + 2), Math.min(r.y + r.h, ty + 2)] });
+  const walk = GFX.pathScratches && typeof walkFieldPacked === 'function';
+  for (const rs of [ROOM_RECTS, DOORWAYS]) for (const r of rs) {
+    if (!GFX.onScreen(r.x + r.w / 2, r.y + r.h / 2, 0, Math.hypot(r.w, r.h) / 2 + 3)) continue;   // (the whole rect off screen)
+    for (const [name, tx, ty, o] of floorTiles(r)) {
+      const floor = o.floor;
+      if (floor.length === 5 && walk) floor.push(walkFieldPacked(tx, ty), walkFieldPacked(tx + 1, ty), walkFieldPacked(tx, ty + 1), walkFieldPacked(tx + 1, ty + 1));   // + where the crew walk (js/walkfield.js)
+      GFX.sprite(name, 0, tx, ty, 0, o);
     }
   }
   return true;

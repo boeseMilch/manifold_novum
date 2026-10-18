@@ -12,7 +12,7 @@
 //               the wall, and Dr. Varga in the brig. See "The pirate base" below.
 // Everything in `dk` is plain data.
 
-const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0 };   // ships: pirate raiders destroyed; bodies: fallen pirates { x, y, face, t } (purely visual); ore: samples stowed aboard
+const dk = { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0, helmCore: false };   // ships: pirate raiders destroyed; bodies: fallen pirates { x, y, face, t } (purely visual); ore: samples stowed aboard; helmCore: a nav core installed in our helm (chapter 4)
 const DOCK_TIME = 40, DETACH_TIME = 15, PIRATE_HP = 3, PIRATE_SPEED = 2.3, PIRATE_RANGE = 9;
 // Pirates stop and aim: a faint laser sight tracks you right up to the shot — after PIRATE_AIM s a very fast shot
 // goes down that line, so get behind a wall (out of its sight) when you see it. Then a long cooldown: your window
@@ -21,12 +21,14 @@ const PIRATE_AIM = 1.7, PIRATE_SHOT = 30, PIRATE_COOLDOWN = 5, PIRATE_LOOT = 2, 
 const OVERLOAD_TIME = 3, DRILL_TIME = 6, NPC_SPEED = 2.6;
 
 const MAX_BODIES = 12, FALL_TIME = 0.6;               // fallen pirates kept lying around (oldest go first); how long the fall takes
-function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0, boss: null, raid: null }); }   // (boss, raid: Captain Red Comet and his raider, js/captain.js)
+function resetDock() { Object.assign(dk, { dock: null, pirates: [], npc: null, rock: null, defeated: 0, ships: 0, bodies: [], ore: 0, helmCore: false, boss: null, raid: null }); }   // (boss, raid: Captain Red Comet and his raider, js/captain.js)
 // The Red Comet's nav core (chapter 4's objective, kind 'navcore'): every raider's nav computer knows where their hideout is.
 // A docked raider: hold click NAVCORE_PULL s on the nav console beside its reactor. A raider shot to scrap: its core is flung
 // clear (hz.floating, kind 'navcore', with a drift and a `life`): NAVCORE_LIFE s to fetch it on a spacewalk before it's lost.
-const NAVCORE_PULL = 4, NAVCORE_LIFE = 60;
-const navcoreWanted = () => typeof mission !== 'undefined' && mission.objective?.kind === 'navcore' && !objectiveAboard('navcore');
+// Either way it only counts once it's installed in our helm (bridge): hold click NAVCORE_INSTALL s there with the core in
+// hand (dk.helmCore, synced with dk; then it sits in the helm desk, drawHelmNavcore). Just carrying it aboard isn't enough.
+const NAVCORE_PULL = 4, NAVCORE_LIFE = 60, NAVCORE_INSTALL = 3;
+const navcoreWanted = () => typeof mission !== 'undefined' && mission.objective?.kind === 'navcore' && !dk.helmCore && !objectiveAboard('navcore');
 // The ore asteroid drifts past in front of the ship (EVENT_RUNNERS.rock): in from one side at ROCK_Y, out the other, at
 // ROCK_SPEED units/s (× ROCK_EASY on easy / very easy). Its centre between ROCK_REACH[0] and [1]: drillable on a spacewalk
 // (its near side within the spacewalk's reach, js/ship.js EVA_REACH; tests/dock.js checks it). ~160 s in reach at normal.
@@ -433,7 +435,8 @@ function sprayDock(a, dt) {                           // the extinguisher works 
 // ---------------------------------------------------------------------------
 function dockClickTarget(mx, my) {
   const d = dk.dock, g = DG(), at = (p, r) => Math.hypot(mx - p.x, my - p.y) <= r;
-  const N = dk.npc;
+  const N = dk.npc, hc = helmNavcoreTarget(mx, my);
+  if (hc) return hc;
   if (d?.kind === 'base') { const st = baseClickTarget(mx, my); if (st) return st; }
   if (N && N.state === 'down' && at(N, 0.55)) {
     if (!near(N.x, N.y)) return { text: `${cap(npcName())} — get closer`, ok: false, x: N.x, y: N.y, r: 0.55 };
@@ -463,9 +466,20 @@ function dockClickTarget(mx, my) {
     if (!navcoreWanted()) return { ...t, text: 'Nav console — the Red Comet\'s charts (nothing we need today)', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Nav console — get closer', ok: false };
     return holdTarget('navcore', NAVCORE_PULL, `Hold click: pull the nav core out of their console (${NAVCORE_PULL} s)`, t.x, t.y, 0.6,
-                      () => { d.navcore = false; grab('navcore'); sfx.poi(); combatBanner('Got the nav core — the Red Comet\'s hideout is on it. Bring it aboard!'); });
+                      () => { d.navcore = false; grab('navcore'); sfx.poi(); combatBanner('Got the nav core — the Red Comet\'s hideout is on it. Bring it to our helm and install it!'); });
   }
   return null;
+}
+// Our helm (bridge) with a nav core in hand (chapter 4): hold click to install it — that's what completes the objective.
+// (Before missionClickTarget's diagnosis on the same spot; only while you carry a core and none is installed yet.)
+const HELM_CORE = { x: 22.75, y: -1.95 };             // where the installed core sits: the helm desk's right end
+function helmNavcoreTarget(mx, my) {
+  if (inv.item !== 'navcore' || dk.helmCore || mission.objective?.kind !== 'navcore' || player.mode !== 'inside' || inDock(player.x, player.y)) return null;
+  const t = { x: HELM.x, y: HELM.y + 0.5, r: 0.9 };
+  if (Math.hypot(mx - t.x, my - t.y) > t.r) return null;
+  if (!near(t.x, t.y, REACH + 0.6)) return { ...t, text: 'Helm — get closer to install the nav core', ok: false };
+  return holdTarget('navInstall', NAVCORE_INSTALL, `Hold click: install the nav core in our helm (${NAVCORE_INSTALL} s)`, t.x, t.y, t.r,
+                    () => { inv.item = null; dk.helmCore = true; sfx.poi(); combatBanner('Nav core installed — the helm reads the Red Comet\'s charts: their hideout is on our map!'); });
 }
 // Jammed derelict door: a prompt like ours (manual override).
 function dockAct() {
@@ -615,6 +629,21 @@ function drawNavConsole(d, g, t) {
   } else { ctx.strokeStyle = '#ffcf6b'; ctx.lineWidth = 1.2; for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(L(0.3 + i * 0.05), -L(0.2)); ctx.lineTo(L(0.33 + i * 0.05), L(0.1)); ctx.stroke(); } }   // torn wires
   ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('NAV', -L(0.14), L(0.32)); ctx.textAlign = 'left';
   ctx.restore();
+}
+// The nav core installed in our helm (dk.helmCore): standing in the desk's right end, glowing. GFX: the core's 2D drawing
+// as an upright canvas sprite on the desk top (drawn once), so it sits in the world like the desk; classic: on the canvas.
+function drawHelmNavcore(t) {
+  if (!dk.helmCore) return;
+  const { x, y } = HELM_CORE, k = 0.75 + 0.25 * Math.sin(t * 3);
+  if (GFX.on) {
+    const D = GFX.canvasSprite('helm_navcore', 48, 48, { ppu: T * 1.25, ox: 24, oy: 40 });
+    if (D) {
+      if (!D.drawn) { const prev = ctx; ctx = D.ctx; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, D.w, D.h); drawItemIcon('navcore', 24, 24, 1.2, 0); ctx = prev; D.commit(); D.drawn = true; }
+      GFX.sprite(D.name, 0, x, y, DESK_Z, { billboard: true, unlit: true, alpha: 0.85 + 0.15 * k, sortY: y + 0.3, depthWrite: false });
+      return;
+    }
+  }
+  ctx.save(); ctx.globalAlpha = 0.85 + 0.15 * k; drawItemIcon('navcore', L(x), L(y - GFX.lift(DESK_Z)), 1.0, t); ctx.restore();
 }
 function drawNavcoreFloating(f, x, y, t) {
   pickupHalo(L(x), L(y), T * 0.5, t, me.mode === 'eva' && Math.hypot(me.x - x, me.y - y) <= REACH, f.uid);
@@ -901,6 +930,10 @@ function dockPlates(add) {
   }
   for (const f of hz.floating) if (f.kind === 'navcore' && f.life !== undefined)
     add('navcore' + f.uid, { icon: 'ping', title: 'NAV CORE ADRIFT', sub: `lost in ${Math.ceil(f.life)} s · ${f.x < SHIP_W / 2 ? 'left' : 'right'} side, outside`, stripe: '#7af0ff', red: f.life < 20 });
+  if (typeof mission !== 'undefined' && mission.objective?.kind === 'navcore' && !dk.helmCore) {   // a core in hand: it still has to go into our helm
+    const c = crew.find(c => c.inv.item === 'navcore');
+    if (c) add('navhelm', { icon: 'ping', title: 'NAV CORE', sub: `${c === me ? 'you have it' : `${c.name} has it`} · install it at our helm (bridge, hold click)`, stripe: '#7af0ff' });
+  }
   if (dk.dock?.kind === 'pirate' && dk.dock.navcore && navcoreWanted()) add('navconsole', { icon: 'ping', title: 'NAV CONSOLE', sub: 'by their reactor · pull its core', stripe: '#7af0ff' });
 }
 

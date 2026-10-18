@@ -132,13 +132,20 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
 }
 // --- chapter 2: two aliens, one per deck, through both airlocks; the objective needs both dead
 {
-  const N3 = [...NAMES, 'hurtInvader', 'mission', 'startMission', 'runEvent', 'objectiveStatus', 'eventLabel', 'crew'];
+  const N3 = [...NAMES, 'hurtInvader', 'mission', 'startMission', 'runEvent', 'objectiveStatus', 'eventLabel', 'crew', 'MISSIONS'];
   const G = loadGame(N3); G.startMission('c2');
   const ev = G.mission.events.find(e => e.kind === 'intruder');
   check(ev && ev.count === 2 && G.mission.objective.count === 2, 'chapter 2\'s intruder event brings two aliens, and the objective is to kill both');
   check(G.eventLabel(ev) === '2 intruders — both airlocks', `the radar calls it "${G.eventLabel(ev)}"`);
-  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `the objective reads "${G.objectiveStatus().text}"`);
+  // no spoiler: until they show up the objective is the cover story (lobby: MISSIONS.c2.objective.cover; HUD: objectiveStatus)
+  const pre = G.objectiveStatus();
+  check(!pre.done && pre.text === 'Get the salvage pod to the Xenobiology Institute' && !/intruder|alien|kill/i.test(pre.text), `before they appear the objective reads "${pre.text}"`);
+  for (const t of [G.MISSIONS.c2.blurb, G.MISSIONS.c2.briefing]) check(!/intruder|alien|kill|legs|two somethings/i.test(t), `the chapter's blurb / briefing doesn't give them away: "${t.slice(0, 50)}…"`);
+  G.mission.revealed.add(ev.id);
+  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `once the radar sees them it's explicit: "${G.objectiveStatus().text}"`);
+  G.mission.revealed.delete(ev.id);
   G.mission.active = false; G.boarding.invaders.length = 0; G.runEvent(ev);
+  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `once they're aboard: "${G.objectiveStatus().text}"`);
   const [p, q] = G.boarding.invaders;
   check(G.boarding.invaders.length === 2 && p.hatch !== q.hatch && p.zone !== q.zone, `they come in through different airlocks (${p.hatch.side} / ${q.hatch.side}) and keep to different decks (${p.zone} / ${q.zone})`);
   // nobody aboard: each prowls its own deck, they don't clump

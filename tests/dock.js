@@ -5,7 +5,7 @@ const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
   'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES', 'inRect',
   's7Geom', 's7Holding', 's7Wrapped', 'attack', 'spray', 'useEnergy', 'S7_FREEZE', 'S7_DRAW', 'S7_RECOIL_SHOT', 'S7_RECOIL_SPRAY', 'S7_STRUGGLE_PRESSES', 'resetDock', 'SIDE_CAP',
-  'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_Y', 'EVENT_RUNNERS', 'evaOk', 'evaReach', 'REACH', 'rockReachLeft'];
+  'NAVCORE_LIFE', 'NAVCORE_PULL', 'NAVCORE_INSTALL', 'HELM', 'clickTarget', 'flingNavcore', 'ROCK_REACH', 'ROCK_Y', 'EVENT_RUNNERS', 'evaOk', 'evaReach', 'REACH', 'rockReachLeft'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -289,12 +289,19 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   const t = holdOn(G, 22.2, -6.0, () => G.hz.floating.some(f => f.kind === 'ore'));
   check(G.hz.floating.some(f => f.kind === 'ore') && t < 6.5, `drilling the asteroid on a spacewalk gives an ore sample (${t.toFixed(1)} s)`);
 }
-// --- chapter 4 / Pirate cove: bring a Red Comet nav core aboard (way 1: pull it from a docked raider's nav console)
+// --- chapter 4 / Pirate cove: get a Red Comet nav core and install it in our helm (way 1: pull it from a docked raider's nav console)
+// Installing: walk up to the helm with the core in hand and hold click NAVCORE_INSTALL s on it (carrying it aboard isn't enough).
+function installAtHelm(G) {
+  const me = G.me; me.mode = 'inside'; me.x = G.HELM.x; me.y = G.HELM.y + 1.5; me.vx = me.vy = 0;
+  const tg = G.withCrew(me, () => G.clickTarget(G.HELM.x, G.HELM.y + 0.5));
+  const t = holdOn(G, G.HELM.x, G.HELM.y + 0.5, () => G.dk.helmCore);
+  return { tg, t };
+}
 const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.active = false; G.combat.enemies.length = 0; return G; };
 {
   const G = c4();
   check(G.MISSIONS.c4.objective.kind === 'navcore' && G.MISSIONS.pirates.objective.kind === 'navcore' && G.MISSIONS.c1.objective.kind === 'raiders', 'Red Comet Cove and Pirate cove want a nav core; First Contract still two raiders');
-  check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Bring a Red Comet nav core aboard', `the objective: "${G.objectiveStatus().text}"`);
+  check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Get a Red Comet nav core and install it in our helm', `the objective: "${G.objectiveStatus().text}"`);
   G.dockShip('pirate', 'port'); G.dk.pirates.length = 0;
   const g = G.dockGeom('port'), me = G.me; me.x = 3; me.y = g.y;
   check(G.dk.dock.navcore, 'a docked raider\'s nav console still has its core');
@@ -303,8 +310,22 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   check(me.inv.item === 'navcore' && !G.dk.dock.navcore && Math.abs(t - G.NAVCORE_PULL) < 0.3, `holding click on the nav console pulls the nav core out (${t.toFixed(1)} s)`);
   check(!G.objectiveStatus().done, 'not done while it is still over on their ship');
   via(G, [[g.nav.x + 0.6, g.y], doorC(g.doors[1]), [g.crate.x + 1, g.y], doorC(g.doors[0]), [g.entry.x, g.y], [3, g.y]]);
-  check(G.roomAt(me.x, me.y) && !G.inDock(me.x, me.y) && G.objectiveStatus().done, 'carried aboard our ship: objective done');
+  check(G.roomAt(me.x, me.y) && !G.inDock(me.x, me.y) && !G.objectiveStatus().done && G.objectiveStatus().text === 'Install the nav core in our helm (bridge)',
+        `carried aboard our ship: not done yet ("${G.objectiveStatus().text}", jumping now: "${G.objectiveStatus().fail}")`);
+  const { tg, t: ti } = installAtHelm(G);
+  check(tg?.hold?.id === 'navInstall' && /install the nav core/.test(tg.text), `at the helm with it in hand: "${tg?.text}"`);
+  check(G.dk.helmCore && !me.inv.item && Math.abs(ti - G.NAVCORE_INSTALL) < 0.3 && G.objectiveStatus().done, `holding click on the helm installs it (${ti.toFixed(1)} s): objective done`);
+  G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'star', y: 9 });
+  check(!G.hz.floating.some(q => q.kind === 'navcore'), 'with a core installed, the next raider\'s core isn\'t flung out');
+  const tg2 = G.withCrew(me, () => G.clickTarget(G.HELM.x, G.HELM.y + 0.5));
+  check(tg2?.run && !tg2.hold, 'then the helm is the diagnosis console again');
   const m = me.input.mouse; m.wx = g.nav.x; m.wy = g.nav.y; G.simTick(DT);
+}
+{
+  const G = fresh(), me = G.me; G.withCrew(me, () => { G.inv.item = 'navcore'; });   // (a mission that doesn't want one: the helm is just the helm)
+  me.x = G.HELM.x; me.y = G.HELM.y + 1.5;
+  const tg = G.withCrew(me, () => G.clickTarget(G.HELM.x, G.HELM.y + 0.5));
+  check(tg?.run && tg.hold?.id !== 'navInstall', 'the helm still installs nothing in a mission without the nav core objective');
 }
 // way 2: a raider shot to scrap flings its core clear; a spacewalk fetches it; ~60 s, then it's lost
 {
@@ -319,9 +340,11 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   check(me.inv.item === 'navcore' && !G.hz.floating.some(q => q.kind === 'navcore'), 'clicking it on a spacewalk grabs it');
   check(!G.objectiveStatus().done, 'not done while you are still outside with it');
   me.mode = 'inside'; me.x = 7.5; me.y = 19; G.simTick(DT);
-  check(G.objectiveStatus().done, 'brought inside: objective done');
+  check(!G.objectiveStatus().done, 'brought inside: not done yet (picking it up adrift isn\'t the whole job)');
   G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'star', y: 9 });
   check(!G.hz.floating.some(q => q.kind === 'navcore'), 'with a core aboard, the next raider\'s core isn\'t flung out');
+  installAtHelm(G);
+  check(G.dk.helmCore && !me.inv.item && G.objectiveStatus().done, 'carried to the helm and installed: objective done');
 }
 {
   const G = c4('pirates');
@@ -338,6 +361,9 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   const C = loadGame(NAMES); C.startMission('intro'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   const f = C.hz.floating.find(f => f.kind === 'navcore');
   check(C.dk.dock?.navcore === false && f && f.life === 33 && f.vx, 'the snapshot carries the nav console\'s state and the drifting core (its life and drift)');
+  G.dk.helmCore = true; C.startMission('c4'); check(!C.dk.helmCore, 'a new mission starts with an empty helm');
+  C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  check(C.dk.helmCore && C.objectiveStatus().done, 'the snapshot carries the installed core: done for every player');
 }
 // --- the ore asteroid drifts past (Ore run, chapter 6): in from one side, past the front within reach, out the other
 {

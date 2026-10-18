@@ -265,11 +265,11 @@ function updatePlayer(dt) {
     const self = treatInfo(player);
     if (player.mode === 'gun') {                                // slumped in the cannon's seat: no aiming, no firing (updateInteraction: patching)
       const where = player.gun.name.toLowerCase();
-      prompt = { text: self ? `${player.health === 'out' ? 'Out cold' : 'Down'} in the ${where} — hold click or E to ${self.label} (${self.time} s)` : `Out cold in the ${where} — a crewmate has to pull you out at its ladder`, screen: true };
+      prompt = { text: self ? `${player.health === 'out' ? 'Out cold' : 'Down'} in the ${where} — hold E (or click) to ${self.label} (${self.time} s)` : `Out cold in the ${where} — a crewmate has to pull you out at its ladder`, screen: true };
       return;
     }
     updateCrew(player, dt, 0, 0);
-    prompt = { text: self ? `${player.health === 'out' ? 'Out cold' : 'Down'} — hold click on yourself or E to ${self.label} (${self.time} s)` : 'Out cold — a crewmate has to treat you (hold click or E on you, 2 s)', screen: true };
+    prompt = { text: self ? `${player.health === 'out' ? 'Out cold' : 'Down'} — hold E (or click on yourself) to ${self.label} (${self.time} s)` : 'Out cold — a crewmate has to treat you (hold click or E on you, 2 s)', screen: true };
     return;
   }
 
@@ -407,10 +407,14 @@ function updateInteraction(dt) {
   if (hover?.ok && !tutAllows('target', hover)) hover = { text: hover.text, ok: false, x: hover.x, y: hover.y, r: hover.r };   // tutorial: only what the step asks for
   let target = hover, holding = mouse.down && !mouse.suppress, click = mouse.click;
   const eDown = keys.has('KeyE') && !player.eUsed, eTap = pressed.has('KeyE') && !player.eUsed;
-  if (!mouse.down) {
+  if (!standing(player)) {                         // down / out: holding E alone patches you up, wherever the mouse is (or hold click on yourself)
+    const self = treatInfo(player), onMe = hover?.treat === player;   // (down, that is all you can do: nothing else to take E's priority)
+    target = self && { treat: player, time: self.time, ok: true, x: player.x, y: player.y, r: 0.55 };
+    holding = keys.has('KeyE') || (onMe && holding); click = pressed.has('KeyE') || (onMe && click);
+  } else if (!mouse.down) {
     const e = nearbyTarget(eDown || eTap);          // E: what's nearest (and in front of you), wherever the mouse is
     if (e && (!prompt?.run || prompt.noE) && !prompt?.screen)            // show what E would do
-      prompt = { text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, eAct: true, at: { x: e.x, y: e.y, r: e.r, z: e.z, hullTop: e.hullTop } };
+      prompt = ePromptOf(e);
     const eLetGo = player.eHeld && !keys.has('KeyE');
     const treating = e?.treat && player.treat?.id === e.treat.id && !mouse.down;   // (letting go of E for a moment keeps a treatment going, as with the mouse)
     if (eDown || eTap || eLetGo || treating) { target = e; holding = eDown; click = eTap; }   // (letting go of E counts too: quick taps)
@@ -429,13 +433,20 @@ function updateInteraction(dt) {
   if (!standing(player)) { player.charge = null; return; }      // down: no weapons
   if (tutAllows('weapon')) updateWeapon(dt, mx, my);
 }
+// The prompt that says what E does with target e (also worked out in the browser in multiplayer: js/net.js netLocalPrompt).
+const ePromptOf = (e) => ({ text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, eAct: true, at: { x: e.x, y: e.y, r: e.r, z: e.z, hullTop: e.hullTop } });
 // Something a click (or E) does something with; a prompt's spot (promptHover) is only its tooltip: act() runs it.
 const actionable = (t) => !!t?.ok && !!(t.run || t.repair || t.treat || t.hold);
 // The nearest thing in reach that a click would do something with (for E). Rescanned every tick
-// while E is down, otherwise a few times a second (it's only shown as a prompt then).
+// while E is down, otherwise a few times a second (it's only shown as a prompt then); in between, the
+// same spot is asked again, so its text stays fresh (the lever's "turn to …" changes with every turn).
 function nearbyTarget(now) {
-  if (!now && player.eScan && time - player.eScan.t < 0.15) return player.eScan.target;
-  let best = null, bd = Infinity;
+  const memo = player.eScan;
+  if (!now && memo && time - memo.t < 0.15 && time >= memo.t) {
+    const t = memo.at && clickTarget(memo.at[0], memo.at[1]);
+    return actionable(t) && tutAllows('target', t) ? t : null;
+  }
+  let best = null, bd = Infinity, at = null;
   if (player.mode === 'inside' || player.mode === 'eva')
     for (let gx = -REACH; gx <= REACH; gx += 0.3) for (let gy = -REACH; gy <= REACH; gy += 0.3) {
       if (gx * gx + gy * gy > REACH * REACH) continue;
@@ -443,9 +454,9 @@ function nearbyTarget(now) {
       if (!actionable(t) || !tutAllows('target', t)) continue;
       const d = Math.hypot(t.x - player.x, t.y - player.y), f = player.face ?? 0;   // (the way you face counts a little)
       const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
-      if (sc < bd) { bd = sc; best = t; }
+      if (sc < bd) { bd = sc; best = t; at = [player.x + gx, player.y + gy]; }
     }
-  player.eScan = { t: time, target: best };
+  player.eScan = { t: time, target: best, at };
   return best;
 }
 
@@ -775,6 +786,7 @@ function render(t) {
   drawReactor(REACTOR, t);
   drawLever(t);
   for (const s of STATIONS) drawStation(s, t);
+  drawHelmNavcore(t);                                  // chapter 4: the Red Comet's nav core, installed in the helm (js/dock.js)
   for (const c of CAPACITORS) drawCapacitor(c, CAP_MAX, t);
   for (const b of SHIELD_BUTTONS) {
     const s = combat.shields[b.side];

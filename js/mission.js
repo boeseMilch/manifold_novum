@@ -111,7 +111,7 @@ const MISSIONS = {
     },
   },
   pirates: {
-    name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space.',
+    name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space. Then install it in our helm.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
     crew: {events: [3, 6, 11, 15, 19, 22, 24, 24], cells: [2, 3, 11, 14, 16, 16, 19, 19], reactor: [1, 0.85, 0.7, 0.85, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, a failing part at every crew size, 2026-10-16): 47% 67% 64% 66% 64% 70% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8); was 2/6/11/15/19/22/24/24
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
@@ -373,7 +373,7 @@ function updateMission(dt) {
     mission.jump = { t: 0, st: 0, fails: 0 };
     mission.press = MISSIONS[mission.id]?.practice ? null : { n: 0, strain: 0, strainAt: mission.t + STRAIN_FIRST };   // (practice's jump handle: no hot zone)
     if (mission.rules?.handle) { combatBanner('No nav fix out here — someone pull the jump handle!'); sfx.say?.('No navigation fix. Manual jump required.'); }
-    else { combatBanner('Jump drive spooling up — needs 1 energy in MID!'); sfx.say?.('Jump drive spooling up.'); }
+    else combatBanner('Jump drive spooling up — needs 1 energy in MID!');
   }
   if (mission.jump) {
     const j = mission.jump;
@@ -454,9 +454,16 @@ function objectiveStatus() {
     if (need === 1) return { done: n >= 1, fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
     return { done: n >= need, fail: `with only ${n}/${need} ore samples`, text: `Bring ${need} ore samples aboard (${n}/${need})` };
   }
-  if (o.kind === 'navcore') return { done: objectiveAboard('navcore'), fail: 'without a nav core', text: 'Bring a Red Comet nav core aboard' };
+  if (o.kind === 'navcore') {                            // (it counts once installed in our helm, dk.helmCore: carrying it aboard isn't enough; js/dock.js)
+    if (dk.helmCore) return { done: true, text: 'Red Comet nav core installed in our helm' };
+    if (objectiveAboard('navcore')) return { done: false, fail: 'with the nav core not installed', text: 'Install the nav core in our helm (bridge)' };
+    return { done: false, fail: 'without a nav core', text: 'Get a Red Comet nav core and install it in our helm' };
+  }
   if (o.kind === 'intruder') {
     const k = Math.min(o.count, mission.kills || 0), left = o.count - k;
+    // until they show up (the event ran, the radar saw it, or one's aboard / dead) a cover objective: no spoiler (chapter 2)
+    const seen = k > 0 || mission.events.some(e => e.kind === 'intruder' && (e.done || mission.revealed?.has(e.id))) || boarding.invaders.some(a => a.kind !== 'saboteur' && a.state !== 'dormant');
+    if (o.cover && !seen) return { done: false, fail: `with ${left === 1 ? 'an intruder' : `${left} intruders`} still alive`, text: o.cover };
     if (!(o.count > 1)) return { done: k >= 1, fail: 'with the intruder still alive', text: 'Kill the intruder' };
     return { done: left <= 0, fail: `with ${left === 1 ? 'an intruder' : `${left} intruders`} still alive`, text: `Kill ${o.count === 2 ? 'both' : `all ${o.count}`} intruders (${k}/${o.count} dead)` };
   }

@@ -3,7 +3,7 @@
 // with. Run: node tests/sidebar.js
 const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'render', 'mission', 'startMission', 'radarScan', 'encounterPlates', 'sidePlates', 'combat', 'combatSpawn',
-  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H']);
+  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -62,4 +62,13 @@ for (let i = 0; i < 180; i++) {
 }
 G.mission.objective = keep; step(60);
 check(worst === 0 && onScreen(), `a panel whose problem blinks out for single ticks stays put (worst x ${worst})`);
+// a plate's second line: wrapped onto two lines when that fits, else cut off with '…'; worked out once per text
+let measured = 0;
+const w7 = (s) => { measured++; return s.length * 7; };     // (7 px a character)
+const two = G.plateLines('rushed out of the base - five pirates', 150, true, w7);
+check(two.length === 2 && two.every(l => l.length * 7 <= 150) && two.join(' ') === 'rushed out of the base - five pirates', `a long line wraps onto two ("${two.join(' / ')}")`);
+const cut = G.plateLines('reactor heat 21% · canister in the left airlock room', 150, false, w7);
+check(cut.length === 1 && cut[0].endsWith('…') && cut[0].length * 7 <= 157, `without wrapping it's cut off with an ellipsis ("${cut[0]}")`);
+measured = 0;
+check(G.plateLines('rushed out of the base - five pirates', 150, true, w7) === two && measured === 0, 'the same text again comes from the cache (no measuring)');
 process.exitCode = failed ? 1 : 0;

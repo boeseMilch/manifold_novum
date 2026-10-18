@@ -103,7 +103,8 @@ The prompt above you always says what a click (or E) will do.
   specialist (own laser gun, heavy blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
   bigger capacitors, longer shields, reinforced hull, sprinklers, … In multiplayer the
-  ship gets every upgrade anyone in the crew has bought.
+  crew flies the host's ship: only the host's upgrades count, and only the host earns reputation
+  (everyone gets their pay). Your own ship and reputation wait for when you play solo or host.
 - Progress is saved in your browser (a cookie), separately for each player.
 - **Skirmish:** Intro run, Rush hour, Ore run, Pirate cove, Black box, Stranded engineer, Deep drift, Nightmare.
 - **Music:** every mission has its own synthesized piece that builds up to a crescendo at the jump

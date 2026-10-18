@@ -34,7 +34,7 @@ const reactorSpeed = () => (power.overcharge ? 2 : 1) / paceFactor();
 const power = {
   reactor: { fuel: CELL_ENERGY, t: 0 },          // energy left in the loaded cell, progress to the next one
   reserve: 3,                                     // spare fuel cells in the crate
-  lever: { pos: 1, jammed: false, angle: 0 },     // starts on MID; jammed = a wrench wedged in front of the handle
+  lever: { pos: 1, jammed: false, angle: LEVER_ANGLES[1] },   // starts on MID; jammed = a wrench wedged in front of the handle
   bolts: [],                                      // energy travelling from the reactor to a capacitor
   pulses: [],                                     // energy travelling from a capacitor to what used it
   patch: [0, 1, 2],                               // patch board: lever output → capacitor it feeds
@@ -341,8 +341,13 @@ function updatePower(dt) {
   for (const p of power.pulses) p.t += dt / 0.7;
   power.pulses = power.pulses.filter(p => p.t < 1);
   for (const c of CAPACITORS) c.pulse = Math.max(0, (c.pulse || 0) - dt * 2);
-  const target = leverAngle(leverShownPos());                            // handle points at the active output
-  power.lever.angle = lerp(power.lever.angle || target, target, 1 - Math.exp(-10 * dt));
+  animateLever(dt);
+}
+// The handle swings to the output it shows (also run by every browser in multiplayer, every frame: js/net.js).
+// (?? not ||: RIGHT is angle 0, and a handle that sat there long enough reached exactly 0 and then snapped)
+function animateLever(dt) {
+  const target = leverAngle(leverShownPos());
+  power.lever.angle = lerp(power.lever.angle ?? target, target, 1 - Math.exp(-10 * dt));
 }
 
 // ---------------------------------------------------------------------------
@@ -467,7 +472,7 @@ function hurtCrew(c, dmg = 1) {
     if (--dmg <= 0) return;
   }
   for (let i = 0; i < dmg; i++) { const h = c.health || 'ok'; c.health = h === 'ok' ? 'hurt' : h === 'hurt' ? 'down' : 'out'; }
-  c.hurtT = HURT_TIME; c.treat = null;
+  c.hurtT = HURT_TIME; c.treat = null; c.heal = null;   // (a new hit: any treatment starts over)
   if (c.health === 'down' || c.health === 'out') {
     if (c.mode === 'gun') {                       // slumps in the seat, below the rim: shots can't reach them (js/combat.js)
       c.cover = 0; c.gunReady = false;
@@ -488,6 +493,7 @@ function pullOutOfCannon(c, g) {
 }
 function updateInjury(c, dt) {
   if (c.health === 'hurt' && (c.hurtT -= dt) <= 0) { c.health = 'ok'; c.hurtT = 0; }
+  if (c.heal != null && !crew.some(o => o.treat?.id === c.id)) c.heal = null;   // nobody on it any more: the treatment starts over
 }
 // The treat action on crew member `who`, from the acting crew member: { time, label } or null.
 function treatInfo(who) {
@@ -499,6 +505,9 @@ function treatInfo(who) {
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
 }
+// The progress lives on the patient (who.heal, 0..1, sent to every browser), so everyone working on them adds up:
+// patching yourself up and a crewmate treating you at once fills it at 1/self time + 1/their time (each with
+// their own gear). Each treater's player.treat only keeps their own hold (the heartbeat's phase, letting go).
 function updateTreat(dt, target, holding, click = mouse.click) {   // (click: a fresh click or E press)
   if (!target?.treat) { player.treat = null; return; }
   const who = target.treat;
@@ -507,24 +516,29 @@ function updateTreat(dt, target, holding, click = mouse.click) {   // (click: a 
     return;
   }
   if (player.treat?.id !== who.id) player.treat = { id: who.id, t: 0, time: target.time };
+  player.treat.time = target.time;
+  let add = dt;
   if (click && player.treat.t > 0.1) {               // a click (or E pressed again) right on the heartbeat speeds it up
     const off = Math.abs(((player.treat.t + BEAT / 2) % BEAT) - BEAT / 2);
-    if (off < 0.15) { player.treat.t += 0.5; player.treat.beat = 1; sfx.poi(); }
+    if (off < 0.15) { player.treat.t += 0.5; add += 0.5; player.treat.beat = 1; sfx.poi(); }
   }
   player.treat.up = 0; player.treat.beat = Math.max(0, (player.treat.beat || 0) - dt * 3);
   player.treat.t += dt;
-  if (player.treat.t >= target.time) {
-    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME;
+  who.heal = (who.heal || 0) + add / target.time;
+  if (who.heal >= 1 - 1e-9) {
+    who.health = who.health === 'hurt' ? 'ok' : 'hurt'; who.hurtT = HURT_TIME; who.heal = null;
     sfx.poi(); combatBanner(who === player ? 'Patched up — still hurt for a while' : `${who.name} is back on their feet`);
-    if (who !== player) hz.stats.treated[player.name] = (hz.stats.treated[player.name] || 0) + 1;
-    player.treat = null;
+    for (const o of crew) if (o.treat?.id === who.id) {   // done for everyone on it; every crewmate who helped counts as a medic
+      if (o !== who) hz.stats.treated[o.name] = (hz.stats.treated[o.name] || 0) + 1;
+      o.treat = null;
+    }
   }
 }
 
 // E on the power lever (hub or handle): a tap (let go before LEVER_E_HOLD s) steps the lever like a
 // click on the handle; holding E that long wedges the wrench in (or pulls it out) instead.
 // target.eHold = { time, tap, hold, text }: game.js updateInteraction runs it (only for E; clicks stay as they are).
-const LEVER_E_HOLD = 0.5;
+const LEVER_E_HOLD = 0.5, LEVER_E_BAR = 0.15;          // (the hold's bar only shows once it's longer than a tap: workProgress)
 function leverEHold() {
   const lv = power.lever, next = LEVER_NAMES[(lv.pos + 1) % 3];
   return {
@@ -967,10 +981,15 @@ function useLights() {
 function workProgress(c) {
   if (c.repair?.sys) return { k: c.repair.t / REPAIR_TIME, label: `Repairing the ${c.repair.sys.name.toLowerCase()}` };
   if (c.hold?.id === 'jumpHandle') return { k: Math.min(1, (mission.jump?.pull || 0) / JUMP_PULL), label: 'Pulling the jump handle' };   // (its own meter: the hold itself never ends)
+  if (c.hold?.id === 'eHold' && c.hold.t < LEVER_E_BAR) return null;   // (the lever: a quick tap turns it, so no "wedging" bar during a tap)
   if (c.hold && c.hold.time) return { k: c.hold.t / c.hold.time, label: c.hold.label || 'Working' };
   if (c.treat) {
     const who = crew.find(o => o.id === c.treat.id);
-    if (who && c.treat.time) return { k: c.treat.t / c.treat.time, label: who === c ? 'Patching yourself up' : `Treating ${who.name}` };
+    if (who) return { k: who.heal || 0, label: who === c ? 'Patching yourself up' : `Treating ${who.name}` };   // (the patient's shared progress)
+  }
+  if (c.heal != null) {                              // others treating you (and you not helping): their progress, over your head too
+    const by = crew.find(o => o !== c && o.treat?.id === c.id);
+    if (by) return { k: c.heal, label: `${by.name} is treating you` };
   }
   return null;
 }

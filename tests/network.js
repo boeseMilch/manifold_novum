@@ -156,6 +156,60 @@ function client(name) {
     watcher.send({ t: 'join', game: g1 }); await sleep(150);
     check(watcher.gone === g1 && !watcher.game, 'joining a closed game says it is gone');
     for (const m of [d, e, watcher]) m.ws.close();
+
+    // permessage-deflate (what browsers offer): the snapshots come compressed, with the context kept from one
+    // to the next (a fraction of the JSON), and the browser's own messages may come compressed too (Chrome does)
+    {
+      const net = require('net'), zlib = require('zlib'), crypto = require('crypto');
+      const sock = net.connect(PORT, '127.0.0.1'), inf = zlib.createInflateRaw(), got = [];
+      let buf = Buffer.alloc(0), shook = null, wire = 0, plain = 0, allZ = true, chain = Promise.resolve();
+      const outs = []; inf.on('data', d => outs.push(d));
+      sock.on('data', (d) => {
+        buf = Buffer.concat([buf, d]);
+        if (shook === null) { const i = buf.indexOf('\r\n\r\n'); if (i < 0) return; shook = buf.subarray(0, i).toString(); buf = buf.subarray(i + 4); }
+        for (;;) {
+          if (buf.length < 2) return;
+          let len = buf[1] & 0x7f, off = 2;
+          if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
+          if (buf.length < off + len) return;
+          const z = !!(buf[0] & 0x40), payload = buf.subarray(off, off + len); buf = buf.subarray(off + len);
+          allZ &&= z;
+          chain = chain.then(() => new Promise(r => {
+            if (!z) { got.push(payload.toString()); return r(); }
+            inf.write(Buffer.concat([payload, Buffer.from([0, 0, 0xff, 0xff])]));
+            inf.flush(zlib.constants.Z_SYNC_FLUSH, () => { const t = Buffer.concat(outs.splice(0)).toString(); got.push(t); if (t.startsWith('{"t":"state"')) { wire += len; plain += t.length; } r(); });
+          }));
+        }
+      });
+      const sendZ = (o) => {                           // a masked text frame, compressed on its own (client_no_context_takeover)
+        let p = zlib.deflateRawSync(JSON.stringify(o), { finishFlush: zlib.constants.Z_SYNC_FLUSH }); p = p.subarray(0, p.length - 4);
+        const mask = crypto.randomBytes(4), m = Buffer.from(p.map((b, i) => b ^ mask[i & 3]));
+        sock.write(Buffer.concat([Buffer.from([0xC1, 0x80 | p.length]), mask, m]));
+      };
+      sock.write(`GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n`);
+      await sleep(200);
+      sendZ({ t: 'hello', name: 'Zed' }); sendZ({ t: 'open', mission: 'intro' }); await sleep(150); sendZ({ t: 'start' }); await sleep(900); await chain;
+      const kinds = got.map(t => { try { return JSON.parse(t).t; } catch (e) { return 'bad'; } });
+      check(/permessage-deflate/.test(shook || ''), 'the server agrees to permessage-deflate when the browser offers it');
+      check(kinds.includes('joined') && kinds.includes('start') && kinds.filter(k => k === 'state').length >= 10 && !kinds.includes('bad'),
+        `compressed messages from the browser work (it opened and started a game), compressed snapshots decode (${kinds.filter(k => k === 'state').length} snapshots)`);
+      check(allZ && wire < plain * 0.4, `every message comes compressed: the snapshots take ${Math.round(wire / 1024)} KB on the wire for ${Math.round(plain / 1024)} KB of JSON`);
+      sock.destroy();
+    }
+
+    // one ship: the host's. Its upgrades fly (not the guest's), the lobby shows it, and the server tells
+    // every browser whose ship it is (only the host gets the reputation; see tests/progress.js)
+    const h = client('Hana'), q = client('Quinn');
+    await Promise.all([h.open, q.open]);
+    h.send({ t: 'hello', name: 'Hana', ship: { cannons: true } }); q.send({ t: 'hello', name: 'Quinn', ship: { caps: true, inserter: true } });
+    h.send({ t: 'open', mission: 'rush' }); await sleep(150);
+    q.send({ t: 'join', game: h.game }); await sleep(150);
+    check(q.lobby?.hostShip?.cannons && !q.lobby.hostShip.caps, `the lobby sends the host's ship upgrades (${JSON.stringify(q.lobby?.hostShip)})`);
+    h.send({ t: 'start' }); await sleep(400);
+    const M = q.state?.mission;
+    check(M && M.upgrades.cannons && !M.upgrades.caps && !M.upgrades.inserter, `in the game only the host's upgrades apply, not the guest's (${JSON.stringify(M?.upgrades)})`);
+    check(M && M.shipOf?.id === h.id && M.shipOf.name === 'Hana', `every browser knows whose ship flies (${JSON.stringify(M?.shipOf)})`);
+    for (const m of [h, q]) m.ws.close();
   } finally { srv.kill(); }
   process.exitCode = failed ? 1 : 0;
 })();

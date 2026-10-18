@@ -23,7 +23,7 @@
 // State: dk.boss and dk.raid (plain data, in the snapshot with dk). Hooks: dockBase → captainDock, updateDock →
 // updateCaptain, js/invader.js boltHitsBody → captainBoltTest, sprayDock → captainSpray, updatePirate → raidPirateMove.
 
-const CAPT_HP = 24, CAPT_HP_PER = 12, CAPT_WALK = 1.3, CAPT_TURN = 5;
+const CAPT_HP = [18, 24], CAPT_HP_PER = 12, CAPT_WALK = 1.3, CAPT_TURN = 5;
 const CAPT_BODY = { r: 0.55, top: 1.9 }, CAPT_GEN = 0.55, CAPT_GEN_R = 0.42, CAPT_GEN_Z = 1.35;   // the generator: this far behind his centre
 const CAPT_SHOTS = [3, 2], CAPT_TEL = [0.6, 0.45], CAPT_RECOVER = [0.5, 0.35], CAPT_TURN_MAX = 0.8;
 const CAPT_PELLETS = 7, CAPT_SPREAD = 0.5, CAPT_PELLET_V = 12, CAPT_PELLET_LIFE = 0.95;
@@ -37,7 +37,8 @@ const CAPT_RAID_DELAY = 6, CAPT_RAID_LATE = 150;
 const CAPT_MUZZLE = { fwd: 0.95, right: 0.42, z: 1.05 };
 
 const captEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
-const captMaxHp = (n) => CAPT_HP + CAPT_HP_PER * (Math.min(4, Math.max(1, n)) - 1);
+// HP by crew size (the user, 2026-10-17): 18 solo, 24 with two (70 % of the old 36), then +12 a player (near linear), up to 8
+const captMaxHp = (n) => (n <= 1 ? CAPT_HP[0] : CAPT_HP[1] + CAPT_HP_PER * (Math.min(8, n) - 2));
 const captWave = (n) => Math.min(CAPT_DOOR_MAX, Math.max(1, n - captEasy()));
 // Spots in the quarters (port coords like baseGeom: x absolute, y relative to the hatch; mirrored for starboard).
 function captSpots(g) {

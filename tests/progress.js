@@ -52,6 +52,18 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
     'a mission without an objective: surviving the jump is a success (finished, reputation, next chapter)');
   const R4 = credit('c1', { jumped: false, objective: true, pirates: 2 });
   check(R4.profile.money === 0 && R4.profile.rep === 0 && !R4.profile.done.c1, 'the ship didn\'t jump out: nothing, even with the objective');
+  // multiplayer: the crew flies the host's ship (mission.shipOf from the server); only the host gets reputation
+  const mp = (hostIsMe) => {
+    const G = loadGame(NAMES); G.startMission('c1');
+    G.mission.shipOf = { id: hostIsMe ? G.me.id : G.me.id + 100, name: 'Hosty' };
+    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id, survived: true }], jumped: true, objective: true, pirates: 2 } };
+    G.creditMission();
+    return G;
+  };
+  const H = mp(true), Gu = mp(false);
+  check(H.profile.rep === 2 && H.profile.money === 120 + 2 * 16 && !H.lastReward.guestOf, 'multiplayer host: money and reputation, as solo');
+  check(Gu.profile.rep === 0 && Gu.lastReward.rep === 0 && Gu.profile.money === 120 + 2 * 16 && Gu.profile.done.c1 === 1 && Gu.unlockedMissions(Gu.profile).has('c2') && Gu.lastReward.guestOf === 'Hosty' && Gu.lastReward.unlocked,
+    'multiplayer guest: the money and the finished chapter (next one unlocked), but no reputation: that goes to the host\'s ship');
 }
 // --- profiles: old and odd saves still load
 {

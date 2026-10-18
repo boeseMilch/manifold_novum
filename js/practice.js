@@ -60,6 +60,7 @@ const PRACTICE = [
   ['Other ships', 'Captain Red Comet (phase 1)', () => captainPractice(1)],
   ['Other ships', 'Captain Red Comet (phase 2)', () => captainPractice(2)],
   ['Other ships', 'Cast off the docked ship', () => undock()],
+  ['Other ships', 'Nav core adrift (left; install it in the helm)', () => { mission.objective = { kind: 'navcore' }; dk.helmCore = false; flingNavcore({ side: 'port', y: 9 }); }],   // (chapter 4's objective, for practice)
   ['Other ships', 'Ore asteroid + drill', () => { EVENT_RUNNERS.rock(); give('drill'); }],
   // mini-games
   ['Stations', 'Radar scan', () => radarScan()],

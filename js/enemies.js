@@ -795,28 +795,31 @@ function drawEnemySprite(e, t) {
 function drawEnemyOverlays(t) {
   for (const e of spritedEnemies) {
     if (!combat.enemies.includes(e)) continue;
-    ctx.save();
-    ctx.globalAlpha = enemyAlpha(e);
-    ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.rot); ctx.scale(e.dir, 1);
-    if (e.phase === 'burning' && e.D.organic) { const k = Math.min(1, e.burnT / 3.5); ctx.scale(1 - 0.4 * k, 1 - 0.4 * k); }
-    e.D.overlay?.(e, t);
-    if (e.flash > 0) {                              // hit flash
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.fillStyle = `rgba(255,200,150,${e.flash * 0.2})`;
-      ctx.beginPath(); ctx.ellipse(0, 0, L(e.D.size[0]), L(e.D.size[1]), 0, 0, TAU); ctx.fill();
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    if (!e.D.organic) e.pois.forEach((p, i) => {
-      if (!p.hit || p.id === 'crack') return;
-      if (p.id !== 'cooling') sparkBurst(p.c[0], p.c[1], t, 41 + i * 10);
-      drawSmoke(L(p.c[0]), L(p.c[1]), p.smoke, t + p.c[0]);
-    });
-    drawEnemyShield(e);
-    ctx.restore();
+    if (GFX.onScreen(e.x, e.y, 0, Math.max(...bubble(e)) + 3)) drawEnemyOverlay(e, t);   // (off screen: its overlay, smoke and shield can't show)
     if (e.phase === 'fighting' && (!e.D.stealth || stealthAlpha(e) > 0.3)) drawEnemyTag(e);
     e.D.drawExtra?.(e, t);
   }
   spritedEnemies.clear();
+}
+function drawEnemyOverlay(e, t) {
+  ctx.save();
+  ctx.globalAlpha = enemyAlpha(e);
+  ctx.translate(L(e.x), L(e.y)); ctx.rotate(e.rot); ctx.scale(e.dir, 1);
+  if (e.phase === 'burning' && e.D.organic) { const k = Math.min(1, e.burnT / 3.5); ctx.scale(1 - 0.4 * k, 1 - 0.4 * k); }
+  e.D.overlay?.(e, t);
+  if (e.flash > 0) {                              // hit flash
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.fillStyle = `rgba(255,200,150,${e.flash * 0.2})`;
+    ctx.beginPath(); ctx.ellipse(0, 0, L(e.D.size[0]), L(e.D.size[1]), 0, 0, TAU); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+  if (!e.D.organic) e.pois.forEach((p, i) => {
+    if (!p.hit || p.id === 'crack') return;
+    if (p.id !== 'cooling') sparkBurst(p.c[0], p.c[1], t, 41 + i * 10);
+    drawSmoke(L(p.c[0]), L(p.c[1]), p.smoke, t + p.c[0]);
+  });
+  drawEnemyShield(e);
+  ctx.restore();
 }
 
 // Asteroids: asteroid_big<k> (+ _crack, the weak spot) and asteroid_small<k>, k from the shape seed: one

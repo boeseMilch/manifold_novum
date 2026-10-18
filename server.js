@@ -7,7 +7,7 @@
 // the host picks the mission and starts it; when the host leaves, the next player takes over.
 // When the mission is over, anyone can press R to send that game back to its lobby. A game
 // closes when its last player leaves.
-const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), vm = require('vm'), os = require('os');
+const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), vm = require('vm'), os = require('os'), zlib = require('zlib');
 
 const PORT = +process.argv[2] || +process.env.PORT || 8080;
 const ROOT = __dirname;
@@ -31,14 +31,21 @@ const server = http.createServer((req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Minimal WebSocket (RFC 6455): text frames, ping/pong, close.
+// Minimal WebSocket (RFC 6455): text frames, ping/pong, close, and permessage-deflate (RFC 7692) when
+// the browser offers it (they all do): a snapshot is ~10 KB of JSON, 30 a second (2.5 Mbit/s per player,
+// too much for many home uplinks and tunnels); compressed with the context kept between messages it's
+// under 1 KB. Browsers compress their own (small) messages one by one (client_no_context_takeover).
 // ---------------------------------------------------------------------------
 server.on('upgrade', (req, socket) => {
   if ((req.url || '').split('?')[0] !== '/ws' || !req.headers['sec-websocket-key']) return socket.destroy();
   const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
-  socket.write(['HTTP/1.1 101 Switching Protocols', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Accept: ${accept}`, '', ''].join('\r\n'));
+  const offer = String(req.headers['sec-websocket-extensions'] || '').split(',').map(o => o.trim()).find(o => /^permessage-deflate\b/i.test(o));
+  const deflate = !!offer && !/server_/i.test(offer);  // (an offer that limits the server's side: plain frames)
+  socket.write(['HTTP/1.1 101 Switching Protocols', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Accept: ${accept}`,
+    ...(deflate ? ['Sec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover'] : []), '', ''].join('\r\n'));
   socket.setNoDelay(true);
-  const client = { socket, id: nextId++, name: 'Crew', alive: true, buf: Buffer.alloc(0) };
+  const client = { socket, id: nextId++, name: 'Crew', alive: true, buf: Buffer.alloc(0), z: null, zq: [], zbuf: [] };
+  if (deflate) { client.z = zlib.createDeflateRaw({ level: 3 }); client.z.on('data', (d) => client.zbuf.push(d)); client.z.on('error', () => drop(client)); }
   socket.on('data', (chunk) => { client.buf = Buffer.concat([client.buf, chunk]); readFrames(client); });
   socket.on('close', () => drop(client));
   socket.on('error', () => drop(client));
@@ -48,7 +55,7 @@ function readFrames(c) {
   for (;;) {
     const b = c.buf;
     if (b.length < 2) return;
-    const op = b[0] & 0x0f, masked = b[1] & 0x80;
+    const op = b[0] & 0x0f, rsv1 = b[0] & 0x40, masked = b[1] & 0x80;
     let len = b[1] & 0x7f, off = 2;
     if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
     else if (len === 127) { if (b.length < 10) return; len = Number(b.readBigUInt64BE(2)); off = 10; }
@@ -59,19 +66,44 @@ function readFrames(c) {
     c.buf = b.subarray(off + len);
     if (op === 0x8) { c.socket.end(); return drop(c); }
     if (op === 0x9) { sendFrame(c, data, 0xA); continue; }
-    if (op === 0x1) { try { onMessage(c, JSON.parse(data.toString('utf8'))); } catch (e) { /* ignore bad messages */ } }
+    if (op === 0x1) {
+      try {
+        const text = rsv1 && c.z ? zlib.inflateRawSync(Buffer.concat([data, Buffer.from([0, 0, 0xff, 0xff])]), { finishFlush: zlib.constants.Z_SYNC_FLUSH, maxOutputLength: 1 << 20 }) : data;
+        onMessage(c, JSON.parse(text.toString('utf8')));
+      } catch (e) { /* ignore bad messages */ }
+    }
   }
 }
-function sendFrame(c, payload, op = 0x1) {
+function sendFrame(c, payload, op = 0x1, compressed = false) {
   if (!c.alive) return;
   const data = Buffer.isBuffer(payload) ? payload : Buffer.from(payload, 'utf8');
-  const len = data.length;
-  const head = len < 126 ? Buffer.from([0x80 | op, len]) : len < 65536 ? Buffer.alloc(4) : Buffer.alloc(10);
-  if (len >= 126 && len < 65536) { head[0] = 0x80 | op; head[1] = 126; head.writeUInt16BE(len, 2); }
-  else if (len >= 65536) { head[0] = 0x80 | op; head[1] = 127; head.writeBigUInt64BE(BigInt(len), 2); }
+  const len = data.length, b0 = 0x80 | (compressed ? 0x40 : 0) | op;
+  const head = len < 126 ? Buffer.from([b0, len]) : len < 65536 ? Buffer.alloc(4) : Buffer.alloc(10);
+  if (len >= 126 && len < 65536) { head[0] = b0; head[1] = 126; head.writeUInt16BE(len, 2); }
+  else if (len >= 65536) { head[0] = b0; head[1] = 127; head.writeBigUInt64BE(BigInt(len), 2); }
   try { c.socket.write(Buffer.concat([head, data])); } catch (e) { drop(c); }
 }
-const send = (c, obj) => sendFrame(c, JSON.stringify(obj));
+// Every text message goes through here (so they stay in order): compressed one after another, or plain.
+function sendText(c, text) {
+  if (!c.alive) return;
+  if (!c.z) return sendFrame(c, text);
+  c.zq.push(text);
+  if (c.zq.length === 1) deflateNext(c);
+}
+function deflateNext(c) {
+  if (!c.alive || !c.zq.length) return;
+  c.z.write(c.zq[0]);
+  c.z.flush(zlib.constants.Z_SYNC_FLUSH, () => {
+    const out = Buffer.concat(c.zbuf); c.zbuf = [];
+    c.zq.shift();
+    sendFrame(c, out.subarray(0, out.length - 4), 0x1, true);   // (without the flush's 00 00 ff ff tail)
+    deflateNext(c);
+  });
+}
+// A browser that can't keep up (slow uplink, a hiccup in the tunnel) skips snapshots instead of getting
+// an ever longer queue of old ones (seconds of lag that never go away). Each snapshot is the whole state.
+const behind = (c) => c.zq.length > 1 || c.socket.writableLength > 64 * 1024;
+const send = (c, obj) => sendText(c, JSON.stringify(obj));
 
 // ---------------------------------------------------------------------------
 // Games: every connection starts in the main menu (it gets the live list of open games).
@@ -92,7 +124,7 @@ const clampEasy = (v) => Math.min(2, Math.max(0, Math.floor(+v) || 0));   // dif
 function lobbyState(g) {
   const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
   const host = hostOf(g);
-  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, unlocked, host: host && host.id, max: MAX_PLAYERS,
+  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, unlocked, host: host && host.id, hostShip: (host && host.ship) || {}, max: MAX_PLAYERS,
     players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), host: c === host, away: !c.alive || undefined })) };
 }
 function gameList() {
@@ -101,7 +133,7 @@ function gameList() {
     return { id: g.id, host: h ? h.name : '?', color: h ? colorOf(h) : '#888', mission: g.missionId, players: g.members.length, phase: g.phase, full: g.members.length >= MAX_PLAYERS };
   }) };
 }
-const sendAll = (list, obj) => { const s = JSON.stringify(obj); for (const c of list) sendFrame(c, s); };
+const sendAll = (list, obj) => { const s = JSON.stringify(obj); for (const c of list) sendText(c, s); };
 // Changes are collected and sent once per turn: the game's lobby to its players, the list to everyone in the menu.
 const dirty = new Set(); let listDirty = false, flushQueued = false;
 function changed(g) {
@@ -124,6 +156,7 @@ function connect(c) {
 function drop(c) {
   if (!c.alive) return;
   c.alive = false; clients.delete(c);
+  if (c.z) { c.z.close(); c.zq.length = 0; }
   const g = c.game;
   if (!g) return;
   if (g.phase === 'lobby' && c.returning && Date.now() - c.returning < RETURN_GRACE) {
@@ -182,7 +215,7 @@ function onMessage(c, m) {
   if (m.t === 'hello') {
     c.name = String(m.name || 'Crew').slice(0, 20);
     if (m.kit && typeof m.kit === 'object') c.kit = m.kit;                  // the player's gear and profession (from their own saved profile)
-    if (m.ship && typeof m.ship === 'object') c.ship = m.ship;              // ship upgrades they bought
+    if (m.ship && typeof m.ship === 'object') c.ship = m.ship;              // ship upgrades they bought (only the host's fly)
     if (Array.isArray(m.unlocked)) c.unlocked = m.unlocked.map(String).slice(0, 50);
     if (g?.run) { const cr = g.run.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; }
     changed(g);
@@ -219,8 +252,8 @@ function startGame(g) {
   const crewNow = live(g);
   const sim = makeSim();
   const sfx = sim.netCaptureSfx();
-  const ship = Object.assign({}, ...crewNow.map(c => c.ship || {}));      // the crew's ship has every upgrade anyone bought
-  sim.netServer.init(g.missionId, ship, g.easy || 0);
+  const host = hostOf(g);                               // one ship: the host's (their upgrades; the reputation goes to them)
+  sim.netServer.init(g.missionId, { ...(host && host.ship || {}) }, g.easy || 0, host && { id: host.id, name: host.name });
   for (const c of crewNow) sim.netServer.addCrew(c.id, c.name, c.kit);
   g.phase = 'game';
   g.run = { sim, sfx, tick: 0, last: Date.now(), acc: 0 };
@@ -232,13 +265,18 @@ function startGame(g) {
 function stepGame(g) {
   const run = g.run, now = Date.now();
   run.acc += Math.min(0.25, (now - run.last) / 1000); run.last = now;
+  let due = false;
   while (run.acc >= TICK) {
     run.acc -= TICK;
     try { run.sim.netServer.step(TICK); } catch (e) { console.error(`[game ${g.id}] sim error`, e); }
-    if (++run.tick % SEND_EVERY === 0) {
-      const snap = JSON.stringify(run.sim.netSerialize()), fx = JSON.stringify(run.sfx.splice(0));
-      for (const c of live(g)) sendFrame(c, `{"t":"state","you":${c.id},"sfx":${fx},"s":${snap}}`);
-    }
+    if (++run.tick % SEND_EVERY === 0) due = true;
+  }
+  if (!due) return;                                    // (catching up several ticks at once: one snapshot, the latest)
+  const snap = JSON.stringify(run.sim.netSerialize()), events = run.sfx.splice(0), fx = JSON.stringify(events);
+  for (const c of live(g)) {
+    if (behind(c)) { c.sfxLate = [...(c.sfxLate || []), ...events].slice(-60); continue; }   // (its sounds wait for the next one it gets)
+    const late = c.sfxLate; c.sfxLate = null;
+    sendText(c, `{"t":"state","you":${c.id},"sfx":${late ? JSON.stringify([...late, ...events]) : fx},"s":${snap}}`);
   }
 }
 function endGame(g) {                                  // mission over: everyone back to this game's lobby

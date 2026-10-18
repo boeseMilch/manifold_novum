@@ -113,7 +113,7 @@
 // Internal resolution: min(1, 2048 / physical width) of the screen, upscaled with linear filtering;
 // change it with ?gfxscale=0.75 (remembered) or GFX.setScale(k) (null = default).
 // Other helpers: GFX.has(name), GFX.ready(name), GFX.info(name) (the sprites.json entry),
-// GFX.frameIndex(name, angle, f), GFX.toScreen(x, y, z) (CSS px), GFX.lift(z) (how many ground-y
+// GFX.frameIndex(name, angle, f), GFX.toScreen(x, y, z) (CSS px), GFX.onScreen(x, y, z, r) (can anything within r of it show), GFX.lift(z) (how many ground-y
 // units a height z shifts things up on screen; 0 in the classic view), GFX.pickAt(cssX, cssY), GFX.stats.
 
 const GFX = (() => {
@@ -123,7 +123,7 @@ const GFX = (() => {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
     begin: noop, end: noop, sprite: () => false, lighting: noop, backdrop: noop, overlay: () => false, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
-    setScale: noop, setShadows: noop, setScratches: noop, setPathScratches: noop, toScreen: () => [0, 0], pickAt: () => null, disable: noop,
+    setScale: noop, setShadows: noop, setScratches: noop, setPathScratches: noop, toScreen: () => [0, 0], onScreen: () => true, pickAt: () => null, disable: noop,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
   const off = (why) => { api.reason = why; return api; };
@@ -1237,10 +1237,12 @@ void main() {
   }
   function spriteReady(S) {
     if (S.dyn) return !!S.dyn.tex.b;
+    if (S._ready) return true;                         // (a loaded page stays loaded)
     let ok = true;
     for (const i of pagesOf(S)) if (page(S.group, i).state !== 'ready') ok = false;
-    return ok;
+    return (S._ready = ok);
   }
+  const pageOf = (S, i) => (S._pg || (S._pg = []))[i] || (S._pg[i] = page(S.group, i));   // (page() memoized on the sprite: no key string per call)
   // The tint mask recolours by luminance relative to the untinted mask area's mean (measured once).
   function tintRef(S) {
     if (S._tintRef != null) return S._tintRef;
@@ -1396,7 +1398,8 @@ void main() {
   // Wraps the layer context's drawing calls (on the instance) to grow L.box by what each one can touch: the
   // current path's points (through a copy of the transform), plus the line width, shadow and a pixel of
   // antialiasing. Anything it can't bound (Path2D, putImageData, arcTo, compositing that clears outside the
-  // shape) sets L.full.
+  // shape) sets L.full. A call whose box lies entirely off the canvas is skipped: it couldn't change a pixel
+  // (the ship is drawn whole every frame, the camera shows about a room of it).
   function trackDirty(L) {
     const g = L.g, proto = Object.getPrototypeOf(g);
     let m = [1, 0, 0, 1, 0, 0], stack = [];
@@ -1434,31 +1437,39 @@ void main() {
       piece(a, b, c, d);
     };
     const GLOBAL_OPS = { copy: 1, 'source-in': 1, 'source-out': 1, 'destination-in': 1, 'destination-atop': 1 };
-    const mark = (bx0, by0, bx1, by1, line) => {                       // device px box, line width (user units)
-      if (!(bx0 <= bx1) || L.full) return;
-      if (GLOBAL_OPS[g.globalCompositeOperation] || g.filter !== 'none' && g.filter) { L.full = true; return; }
+    // how far (device px) a call's pixels can reach past its shape: a pixel of antialiasing, half the line width
+    // (line width in user units; miter joins: times the miter limit), the shadow. -1: anywhere (a compositing mode
+    // that clears outside the shape, a filter). Read once per call: the context's getters aren't free.
+    const pad = (line) => {
+      if (GLOBAL_OPS[g.globalCompositeOperation] || g.filter !== 'none' && g.filter) return -1;
       let e = 2;
       if (line) e += line * Math.max(Math.hypot(m[0], m[1]), Math.hypot(m[2], m[3])) * (g.lineJoin === 'miter' ? Math.max(1, g.miterLimit) : 1) * 0.5;
       if (g.shadowBlur > 0 || g.shadowOffsetX || g.shadowOffsetY) e += g.shadowBlur * 2 + Math.abs(g.shadowOffsetX) + Math.abs(g.shadowOffsetY);
-      const b = L.box, X0 = Math.max(0, Math.floor(bx0 - e)), Y0 = Math.max(0, Math.floor(by0 - e)), X1 = Math.min(W, Math.ceil(bx1 + e)), Y1 = Math.min(H, Math.ceil(by1 + e));
-      if (X1 <= X0 || Y1 <= Y0) return;
+      return e;
+    };
+    // marks the tiles a device px box (grown by e = pad()) touches; false if it lies entirely off the canvas
+    const mark = (bx0, by0, bx1, by1, e) => {
+      if (e < 0) { L.full = true; return true; }
+      if (!(bx0 <= bx1)) return true;                                  // (an empty path, NaN: left to the canvas)
+      const X0 = Math.max(0, Math.floor(bx0 - e)), Y0 = Math.max(0, Math.floor(by0 - e)), X1 = Math.min(W, Math.ceil(bx1 + e)), Y1 = Math.min(H, Math.ceil(by1 + e));
+      if (X1 <= X0 || Y1 <= Y0) return false;
+      if (L.full) return true;
+      const b = L.box;
       if (X0 < b[0]) b[0] = X0; if (Y0 < b[1]) b[1] = Y0; if (X1 > b[2]) b[2] = X1; if (Y1 > b[3]) b[3] = Y1;
       const T = L.tiles, tw = L.tw0, i1 = Math.ceil(X1 / DT), j1 = Math.ceil(Y1 / DT);
       for (let j = Math.floor(Y0 / DT); j < j1; j++) for (let i = Math.floor(X0 / DT); i < i1; i++) T[j * tw + i] |= 1;
+      return true;
     };
     const rectBox = (x, y, w, h, line) => {                            // a rect in user units → mark (keeps the path)
-      let a = Infinity, b = Infinity, c = -Infinity, d = -Infinity;
-      for (const [u, v] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) {
-        const X = m[0] * u + m[2] * v + m[4], Y = m[1] * u + m[3] * v + m[5];
-        if (X < a) a = X; if (X > c) c = X; if (Y < b) b = Y; if (Y > d) d = Y;
-      }
-      mark(a, b, c, d, line);
+      const ax = m[0] * x, bx = m[0] * (x + w), ay = m[1] * x, by = m[1] * (x + w), cx = m[2] * y, dx = m[2] * (y + h), cy = m[3] * y, dy = m[3] * (y + h);
+      return mark(Math.min(ax, bx) + Math.min(cx, dx) + m[4], Math.min(ay, by) + Math.min(cy, dy) + m[5],
+        Math.max(ax, bx) + Math.max(cx, dx) + m[4], Math.max(ay, by) + Math.max(cy, dy) + m[5], pad(line));
     };
     const rectPath = (x, y, w, h) => { pt(x, y, false); pt(x + w, y, true); pt(x + w, y + h, true); pt(x, y + h, true); pt(x, y, true); };
-    const wrap = (name, before) => {
+    const wrap = (name, before) => {                                   // (before() returning false: skip the call, it draws nothing on the canvas)
       const orig = proto[name];
       if (typeof orig !== 'function') return;
-      g[name] = function (a, b, c, d, e, f, h, i, j) { before(a, b, c, d, e, f, h, i, j, arguments.length); return orig.apply(g, arguments); };
+      g[name] = function (a, b, c, d, e, f, h, i, j) { if (before(a, b, c, d, e, f, h, i, j, arguments.length) === false) return; return orig.apply(g, arguments); };
     };
     wrap('save', () => { stack.push(m.slice()); });
     wrap('restore', () => { if (stack.length) m = stack.pop(); });
@@ -1481,27 +1492,39 @@ void main() {
     wrap('ellipse', (x, y, rx, ry) => ell(x, y, Math.max(rx, ry)));
     wrap('rect', (x, y, w, h) => rectPath(x, y, w, h));
     wrap('roundRect', (x, y, w, h) => rectPath(x, y, w, h));
-    wrap('arcTo', () => { L.full = true; });
+    wrap('arcTo', (a, b, c, d) => { L.full = true; curve([a, b, c, d]); });   // (its arc lies within the corner's triangle: the box, for skipping)
     wrap('closePath', () => { if (ns && lx === lx) piece(lx, ly, lx, ly); });   // (the closing line lies within the path's box: fills mark that box anyway)
-    wrap('fill', (a) => { if (typeof a === 'object' && a) L.full = true; else mark(x0, y0, x1, y1, 0); });
+    wrap('fill', (a) => { if (typeof a === 'object' && a) { L.full = true; return; } return mark(x0, y0, x1, y1, pad(0)); });
     wrap('stroke', (a) => {
       if (typeof a === 'object' && a) { L.full = true; return; }
-      if (ns > 64) { mark(x0, y0, x1, y1, g.lineWidth); return; }      // (many pieces: the whole box is as good)
-      for (let k = 0; k < ns; k++) mark(seg[k * 4], seg[k * 4 + 1], seg[k * 4 + 2], seg[k * 4 + 3], g.lineWidth);
+      const e = pad(g.lineWidth);
+      if (ns > 64 || e < 0) return mark(x0, y0, x1, y1, e);            // (many pieces: the whole box is as good)
+      if (!ns) return;
+      let on = false;
+      for (let k = 0; k < ns; k++) if (mark(seg[k * 4], seg[k * 4 + 1], seg[k * 4 + 2], seg[k * 4 + 3], e)) on = true;
+      return on;
     });
     wrap('fillRect', (x, y, w, h) => rectBox(x, y, w, h, 0));
     wrap('strokeRect', (x, y, w, h) => rectBox(x, y, w, h, g.lineWidth));
+    let lastFont = '', lastFs = 48;
     const textBox = (t, x, y, mw, line) => {
-      const fs = +((/([\d.]+)px/.exec(g.font) || [])[1] || 48), w = (mw != null ? Math.min(mw, g.measureText(t).width) : g.measureText(t).width) + fs * 0.5;
-      const al = g.textAlign, x0 = al === 'center' ? x - w / 2 : al === 'right' || al === 'end' ? x - w : x;   // (left-to-right text)
-      rectBox(x0 - fs * 0.25, y - fs * 1.3, w + fs * 0.5, fs * 2.6, line);
+      const font = g.font;
+      if (font !== lastFont) { lastFont = font; lastFs = +((/([\d.]+)px/.exec(font) || [])[1] || 48); }
+      const fs = lastFs, al = g.textAlign, ls = parseFloat(g.letterSpacing) || 0;
+      const box = (w) => { w += fs * 0.5; const x0 = al === 'center' ? x - w / 2 : al === 'right' || al === 'end' ? x - w : x;   // (left-to-right text)
+        return rectBox(x0 - fs * 0.25, y - fs * 1.3, w + fs * 0.5, fs * 2.6, line); };
+      // far off the canvas (no glyph is 2 em wide): skipped before measuring it (stencils, labels round the whole ship)
+      const most = t.length * (2 * fs + Math.max(0, ls) * (/em$/.test(g.letterSpacing) ? fs : 1));
+      if (!box(mw != null ? Math.min(mw, most) : most)) return false;
+      const w = g.measureText(t).width;
+      return box(mw != null ? Math.min(mw, w) : w);
     };
-    wrap('fillText', (t, x, y, mw) => textBox(t, x, y, mw, 0));
-    wrap('strokeText', (t, x, y, mw) => textBox(t, x, y, mw, g.lineWidth));
+    wrap('fillText', (t, x, y, mw) => textBox(String(t), x, y, mw, 0));
+    wrap('strokeText', (t, x, y, mw) => textBox(String(t), x, y, mw, g.lineWidth));
     wrap('drawImage', (img, a, b, c, d, e, f, h, i, n) => {
-      if (n >= 9) rectBox(e, f, h, i, 0);
-      else if (n >= 5) rectBox(a, b, c, d, 0);
-      else rectBox(a, b, img.width || 0, img.height || 0, 0);
+      if (n >= 9) return rectBox(e, f, h, i, 0);
+      if (n >= 5) return rectBox(a, b, c, d, 0);
+      return rectBox(a, b, img.width || 0, img.height || 0, 0);
     });
     wrap('putImageData', () => { L.full = true; });
   }
@@ -1594,7 +1617,7 @@ void main() {
     if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
     const t = o.tint ? rgb(o.tint) : o.recolor ? rgb(o.recolor) : null, useMask = !!o.tint && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null, fp = fl && pathScratchOn && fl.length > 8;
     queue.push({
-      layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || page(S.group, b[0]), mask: useMask,
+      layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || pageOf(S, b[0]), mask: useMask,
       d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
           b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
           t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : !o.tint && o.recolor ? -1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, fl ? fl[0] : 0,
@@ -1903,10 +1926,11 @@ void main() {
     // the 2D layers first, all together: each upload makes the GPU process switch from the WebGL context to
     // the 2D canvases' one and back (a costly MakeCurrent); between the WebGL passes that was 6 switches a frame
     for (const k of ['back', 'mid', 'glow']) if (L2D[k] && L2D[k].used === frameNo) uploadLayer(L2D[k]);
-    const by = (l) => queue.filter(q => q.layer === l);
-    const ground = [...by(-1), ...by(0), ...by(1)];
-    const sorted = (l) => by(l).sort((a, b) => a.sortY - b.sortY || a.seq - b.seq);
-    const walls = sorted(2), mains = sorted(3), tops = by(4);
+    const by = [[], [], [], [], [], []];                // layers -1..4, in queue order (one pass)
+    for (const q of queue) { const b = by[q.layer + 1]; if (b) b.push(q); }
+    const ground = by[0].concat(by[1], by[2]);
+    const sorted = (b) => b.sort((a, c) => a.sortY - c.sortY || a.seq - c.seq);
+    const walls = sorted(by[3]), mains = sorted(by[4]), tops = by[5];
     uploadInstances([ground, walls, mains, tops]);
     if (RT.depth) depthPass([ground, walls, mains, tops]);   // (the 2D layers write no depth)
     softReady = !!(RT.depth && RT.sh0);
@@ -1981,6 +2005,8 @@ void main() {
     preload: (groups) => { if (META) for (const g of groups) (META.pages[g] || []).forEach((_, i) => page(g, i)); },
     setScale: (k) => { userScale = k || null; try { if (k) localStorage.setItem('mn-gfx-scale', String(k)); else localStorage.removeItem('mn-gfx-scale'); } catch (e) { /* no storage */ } },
     toScreen: (x, y, z = 0) => { const [sx, sy] = toDev(x, y, z); return [sx / K, sy / K]; },
+    // whether anything within r (layout units, on screen) of (x, y, z) can show this frame (between begin and end)
+    onScreen: (x, y, z = 0, r = 1) => { const [sx, sy] = toDev(x, y, z), R = r * Sdev; return sx + R >= 0 && sx - R <= W && sy + R >= 0 && sy - R <= H; },
     get manifest() { return MAN; },
   });
 

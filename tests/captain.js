@@ -66,7 +66,7 @@ const doorPirates = (G) => G.dk.pirates.filter(p => p.door).length;
   check(B(G).hp === hp && B(G).clock - B(G).ripT < 0.5, 'a shot from the front ripples off his shield');
   const G2 = G.captGen(B(G)); shoot(G, k.x, k.y, G2.x, G2.y);
   check(B(G).hp === hp - 1, `a shot from behind into the generator hurts (${hp} → ${B(G).hp} of ${B(G).max})`);
-  check(G.captMaxHp(1) === 24 && G.captMaxHp(2) === 36 && G.captMaxHp(4) === 60 && G.captMaxHp(8) === 60, 'HP scales with the crew (24 solo, +12 each, up to 4)');
+  check(G.captMaxHp(1) === 18 && G.captMaxHp(2) === 24 && G.captMaxHp(3) === 36 && G.captMaxHp(4) === 48 && G.captMaxHp(8) === 96 && G.captMaxHp(9) === 96, 'HP scales with the crew (18 solo, 24 with two, then +12 each, up to 8)');
 }
 // --- 75 %: ALL HANDS through the blast door (1 solo, 2 for two, 3 for more; at most 3 alive)
 for (const [n, want] of [[1, 1], [2, 2], [4, 3]]) {

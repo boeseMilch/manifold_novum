@@ -854,7 +854,7 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   long-range radar, longer shields (3 s; shown as "Longer shields", id `shields`), bigger capacitors (4),
   reinforced hull (MAX_DAMAGE 5 → 6: the ship survives one more broken part; set per mission in
   `applyShipUpgrades`, so it reaches clients and doesn't leak into the next mission), sprinklers.
-  Multiplayer: the union of everyone's upgrades.
+  Multiplayer: the host's ship (its upgrades only; see "One ship: the host's" below).
 - **Gear** (money only, `GEAR`) and **professions** (once chapter 1 is finished, one for good: see "Specialize" below):
   general gear for anyone (gravity boots, thrusters, first aid course, stim pack); engineer and
   weapons specialist, each with a gear track (see 8w, 8x; the armor vest is weapons gear). Suit
@@ -2810,3 +2810,183 @@ tests/music.js's "own opening / own build-up" checks skip pieces without mission
   js/music/home.js is Last Jump Home with the deep growl built in (no factory, no switch), js/music/homedeep.js and its
   music.html entry are gone, and tests/music.js's "own opening" checks are strict again. The game (c8, Nightmare)
   plays it.
+
+## One ship: the host's (2026-10-17)
+
+The user: "In multiplayer both people can upgrade the ship, which one counts? It seems broken because there is only
+one ship. I guess only the host should be able to get rep and upgrade." Before, the server flew the union of everyone's
+upgrades and everyone earned reputation for them. Now a multiplayer game flies the host's ship:
+- server.js `startGame` passes only the host's `ship` (from their hello) to `netServer.init`, plus `{ id, name }` of
+  the host, which `init` stores as `mission.shipOf` (synced in the snapshot). The lobby message carries `hostShip`.
+- `creditMission`: with `mission.shipOf` set and not you, you are a guest: your reputation is 0 (first-clear bonus
+  too); money, the finished chapter and its unlocks are as before (they never depended on reputation). The end
+  screen says "the reputation goes to <host> (it's their ship)". Solo is unchanged (no `shipOf`). If the host leaves
+  mid-mission, the reputation of that run goes to nobody (it was their ship).
+- Lobby (`lobbyUI.flight`, set by net.js from the lobby message): the briefing says "Flying <host>'s ship" (or "Flying
+  your ship" for the host), the recommended upgrades are marked ✔/✘ against the ship that will fly
+  (`missionRequirements(id, ship)`: the host's for a guest, your own otherwise), and the Shipyard says it upgrades your
+  own ship, used when you play solo or host. No save format change: guests keep their own `ship` and `rep`.
+- Tests: tests/network.js (guest's upgrades don't fly, host's do, `shipOf`, `hostShip`), tests/progress.js (rep only
+  to the host, money and the chapter to the guest).
+
+### No spoilers in Strange Cargo, no "Jump drive spooling up." voice (2026-10-17)
+- Chapter 2's objective said "Kill both intruders." in the lobby and the HUD before anything had happened, and its blurb and
+  briefing told the whole story. Now the objective carries a `cover` ("Get the salvage pod to the Xenobiology Institute"):
+  the lobby shows it, and `objectiveStatus()` shows it until the aliens show up (the intruder event ran, the radar saw it, one
+  is aboard or dead); then "Kill both intruders (0/2 dead)" as before. The objective's logic (and the fail text, shown after the
+  fact) is unchanged. Blurb and briefing now only hint (a warm sealed pod that scratches; the security console and a weapon
+  if anything gets loose). tests/intruder.js checks the cover text, the switch, and that blurb/briefing don't name them.
+- The ship voice no longer says "Jump drive spooling up." (it came when the mission is basically over); the banner stays, as
+  does "No navigation fix. Manual jump required." (that one asks you to act).
+
+### The nav core has to be installed in our helm (2026-10-17)
+- User: "When the nav core is adrift it is solved just by picking it up — that is kinda weird. You should need to mount or
+  insert it somewhere." Chapter 4 / Pirate cove (objective `navcore`) now count only once a core is **installed in our helm**
+  (bridge): carry it there (from the raider's nav console or fished out of space; every way ends the same) and hold click
+  `NAVCORE_INSTALL` 3 s on the helm (`helmNavcoreTarget` in js/dock.js, checked before the helm's diagnosis click and only
+  while you hold a core and none is in yet). That sets `dk.helmCore` (in `dk`, so it's in the snapshot; reset with the dock):
+  the core leaves your hands and stands in the helm desk's right end, glowing (`drawHelmNavcore`: the core's 2D drawing as an
+  upright canvas sprite on the desk top; classic: on the canvas). No new id stored in saves; no timings of the pull / drift
+  changed. A raider shot down after that flings no core (as with one aboard).
+- Objective text: "Get a Red Comet nav core and install it in our helm" → with one aboard "Install the nav core in our helm
+  (bridge)" (jumping then: "with the nav core not installed") → "Red Comet nav core installed in our helm". A NAV CORE plate
+  says who has it and where it goes. Blurbs / briefing say so; practice has "Nav core adrift (left; install it in the helm)".
+- tools/balance.js doesn't model the walk to the helm and the 3 s install yet (the calibration of c4 / Pirate cove is from
+  before this): left as is, no numbers re-tuned.
+- tests/dock.js: carried aboard (both ways) isn't done; installing at the helm is; the snapshot carries `dk.helmCore`.
+
+### Treating adds up; E alone gets you up (2026-10-17)
+- User: "patching yourself up and someone else patching you up should be additive." The treatment's progress used to live
+  in each treater's own hold (`player.treat.t`), so a crewmate helping you while you patched yourself up raced you instead
+  of helping. It now lives on the patient: `c.heal` (0..1, in the crew snapshot: js/net.js adds the one field). Everyone
+  holding on them adds `dt / their own time` (self 10 s / 6 s first aid / 3 s stim, crewmate 2 s / 1.2 s first aid; the
+  heartbeat bonus adds 0.5 s of their own time), so self + crewmate fills at 1/10 + 1/2 per s (1.67 s), and it ends for
+  everyone at 100 % (every crewmate who helped counts as a medic). `player.treat` only keeps your own hold (the heartbeat's
+  phase, the 0.4 s grace). Interruptions as before: letting go briefly keeps it, and while anyone is still on it the progress
+  stays; once nobody is (`updateInjury`), it starts over. A new hit also starts it over. No time itself changed.
+- `workProgress`: treaters and the self-treating patient all show the patient's shared progress; a patient who isn't helping
+  (out cold) gets a bar too ("X is treating you").
+- User: "patching myself up needs me to hover over me with the mouse and press E". Down / out, holding E now patches you up
+  directly in `updateInteraction` (no nearby-target scan, wherever the mouse is, even with the mouse button held elsewhere);
+  holding click on yourself still works. Down, that is the only thing you can do, so nothing else competes for E. Prompts:
+  "Down — hold E (or click on yourself) to get up (10 s)"; the tutorial's injury page says the same in mouse mode.
+- tests/treat.js: self alone, crewmate alone, both (1/(1/a+1/b)), own gear each, one stops / all stop / hit again, the
+  snapshot giving both browsers the same bar, E with the mouse anywhere, clicking yourself, E on a downed crewmate.
+
+### Multiplayer over the internet: no rubber-band walk, smooth in-between, compressed snapshots, the lever (2026-10-17)
+- User (2 players, one hosting `node server.js`, the other joining, possibly over a cloudflared tunnel): "ui is weird in
+  multiplayer - it seems laggy. Also the lever is weird." Reproduced with the server sim and a browser copy with every
+  message delayed (60 ms each way + 30 ms jitter; also two headless browsers, the guest's WebSocket through a delaying proxy).
+  What it concretely was:
+  - **Your own walk lagged a round trip.** The browser predicted your movement but pulled you back towards the server's
+    position whenever it was more than 0.6 m off, and while walking the server is always a round trip of walking behind
+    (4.2 m/s × ~150 ms ≈ 0.6 m): at tunnel latencies the prediction was undone, you saw yourself where the server had you
+    (start late, slide on after letting go, snap back on a jitter spike).
+  - **Your prompt and E ring lagged too**: the "E: …" prompt over your head and the white E ring come from the server, from
+    where it has you, so walking past things they showed up late and stayed behind.
+  - **Everything else moved at 30 Hz with jitter**: shells (45 m/s: 1.5 m jumps per snapshot), shots, bolts, sparks,
+    asteroids, energy bolts on the cables, the intruders, the lever's handle, and the sim clock (`time`) itself only changed
+    when a snapshot arrived, and over a tunnel two often arrive together.
+  - **The snapshots are big**: ~10 KB of JSON (peaks 20 KB), 30 a second, uncompressed: 2.5–5 Mbit/s per guest from the
+    host's uplink, and the server queued them without limit when a connection couldn't keep up (lag that only grows).
+  - **The lever**: a tap on E showed a "Wedging the wrench in" bar while you held the key (also solo), then the lever turned
+    (a round trip later), the prompt kept saying "turn lever to RIGHT" for another 0.15 s (the cached E target kept its old
+    text), and the handle swung in 30 Hz steps. A handle that had sat on RIGHT for over a minute (angle exactly 0) snapped
+    instead of swinging (`angle || target`).
+- **Reconciliation** (js/net.js): every input carries a number (`seq`); the server keeps the last one per crew member
+  (`input.seq`) and sends it in the crew snapshot. The browser keeps where it had you per input (`netHist`, ~4 s) and compares
+  the server's position with that, not with where you are now (`netReconcile`); only a real difference (a door, a push, a
+  move only the server made) glides away (or snaps over 1.5 m), shifting the history along. Same walk as with no lag, at
+  60+30 ms and at 150+80 ms each way.
+- **Your E prompt from your screen** (`netLocalPrompt`, `ePromptOf` in js/game.js): the "E: …" suggestion and its ring are
+  worked out in the browser from where you see yourself (only that one; what you stand next to — ladders, buttons,
+  airlocks — and screen prompts stay the server's).
+- **In between snapshots** (`netBetween`, every frame): the sim clock runs on smoothly (never backwards; `netClockSync`),
+  shells / shots / bolts / sparks / asteroids fly on with their own velocity for up to 0.12 s, the energy bolts on the
+  cables move on, the intruders and pirates glide to their server position (like the other crew), and the lever's handle
+  swings in the browser (`animateLever`, js/systems.js, shared with the server's `updatePower`).
+- **Compression and back-pressure** (server.js): permessage-deflate (RFC 7692; every browser offers it), the server's side
+  with the context kept between messages: a snapshot is 0.5–3 KB on the wire instead of 10 KB (~25–90 kB/s per player).
+  The browser's own messages may come compressed too (each on its own). All text goes through `sendText` (in order). A
+  connection that is behind (a compressed message waiting, or 64 KB unsent) skips snapshots (each is the whole state) and
+  gets the skipped sounds with the next one. When the server catches up several ticks at once it sends one snapshot.
+- **The lever**: no hold bar during a tap (`LEVER_E_BAR`: the bar shows once you've held E 0.15 s; a tap turns, a hold of
+  0.5 s wedges, as before); `nearbyTarget` remembers *where* its target is and asks that spot again between rescans, so the
+  text is fresh right after a turn (solo too); `angle ?? target` and the handle starts on MID.
+- No gameplay rule or number changed; no save change.
+- `tests/latency.js` (new): the server sim and a guest browser with delayed messages: the walk matches a lag-free one, a
+  server-only move reaches the screen, E tap turns the lever once with no bar, the prompt follows within a frame, the handle
+  moves every frame, holding E still wedges, shells fly on between snapshots, the clock never stops or goes back.
+  `tests/network.js`: a raw client offering permessage-deflate gets compressed snapshots (4 KB on the wire for 98 KB of
+  JSON) and can send compressed messages (opens and starts a game with them).
+
+### Red Comet Cove runs 7 minutes (2026-10-17)
+- Playtest (2 players): "we need some more time for the red pirate cove"; then "mission time is probably good at 7 min".
+  c4 now has `length: 420` (was the default `MISSION_LENGTH` 360): the same events per crew size, spread evenly from the
+  30 s opener to 398 s (the swarm finale), the jump 22 s later. Nothing else is c4-specific: `layoutMission` already
+  spaced the events to `M.length − finaleLead`, and the reactor follows the gaps (`paceFactor`), so the energy per gap
+  is what it was written for.
+- What the time is for: each raider is one chance at the core. Shot down: the fight (~20 s), a spacewalk to fish the core
+  in (~20-30 s, it drifts off after `NAVCORE_LIFE` 60 s), back through the airlock and up to the helm (~10 s) and the
+  install (`NAVCORE_INSTALL` 3 s). Docked: it docks after `DOCK_TIME` 40 s, two pirates to fight, into the raider, the pull
+  (4 s), back and up to the helm, the install: ~90-100 s after it shows up for a crew that knows the way, more for a new one.
+  Solo / 2 players: raiders at 2:02 and 5:06 (were 1:47 / 4:21), 1:54 from the second raider to the jump (was 1:39), and
+  4:58 from the first (was 4:13). 3+ players get the raiders early anyway (×3 1:07 / 2:20, ×4 0:58 / 1:55).
+- Music: the stage follows `t / jumpAt`, so the piece stretches; Red Comet Gallop's climax (stage 6) now starts at 354 s,
+  66 s before the spool (at 360 s: 309 s, 51 s before), drops 217 / 251 / 354 s, breakdown 240 s (music.plan(420)).
+- Balance (`node tools/balance.js c4`, expected kit): at 420 s with the old cells / reactor ×3 and ×4 went out of spec (star
+  cannon waits 128 s at 322 s / 8 s at 256 s). The user's rule from the swarm change (counts kept, energy fixed with cells /
+  reactor only) over `--calibrate`, which with the longer gaps wanted more encounters (4/6/12/17/21/23/23/23) and Bigger
+  capacitors as a new prerequisite: refitted by hand like `--calibrate` (fitCells with the kit, mildest reactor in spec):
+  cells 2/2/12/11 → 4/4/12/10 for 1-4 players, reactor ×3 0.5 → 0.6, ×4 1 → 0.85; 5-8 unchanged.
+  Idle 1-8 players: 28 68 65 66 66 68 73 76 % (360 s) → 45 72 70 70 71 70 74 78 % (420 s), all in spec; solo "tight" (fights
+  wait 18 s for energy) → doable. The model still leaves out the walk to the helm and the 3 s install (see the nav core
+  install above): a few seconds per run, not enough to move the fit.
+- tests/scaling.js: c4 in the timeline check (its counts, jump at its own length, even spacing); a c4 check (jump at 420 s,
+  both raiders, at least 110 s from the last one to the jump at every crew size).
+
+### Performance, round 2: skip what's off screen (2026-10-17)
+Request: "can you optimize". Measured first (headless Chromium on the real GPU, 1920×1080, dpr 1, per-frame timers round
+`simTick` / `clientUpdate` / `netApply` / `render` plus the CPU profiler; then the same in headless Firefox over WebDriver
+BiDi), in four busy scenes: practice with interceptor + frigate + swarm + intruder + fires + breach + surge + storm +
+coolant + grappler + leeches (on the bridge), the pirate base docked (in the left airlock room), the leviathan boss
+(phase 2, from the front cannon) and 2-player multiplayer (practice, 8 encounters). The simulation is cheap
+(0.05-0.35 ms a frame, the browser-side update 0.1-0.2 ms, `netApply` ~0.1 ms); the frame is the render.
+- Where it went: the ship is drawn whole every frame and the camera shows about a room of it. The 2D layers' dirty
+  tracking (`trackDirty`) re-read half a dozen context properties for every piece of every stroke (the power glow's long
+  dashed cables), stencils and labels round the whole ship were measured and rasterized off screen, the sidebar plates
+  measured their second line word by word (~a dozen `measureText` a plate a frame), the steam and the map table's radar
+  sweep were redrawn and uploaded off screen, enemy shields' hex cells were built off screen, and every floor / wall /
+  spine tile rebuilt its options (strings, arrays, objects) each frame.
+- Changes (no visual change; nothing in the simulation):
+  - js/gfx.js `trackDirty`: the margin (`pad`: compositing, filter, line width, miter, shadow) is read once per call, not
+    per path piece; `rectBox` without temporary arrays; the text box's font size parsed once per font. A drawing call
+    whose box lies entirely off the canvas is skipped (fill, stroke, fillRect, strokeRect, fillText, strokeText,
+    drawImage): it can't change a pixel. Text far off is skipped before `measureText` (a bound of 2 em a character plus
+    the letter spacing). `arcTo` adds its corner to the path box (still marks the whole layer).
+  - `GFX.onScreen(x, y, z, r)`: can anything within r of a point show this frame. Used by `steamWisps` and the map
+    table's sweep (no redraw / upload off screen), `drawEnemyOverlays` (overlay, smoke, shield; the tag and the tentacle
+    still draw) and `drawFloorSprites` (a whole floor rect off screen).
+  - Sprites: a sprite's pages, once loaded, are remembered on it (`S._ready`, `pageOf`); floor tiles, wall pieces and
+    spine pieces are worked out once (js/sprites.js `floorTiles`, `buildWallPieces`, `buildSpinePieces`); `end()` sorts
+    the queue into its layers in one pass.
+  - js/sidebar.js `plateLines`: a plate's wrapped / cut second line is remembered per text.
+- Checked: deterministic frames (seeded `Math.random`, a fake clock, rAF frozen, 40 frames stepped by hand) in 7 scenes
+  (the four above plus walking with the camera moving, a side cannon with a grappler, a spacewalk) are pixel-identical
+  before / after (21 screenshots, 0 differing pixels); `?classic` runs clean.
+- Results (ms of main thread a frame, avg / p95, before → after; 3 alternating runs each, a busy machine):
+  Chromium render: busy 3.51/4.73 → 2.72/3.83, docked 2.63/3.63 → 2.11/2.90, leviathan 2.37/3.07 → 2.01/2.83, multiplayer
+  4.66/6.13 → 3.67/4.93 (host) and 4.67/6.17 → 4.05/5.13 (guest). Firefox (software 2D canvases, like the user's laptop):
+  busy 9.95/11.57 → 9.45/11.20, docked 7.07/9.65 → 6.24/7.94, leviathan 5.59/7.26 → 5.16/6.68.
+- Left (bigger, or not mine to change): in Firefox most of the rest is rasterizing what is on screen on the full-size
+  HUD canvas (use rings ~0.9 ms, sidebar plates ~0.75, the storm's darkness ~0.7 as a full-screen evenodd fill) and the
+  2D layers' readback + upload (~1.3 ms busy: ~320 k pixels a frame of 'mid' and 'glow', static decor re-uploaded every
+  frame; caching static layer content across frames would need to know what's static). Multiplayer guests parse a JSON
+  snapshot per message (`ws.onmessage`, ~1% of a frame; net.js).
+
+### Captain Red Comet's HP by crew size (2026-10-17)
+
+The user (2 players: too much; it "should scale almost linearly with the amount of people"; then "do 18/24/... and
+then near linear"): `captMaxHp` is 18 solo, 24 with two (70 % of the old 36), then +12 a player up to 8 (36, 48 …
+96); was 24 + 12 a player, capped at 4. The balance model keeps chapter 5 in spec at every crew size (solo tight
+42, ×2 doable 30). The phase thresholds are fractions of the bar, so they follow.

@@ -29,10 +29,12 @@ const SHIP_UPGRADES = [
 ];
 // A mission's prerequisites (MISSIONS[id].needs: { ship: [upgrade ids], overcharge }), as warning lines for
 // the lobby: without them the energy isn't enough (tools/balance.js --calibrate). Not a hard block.
-function missionRequirements(id) {
+// With `ship` (the upgrades of the ship that will fly: the host's in multiplayer) each is marked ✔ or ✘.
+function missionRequirements(id, ship = null) {
   const N = MISSIONS[id]?.needs, out = [];
   if (!N) return out;
-  const names = (N.ship || []).map(u => SHIP_UPGRADES.find(x => x.id === u)?.name).filter(Boolean);
+  const names = (N.ship || []).filter(u => SHIP_UPGRADES.some(x => x.id === u))
+    .map(u => SHIP_UPGRADES.find(x => x.id === u).name + (ship ? (ship[u] ? ' ✔' : ' ✘') : ''));
   if (names.length) out.push(`Recommended: ${names.join(', ')}`);
   if (N.overcharge) out.push('Recommended: an engineer with reactor overcharge');
   return out;
@@ -92,9 +94,10 @@ Object.assign(MISSIONS, {
     essential: ['intruder'],
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     finaleLead: 70,                           // the frigate finale comes 70 s before the jump (not 22): time for its heavy shots to matter
-    objective: { kind: 'intruder', count: 2 }, rules: {},
-    blurb: 'Two somethings crawled out of the bonus salvage pod. Kill them both.',
-    briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Halfway through the next jump, the pod\'s seal hissed open.\n\nTwo somethings with too many legs are loose on the ship: one prowls the upper deck, the other the lower. They force their way around, room by room, hunting whoever they can find. Lock them in with the security console, get a weapon, and kill them both, one at a time if you can. The Xenobiology Institute will pay for the remains.',
+    // cover: what the objective reads (lobby, HUD) until the aliens show up, so it doesn't give them away (mission.js objectiveStatus)
+    objective: { kind: 'intruder', count: 2, cover: 'Get the salvage pod to the Xenobiology Institute' }, rules: {},
+    blurb: 'The Guild threw in a sealed salvage pod as a bonus. The Xenobiology Institute wants it, whatever is inside.',
+    briefing: 'The Guild paid up — and threw in a sealed salvage pod as a bonus. Nobody knows what\'s in it. The Xenobiology Institute will pay for whatever it turns out to be.\n\nHaul it through the hot zone and keep an eye on it: the pod is warm, and now and then something inside scratches at the seal. If anything gets loose, lock it in with the security console and get a weapon.',
     // solo: the opener (an asteroid swarm; 2026-10-16: no more interceptor half the time, no pirates on this run), the two
     // aliens (the objective), the frigate (the finale); bigger crews add the mine drone, the maintenance failure, a jammed
     // cannon and the antenna (DROP_ORDER), then repeats
@@ -119,13 +122,15 @@ Object.assign(MISSIONS, {
   c4: {
     name: '4 · Red Comet Cove', tier: 2, campaign: 4, rewards: { money: 80, perPirate: 20, rep: 2 },
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×3 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [4, 5, 11, 14, 18, 23, 23, 23], cells: [2, 2, 12, 11, 14, 17, 17, 17], reactor: [1, 1, 0.5, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, a failing part at every crew size, 2026-10-16): 28% 68% 65% 66% 66% 68% 73% 76% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8); was 3/5/11/14/18/23/24/24 (46% 66% 65% 67% ...)
+    // (2026-10-17, 7 min instead of 6: the event counts kept; cells / reactor refitted like --calibrate with the expected kit, see PLAN.md)
+    crew: {events: [4, 5, 11, 14, 18, 23, 23, 23], cells: [4, 4, 12, 10, 14, 17, 17, 17], reactor: [1, 1, 0.6, 0.85, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // fitted (expected kit, 420 s, 2026-10-17): 45% 72% 70% 70% 71% 70% 74% 78% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8), in spec; was cells 2/2/12/11, reactor 1/1/0.5/1 at 360 s (28% 68% 65% 66% 66% 68% 73% 76%)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on)
     objective: { kind: 'navcore' }, rules: { breach: true, surge: true },   // (was 'raiders' ×2 like chapter 1; 2026-10-16: no mission twice)
-    blurb: 'Pirates took Dr. Varga. Find the Red Comet\'s hideout: bring a raider\'s nav core aboard.',
-    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away. Where to? Nobody knows where their hideout is — but every one of their raiders does: it\'s in its nav computer.\n\nTheir raiders patrol the Cove. Get us a nav core. Let one dock and board it: the nav console sits beside its reactor, pull the core out (hold click) and carry it home. Or shoot one to scrap: its nav core gets flung clear — spacewalk out and fish it in before it drifts off (about a minute). The Guild\'s bounty still stands: $20 a pirate. Power lines can arc now; splice them with the repair kit.',
+    length: 420,                              // 7 min to the jump (2026-10-17 playtest, 2 players: "we need some more time"): the nav core is two chances, a fight + a fetch + the install each
+    blurb: 'Pirates took Dr. Varga. Find the Red Comet\'s hideout: get a raider\'s nav core and install it in our helm.',
+    briefing: 'The black box recording is clear: pirates of the Red Comet gang boarded the lab and dragged Dr. Varga away. Where to? Nobody knows where their hideout is — but every one of their raiders does: it\'s in its nav computer.\n\nTheir raiders patrol the Cove. Get us a nav core. Let one dock and board it: the nav console sits beside its reactor, pull the core out (hold click) and carry it home. Or shoot one to scrap: its nav core gets flung clear — spacewalk out and fish it in before it drifts off (about a minute). Either way, plug it into our helm on the bridge (hold click) so we can read their charts. The Guild\'s bounty still stands: $20 a pirate. Power lines can arc now; splice them with the repair kit.',
     // a calm half minute, a Red Comet scout (the opener), then the raiders; a part fails in between (bigger crews)
     build: () => [evAt('interceptor', 30, { side: 'star', opener: true }), evAt('pirates', 70, { side: 'port' }), evAt('maintenance', 110, { radar: false }), evAt('pirates', 150, { side: randSide() }),
                   evAt('mines', 190, { side: randSide() }), evAt('glitch', 230, { radar: false }), evAt('swarm', 270)],
@@ -386,13 +391,17 @@ function creditMission() {
   if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice') return;
   const mine = o.results.crew.find(c => c.id === me.id);
   const ok = missionSuccess(mission.id, o.results), first = ok && !profile.done[mission.id];
+  // In multiplayer the crew flies the host's ship (mission.shipOf, set by the server): the reputation goes
+  // to the host only (it buys that ship's upgrades); a guest gets the money and the finished chapter.
+  const guestOf = mission.shipOf && mission.shipOf.id !== me.id ? mission.shipOf.name || 'the host' : null;
   const r = computeRewards(mission.id, o.results, !!mine?.survived, first);
+  if (guestOf) r.rep = 0;
   profile.money += r.money; profile.rep += r.rep;
   if (ok) profile.done[mission.id] = (profile.done[mission.id] || 0) + 1;     // done = completed (objective included)
   profile.lastRun = mission.runId;
   saveProfile(profile);
   const next = CAMPAIGN[CAMPAIGN.indexOf(mission.id) + 1], nextName = next && CAMPAIGN.includes(mission.id) ? MISSIONS[next].name : null;
-  lastReward = { ...r, profession: first && mission.id === 'c1' && !profile.profession, unlocked: first ? nextName : null,
+  lastReward = { ...r, guestOf: guestOf && ok ? guestOf : null, profession: first && mission.id === 'c1' && !profile.profession, unlocked: first ? nextName : null,
     objFailed: !!o.results.jumped && !ok, locked: !ok && !profile.done[mission.id] && nextName && !unlockedMissions().has(next) ? nextName : null };
 }
 // The rewards block on the end screen.
@@ -400,7 +409,7 @@ function drawRewards(cx, y) {
   if (!lastReward || mission.id === 'practice') return;
   const r = lastReward;
   ctx.textAlign = 'center'; ctx.font = '700 16px system-ui, sans-serif'; ctx.fillStyle = '#ffe08a';
-  ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
+  ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : r.guestOf ? `+$${r.money}  ·  the reputation goes to ${r.guestOf} (it's their ship)` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
   let dy = 26;
   if (r.profession) { ctx.fillStyle = '#7af0b0'; ctx.font = '800 18px system-ui, sans-serif'; ctx.fillText('Professions are open: pick one in the locker.', cx, y + dy); dy += 24; }
   if (r.unlocked) { ctx.fillStyle = '#9cd8ff'; ctx.font = '600 14px system-ui, sans-serif'; ctx.fillText(`Unlocked: ${r.unlocked}`, cx, y + dy); }
@@ -435,6 +444,10 @@ function pickProfession(p, id) {
 }
 const lobbyUI = {
   union: null, askProf: null, onPick: null, onProfile: null,
+  // Whose ship flies (net.js, from the server's lobby): null solo (and in the menu), { host: true } when you
+  // host a game, { name, ship } as a guest in someone else's game: their ship and its upgrades.
+  flight: null,
+  flownShip() { return this.flight && !this.flight.host ? this.flight.ship || {} : profile.ship; },
   el: (id) => document.getElementById(id),
   init(onPick, onProfile) {
     this.onPick = onPick; this.onProfile = onProfile;
@@ -475,10 +488,11 @@ const lobbyUI = {
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? ((obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Bring a Red Comet nav core aboard.' : '';
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? ((obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : '';
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
-        ${missionRequirements(this.chosen).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
+        ${this.flight ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades, and the reputation is yours.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: their upgrades count, and the reputation goes to them. You get the pay.`}</p>` : ''}
+        ${missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
         ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
     }
   },
@@ -506,7 +520,10 @@ const lobbyUI = {
     } else {
       html += '<div class="grid">' + SHIP_UPGRADES.map(u => shopItem(`data-ship="${u.id}"`, u.name, u.desc,
         { own: p.ship[u.id], price: `★${u.rep}`, why: p.rep < u.rep ? `Need ★${u.rep - p.rep} more reputation (missions)` : '' })).join('') + '</div>';
-      html += '<p class="note">In multiplayer, the ship gets every upgrade anyone in the crew has bought.</p>';
+      const F = this.flight;   // (in multiplayer the host's ship flies; see lobbyUI.flight)
+      html += `<p class="note">${F && !F.host ? `This is your own ship: its upgrades count when you play solo or host a game. In this game you fly ${escapeHtml(F.name || 'the host')}'s ship.`
+        : F ? 'You are the host: the crew flies your ship, with these upgrades, and the reputation earned is yours.'
+        : 'This is your own ship: its upgrades count when you play solo or host a game. In someone else\'s game you fly the host\'s ship.'}</p>`;
     }
     box.innerHTML = html;
     box.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => { if (!p.profession) { this.askProf = b.dataset.prof; this.shop(kind); } });

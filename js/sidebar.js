@@ -117,6 +117,27 @@ function plateBody(x, y, w, h) {
   ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x + 6, y + 2, w - 12, 1.5);   // a thin top highlight
 }
 
+// A plate's second line in the current font (500 13px) and `room` px: two lines if it wraps and that fits,
+// else one, cut off with '…'. Remembered per text (it was ~a dozen measureTexts per plate, every frame).
+// (measure: the text's width; tests pass their own)
+const plateLineCache = new Map();
+function plateLines(text, room, wrap, measure = (s) => ctx.measureText(s).width) {
+  const key = room + '|' + (wrap ? 1 : 0) + '|' + text;
+  let out = plateLineCache.get(key);
+  if (out) return out;
+  const fits = (s) => measure(s) <= room;
+  const words = text.split(' '), cut = words.findIndex((_, i) => !fits(words.slice(0, i + 1).join(' ')));
+  if (wrap && cut > 0 && fits(words.slice(cut).join(' '))) out = [words.slice(0, cut).join(' '), words.slice(cut).join(' ')];   // (wrap: two lines instead of cutting it off)
+  else {
+    let sub = text; while (!fits(sub) && sub.length > 4) sub = sub.slice(0, -2);
+    if (sub !== text) sub = sub.slice(0, -1) + '…';
+    out = [sub];
+  }
+  if (plateLineCache.size > 400) plateLineCache.clear();      // (texts with timers in them: keep it small)
+  plateLineCache.set(key, out);
+  return out;
+}
+
 function drawPlate(p) {
   const d = p.data, x = SIDEBAR_X + p.x, y = p.y, w = PLATE_W, h = PLATE_H, t = time;
   ctx.save(); ctx.globalAlpha = clamp(p.alpha, 0, 1);
@@ -128,15 +149,9 @@ function drawPlate(p) {
   ctx.font = '800 16px system-ui, sans-serif'; ctx.fillStyle = '#ffffff';
   ctx.fillText(d.title, x + 58, y + 18);
   ctx.font = '500 13px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec';
-  const room = w - 66 - (d.red ? 14 : 0), fits = (s) => ctx.measureText(s).width <= room;
-  const words = d.sub.split(' '), cut = words.findIndex((_, i) => !fits(words.slice(0, i + 1).join(' ')));
-  if (d.wrap && cut > 0 && fits(words.slice(cut).join(' '))) {   // (wrap: two lines instead of cutting it off)
-    ctx.fillText(words.slice(0, cut).join(' '), x + 58, y + 35); ctx.fillText(words.slice(cut).join(' '), x + 58, y + 49);
-  } else {
-    let sub = d.sub; while (!fits(sub) && sub.length > 4) sub = sub.slice(0, -2);
-    if (sub !== d.sub) sub = sub.slice(0, -1) + '…';
-    ctx.fillText(sub, x + 58, y + 39);
-  }
+  const lines = plateLines(d.sub, w - 66 - (d.red ? 14 : 0), d.wrap);
+  if (lines.length > 1) { ctx.fillText(lines[0], x + 58, y + 35); ctx.fillText(lines[1], x + 58, y + 49); }
+  else ctx.fillText(lines[0], x + 58, y + 39);
   if (d.red) {                                       // red light: a problem that is happening right now
     const k = 0.55 + 0.45 * Math.sin(t * 6);
     ctx.beginPath(); ctx.arc(x + w - 14, y + 15, 5, 0, TAU); ctx.fillStyle = `rgb(255,${50 + 60 * k | 0},40)`; ctx.fill();

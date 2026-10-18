@@ -32,7 +32,7 @@ const essential = (id) => new Set([...G0.ESSENTIAL_KINDS, ...(G0.MISSIONS[id].es
 }
 
 // --- the timeline for 1, 2, 4, 8 players: about the same length, fewer events for a small crew
-for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
+for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   const lens = [], counts = [];
   let prevKept = null, okAll = true, msg = '';
   const L = G0.MISSIONS[id].length || G0.MISSION_LENGTH;   // (c8: its own length, the boss fight's estimate after the events: js/progress.js)
@@ -51,6 +51,18 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c7', 'c8']) {
     prevKept = kept; lens.push(G.mission.jumpAt); counts.push(ev.length);
   }
   check(okAll, `${G0.MISSIONS[id].name}: 1 / 2 / 4 / 8 players get ${counts.join(' / ')} events, all jump at ${G0.MISSIONS[id].length || L} s, evenly spaced, essentials kept, a smaller crew's events a subset of a bigger one's, reactor ∝ gap${msg}`);
+}
+// --- Red Comet Cove (c4) runs 7 min to the jump (2026-10-17 playtest, 2 players: "we need some more time"): the nav core
+// takes a fight, a fetch or a boarding, and the install in our helm; even the last raider leaves ~2 min for its core
+{
+  const msg = []; let ok = G0.MISSIONS.c4.length === 420;
+  for (const n of [1, 2, 3, 4, 8]) {
+    const G = withCrew(n, 'c4'), raiders = G.mission.events.filter(e => e.kind === 'pirates').map(e => e.t).sort((a, b) => a - b);
+    const left = G.mission.jumpAt - raiders[raiders.length - 1];
+    if (!(near(G.mission.jumpAt, 420) && raiders.length === 2 && raiders[0] < 125 && left >= 110)) ok = false;
+    msg.push(`×${n}: raiders at ${raiders.map(t => t.toFixed(0)).join(' / ')} s, ${left.toFixed(0)} s from the last to the jump`);
+  }
+  check(ok, `Red Comet Cove jumps at 420 s, both raiders by ${G0.MISSIONS.c4.length - 110} s at every crew size (${msg.join('; ')})`);
 }
 {
   const A = withCrew(1, 'c3', 3), B = withCrew(1, 'c3', 99);
