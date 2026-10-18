@@ -2694,6 +2694,8 @@ the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away
 Headless Node tests (no browser needed; `tests/harness.js` loads the game scripts with a
 dummy canvas):
 
+- `node tests/balancemodel.js`: the balance model's travel table covers every pair of its spots in every variant and
+  still matches a fresh walk; fire spreading (tools/balance.js `spread()`) grows with the wait and stays within reach.
 - `node tests/reachability.js`: every weak spot of every enemy, on both sides, plus the
   asteroid crack, can be hit from its cannon within 10 s with good aim (with lead, within
   the cannon's arc). Each case runs 6 random sway patterns. Hull wear is off, so only
@@ -3139,3 +3141,32 @@ event hatches them instead of bringing two aliens in through the airlocks.
   `podHatchAt(i)`, the crew walking to the reactor room instead of the airlock rooms; no radar warning any more). c2 score
   1-4 / 8 players 41 / 34 / 31 / 27 / 34 → 48 / 31 / 25 / 21 / 34, idle 35 / 58 / 66 / 74 / 69 % → 34 / 60 / 69 / 77 / 70 %:
   solo a little harder (no warning from the radar), bigger crews a little easier (the fight is in the middle of the ship).
+
+### Balance model: a travel table, fires that spread, 10 builds (2026-10-18)
+- The user asked whether the idle time counts reloads, time between shots and enemy shots getting through. It did
+  (1.2 s per shot vs the 0.45 s cooldown, a 3 s reload per 3 shots, damage while the enemy lives → repair jobs), but
+  a fire cost the same whether it was reached at once or 40 s later. Solo, fires wait behind the next encounter.
+- **Fires spread** (tools/balance.js `spread()` / `fireWork()`): the game's rules from js/mission.js updateFires. Every
+  FIRE_TIME (22 s with sprinklers) a fire spreads (1/3), burns its part out and keeps burning (1/6), burns it out and goes
+  out (1/6); plasma fires every PLASMA_TIME burn their part (1/2) or spread. The fire job's work is settled when someone
+  gets there: fires × `FIRE_WORK` (3 s) + burnt-out parts × (REPAIR_TIME + `PART_WORK`) (+ the repair kit's fetch). Worked
+  out for one whole fire and scaled by the expected count, limited to `FIRE_REACH` (8) / `PLASMA_REACH` (4) parts.
+  Incidents per hit are now the game's: HIT_FIRE (0.24) fires and HIT_BREAK (0.06) broken parts per small hit, a fire
+  with every big hit (was 0.5 'incidents' per small hit at 4 s each). The overcharged reactor's fires spread too.
+  `--detail` shows each fire job's growth ("0.4 → 0.6 fires, 0.3 parts burnt out").
+- **Travel table** (tools/travel-table.json, `node tools/travel.js --table`, 84 s in 4 processes): every pair of the 17
+  places the model sends the crew (`SPOTS` in tools/travel.js), plain / boots / faster airlocks / both, [airlocks open
+  towards you, the other way]. balance.js reads it and only walks a trip that's missing (with a warning to add it to
+  SPOTS). Rebuild after moving rooms, doors or stations (tests/balancemodel.js re-walks two trips to notice).
+- **10 builds** per mission and crew size (`A.RUNS`, `A.CAL_RUNS`; were 8).
+- Speed: one mission 9.4 → ~2 s, everything (16 missions × 5 crew sizes × 10 builds) ~56 s. What's left is the energy
+  check: the game's power and combat code at 0.1 s steps, three runs per build (~2/3 of the time); a 0.25 s step was
+  tried, but it flips some in-spec verdicts.
+- Solo idle, hit rate 0.5 (before → after; 2 players in brackets): intro 48 → 42 (72 → 70), rush 76 → 76 (61 → 56),
+  pirate cove 47 → 41, c1 49 → 43 (66 → 62), c2 34 → 34, c3 26 → 26, c4 19 → 9 (59 → 55), c5 38 → 36, c6 27 → 26,
+  c7 40 → 40, c8 16 → 15 (51 → 45), nightmare 27 → 21 (59 → 48). The 60 % hit rate changes these by 0-1 points
+  (aiming is ~6 s of a ~30 s encounter: getting there, the reload and the cleanup are the rest).
+- Not retuned (c1 / c2 / c5 are approved as they are): tests/scaling.js fails on the solo targets (pirate cove, deep,
+  c4 below 25 %), the 2-4 player targets, and one energy check (Stranded engineer ×3 in the new 10th build). The first
+  three failed before this change too.
+

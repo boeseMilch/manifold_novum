@@ -27,7 +27,7 @@
 // It's an expected-value model, not a simulation of players: it says where the pressure is, not
 // whether a given crew will make it. Every guess is named below.
 const { loadGame } = require('../tests/harness');
-const { travel } = require('./travel');
+const { travel, tableTrip } = require('./travel');
 
 // ===========================================================================
 // ASSUMPTIONS — every guess the model makes, in one place
@@ -59,11 +59,15 @@ const A = {
                           // in a crew half the downs are treated by a crewmate instead (TREAT_TIME + TREAT_WALK). The kit
                           // (first aid course, stim pack) scales CREW_HIT_COST by the ratio of these
   TREAT_WALK: 4,          // s for a crewmate to come over and treat someone who's down
-  INCIDENT_WORK: 4,       // s of work per small-hit incident (extinguish a fire ~1.3 s or repair a part 5 s)
+  FIRE_WORK: 3,           // s per fire: step to it and spray it out (~1.3 s of foam), then on to the next
+  FIRE_REACH: 8,          // parts a fire on one side can spread over (its column's 5-6 inside parts, and some next door) …
+  PLASMA_REACH: 4,        // … a plasma fire (it stays in its room: a lower side room's 4 parts)
+  PART_WORK: 1,           // s per broken part on top of REPAIR_TIME (stepping from part to part)
   TOOL_FETCH: 4,          // s extra to fetch the extinguisher / repair kit for a repair
   BREAK_PER_LARGE: 1.3,   // parts broken per big hit (damageColumn: 1, 30% 2)
-  INCIDENT_PER_SMALL: 0.5,// incidents per small hit (smallHit: half the time nothing)
-  OPEN_SMALL: 0.4,        // a small-hit incident counts as this much of a broken part (most are fires; a fire burns its part 40% per FIRE_TIME)
+  OPEN_FIRE: 0.4,         // a fire counts as this much of a broken part in 'problems open at once' (left alone it burns its part out)
+                          // (per small hit: the game's HIT_FIRE fires and HIT_BREAK broken parts; per big hit: BREAK_PER_LARGE parts and a fire.
+                          // A fire nobody has reached yet spreads and burns out parts as in the game: spread(); was 0.5 'incidents' per small hit, no spreading)
   SUPPRESS: 0.6,          // an enemy's fire once the gunner is shooting at it (the crack blinds it, the cable fizzles), vs ignored
   INCIDENT_CHUNK: 10,     // s: enemy damage is turned into repair jobs in chunks of this much alive time
   BREACH_FIX: 15,         // s to tarp a breach from inside (TARP_TIME), when the breach rule is on
@@ -124,7 +128,7 @@ const A = {
   SPEC_FINALE: 5,         // s before the jump: a wait that starts this late is the finale's, it doesn't count
   REACTOR_STEPS: [0.85, 0.7],          // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites …
   REACTOR_STEPS_EARLY: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3],   // … and for the early missions, which have to be in spec on the base ship           // s a cannon may wait for its next energy and still count as in spec
-  CAL_RUNS: 8,            // --calibrate: random builds per mission and crew size while searching (= RUNS: what the summary rates)
+  CAL_RUNS: 10,           // --calibrate: random builds per mission and crew size while searching (= RUNS: what the summary rates)
   OPTIONAL_IDLE: 0.6,     // optional jobs (fuel canister) are only done when the crew is below this load
   // verdicts and score
   TIGHT_LOAD: 0.8, MAX_LOAD: 1.15,           // crew-seconds needed / available
@@ -132,7 +136,7 @@ const A = {
   TIGHT_WAIT: 15,                             // s of fights waiting for energy, summed
   BEST_WAIT: 3,                               // s of waiting allowed with perfect routing (an energy takes 0.9 s down the line)
   SCORE: { load: 45, open: 30, energy: 15, late: 10 },   // difficulty score weights (out of 100)
-  RUNS: 8,                // random builds per mission and crew size (shuffled timelines, random sides)
+  RUNS: 10,               // random builds per mission and crew size (shuffled timelines, random sides)
   SEED: 12345,
 };
 const PLAYERS = [1, 2, 3, 4, 8];
@@ -161,7 +165,7 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY',
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY', 'HIT_FIRE', 'HIT_BREAK', 'PLASMA_TIME',
   'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE',
   'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY', 'podHatchAt'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -176,13 +180,18 @@ const game = () => G0 || (G0 = loadGame(NAMES));
 // Walking (tools/travel.js, cached)
 // ===========================================================================
 // (with the kit's gravity boots / faster airlock pumps measured that way: KIT, set by runOne)
-const tripCache = new Map();
+const tripCache = new Map(), warned = new Set();
 function T(from, to) {                            // seconds from one place to another (airlocks blended by CYCLE)
   if (from === to) return 0;
   const opts = { boots: !!KIT?.boots, airlocks: !!KIT?.airlocks }, k = from + '→' + to + (opts.boots ? '|boots' : '') + (opts.airlocks ? '|airlocks' : '');
-  if (!tripCache.has(k)) {
-    const r = travel(from, to, opts), b = r.best.at ?? r.best.enter ?? 15, w = r.worst.at ?? r.worst.enter ?? b + 3;
-    tripCache.set(k, b + (w - b) * A.CYCLE);
+  if (!tripCache.has(k)) {                       // from tools/travel-table.json; a trip that isn't in there is walked (slow)
+    let bw = tableTrip(from, to, opts);
+    if (!bw) {
+      if (!warned.size) console.error('tools/balance.js: trips missing from tools/travel-table.json (add them to SPOTS in tools/travel.js, then node tools/travel.js --table):');
+      if (!warned.has(from + '→' + to)) { warned.add(from + '→' + to); console.error(`  ${from} → ${to}`); }
+      const r = travel(from, to, opts), b = r.best.at ?? r.best.enter ?? 15; bw = [b, r.worst.at ?? r.worst.enter ?? b + 3];
+    }
+    tripCache.set(k, bw[0] + (bw[1] - bw[0]) * A.CYCLE);
   }
   return tripCache.get(k);
 }
@@ -563,6 +572,32 @@ function simulate(build) {
   const real = energySim(build, s2.plan, 'real'), best = energySim(build, s2.plan, 'best');
   return finish(build, s2, real, best);
 }
+// Fires nobody has reached yet (js/mission.js updateFires): about every FIRE_TIME (15 s; 22 with sprinklers) each fire
+// spreads to another part nearby (1/3), burns its part out and keeps burning (1/6), burns it out and goes out (1/6), or
+// nothing happens (1/3); a plasma fire, every PLASMA_TIME (6 s), burns its part out (1/2, if it's intact) or spreads.
+// Expected values after `wait` s, from fires on intact parts (each fire's clock starts at a random point of its period,
+// so a fraction of a period rolls that share of the fires). → fires and parts broken when someone gets there, and the work.
+function spread(fires, wait, plasma) {
+  const g = game(), T = plasma ? g.PLASMA_TIME : g.FIRE_TIME / (KIT?.fireSlow ?? 1), rolls = Math.max(0, wait) / T;
+  const cap = plasma ? A.PLASMA_REACH : A.FIRE_REACH;
+  let fi = fires, fb = 0, brk = 0;                    // fires on intact parts / on broken ones, parts burnt out
+  for (let r = 0; r < rolls; r++) {
+    // (a fire only spreads to a part that isn't burning yet, and only burns out one that's intact)
+    const f = Math.min(1, rolls - r), room = Math.max(0, 1 - (fi + fb) / cap), intact = Math.max(0, 1 - brk / cap);
+    if (!plasma) { const sp = (fi + fb) / 3 * room, burn = fi / 6 * intact, out = fi / 6, outB = fb / 6; fi += f * (sp - burn - out); fb += f * (burn + fi / 6 * (1 - intact) - outB); brk += f * (burn + out * intact); }
+    else { const burn = fi / 2 * intact, sp = (fi / 2 + fb) * room; fi += f * (sp - burn); fb += f * burn; brk += f * burn; }
+  }
+  return { fires: fi + fb, broken: brk };
+}
+function fireWork(fire, wait) {
+  // (worked out for one whole fire, then scaled: an expected 0.1 fire is a 10% chance of one, which may fill its room)
+  const g = game(), per = (n, plasma) => { if (!(n > 0)) return { fires: 0, broken: 0 }; const o = spread(1, wait, plasma), cap = plasma ? A.PLASMA_REACH : A.FIRE_REACH;
+    return { fires: Math.min(cap, n * o.fires), broken: Math.min(cap, n * o.broken) }; };
+  const a = per(fire.n, false), b = per(fire.plasma, true);
+  const broken = a.broken + b.broken;
+  const work = a.fires * A.FIRE_WORK + (b.fires > 0 ? Math.min(1, b.fires) * (A.PIN_TIME + g.VENT_TIME) : 0) + broken * (g.REPAIR_TIME + A.PART_WORK);
+  return { work, fetch: Math.min(1, broken) * A.TOOL_FETCH, weight: (a.fires + b.fires) * A.OPEN_FIRE + broken, fires: a.fires + b.fires, broken };   // (fetch: the repair kit too)
+}
 function schedule(build, waitByKey) {
   const { n, events, jumpAt, rules, objective } = build, g = build.g;
   const end = jumpAt + 2, got = {}, ctx = { n, rules, objective, got };   // (got: objectives reached so far, in schedule order: the nav core's / ore's follow-up jobs look)
@@ -576,7 +611,11 @@ function schedule(build, waitByKey) {
     const job = { rel: 0, prio: 0, work: 0, trip: 0, energy: [], deadline: null, ...j, release, ev: ev || j.ev };
     // a repair joins one that's still waiting in the same place (one trip fixes both)
     const same = job.prio === 2 && queue.find(q => q.prio === 2 && q.label === job.label && q.where === job.where && Math.abs(q.release - release) <= A.INCIDENT_CHUNK * 1.5);
-    if (same) { same.work += job.work; same.weight = (same.weight || 0) + (job.weight || 0); return; }
+    if (same) {
+      same.work += job.work; same.weight = (same.weight || 0) + (job.weight || 0);
+      if (job.fire) { same.fire.n += job.fire.n; same.fire.plasma += job.fire.plasma; }
+      return;
+    }
     queue.push(job);
   };
   // the `tides` rule: one tide, rules.tides s in (js/encounters.js updateTide; it recurred until 2026-10-17)
@@ -614,12 +653,15 @@ function schedule(build, waitByKey) {
   let crewHits = 0, bonusCells = 0, jumpDelay = 0, busy = 0, coilsDone = 0, radarBusy = 0;
   const roomOf = (side) => (side === 'front' ? 'bridge' : side === 'port' ? 'portGun' : 'starGun');
   const sideOf = (j) => j.ev?.side || 'front';
-  // damage → repair jobs: small hits (A.INCIDENT_PER_SMALL incidents each), big hits (parts broken, plus the rules' extras)
-  const repairs = (small, large, at, side, ev) => {
-    const inc = small * A.INCIDENT_PER_SMALL, brk = large * A.BREAK_PER_LARGE;
-    if (inc > 0) {
-      const pl = rules.plasma ? A.PLASMA_SHARE : 0, work = (1 - pl) * A.INCIDENT_WORK + pl * (A.PIN_TIME + g.VENT_TIME);
-      push({ label: 'fire / damage', where: side, prio: 2, trip: H(roomOf(side)) + A.TOOL_FETCH, work: work * inc, weight: inc * A.OPEN_SMALL * (KIT?.fireSlow ?? 1) }, at, ev);
+  // damage → repair jobs: small hits (the game's HIT_FIRE fires and HIT_BREAK broken parts each), big hits (parts broken and a
+  // fire, plus the rules' extras). A fire job's work is settled when someone gets there (fireWork: it spread meanwhile).
+  // (fire = false: damage that breaks parts without a fire, e.g. leeches chewing)
+  const repairs = (small, large, at, side, ev, fire = true) => {
+    const fires = small * g.HIT_FIRE + (fire ? large : 0), brk = small * g.HIT_BREAK + large * A.BREAK_PER_LARGE;
+    if (fires > 0) {
+      const pl = rules.plasma ? A.PLASMA_SHARE : 0;
+      push({ label: 'fire', where: side, prio: 2, trip: H(roomOf(side)) + A.TOOL_FETCH, work: 0, fire: { n: fires * (1 - pl), plasma: fires * pl },
+             weight: fires * A.OPEN_FIRE }, at, ev);
     }
     if (brk > 0) push({ label: 'repair', where: side, prio: 2, trip: H(roomOf(side)) + A.TOOL_FETCH, work: g.REPAIR_TIME * brk, weight: brk }, at, ev);
     if (large > 0 && rules.breach) breach(0.7 * large, at, side, ev);     // (the first big hit on a side only dents it)
@@ -669,6 +711,10 @@ function schedule(build, waitByKey) {
     const j = forced && forced.who === who && queue.includes(forced.job) ? forced.job : ready[0]; queue = queue.filter(q => q !== j);
     forced = null;
     const start = Math.max(now, releaseOf(j, now)), atJob = start + j.trip, since = atJob - j.release;
+    if (j.fire && !j.settled) {                               // the fires spread and burnt parts out until someone got there
+      const w = fireWork(j.fire, since);
+      j.work += w.work; j.trip += w.fetch; j.weight = w.weight; j.settled = true; j.fireOut = w;
+    }
     let finish = atJob + j.work;
     if (j.notBefore) finish = Math.max(finish, j.release + j.notBefore + j.work);
     if (j.mother) {                                           // a tongue can only be hit while it's out
@@ -689,7 +735,7 @@ function schedule(build, waitByKey) {
       lateList.push(j.label); wasLate = true; lost = !!res.lost;   // (lost: the objective it was for slipped away, e.g. the nav core drifted off)
       if (res.cancelAt !== undefined) finish = Math.max(start, Math.min(finish, j.release + res.cancelAt));   // (gone before anyone got there: no time spent)
       for (const nj of res.jobs || []) push({ ...nj, key: `${j.ev?.id}|${nj.label}` }, j.release + (nj.rel || 0), j.ev);
-      if (res.breaks) repairs(0, res.breaks / A.BREAK_PER_LARGE, at, sideOf(j), j.ev);
+      if (res.breaks) repairs(0, res.breaks / A.BREAK_PER_LARGE, at, sideOf(j), j.ev, false);
       if (res.large) repairs(0, res.large, at, sideOf(j), j.ev);
       if (res.breach) breach(res.breach, at, sideOf(j), j.ev);
       if (res.crewHits) crewHits += res.crewHits;
@@ -711,7 +757,7 @@ function schedule(build, waitByKey) {
       const k = (tg - t0) + A.SUPPRESS * (t1 - tg);
       if (t1 > t0) {
         overTime((j.alive.small || 0) * k, (j.alive.large || 0) * k, t0, t1, sideOf(j), j.ev);
-        if (j.alive.breaks) repairs(0, j.alive.breaks * (t1 - t0) / A.BREAK_PER_LARGE, (t0 + t1) / 2, sideOf(j), j.ev);
+        if (j.alive.breaks) repairs(0, j.alive.breaks * (t1 - t0) / A.BREAK_PER_LARGE, (t0 + t1) / 2, sideOf(j), j.ev, false);
         if (j.alive.crew) crewHits += j.alive.crew * (t1 - t0);
       }
     }
@@ -748,7 +794,8 @@ function finish(build, s, real, best) {
   const marks = s.open.flatMap(({ a, b, w }) => [[a, w], [Math.max(a, Math.min(b, end)), -w]]).sort((x, y) => x[0] - y[0] || x[1] - y[1]);
   let level = 0, peak = 0; for (const [, d] of marks) { level += d; peak = Math.max(peak, level); }
   peak += real.unmet.length > 0 ? A.BREAK_PER_LARGE * Math.min(1, real.unmet.length) : 0;      // a heavy shot that hit for want of a shield
-  const ocTime = real.ocFires * (H('reactor') + A.TOOL_FETCH + A.INCIDENT_WORK);   // putting out the overcharged reactor's fires
+  const ocFire = fireWork({ n: 1, plasma: 0 }, A.REACT + H('reactor') + A.TOOL_FETCH);   // (an overcharged reactor's fire spreads too, until someone's there)
+  const ocTime = real.ocFires * (H('reactor') + A.TOOL_FETCH + ocFire.fetch + ocFire.work);   // putting out the overcharged reactor's fires
   const crewHits = KIT?.armor ? Math.max(0, s.crewHits - n) : s.crewHits;   // (the armor vest: each player's first hit shrugged off)
   const crewNeed = s.busy + extra + leverTime + fuelTime + ocTime + crewHits * hitCost(n) + real.unmet.length * A.BREAK_PER_LARGE * (g.REPAIR_TIME + A.TOOL_FETCH + 6);
   const crewHave = n * end;
@@ -1204,7 +1251,7 @@ function main() {
     console.log(`kit: ${opts.kit === null ? 'none (--kit none)' : kitText(id)}`);
     console.log(`${g.MISSIONS[id].name}, ${n} player(s): ${b.events.length} events every ${b.gap?.toFixed(0)} s, jump at ${b.jumpAt.toFixed(0)} s; energy every ${r.energy.interval.toFixed(1)} s, ${r.cells} cells${b.overcharge ? ', reactor overcharged' : ''}${Object.keys(b.ship).length ? `, ship: ${Object.keys(b.ship).join(', ')}` : ''}`);
     console.log('events: ' + b.events.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', '));
-    for (const j of r.done.sort((a, b) => a.start - b.start)) console.log(`  P${j.who + 1} ${j.start.toFixed(0).padStart(4)}–${j.finish.toFixed(0).padStart(4)} s  ${j.label}${j.release !== undefined ? ` (from ${j.release.toFixed(0)})` : ''}`);
+    for (const j of r.done.sort((a, b) => a.start - b.start)) console.log(`  P${j.who + 1} ${j.start.toFixed(0).padStart(4)}–${j.finish.toFixed(0).padStart(4)} s  ${j.label}${j.release !== undefined ? ` (from ${j.release.toFixed(0)})` : ''}${j.fireOut ? `: ${(j.fire.n + j.fire.plasma).toFixed(1)} → ${j.fireOut.fires.toFixed(1)} fires, ${j.fireOut.broken.toFixed(1)} parts burnt out` : ''}`);
     const E = r.energy;
     console.log(`energy (game code): ${E.perSide.map(s => `${s.name} ${s.need}/${s.have}`).join(', ')} needed/delivered; lever re-routed ${E.leverTrips}×, ${E.refuels} cells fetched; waits ${E.waits.map(w => `${w.side} ${w.t.toFixed(0)} s +${w.wait.toFixed(1)} s`).join(', ') || 'none'}; shields without energy ${E.unmet.map(u => `${u.side} ${u.t.toFixed(0)} s`).join(', ') || 'none'}; jump ${E.jumpOk ? 'ok' : 'NO ENERGY'} → ${r.spec.ok ? 'in spec' : 'out of spec: ' + r.spec.why}`);
     console.log(`perfect routing: ${r.bestSpec.ok ? 'in spec' : 'out of spec: ' + r.bestSpec.why}`);
@@ -1259,4 +1306,4 @@ function printRows(rows) {
 }
 if (require.main === module) main();
 
-module.exports = { balance, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, setup, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };
+module.exports = { balance, spread, fireWork, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, setup, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };

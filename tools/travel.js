@@ -6,6 +6,9 @@
 //   node tools/travel.js "left capacitor" helm   between interactables (part / station names, any case)
 //   node tools/travel.js 7,19 "front cannon"  or from / to a point (x,y in layout units)
 //   node tools/travel.js reactor portGun --boots --airlocks   with gravity boots / the faster airlock pumps
+//   node tools/travel.js --table             rebuild tools/travel-table.json: every pair of SPOTS (the places tools/balance.js
+//                                            sends the crew), with and without the kit (~1-2 min, 4 processes). Rebuild it
+//                                            after moving rooms, doors or stations, or when balance.js warns about a missing trip
 //
 // Each trip is walked twice: with every deck airlock open towards you (best) and towards the far side
 // (worst: you wait for a full cycle). "enter" is when you step into the target room, "at" when you're
@@ -157,11 +160,48 @@ function travel(fromSpec, toSpec, opts = {}) {
   return out;
 }
 
+// The travel table: every trip between the places the balance model uses, measured once and saved
+// (tools/travel-table.json), so a balance run doesn't walk them again. Per variant (kit) and pair: [best, worst]
+// seconds to be there (deck airlocks open towards you / the other way; 'at', or 'enter' if never in reach).
+const SPOTS = ['bridge', 'reactor', 'portGun', 'starGun', 'portLock', 'starLock', 'Reactor', 'Helm', 'Security', 'Power lever',
+  'Front cannon', 'Left cannon', 'Right cannon', 'Left shield button', 'Right shield button', 'Left outer airlock', 'Right outer airlock'];
+const VARIANTS = { plain: {}, boots: { boots: true }, airlocks: { airlocks: true }, both: { boots: true, airlocks: true } };
+const TABLE_FILE = require('path').join(__dirname, 'travel-table.json');
+const variantOf = (opts) => (opts.boots ? (opts.airlocks ? 'both' : 'boots') : opts.airlocks ? 'airlocks' : 'plain');
+function measure(from, to, opts) {                  // one pair as the table stores it
+  const r = travel(from, to, opts), b = r.best.at ?? r.best.enter ?? 15, w = r.worst.at ?? r.worst.enter ?? b + 3;
+  return [Math.round(b * 100) / 100, Math.round(w * 100) / 100];
+}
+function tableVariant(v) {
+  const out = {};
+  for (const a of SPOTS) { out[a] = {}; for (const b of SPOTS) if (a !== b) out[a][b] = measure(a, b, VARIANTS[v]); }
+  return out;
+}
+let tableCache;
+const loadTable = () => {
+  if (tableCache === undefined) { try { tableCache = JSON.parse(require('fs').readFileSync(TABLE_FILE, 'utf8')); } catch { tableCache = null; } }
+  return tableCache;
+};
+// A trip from the table: [best, worst] seconds, or null if it isn't in there.
+const tableTrip = (from, to, opts = {}) => loadTable()?.trips?.[variantOf(opts)]?.[from]?.[to] || null;
+
 const fmt = (v) => (v == null ? '  —  ' : v.toFixed(1).padStart(5));
 if (require.main === module) {
   const all = process.argv.slice(2), args = all.filter(a => !a.startsWith('--'));
   const opts = { boots: all.includes('--boots'), airlocks: all.includes('--airlocks') };
-  if (args.length === 2) {
+  if (all[0] === '--table-variant') process.stdout.write(JSON.stringify(tableVariant(all[1])));
+  else if (all[0] === '--table') {
+    const { spawn } = require('child_process'), t0 = Date.now();
+    Promise.all(Object.keys(VARIANTS).map(v => new Promise((res, rej) => {
+      const p = spawn(process.execPath, [__filename, '--table-variant', v]); let out = '';
+      p.stdout.on('data', d => (out += d)); p.stderr.pipe(process.stderr);
+      p.on('close', c => (c ? rej(new Error(`variant ${v} failed`)) : res([v, JSON.parse(out)])));
+    }))).then(rs => {
+      const trips = Object.fromEntries(rs);
+      require('fs').writeFileSync(TABLE_FILE, JSON.stringify({ about: 'travel times in s, [deck airlocks open towards you, the other way]; node tools/travel.js --table', spots: SPOTS, trips }, null, 0).replace(/\],"/g, '],\n"') + '\n');
+      console.log(`${TABLE_FILE}: ${SPOTS.length} spots, ${Object.keys(VARIANTS).length} variants, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+    });
+  } else if (args.length === 2) {
     const r = travel(args[0], args[1], opts);
     console.log(`${r.from} → ${r.to}`);
     console.log(`  deck airlocks open towards you:   enter ${fmt(r.best.enter)} s   there ${fmt(r.best.at)} s`);
@@ -177,4 +217,4 @@ if (require.main === module) {
   } else { console.log('usage: node tools/travel.js [from to]'); process.exitCode = 1; }
 }
 
-module.exports = { travel };
+module.exports = { travel, tableTrip, SPOTS, VARIANTS, TABLE_FILE };
