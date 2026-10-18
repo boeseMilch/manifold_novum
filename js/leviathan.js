@@ -54,7 +54,7 @@ const LEVB_SPOTS = {
   fin: { piece: 0, at: [-10, -3], r: 4.5 },
   L1: { piece: 1, at: [-8, -6.2], r: 3.8 }, L2: { piece: 2, at: [-2, -5.9], r: 3.8 }, L3: { piece: 2, at: [-10, -5.4], r: 3.8 },
   R1: { piece: 3, at: [-2, -5], r: 3.8 }, R2: { piece: 3, at: [-9.5, -4.4], r: 3.8 }, R3: { piece: 4, at: [-4, -3.6], r: 3.6 },
-  E1: { piece: 'head', at: [10, 4.5], r: 3.4 }, E2: { piece: 'head', at: [7.5, -3.5], r: 3.4 },   // (phase 3: zones regrow on its head, by the eye)
+  E1: { piece: 'head', at: [2, -8.5], r: 3.4 }, E2: { piece: 'head', at: [7.5, -3.5], r: 3.4 },   // (phase 3: zones regrow on its head, by the eye)
   nest: { piece: 3, at: [-10, -3], r: 5 },   // (far enough back that its station behind comes just after phase 3's right-side one: no extra lap)
 };
 // The dorsal sail sits on segment 0 (its origin 3 behind the neck joint); the left pectoral's root on the head (x, -y).

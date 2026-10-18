@@ -93,8 +93,11 @@ for (const n of [1, 3]) {
         const save = JSON.parse(JSON.stringify({ fin: b.fin, zones: b.zones, p3: b.p3, phase: b.phase, step: b.step, sTo: b.sTo, parked: b.parked, gas: b.gas }));
         const p = G.levSpotAt(G.levChain(b), id), want = Math.atan2(p.wy - g.y, p.wx - g.x), d = Math.atan2(Math.sin(want - g.a), Math.cos(want - g.a)), arc = G.gunArc(g);
         g.aim = g.a + Math.max(-arc, Math.min(arc, d)); g.cd = 0; g.shots = 3; g.reload = 0;
-        const s0 = state(); G.fireCannon(g); let hit = false;
-        for (let i = 0; i < 100 && G.combat.shells.length; i++) { G.simTick(DT); if (state() !== s0) { hit = true; break; } }
+        // (only that target's own state counts: a shell aimed at it that hits a neighbour instead doesn't — E1 sat on the far
+        // side of the head, unhittable, and a looser check let the eye / E2 count for it)
+        const own = () => JSON.stringify(id === 'eye' ? b.p3?.eye : /^E/.test(id) ? b.p3?.glow?.find(q => q.id === id) : id === 'fin' ? b.fin : b.zones.find(z => z.id === id)?.hp);
+        const s0 = own(); G.fireCannon(g); let hit = false;
+        for (let i = 0; i < 100 && G.combat.shells.length; i++) { G.simTick(DT); if (own() !== s0) { hit = true; break; } }
         G.combat.shells = []; Object.assign(b, save);
         if (!hit || Math.abs(d) > arc) { bad.push(`${step}:${id}`); break; }
       }
