@@ -46,11 +46,9 @@ for (const p of music.pieces) for (const sec of ['A', 'B']) p[sec].theme.forEach
 check(!clashes.length, `every theme note on a strong beat is a tone of its chord (${clashes.join('; ') || 'none off'})`);
 check(music.pieces.every(p => p.ost.length === p.meter && p.ost.every(k => k >= -1 && k <= 4)), 'every ostinato is one bar long');
 // Every piece has its own identity: its own opening, its own lead, its own drums; not one shared recipe.
-// (Variants with no missions, only in music.html to compare, e.g. js/music/homedeep.js, share their original's.)
-const ownPieces = music.pieces.filter(p => p.missions.length);
-const openings = ownPieces.map(p => music.layersAt(p.name, 0).join('+'));
+const openings = music.pieces.map(p => music.layersAt(p.name, 0).join('+'));
 check(new Set(openings).size === openings.length && openings.every(o => o), `every piece opens with its own instruments (${openings.join(' | ')})`);
-const firstTwo = ownPieces.map(p => [0, 1].map(st => music.layersAt(p.name, st).join('+')).join(' / '));
+const firstTwo = music.pieces.map(p => [0, 1].map(st => music.layersAt(p.name, st).join('+')).join(' / '));
 check(new Set(firstTwo).size === firstTwo.length, 'and builds up its own way');
 check(new Set(music.pieces.map(p => p.lead)).size >= 6, `at least 6 different lead sounds (${music.pieces.map(p => p.lead).join(', ')})`);
 check(new Set(music.pieces.map(p => p.drums)).size >= 5, `at least 5 different drum styles (${music.pieces.map(p => p.drums).join(', ')})`);

@@ -7,10 +7,9 @@
 // breakdown), the ending, the mix and the shared instruments; everything that makes this piece itself lives here.
 // Loaded after js/music.js (index.html, music.html, tests/music.js, tests/harness.js).
 // (The opening, stages 0-1: clock and music box, plays exactly as before the dubstep rework, call for call.)
-// music.homePiece(V) defines it; V.deep (js/music/homedeep.js, only in music.html to compare) is a variant whose
-// growl dives into the deep: octave-down wobbles (suffix _), half-bar dives (D), a louder sub, more low body.
-music.homePiece = (V = {}) => {
-  const DEEP = !!V.deep;
+// (2026-10-17, "the deep version", the user: "it is very good now"): the growl dives into the deep: octave-down
+// wobbles (suffix _), a half-bar dive (D) closing every 4-bar phrase, a second sub an octave under the first.
+(() => {
   const K = music.kit;
   const { hz, osc, filt, noiseSrc, pan, route, env, inRange, bassRoot, stepDur, hash, pluck, lead, bass, taiko, kick, snare, clap, hat, crash, brass, LEAD_VEL } = K;
   // A music-box tine: pure and high, with a bright octave click at the start.
@@ -34,7 +33,7 @@ music.homePiece = (V = {}) => {
   // any other. Wobble patterns: one bar in 8 slots (8ths): a letter starts a segment, '-' holds it, '.' rests.
   //   q 1/4  e 1/8  t 1/8 triplet  s 1/16  x 1/16 triplet  z 1/32 stutter (chopped)  W one slow "waaah" opening  H one "yowww"
   //   prefix v: dives in from an octave up; suffix ^ an octave up, 5 the fifth.
-  //   (deep only: D one long dive, the pitch falling an octave, sub too; suffix _ an octave down, sub too.)
+  //   D one long dive, the pitch falling an octave (the subs too); suffix _ an octave down (the sub too).
   const DIV = { q: 1, e: 2, t: 3, s: 4, x: 6, z: 8, W: 0, H: 0, D: 0 };
   const VOW = { oo: [300, 780], oh: [460, 880], uh: [560, 1040], ah: [780, 1250], ae: [660, 1720], ee: [360, 2150] };
   const VPAIRS = [['oo', 'ah'], ['oh', 'ee'], ['uh', 'ae'], ['oo', 'ee'], ['oh', 'ah']];
@@ -52,30 +51,22 @@ music.homePiece = (V = {}) => {
   const PAT = {
     creep: P(['q - - - - - - -']),                                            // stage 2: slow, muffled, creeping in
     rise: P(['e - - - - - - -', 'e - - - q - - -', 'e - - - - - - -', 't - - - s - - -']),   // stage 3: 8ths, still under a blanket
-    // stage 4, from the first drop: half time, the snare's beat left open, every bar its own figure
-    drop: P(['vW - - - . e - -', 'e - s - . t - -', 'q5 - e - . s - .', 't - - - . z - z^',
-      'H - - - . e - -', 's - e^ - . t - -', 'e - t - . s - z', 'z - s - x - - -']),
+    // stage 4, from the first drop: half time, the snare's beat left open, every bar its own figure; octave-down
+    // wobbles, and the 4th and 8th bar open with a long dive
+    drop: P(['vW - - - . e - -', 'e_ - s - . t - -', 'q5 - e - . s_ - .', 'D - - - . z - z^',
+      'H - - - . e_ - -', 's - e^ - . t_ - -', 'e - t - . s - z', 'D - - - x_ - - -']),
     // stage 5, after the breakdown: busier, faster, octave jumps
-    five: P(['vW - - - . s - -', 'e - x - . t^ - -', 's5 - e - . z - -', 't - s - . x - z^',
-      'vH - - - . e - s', 'x - e - . t5 - -', 's - t - . s^ - z', 'z - x - s - z^ -']),
+    five: P(['vW - - - . s_ - -', 'e - x - . t^ - -', 's5 - e_ - . z - -', 'D - - - . x - z^',
+      'vH - - - . e_ - s', 'x_ - e - . t5 - -', 's - t - . s^ - z', 'D - - - s_ - z^ -']),
     // stage 6, the climax: everything at once
-    six: P(['vW - - - . x - -', 's - x^ - . t - z', 'x5 - s - . z - -', 't - x - . s^ - z^',
-      'vW - - - . s - x', 'x - s^ - . t - z', 's - t5 - . x - -', 'z - x - z^ - x -']),
+    six: P(['vW - - - . x_ - -', 's - x^ - . t_ - z', 'x5 - s_ - . z - -', 'D - - - . s^ - z^',
+      'vW - - - . s_ - x', 'x_ - s^ - . t - z', 's - t5 - . x_ - -', 'D - - - z_ - x -']),
     spool: P(['s - - - s^ - - -', 'z - - - z^ - - -']),   // accelerating in 2-bar waves
     dist: P(['q - - - - - - -', 'q - - - - - - -', 'e - - - . e - -']),         // the breakdown: far away, coming back
   };
-  if (DEEP) Object.assign(PAT, {                         // the deep variant: octave-down wobbles, and every 4th bar a long dive
-    drop: P(['vW - - - . e - -', 'e_ - s - . t - -', 'q5 - e - . s_ - .', 'D - - - . z - z^',
-      'H - - - . e_ - -', 's - e^ - . t_ - -', 'e - t - . s - z', 'D - - - x_ - - -']),
-    five: P(['vW - - - . s_ - -', 'e - x - . t^ - -', 's5 - e_ - . z - -', 'D - - - . x - z^',
-      'vH - - - . e_ - s', 'x_ - e - . t5 - -', 's - t - . s^ - z', 'D - - - s_ - z^ -']),
-    six: P(['vW - - - . x_ - -', 's - x^ - . t_ - z', 'x5 - s_ - . z - -', 'D - - - . s^ - z^',
-      'vW - - - . s_ - x', 'x_ - s^ - . t - z', 's - t5 - . x_ - -', 'D - - - z_ - x -']),
-  });
   // stage → [level, how far the filter opens, FM growl, formant width, sub level]
-  const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.11],
-    5: [0.18, 0.95, 0.9, 1, 0.11], 6: [0.186, 1, 1, 1, 0.115], 7: [0.18, 0.8, 0.9, 1, 0.11] };
-  if (DEEP) for (const [st, sub] of [[2, 0.05], [3, 0.06], [4, 0.12], [5, 0.12], [6, 0.125], [7, 0.115]]) LOOK[st] = [...LOOK[st].slice(0, 4), sub];
+  const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.12],
+    5: [0.18, 0.95, 0.9, 1, 0.12], 6: [0.186, 1, 1, 1, 0.125], 7: [0.18, 0.8, 0.9, 1, 0.115] };
   const zg = () => { const g = K.ac.createGain(); g.gain.value = 0; return g; };   // (an enveloped gain starts silent: no click before its first event)
   let curve = null;
   function shaper() {                                    // saturation (where the browser has it), a little lopsided: 2nd and 3rd harmonics
@@ -83,8 +74,8 @@ music.homePiece = (V = {}) => {
     if (!curve) { curve = new Float32Array(1025); const b = Math.tanh(0.6), n = Math.max(Math.tanh(3.6) - b, b - Math.tanh(-2.4)); for (let i = 0; i < 1025; i++) curve[i] = (Math.tanh((i / 512 - 1) * 3 + 0.6) - b) / n; }
     const s = K.ac.createWaveShaper(); s.curve = curve; s.oversample = '2x'; return s;
   }
-  // deep: the growl a little quieter (the sub carries more), the second sub's level against the first, the drop's sub hit
-  const GROWL = DEEP ? 0.72 : 1, SUB2 = 1.3, HIT = DEEP ? 0.6 : 1;
+  // the growl's level (the subs carry the low end), the second sub's level against the first, the drop's sub hit
+  const GROWL = 0.72, SUB2 = 1.3, HIT = 0.6;
   let scurve = null;
   function subShaper() {                                 // the subs' saturation: a soft symmetric tanh (odd harmonics, a touch of drive)
     if (!K.ac.createWaveShaper) return null;
@@ -99,7 +90,7 @@ music.homePiece = (V = {}) => {
     const mod = osc('sine', hz(m0), t, stop), mg = zg(), pre = K.ac.createGain();
     mod.connect(mg); saws.forEach(s => { mg.connect(s.frequency); s.connect(pre); }); sq.connect(pre);
     pre.gain.value = 0.5;
-    const sh = shaper(), lp = filt('lowpass', 200, 5), hp = filt('highpass', DEEP ? 90 : 150, 0.7), f1 = filt('bandpass', 400, 6), f2 = filt('bandpass', 1000, 8);
+    const sh = shaper(), lp = filt('lowpass', 200, 5), hp = filt('highpass', 90, 0.7), f1 = filt('bandpass', 400, 6), f2 = filt('bandpass', 1000, 8);
     if (sh) { pre.connect(sh); sh.connect(lp); } else pre.connect(lp);
     const g = zg(), b1 = K.ac.createGain(), b2 = K.ac.createGain(), kg = K.ac.createGain();
     b1.gain.value = 4.3; b2.gain.value = 4;                  // (the formants, against the body through the highpass)
@@ -112,11 +103,10 @@ music.homePiece = (V = {}) => {
     const gu = zg(), uni = [-23, 23].map(d => { const u = osc('sawtooth', hz(m0), t, stop, d), ul = filt('lowpass', 300, 2); mg.connect(u.frequency); u.connect(ul); pan(ul, d < 0 ? -0.6 : 0.6).connect(gu); return [u, ul]; });
     const sub = osc('sine', hz(bassRoot(c)), t, stop), sg = zg();
     sub.connect(sg); g.connect(kg); gu.connect(kg); route(kg, false, false);
-    // deep: a second sub an octave under the first (24-46 Hz: what moves a subwoofer), both through a gentle
+    // a second sub an octave under the first (24-46 Hz: what moves a subwoofer), both through a gentle
     // saturation (their 2nd and 3rd harmonics, so the deep notes still read on small speakers)
-    const sub2 = DEEP && osc('sine', hz(bassRoot(c) - 12), t, stop), sg2 = DEEP && zg(), ssat = DEEP && subShaper();
-    if (DEEP) { sub2.connect(sg2); if (ssat) { sg.connect(ssat); sg2.connect(ssat); ssat.connect(kg); } else { sg.connect(kg); sg2.connect(kg); } }
-    else sg.connect(kg);
+    const sub2 = osc('sine', hz(bassRoot(c) - 12), t, stop), sg2 = zg(), ssat = subShaper();
+    sub2.connect(sg2); if (ssat) { sg.connect(ssat); sg2.connect(ssat); ssat.connect(kg); } else { sg.connect(kg); sg2.connect(kg); }
     const [v0, v1] = o.vow.map(v => VOW[v]);
     for (const S of segs) {
       const f = hz(m0 + S.off), end = rt(S.at + S.dur), op = o.open * (S.open || 1), hi = 170 + 3400 * op;
@@ -127,10 +117,10 @@ music.homePiece = (V = {}) => {
       }
       // the gate (the sub plays the segment through, smooth; the growl is chopped on z)
       const att = S.att || 0.006, rel = S.rel || 0.018;
-      for (const [G, v] of DEEP ? [[sg, o.sub], [sg2, o.sub * SUB2]] : [[sg, o.sub]]) {
+      for (const [G, v] of [[sg, o.sub], [sg2, o.sub * SUB2]]) {
         G.gain.setValueAtTime(0, S.at); G.gain.linearRampToValueAtTime(v, S.at + Math.max(att, 0.01)); G.gain.linearRampToValueAtTime(v, end - Math.max(rel, 0.03)); G.gain.linearRampToValueAtTime(0, end);
       }
-      if (DEEP) sub2.frequency.setValueAtTime(hz(bassRoot(c) - 12 + (S.off === 7 ? 7 : 0)), S.at);
+      sub2.frequency.setValueAtTime(hz(bassRoot(c) - 12 + (S.off === 7 ? 7 : 0)), S.at);
       const n = DIV[S.kind] ? Math.max(1, Math.round(S.dur / (beat / DIV[S.kind]))) : 1, C = S.dur / n, cyc = (i) => (i >= n ? end : rt(S.at + i * C));   // (times on a 1 µs grid: a segment ends exactly where the next begins)
       for (const [P, v] of [[g.gain, o.vel * 1.45 * GROWL], [gu.gain, o.vel * 0.65 * GROWL]]) {   // (1.45: makes up for the lopsided curve's lower output)
         if (S.kind === 'z') for (let i = 0; i < n; i++) {
@@ -139,7 +129,7 @@ music.homePiece = (V = {}) => {
       }
       // the wobble: filter, both formants and the growl's FM depth, one cycle per wobble (k: where it is most open)
       const k = S.kind === 'W' ? 0.8 : S.kind === 'D' ? 0.2 : S.kind === 'H' ? 0.12 : S.kind === 'z' ? 0.05 : S.kind === 's' || S.kind === 'x' ? 0.35 : 0.45;
-      const sweeps = [[lp.frequency, 200 + 450 * op, hi, false], [low.frequency, DEEP ? 140 : 180, DEEP ? 160 + 600 * op : 180 + 380 * op, false],
+      const sweeps = [[lp.frequency, 200 + 450 * op, hi, false], [low.frequency, 140, 160 + 600 * op, false],
         ...uni.map(([, ul]) => [ul.frequency, 200 + 300 * op, 300 + 1500 * op, false]), [f1.frequency, v0[0], v0[0] + (v1[0] - v0[0]) * op, false], [f2.frequency, v0[1], v0[1] + (v1[1] - v0[1]) * op, false], [mg.gain, 0, f * 1.1 * o.fm, true]];
       for (const [p, lo, top, lin] of sweeps) {
         const ramp = lin ? 'linearRampToValueAtTime' : 'exponentialRampToValueAtTime';
@@ -159,7 +149,7 @@ music.homePiece = (V = {}) => {
     vel *= HIT;
     const f = hz(bassRoot(c)), o = osc('sine', f * 2, t, t + len + 0.2), g = zg();
     o.frequency.setValueAtTime(f * 2, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.14);
-    if (DEEP) o.frequency.exponentialRampToValueAtTime(f / 2, t + len * 0.8);   // (deep: on down to the floor, an octave under the root)
+    o.frequency.exponentialRampToValueAtTime(f / 2, t + len * 0.8);   // (then on down to the floor, an octave under the root)
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.03); g.gain.linearRampToValueAtTime(vel * 0.85, t + len * 0.5); g.gain.linearRampToValueAtTime(0, t + len);
     o.connect(g); route(g, false, false);
   }
@@ -173,8 +163,8 @@ music.homePiece = (V = {}) => {
 
   let cur = null, buildBar = -1, spoolAt = 0, dropBar = -1;   // this bar's growl, the last build bar, the spool's first bar, this bar if it drops
 
-  music.define({ name: V.name || 'home', title: V.title || 'Last Jump Home', bpm: 112, key: 'C', missions: V.missions || ['c8', 'nightmare'],
-    mood: (DEEP ? 'DEEP VARIANT (not in the game): octave-down wobbles, dives, more sub. ' : '') + 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
+  music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8', 'nightmare'],
+    mood: 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
     lead: 'saw', ostInst: 'pluck', drums: 'dub',
     engineDrums: false,                                   // (the engine's rolls, fills, drop hits and spool percussion are off: the growl carries the rhythm, over a sparse kit of its own)
     parts: { tick: [0, 3], tines: [0, 3], pad: 1, wobble: 2, drums: 3, hats: 3, snare: 4, theme: 4, choir: 5, brass: 5, stabs: 6, strings: 6 },
@@ -275,5 +265,4 @@ music.homePiece = (V = {}) => {
       },
     },
   });
-};
-music.homePiece();
+})();

@@ -2806,3 +2806,7 @@ tests/music.js's "own opening / own build-up" checks skip pieces without mission
   the growl at 72 % and its deep body at the original's level. Measured on the climax (offline, mono FFT): below
   40 Hz +14.5 dB over the original, 40-60 +4.2, 60-120 +2.6, 120 Hz and up at or under it; K-weighted loudness
   +0.9 dB (v1: RMS +2.6 dB), peaks -4.7 dB.
+- The deep version replaced the original (the user: "it is very good now. We can replace the old version"):
+  js/music/home.js is Last Jump Home with the deep growl built in (no factory, no switch), js/music/homedeep.js and its
+  music.html entry are gone, and tests/music.js's "own opening" checks are strict again. The game (c8, Nightmare)
+  plays it.
