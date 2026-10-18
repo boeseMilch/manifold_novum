@@ -75,13 +75,21 @@ music.homePiece = (V = {}) => {
   // stage → [level, how far the filter opens, FM growl, formant width, sub level]
   const LOOK = { 2: [0.036, 0.16, 0.15, 0.35, 0.05], 3: [0.042, 0.28, 0.3, 0.55, 0.06], 4: [0.18, 0.85, 0.75, 1, 0.11],
     5: [0.18, 0.95, 0.9, 1, 0.11], 6: [0.186, 1, 1, 1, 0.115], 7: [0.18, 0.8, 0.9, 1, 0.11] };
-  if (DEEP) for (const [st, sub] of [[2, 0.06], [3, 0.075], [4, 0.16], [5, 0.16], [6, 0.165], [7, 0.15]]) LOOK[st] = [...LOOK[st].slice(0, 4), sub];
+  if (DEEP) for (const [st, sub] of [[2, 0.05], [3, 0.06], [4, 0.12], [5, 0.12], [6, 0.125], [7, 0.115]]) LOOK[st] = [...LOOK[st].slice(0, 4), sub];
   const zg = () => { const g = K.ac.createGain(); g.gain.value = 0; return g; };   // (an enveloped gain starts silent: no click before its first event)
   let curve = null;
   function shaper() {                                    // saturation (where the browser has it), a little lopsided: 2nd and 3rd harmonics
     if (!K.ac.createWaveShaper) return null;
     if (!curve) { curve = new Float32Array(1025); const b = Math.tanh(0.6), n = Math.max(Math.tanh(3.6) - b, b - Math.tanh(-2.4)); for (let i = 0; i < 1025; i++) curve[i] = (Math.tanh((i / 512 - 1) * 3 + 0.6) - b) / n; }
     const s = K.ac.createWaveShaper(); s.curve = curve; s.oversample = '2x'; return s;
+  }
+  // deep: the growl a little quieter (the sub carries more), the second sub's level against the first, the drop's sub hit
+  const GROWL = DEEP ? 0.72 : 1, SUB2 = 1.3, HIT = DEEP ? 0.6 : 1;
+  let scurve = null;
+  function subShaper() {                                 // the subs' saturation: a soft symmetric tanh (odd harmonics, a touch of drive)
+    if (!K.ac.createWaveShaper) return null;
+    if (!scurve) { scurve = new Float32Array(1025); const k = 2.2; for (let i = 0; i < 1025; i++) scurve[i] = Math.tanh((i / 512 - 1) * k) / Math.tanh(k); }
+    const s = K.ac.createWaveShaper(); s.curve = scurve; s.oversample = '2x'; return s;
   }
   // segs: [{ at, dur, kind, off, glide, open?, att?, rel? }] in time order; o: { vel, open, fm, wide, sub, vow }
   function growl(c, segs, o) {
@@ -99,11 +107,16 @@ music.homePiece = (V = {}) => {
     pan(b1, -0.7 * o.wide).connect(g); pan(b2, 0.7 * o.wide).connect(g);
     // the deep body: the saturated saws and square (with their low overtones) through a gentle lowpass, below the
     // formants' highpass, centred; and a detuned unison pair, left and right, for width in the low mids
-    const low = filt('lowpass', 300, 0.9), bl = K.ac.createGain(); bl.gain.value = DEEP ? 1.9 : 1.3;
+    const low = filt('lowpass', 300, 0.9), bl = K.ac.createGain(); bl.gain.value = 1.3;
     (sh || pre).connect(low); low.connect(bl); bl.connect(g);
     const gu = zg(), uni = [-23, 23].map(d => { const u = osc('sawtooth', hz(m0), t, stop, d), ul = filt('lowpass', 300, 2); mg.connect(u.frequency); u.connect(ul); pan(ul, d < 0 ? -0.6 : 0.6).connect(gu); return [u, ul]; });
     const sub = osc('sine', hz(bassRoot(c)), t, stop), sg = zg();
-    sub.connect(sg); sg.connect(kg); g.connect(kg); gu.connect(kg); route(kg, false, false);
+    sub.connect(sg); g.connect(kg); gu.connect(kg); route(kg, false, false);
+    // deep: a second sub an octave under the first (24-46 Hz: what moves a subwoofer), both through a gentle
+    // saturation (their 2nd and 3rd harmonics, so the deep notes still read on small speakers)
+    const sub2 = DEEP && osc('sine', hz(bassRoot(c) - 12), t, stop), sg2 = DEEP && zg(), ssat = DEEP && subShaper();
+    if (DEEP) { sub2.connect(sg2); if (ssat) { sg.connect(ssat); sg2.connect(ssat); ssat.connect(kg); } else { sg.connect(kg); sg2.connect(kg); } }
+    else sg.connect(kg);
     const [v0, v1] = o.vow.map(v => VOW[v]);
     for (const S of segs) {
       const f = hz(m0 + S.off), end = rt(S.at + S.dur), op = o.open * (S.open || 1), hi = 170 + 3400 * op;
@@ -114,9 +127,12 @@ music.homePiece = (V = {}) => {
       }
       // the gate (the sub plays the segment through, smooth; the growl is chopped on z)
       const att = S.att || 0.006, rel = S.rel || 0.018;
-      sg.gain.setValueAtTime(0, S.at); sg.gain.linearRampToValueAtTime(o.sub, S.at + Math.max(att, 0.01)); sg.gain.linearRampToValueAtTime(o.sub, end - Math.max(rel, 0.03)); sg.gain.linearRampToValueAtTime(0, end);
+      for (const [G, v] of DEEP ? [[sg, o.sub], [sg2, o.sub * SUB2]] : [[sg, o.sub]]) {
+        G.gain.setValueAtTime(0, S.at); G.gain.linearRampToValueAtTime(v, S.at + Math.max(att, 0.01)); G.gain.linearRampToValueAtTime(v, end - Math.max(rel, 0.03)); G.gain.linearRampToValueAtTime(0, end);
+      }
+      if (DEEP) sub2.frequency.setValueAtTime(hz(bassRoot(c) - 12 + (S.off === 7 ? 7 : 0)), S.at);
       const n = DIV[S.kind] ? Math.max(1, Math.round(S.dur / (beat / DIV[S.kind]))) : 1, C = S.dur / n, cyc = (i) => (i >= n ? end : rt(S.at + i * C));   // (times on a 1 µs grid: a segment ends exactly where the next begins)
-      for (const [P, v] of [[g.gain, o.vel * 1.45], [gu.gain, o.vel * 0.65]]) {   // (1.45: makes up for the lopsided curve's lower output)
+      for (const [P, v] of [[g.gain, o.vel * 1.45 * GROWL], [gu.gain, o.vel * 0.65 * GROWL]]) {   // (1.45: makes up for the lopsided curve's lower output)
         if (S.kind === 'z') for (let i = 0; i < n; i++) {
           const c0 = cyc(i); P.setValueAtTime(0, c0); P.linearRampToValueAtTime(v, c0 + 0.003); P.linearRampToValueAtTime(v, c0 + C * 0.5); P.linearRampToValueAtTime(0, c0 + C * 0.75);
         } else { P.setValueAtTime(0, S.at); P.linearRampToValueAtTime(v, S.at + att); P.linearRampToValueAtTime(v, end - rel); P.linearRampToValueAtTime(0, end); }
@@ -140,6 +156,7 @@ music.homePiece = (V = {}) => {
   // The sub hit on a drop: an 808-ish sine diving from an octave up onto the root, ringing (a soft-ish front: the
   // drop's boom and taiko take the first hit).
   function subHit(c, t, vel, len) {
+    vel *= HIT;
     const f = hz(bassRoot(c)), o = osc('sine', f * 2, t, t + len + 0.2), g = zg();
     o.frequency.setValueAtTime(f * 2, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.14);
     if (DEEP) o.frequency.exponentialRampToValueAtTime(f / 2, t + len * 0.8);   // (deep: on down to the floor, an octave under the root)

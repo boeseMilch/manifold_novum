@@ -2800,3 +2800,9 @@ tests/music.js's "own opening / own build-up" checks skip pieces without mission
   counts the spool's bars and jumps after the second, then the cadence and final hit (in the game the spool runs as
   long as the jump is delayed, as before). Last Jump Home (both versions) plays no drum fill at all now: the tom
   fill into stage 1 is gone (the user: off topic for the dubstep piece); tests/music.js's opening hash re-pinned.
+- Deep v2 (the user: the drop's low hit had more bass than the wobble, louder overall, still not enough to move a
+  subwoofer): the drop's sub hit at 60 %; a second sub an octave under the first (24-46 Hz), both subs through a
+  soft tanh saturation (harmonics for small speakers); the first sub back down (0.16 → 0.12, the second at 1.3× it);
+  the growl at 72 % and its deep body at the original's level. Measured on the climax (offline, mono FFT): below
+  40 Hz +14.5 dB over the original, 40-60 +4.2, 60-120 +2.6, 120 Hz and up at or under it; K-weighted loudness
+  +0.9 dB (v1: RMS +2.6 dB), peaks -4.7 dB.
