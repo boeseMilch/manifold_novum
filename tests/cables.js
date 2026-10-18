@@ -92,7 +92,7 @@ for (let i = 0; i < 3; i++) {
   const k = (G.leverAngle(i) - L0) * dir / G.LEVER_HANDLE_STEP;
   check(Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) >= 0 && Math.round(k) < G.LEVER_HANDLE_FRAMES, `${G.LEVER_NAMES[i]} has its own handle frame (${Math.round(k)})`);
 }
-check(Math.round(Math.abs(L2 - L0) / G.LEVER_HANDLE_STEP) + 1 === G.LEVER_HANDLE_FRAMES, 'the handle frames span LEFT to RIGHT exactly');
+check(Math.round(2 * Math.PI / G.LEVER_HANDLE_STEP) === G.LEVER_HANDLE_FRAMES, 'the handle frames make one full turn (LEFT → RIGHT over the top, back round the bottom)');
 
 // --- a bolt's way: reactor → trunk → the lever's hub → its branch → its capacitor, without jumps
 for (let i = 0; i < 3; i++) {
