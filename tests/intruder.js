@@ -130,24 +130,63 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   for (let i = 0; i < 40; i++) { G.tick(DT); G.player.health = 'ok'; a.spitT = 1e9; }
   check(G.combat.hits.crew - h1 === 1, `a pounce that connects is one hit, not a pounce plus a touch (${G.combat.hits.crew - h1})`);
 }
-// --- chapter 2: two aliens, one per deck, through both airlocks; the objective needs both dead
+// --- chapter 2: the cargo pods. Two sealed pods in the reactor room hatch the two aliens (one per deck); the objective needs both dead
 {
-  const N3 = [...NAMES, 'hurtInvader', 'mission', 'startMission', 'runEvent', 'objectiveStatus', 'eventLabel', 'crew', 'MISSIONS'];
+  const N3 = [...NAMES, 'hurtInvader', 'mission', 'startMission', 'runEvent', 'objectiveStatus', 'eventLabel', 'crew', 'MISSIONS', 'radarScan', 'SOLIDS', 'canStand',
+              'walkRects', 'POD_STIR', 'POD_GAP', 'podHatchAt', 'CARGO_PODS', 'netSerialize', 'netApply', 'me', 'NAV_SPOTS', 'WALK_DESTS', 'syncPodSolids'];
   const G = loadGame(N3); G.startMission('c2');
   const ev = G.mission.events.find(e => e.kind === 'intruder');
-  check(ev && ev.count === 2 && G.mission.objective.count === 2, 'chapter 2\'s intruder event brings two aliens, and the objective is to kill both');
-  check(G.eventLabel(ev) === '2 intruders — both airlocks', `the radar calls it "${G.eventLabel(ev)}"`);
+  check(ev && ev.count === 2 && ev.pods && G.mission.objective.count === 2, 'chapter 2\'s intruder event hatches two aliens from the cargo pods, and the objective is to kill both');
+  check(G.eventLabel(ev) === '2 intruders — the cargo pods', `it's called "${G.eventLabel(ev)}"`);
+  check(ev.radar === false, 'the hatching is no radar contact (it happens inside the ship)');
+  // the cargo: two sealed pods, solid, out of the way (every place the crew walks to is still reachable)
+  const pods = G.boarding.pods;
+  check(pods.length === 2 && pods.every(p => p.state === 'sealed') && G.SOLIDS.filter(S => S.pod).length === 2 && pods.every(p => !G.canStand(p.x, p.y, G.walkRects())),
+    `two sealed cargo pods aboard, solid (${pods.map(p => `${p.x}, ${p.y}`).join(' / ')})`);
+  {
+    // floor cells in the reactor room you can stand on but not walk to from its middle (0.2 grid), with and without the pods
+    const shutOff = () => {
+      const rects = G.walkRects(), ok = (x, y) => G.canStand(x, y, rects), key = (x, y) => `${Math.round(x * 5)},${Math.round(y * 5)}`;
+      const [sx, sy] = G.NAV_SPOTS.reactor, seen = new Set([key(sx, sy)]), q = [[sx, sy]];
+      while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { const nx = x + dx, ny = y + dy, k = key(nx, ny); if (!seen.has(k) && ok(nx, ny)) { seen.add(k); q.push([nx, ny]); } } }
+      const out = new Set();
+      for (let x = 14.4; x < 30.1; x += 0.2) for (let y = 15.2; y < 25.4; y += 0.2) if (ok(x, y) && !seen.has(key(x, y))) out.add(key(x, y));
+      return out;
+    };
+    const withPods = shutOff(), keep = G.boarding.pods; G.boarding.pods = []; G.syncPodSolids();
+    const without = shutOff(); G.boarding.pods = keep; G.syncPodSolids();
+    const extra = [...withPods].filter(k => !without.has(k)).length;
+    check(extra === 0, `the pods shut off no floor in the reactor room (${extra} cells more unreachable than without them)`);
+  }
+  const H0 = loadGame(N3); H0.startMission('intro');
+  check(!H0.boarding.pods.length && !H0.SOLIDS.some(S => S.pod), 'other missions have no cargo pods');
   // no spoiler: until they show up the objective is the cover story (lobby: MISSIONS.c2.objective.cover; HUD: objectiveStatus)
   const pre = G.objectiveStatus();
-  check(!pre.done && pre.text === 'Get the salvage pod to the Xenobiology Institute' && !/intruder|alien|kill/i.test(pre.text), `before they appear the objective reads "${pre.text}"`);
-  for (const t of [G.MISSIONS.c2.blurb, G.MISSIONS.c2.briefing]) check(!/intruder|alien|kill|legs|two somethings/i.test(t), `the chapter's blurb / briefing doesn't give them away: "${t.slice(0, 50)}…"`);
-  G.mission.revealed.add(ev.id);
-  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `once the radar sees them it's explicit: "${G.objectiveStatus().text}"`);
-  G.mission.revealed.delete(ev.id);
-  G.mission.active = false; G.boarding.invaders.length = 0; G.runEvent(ev);
-  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `once they're aboard: "${G.objectiveStatus().text}"`);
+  check(!pre.done && pre.text === 'Deliver the cargo pods to the Xenobiology Institute' && !/intruder|alien|kill/i.test(pre.text), `before they appear the objective reads "${pre.text}"`);
+  for (const t of [G.MISSIONS.c2.blurb, G.MISSIONS.c2.briefing]) check(!/intruder|alien|kill|legs|two somethings|hatch/i.test(t), `the chapter's blurb / briefing doesn't give them away: "${t.slice(0, 50)}…"`);
+  G.mission.t = ev.t - 10; G.radarScan();
+  check(!G.mission.revealed.has(ev.id) && G.objectiveStatus().text === pre.text, 'a radar scan just before doesn\'t see it coming (the cover story stays)');
+  // the event: pod 1 stirs (banner), bursts POD_STIR s later; pod 2 POD_GAP s after pod 1
+  G.mission.active = false; G.boarding.invaders.length = 0; G.runEvent(ev); G.tick(DT);
+  check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `as soon as the first pod stirs it's explicit: "${G.objectiveStatus().text}"`);
+  check(pods[0].state === 'stir' && !G.boarding.invaders.length && /moving in the cargo pod/.test(G.combat.banner?.text || ''), `first a warning: the pod stirs ("${G.combat.banner?.text}"), nothing is out yet`);
+  let t1 = null, t2 = null;
+  for (let i = 1; i < 60 * 30 && t2 === null; i++) { G.tick(DT); if (t1 === null && G.boarding.invaders.length === 1) t1 = (i + 1) * DT; if (G.boarding.invaders.length === 2) t2 = (i + 1) * DT; }
+  check(Math.abs(t1 - G.podHatchAt(0)) < 0.05 && Math.abs(t2 - G.podHatchAt(1)) < 0.05, `the first alien is out after ${t1?.toFixed(2)} s, the second after ${t2?.toFixed(2)} s (pods burst at ${G.podHatchAt(0)} / ${G.podHatchAt(1)} s)`);
   const [p, q] = G.boarding.invaders;
-  check(G.boarding.invaders.length === 2 && p.hatch !== q.hatch && p.zone !== q.zone, `they come in through different airlocks (${p.hatch.side} / ${q.hatch.side}) and keep to different decks (${p.zone} / ${q.zone})`);
+  check(pods.every(o => o.state === 'open') && G.SOLIDS.filter(S => S.pod).length === 2, 'both pods burst open; their remains stay (still solid)');
+  check(p.hatch == null && p.mode === 'inside' && p.pod === 0 && q.pod === 1 && p.zone !== q.zone, `they come out of the pods, not through the airlocks, and keep to different decks (${p.zone} / ${q.zone})`);
+  // multiplayer: the pods are in the snapshot (and their footprints solid in every browser)
+  {
+    const B = loadGame(N3); B.startMission('intro'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+    check(B.boarding.pods.length === 2 && B.boarding.pods.every(o => o.state === 'open') && B.SOLIDS.filter(S => S.pod).length === 2, 'the pods\' state reaches the other browsers (with their solid footprints)');
+  }
+  // more aliens than sealed pods (another such event with the pods already burst): the airlocks, as before
+  {
+    const H = loadGame(N3); H.startMission('c2'); H.boarding.pods.forEach(o => { o.state = 'open'; });
+    H.mission.active = false; H.runEvent({ t: 0, kind: 'intruder', side: 'port', count: 2, pods: true });
+    check(H.boarding.invaders.length === 2 && H.boarding.invaders.every(a => a.state === 'entering' && a.hatch), 'with no sealed pod left they come in through the airlocks');
+  }
   // nobody aboard: each prowls its own deck, they don't clump
   G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;
   const deck = (a) => (a.y < 11.5 ? 'top' : 'bottom'); let off = 0, apart = 0, n = 0;

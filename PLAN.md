@@ -3067,3 +3067,75 @@ Fixed (no numbers changed; the fight's steps, HP, windows and timings are the sa
 Open (story, the user: "why do we need to shoot its eye? I thought we're trying to heal it?"): the eye (and the dorsal
 fin, phase 1) are targets that hurt the creature; see the report's options (leech over the eye / a third regrown
 zone instead of the eye; a leech clump on the fin).
+
+### One gravity tide per mission (2026-10-17, js/encounters.js, js/mission.js)
+
+Playtest: "the gravity coils: there is no point if they go out of alignment _all_ the time. Just do one gravity wave
+per mission." The repeats came from the `tides: <s>` rule (c7 / The Deep 70, Deep drift 70, c8 / The Mother of All 80):
+`updateTide` started a tide every ~that many s (×0.8-1.2 each time) until the jump, ~4 a mission, each knocking a coil
+off. c8 also had two written tide events (140, 225 s, picked for 7-8 players) on top of its rule.
+- The rule now means ONE tide at that many s (where the first came before: 70 / 70 / 80 s), then never again
+  (`enc.tideDone`, a JSON-safe flag in the snapshot).
+- `selectEvents` picks at most one written tide (`oneTide`): none when the rule brings one (so c8's two written tides
+  are never picked; they stay in the build so the written spread, and with it the reactor's pace, is unchanged), else the
+  first written one; `tide` is never a repeat kind for big crews (`ONE_OFF_KINDS`). Nightmare's one pool tide is as before.
+- Briefings / blurbs: "a gravity tide rolls through" instead of "every minute or so".
+- tools/balance.js models the rule's one tide (was one every rules.tides s up to the jump).
+- tests/jumpdrive.js: the rule's tide comes once and never again (2 more minutes), the flag survives a snapshot, and at
+  most one tide (written + rule) in every mission at 1-8 players and every difficulty (c7, c8, Deep drift keep theirs).
+No numbers changed, so the missions got calmer: in the model Deep drift solo went from 33 % to 51 % idle (target 37 %)
+and 63 / 69 % → 75 / 78 % for 2 / 3 players (target 64.5 %): tests/scaling.js flags it OFF until it is re-calibrated.
+c7 ×1 27 → ~39 %, c8 ×1-4 1 / 35 / 57 / 58 % → 16 / 51 / 65 / 67 %. c8 at 8 players gets two repeats (leeches, spores)
+in place of its two written tides (same event count).
+
+### Red Comet Cove back to 5 minutes (2026-10-17, js/progress.js)
+
+The user: "mission 4 should go back to 5" (the 7 minutes from the playtest were meant for chapter 5, see above).
+c4 `length: 300` (was 420 that morning, 360, the default, before). `layoutMission` spreads the same written timeline from
+the 30 s scout to 278 s (`end = length − finaleLead`, JUMP_DELAY 22), the jump at 300 s; the reactor follows the gaps.
+- The nav core (solo / 2 players: scout 30, raiders 1:32 and 3:36, failing part 2:34, swarm finale 4:38): the first
+  raider leaves 208 s to get its core (360 s: 253 s, 420 s: 298 s), the last one 84 s (99 s / 114 s). In the model a
+  2-player crew has the first raider's core aboard at ~137 s (fight 17 s, the fetch 20 s; + the walk to the helm and the
+  3 s install, not modelled: ~150 s). The second chance still fits by shooting the raider and fishing the core in
+  (~50-60 s with the install), no longer by letting it dock and boarding it (docks 40 s after it shows up, then ~50-60 s
+  more: past the jump), and it overlaps the finale swarm. 3+ players get both raiders in the first 2:20.
+- Balance (`node tools/balance.js --calibrate c4`, expected kit, mines drones always 3): with the counts kept and cells /
+  reactor refitted (5/4/11/10/14/17/17/17, reactor ×3 0.7) ×3-6 sat at 56-61 % idle, 6-10 points under the aim (the same
+  encounters in 5/6 of the time; tests/scaling.js flagged 2-4 players OFF). So the --calibrate fit, counts included:
+  events 4/5/11/14/18/23/23/23 → 4/5/8/11/14/19/23/23, cells 4/4/12/10/14/17/17/17 → 5/4/8/9/11/14/17/17, reactor 1
+  everywhere (was ×3 0.6, ×4 0.85). Idle 1-8 players: 45 72 70 70 71 70 74 78 % (420 s) → 19 59 66 67 66 67 66 70 %
+  (300 s), all in spec. Solo / 2 players can't get fewer than their 5 encounters (scout, two raiders, the failing part,
+  the finale): solo is "tight" (busy 81 %, below the 25 % floor tests/scaling.js wants for the essentials-only missions),
+  2 players 59 % (aim 66).
+- Music: 300 s is the length the pieces are planned for (music.plan's default): Red Comet Gallop's drops at 160 / 194 /
+  251 s, the breakdown at 183 s, the climax from 251 s (49 s before the spool).
+- tests/scaling.js: the c4 check now wants the jump at 300 s, the first raider before 100 s and at least 80 s from the
+  last raider to the jump at every crew size.
+
+### Strange Cargo: the aliens hatch out of the cargo pods (2026-10-18, js/invader.js, js/progress.js, models/cargo/pod.py)
+
+The user: "they should hatch out of the pods. Your mission is to carry the pods but then they hatch." Chapter 2 is now a
+delivery job: two sealed salvage pods for the Xenobiology Institute, strapped down in the reactor room, and its intruder
+event hatches them instead of bringing two aliens in through the airlocks.
+- The pods (`boarding.pods`, js/invader.js `CARGO_PODS`): at (28.15, 23.3) and (29.55, 23.3), right of the engine below the
+  power line to the right airlock room, 1.2 × 0.72 each, solid (`podRect` in SOLIDS, re-synced by `syncPodSolids` at the
+  mission start and on every snapshot). `startMission` sets up as many as the mission's written intruder events with
+  `pods: true` ask for (only c2: 2); every other mission has none. tests/intruder.js: they shut off no floor.
+- The event (`evAt('intruder', 90, { count: 2, pods: true, radar: false })`): pod i starts to stir `i × POD_GAP` (10 s)
+  after it, with a banner ("Something is moving in the cargo pod!"), thumps, a stronger amber throb and a sidebar plate
+  with a countdown, and bursts `POD_STIR` (6 s) later (`podHatchAt(i)`: 6 / 16 s): goo and shell shards, its alien crawls
+  out in front of it, keeping to its deck while the other lives (the first the upper, the second the lower, as the airlock
+  pair did). The shell stays, burst open. More aliens than sealed pods: the rest through the airlocks as before.
+- Not a radar contact (`radar: false`): it happens inside the ship. So the objective keeps its cover ("Deliver the cargo
+  pods to the Xenobiology Institute") until the first pod stirs (the event ran), then "Kill both intruders (k/2)".
+- Multiplayer: `boarding.pods` is in the snapshot (js/net.js).
+- Sprites (group `cargo`, `tools/blender/models/cargo/pod.py`): `cargo/pod_0|1` (frames: at rest, left bulge, right bulge,
+  big bulge with the pod rocking; the two differ in the stencilled number and the tape) and `cargo/pod_0|1_open` (petals
+  peeled back, slimed cavity, goo drooling into a puddle, a strap snapped, shards). Sealed, a pod twitches now and then
+  (looks only); stirring, it cycles the bulges ever faster and shudders. A warm light per pod (js/lights.js), green once
+  open. 2D fallback for ?classic.
+- Story: new blurb / briefing (a cargo run, "warmer than cargo should be", the manifest says DO NOT OPEN).
+- Balance (no numbers changed): tools/balance.js models the pod variant (`ev.pods`: each alien released at
+  `podHatchAt(i)`, the crew walking to the reactor room instead of the airlock rooms; no radar warning any more). c2 score
+  1-4 / 8 players 41 / 34 / 31 / 27 / 34 → 48 / 31 / 25 / 21 / 34, idle 35 / 58 / 66 / 74 / 69 % → 34 / 60 / 69 / 77 / 70 %:
+  solo a little harder (no warning from the radar), bigger crews a little easier (the fight is in the middle of the ship).

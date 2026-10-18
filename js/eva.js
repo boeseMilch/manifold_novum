@@ -54,8 +54,9 @@ function hullTopZ(x, y) {
 // ---------------------------------------------------------------------------
 // Spawning (mission events / debug)
 // ---------------------------------------------------------------------------
+const MINES_PER_DRONE = 3;   // always 3 (2026-10-17 playtest: it was a random 1-3, and a single mine made it far too easy)
 function spawnMineDrone(side) {
-  const n = 1 + Math.floor(Math.random() * 3), sx = side === 'port' ? -18 : SHIP_W + 18;
+  const n = MINES_PER_DRONE, sx = side === 'port' ? -18 : SHIP_W + 18;
   evs.drones.push({ uid: newUid(), side, x: sx, y: 6 + Math.random() * 10, left: n, spot: null, t: 0, leaving: false });
   combatBanner(`Mine drone on the ${SIDE_LABEL[side].toLowerCase()} side — it sticks limpet mines on the hull!`);
   sfx.alarm();

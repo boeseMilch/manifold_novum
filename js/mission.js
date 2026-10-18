@@ -52,6 +52,7 @@ function eventLabel(ev) {
   if (ev.kind === 'interceptor') return `Interceptor — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'frigate') return `Frigate — ${SIDE_NAME[ev.side]}`;
   if (ev.kind === 'swarm') return `Asteroid swarm — ${SIDE_NAME[ev.side] || 'front'}`;
+  if (ev.kind === 'intruder' && ev.pods) return ev.count > 1 ? `${ev.count} intruders — the cargo pods` : 'Intruder — the cargo pod';
   if (ev.kind === 'intruder') return ev.count > 1 ? `${ev.count} intruders — both airlocks` : `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'saboteur') return `Saboteur — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'mines') return `Mine drone — ${SIDE_NAME[ev.side]}`;
@@ -99,7 +100,7 @@ const MISSIONS = {
     },
   },
   deep: {
-    name: 'Deep drift', tier: 3, blurb: 'Hard. Gravity tides, herds of creatures, breaches, plasma fires, failing gravity, and a fussy jump drive.',
+    name: 'Deep drift', tier: 3, blurb: 'Hard. A gravity tide, herds of creatures, breaches, plasma fires, failing gravity, and a fussy jump drive.',
     balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 7's twin: 33-40% is right solo)
     crew: {events: [2, 2, 3, 4, 4, 7, 8, 12], cells: [2, 2, 2, 3, 3, 4, 4, 6], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, tides + herds, 2026-10-16): 33% 63% 70% 66% 69% 65% 63% 63% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 port shield without energy at 32 s; was 1/1/5/8/15/18/23/27
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
@@ -206,6 +207,14 @@ function fillSides(written) { for (const e of written) if (e.kind === 'swarm' &&
 // ---------------------------------------------------------------------------
 const MISSION_LENGTH = 360;
 const ESSENTIAL_KINDS = new Set(['derelict', 'rock', 'brig', 'leviathan']);
+const ONE_OFF_KINDS = new Set(['tide']);              // never repeated for a bigger crew (one gravity tide per mission, 2026-10-17)
+// One gravity tide per mission (2026-10-17, the user: "no point if they go out of alignment all the time"): with the
+// `tides` rule (its one tide, js/encounters.js) no written tide event is picked; without it only the first written one.
+// (Picking only: layoutMission's written spread, and so the reactor's pace, still counts every written event.)
+function oneTide(M, written) {
+  const first = M?.rules?.tides ? null : written.find(e => e.kind === 'tide');
+  return written.filter(e => e.kind !== 'tide' || e === first);
+}
 const DROP_ORDER = ['canister', 'antenna', 'debris', 'glitch', 'storm', 'coolant', 'maintenance', 'flare', 'tide', 'spores', 'mines', 'leeches', 'grappler',
                     'tractor', 'stealth', 'saboteur', 'mother', 'intruder', 'swarm', 'herd', 'frigate', 'interceptor', 'pirates'];
 const crewSize = () => Math.max(1, crew.length);
@@ -220,6 +229,7 @@ const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / miss
 const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
 function selectEvents(id, written, n, target, easy = 0) {
+  written = oneTide(MISSIONS[id], written);
   const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]), always = new Set(M.always || []);
   const base = missionCrew(id, n).events ?? written.length, want = Math.min(base, Math.max(1, base - easy));   // (at least one: the finale)
   const dropRank = (e) => (DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
@@ -229,7 +239,7 @@ function selectEvents(id, written, n, target, easy = 0) {
   // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump), nor the opener
   const objective = new Set(M.essential || []), optionalFight = order.find(o => rank(o.e) !== Infinity && COMBAT_KINDS.has(o.e.kind) && !keep.includes(o.e));
   if ((objective.size || keep.some(e => e.opener)) && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind) || e.opener)) keep.push(optionalFight.e);
-  const extra = [...new Set(written.map((e, i) => ({ e, i })).filter(o => !ess.has(o.e.kind) && !o.e.opener)   // repeats: most important optional kinds
+  const extra = [...new Set(written.map((e, i) => ({ e, i })).filter(o => !ess.has(o.e.kind) && !o.e.opener && !ONE_OFF_KINDS.has(o.e.kind))   // repeats: most important optional kinds
     .sort((a, b) => dropRank(b.e) - dropRank(a.e) || a.i - b.i).map(o => o.e.kind))];                            // (and `always` ones), in turn
   for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target, M.sides), repeat: true });
   const kept = written.filter(e => keep.includes(e)), reps = keep.filter(e => e.repeat);
@@ -327,6 +337,7 @@ function startMission(id = 'intro', opts = {}) {
   });
   mission.written = fillSides((MISSIONS[id] || MISSIONS.intro).build(null).map(({ sys, ...e }) => e));   // the timeline as written (no part refs: it's sent to browsers)
   layoutMission(id, crewSize());
+  setupCargoPods(mission.written.filter(e => e.kind === 'intruder' && e.pods).reduce((n, e) => n + (e.count || 1), 0));   // (chapter 2's cargo: js/invader.js)
   if (mission.objective?.kind === 'ore' && !ITEMS.some(i => i.kind === 'drill')) ITEMS.push({ kind: 'drill', x: 4.2, y: 21.8 });   // the mining drill, left airlock room
   power.reserve = 0; crewFuel(crewSize());              // (the crew's cells, then the ship's spare cell on top)
   shipStartExtras(opts.ship || {});

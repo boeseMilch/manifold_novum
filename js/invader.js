@@ -89,10 +89,67 @@ function spawnInvader(side, zone = null, banner = true) {
 // each keeping to its own deck (the first the upper, the next the lower, ...) so they don't hunt as a pack.
 function spawnIntruders(ev) {
   const n = Math.max(1, ev.count || 1);
+  if (ev.pods && boarding.pods.some(p => p.state === 'sealed')) return hatchPods(ev, n);
   if (n === 1) return spawnInvader(ev.side);
   const other = ev.side === 'port' ? 'star' : 'port';
   for (let i = 0; i < n; i++) spawnInvader(i % 2 ? other : ev.side, i % 2 ? 'bottom' : 'top', false);
   combatBanner(`Intruder alert — ${n === 2 ? 'two of them' : `${n} of them`}, coming in through both airlocks!`);
+}
+
+// ---------------------------------------------------------------------------
+// Cargo pods (chapter 2, "Strange Cargo"): the delivery is two sealed salvage pods, strapped down in the reactor
+// room's back corner (boarding.pods; solid, like crates: podRect in SOLIDS). Its intruder event (ev.pods, not a
+// radar contact: it happens inside) hatches them instead of bringing aliens in through the airlocks: pod i starts
+// to stir (bulges, twitches, a banner) i·POD_GAP s after the event, and bursts POD_STIR s later; its alien crawls
+// out in front of it (keeping to its deck like the airlock pair: the first the upper, the next the lower). The
+// burst-open shell stays (state 'open'). Count beyond the sealed pods: the rest come through the airlocks as before.
+// ---------------------------------------------------------------------------
+const CARGO_PODS = [{ x: 28.15, y: 23.3 }, { x: 29.55, y: 23.3 }];   // reactor room, right of the engine, below the line to the right airlock room
+const POD_W = 1.2, POD_H = 0.72, POD_STIR = 6, POD_GAP = 10;
+boarding.pods = [];
+const podHatchAt = (i) => i * POD_GAP + POD_STIR;   // s after the event that pod i bursts (tools/balance.js)
+const podRect = (p) => ({ ...R(p.x - POD_W / 2, p.y - POD_H / 2, p.x + POD_W / 2, p.y + POD_H / 2), pod: true });
+// The pods' footprints in SOLIDS (re-done whenever the pods change: mission start, every snapshot)
+function syncPodSolids() {
+  for (let i = SOLIDS.length - 1; i >= 0; i--) if (SOLIDS[i].pod) SOLIDS.splice(i, 1);
+  for (const p of boarding.pods) SOLIDS.push(podRect(p));
+}
+// n sealed pods aboard at the mission start (the missions whose written intruder events say pods: their count)
+function setupCargoPods(n) {
+  boarding.pods = CARGO_PODS.slice(0, Math.max(0, n)).map((p, i) => ({ id: i, x: p.x, y: p.y, state: 'sealed', t: 0, zone: null }));
+  syncPodSolids();
+}
+function hatchPods(ev, n) {
+  const sealed = boarding.pods.filter(p => p.state === 'sealed'), k = Math.min(n, sealed.length);
+  sealed.slice(0, k).forEach((p, i) => Object.assign(p, { state: 'stir', t: -i * POD_GAP, zone: n > 1 ? (i % 2 ? 'bottom' : 'top') : null, nth: i, of: k }));
+  for (let i = k; i < n; i++) spawnInvader(i % 2 ? (ev.side === 'port' ? 'star' : 'port') : ev.side, n > 1 ? (i % 2 ? 'bottom' : 'top') : null, false);
+}
+function updatePods(dt) {
+  for (const p of boarding.pods) {
+    if (p.state !== 'stir') continue;
+    const t0 = p.t; p.t += dt;
+    if (!p.warned && p.t >= 0) {                     // it starts: the warning beat
+      p.warned = true;
+      combatBanner(p.nth ? 'The other cargo pod is moving too!' : 'Something is moving in the cargo pod! (reactor room)');
+      sfx.squelch?.(); sfx.clank();
+    }
+    if (p.t >= 0 && Math.floor(p.t * 1.6) !== Math.floor(t0 * 1.6)) sfx.clank();   // thumps from inside, faster than you'd like
+    if (p.t >= POD_STIR) podBurst(p);
+  }
+}
+function podBurst(p) {
+  p.state = 'open'; p.t = 0;
+  const rects = walkRects(), [x, y] = nearestFree(p.x, p.y - POD_H / 2 - 0.35, (x, y) => canStand(x, y, rects)) || [p.x, p.y - POD_H / 2 - 0.35];
+  boarding.invaders.push({
+    uid: newUid(), kind: 'alien', x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside',
+    state: 'wander', hatch: null, t: 0, hp: ALIEN_HP, path: [], linger: 0.6, stuck: 0,
+    spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0, touchCd: 0, zone: p.zone, pod: p.id,
+  });
+  if (typeof slimeBurst === 'function') slimeBurst(p.x, p.y - 0.1, 26, 0.12, 0.45); else sfx.squelch?.();
+  for (let i = 0; i < 14; i++) combatFx(p.x, p.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 4, 0.6, i % 2 ? '#ffb36a' : '#e8e4d8', 0.08);   // shell shards
+  sfx.alienHurt(); sfx.crack?.();
+  combatBanner(p.of > 1 ? (p.nth ? 'The second pod burst — both of them are loose!' : 'The cargo pod burst open — something got out! The other pod is next…')
+                        : 'The cargo pod burst open — something got out!');
 }
 const deckOf = (y) => (y < (SPINE_Y0 + SPINE_Y1) / 2 ? 'top' : 'bottom');
 // Does it keep to its zone (its own deck) right now? Only while another alien is still about.
@@ -504,6 +561,7 @@ function boltHitsBody(b, x0, y0) {
   b.dead = true; best(); return true;
 }
 function updateBoarding(dt) {
+  updatePods(dt);
   for (const a of boarding.invaders) updateInvader(a, dt);
   boarding.invaders = boarding.invaders.filter(a => !a.dead);
   for (const b of boarding.bolts) {
@@ -837,7 +895,42 @@ function drawWrenchSprite(b) {
   const step = TAU / 16, i = Math.round(b.spin / step);
   return GFX.sprite('items/wrench', ((i % 16) + 16) % 16, b.x, b.y, b.z || 0, { rot: b.spin - i * step, emissive: 0.15, sortY: b.y });
 }
+// The cargo pods (cargo/pod_<v> frames 0-3: at rest, then three bulges; cargo/pod_<v>_open: the burst shell,
+// models/cargo/pod.py). Sealed, one twitches now and then (just a look: nothing happens yet); stirring, it bulges
+// faster and faster and shudders. 2D fallback: a strapped capsule, a torn one with goo once open.
+function podPose(p, t) {
+  if (p.state === 'open') return { f: 0, dx: 0 };
+  if (p.state === 'stir' && p.t >= 0) {
+    const k = clamp(p.t / POD_STIR, 0, 1);
+    return { f: 1 + Math.floor(t * (5 + 9 * k) + p.id) % 3, dx: Math.sin(t * 47) * 0.025 * (0.4 + k) };
+  }
+  const ph = (t * 0.12 + p.id * 0.43) % 1;           // a twitch every ~8 s, half a second long
+  return { f: ph < 0.06 ? 1 + Math.floor(ph / 0.02) % 3 : 0, dx: 0 };
+}
+function drawCargoPods(t) {
+  for (const p of boarding.pods) {
+    const P = podPose(p, t), name = p.state === 'open' ? `cargo/pod_${p.id % 2}_open` : `cargo/pod_${p.id % 2}`;
+    if (GFX.on && GFX.sprite(name, Math.min(P.f, (GFX.info(name)?.frames || 1) - 1), p.x + P.dx, p.y, 0, { emissive: 0.5, sortY: p.y })) continue;
+    const x = L(p.x + P.dx), y = L(p.y), w = L(POD_W), h = L(POD_H), b = P.f ? 1 + 0.05 * (P.f === 2 ? 1.6 : 1) : 1;
+    ctx.save(); ctx.translate(x, y);
+    shadowEllipse(3, 4, w * 0.5, h * 0.5, 0.35);
+    if (p.state === 'open') {                         // the burst shell: torn edges, goo
+      stain(0, L(0.15), L(0.55), 'rgba(120,220,70,0.45)', p.id * 7 + 3);
+      rr(-w / 2, -h / 2, w, h, h * 0.45); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(2);
+      ctx.beginPath(); ctx.ellipse(0, 0, w * 0.36, h * 0.3, 0, 0, TAU); ctx.fillStyle = '#1b2016'; ctx.fill();
+      ctx.fillStyle = '#c98a4a';
+      for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; ctx.beginPath(); ctx.moveTo(Math.cos(a) * w * 0.3, Math.sin(a) * h * 0.26); ctx.lineTo(Math.cos(a + 0.25) * w * 0.48, Math.sin(a + 0.25) * h * 0.5); ctx.lineTo(Math.cos(a + 0.5) * w * 0.3, Math.sin(a + 0.5) * h * 0.26); ctx.fill(); stroke(1.2); }
+    } else {
+      rr(-w / 2, -h / 2, w, h, h * 0.45); ctx.fillStyle = '#6a6f7a'; ctx.fill(); stroke(2);
+      ctx.save(); ctx.scale(b, b); ctx.beginPath(); ctx.ellipse(0, 0, w * 0.3, h * 0.28, 0, 0, TAU);
+      ctx.fillStyle = `rgba(232,150,70,${0.75 + 0.2 * Math.sin(t * 2 + p.id)})`; ctx.fill(); stroke(1.5); ctx.restore();
+      ctx.fillStyle = '#e8c34f'; for (const sx of [-0.32, 0.32]) { ctx.fillRect(sx * w - L(0.05), -h / 2 - 1, L(0.1), h + 2); }
+    }
+    ctx.restore();
+  }
+}
 function drawBoarding(t) {
+  drawCargoPods(t);
   drawAlienCorpses();
   drawSaboteurCorpses();
   for (const a of boarding.invaders) {

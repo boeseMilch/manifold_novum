@@ -70,7 +70,7 @@ const A = {
   PLASMA_SHARE: 0.25,     // share of incidents in a plasma mission that are plasma fires (vent: PIN pad + VENT_TIME)
   PIN_TIME: 6,            // s to type the vent PIN
   FLARE_COST: 8,          // crew-seconds per crew member to get off the upper deck and wait out a solar flare
-  MINES: 2,               // limpet mines per drone (1-3)
+  MINES: 3,               // limpet mines per drone (always 3 since 2026-10-17; was a random 1-3, modelled as 2)
   LEECH_LATCH: 12,        // s until the whole leech swarm has latched on (then they're pried off outside)
   BOARD_WALK: 24,         // units from our outer airlock to the far end of a docked ship (and back)
   DERELICT_EXTRA: 20,     // s inside a derelict: the jammed door, its fire, finding the box / the engineer
@@ -163,7 +163,7 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
   'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY',
   'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE',
-  'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY'];
+  'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY', 'podHatchAt'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function seeded(seed, fn) {                       // the sandbox shares the host's Math, so this seeds the game too
   const keep = Math.random; Math.random = mulberry(seed);
@@ -368,8 +368,9 @@ function jobsFor(ev, ctx) {
           swarm: { per: per * A.AIM_TIME, hitAt, side } });
   } else if (k === 'intruder') {
     const fight = g.ALIEN_HP / A.LASER_HIT * A.LASER_SHOT;
-    for (let i = 0; i < (ev.count || 1); i++)            // (several: one per deck, each its own fight)
-      job({ label: 'alien', trip: H(i % 2 ? 'portLock' : 'starLock'), work: fight, crewHits: fight * A.ALIEN_HITS, alive: { crew: A.ALIEN_HARASS, from: 2 }, objective: { intruder: 1 } });
+    // (several: one per deck, each its own fight; chapter 2's hatch out of the cargo pods in the reactor room, in turn: js/invader.js podHatchAt)
+    for (let i = 0; i < (ev.count || 1); i++)
+      job({ label: 'alien', ...(ev.pods ? { rel: g.podHatchAt(i), trip: H('reactor') } : { trip: H(i % 2 ? 'portLock' : 'starLock') }), work: fight, crewHits: fight * A.ALIEN_HITS, alive: { crew: A.ALIEN_HARASS, from: 2 }, objective: { intruder: 1 } });
   } else if (k === 'saboteur') {
     const work = n > 1 ? g.SAB_WORK_TEAM : g.SAB_WORK_SOLO, period = (g.SAB_SNEAK[0] + g.SAB_SNEAK[1]) / 2 + 2 * g.SAB_FADE + work + A.SAB_PERIOD_EXTRA;
     const first = calibrate('saboteur').first.broken ?? period;
@@ -426,7 +427,7 @@ function jobsFor(ev, ctx) {
     // the herd: its two encounters at once, from one side (each with its own jobs)
     for (const kind of ev.kinds || []) for (const j of jobsFor({ ...ev, kind }, ctx)) J.push({ ...j, label: `herd: ${j.label}` });
   } else if (k === 'tide') {
-    // a gravity tide (an event, or the `tides` rule's clock): everyone holds on through the lurch (TIDE_WARN s after the
+    // a gravity tide (an event, or the `tides` rule's one tide): everyone holds on through the lurch (TIDE_WARN s after the
     // warning), and with the coils rule it knocks one coil out: a spacewalk to turn it back (or the jump takes COIL_DELAY longer)
     for (let i = 0; i < n; i++) job({ label: 'gravity tide: hold on', rel: g.TIDE_WARN, work: g.TIDE_TIME });
     if (rules.coils) {
@@ -578,9 +579,9 @@ function schedule(build, waitByKey) {
     if (same) { same.work += job.work; same.weight = (same.weight || 0) + (job.weight || 0); return; }
     queue.push(job);
   };
-  // the `tides` rule: a tide every ~rules.tides s (the game draws ×0.8-1.2 each time; the model takes the mean)
+  // the `tides` rule: one tide, rules.tides s in (js/encounters.js updateTide; it recurred until 2026-10-17)
   const tideEvs = [];
-  if (rules.tides) { const every = rules.tides === true ? g.TIDE_EVERY : +rules.tides || g.TIDE_EVERY; for (let t = every, i = 0; t < jumpAt; t += every, i++) tideEvs.push({ id: `tide${i}`, t, kind: 'tide', radar: false }); }
+  if (rules.tides) { const at = rules.tides === true ? g.TIDE_EVERY : +rules.tides || g.TIDE_EVERY; if (at < jumpAt) tideEvs.push({ id: 'tide0', t: at, kind: 'tide', radar: false }); }
   for (const ev of [...events, ...tideEvs]) for (const j of jobsFor(ev, ctx)) {
     j.key = `${ev.id}|${j.label}`;
     if (waitByKey[j.key]) j.work += waitByKey[j.key];              // (pass 2: the fight waited this long for energy)

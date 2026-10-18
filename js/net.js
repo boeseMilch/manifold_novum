@@ -45,6 +45,7 @@ function netSerialize() {
     boarding: {
       invaders: boarding.invaders.map(({ path, ...a }) => ({ ...a, hatch: HATCHES.indexOf(a.hatch), target: a.target?.id ?? null, task: a.task ? { ...a.task, sys: sysIdx(a.task.sys) } : null })),
       bolts: boarding.bolts,
+      pods: boarding.pods,                            // (chapter 2's cargo pods: sealed / stirring / burst open)
     },
   };
 }
@@ -112,6 +113,7 @@ function netApply(s, myId) {
   boarding.invaders = s.boarding.invaders.map(a => ({ ...a, path: [], hatch: HATCHES[a.hatch], target: crew.find(c => c.id === a.target) || null,
                                                       task: a.task ? { ...a.task, sys: SYSTEMS[a.task.sys] } : null }));
   boarding.bolts = s.boarding.bolts;
+  boarding.pods = s.boarding.pods || []; syncPodSolids();   // (their footprints are solid: your own walking is predicted here)
   netGlideFrom(boarding.invaders); netGlideFrom(dk.pirates || []);
   netLive = true;
 }

@@ -7,7 +7,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'tick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'evs', 'enc', 'org', 'combat', 'CAPACITORS', 'SYSTEMS', 'ITEMS',
   'JUMP_HANDLE', 'JUMP_PULL', 'AUTO_LEAD', 'AUTO_PULL', 'handlePull', 'clickTarget', 'withCrew', 'coilFx', 'jumpCharge', 'jumpOutT', 'startTide', 'TIDE_WARN',
   'TIDE_TIME', 'runEvent', 'makeEvent', 'eventLabel', 'HERD_KINDS', 'evaReach', 'roomAt', 'GFX', 'drawMinigameProps', 'drawEvaJobs', 'netSerialize', 'netApply',
-  'COIL_SPOTS', 'encounterPlates', 'radarList'];
+  'COIL_SPOTS', 'encounterPlates', 'radarList', 'makeCrew'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -122,7 +122,26 @@ const atJump = (G, id, lead = 6) => {
   check(G2.eventLabel({ kind: 'tide' }) === 'Gravity tide — everywhere', 'event kind tide has a label');
   const G3 = loadGame(NAMES); G3.startMission('intro'); G3.mission.events = []; G3.mission.jumpAt = Infinity; G3.mission.rules.tides = 20;
   let first = null; tickN(G3, 60 * 45, () => { calm(G3); if (first === null && G3.enc.tide) first = G3.mission.t; });
-  check(first !== null && first <= 20.1, `rule tides: 20 brings a tide every ~20 s (first at ${first?.toFixed(1)} s)`);
+  check(first !== null && first <= 20.1, `rule tides: 20 brings a tide ~20 s in (at ${first?.toFixed(1)} s)`);
+  // and only that one (2026-10-17, the user: "just do one gravity wave per mission")
+  let starts = 0, was = false; tickN(G3, 60 * 120, () => { calm(G3); if (G3.enc.tide && !was) starts++; was = !!G3.enc.tide; });
+  check(starts === 0 && G3.enc.tideDone, `... and never again (${starts} more in the next 2 minutes)`);
+  const S3 = loadGame(NAMES); S3.startMission('intro'); S3.mission.rules.tides = 20; S3.netApply(JSON.parse(JSON.stringify(G3.netSerialize())));
+  check(S3.enc.tideDone === true, 'the "tide done" flag survives a snapshot (JSON)');
+}
+// --- at most one gravity tide per mission: written tide events + the rule's one, every mission, crew size and difficulty
+{
+  const G = loadGame(NAMES), had = new Set(), bad = [];
+  for (const id of Object.keys(G.MISSIONS).filter(id => !G.MISSIONS[id].practice)) for (let n = 1; n <= 8; n++) for (let easy = 0; easy <= 2; easy++) {
+    G.crew.length = 1; while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
+    G.startMission(id, { easy }); G.mission.active = false;
+    const tides = G.mission.events.filter(e => e.kind === 'tide').length + (G.mission.rules?.tides ? 1 : 0);
+    if (tides > 1) bad.push(`${id} ×${n} easy ${easy}: ${tides}`);
+    if (tides) had.add(id);
+  }
+  G.crew.length = 1;
+  check(!bad.length, `at most one gravity tide per mission, every mission, 1-8 players, every difficulty${bad.length ? ': ' + bad.slice(0, 6).join(', ') : ''}`);
+  check(['c7', 'c8', 'deep'].every(id => had.has(id) && G.MISSIONS[id].rules.tides), `the tide missions still have theirs (${[...had].join(', ')})`);
 }
 
 // --- the herd: two organic encounters at once, one side

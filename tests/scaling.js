@@ -52,17 +52,19 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   }
   check(okAll, `${G0.MISSIONS[id].name}: 1 / 2 / 4 / 8 players get ${counts.join(' / ')} events, all jump at ${G0.MISSIONS[id].length || L} s, evenly spaced, essentials kept, a smaller crew's events a subset of a bigger one's, reactor ∝ gap${msg}`);
 }
-// --- Red Comet Cove (c4) runs 7 min to the jump (2026-10-17 playtest, 2 players: "we need some more time"): the nav core
-// takes a fight, a fetch or a boarding, and the install in our helm; even the last raider leaves ~2 min for its core
+// --- Red Comet Cove (c4) runs 5 min to the jump (2026-10-17: 7 min by mistake that morning, then back to 5 at the user's
+// word; was 6, the default): the nav core takes a fight + a fetch (or a boarding) + the install in our helm. Solo / 2 players
+// get the first raider ~1:30 in (~3.5 min to get its core) and the last one ~85 s before the jump: enough to shoot it down,
+// fish the core in and install it (~50-60 s), not to let it dock and board it (~90-100 s)
 {
-  const msg = []; let ok = G0.MISSIONS.c4.length === 420;
+  const msg = []; let ok = G0.MISSIONS.c4.length === 300;
   for (const n of [1, 2, 3, 4, 8]) {
     const G = withCrew(n, 'c4'), raiders = G.mission.events.filter(e => e.kind === 'pirates').map(e => e.t).sort((a, b) => a - b);
     const left = G.mission.jumpAt - raiders[raiders.length - 1];
-    if (!(near(G.mission.jumpAt, 420) && raiders.length === 2 && raiders[0] < 125 && left >= 110)) ok = false;
+    if (!(near(G.mission.jumpAt, 300) && raiders.length === 2 && raiders[0] < 100 && left >= 80)) ok = false;
     msg.push(`×${n}: raiders at ${raiders.map(t => t.toFixed(0)).join(' / ')} s, ${left.toFixed(0)} s from the last to the jump`);
   }
-  check(ok, `Red Comet Cove jumps at 420 s, both raiders by ${G0.MISSIONS.c4.length - 110} s at every crew size (${msg.join('; ')})`);
+  check(ok, `Red Comet Cove jumps at 300 s, the first raider before 100 s, the last at least 80 s before the jump at every crew size (${msg.join('; ')})`);
 }
 {
   const A = withCrew(1, 'c3', 3), B = withCrew(1, 'c3', 99);
@@ -133,21 +135,23 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   }
   check(ok && Object.keys(want).every(id => G0.MISSIONS[id].always?.includes('maintenance')), `failing parts at every crew size: ${Object.entries(want).map(([id, m]) => `${id} ≥${m}`).join(', ')}${msg.length ? ' (' + msg.join(', ') + ')' : ''}`);
 }
-// --- The Deep (c7): gravity tides every ~70 s (they knock the coils out), the handle by hand, herds of two organic kinds
-// from one side, no interceptors; solo gets a herd (the finale fight) and both failing parts
+// --- The Deep (c7): one gravity tide, 70 s in (it knocks a coil out), the handle by hand, herds of two organic kinds
+// from one side, no interceptors; solo gets a herd (the finale fight), both failing parts and (2026-10-17, "too chill") the
+// alien, early, at every crew size
 {
   const R = G0.MISSIONS.c7.rules; let ok = R.tides > 0 && R.coils && R.handle; const msg = [];
   for (const n of [1, 2, 4, 8]) {
     const G = withCrew(n, 'c7', 5), ev = [...G.mission.events].sort((a, b) => a.t - b.t), herds = ev.filter(e => e.kind === 'herd');
     const good = herds.length >= 1 && herds.every(h => h.kinds?.length === 2 && h.kinds[0] !== h.kinds[1] && h.kinds.every(k => ['grappler', 'leeches', 'mother', 'spores'].includes(k)) && h.side)
-      && ev[ev.length - 1].kind !== 'maintenance' && ev.filter(e => e.kind === 'maintenance').length >= 2 && (n < 4 || herds.length >= 2);
+      && ev[ev.length - 1].kind !== 'maintenance' && ev.filter(e => e.kind === 'maintenance').length >= 2 && (n < 4 || herds.length >= 2)
+      && ev.filter(e => e.kind === 'intruder').length === 1 && ev.findIndex(e => e.kind === 'intruder') < ev.findIndex(e => e.kind === 'herd') && ev.length === G0.MISSIONS.c7.crew.events[n - 1];
     if (!good) ok = false;
     msg.push(`×${n}: ${ev.map(e => e.kind === 'herd' ? `herd(${e.kinds.join('+')})` : e.kind).join(', ')}`);
   }
-  check(ok, `The Deep: tides every ${R.tides} s with the coils and handle rules, herds, two failing parts (${msg.join(' · ')})`);
+  check(ok, `The Deep: a tide ${R.tides} s in with the coils and handle rules, herds, two failing parts, the alien before the herds (${msg.join(' · ')})`);
 }
 // --- The Mother of All (c8): a fixed escalating timeline; at every crew size (and difficulty) the spore clouds first, the
-// spore mother, the grappler, two failing parts and the leviathan as the finale; more players get herds, tides, leeches
+// spore mother, the grappler, two failing parts and the leviathan as the finale; more players get herds, leeches
 {
   let ok = true; const msg = [];
   for (const n of [1, 2, 3, 4, 8]) for (const easy of [0, 2]) {
@@ -290,7 +294,7 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   // the nearest count lands within ~8 points of its target. SHORT: the essentials (+ the finale fight) alone keep a
   // solo crew busier than the target (c1: two pirate raiders, a failing part + finale; c4: two raiders, the opener, a
   // finale fight and the nav core's fetch: 4 encounters is the least a solo run gets, 46%).
-  const SHORT = ['c1', 'c4'];   // (c4 2026-10-16: + a failing part at every crew size, 5 encounters solo, 28%)
+  const SHORT = ['c1', 'c4'];   // (c4 2026-10-16: + a failing part at every crew size, 5 encounters solo, 28%; at 300 s since 2026-10-17: 19%, under this floor)
   // HARD: set harder than the model's target on purpose, after a playtest (c2: two aliens + opener + frigate even solo,
   // 2026-10-16 a failing part too; c3: the opener + the lab, whose S-7 work is a long job solo, + a failing part)
   const HARD = ['c2', 'c3'];
@@ -300,8 +304,9 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   // BELOW: busier solo than the target since 2026-10-16 (asteroid swarms from the side: the side cannon and its capacitor,
   // which the auto lever feeds last; leeches no longer burnt off by a shield: shot or pried off outside). The user's rule:
   // keep the encounters (counts, always, essential) and fix the energy with cells / reactor only, accepting the lower idle:
-  // intro ~48% (target 56%), c6 ~27% and c7 ~27% (37%)
-  const BELOW = ['intro', 'c6', 'c7'];
+  // intro ~48% (target 56%), c6 ~27% (37%). (c7 left BELOW on 2026-10-17: one tide instead of one every ~70 s, and an
+  // alien at every crew size, "too chill": ~40% solo, within the fit of its 37%)
+  const BELOW = ['intro', 'c6'];
   const solo = rows.filter(r => r.n === 1), fit = solo.filter(r => ![...SHORT, ...HARD, ...COARSE, ...PENDING, ...BELOW].includes(r.id) && !(FIXED[r.id] || []).includes(1));
   const fixed = rows.filter(r => (FIXED[r.id] || []).includes(r.n));
   check(fixed.every(r => r.idle < r.aim && r.idle > 0 && r.inSpec && r.verdict !== 'impossible'), `the fixed minimum (c8: six encounters at every crew size) keeps 1-2 players busier than the target, in spec and doable: ${fixed.map(r => `${r.id} ×${r.n} ${pct(r.idle)}% (${r.events} encounters, ${r.verdict})`).join(', ')}`);

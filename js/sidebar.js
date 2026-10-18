@@ -26,6 +26,8 @@ function encounterPlates() {
   }
   if (combat.swarm || combat.asteroids.length)
     add('swarm', { icon: 'asteroid', title: 'ASTEROID SWARM', sub: `${swarmWhere()} · ${combat.asteroids.length} incoming${combat.swarm?.left ? `, ${combat.swarm.left} more` : ''}`, stripe: '#e2574c', red: true });
+  for (const p of boarding.pods || []) if (p.state === 'stir' && p.t >= 0)   // (chapter 2: a cargo pod about to burst, js/invader.js)
+    add('pod' + p.id, { icon: 'alien', title: 'CARGO POD', sub: `something is breaking out · reactor room · ${Math.max(0, Math.ceil(POD_STIR - p.t))} s`, stripe: '#ffb36a', red: true });
   for (const a of boarding.invaders) {
     const room = (id) => ROOMS.find(r => r.id === id)?.name.toLowerCase();
     const where = a.state === 'dormant' ? 'asleep on the derelict' : a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'

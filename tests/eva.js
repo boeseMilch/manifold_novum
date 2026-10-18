@@ -22,7 +22,7 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
   G.spawnMineDrone('port');
   const n = G.evs.drones[0].left;
   tickN(G, 60 * 12);
-  check(G.evs.mines.length === n && G.evs.mines.every(m => m.x < 0), `the drone sticks ${n} limpet mine(s) on the left hull`);
+  check(n === 3 && G.evs.mines.length === n && G.evs.mines.every(m => m.x < 0), `the drone sticks ${n} limpet mines on the left hull (always 3)`);
   const m = G.evs.mines[0];
   outside(G, m.x - 0.7, m.y);
   const t = holdOn(G, m.x, m.y, () => !G.evs.mines.includes(m));

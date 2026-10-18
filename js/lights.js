@@ -345,6 +345,14 @@ function gameLighting(t) {
   if (typeof combat !== 'undefined' && typeof SHIELD_EMITTERS !== 'undefined') for (const e of SHIELD_EMITTERS) if (combat.shields[e.side].up > 0)   // the emitter outside, projecting
     add({ x: e.x + Math.cos(e.face) * 0.3, y: e.y + Math.sin(e.face) * 0.3, z: 0.5, color: [0.5, 0.82, 1.0], radius: 3.2, intensity: 1.3 + 0.2 * Math.sin(t * 9) });
 
+  // chapter 2's cargo pods (js/invader.js): a faint warm glow from under the membrane, throbbing harder while one stirs;
+  // a burst one only glows a little green from its goo
+  if (typeof boarding !== 'undefined' && boarding.pods) for (const p of boarding.pods) {
+    const stir = p.state === 'stir' && p.t >= 0 ? clamp(p.t / POD_STIR, 0, 1) : 0;
+    if (p.state === 'open') add({ x: p.x, y: p.y, z: 0.4, color: [0.55, 1.0, 0.35], radius: 1.8, intensity: 0.3 });
+    else add({ x: p.x, y: p.y, z: 0.7, color: [1.0, 0.62, 0.3], radius: 2 + stir, intensity: 0.35 + 0.08 * Math.sin(t * 1.3 + p.id * 2) + stir * (0.5 + 0.5 * Math.sin(t * (8 + 10 * stir))) });
+  }
+
   // --- muzzle flashes, bolts and blasts in flight ------------------------------------------------------
   for (const g of GUNS) if (g.flash > 0)
     add({ x: g.x + Math.cos(g.aim) * 1.2, y: g.y + gunDY(g) + Math.sin(g.aim) * 1.2, z: 0.6 + gunZ(g), color: [1.0, 0.75, 0.45], radius: 5, intensity: 2.6 * g.flash });

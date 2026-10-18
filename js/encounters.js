@@ -8,16 +8,18 @@
 //   and, rule `coils`, one jump coil is knocked out of alignment).
 // Everything in `enc` is plain data.
 
-const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null };
+const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false };
 const FLARE_WARN = 10, FLARE_TIME = 8, STORM_TIME = 30, STORM_ARC = 10, COOLANT_RISE = 50, SCRAM_TIME = 30, COOLANT_FIX = 3, GLITCH_STEP = 3;
 const COOLANT_CRATE = { x: 11.4, y: 22.6 };
 const UPPER = new Set(['portGun', 'bridge', 'starGun']);
 // Gravity tides: TIDE_WARN s of warning, then TIDE_TIME s of lurch. Loose items slide up to TIDE_SLIDE units
 // (TIDE_SLIDE_SPEED u/s) towards one side; spacewalkers get TIDE_PUSH u/s² away from the hull while it lasts
-// (about 2 u/s outwards: they can steer back). Rule `tides: <s>` (true: TIDE_EVERY): a tide every ~that many s.
+// (about 2 u/s outwards: they can steer back). Rule `tides: <s>` (true: TIDE_EVERY): ONE tide at that many s into
+// the mission (2026-10-17, the user: "no point if they go out of alignment all the time. Just do one gravity wave per
+// mission"; it used to come back every ~that many s). A mission has at most one tide: the rule's or a written event.
 const TIDE_WARN = 5, TIDE_TIME = 1.6, TIDE_SLIDE = 1.2, TIDE_SLIDE_SPEED = 1.5, TIDE_PUSH = 4.5, TIDE_EVERY = 60;
 
-function resetEncounters() { Object.assign(enc, { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null }); }
+function resetEncounters() { Object.assign(enc, { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false }); }
 
 // ---------------------------------------------------------------------------
 // Starting them
@@ -60,10 +62,10 @@ function tideHit() {
 }
 function updateTide(dt) {
   const T0 = enc.tide;
-  if (mission.rules?.tides && mission.active && !mission.over) {   // the rule: a tide every so often
-    const every = mission.rules.tides === true ? TIDE_EVERY : +mission.rules.tides || TIDE_EVERY;
-    if (enc.tideNext == null) enc.tideNext = mission.t + every;
-    if (mission.t >= enc.tideNext) { enc.tideNext = mission.t + every * (0.8 + 0.4 * Math.random()); if (!enc.tide) startTide(); }
+  if (mission.rules?.tides && mission.active && !mission.over) {   // the rule: one tide, that many s in (then never again)
+    const at = mission.rules.tides === true ? TIDE_EVERY : +mission.rules.tides || TIDE_EVERY;
+    if (enc.tideNext == null) enc.tideNext = mission.t + at;
+    if (!enc.tideDone && mission.t >= enc.tideNext) { enc.tideDone = true; if (!enc.tide) startTide(); }   // (a flag, not Infinity: snapshots are JSON)
   }
   if (!T0) return;
   T0.t -= dt;
