@@ -4,7 +4,8 @@ const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'time', 'ui', 'miniCommand', 'player', 'combat', 'combatClear', 'combatSpawn', 'teleportToGun', 'fireCannon', 'pressShield', 'reloadCannon',
   'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'updateRepair', 'grab', 'lightLevel',
   'drawLights', 'fuelFraction', 'CELL_ENERGY', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
-  'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires']);
+  'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires',
+  'LEVER_ANGLES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -51,6 +52,13 @@ check(G.CAPACITORS[1].charge === G.CAP_MAX && G.power.lever.pos === 2, 'energy i
 caps(0, 0, 0); G.power.lever.pos = 0; G.power.lever.jammed = true; G.power.reactor.fuel = 5;
 for (let k = 0; k < 2; k++) { G.power.reactor.t = G.ENERGY_TIME - 0.1; run(1.5); }
 check(G.CAPACITORS[0].charge === 2 && G.power.lever.pos === 0, 'manual override (wrench) keeps the lever on one output');
+
+// --- the handle's sprite: one frame per LEVER_HANDLE_STEP from LEFT to RIGHT, and the packed sheet has all of them
+// (a re-pack from stale renders once left 13 frames for 19 angles: the handle twitched and never reached RIGHT)
+const sheet = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../assets/sprites/sprites.json'), 'utf8')).sprites['systems/lever_handle'];
+const span = Math.abs(G.LEVER_ANGLES[2] - G.LEVER_ANGLES[0]);
+check(Math.abs(span / G.LEVER_HANDLE_STEP + 1 - G.LEVER_HANDLE_FRAMES) < 1e-9 && sheet?.frames === G.LEVER_HANDLE_FRAMES,
+  `the lever handle sheet has a frame for every ${Math.round(G.LEVER_HANDLE_STEP * 180 / Math.PI)}° step (${sheet?.frames} frames, the code wants ${G.LEVER_HANDLE_FRAMES})`);
 
 // --- clicking: lever turn + override, fuel crate → reactor
 reset(); G.power.lever.jammed = false; G.power.lever.pos = 1;

@@ -2990,3 +2990,12 @@ The user (2 players: too much; it "should scale almost linearly with the amount 
 then near linear"): `captMaxHp` is 18 solo, 24 with two (70 % of the old 36), then +12 a player up to 8 (36, 48 …
 96); was 24 + 12 a player, capped at 4. The balance model keeps chapter 5 in spec at every crew size (solo tight
 42, ×2 doable 30). The phase thresholds are fractions of the bar, so they follow.
+
+## Lever handle sprite restored (2026-10-17)
+
+The handle twitched and never reached RIGHT: the leviathan commit had re-packed the `systems` atlas from
+stale renders (13 handle frames at 15°, an older wrench), while js/systems.js steps through 19 frames at 10°,
+so frames past 12 wrapped around. Re-rendered the leviathan's own systems sprites (engine vents, override
+panel) here and re-packed `systems` from the current renders: only `lever_handle` (19 frames),
+`lever_wrench` and the until-now missing `lever_bus` change. tests/systems.js checks that the packed sheet
+has a frame for every step the code uses.
