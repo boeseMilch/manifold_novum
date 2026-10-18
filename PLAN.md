@@ -2999,3 +2999,6 @@ so frames past 12 wrapped around. Re-rendered the leviathan's own systems sprite
 panel) here and re-packed `systems` from the current renders: only `lever_handle` (19 frames),
 `lever_wrench` and the until-now missing `lever_bus` change. tests/systems.js checks that the packed sheet
 has a frame for every step the code uses.
+Then the handle was made to turn clockwise only: lever.py renders a full turn (36 frames, 10° apart; RIGHT → LEFT
+carries on round the bottom), and `animateLever` keeps the angle within one turn past LEFT and always aims at the
+next target in the turning direction. tests/systems.js checks it never steps back or jumps.

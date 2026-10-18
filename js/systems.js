@@ -17,7 +17,8 @@ const LEVER = { x: 22.2, y: 22.75 }, LEVER_HUB = 0.22;
 const LEVER_ANGLES = [-180, -90, 0].map(d => d * Math.PI / 180), LEVER_TRUNK_ANGLE = -125 * Math.PI / 180;
 const leverAngle = (i) => LEVER_ANGLES[i];
 // the handle sprite's frames (tools/blender/models/systems/lever.py): from LEFT, LEVER_HANDLE_STEP apart towards RIGHT
-const LEVER_HANDLE_STEP = 10 * Math.PI / 180, LEVER_HANDLE_FRAMES = 19, LEVER_HANDLE_DIR = Math.sign(LEVER_ANGLES[2] - LEVER_ANGLES[0]);
+// and on round the bottom back to LEFT (one full turn: the handle only ever turns that way)
+const LEVER_HANDLE_STEP = 10 * Math.PI / 180, LEVER_HANDLE_FRAMES = 36, LEVER_HANDLE_DIR = Math.sign(LEVER_ANGLES[2] - LEVER_ANGLES[0]);
 const FUEL_CRATE = { x: 17.4, y: 19.6 };
 const REACH = 1.9;                                // how far you can reach to click things
 const LASER_COOLDOWN = 0.9, WRENCH_COOLDOWN = 8, BOLT_SPEED = 26, WRENCH_SPEED = 13;
@@ -343,11 +344,15 @@ function updatePower(dt) {
   for (const c of CAPACITORS) c.pulse = Math.max(0, (c.pulse || 0) - dt * 2);
   animateLever(dt);
 }
-// The handle swings to the output it shows (also run by every browser in multiplayer, every frame: js/net.js).
+// The handle swings to the output it shows (also run by every browser in multiplayer, every frame: js/net.js),
+// always the same way round (LEFT → MID → RIGHT, then on round the bottom back to LEFT): the angle is kept in
+// [LEFT, LEFT + a turn) and the target taken as the next one at or past it in the turning direction.
 // (?? not ||: RIGHT is angle 0, and a handle that sat there long enough reached exactly 0 and then snapped)
 function animateLever(dt) {
-  const target = leverAngle(leverShownPos());
-  power.lever.angle = lerp(power.lever.angle ?? target, target, 1 - Math.exp(-10 * dt));
+  const T = 2 * Math.PI, a0 = leverAngle(0), D = LEVER_HANDLE_DIR, turn = (a) => ((((a - a0) * D) % T) + T) % T;   // (how far past LEFT)
+  const at = turn(power.lever.angle ?? leverAngle(leverShownPos()));
+  let to = turn(leverAngle(leverShownPos())); if (to < at - 1e-3) to += T;
+  power.lever.angle = a0 + D * (to - (to - at) * Math.exp(-10 * dt));
 }
 
 // ---------------------------------------------------------------------------
@@ -698,7 +703,7 @@ function drawLeverSprite(lv) {
   spr(base, 0, LEVER.x, LEVER.y, 0, { ...o, emissive: 0.5, pick: [LEVER_HUB, 0.42] });
   // the lit bus on the dial (trunk inlet → hub → the gland of the branch the energy takes) while the trunk is live
   if (powerLineLive(LINE.trunk)) spr('systems/lever_bus', nextFeed(), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.305, emissive: 1 });
-  spr('systems/lever_handle', clamp(Math.round((lv.angle - leverAngle(0)) * LEVER_HANDLE_DIR / LEVER_HANDLE_STEP), 0, LEVER_HANDLE_FRAMES - 1), LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
+  spr('systems/lever_handle', ((Math.round((lv.angle - leverAngle(0)) * LEVER_HANDLE_DIR / LEVER_HANDLE_STEP) % LEVER_HANDLE_FRAMES) + LEVER_HANDLE_FRAMES) % LEVER_HANDLE_FRAMES, LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.31 });
   if (lv.jammed) spr('systems/lever_wrench', lv.pos, LEVER.x, LEVER.y, 0, { ...o, sortY: LEVER.y + 0.32 });
   return true;
 }

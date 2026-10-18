@@ -56,9 +56,17 @@ check(G.CAPACITORS[0].charge === 2 && G.power.lever.pos === 0, 'manual override 
 // --- the handle's sprite: one frame per LEVER_HANDLE_STEP from LEFT to RIGHT, and the packed sheet has all of them
 // (a re-pack from stale renders once left 13 frames for 19 angles: the handle twitched and never reached RIGHT)
 const sheet = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, '../assets/sprites/sprites.json'), 'utf8')).sprites['systems/lever_handle'];
-const span = Math.abs(G.LEVER_ANGLES[2] - G.LEVER_ANGLES[0]);
-check(Math.abs(span / G.LEVER_HANDLE_STEP + 1 - G.LEVER_HANDLE_FRAMES) < 1e-9 && sheet?.frames === G.LEVER_HANDLE_FRAMES,
+check(Math.abs(2 * Math.PI / G.LEVER_HANDLE_STEP - G.LEVER_HANDLE_FRAMES) < 1e-9 && sheet?.frames === G.LEVER_HANDLE_FRAMES,
   `the lever handle sheet has a frame for every ${Math.round(G.LEVER_HANDLE_STEP * 180 / Math.PI)}° step (${sheet?.frames} frames, the code wants ${G.LEVER_HANDLE_FRAMES})`);
+
+// …and the handle only ever turns clockwise (LEFT → MID → RIGHT → round the bottom → LEFT), smoothly, ending on the output
+{ const lv = G.power.lever, A = G.LEVER_ANGLES, wrapTo = (a, ref) => ref + ((((a - ref) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI;
+  reset(); lv.jammed = false; lv.pos = 1; lv.angle = A[1];
+  for (const next of [2, 0, 1]) {
+    lv.pos = next; let prev = lv.angle, back = 0, jump = 0;
+    for (let i = 0; i < 90; i++) { G.tick(DT); const d = wrapTo(lv.angle, prev) - prev; if (d < -1e-9) back++; if (d > 0.5) jump++; prev = lv.angle; }
+    check(!back && !jump && Math.abs(wrapTo(lv.angle, A[next]) - A[next]) < 0.02, `lever handle to ${['LEFT', 'MID', 'RIGHT'][next]}: turns clockwise only, smoothly, and ends there (${back} steps back, ${jump} jumps)`);
+  } }
 
 // --- clicking: lever turn + override, fuel crate → reactor
 reset(); G.power.lever.jammed = false; G.power.lever.pos = 1;

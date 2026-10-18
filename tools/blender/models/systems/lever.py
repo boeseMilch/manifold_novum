@@ -10,9 +10,10 @@ a handle. Origin = LEVER (x, y) for every lever sprite, so they stack: base, bus
   lever_bus_f0..f2       the lit conductor on the dial: an amber bus bar from the trunk's inlet (top rim) to
                          the hub and on to the rim at leverAngle(c), c = the branch the energy takes (the
                          patch board's choice for the lever's output). Drawn while the trunk is live.
-  lever_handle_f0..f18   the handle at game angle a_k = leverAngle(0) + k * HANDLE_STEP (10 degrees; k = 0..18
-                         covers LEFT -180 .. RIGHT 0 over the top: f0 = LEFT, f9 = MID, f18 = RIGHT).
-                         Pick k = round((power.lever.angle - leverAngle(0)) / HANDLE_STEP): the game lerps the angle.
+  lever_handle_f0..f35   the handle at game angle a_k = leverAngle(0) + k * HANDLE_STEP (10 degrees; k = 0..35
+                         is one full clockwise turn: f0 = LEFT, f9 = MID, f18 = RIGHT, then on round the bottom
+                         back to LEFT, as the handle only ever turns clockwise).
+                         Pick k = round((power.lever.angle - leverAngle(0)) / HANDLE_STEP) mod 36: the game lerps the angle.
   lever_wrench_f0..f2    power.lever.jammed with pos = 0..2: a spanner (yellow grip) standing upright in the
                          track, ring end rammed into the groove at r 0.38, jaw up (~0.55 tall), at
                          leverAngle(pos) + WRENCH_OFF towards the next output (pos 2: back towards MID, the way
@@ -130,7 +131,7 @@ def lever():
         for o in b: o.animation_data_clear(); o.hide_render = True
     # handle frames: rotation keyed per frame, canvas shared over all of them
     only(hp)
-    nf = round(abs(lever_angle(2) - lever_angle(0)) / HANDLE_STEP) + 1
+    nf = round(2 * math.pi / HANDLE_STEP)                   # a full turn: RIGHT → LEFT carries on round the bottom
     frames = list(range(1, nf + 1))
     for k, f in enumerate(frames):
         s.frame_set(f); hroot.rotation_euler.z = -(lever_angle(0) + SG * k * HANDLE_STEP); hroot.keyframe_insert('rotation_euler', index=2, frame=f)
