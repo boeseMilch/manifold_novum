@@ -171,16 +171,16 @@ for (const [n, want] of [[1, 1], [2, 2], [4, 3]]) {
 // --- the twist (2+ players): a raider docks at our other airlock while we're in the base; its pirates go for our fuel
 {
   const G = fresh(2); const other = G.crew[1]; other.x = 20; other.y = 6;
-  G.power.reserve = 3; tick(G, 2);
-  check(!G.dk.raid, 'not yet');
-  tick(G, 5);
+  G.power.reserve = 3; tick(G, 13);
+  check(!G.dk.raid, 'not yet (13 s into the fight)');
+  tick(G, 3);
   const R = G.dk.raid, side = G.dk.dock.side === 'port' ? 'star' : 'port';
-  check(R?.state === 'docked' && R.side === side && G.dk.pirates.filter(p => p.raid).length === 2, `2 players: a raider docked at our other (${side}) airlock ${R ? '' : 'NOT '}6 s into the fight, two pirates aboard`);
+  check(R?.state === 'docked' && R.side === side && G.dk.pirates.filter(p => p.raid).length === 2, `2 players: a raider docked at our other (${side}) airlock ${R ? '' : 'NOT '}15 s into the fight, two pirates aboard`);
   check(G.walkRects().some(q => q === G.DG && false) || G.canStand(side === 'star' ? G.HATCHES[1].x + 2 : G.HATCHES[0].x - 2, G.HATCHES.find(h => h.side === side).y, G.walkRects()), 'its tube is walkable');
   const r0 = G.power.reserve; other.x = 2; other.y = 2;           // nobody stops them
   until(G, () => G.dk.raid.state === 'gone', 120);
   check(G.dk.raid.state === 'gone' && G.power.reserve < r0 && G.dk.raid.stolen.length >= 1, `they took ${G.dk.raid.stolen.length} fuel cell(s) and cast off`);
-  const H = fresh(3); H.power.reserve = 3; tick(H, 7.5);
+  const H = fresh(3); H.power.reserve = 3; tick(H, 16.5);
   const p = H.dk.pirates.filter(p => p.raid);
   for (const q of p) q.hp = 0, q.dead = true;
   H.dk.pirates = H.dk.pirates.filter(q => !q.dead); tick(H, 2);

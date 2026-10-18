@@ -3017,3 +3017,11 @@ next target in the turning direction. tests/systems.js checks it never steps bac
 - **Chapter 5 (Rescue Dr. Varga) is 7 minutes:** `length 420, finaleLead 360` (the jump is due 360 s after the
   docking at 60 s instead of 240). The 7 minutes asked for in the first playtest were meant for this mission (the
   captain's), not chapter 4; chapter 4 keeps its 420 s for now.
+- **The captain's raid comes after the fight starts:** `CAPT_RAID_DELAY` 15 s after the captain's fight first starts
+  (was 6), and the `CAPT_RAID_LATE` fallback (150 s after docking) is gone: it mostly came first, while the crew was
+  still clearing rooms, so the stab in the back came before the thing to focus on. tests/captain.js.
+- **E repairs / services from anywhere next to the part:** with the repair kit in hand, a broken or failing part in
+  reach wins E over a door, hatch, shield button or console you stand next to (`repairInReach` sets `noE` on those
+  proximity prompts in js/game.js `act`; `nearbyTarget` ranks repair targets first). Before, from some sides of the
+  cannons, the middle capacitor, the reactor and the deck airlocks, E pressed the button / forced the door instead.
+  tests/controls.js tries every inside part from 8 sides.

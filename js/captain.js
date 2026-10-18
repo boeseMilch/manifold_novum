@@ -18,8 +18,9 @@
 // to his throne (no healing) and waits.
 // THE RAID (2+ players only, never solo): while the crew is in the base a Red Comet raider docks at our OTHER airlock
 // (just its tube is walkable: dk.raid) and its two pirates come for our fuel cells like any raider's crew. They cast off
-// once both are back home with their loot (or down). Triggered CAPT_RAID_DELAY s after the captain's fight first starts,
-// or CAPT_RAID_LATE s after docking with somebody over in the base, whichever comes first.
+// once both are back home with their loot (or down). Triggered CAPT_RAID_DELAY s after the captain's fight first starts:
+// a stab in the back while the crew is busy with him, never before (2026-10-17 playtest: there used to be a fallback
+// CAPT_RAID_LATE s after docking, which mostly came first, while the crew was still clearing rooms).
 // State: dk.boss and dk.raid (plain data, in the snapshot with dk). Hooks: dockBase → captainDock, updateDock →
 // updateCaptain, js/invader.js boltHitsBody → captainBoltTest, sprayDock → captainSpray, updatePirate → raidPirateMove.
 
@@ -33,7 +34,7 @@ const CAPT_BREATH = [3.5, 2.5], CAPT_WHISTLE = 1.3, CAPT_TRANSITION = 2.4;
 const CAPT_DASH_TEL = 0.8, CAPT_DASH_V = 15, CAPT_DASH_OVER = 2.5, CAPT_DASH_MAX = 11, CAPT_DAZE = 2.5, CAPT_TRAIL = 5, CAPT_TRAIL_STEP = 0.7;
 const CAPT_EASY_K = [1, 1.35, 1.7], CAPT_EASY_BREATH = [0, 1, 2], CAPT_EASY_DAZE = [0, 0.7, 1.5];
 const CAPT_TRICKLE = 30, CAPT_DOOR_MAX = 3, CAPT_AWAY = 3;
-const CAPT_RAID_DELAY = 6, CAPT_RAID_LATE = 150;
+const CAPT_RAID_DELAY = 15;   // (was 6, with a CAPT_RAID_LATE 150 s fallback)
 const CAPT_MUZZLE = { fwd: 0.95, right: 0.42, z: 1.05 };
 
 const captEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
@@ -360,7 +361,7 @@ function captBoltHit(B, b, gen) {
 // ---------------------------------------------------------------------------
 function captRaidTrigger(B) {
   if (B.raided || dk.raid || crewSize() < 2 || (typeof mission !== 'undefined' && mission.jump)) return;
-  if ((B.raidAt != null && B.clock >= B.raidAt) || (B.clock >= CAPT_RAID_LATE && baseCrew().length)) { B.raided = true; startRaid(dk.dock.side === 'port' ? 'star' : 'port'); }
+  if (B.raidAt != null && B.clock >= B.raidAt) { B.raided = true; startRaid(dk.dock.side === 'port' ? 'star' : 'port'); }
 }
 function raidGeom(R) { return dockGeom(R.side); }
 const raidRects = () => (dk.raid?.state === 'docked' ? [raidGeom(dk.raid).tube] : []);

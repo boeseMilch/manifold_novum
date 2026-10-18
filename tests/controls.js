@@ -3,7 +3,7 @@
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
-  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER'];
+  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -114,6 +114,19 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G.simTick(DT); p.add('KeyE'); k.add('KeyE');
   tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
   check(!s.broken, 'holding E on a broken part repairs it');
+  // …from every side, even standing next to a door / hatch / button (they used to take E first: 2026-10-17 playtest)
+  const bad = [];
+  for (const q of G.SYSTEMS.filter(q => !q.outside)) for (let a = 0; a < 8; a++) {
+    G.SYSTEMS.forEach(o => { o.broken = false; }); q.broken = true; me.inv.weapon = 'repair'; me.repair = null; G.me.ui.panel = null;
+    const d = q.r + 0.5, x = q.x + Math.cos(a * Math.PI / 4) * d, y = q.y + Math.sin(a * Math.PI / 4) * d;
+    if (!G.canStand(x, y, G.walkRects())) continue;
+    me.mode = 'inside'; me.x = x; me.y = y; k.delete('KeyE'); G.simTick(DT); p.add('KeyE'); k.add('KeyE');
+    for (let i = 0; i < Math.ceil(G.REPAIR_TIME / DT) + 10; i++) { G.simTick(DT); me.x = x; me.y = y; }
+    k.delete('KeyE'); G.simTick(DT);
+    if (q.broken) bad.push(`${q.name} from ${a * 45}°`);
+  }
+  G.SYSTEMS.forEach(o => { o.broken = false; });
+  check(!bad.length, `holding E next to any broken part repairs it, from every side (${bad.join(', ') || 'all ok'})`);
 }
 // --- E on the power lever: tap (let go before 0.5 s) steps it, hold 0.5 s wedges / pulls the wrench
 {

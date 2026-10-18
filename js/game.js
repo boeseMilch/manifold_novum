@@ -378,7 +378,12 @@ function promptHover(c, mx, my) {
 
 // What you can do with the thing you're next to: shown as a prompt; clicking it (or E) does it.
 // p: { text, at: {x, y, r} (where to click), run?, ok? }
+// With the repair kit in hand and a broken (or failing) part in reach, E repairs it: a door, hatch or button you
+// happen to stand next to doesn't take E first (2026-10-17 playtest; nearbyTarget ranks repairs first too).
+const repairInReach = () => inv.weapon === 'repair' && player.mode === 'inside'
+  && [...SYSTEMS.filter(s => s.broken && !s.outside), ...serviceTargets()].some(s => near(s.x, s.y, REACH + s.r * 0.6));
 function act(p) {
+  if (!p.noE && p.run && repairInReach()) p = { ...p, noE: true };
   prompt = { ok: !!p.run || !!p.ok, ...p };
   if (!p.run) return;
   if (!tutAllows('target', p)) { prompt.ok = false; return; }   // tutorial: not what this step asks for
@@ -453,7 +458,9 @@ function nearbyTarget(now) {
       const t = clickTarget(player.x + gx, player.y + gy);
       if (!actionable(t) || !tutAllows('target', t)) continue;
       const d = Math.hypot(t.x - player.x, t.y - player.y), f = player.face ?? 0;   // (the way you face counts a little)
-      const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
+      // a broken or failing part in reach comes first (it's only a target with the repair kit in hand: that's what
+      // you came for), before a door, hatch or console that happens to be nearer (2026-10-17 playtest)
+      const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f)) - (t.repair ? 100 : 0);
       if (sc < bd) { bd = sc; best = t; at = [player.x + gx, player.y + gy]; }
     }
   player.eScan = { t: time, target: best, at };
