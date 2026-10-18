@@ -3170,3 +3170,59 @@ event hatches them instead of bringing two aliens in through the airlocks.
   c4 below 25 %), the 2-4 player targets, and one energy check (Stranded engineer ×3 in the new 10th build). The first
   three failed before this change too.
 
+### Shaped encounter timelines, 5-minute missions, new idle targets (2026-10-18)
+- **Missions are 5 minutes again** (`MISSION_LENGTH` 360 → 300). The 2026-10-13 fixed-length change had made them 6 min
+  without the user asking; only the boss missions are longer (c5 7 min, c8 ~9:20; c4 already had `length: 300`).
+- **Encounters are no longer evenly spaced** (the user: "one encounter _always_ in the first 5-30 s, otherwise there is
+  nothing to do; even 2 with 2 people; then a hot time around 3:30 and another encounter on your way out at 4:30"):
+  js/mission.js `shapedTimes()`. The first at 15 s (with 2+ crew and 3+ events: two, at 10 and 28 s), the finale at
+  90% of the length (4:30; the jump at 5:00 comes while it's on), the rest from an encounter density (the user's
+  design): `DENSITY` 0.5 at the start, 1.3 at 7%, 0.5 at 20%, 1.5 at 70% (first hot time, 3:30), 1.7 at 90% (second,
+  4:30), 1.0 at the jump. Its integral, scaled to 1, compresses time: events are spaced evenly in that space, jittered
+  ±10 s (at most 0.45 of a step: the order stays), and mapped back. Missions with `spacing: 'even'` keep the old even
+  layout: c5 and c8 (boss missions: docked / fighting the boss most of the time). A mission's own `finaleLead` still
+  pulls the finale earlier (c2: the frigate 70 s before the jump, at 3:50). The reactor still follows the average
+  gap (normal difficulty's first-to-last spread). The old 30 s calm start is gone.
+- **Idle targets** (tools/balance.js): solo `A.TARGET_IDLE` 0.296 (the model's solo average of chapters 1-5 with fire
+  spreading, before this recalibration), 2-8 players `A.TARGET_IDLE_CREW` 0.45 (was 0.68; the user picked "in between"
+  rather than solo + 2 points, which would have doubled crews' encounters), no ramp (`A.TARGET_RAMP` 0, was 0.005 per
+  step). Chapters 6-8, Ore run, Deep drift and Nightmare keep their own targets until more playtesting: `balance` now
+  also pins their old crew aim (`crewIdle` 0.64-0.66); they weren't recalibrated (but they're 5 minutes now too).
+- **Recalibrated** (`--calibrate`, the shaped timeline at 5 min): intro, rush, pirate cove, black box, stranded engineer,
+  c1-c4 (events / cells / reactor per crew size; the new counts are in the mission definitions with their idle %). c5
+  (boss mission) unchanged. Not applied: the calibration's new prerequisite for Stranded engineer (bigger capacitors,
+  for ×3's energy), a shop-progression change. Solo where the essentials alone are busier than the target: c4 0% (two
+  raiders + opener + failing part + finale in 5 min), c3 15%, c2 20%, c1 22%.
+- tools/balance.js: a memory leak fixed (each cached build kept its game sandbox alive through the maintenance event's
+  parts and the objective; --calibrate ran out of memory with more encounters).
+- tests/scaling.js: the new targets, the shaped layout, c4's raiders (first before 2:00, the last ≥ 70 s before the
+  jump: ~78 s solo), c1-c4 solo as essentials-only (must stay doable), rush coarse at 2 encounters, intro / c2 ×4 accepted
+  slightly out of energy spec (8-12 s waits). Still failing, on purpose: the missions not retuned (Ore run, c6, c7, Deep
+  drift: squeezed by the 5-minute length; c7 solo rated impossible) and c2 ×3 (62% idle: 8 encounters is out of spec).
+  tests/jumpfx.js: the stalled-jump case also empties the reactor (the intro's faster solo reactor landed an energy in MID).
+- Tests: tests/mission.js (the shaped timeline: first within 5-30 s, two early with 2+ crew, closer together in the hot
+  times, jitter keeps the order; difficulty and openers against the new layout; the late-failure test mission keeps
+  even spacing and 7 min), tests/sidebar.js (the first contact at 15 s).
+
+### Balance model: fast energy check, saved damage rates (2026-10-18)
+- **tools/balance.js is ~45-60× faster, same results.** One mission (5 crew sizes × 10 builds) 6 s → 0.2 s, every
+  mission 56 s → 1.3 s, `--calibrate c1` ~6 min (and out of memory in a copy of the old code) → 6 s, all 16 missions
+  ~30 s. The full run (16 missions × 1/2/3/4/8 players) and tests/scaling.js give exactly the same output as before.
+- **The energy as plain numbers** (`energyFast`, the default): the same run as before, tick for tick (0.1 s) and in the
+  same order, but on a handful of numbers from the game's constants (charges, reactor fuel and timer, energies in
+  flight, the lever, reserve cells, cannon shots / reloads / cooldowns, shields, scrams, the ion storm's arcs) instead
+  of the game's `updatePower` / `updateCombat` / `updateEncounters` / `updateEva`. Timers are tick counts, so only the
+  ticks where something happens are run. The old run on the game's code stays as `energySimGame` (`--energy game`);
+  tests/balancemodel.js checks both give identical results on real plans and 40 random ones (6000+ runs checked while
+  building it, no difference). Found on the way, not changed: the barnacle drains in a plan never reach the energy run
+  (`drain` entries have no `count` / `side`), in either version.
+- **One sandbox for every build's layout** (was a fresh `loadGame` per build): the missions' crew tables are reset
+  between builds; the layout (events, times, jump) is cached per event count, and the cells / reactor tuning /
+  overcharge are read from the game's own `missionCrew` / `crewFuel` / `shipStartExtras` / `paceFactor`. Checked
+  against a fresh sandbox + full `startMission` (tests/balancemodel.js).
+- **Damage rates saved** in tools/damage-rates.json (each enemy kind 60 s in the game, nobody fighting back, 3 seeds);
+  `node tools/balance.js --rates` rebuilds it after changing an enemy, a hazard or the hull. A kind missing from it is
+  measured with a warning. tests/balancemodel.js re-measures two kinds and flags a stale file.
+- `--calibrate` also skips work it never looks at: perfect routing ('best') runs only when a result asks for it, the
+  schedules are shared between the fuel counts it tries on one layout, and the second pass is skipped when the first
+  had no waits for energy (it would be the same).

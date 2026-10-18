@@ -3,7 +3,7 @@
 // without energy the wind-up loops: charges, sputters out, tries again.
 // Run: node tests/jumpfx.js
 const { loadGame } = require('./harness');
-const NAMES = ['mission', 'startMission', 'tick', 'CAPACITORS', 'combat', 'enemyFire', 'jumpCharge', 'jumpOutT', 'endScreenReady',
+const NAMES = ['power', 'mission', 'startMission', 'tick', 'CAPACITORS', 'combat', 'enemyFire', 'jumpCharge', 'jumpOutT', 'endScreenReady',
   'JUMP_OUT', 'SYSTEMS', 'jumpStall', 'MAX_DAMAGE'];
 const DT = 1 / 60;
 let failed = 0;
@@ -41,6 +41,7 @@ const calm = (G) => { G.combat.shots.length = 0; G.SYSTEMS.forEach(s => { s.brok
 {
   const G = loadGame(NAMES); G.startMission();
   const m = G.mission;
+  G.power.reactor.fuel = 0; G.power.reserve = 0; G.power.bolts.length = 0;   // (no energy on its way either: a fast reactor would land one in MID)
   G.CAPACITORS[1].charge = 0; m.t = m.jumpAt - 0.5;
   const seq = []; let t = 0;
   while (t < 20) { calm(G); G.CAPACITORS[1].charge = 0; G.tick(DT); t += DT; const s = G.jumpStall(); if (s && seq[seq.length - 1]?.phase !== s.phase) seq.push({ phase: s.phase, k: s.k }); }

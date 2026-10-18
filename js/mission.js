@@ -72,7 +72,7 @@ const MISSIONS = {
   intro: {
     name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 3, 6, 7, 12, 13, 17, 17], cells: [3, 3, 8, 11, 8, 11, 12, 12], reactor: [0.7, 0.7, 0.3, 0.25, 1, 0.7, 0.85, 0.85]},   // --calibrate: 51% 74% 70% 73% 67% 69% 67% 72% idle for 1-8 players (aim 56.0% solo, 68.0% for 2-8)
+    crew: {events: [3, 5, 7, 11, 15, 20, 23, 23], cells: [5, 6, 10, 7, 17, 19, 22, 22], reactor: [0.4, 0.4, 0.3, 1, 0.3, 0.3, 0.3, 0.3]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread): 26% 44% 41% 48% 47% 45% 46% 52% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×4 star cannon waits 12 s at 220 s; base ship: ×4: star cannon waits 12 s at 220 s
     build(target) {
       const s1 = randSide();
       return [
@@ -86,7 +86,7 @@ const MISSIONS = {
   },
   rush: {
     name: 'Rush hour', blurb: '7 incidents in random order. More trouble.',
-    crew: {events: [1, 3, 5, 8, 10, 13, 15, 17], cells: [2, 3, 5, 7, 11, 9, 14, 12], reactor: [1, 1, 1, 1, 0.7, 1, 0.7, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate: 76% 70% 65% 67% 68% 67% 67% 68% idle for 1-8 players (aim 55.0% solo, 67.0% for 2-8); OUT OF SPEC: ×2 front cannon waits 26 s at 55 s; ×3 port cannon waits 12 s at 348 s; ×4 front cannon waits 13 s at 323 s
+    crew: {events: [2, 3, 8, 10, 14, 18, 22, 23], cells: [2, 3, 7, 8, 10, 13, 15, 15], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread): 39% 35% 43% 45% 45% 45% 45% 51% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×1 port cannon waits 32 s at 35 s; ×2 star cannon waits 27 s at 42 s; ×3 port cannon waits 16 s at 219 s; ×4 star cannon waits 26 s at 213 s; base ship: ×1: star cannon waits 40 s at 282 s; ×2: star cannon waits 27 s at 42 s; ×3: front cannon waits 18 s at 51 s; ×4: star cannon waits 23 s at 104 s
     needs: {ship: [], overcharge: true},
     rules: { breach: true, surge: true },
     build(target) {
@@ -101,7 +101,7 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. A gravity tide, herds of creatures, breaches, plasma fires, failing gravity, and a fussy jump drive.',
-    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 7's twin: 33-40% is right solo)
+    balance: { soloIdle: 0.37, crewIdle: 0.645 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 7's twin: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
     crew: {events: [2, 2, 3, 4, 4, 7, 8, 12], cells: [2, 2, 2, 3, 3, 4, 4, 6], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, tides + herds, 2026-10-16): 33% 63% 70% 66% 69% 65% 63% 63% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 port shield without energy at 32 s; was 1/1/5/8/15/18/23/27
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     always: ['maintenance'],                  // two parts fail at every crew size (like chapter 7, 2026-10-16)
@@ -114,7 +114,7 @@ const MISSIONS = {
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space. Then install it in our helm.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 6, 11, 15, 19, 22, 24, 24], cells: [2, 3, 11, 14, 16, 16, 19, 19], reactor: [1, 0.85, 0.7, 0.85, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, nav core, a failing part at every crew size, 2026-10-16): 47% 67% 64% 66% 64% 70% 72% 76% idle for 1-8 players (aim 53.5% solo, 65.5% for 2-8); was 2/6/11/15/19/22/24/24
+    crew: {events: [3, 4, 14, 19, 23, 23, 23, 23], cells: [4, 4, 10, 15, 18, 18, 18, 18], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 22% 52% 44% 45% 50% 59% 65% 69% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 4, 2026-10-16)
@@ -124,7 +124,7 @@ const MISSIONS = {
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something over there is still alive — its freezer log says: KEEP S-7 FROZEN.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [2, 3, 8, 11, 15, 17, 21, 23], cells: [2, 3, 5, 10, 13, 12, 17, 17], reactor: [1, 0.7, 0.5, 0.7, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2026-10-16): 47% 64% 65% 66% 66% 66% 65% 68% idle for 1-8 players (aim 54.0% solo, 66.0% for 2-8)
+    crew: {events: [2, 6, 12, 16, 20, 23, 23, 23], cells: [2, 5, 9, 12, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 30% 45% 40% 44% 45% 45% 50% 55% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
@@ -132,13 +132,13 @@ const MISSIONS = {
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 4, 8, 11, 13, 17, 19, 24], cells: [2, 2, 3, 5, 5, 6, 7, 8], reactor: [1, 1, 0.85, 0.7, 1, 1, 1, 1]},   // --calibrate (S-7, 2026-10-16): 50% 65% 65% 63% 65% 65% 65% 67% idle for 1-8 players (aim 53.0% solo, 65.0% for 2-8)
+    crew: {events: [4, 5, 10, 13, 18, 23, 24, 24], cells: [2, 2, 7, 10, 11, 15, 16, 16], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 23% 47% 46% 46% 47% 45% 52% 59% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); kit before new prerequisites: ×3: port cannon waits 17 s at 270 s; ×4: port cannon waits 11 s at 188 s
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'A big asteroid drifts past in front: spacewalk out, drill two samples and haul them in while the front cannon holds off the small ones.',
-    balance: { soloIdle: 0.37 },              // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo)
+    balance: { soloIdle: 0.37, crewIdle: 0.66 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
     crew: {events: [4, 4, 8, 12, 15, 18, 23, 23], cells: [2, 2, 4, 5, 7, 6, 8, 8], reactor: [1, 1, 0.85, 0.5, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2 samples, a failing part at every crew size, 2026-10-16): 37% 68% 67% 66% 66% 67% 69% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8); was 4/4/8/12/15/18/23/23
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
@@ -148,7 +148,7 @@ const MISSIONS = {
   },
   nightmare: {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
-    balance: { soloIdle: 0.25 },              // the idle share tools/balance.js --calibrate aims for solo (a challenge mission: busier than the chapters)
+    balance: { soloIdle: 0.25, crewIdle: 0.64 }, // the idle share tools/balance.js --calibrate aims for solo (a challenge mission: busier than the chapters) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
     crew: {events: [3, 3, 3, 4, 4, 9, 9, 11], cells: [2, 2, 2, 2, 2, 4, 4, 4], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, + herd and tide in the pool, 2026-10-16): 25% 56% 79% 52% 60% 70% 67% 65% idle for 1-8 players (aim 25.0% solo, 64.0% for 2-8); OUT OF SPEC: ×1 star cannon waits 80 s at 184 s; ×2 star cannon waits 70 s at 194 s; ×4 star cannon waits 57 s at 33 s; ×3 by hand: reactor 1 (72%, out of spec) rather than the fit's ×0.7 (79%, in spec but 15 points off)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
@@ -197,15 +197,22 @@ function fillSides(written) { for (const e of written) if (e.kind === 'swarm' &&
 //   The opener (a written event with opener: true, the first one) is never dropped either, and never the finale:
 // a mission jumps in, gives the crew a calm half minute (the first written time), then something else
 // happens before the mission's main encounter (the designer's rule: if the point is X, X never comes first).
-//   The kept events stay in their written order and are spread evenly from the first event's written
-// time to MISSION_LENGTH - finaleLead(id) (JUMP_DELAY unless the mission says). The reactor follows the gaps: ENERGY_TIME × gap / the written gap
-// (paceFactor), so the energy made per gap is what the mission was written for.
+//   The kept events stay in their written order. Their times (2026-10-18, the user: "one encounter always in the
+// first 5-30 s, otherwise there is nothing to do; even 2 with 2 people; then a hot time around 3:30 and another
+// encounter on your way out at 4:30", for a 5-minute mission, scaled to the mission's length): shapedTimes. The
+// first at 15 s (with 2+ crew and 3+ events: two, at 10 and 28 s), the last (the finale) at 90% of the length, the
+// rest following the encounter density (DENSITY: hot times at 70% and 90%) with a little jitter; the jump at the
+// mission's length. Missions with spacing: 'even' (the boss missions, c5 / c8: docked or fighting the
+// boss most of the time) keep the old layout: evenly from the first event's written time to the length −
+// finaleLead(id) (JUMP_DELAY unless the mission says), the jump finaleLead after the last.
+//   The reactor follows the average gap: ENERGY_TIME × gap / the written gap (paceFactor), so the energy made per gap
+// is what the mission was written for.
 //   Crew joining / leaving: while nobody has seen an encounter yet (the lead-in), the timeline is rebuilt
 // for the new crew size (that's also how the server's start works: crew are added right after
 // startMission). After that the encounters and their times stay; only the fuel crate gets the new
 // size's extra cells if it needs more.
 // ---------------------------------------------------------------------------
-const MISSION_LENGTH = 360;
+const MISSION_LENGTH = 300;                         // s to the jump (5 min; 360 from 2026-10-13 until 2026-10-18 by mistake: the user wants 5 min, longer only for the boss missions c5 / c8)
 const ESSENTIAL_KINDS = new Set(['derelict', 'rock', 'brig', 'leviathan']);
 const ONE_OFF_KINDS = new Set(['tide']);              // never repeated for a bigger crew (one gravity tide per mission, 2026-10-17)
 // One gravity tide per mission (2026-10-17, the user: "no point if they go out of alignment all the time"): with the
@@ -246,14 +253,55 @@ function selectEvents(id, written, n, target, easy = 0) {
   if (kept.length && kept[kept.length - 1].finale) return kept.slice(0, -1).concat(reps, kept.slice(-1));   // (a written finale: finale: true, stays last)
   return kept.concat(reps);
 }
+// Encounter density over the mission (x: the share of its length; piecewise linear between the knots; the user's
+// design, 2026-10-18): a bump at the start, calm, ramping up to the first hot time (70%: 3:30 of a 5-minute
+// mission), more in the second (90%: 4:30, on the way out), easing off to the jump. Its integral, scaled to 1, is
+// the compression F: the encounters are spaced evenly (with ±SHAPE.jitter s) in F's space and mapped back, so they
+// bunch where the density is high.
+const DENSITY = [[0, 0.5], [0.07, 1.3], [0.2, 0.5], [0.7, 1.5], [0.9, 1.7], [1, 1.0]];
+const SHAPE = { open: [15], openCrew: [10, 28], out: 0.9, jitter: 10 };
+const densityArea = (x) => {                         // ∫₀ˣ density (unscaled)
+  let a = 0;
+  for (let i = 1; i < DENSITY.length; i++) {
+    const [x0, y0] = DENSITY[i - 1], [x1, y1] = DENSITY[i];
+    if (x <= x0) break;
+    const xe = Math.min(x, x1), ye = y0 + (y1 - y0) * (xe - x0) / (x1 - x0);
+    a += (xe - x0) * (y0 + ye) / 2;
+  }
+  return a;
+};
+const densityCdf = (x) => densityArea(Math.max(0, Math.min(1, x))) / densityArea(1);
+function densityInv(u) {                             // F⁻¹ (bisection; F rises everywhere)
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (densityCdf(mid) < u) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+// The times for `count` events (in order) in a mission of length L s with n crew: the opener at 15 s (with 2+ crew and
+// 3+ events two, at 10 and 28 s: always something to do from the start), the finale at 90%, or finaleLead fl s before
+// the end if that's earlier (no jitter: the jump at L
+// comes while it's on), the rest evenly in F's space between, each jittered by up to ±SHAPE.jitter s of that even
+// timeline (at most 0.45 of a step, so the order stays) when `rnd` is given.
+function shapedTimes(count, n, L, rnd = null, fl = 0) {
+  if (count <= 0) return [];
+  const out = Math.min(SHAPE.out * L, L - fl);      // (a mission's own finaleLead may want the finale earlier: c2's frigate 70 s before the jump)
+  if (count === 1) return [out];
+  const open = (n > 1 && count >= 3 ? SHAPE.openCrew : SHAPE.open).slice(0, count - 1), t = [...open];
+  const from = open[open.length - 1], m = count - open.length;    // the rest; the last of them is the finale
+  const F0 = densityCdf(from / L), F1 = densityCdf(out / L), jit = rnd ? Math.min(SHAPE.jitter / (out - from), 0.45 / m) : 0;
+  for (let i = 1; i < m; i++) t.push(densityInv(F0 + (i / m + (rnd ? (rnd() * 2 - 1) * jit : 0)) * (F1 - F0)) * L);
+  t.push(out);
+  return t;
+}
 function layoutMission(id, n) {
   const M = MISSIONS[id] || MISSIONS.intro, written = mission.written;
   const evs = selectEvents(id, written, n, null, mission.easy || 0).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
     sys: e.kind === 'maintenance' ? null : e.sys }));
   if (!evs.length) { Object.assign(mission, { events: [], lead: Infinity, gap: null, writtenGap: null, paceN: n, jumpAt: M.practice ? Infinity : JUMP_DELAY, overcharge: false }); return; }
-  const lead = Math.min(...written.map(e => e.t)), fl = finaleLead(id), end = (M.length || MISSION_LENGTH) - fl;
+  const L = M.length || MISSION_LENGTH, shaped = M.spacing !== 'even' && !M.practice, fl = finaleLead(id);
+  const times = shaped ? shapedTimes(evs.length, n, L, Math.random, M.finaleLead || 0) : null;
+  const lead = shaped ? times[0] : Math.min(...written.map(e => e.t)), end = shaped ? times[times.length - 1] : L - fl;
   const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
-  evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = evs.length > 1 ? lead + i * gap : end; });   // (t1: the time as written; a lone event is the finale)
+  evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = shaped ? times[i] : evs.length > 1 ? lead + i * gap : end; });   // (t1: the time as written; a lone event is the finale)
   // the finale: the last event is a fight, and the jump comes while it's still going
   // (and not an objective's event: it needs more than the 22 s before the jump)
   const sorted = () => [...evs].sort((a, b) => a.t - b.t), objective = new Set(M.essential || []);
@@ -262,11 +310,13 @@ function layoutMission(id, n) {
     const fight = sorted().filter(e => e !== last && COMBAT_KINDS.has(e.kind) && !objective.has(e.kind) && !e.opener).pop();
     if (fight) [fight.t, last.t] = [last.t, fight.t];
   }
-  const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - lead) / (written.length - 1) : gap;
+  const wLead = Math.min(...written.map(e => e.t));                     // (the written timeline's own spread)
+  const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - wLead) / (written.length - 1) : gap;
   const normal = mission.easy ? selectEvents(id, written, n, null).length : evs.length;   // the reactor's pace: normal's gap
-  const paceGap = normal > 1 ? (end - lead) / (normal - 1) : end - lead;
+  const nt = shaped ? shapedTimes(normal, n, L, null, M.finaleLead || 0) : null;                  // (shaped: normal's own first and last times)
+  const paceGap = shaped ? (normal > 1 ? (nt[nt.length - 1] - nt[0]) / (normal - 1) : nt[0] - SHAPE.open[0]) : normal > 1 ? (end - lead) / (normal - 1) : end - lead;
   mission.extraLuck = ((mission.easy || 0) - (normal - evs.length)) / 2;   // easier steps with nothing left to drop: half a cat each
-  Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : Math.max(0, ...evs.map(e => e.t)) + fl });
+  Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : shaped ? L : Math.max(0, ...evs.map(e => e.t)) + fl });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
   pickMaintPairs(evs, maintPrev);
 }

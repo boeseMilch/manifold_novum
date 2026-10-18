@@ -1,0 +1,17 @@
+{"note": "tools/balance.js calibrate(): each encounter in the game for W s, nobody fighting back (node tools/balance.js --rates)", "kinds": {
+  "interceptor": {"kind":"interceptor","W":60,"seeds":[1,2,3],"small":17.666666666666668,"large":0,"crewHits":0,"broken":3,"first":{"small":3.5499999999999994,"broken":30.027777777777782},"smallRate":0.3129613227044582,"largeRate":0},
+  "frigate": {"kind":"frigate","W":60,"seeds":[1,2,3],"small":19.333333333333332,"large":3,"crewHits":0,"broken":6.333333333333333,"first":{"small":4.2555555555555555,"large":11.494444444444445,"broken":11.494444444444445},"smallRate":0.34682080924855485,"largeRate":0.05381702212477576},
+  "stealth": {"kind":"stealth","W":60,"seeds":[1,2,3],"small":14.666666666666666,"large":0,"crewHits":0,"broken":2.3333333333333335,"first":{"small":3.5499999999999994,"broken":38.105555555555554},"smallRate":0.25981694715087095,"largeRate":0},
+  "tractor": {"kind":"tractor","W":60,"seeds":[1,2,3],"small":13.666666666666666,"large":0,"crewHits":0,"broken":1,"first":{"small":3.5499999999999994,"broken":40.1},"smallRate":0.24210215529967521,"largeRate":0},
+  "pirates": {"kind":"pirates","W":60,"seeds":[1,2,3],"small":13.666666666666666,"large":0,"crewHits":0.3333333333333333,"broken":1.6666666666666667,"first":{"small":3.5499999999999994,"broken":25.258333333333333,"crew":57.166666666666664},"smallRate":0.24210215529967521,"largeRate":0},
+  "swarm": {"kind":"swarm","W":60,"seeds":[1,2,3],"small":0,"large":2,"crewHits":0,"broken":2.3333333333333335,"first":{"large":26.95,"broken":26.95},"smallRate":0,"largeRate":0.03508771929824561},
+  "intruder": {"kind":"intruder","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":24.333333333333332,"broken":0,"first":{"crew":10.433333333333334},"smallRate":0,"largeRate":0},
+  "saboteur": {"kind":"saboteur","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":11.666666666666666,"broken":0,"first":{"crew":9.727777777777778},"smallRate":0,"largeRate":0},
+  "mines": {"kind":"mines","W":60,"seeds":[1,2,3],"small":0,"large":3,"crewHits":0,"broken":4,"first":{"large":32.88333333333333,"broken":32.88333333333333},"smallRate":0,"largeRate":0.05263157894736842},
+  "spores": {"kind":"spores","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":0,"broken":0,"first":{"barnacle":9.816666666666666},"smallRate":0,"largeRate":0},
+  "leeches": {"kind":"leeches","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":0,"broken":6,"first":{"broken":26.433333333333334},"smallRate":0,"largeRate":0},
+  "grappler": {"kind":"grappler","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":0,"broken":0,"first":{"breach":38.03333333333333},"smallRate":0,"largeRate":0},
+  "mother": {"kind":"mother","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":0,"broken":0,"first":{"barnacle":19.155555555555555},"smallRate":0,"largeRate":0},
+  "leviathan": {"kind":"leviathan","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":1,"broken":2.3333333333333335,"first":{"crew":14.71111111111111,"broken":31.76666666666667},"smallRate":0,"largeRate":0},
+  "coolant": {"kind":"coolant","W":60,"seeds":[1,2,3],"small":0,"large":0,"crewHits":0,"broken":0,"first":{"scram":50},"smallRate":0,"largeRate":0}
+}}

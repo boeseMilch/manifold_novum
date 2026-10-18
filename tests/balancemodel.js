@@ -1,7 +1,10 @@
-// The balance model's inputs: the saved travel table (tools/travel-table.json) and fire spreading (tools/balance.js spread()).
+// The balance model's inputs: the saved travel table (tools/travel-table.json), the saved damage rates
+// (tools/damage-rates.json), fire spreading (tools/balance.js spread()), and its shortcuts: one sandbox for every
+// build's layout, the energy as plain numbers (energyFast) instead of the game's code (energySimGame).
 // Run: node tests/balancemodel.js
+const fs = require('fs'), path = require('path');
 const { travel, tableTrip, SPOTS, VARIANTS } = require('../tools/travel');
-const { spread, fireWork, A } = require('../tools/balance');
+const B = require('../tools/balance'), { spread, fireWork, A } = B;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 
@@ -29,6 +32,64 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
   check(p.broken > s60.broken, `plasma fires burn out parts much faster (${p.broken.toFixed(2)} parts in 30 s)`);
   const w0 = fireWork({ n: 0.1, plasma: 0 }, 0), w45 = fireWork({ n: 0.1, plasma: 0 }, 45);
   check(w45.work > w0.work * 2 && w45.weight > w0.weight, `a likely fire left 45 s costs much more work (${w0.work.toFixed(2)} → ${w45.work.toFixed(2)} s)`);
+}
+
+// --- the layout: one reused sandbox (and the layout cached without the cells / reactor / overcharge) = a fresh sandbox
+// and a full startMission for every build, as before
+{
+  const strip = (b) => JSON.stringify({ ...b, g: undefined });
+  let n = 0, bad = [];
+  for (const [id, k] of [['intro', 1], ['c2', 3], ['c5', 2], ['c8', 8], ['deep', 4]])
+    for (const ship of [{}, { caps: true, cannons: true, inserter: true, spareCell: true }])
+      for (const over of [{}, { events: 6, cells: 2, overcharge: true, reactor: 0.6 }, { events: 6 }]) {
+        n++;
+        if (strip(B.setup(id, k, ship, 4242 + k, over)) !== strip(B.setup(id, k, ship, 4242 + k, over, undefined, true))) bad.push(`${id} ×${k} ${JSON.stringify(ship)} ${JSON.stringify(over)}`);
+      }
+  check(!bad.length, `the reused layout sandbox gives the same ${n} builds as a fresh one each${bad.length ? ': not ' + bad.slice(0, 3).join('; ') : ''}`);
+}
+
+// --- the energy: energyFast (plain numbers) gives exactly what energySimGame (the game's own code) gives, on real
+// plans (both passes, every mode) and on random ones (fights, shields, scrams, ion storms, the freezer, low fuel,
+// overcharge, the inserter)
+{
+  const out = (e) => JSON.stringify([e.waits, e.waitByKey, e.unmet, e.jumpOk, e.jumpWait, e.perSide, e.leverTrips, e.refuels, e.ocFires, e.produced, e.demand, e.supply, e.interval, e.cells]);
+  let n = 0, tg = 0, tf = 0; const bad = [];
+  const cmp = (b, plan, mode, label) => {
+    let t = Date.now(); const a = B.energySimGame(b, plan, mode); tg += Date.now() - t;
+    t = Date.now(); const f = B.energyFast(b, plan, mode); tf += Date.now() - t;
+    n++; if (out(a) !== out(f)) bad.push(`${label} ${mode}`);
+    return a;
+  };
+  for (const [id, k] of [['c1', 1], ['c3', 2], ['c5', 4], ['c6', 3], ['c8', 8], ['rush', 2]]) {
+    const kit = B.expectedKit(id), ship = Object.fromEntries([...(kit?.ship || []), ...(B.game().MISSIONS[id].needs?.ship || [])].map(u => [u, true]));
+    const b = B.setup(id, k, ship, 99 + k), s1 = B.schedule(b, {});
+    const e1 = cmp(b, s1.plan, 'real', `${id} ×${k}`), s2 = B.schedule(b, e1.waitByKey);
+    for (const mode of ['real', 'best', 'auto']) cmp(b, s2.plan, mode, `${id} ×${k} (pass 2)`);
+  }
+  let seed = 7; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647, pick = (a) => a[Math.floor(rnd() * a.length)], sides = ['port', 'front', 'star'];
+  for (let i = 0; i < 40; i++) {
+    const b0 = B.setup('intro', 1 + Math.floor(rnd() * 4), { inserter: rnd() < 0.3, caps: rnd() < 0.4, cannons: rnd() < 0.4, shields: rnd() < 0.3 }, 7), jumpAt = 120 + rnd() * 150;
+    const b = { ...b0, factor: 0.3 + rnd() * 1.5, overcharge: rnd() < 0.25, energy: { ...b0.energy, cells: 1 + Math.floor(rnd() * 6) } };
+    const plan = { jumpAt, window: 15, end: jumpAt + 2, drains: [], bonusCells: rnd() < 0.2 ? 1 : 0,
+      fights: Array.from({ length: Math.floor(rnd() * 14) }, (_, j) => ({ key: 'f' + j % 5, gun: pick(sides), t0: rnd() * jumpAt, shots: 1 + Math.floor(rnd() * 20), span: 1 + rnd() * 30 })),
+      shields: Array.from({ length: Math.floor(rnd() * 8) }, (_, j) => ({ key: 's' + j, side: pick(sides), t: rnd() * jumpAt })),
+      scrams: Array.from({ length: Math.floor(rnd() * 3) }, () => { const a = rnd() * jumpAt; return [a, a + rnd() * 40]; }),
+      storms: Array.from({ length: Math.floor(rnd() * 3) }, () => rnd() * jumpAt),
+      freezers: rnd() < 0.3 ? [(() => { const t0 = rnd() * jumpAt; return { key: 'z', cap: Math.floor(rnd() * 3), t0, t1: t0 + rnd() * 80, every: 3 + rnd() * 10 }; })()] : [] };
+    for (const mode of ['real', 'best', 'auto']) cmp(b, plan, mode, `random plan ${i}`);
+  }
+  check(!bad.length, `the fast energy model = the game's code in ${n} runs (game ${tg} ms, fast ${tf} ms)${bad.length ? ': not ' + bad.slice(0, 4).join('; ') : ''}`);
+}
+
+// --- the damage rates: saved for every kind, and still what the game measures (else: node tools/balance.js --rates)
+{
+  const file = path.join(__dirname, '..', 'tools', 'damage-rates.json'), saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).kinds : {};
+  const missing = B.RATE_KINDS.filter(k => !saved[k] || saved[k].W !== 60 || String(saved[k].seeds) !== '1,2,3');
+  check(!missing.length, `tools/damage-rates.json has all ${B.RATE_KINDS.length} kinds${missing.length ? ' (missing ' + missing.join(', ') + ': node tools/balance.js --rates)' : ''}`);
+  for (const k of ['interceptor', 'mines']) {
+    const live = B.calibrate(k, 60, [1, 2, 3], true), s = saved[k] || {}, used = (c) => JSON.stringify([c.smallRate, c.largeRate, c.first]);   // (what the model reads)
+    check(used(live) === used(s), `saved ${k} rates match a fresh measurement (${s.small?.toFixed(1)} small / ${s.large?.toFixed(1)} big hits in 60 s vs ${live.small.toFixed(1)} / ${live.large.toFixed(1)}; else the game changed: node tools/balance.js --rates)`);
+  }
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');

@@ -5,7 +5,7 @@ const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'co
   'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
   'spawnInvader', 'power', 'MAX_DAMAGE', 'MAINT_WARNING', 'MAINT_YELLOW', 'jumpStall', 'PRESS_FIRST', 'PRESS_SHRINK', 'PRESS_FLOOR', 'STRAIN_FIRST',
-  'STRAIN_FLOOR', 'STALL_CYCLE', 'simTick', 'startTutorial', 'netSerialize', 'netApply', 'jumpCharge', 'me', 'radarList'];
+  'STRAIN_FLOOR', 'STALL_CYCLE', 'shapedTimes', 'simTick', 'startTutorial', 'netSerialize', 'netApply', 'jumpCharge', 'me', 'radarList'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -15,19 +15,30 @@ const runTo = (G, t, each) => { while (G.mission.t < t && !G.mission.over) { eac
 // For timing checks: no stray enemy shots or fires breaking things (only scripted events count).
 const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0; G.SYSTEMS.forEach(s => { if (s !== keep) s.broken = false; }); };
 
-// --- timeline: each encounter happens once, evenly spread over the mission (jump at MISSION_LENGTH)
+// --- timeline: each encounter happens once; the first within 5-30 s, denser towards the hot times (70% / 90%), the finale at 90%, the jump at MISSION_LENGTH
 {
   const G = fresh(), seen = [];
   const kinds = G.mission.events.map(e => e.kind);
   check(['interceptor', 'maintenance', 'frigate', 'swarm', 'intruder'].every(k => kinds.filter(x => x === k).length === 1),
         `mission has one of each: ${kinds.join(', ')}`);
-  const gaps = G.mission.events.slice(1).map((e, i) => e.t - G.mission.events[i].t), want = (G.MISSION_LENGTH - G.JUMP_DELAY - 40) / 4;
-  check(gaps.every(g => Math.abs(g - want) < 1e-6) && G.mission.jumpAt === G.MISSION_LENGTH, `events ${want.toFixed(0)} s apart, the jump at ${G.MISSION_LENGTH} s (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s)`);
-  runTo(G, 45, calm(G));
+  const L = G.MISSION_LENGTH, ts = G.mission.events.map(e => e.t).sort((a, b) => a - b), want = G.shapedTimes(ts.length, 1, L);
+  check(L === 300 && ts.every((t, i) => Math.abs(t - want[i]) <= 25) && ts[0] >= 5 && ts[0] <= 30 && Math.abs(ts[ts.length - 1] - 0.9 * L) < 1e-6 && G.mission.jumpAt === L,
+        `events at ${ts.map(t => t.toFixed(0)).join(', ')} s (the first within 5-30 s, the rest near ${want.map(t => t.toFixed(0)).join(', ')}, the finale at 90%), the jump at ${L} s (5 min)`);
+  { // the shape: two early encounters with 2+ crew, one solo; in order however many; jitter only moves them a little; denser late
+    const H = loadGame(NAMES), rnd = () => 0.999;
+    const t2 = H.shapedTimes(6, 2, L), t1 = H.shapedTimes(6, 1, L), t8 = H.shapedTimes(20, 8, L), j8 = H.shapedTimes(20, 8, L, rnd);
+    const ordered = (t) => t.every((x, i) => !i || x > t[i - 1]);
+    check(t2.filter(t => t <= 30).length === 2 && t1.filter(t => t <= 30).length === 1 && ordered(t8) && ordered(j8) && t8[t8.length - 1] === 0.9 * L && j8[j8.length - 1] === 0.9 * L
+          && j8.every((t, i) => Math.abs(t - t8[i]) <= 12),
+          `two early encounters with 2+ crew (${t2.map(t => t.toFixed(0)).join(', ')}), one solo (${t1.map(t => t.toFixed(0)).join(', ')}); 20 events in order, jittered ≤ 12 s (${j8.map(t => t.toFixed(0)).join(', ')})`);
+    const calmGaps = t8.slice(3, 8).map((t, i) => t - t8[i + 2]), hotGaps = t8.slice(-6).map((t, i, a) => i ? t - a[i - 1] : 0).slice(1);
+    check(Math.min(...calmGaps) > Math.max(...hotGaps), `closer together in the hot times (gaps ${hotGaps.map(g => g.toFixed(0)).join(', ')} s) than in the calm (${calmGaps.map(g => g.toFixed(0)).join(', ')} s)`);
+  }
+  runTo(G, 20, calm(G));
   check(G.combat.enemies.some(e => e.kind === 'interceptor'), 'the interceptor shows up on schedule');
 }
 
-// --- difficulty: easy / very easy take one / two optional encounters out, the rest evenly spread, the reactor's pace unchanged
+// --- difficulty: easy / very easy take one / two optional encounters out, the rest laid out the same way (shapedTimes), the reactor's pace unchanged
 {
   const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT', 'COMBAT_KINDS']);
   for (const [id, full] of [['intro', false], ['c3', false], ['intro', true], ['c4', true], ['pirates', true]]) {
@@ -40,11 +51,11 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
     const essN = core.length + ((obj.size || core.some(e => e.opener)) && core.filter(e => G.COMBAT_KINDS.has(e.kind)).every(e => obj.has(e.kind) || e.opener) && n0 > core.length ? 1 : 0);
     for (const easy of [1, 2]) {
       G.startMission(id, { easy }); const evs = G.mission.events, gaps = evs.slice(1).map((e, i) => e.t - evs[i].t);
-      const ts = evs.map(e => e.t).sort((a, b) => a - b), even = ts.slice(1).every((t, i) => Math.abs(t - ts[i] - (ts[1] - ts[0])) < 1e-6);
+      const ts = evs.map(e => e.t).sort((a, b) => a - b), shape = G.shapedTimes(ts.length, 1, G.MISSIONS[id].length || G.MISSION_LENGTH), even = ts.every((t, i) => Math.abs(t - shape[i]) <= 25);
       check(evs.length === Math.max(essN, 1, n0 - easy) && evs.filter(e => ess.has(e.kind) || e.opener).length === core.length && (evs.length < 2 || even)
             && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump
             && G.mission.extraLuck === (easy - (n0 - evs.length)) / 2 && Math.abs(G.luckCut() - G.LUCK_CUT ** G.mission.extraLuck) < 1e-12,
-            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), evenly spread (gaps ${gaps.map(g => g.toFixed(0)).join(', ')} s), same reactor pace and jump; ${G.mission.extraLuck * 2} step(s) with nothing to drop → ${G.mission.extraLuck} cat(s) of luck`);
+            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), laid out (times ${evs.map(e => e.t.toFixed(0)).join(', ')} s), same reactor pace and jump; ${G.mission.extraLuck * 2} step(s) with nothing to drop → ${G.mission.extraLuck} cat(s) of luck`);
     }
   }
 }
@@ -52,10 +63,10 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
 // --- radar: reveals the next 45 s only; unscanned imminent threats show "????"
 {
   const G = fresh();
-  runTo(G, 20, calm(G));
+  runTo(G, 5, calm(G));
   G.radarScan();
   const r1 = G.radarList();
-  check(r1.known.length === 1 && r1.known[0].kind === 'interceptor', 'scan at T+20 reveals only the interceptor (T+40)');
+  check(r1.known.length === 1 && r1.known[0].kind === 'interceptor', 'scan at T+5 reveals only the interceptor (T+15)');
   const fr = G.mission.events.find(e => e.kind === 'frigate').t;
   runTo(G, fr - 5, calm(G));               // the frigate, never scanned
   const r2 = G.radarList();
@@ -77,7 +88,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
         `radar ${G.RADAR_RANGE - 5} s out: only the interceptor (${far.join(', ')}); the stealth fighter shows ${G.STEALTH_RADAR} s out (${near.join(', ')})`);
 }
 
-// --- the campaign's openers: a calm half minute, then something else before the mission's main encounter
+// --- the campaign's openers: within the first 5-30 s, something else before the mission's main encounter
 {
   const G = loadGame(NAMES);
   const MAIN = { c3: 'derelict', c4: 'pirates', c6: 'rock' };   // (c5: being redesigned separately)
@@ -86,11 +97,11 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
     for (const easy of [0, 1, 2]) {
       G.startMission(id, { easy });
       const ev = [...G.mission.events].sort((a, b) => a.t - b.t), first = ev[0], m = ev.findIndex(e => e.kind === main), last = ev[ev.length - 1];
-      const good = first.opener && first.kind !== main && first.t >= 25 && m > 0 && ev[m].t >= 45 && !last.opener && last.kind !== main;
+      const good = first.opener && first.kind !== main && first.t >= 5 && first.t <= 30 && m > 0 && !last.opener && last.kind !== main;
       if (!good) { ok = false; msg += ` difficulty ${easy}: ${ev.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', ')};`; }
       if (easy === 0) msg += ` ${ev.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', ')}`;
     }
-    check(ok, `${id} solo, every difficulty: nothing for ${G.mission.events[0]?.t.toFixed(0)} s, the opener, then the ${main}, a fight as the finale:${msg}`);
+    check(ok, `${id} solo, every difficulty: the opener at ${G.mission.events[0]?.t.toFixed(0)} s, then the ${main}, a fight as the finale:${msg}`);
   }
 }
 
@@ -160,7 +171,7 @@ const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
 {
   // a part of a pair broken (a hit) before its warning starts: the pair takes a working part instead
   const G = loadGame(NAMES);
-  G.MISSIONS.lateFail = { name: 'Late failure', rules: {}, build: () => [{ t: 40, kind: 'swarm' }, { t: 200, kind: 'maintenance', radar: false }, { t: 300, kind: 'interceptor', side: 'port' }] };
+  G.MISSIONS.lateFail = { name: 'Late failure', rules: {}, spacing: 'even', length: 420, build: () => [{ t: 40, kind: 'swarm' }, { t: 200, kind: 'maintenance', radar: false }, { t: 300, kind: 'interceptor', side: 'port' }] };
   G.startMission('lateFail'); G.power.reactor.fuel = 0;
   const ev = maintEv(G), old = ev.sys;
   runTo(G, 2, () => { G.combat.shots.length = 0; G.fires.length = 0; });

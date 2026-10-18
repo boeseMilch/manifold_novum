@@ -10,7 +10,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 const step = (n) => { for (let i = 0; i < n; i++) { G.combat.shots.length = 0; G.tick(DT); G.render(i * DT); } };
 
 G.startMission(); G.power.reactor.fuel = 0;
-step(60 * 20); G.radarScan(); step(2);
+step(60 * 2); G.radarScan(); step(2);   // (the first encounter comes at 15 s)
 let list = G.encounterPlates();
 const up = list.find(p => p.key.startsWith('ev'));
 check(up && !up.red && /T-\d+/.test(up.sub), `a radar contact gets a plate with a countdown and no red light ("${up?.title}: ${up?.sub}")`);
