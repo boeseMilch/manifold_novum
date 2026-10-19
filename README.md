@@ -133,7 +133,12 @@ The prompt above you always says what a click (or E) will do.
   ```
 
   `tests/network.js` starts a real server on a random port and connects WebSocket clients.
-- Balance estimate (shots and energy per encounter): `node tools/balance.js`
+- Balance model (idle time, energy and difficulty per mission and crew size): `node tools/balance.js`
+  (~1 s; `--detail c1 1` for one run job by job, `--calibrate c1` to fit a mission's encounter counts).
+  It reads two saved tables; rebuild them when what they measure changes:
+  - `node tools/balance.js --rates` (`tools/damage-rates.json`) after changing an enemy, a hazard or the hull;
+  - `node tools/travel.js --table` (`tools/travel-table.json`) after moving rooms, doors or stations.
+  `tests/balancemodel.js` notices when either is out of date.
 - Dev URLs:
   - `index.html?mission=rush&autostart` skips the menu: solo it starts the mission, over the
     server it opens a game with that mission and starts it.

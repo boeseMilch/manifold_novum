@@ -46,6 +46,14 @@ their own browser (cookie `mn-profile`, mirrored to localStorage; see `js/progre
 - Upgrade, gear and mission ids are stored in saves: don't rename them; add new ones instead.
 - `tests/progress.js` loads old-style profiles; add a case for every migration.
 
+## The balance model's saved tables
+
+`tools/balance.js` doesn't run the game engine; it reads two measured tables. Rebuild them in the same change that
+makes them stale (and commit the result):
+- enemies, hazards or the hull changed: `node tools/balance.js --rates` (tools/damage-rates.json);
+- rooms, doors or stations moved: `node tools/travel.js --table` (tools/travel-table.json).
+`tests/balancemodel.js` fails when either is out of date.
+
 ## Pointers
 
 - `README.md`: how to run the game (solo, or `node server.js` for LAN multiplayer).
