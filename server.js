@@ -121,10 +121,13 @@ const live = (g) => g.members.filter(c => c.alive);
 const hostOf = (g) => g.members[0] || null;           // the earliest joined player still in the game
 
 const clampEasy = (v) => Math.min(2, Math.max(0, Math.floor(+v) || 0));   // difficulty: 0 normal, 1 easy, 2 very easy
+// The skirmish builder's config (the host's; the sim checks it properly: customConfig in js/progress.js): just its shape here
+const strs = (a) => (Array.isArray(a) ? a.filter(x => typeof x === 'string').slice(0, 64).map(x => x.slice(0, 40)) : undefined);
+const cleanCustom = (c) => (c && typeof c === 'object' ? { n: Math.floor(+c.n) || 8, kinds: strs(c.kinds), parts: strs(c.parts) } : null);
 function lobbyState(g) {
   const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
   const host = hostOf(g);
-  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, unlocked, host: host && host.id, hostShip: (host && host.ship) || {}, max: MAX_PLAYERS,
+  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, custom: g.custom || null, unlocked, host: host && host.id, hostShip: (host && host.ship) || {}, max: MAX_PLAYERS,
     players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), host: c === host, away: !c.alive || undefined })) };
 }
 function gameList() {
@@ -185,8 +188,8 @@ function enter(c, g) {                                 // c joins g (there is ro
   if (g.run) { g.run.sim.netServer.addCrew(c.id, c.name, c.kit); send(c, { t: 'start', mission: g.missionId, game: g.id }); }
   changed(g);
 }
-function openGame(c, mission, easy) {
-  const g = { id: nextGameId++, members: [c], phase: 'lobby', missionId: mission ? String(mission).slice(0, 40) : 'intro', easy: clampEasy(easy), run: null };
+function openGame(c, mission, easy, custom) {
+  const g = { id: nextGameId++, members: [c], phase: 'lobby', missionId: mission ? String(mission).slice(0, 40) : 'c1', easy: clampEasy(easy), custom: cleanCustom(custom), run: null };
   games.set(g.id, g);
   enter(c, g);
   console.log(`[game ${g.id}] opened by ${c.name}`);
@@ -221,12 +224,13 @@ function onMessage(c, m) {
     changed(g);
   }
   else if (m.t === 'games') send(c, gameList());
-  else if (m.t === 'open') { if (g) removeMember(g, c); openGame(c, m.mission, m.easy); }
+  else if (m.t === 'open') { if (g) removeMember(g, c); openGame(c, m.mission, m.easy, m.custom); }
   else if (m.t === 'join') { if (g && g.id === +m.game) return; if (g) removeMember(g, c); joinGame(c, m.game, m.ticket); }
   else if (m.t === 'leave') leaveGame(c);
   else if (!g) return;                                 // (everything below is for players in a game)
   else if (m.t === 'mission' && isHost && g.phase === 'lobby') { g.missionId = String(m.id).slice(0, 40); changed(g); }
   else if (m.t === 'difficulty' && isHost && g.phase === 'lobby') { g.easy = clampEasy(m.easy); changed(g); }
+  else if (m.t === 'skirmish' && isHost && g.phase === 'lobby') { g.custom = cleanCustom(m.custom); changed(g); }
   else if (m.t === 'start' && isHost && g.phase === 'lobby') startGame(g);
   else if (m.t === 'input' && g.run) g.run.sim.netServer.input(c.id, m);
   else if (m.t === 'cmd' && g.run) g.run.sim.netServer.command(c.id, m.cmd);
@@ -253,7 +257,7 @@ function startGame(g) {
   const sim = makeSim();
   const sfx = sim.netCaptureSfx();
   const host = hostOf(g);                               // one ship: the host's (their upgrades; the reputation goes to them)
-  sim.netServer.init(g.missionId, { ...(host && host.ship || {}) }, g.easy || 0, host && { id: host.id, name: host.name });
+  sim.netServer.init(g.missionId, { ...(host && host.ship || {}) }, g.easy || 0, host && { id: host.id, name: host.name }, g.custom || null);
   for (const c of crewNow) sim.netServer.addCrew(c.id, c.name, c.kit);
   g.phase = 'game';
   g.run = { sim, sfx, tick: 0, last: Date.now(), acc: 0 };

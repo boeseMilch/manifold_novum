@@ -64,7 +64,7 @@ const music = (() => {
   // (third + octave), 4 fifth + octave, '.' rest.
   // parts: layer → [first stage, last stage] (a number: from that stage on).
   const PIECES = [
-    { name: 'held', title: 'Held Together', bpm: 100, key: 'D', missions: ['menu', 'intro', 'rush', 'practice'],
+    { name: 'held', title: 'Held Together', bpm: 100, key: 'D', missions: ['menu', 'intro', 'rush', 'practice', 'custom'],
       mood: 'the crew\'s theme (kept from the first score): a drone, a dark pad and bells, then taikos and the horn',
       lead: 'horn', ostInst: 'pluck', drums: 'taiko', classic: true,       // classic: plays exactly as in the first score
       parts: { drone: [0, 4], pad: 0, bells: [0, 4], ost: 2, ost16: 3, drums: 2, bass: 3, hats: 3, snare: 4, theme: 4, brass: 5, stabs: 6, strings: 6 },

@@ -230,6 +230,49 @@ const SKIRMISH = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep'
 // the menu hides them and offers the chapter instead (finished chapters stay replayable). The ids stay
 // defined: old saves (done.*), ?mission= links and hosts on an older page can still name them.
 const SKIRMISH_TWIN = { salvage: 'c3', pirates: 'c4', rescue: 'c5', ore: 'c6', deep: 'c7', nightmare: 'c8' };
+// The skirmish builder (2026-10-19, the user: replaces every preset skirmish in the menu, Intro run too; the presets
+// stay defined for old saves, ?mission= and the balance model): the lobby's Skirmish tab picks how many encounters (n),
+// which kinds may come (all listed from the start: no spoiler filtering; no boss / story kinds) and which ship parts
+// may fail. round(n/5)..round(n/3) of them are failing parts (maintenance on a ticked part), the rest drawn from
+// the ticked kinds. No pay. The config is the host's (lobby message 'skirmish'), passed to startMission as opts.custom.
+const CUSTOM_KINDS = [
+  ['interceptor', 'Interceptor'], ['frigate', 'Frigate'], ['swarm', 'Asteroid swarm'], ['stealth', 'Stealth fighter'],
+  ['tractor', 'Tractor tug'], ['pirates', 'Pirate raider'], ['intruder', 'Intruder'], ['saboteur', 'Saboteur'],
+  ['grappler', 'Grappler'], ['mother', 'Spore mother'], ['leeches', 'Leech swarm'], ['herd', 'Herd (two creatures)'],
+  ['mines', 'Mine drone'], ['spores', 'Spore clouds'], ['debris', 'Debris in a cannon'], ['antenna', 'Antenna strike'],
+  ['canister', 'Fuel canister'], ['flare', 'Solar flare'], ['storm', 'Ion storm'], ['coolant', 'Coolant leak'],
+  ['glitch', 'AI glitch'], ['tide', 'Gravity tide'],
+];
+const CUSTOM_PARTS = () => SYSTEMS.filter(s => !s.outside).map(s => s.name);   // (by name: they're unique, and readable in the lobby)
+const CUSTOM_MAX = 30;
+// Any config (a guest's lobby state, localStorage, an old host) → a valid one; nothing given: everything ticked, 8 encounters.
+function customConfig(c) {
+  const list = (a, ok) => (Array.isArray(a) ? [...new Set(a.filter(x => ok.includes(x)))] : ok.slice());
+  return { n: Math.min(CUSTOM_MAX, Math.max(1, Math.round(+c?.n) || 8)), kinds: list(c?.kinds, CUSTOM_KINDS.map(k => k[0])), parts: list(c?.parts, CUSTOM_PARTS()) };
+}
+const customFailures = (n) => [Math.round(n / 5), Math.round(n / 3)];          // failing parts: from..to of the n
+MISSIONS.custom = {
+  name: 'Skirmish', tier: 0, custom: true, rules: {}, objective: null,
+  blurb: 'Your own mix of encounters.',
+  briefing: 'No story and no pay: just the trouble you picked, spread over five minutes. Hold out until the jump.',
+  build() {
+    const C = customConfig(mission.custom), [lo, hi] = customFailures(C.n);
+    let fails = !C.parts.length ? 0 : !C.kinds.length ? C.n : Math.min(C.n, lo + Math.floor(Math.random() * (hi - lo + 1)));
+    const kinds = C.kinds.slice(), out = [];
+    for (let i = 0; i < C.n; i++) {
+      let kind = 'maintenance';
+      if (i >= fails) {
+        if (!kinds.length) break;
+        kind = kinds[Math.floor(Math.random() * kinds.length)];
+        if (kind === 'tide') kinds.splice(kinds.indexOf('tide'), 1);      // (one gravity tide per mission: oneTide)
+      }
+      out.push(makeEvent(kind, 30 + i * 30, null));
+    }
+    for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
+    out.forEach((e, i) => { e.t = 30 + i * 30; });                          // (written 30 s apart: the reactor's pace, paceFactor)
+    return out;
+  },
+};
 EVENT_SIDES.brig = randSide;
 // The pirate base (js/dock.js dockStation): we dock once the patrol is gone (checked again every 2 s).
 EVENT_RUNNERS.brig = (ev) => {
@@ -403,7 +446,7 @@ const unlockedMissions = (p = profile) => {
 let lastReward = null;
 function creditMission() {
   const o = mission.over;
-  if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice') return;
+  if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice' || MISSIONS[mission.id]?.custom) return;   // (a custom skirmish: no pay)
   const mine = o.results.crew.find(c => c.id === me.id);
   const ok = missionSuccess(mission.id, o.results), first = ok && !profile.done[mission.id];
   // In multiplayer the crew flies the host's ship (mission.shipOf, set by the server): the reputation goes
@@ -421,7 +464,7 @@ function creditMission() {
 }
 // The rewards block on the end screen.
 function drawRewards(cx, y) {
-  if (!lastReward || mission.id === 'practice') return;
+  if (!lastReward || mission.id === 'practice' || MISSIONS[mission.id]?.custom) return;
   const r = lastReward;
   ctx.textAlign = 'center'; ctx.font = '700 16px system-ui, sans-serif'; ctx.fillStyle = '#ffe08a';
   ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : r.guestOf ? `+$${r.money}  ·  the reputation goes to ${r.guestOf} (it's their ship)` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
@@ -482,11 +525,45 @@ const lobbyUI = {
       paint.innerHTML = PAINTS.map(c => `<button class="paint${p.paint === c ? ' chosen' : ''}" data-paint="${c}" style="background:${c}; --c:${paintGlow(c)}" title="${PAINT_NAMES[PAINTS.indexOf(c)] || 'Suit'} suit"></button>`).join('');
       paint.querySelectorAll('[data-paint]').forEach(b => b.onclick = () => { p.paint = p.paint === b.dataset.paint ? null : b.dataset.paint; saveProfile(p); this.render(); this.onProfile?.(); });
     }
-    // One list: only what's unlocked (for you or anyone in the game), so future chapters don't spoil the story.
-    const avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
+    // Two tabs: the campaign (only what's unlocked, for you or anyone in the game, so future chapters don't spoil
+    // the story) and the skirmish builder. The tab follows the chosen mission (a guest sees the host's).
+    const tab = this.chosen === 'custom' || this.chosen === 'practice' ? 'skirmish' : 'campaign';
+    if (tab === 'campaign' && CAMPAIGN.includes(this.chosen)) this.lastCampaign = this.chosen;
+    this.el('lobby-tabs').querySelectorAll('[data-tab]').forEach(b => {
+      b.classList.toggle('chosen', b.dataset.tab === tab);
+      b.onclick = () => { if (b.dataset.tab !== tab) this.pick(b.dataset.tab === 'skirmish' ? (this.practice ? 'practice' : 'custom') : this.lastCampaign || CAMPAIGN.find(id => this.available().has(id) && !p.done[id]) || 'c1'); };
+    });
+    const list = this.el('lobby-missions'), builder = this.el('lobby-builder');
+    list.hidden = tab !== 'campaign'; builder.hidden = tab !== 'skirmish';
+    if (tab === 'skirmish') this.renderBuilder();
+    else this.renderCampaign();
+    const m = MISSIONS[this.chosen];
+    if (m) {
+      const R = m.rewards, obj = m.objective;
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? ((obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : '';
+      this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
+        ${m.custom ? `<p class="obj">${escapeHtml(this.customSummary())}</p>` : ''}
+        <p class="note">♪ ${music.songOf(this.chosen)}</p>
+        ${this.flight ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades, and the reputation is yours.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: their upgrades count, and the reputation goes to them. You get the pay.`}</p>` : ''}
+        ${missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
+        ${m.practice || m.custom ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
+    }
+  },
+  pick(id) { this.chosen = id; this.onPick(id); this.render(); },
+  // The custom skirmish (lobbyUI.custom: customConfig's shape; practice: the Practice tick, the browser's own)
+  custom: null, practice: false, onCustom: null,
+  ready() { if (this.chosen !== 'custom') return true; const C = customConfig(this.custom); return C.kinds.length + C.parts.length > 0; },
+  customSummary() {
+    const C = customConfig(this.custom), [lo, hi] = customFailures(C.n);
+    if (!C.kinds.length && !C.parts.length) return 'Tick at least one encounter or ship part.';
+    const fails = !C.parts.length ? 'no failing parts' : !C.kinds.length ? 'all of them failing parts' : lo === hi ? `${lo} of them a failing part` : `${lo}–${hi} of them failing parts`;
+    return `${C.n} encounter${C.n > 1 ? 's' : ''}, ${fails}. ${2 + Math.ceil(C.n / 2)} fuel cells. No pay.`;
+  },
+  renderCampaign() {
+    const p = profile, avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
     list.innerHTML = '';
-    const skirmish = SKIRMISH.filter(id => !SKIRMISH_TWIN[id] || id === this.chosen);   // (a twin only when it is already picked, e.g. by an older host)
-    for (const [title, ids] of [['Campaign', CAMPAIGN], ['Skirmish', skirmish], ['Practice', ['practice']]]) {
+    const other = this.chosen && !CAMPAIGN.includes(this.chosen) && MISSIONS[this.chosen] ? [this.chosen] : [];   // (an older host's preset skirmish, a ?mission= link)
+    for (const [title, ids] of [['Campaign', CAMPAIGN], ['Other', other]]) {
       const open = ids.filter(id => MISSIONS[id] && avail.has(id));
       if (!open.length) continue;
       const h = document.createElement('div'); h.className = 'mission-group'; h.textContent = title; list.appendChild(h);
@@ -494,23 +571,49 @@ const lobbyUI = {
         const m = MISSIONS[id], b = document.createElement('button');
         b.className = 'mission' + (id === this.chosen ? ' chosen' : ''); b.dataset.id = id;
         b.innerHTML = `<b>${m.name}${m.tier ? ` <em>${'★'.repeat(m.tier)}</em>` : ''}${p.done[id] ? ' <em class="done">✔</em>' : ''}</b><span>${m.blurb}</span>`;
-        b.onclick = () => { this.chosen = id; this.onPick(id); this.render(); };
+        b.onclick = () => this.pick(id);
         list.appendChild(b);
       }
-      if (open.length < ids.length) { const n = document.createElement('div'); n.className = 'mission-more'; n.textContent = title === 'Campaign' ? 'More chapters unlock as you go.' : 'More unlock as you go.'; list.appendChild(n); }
+      if (open.length < ids.length) { const n = document.createElement('div'); n.className = 'mission-more'; n.textContent = 'More chapters unlock as you go.'; list.appendChild(n); }
     }
     list.scrollTop = scroll;
     list.querySelector('.mission.chosen')?.scrollIntoView?.({ block: 'nearest' });
-    const m = MISSIONS[this.chosen];
-    if (m) {
-      const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? ((obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : '';
-      this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
-        <p class="note">♪ ${music.songOf(this.chosen)}</p>
-        ${this.flight ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades, and the reputation is yours.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: their upgrades count, and the reputation goes to them. You get the pay.`}</p>` : ''}
-        ${missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
-        ${m.practice ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
+  },
+  // The builder is built once and then only synced (re-rendering it would break a slider drag: the host's own
+  // change comes back in the server's lobby state).
+  renderBuilder() {
+    const box = this.el('lobby-builder'), C = customConfig(this.custom), practice = this.chosen === 'practice';
+    if (!box.dataset.built) {
+      box.dataset.built = 1;
+      const ticks = (group, items) => `<div class="sk-grid">${items.map(([id, name]) => `<label class="sk-tick"><input type="checkbox" data-${group}="${escapeHtml(id)}"><span>${escapeHtml(name)}</span></label>`).join('')}</div>`;
+      box.innerHTML = `<label class="sk-tick sk-practice"><input type="checkbox" id="sk-practice"><span><b>Practice</b> no timer, no encounters: spawn anything from the practice panel</span></label>
+        <div class="sk-body">
+          <div class="list-head"><label for="sk-n">HOW MANY ENCOUNTERS</label><span id="sk-count"></span></div>
+          <input type="range" id="sk-n" min="1" max="${CUSTOM_MAX}" step="1" aria-label="Encounters">
+          <div class="mission-group">Encounters <span class="sk-all"><button data-all="kind">all</button><button data-none="kind">none</button></span></div>
+          ${ticks('kind', CUSTOM_KINDS)}
+          <div class="mission-group">Ship parts that may fail <span class="sk-all"><button data-all="part">all</button><button data-none="part">none</button></span></div>
+          ${ticks('part', CUSTOM_PARTS().map(n => [n, n]))}
+        </div>`;
+      const changed = (cfg) => { this.custom = cfg; this.onCustom?.(cfg); this.render(); };
+      const read = () => ({ n: +box.querySelector('#sk-n').value,
+        kinds: [...box.querySelectorAll('[data-kind]:checked')].map(x => x.dataset.kind), parts: [...box.querySelectorAll('[data-part]:checked')].map(x => x.dataset.part) });
+      box.querySelector('#sk-n').oninput = () => changed(read());
+      box.querySelectorAll('[data-kind], [data-part]').forEach(x => x.onchange = () => changed(read()));
+      box.querySelectorAll('[data-all], [data-none]').forEach(b => b.onclick = () => {
+        const g = b.dataset.all || b.dataset.none;
+        box.querySelectorAll(`[data-${g}]`).forEach(x => { x.checked = !!b.dataset.all; });
+        changed(read());
+      });
+      box.querySelector('#sk-practice').onchange = (e) => { this.practice = e.target.checked; this.onCustom?.(this.custom); this.pick(this.practice ? 'practice' : 'custom'); };
     }
+    box.querySelector('#sk-practice').checked = practice;
+    box.querySelector('.sk-body').classList.toggle('off', practice);
+    box.querySelectorAll('.sk-body input, .sk-body button').forEach(x => { x.disabled = practice; });
+    box.querySelector('#sk-n').value = C.n;
+    box.querySelector('#sk-count').textContent = C.n;
+    box.querySelectorAll('[data-kind]').forEach(x => { x.checked = C.kinds.includes(x.dataset.kind); });
+    box.querySelectorAll('[data-part]').forEach(x => { x.checked = C.parts.includes(x.dataset.part); });
   },
   shop(kind) {
     const p = profile, open = professionOpen(p), box = this.el('shop-body');

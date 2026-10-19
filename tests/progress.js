@@ -293,4 +293,35 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(/class="item avail"/.test(avail) && !/disabled/.test(avail) && /tag price">\$150/.test(avail), 'available: clickable, with its price tag');
   check(/class="item locked"/.test(locked) && /disabled/.test(locked) && /padlock/.test(locked) && /Need ★1 more reputation/.test(locked), 'locked: not clickable, padlock and why');
 }
+// --- the skirmish builder (Skirmish tab): n encounters from the ticked kinds, round(n/5)..round(n/3) failing parts on ticked parts, no pay
+{
+  const G = loadGame([...NAMES, 'customConfig', 'CUSTOM_KINDS', 'CUSTOM_PARTS', 'maintPrev']);
+  const def = G.customConfig(null);
+  check(def.n === 8 && def.kinds.length === G.CUSTOM_KINDS.length && def.parts.length === G.CUSTOM_PARTS().length
+    && !def.kinds.some(k => ['leviathan', 'leviathan_boss', 'brig', 'derelict', 'rock', 'maintenance'].includes(k)), 'default config: 8 encounters, every kind and part ticked, no boss / story kinds');
+  const bad = G.customConfig({ n: 99, kinds: ['interceptor', 'leviathan', 'bogus', 'interceptor'], parts: ['Reactor', 'Nope'] });
+  check(bad.n === 30 && bad.kinds.join() === 'interceptor' && bad.parts.join() === 'Reactor', 'a config is cleaned: n ≤ 30, only known kinds / parts, no doubles');
+  let ok = true, fails = new Set(), tides = 0;
+  for (let k = 0; k < 40; k++) {
+    G.startMission('custom', { custom: { n: 15, kinds: ['interceptor', 'swarm', 'tide'], parts: ['Reactor', 'Power lever'] } });
+    const ev = G.mission.events, m = ev.filter(e => e.kind === 'maintenance');
+    fails.add(m.length);
+    tides = Math.max(tides, ev.filter(e => e.kind === 'tide').length);
+    if (ev.length !== 15 || !m.every(e => ['Reactor', 'Power lever'].includes(e.sys.name)) || !ev.every(e => ['interceptor', 'swarm', 'tide', 'maintenance'].includes(e.kind))
+      || G.missionCrew('custom', 1).cells !== 10 || G.mission.jumpAt !== 300) ok = false;
+  }
+  check(ok && [...fails].every(n => n >= 3 && n <= 5) && tides <= 1, `15 encounters: 3-5 failing parts (seen ${[...fails].sort()}), only on the ticked parts, the rest of the ticked kinds, one tide at most, 10 fuel cells, the jump at 300 s`);
+  G.startMission('custom', { custom: { n: 5, kinds: [], parts: ['Reactor'] } });
+  check(G.mission.events.length === 5 && G.mission.events.every(e => e.kind === 'maintenance' && e.sys.name === 'Reactor'), 'no kinds ticked: every encounter a failing part (one ticked part: reused)');
+  G.startMission('custom', { custom: { n: 6, kinds: ['flare'], parts: [] } });
+  check(G.mission.events.length === 6 && G.mission.events.every(e => e.kind === 'flare'), 'no parts ticked: no failing parts');
+  G.startMission('custom', { custom: { n: 4, kinds: ['interceptor'], parts: ['Reactor'] } });
+  G.mission.over = { results: { jumped: true, crew: [{ id: G.me.id, survived: true }] } };
+  const money = G.profile.money; G.creditMission();
+  check(G.profile.money === money && !G.profile.done.custom, 'a custom skirmish pays nothing and counts as no completion');
+  G.netServer.init('custom', {}, 0, null, { n: 3, kinds: ['frigate'], parts: [] });
+  check(G.mission.events.length === 3 && G.mission.events.every(e => e.kind === 'frigate'), 'multiplayer: the host\'s config reaches the server\'s mission (netServer.init)');
+  G.startMission('c1');
+  check(!G.mission.custom, 'other missions carry no custom config');
+}
 process.exitCode = failed ? 1 : 0;

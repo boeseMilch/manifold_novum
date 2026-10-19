@@ -139,6 +139,31 @@
   #lobby-players .crown { font-size: 10px; letter-spacing: 1px; padding: 1px 5px; border-radius: 4px; background: #ffd38a; color: #14161b; vertical-align: 1px; }
   #lobby-players li.away { opacity: 0.55; }
   #lobby-players small { color: #c9ced8; font-weight: 600; }
+  /* the lobby's Campaign | Skirmish tabs and the skirmish builder (lobbyUI.renderBuilder, js/progress.js) */
+  .tabs { display: flex; gap: 8px; margin: 14px 0 10px; }
+  .tabs button { flex: 1; padding: 8px; font: 800 13px system-ui, sans-serif; letter-spacing: 2px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
+  .tabs button.chosen { background: #1d4a36; border-color: #5fd6a0; }
+  #lobby-builder { padding: 16px; border-radius: 10px; background: #1c2028; border: 2px solid #14161b; max-height: calc(100vh - 360px); min-height: 260px; overflow-y: auto; scrollbar-color: #4a5262 transparent; }
+  :is(#lobby-builder, #lobby-missions)[hidden] { display: none !important; }
+  #lobby-builder .list-head { margin: 14px 4px 6px; }
+  #lobby-builder input[type=range] { width: 100%; margin: 0; padding: 0; accent-color: #c4683a; cursor: pointer; }
+  #sk-count { font: 800 14px ui-monospace, monospace; color: #e8ecf4; background: #2f3542; padding: 2px 10px; border-radius: 4px; }
+  #lobby-builder .mission-group { display: flex; align-items: center; gap: 10px; margin: 18px 4px 8px; }
+  .sk-all { margin-left: auto; display: flex; gap: 6px; }
+  .sk-all button { padding: 2px 10px; font: 700 11px system-ui, sans-serif; letter-spacing: 1px; text-transform: none; border-radius: 4px; border: 1px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
+  .sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
+  .sk-tick { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; padding: 4px 4px; font: 600 13px system-ui, sans-serif !important; letter-spacing: 0 !important; color: #e8ecf4; cursor: pointer; border-radius: 4px; }
+  .sk-tick:hover { background: rgba(255, 255, 255, 0.06); }
+  .sk-tick input { width: 17px !important; height: 17px; flex: none; margin: 0; padding: 0 !important; accent-color: #5fd6a0; cursor: pointer; }
+  .sk-practice { padding: 8px 6px !important; border-bottom: 1px solid rgba(255, 255, 255, 0.1); border-radius: 0; }
+  .sk-practice span { font-weight: 500; color: #c9ced8; } .sk-practice b { color: #fff; margin-right: 6px; }
+  .sk-body.off { opacity: 0.4; }
+  #room.guest :is(#lobby-tabs, #lobby-builder) { pointer-events: none; }
+  html:is(.metal-gl, .metal-css) :is(.tabs, .sk-all) button { color: #161a21; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); --up: url(assets/ui/btn.png); --dn: url(assets/ui/btn_down.png); }
+  html.metal-css :is(.tabs, .sk-all) button { background: none; border-color: transparent; border-image-source: var(--up); border-image-slice: 32 fill; border-image-width: 12px; }
+  html.metal-css .tabs button.chosen { border-image-source: var(--dn); }
+  html.metal-css .sk-all button { border-image-width: 6px; padding: 3px 12px; }
+  #lobby .tabs button.chosen { color: #0f3a26; text-shadow: 0 0 6px rgba(95, 214, 160, 0.9), 0 1px 0 rgba(255, 255, 255, 0.4); box-shadow: inset 0 -4px 0 #5fd6a0 !important; }
   #room.guest #lobby-missions .mission { pointer-events: none; }
   #room.guest #lobby-missions .mission:not(.chosen) { opacity: 0.55; }
   @media (max-width: 760px) {
@@ -242,7 +267,7 @@
   html.metal-css #lobby-start:hover:not(:disabled) { filter: brightness(1.08) drop-shadow(0 0 8px rgba(255, 236, 200, 0.22)); }
   html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, #shop-close, .mission, .item, #room-back, button.join):active:not(:disabled) {
     border-image-source: var(--dn); filter: brightness(0.92); }
-  html.metal-css :is(#lobby, #shop) :is(#menu-games, #lobby-brief, #lobby-missions) { background: none; border-color: transparent;
+  html.metal-css :is(#lobby, #shop) :is(#menu-games, #lobby-brief, #lobby-missions, #lobby-builder) { background: none; border-color: transparent;
     border-image: url(assets/ui/inset.png) 32 fill / 16px stretch; }
   html.metal-css #lobby input { background: none; border-color: transparent; border-image: url(assets/ui/inset.png) 32 fill / 9px stretch; }
   html.metal-css .paint { border: none; background-image: url(assets/ui/swatch.png) !important; background-size: 100% 100% !important; background-blend-mode: multiply; }
@@ -265,7 +290,7 @@
   html.metal-css #room .plate::after { left: -25.4px; bottom: -20.2px; }
   /* lit look: the canvas draws all of it */
   html.metal-gl :is(#lobby, #shop) .plate { background: none; border-color: transparent; box-shadow: 0 16px 44px rgba(0,0,0,0.55); }
-  html.metal-gl :is(#lobby, #shop) :is(button, input, #menu-games, #lobby-brief, #lobby-missions, .bar) {
+  html.metal-gl :is(#lobby, #shop) :is(button, input:not([type=checkbox]), #menu-games, #lobby-brief, #lobby-missions, #lobby-builder, .bar) {
     background: transparent !important; border-color: transparent !important; box-shadow: none !important; filter: none !important; }
   html.metal-gl #lobby #lobby-paint .paint.chosen { box-shadow: 0 0 6px 1px var(--c, #fff), 0 0 16px 3px var(--c, #fff) !important; }   /* the chosen suit colour's lamp glows (menugl.js lights it) */
   /* tutorial (js/tutorial.js): the menu button, the controls question, the message box */
@@ -343,8 +368,9 @@
       </div>
       <div class="room-cols">
         <div>
-          <label>MISSION</label>
+          <div id="lobby-tabs" class="tabs"><button data-tab="campaign">CAMPAIGN</button><button data-tab="skirmish">SKIRMISH</button></div>
           <div id="lobby-missions"></div>
+          <div id="lobby-builder" hidden></div>
         </div>
         <div class="room-side">
           <div id="lobby-brief"></div>

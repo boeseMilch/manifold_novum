@@ -225,7 +225,9 @@ function oneTide(M, written) {
 const DROP_ORDER = ['canister', 'antenna', 'debris', 'glitch', 'storm', 'coolant', 'maintenance', 'flare', 'tide', 'spores', 'mines', 'leeches', 'grappler',
                     'tractor', 'stealth', 'saboteur', 'mother', 'intruder', 'swarm', 'herd', 'frigate', 'interceptor', 'pirates'];
 const crewSize = () => Math.max(1, crew.length);
-const missionCrew = (id, n) => { const C = MISSIONS[id]?.crew, i = Math.min(8, Math.max(1, n)) - 1; return { events: C?.events?.[i], cells: C?.cells?.[i] ?? 4, reactor: C?.reactor?.[i] ?? 1, overcharge: !!C?.overcharge?.[i] }; };
+// (a custom skirmish has no calibration: 2 + n/2 fuel cells, rounded up, for any crew size)
+const customCrew = () => { const c = 2 + Math.ceil(customConfig(mission.custom).n / 2); return { cells: Array(8).fill(c) }; };
+const missionCrew = (id, n) => { const C = MISSIONS[id]?.custom ? customCrew() : MISSIONS[id]?.crew, i = Math.min(8, Math.max(1, n)) - 1; return { events: C?.events?.[i], cells: C?.cells?.[i] ?? 4, reactor: C?.reactor?.[i] ?? 1, overcharge: !!C?.overcharge?.[i] }; };
 // The reactor's ENERGY_TIME multiplier: the gap / the written gap, × the crew size's reactor tuning (crew.reactor,
 // < 1 where the energy needs a faster reactor to be in spec).
 const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
@@ -325,6 +327,17 @@ function layoutMission(id, n) {
 // lead-in) keeps the pairs it had, in time order, so the helm doesn't shuffle. Only when the ship runs out
 // of parts may a pair reuse one whose warning doesn't overlap.
 let maintPrev = [];                                  // (the last layout's pairs: [{ sys, decoy }], in time order)
+// A custom skirmish's failing parts are the ticked ones (the decoy, only shaky, may be any)
+const maintAllowed = (s) => !MISSIONS[mission.id]?.custom || customConfig(mission.custom).parts.includes(s.name);
+// (its target: a ticked part no pair uses, else one whose warning doesn't overlap, else any ticked one; null: not custom,
+// or every ticked part is broken)
+function customTarget(ev, used) {
+  if (!MISSIONS[mission.id]?.custom) return null;
+  const A = SYSTEMS.filter(s => !s.broken && !s.outside && maintAllowed(s));
+  const t1 = A.filter(s => !used.some(u => u.s === s)), t2 = A.filter(s => !used.some(u => u.s === s && Math.abs(u.t - ev.t) < MAINT_YELLOW));
+  const pool = t1.length ? t1 : t2.length ? t2 : A;
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+}
 function pickMaintPairs(evs, prev = []) {
   const ms = evs.filter(e => e.kind === 'maintenance').sort((a, b) => a.t - b.t), used = [];
   const free = (ev) => {
@@ -334,9 +347,10 @@ function pickMaintPairs(evs, prev = []) {
   };
   ms.forEach((ev, i) => {
     let p = prev[i];
-    if (!p || used.some(u => u.s === p.sys || u.s === p.decoy) || !p.sys || p.sys.broken || p.decoy?.broken) {
-      const c = free(ev), take = () => c.splice(Math.floor(Math.random() * c.length), 1)[0];
-      p = { sys: take(), decoy: take() };
+    if (!p || used.some(u => u.s === p.sys || u.s === p.decoy) || !p.sys || p.sys.broken || p.decoy?.broken || !maintAllowed(p.sys)) {
+      const c = free(ev), take = () => c.splice(Math.floor(Math.random() * c.length), 1)[0], own = customTarget(ev, used);
+      if (own && c.includes(own)) c.splice(c.indexOf(own), 1);
+      p = own ? { sys: own, decoy: take() } : { sys: take(), decoy: take() };
     }
     Object.assign(ev, { sys: p.sys, decoy: p.decoy || null, serviced: false, seen: !!p.seen });
     used.push({ s: p.sys, t: ev.t }, { s: p.decoy, t: ev.t });
@@ -352,8 +366,8 @@ function armMaintPairs() {
     if (!ev.sys?.broken && !ev.decoy?.broken) continue;
     const busy = new Set(maintWarnings().filter(w => w.ev !== ev).flatMap(w => [w.sys, w.decoy]));
     const c = SYSTEMS.filter(s => !s.broken && !s.outside && !busy.has(s) && s !== ev.sys && s !== ev.decoy);
-    const take = () => c.splice(Math.floor(Math.random() * c.length), 1)[0];
-    if (ev.sys?.broken && c.length) ev.sys = take();
+    const take = (ok = () => true) => { const k = c.filter(ok), x = k.length ? k : c; return c.splice(c.indexOf(x[Math.floor(Math.random() * x.length)]), 1)[0]; };
+    if (ev.sys?.broken && c.length) ev.sys = take(maintAllowed);
     if (ev.decoy?.broken && c.length) ev.decoy = take();
   }
 }
@@ -384,6 +398,7 @@ function startMission(id = 'intro', opts = {}) {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
     id, active: true, coilsChecked: false, autoPull: null, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
     crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
+    custom: (MISSIONS[id] || {}).custom ? customConfig(opts.custom) : null,
   });
   mission.written = fillSides((MISSIONS[id] || MISSIONS.intro).build(null).map(({ sys, ...e }) => e));   // the timeline as written (no part refs: it's sent to browsers)
   layoutMission(id, crewSize());

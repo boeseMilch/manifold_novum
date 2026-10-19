@@ -52,8 +52,8 @@ const MenuGL = (() => {
   // --- what is drawn for which element (first match wins) -------------------------------------------
   const RULES = [
     ['.plate', { kind: 'plate' }],
-    ['#menu-games, #lobby-brief, #lobby-missions', { kind: 'inset' }],
-    ['#lobby input', { kind: 'inset', scale: 0.55 }],
+    ['#menu-games, #lobby-brief, #lobby-missions, #lobby-builder', { kind: 'inset' }],
+    ['#lobby input:not([type=checkbox])', { kind: 'inset', scale: 0.55 }],
     ['#lobby-profile .bar', { kind: 'inset', scale: 0.3, flat: true }],
     ['.paint', { kind: 'swatch' }],
     ['#room-back, .game button.join', { kind: 'btns' }],
@@ -61,7 +61,7 @@ const MenuGL = (() => {
   ];
   const SEL = RULES.map(r => r[0]).join(', ');
   const toneOf = (el) => (el.matches('#lobby-start') ? 'red' : 'steel');          // colour sparingly: one red button, the rest silver
-  const latched = (el) => el.matches('.mission.chosen, .item.chosen, .paint.chosen');
+  const latched = (el) => el.matches('.mission.chosen, .item.chosen, .paint.chosen, .tabs button.chosen');
   const hasLed = (el) => el.matches('.mission, #shop .item:not(.locked)');
   // decals on plates (ui.py: tape, tag_*): where on which plate. at: 'tr' / 'bl' corner (tape) or 'b' (on the bottom lip)
   const DECALS = [['#menu-you', [['tape', 'tr'], ['tag_crew', 'b']]], ['#menu-play', [['tag_ops', 'b']]],

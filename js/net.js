@@ -143,7 +143,7 @@ function netPlaySfx(events) {
 // Server side (runs inside the server's simulation sandbox)
 // ---------------------------------------------------------------------------
 const netServer = {
-  init(missionId, ship, easy = 0, host = null) { crew.length = 0; startMission(missionId, { ship, easy }); mission.shipOf = host; },   // (host: { id, name }, whose ship flies and gets the reputation)
+  init(missionId, ship, easy = 0, host = null, custom = null) { crew.length = 0; startMission(missionId, { ship, easy, custom }); mission.shipOf = host; },   // (host: { id, name }, whose ship flies and gets the reputation)
   addCrew(id, name, kit) {
     const spots = [[22.2, 4.5], [20.2, 8], [24.2, 8], [18.5, 4], [26, 4], [22.2, 9.5], [16.5, 8.5], [28, 8.5]];
     const [x, y] = spots[crew.length % spots.length];
@@ -183,7 +183,7 @@ function netClientMain() {
   const $ = (id) => document.getElementById(id);
   const lobby = $('lobby');
   if (lobby.hidden) return;                          // a debug URL skipped the menu
-  let ws = null, myId = null, chosen = 'intro', phase = 'menu', solo = false, myGame = null, ticket = null, isHost = false;
+  let ws = null, myId = null, chosen = 'c1', phase = 'menu', solo = false, myGame = null, ticket = null, isHost = false;
   let netState = 'none', games = [], lastLobby = null, maxPlayers = 8;
   const store = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { return null; } };
   const nameBox = $('lobby-name');
@@ -198,6 +198,13 @@ function netClientMain() {
   const hello = () => sendWs({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()] });
   const pick = (id) => { if (!solo && !isHost) return; chosen = id; if (!solo) sendWs({ t: 'mission', id }); };
   lobbyUI.init(pick, hello);
+  // The skirmish builder's settings: this browser's (localStorage, not the profile); the host's travel to the server
+  try { const c = JSON.parse(localStorage.getItem('mn-skirmish')); lobbyUI.custom = customConfig(c); lobbyUI.practice = !!c?.practice; } catch (e) { lobbyUI.custom = customConfig(null); }
+  lobbyUI.onCustom = (cfg) => {
+    try { localStorage.setItem('mn-skirmish', JSON.stringify({ ...cfg, practice: lobbyUI.practice })); } catch (e) { /* no storage */ }
+    if (!solo && isHost) sendWs({ t: 'skirmish', custom: cfg });
+    renderRoom();
+  };
   $('room-locker').onclick = () => lobbyUI.shop('locker');
   // Start over (e.g. to play the progression again with friends): a fresh profile, keeping the name and suit
   // color; the old one is kept in localStorage 'mn-profile-backup' in case it was a misclick.
@@ -269,15 +276,15 @@ function netClientMain() {
       : L.players.map(p => `<li style="color:${p.color}"${p.away ? ' class="away"' : ''}>${p.host ? '<span class="crown" title="host">HOST</span> ' : ''}${escapeHtml(p.name)}${p.id === myId || p.away ? ` <small>${[p.id === myId && 'you', p.away && 'coming back…'].filter(Boolean).join(' · ')}</small>` : ''}</li>`).join('');
     $('room-count').textContent = solo ? '' : L ? `${L.players.length}/${L.max || maxPlayers}` : '';
     const start = $('lobby-start');
-    start.disabled = !canPick || (!solo && L?.phase === 'game');
+    start.disabled = !canPick || (!solo && L?.phase === 'game') || !lobbyUI.ready();
     start.textContent = solo ? 'START MISSION' : L?.phase === 'game' ? 'MISSION RUNNING…' : isHost ? 'START MISSION' : `WAITING FOR ${host ? host.name.toUpperCase() : 'THE HOST'}…`;
     $('room-back').textContent = solo ? '‹ MENU' : '‹ LEAVE GAME';
   }
 
   // ----- buttons
-  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship, easy }); };
+  const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship, easy, custom: lobbyUI.custom }); };
   $('menu-solo').onclick = () => { saveName(); solo = true; easy = storedEasy(); showEasy(); lastLobby = null; show('room'); markChosen(); };
-  $('menu-open').onclick = () => { saveName(); hello(); easy = storedEasy(); sendWs({ t: 'open', mission: chosen, easy }); };
+  $('menu-open').onclick = () => { saveName(); hello(); easy = storedEasy(); sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom }); };
   $('room-back').onclick = () => { if (!solo) sendWs({ t: 'leave' }); lastLobby = null; show('menu'); };
   $('lobby-start').onclick = () => { saveName(); if (solo) startSolo(); else if (isHost) sendWs({ t: 'start' }); };
   nameBox.onchange = () => { saveName(); hello(); };
@@ -303,7 +310,7 @@ function netClientMain() {
   ws.onopen = () => {
     clearTimeout(fail); netState = 'online'; hello();
     if (rejoin) sendWs({ t: 'join', game: rejoin.game, ticket: rejoin.ticket });
-    else if (autostart) sendWs({ t: 'open', mission: chosen, easy });           // dev: open a game and start it right away
+    else if (autostart) sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom });           // dev: open a game and start it right away
     if (phase === 'menu') renderMenu();
   };
   ws.onclose = () => {
@@ -329,6 +336,7 @@ function netClientMain() {
       lastLobby = m; isHost = m.host === myId;
       const h = m.players?.find(p => p.host);                             // the host's ship flies (their upgrades, their reputation)
       lobbyUI.flight = isHost ? { host: true } : { name: h ? h.name : 'The host', ship: m.hostShip || {} };
+      if (m.custom) lobbyUI.custom = customConfig(m.custom);
       chosen = m.mission; lobbyUI.union = m.unlocked || null; markChosen();
       easy = m.easy || 0; showEasy();
       renderRoom();

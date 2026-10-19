@@ -3226,3 +3226,27 @@ event hatches them instead of bringing two aliens in through the airlocks.
 - `--calibrate` also skips work it never looks at: perfect routing ('best') runs only when a result asks for it, the
   schedules are shared between the fuel counts it tries on one layout, and the second pass is skipped when the first
   had no waits for energy (it would be the same).
+
+### The skirmish builder (2026-10-19, js/progress.js, js/net.js, server.js, index.html)
+The user: one Skirmish tab with a builder instead of preset skirmishes.
+- The lobby has two tabs, **Campaign | Skirmish**. Campaign lists the chapters (only unlocked ones). Skirmish holds only
+  the builder: a slider for how many encounters (1-30), a tick box for every encounter kind (`CUSTOM_KINDS`: all listed
+  from the start, no spoiler filtering; no boss / story / objective kinds: leviathan, leviathan_boss, brig, derelict,
+  rock), a tick box for every inside ship part that may fail (`CUSTOM_PARTS`, by name), all / none buttons, and a
+  **Practice** tick (today's practice mission: no timer, the practice panel). The tab follows the chosen mission, so a
+  guest sees the host's tab and settings (greyed out).
+- **Every preset skirmish left the menu, Intro run too**: new players start with chapter 1 (the lobby's and the
+  server's default is now `c1`). Their MISSIONS ids stay (old saves' `done.*`, `?mission=`, tools/balance.js, tests);
+  an older host's preset or a `?mission=` link shows under "Other" in the Campaign tab.
+- The run is mission `custom` (`MISSIONS.custom`): round(n/5)..round(n/3) of the n encounters are failing parts
+  (maintenance with its target among the ticked parts; the decoy, only shaky, may be any part; with few ticked parts a
+  part is reused, preferably with warnings that don't overlap: `customTarget` in js/mission.js), the rest drawn from the
+  ticked kinds (at most one gravity tide: one per mission), shuffled, then laid out like every mission (shapedTimes, 5
+  minutes). No calibration for custom counts: 2 + ceil(n/2) fuel cells at any crew size (`customCrew`), the reactor at
+  the written pace (30 s per encounter). Difficulty still drops encounters. No rules (breaches, surges, ...) switched on.
+- **No pay**: creditMission skips it (nothing for `done`, no money, no reputation).
+- The settings are this browser's (localStorage `mn-skirmish`, not the profile: no save-format change). The host's
+  travel to the server like the difficulty: `open {custom}`, a new lobby message `skirmish {custom}`, `custom` in the
+  lobby state, and `netServer.init(..., custom)` → `startMission(id, { custom })`. The sim cleans any config
+  (`customConfig`: n 1-30, only known kinds / parts).
+- Tests: tests/progress.js (the config, the failure count and parts, no pay, the server's init).
