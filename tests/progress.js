@@ -65,9 +65,9 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
     return G;
   };
   const H = mp(true), Gu = mp(false);
-  check(H.profile.rep === 2 && H.profile.money === 120 + 2 * 16 && !H.lastReward.guestOf, 'multiplayer host: money and reputation, as solo');
-  check(Gu.profile.rep === 0 && Gu.lastReward.rep === 0 && Gu.profile.money === 120 + 2 * 16 && Gu.profile.done.c1 === 1 && Gu.unlockedMissions(Gu.profile).has('c2') && Gu.lastReward.guestOf === 'Hosty' && Gu.lastReward.unlocked,
-    'multiplayer guest: the money and the finished chapter (next one unlocked), but no reputation: that goes to the host\'s ship');
+  check(H.profile.rep === 2 && H.profile.money === 120 + 2 * 16, 'multiplayer host: money and reputation, as solo');
+  check(Gu.profile.rep === 2 && Gu.lastReward.rep === 2 && Gu.profile.money === 120 + 2 * 16 && Gu.profile.done.c1 === 1 && Gu.unlockedMissions(Gu.profile).has('c2') && Gu.lastReward.unlocked,
+    'multiplayer guest: their own money, reputation and finished chapter (next one unlocked), like the host');
 }
 // --- profiles: old and odd saves still load
 {

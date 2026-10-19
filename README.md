@@ -103,8 +103,9 @@ The prompt above you always says what a click (or E) will do.
   specialist (own laser gun, heavy blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
   bigger capacitors, longer shields, reinforced hull, sprinklers, … In multiplayer the
-  crew flies the host's ship: only the host's upgrades count, and only the host earns reputation
-  (everyone gets their pay). Your own ship and reputation wait for when you play solo or host.
+  crew flies the host's ship: only the host's upgrades count, but everyone earns their own pay and
+  reputation. A guest's shipyard just shows the host's loadout and unspent reputation (nothing to buy);
+  your own ship waits for when you play solo or host.
 - Progress is saved in your browser (a cookie), separately for each player.
 - **Skirmish:** the lobby's Skirmish tab builds your own run: how many encounters, which kinds may come, and which
   ship parts may fail (a third to a fifth of the encounters are failing parts). No pay. Its **Practice** tick gives the

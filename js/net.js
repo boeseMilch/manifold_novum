@@ -143,7 +143,7 @@ function netPlaySfx(events) {
 // Server side (runs inside the server's simulation sandbox)
 // ---------------------------------------------------------------------------
 const netServer = {
-  init(missionId, ship, easy = 0, host = null, custom = null) { crew.length = 0; startMission(missionId, { ship, easy, custom }); mission.shipOf = host; },   // (host: { id, name }, whose ship flies and gets the reputation)
+  init(missionId, ship, easy = 0, host = null, custom = null) { crew.length = 0; startMission(missionId, { ship, easy, custom }); mission.shipOf = host; },   // (host: { id, name }: whose ship flies; its upgrades count, everyone earns their own reputation)
   addCrew(id, name, kit) {
     const spots = [[22.2, 4.5], [20.2, 8], [24.2, 8], [18.5, 4], [26, 4], [22.2, 9.5], [16.5, 8.5], [28, 8.5]];
     const [x, y] = spots[crew.length % spots.length];
@@ -195,7 +195,7 @@ function netClientMain() {
   const missionName = (id) => MISSIONS[id]?.name || id;
 
   // profile, mission cards, briefing, locker and shipyard (progress.js)
-  const hello = () => sendWs({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, unlocked: [...unlockedMissions()] });
+  const hello = () => sendWs({ t: 'hello', name: nameBox.value, kit: profileKit(), ship: profile.ship, rep: profile.rep, unlocked: [...unlockedMissions()] });
   const pick = (id) => { if (!solo && !isHost) return; chosen = id; if (!solo) sendWs({ t: 'mission', id }); };
   lobbyUI.init(pick, hello);
   // The skirmish builder's settings: this browser's (localStorage, not the profile); the host's travel to the server
@@ -334,8 +334,8 @@ function netClientMain() {
         return;
       }
       lastLobby = m; isHost = m.host === myId;
-      const h = m.players?.find(p => p.host);                             // the host's ship flies (their upgrades, their reputation)
-      lobbyUI.flight = isHost ? { host: true } : { name: h ? h.name : 'The host', ship: m.hostShip || {} };
+      const h = m.players?.find(p => p.host);                             // the host's ship flies (their upgrades; a guest's shipyard shows it, with their unspent reputation)
+      lobbyUI.flight = isHost ? { host: true } : { name: h ? h.name : 'The host', ship: m.hostShip || {}, rep: m.hostRep };
       if (m.custom) lobbyUI.custom = customConfig(m.custom);
       chosen = m.mission; lobbyUI.union = m.unlocked || null; markChosen();
       easy = m.easy || 0; showEasy();

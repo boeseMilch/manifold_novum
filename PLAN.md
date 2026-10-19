@@ -3250,3 +3250,13 @@ The user: one Skirmish tab with a builder instead of preset skirmishes.
   lobby state, and `netServer.init(..., custom)` → `startMission(id, { custom })`. The sim cleans any config
   (`customConfig`: n 1-30, only known kinds / parts).
 - Tests: tests/progress.js (the config, the failure count and parts, no pay, the server's init).
+
+### Everyone earns reputation; a guest's shipyard only looks (2026-10-19, js/progress.js, js/net.js, server.js)
+The user: instead of the guests' reputation going to the host, each player gets their own; only the host's upgrades
+count, and a guest's shipyard in a LAN game can't buy anything: it shows the host's loadout and unspent reputation.
+- creditMission no longer zeroes a guest's reputation (`guestOf` is gone; the end screen says "+$x · +n reputation"
+  for everyone). The lobby brief and the host's shipyard note say so.
+- `hello` now also sends the player's unspent `rep`; the lobby state carries `hostRep` next to `hostShip`
+  (lobbyUI.flight.rep). In a guest's room the SHIPYARD is titled "‹host›'s ship · ★ n unspent", the host's upgrades
+  show as INSTALLED, the rest locked ("Only ‹host› can upgrade their ship"); the note names the guest's own reputation.
+  From the main menu the shipyard is your own ship as before. No save-format change.

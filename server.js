@@ -127,7 +127,7 @@ const cleanCustom = (c) => (c && typeof c === 'object' ? { n: Math.floor(+c.n) |
 function lobbyState(g) {
   const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
   const host = hostOf(g);
-  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, custom: g.custom || null, unlocked, host: host && host.id, hostShip: (host && host.ship) || {}, max: MAX_PLAYERS,
+  return { t: 'lobby', game: g.id, phase: g.phase, mission: g.missionId, easy: g.easy || 0, custom: g.custom || null, unlocked, host: host && host.id, hostShip: (host && host.ship) || {}, hostRep: host && Number.isFinite(host.rep) ? host.rep : null, max: MAX_PLAYERS,
     players: g.members.map(c => ({ id: c.id, name: c.name, color: colorOf(c), host: c === host, away: !c.alive || undefined })) };
 }
 function gameList() {
@@ -219,6 +219,7 @@ function onMessage(c, m) {
     c.name = String(m.name || 'Crew').slice(0, 20);
     if (m.kit && typeof m.kit === 'object') c.kit = m.kit;                  // the player's gear and profession (from their own saved profile)
     if (m.ship && typeof m.ship === 'object') c.ship = m.ship;              // ship upgrades they bought (only the host's fly)
+    if (Number.isFinite(m.rep)) c.rep = Math.max(0, Math.floor(m.rep));    // unspent reputation (guests see the host's in the shipyard)
     if (Array.isArray(m.unlocked)) c.unlocked = m.unlocked.map(String).slice(0, 50);
     if (g?.run) { const cr = g.run.sim.crew.find(x => x.id === c.id); if (cr) cr.name = c.name; }
     changed(g);
@@ -256,7 +257,7 @@ function startGame(g) {
   const crewNow = live(g);
   const sim = makeSim();
   const sfx = sim.netCaptureSfx();
-  const host = hostOf(g);                               // one ship: the host's (their upgrades; the reputation goes to them)
+  const host = hostOf(g);                               // one ship: the host's (their upgrades; everyone earns their own reputation)
   sim.netServer.init(g.missionId, { ...(host && host.ship || {}) }, g.easy || 0, host && { id: host.id, name: host.name }, g.custom || null);
   for (const c of crewNow) sim.netServer.addCrew(c.id, c.name, c.kit);
   g.phase = 'game';

@@ -449,17 +449,15 @@ function creditMission() {
   if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice' || MISSIONS[mission.id]?.custom) return;   // (a custom skirmish: no pay)
   const mine = o.results.crew.find(c => c.id === me.id);
   const ok = missionSuccess(mission.id, o.results), first = ok && !profile.done[mission.id];
-  // In multiplayer the crew flies the host's ship (mission.shipOf, set by the server): the reputation goes
-  // to the host only (it buys that ship's upgrades); a guest gets the money and the finished chapter.
-  const guestOf = mission.shipOf && mission.shipOf.id !== me.id ? mission.shipOf.name || 'the host' : null;
+  // In multiplayer the crew flies the host's ship (mission.shipOf, set by the server): only its upgrades count, but
+  // every player earns their own pay and reputation (2026-10-19, the user; before, the reputation went to the host).
   const r = computeRewards(mission.id, o.results, !!mine?.survived, first);
-  if (guestOf) r.rep = 0;
   profile.money += r.money; profile.rep += r.rep;
   if (ok) profile.done[mission.id] = (profile.done[mission.id] || 0) + 1;     // done = completed (objective included)
   profile.lastRun = mission.runId;
   saveProfile(profile);
   const next = CAMPAIGN[CAMPAIGN.indexOf(mission.id) + 1], nextName = next && CAMPAIGN.includes(mission.id) ? MISSIONS[next].name : null;
-  lastReward = { ...r, damage: o.results.damage || 0, maxDamage: o.results.maxDamage || MAX_DAMAGE, guestOf: guestOf && ok ? guestOf : null, profession: first && mission.id === 'c1' && !profile.profession, unlocked: first ? nextName : null,
+  lastReward = { ...r, damage: o.results.damage || 0, maxDamage: o.results.maxDamage || MAX_DAMAGE, profession: first && mission.id === 'c1' && !profile.profession, unlocked: first ? nextName : null,
     objFailed: !!o.results.jumped && !ok, locked: !ok && !profile.done[mission.id] && nextName && !unlockedMissions().has(next) ? nextName : null };
 }
 // The rewards block on the end screen.
@@ -467,7 +465,7 @@ function drawRewards(cx, y) {
   if (!lastReward || mission.id === 'practice' || MISSIONS[mission.id]?.custom) return;
   const r = lastReward;
   ctx.textAlign = 'center'; ctx.font = '700 16px system-ui, sans-serif'; ctx.fillStyle = '#ffe08a';
-  ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : r.guestOf ? `+$${r.money}  ·  the reputation goes to ${r.guestOf} (it's their ship)` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
+  ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
   let dy = 26;
   if (r.money) { ctx.fillStyle = '#c8cfdc'; ctx.font = '600 13px system-ui, sans-serif'; ctx.fillText(r.clean ? `incl. $${r.clean} for bringing the ship back in one piece (${r.damage}/${r.maxDamage} damage)` : `no bonus for the ship: ${r.damage}/${r.maxDamage} damage`, cx, y + dy - 4); dy += 18; }
   if (r.profession) { ctx.fillStyle = '#7af0b0'; ctx.font = '800 18px system-ui, sans-serif'; ctx.fillText('Professions are open: pick one in the locker.', cx, y + dy); dy += 24; }
@@ -544,7 +542,7 @@ const lobbyUI = {
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         ${m.custom ? `<p class="obj">${escapeHtml(this.customSummary())}</p>` : ''}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
-        ${this.flight ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades, and the reputation is yours.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: their upgrades count, and the reputation goes to them. You get the pay.`}</p>` : ''}
+        ${this.flight ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades. Everyone earns their own pay and reputation.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: only their upgrades count. You earn your own pay and reputation.`}</p>` : ''}
         ${missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
         ${m.practice || m.custom ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
     }
@@ -617,7 +615,9 @@ const lobbyUI = {
   },
   shop(kind) {
     const p = profile, open = professionOpen(p), box = this.el('shop-body');
-    this.el('shop-title').textContent = kind === 'locker' ? `LOCKER — $${p.money}` : `SHIPYARD — ★ ${p.rep} reputation`;
+    // A guest in a LAN game only looks: the host's ship (it's the one that flies), its upgrades and unspent reputation
+    const F = this.flight, guest = kind === 'shipyard' && F && !F.host;
+    this.el('shop-title').textContent = kind === 'locker' ? `LOCKER — $${p.money}` : guest ? `SHIPYARD — ${F.name || 'the host'}'s ship · ★ ${F.rep ?? '?'} unspent` : `SHIPYARD — ★ ${p.rep} reputation`;
     let html = '';
     if (kind === 'locker') {
       // One profession, for good: once picked the others are closed (Start over in the lobby resets the profile).
@@ -637,11 +637,12 @@ const lobbyUI = {
         if (track.length) html += `<h4>${x.name} track${p.profession === x.id ? '' : ' (only as ' + x.name.toLowerCase() + ')'}</h4>` + gearButtons(track);
       }
     } else {
-      html += '<div class="grid">' + SHIP_UPGRADES.map(u => shopItem(`data-ship="${u.id}"`, u.name, u.desc,
-        { own: p.ship[u.id], price: `★${u.rep}`, why: p.rep < u.rep ? `Need ★${u.rep - p.rep} more reputation (missions)` : '' })).join('') + '</div>';
-      const F = this.flight;   // (in multiplayer the host's ship flies; see lobbyUI.flight)
-      html += `<p class="note">${F && !F.host ? `This is your own ship: its upgrades count when you play solo or host a game. In this game you fly ${escapeHtml(F.name || 'the host')}'s ship.`
-        : F ? 'You are the host: the crew flies your ship, with these upgrades, and the reputation earned is yours.'
+      const ship = guest ? F.ship || {} : p.ship, host = escapeHtml(F?.name || 'the host');
+      html += '<div class="grid">' + SHIP_UPGRADES.map(u => shopItem(guest ? '' : `data-ship="${u.id}"`, u.name, u.desc,
+        guest ? { own: ship[u.id], ownTag: 'INSTALLED', why: ship[u.id] ? '' : `Only ${F.name || 'the host'} can upgrade their ship` }
+          : { own: ship[u.id], price: `★${u.rep}`, why: p.rep < u.rep ? `Need ★${u.rep - p.rep} more reputation (missions)` : '' })).join('') + '</div>';
+      html += `<p class="note">${guest ? `In this game you fly ${host}'s ship: this is its loadout, and only ${host} can buy upgrades for it. Your own ship (★ ${p.rep} reputation) waits for when you play solo or host a game; the reputation you earn here is yours.`
+        : F ? 'You are the host: the crew flies your ship, with these upgrades. Everyone earns their own reputation.'
         : 'This is your own ship: its upgrades count when you play solo or host a game. In someone else\'s game you fly the host\'s ship.'}</p>`;
     }
     box.innerHTML = html;
