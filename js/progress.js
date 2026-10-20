@@ -48,8 +48,8 @@ function missionRequirements(id, ship = null) {
 const GEAR = [
   { id: 'boots', name: 'Gravity boots', cost: 150, desc: 'Walk 15% faster, and keep walking where gravity fails.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, desc: 'Spacewalk 30% faster.' },
-  { id: 'firstAid', name: 'First aid course', cost: 150, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s.' },
-  { id: 'stim', name: 'Stim pack', cost: 250, desc: 'Down? Patch yourself up in 3 s.' },
+  { id: 'firstAid', name: 'First aid course', cost: 150, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s (out cold: 12 s instead of 20 s).' },
+  { id: 'stim', name: 'Stim pack', cost: 250, desc: 'Down? Patch yourself up in 3 s (out cold: 6 s instead of 20 s).' },
   { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, desc: 'Start every mission with your own repair kit (on top of the ship\'s).' },
   { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, desc: 'Repairs go another 25% faster.' },
   { id: 'overcharge', prof: 'engineer', name: 'Reactor overcharge', cost: 300, desc: 'Overcharge the reactor (at the reactor): double speed, 10% fire risk per energy.' },
@@ -90,7 +90,9 @@ Object.assign(MISSIONS, {
     // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players.
     // 2026-10-16: + a failing part solo and for 2 (always; 4 / 5 events), the reactor for 2 back in spec at ×0.4 (was 0.3):
     // ~34% 59% 67% 75% idle for 1-4 players with the expected kit (boots); solo without them 2 of 8 builds wait at the finale
-    crew: {events: [3, 5, 7, 12, 18, 25, 25, 25], cells: [3, 3, 3, 5, 13, 11, 9, 13], reactor: [0.3, 0.3, 0.4, 1, 0.3, 0.5, 1, 0.4]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, the frigate 70 s before the jump, expected kit): 20% 48% 62% 47% 44% 45% 48% 55% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×4 front cannon waits 8 s at 44 s; solo: 3 asked, 4 played (opener, the aliens, the failing part, the frigate finale)
+    crew: {events: [5, 5, 7, 12, 18, 25, 25, 25], cells: [3, 3, 3, 5, 13, 11, 9, 13], reactor: [0.3, 0.3, 0.4, 1, 0.3, 0.5, 1, 0.4]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, the frigate 70 s before the jump, expected kit): 20% 48% 62% 47% 44% 45% 48% 55% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×4 front cannon waits 8 s at 44 s; solo: 3 asked, 4 played (opener, the aliens, the failing part, the frigate finale)
+    // 2026-10-20 (solo playtest: one more encounter): solo 5 asked, 5 played (+ the mine drone; 4 asked would still play the same 4: the frigate
+    // was already added as the finale fight), cells / reactor refitted like --calibrate and unchanged (3, ×0.3: the fewest in spec): ~10% idle solo (was 20%)
     essential: ['intruder'],
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     finaleLead: 70,                           // the frigate finale comes 70 s before the jump (not 22): time for its heavy shots to matter
@@ -110,7 +112,10 @@ Object.assign(MISSIONS, {
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 80, rep: 2 },
     sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
-    crew: {events: [3, 3, 10, 14, 16, 20, 22, 22], cells: [2, 3, 7, 9, 13, 12, 12, 12], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 15% 45% 46% 44% 46% 46% 48% 52% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [5, 5, 10, 14, 16, 20, 22, 22], cells: [2, 3, 7, 9, 13, 12, 12, 12], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 15% 45% 46% 44% 46% 46% 48% 52% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    // 2026-10-20 (solo playtest: one more encounter): solo 5 asked, 5 played (+ the written second mine drone; 3 asked played 4: the swarm was
+    // added as the finale fight, so 4 would change nothing), cells / reactor refitted like --calibrate and unchanged (2, ×1, overcharged): ~9% idle solo (was 15%)
+    // and ×2 to 5 as well (it played 4: a smaller crew mustn't get more than a bigger one), still 3 cells, ~49% idle (model)
     needs: {ship: ['cannons'], overcharge: true},
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     objective: { kind: 'blackbox' }, rules: { breach: true },
@@ -127,7 +132,10 @@ Object.assign(MISSIONS, {
     // (2026-10-17, 7 min instead of 6 by mistake (the 7 min were meant for chapter 5), then 5 min at the user's word: refitted with
     //  --calibrate (expected kit, 3 mines a drone) at 300 s; the same 5 encounters solo / ×2 (the least: the scout, two raiders, the
     //  failing part, the finale), ×3-6 fewer (with the counts kept they sat at 57% idle, 9 points under the aim), ×7-8 the same)
-    crew: {events: [4, 4, 14, 19, 23, 23, 23, 23], cells: [5, 5, 11, 14, 17, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 0% 41% 41% 46% 49% 58% 64% 68% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [4, 4, 14, 19, 23, 23, 23, 23], extra: {maintenance: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [5, 5, 11, 14, 17, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 0% 41% 41% 46% 49% 58% 64% 68% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    // 2026-10-20 (solo playtest: one more encounter, an easy one): solo a second failing part, crew.extra (a repeat on top of the
+    // 4 asked / 5 played; one more asked would have been the mine drone): 6 played; cells refitted like --calibrate and unchanged
+    // (5, overcharged): ~-5% idle solo (was ~0%); the model rates it impossible (~6 problems open at once), the playtest says not
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on)
@@ -163,9 +171,9 @@ Object.assign(MISSIONS, {
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores'],                    // (and the leeches: the opener, never dropped)
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
-    objective: { kind: 'ore', count: 2 }, rules: { breach: true, surge: true, plasma: true },
-    blurb: 'Drill two samples of the living rock in the Mire Nebula before it drifts past.',
-    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs two samples of the living rock they grow on. One will drift right past in front of us, and it won\'t wait: take the mining drill (left airlock room), spacewalk out, drill a sample, bring it inside, and go back for the second before the rock is out of reach. The nebula will notice. Expect spores, barnacles and leeches.',
+    objective: { kind: 'ore', perPlayer: true }, rules: { breach: true, surge: true, plasma: true },   // (a sample per player: oreNeeded; was 2)
+    blurb: 'Drill samples of the living rock in the Mire Nebula, one for each of you, before it drifts past.',
+    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs samples of the living rock they grow on, one for each of us. One will drift right past in front of us, and it won\'t wait: take the mining drill (left airlock room), spacewalk out, drill a sample, bring it inside, and go back for the next before the rock is out of reach. The nebula will notice. Expect spores, barnacles and leeches.',
     // a calm half minute, a leech swarm (the opener: the Mire's own; was an interceptor until 2026-10-16), then the rock
     // drifts in (and past); a part fails on the way (every crew size)
     build: () => [evAt('leeches', 30, { side: randSide(), opener: true }), evAt('rock', 60, { side: randSide() }), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
@@ -174,7 +182,9 @@ Object.assign(MISSIONS, {
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 140, rep: 3 },
     balance: { soloIdle: 0.37, crewIdle: 0.645 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
-    crew: {events: [5, 5, 5, 6, 7, 8, 10, 16], cells: [3, 3, 3, 4, 5, 5, 6, 9], reactor: [0.7, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // 2026-10-17 (the user: "too chill"): one encounter more at every crew size (was 3, 3, 4, 5, 6, 7, 9, 15: solo-3 got 4 with the finale herd), set by hand; cells fitted like --calibrate (expected kit): 41% 63% 74% 72% 65% 64% 62% 58% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 star cannon waits 9 s at 193 s (as before: a herd's two fights on one side). Solo: the opener, the alien, two failing parts, the finale herd
+    crew: {events: [5, 5, 5, 6, 7, 8, 10, 16], extra: {mother: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [3, 3, 3, 4, 5, 5, 6, 9], reactor: [0.5, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // 2026-10-17 (the user: "too chill"): one encounter more at every crew size (was 3, 3, 4, 5, 6, 7, 9, 15: solo-3 got 4 with the finale herd), set by hand; cells fitted like --calibrate (expected kit): 41% 63% 74% 72% 65% 64% 62% 58% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 star cannon waits 9 s at 193 s (as before: a herd's two fights on one side). Solo: the opener, the alien, two failing parts, the finale herd
+    // 2026-10-20 (solo playtest: one more encounter, a spore mother): crew.extra adds a mother solo (5 + 1); the solo reactor
+    // ×0.5 (was 0.7) keeps its energy in spec (the right cannon waited 21 s for the mother; an extra cell didn't help)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     always: ['maintenance', 'intruder'],      // two parts fail at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on); the alien
                                               // boards at every crew size (2026-10-17, "too chill"; written before the first herd, so a small crew's herd stays the finale)
@@ -196,15 +206,17 @@ Object.assign(MISSIONS, {
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
     // (2026-10-16, the infested leviathan's ~4 min fight: ×3 / ×4 need 7 / 9 cells (were 4 / 5) to stay in spec; counts kept.
     //  Model with the boss: 1% 35% 57% 58% idle for 1-4)
-    crew: {events: [6, 6, 6, 7, 9, 9, 11, 16], cells: [4, 4, 7, 9, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
+    crew: {events: [5, 5, 5, 6, 8, 8, 10, 15], cells: [4, 4, 7, 9, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
-    // at every crew size, solo too: the spore clouds, the spore mother, the grappler, two failing parts and the leviathan
+    // at every crew size, solo too: the spore clouds, the spore mother, the grappler, a failing part and the leviathan
+    // (2026-10-20, the user: one encounter less, the fight keeps its ~4 min, the mission shorter by that: every crew size -1,
+    //  the second failing part is `optional` (dropped first); the leviathan at 270 s (was 330), length 560 → 500)
     // (an essential kind); more players get herds and leeches on top (the one tide: the rule, every crew size)
     always: ['spores', 'mother', 'grappler', 'maintenance'],
     // the infested leviathan (js/leviathan.js) is the finale: the other events keep their spread (to 330 s, as with the old
     // leviathan's finaleLead 30); the jump is due LEVB's fight later (length − finaleLead: an estimate, ~4 min) and never comes
     // before the fight is over (it holds the drive, then spools it LEVB_SINK s after it's freed, like the base's ESCAPE_SPOOL)
-    length: 560, finaleLead: 230,
+    length: 500, finaleLead: 230,
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 80 },
     blurb: 'Meet the spore mother, the grappler and the leviathan itself. Find out what drives the swarms mad.',
     briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing that spits spore pods at the hull (shoot its sac when it opens). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. A tide pulls at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have.\n\nGood luck — and bring the cat.',
@@ -215,7 +227,7 @@ Object.assign(MISSIONS, {
     // (the mother on one side, the spores and the grappler on the other: one capacitor can't feed both big fights)
     build: () => { const s = randSide(), o = s === 'port' ? 'star' : 'port'; return [evAt('spores', 30, { side: o, opener: true }), evAt('mother', 60, { side: s }), 
                   evAt('grappler', 100, { side: o }), evAt('maintenance', 120, { radar: false }), evAt('herd', 130, { kinds: ['leeches', 'spores'], side: randSide() }), evAt('tide', 140), evAt('herd', 150, { kinds: ['grappler', 'leeches'], side: randSide() }),
-                  evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false }), evAt('herd', 210, { kinds: ['mother', 'spores'], side: randSide() }),
+                  evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false, optional: true }), evAt('herd', 210, { kinds: ['mother', 'spores'], side: randSide() }),
                   evAt('tide', 225), evAt('herd', 240, { kinds: herdPair(), side: randSide() }), evAt('leviathan_boss', 270, { finale: true })]; },
   },
   practice: {
@@ -538,7 +550,7 @@ const lobbyUI = {
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? ((obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : '';
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? (obj.perPlayer ? 'Drill an ore sample for each crew member and bring them all aboard.' : (obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : '';
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         ${m.custom ? `<p class="obj">${escapeHtml(this.customSummary())}</p>` : ''}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>

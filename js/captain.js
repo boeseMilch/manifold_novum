@@ -11,7 +11,7 @@
 //   PHASE 2 (50-0 %), repeating: BUCKSHOT x2 (faster) → DASH (a glowing line on the floor + a rising jet whine, then he
 //            rockets along it, leaving a burning trail; the extinguisher puts it out). Into a wall or cover: DAZED (shield
 //            down, double damage from any side). In the open: straight into a faster 3-armed SPIN → CATCH BREATH (shorter).
-//            One more pirate through the blast door every CAPT_TRICKLE s (at most 3 of them alive).
+//            One more pirate through the blast door every CAPT_TRICKLE s (at most 3 of them alive; solo 2: captDoorMax).
 //   AT 0:    the generator bursts, he staggers into his escape pod ("THIS ISN'T OVER!"), it launches, and the brig door's
 //            lockdown lifts (no code needed any more; until then the brig keypad refuses every code).
 // He starts when someone walks into his quarters ("Who let you in here?!"); with nobody standing in there he walks back
@@ -40,7 +40,9 @@ const CAPT_MUZZLE = { fwd: 0.95, right: 0.42, z: 1.05 };
 const captEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
 // HP by crew size (the user, 2026-10-17): 18 solo, 24 with two (70 % of the old 36), then +12 a player (near linear), up to 8
 const captMaxHp = (n) => (n <= 1 ? CAPT_HP[0] : CAPT_HP[1] + CAPT_HP_PER * (Math.min(8, n) - 2));
-const captWave = (n) => Math.min(CAPT_DOOR_MAX, Math.max(1, n - captEasy()));
+const captWave = (n) => Math.min(captDoorMax(), Math.max(1, n - captEasy()));
+// At most this many door pirates alive at once: 3, solo 2 (2026-10-20, the user: one less for solo)
+const captDoorMax = () => (crewSize() <= 1 ? CAPT_DOOR_MAX - 1 : CAPT_DOOR_MAX);
 // Spots in the quarters (port coords like baseGeom: x absolute, y relative to the hatch; mirrored for starboard).
 function captSpots(g) {
   const port = dk.dock.side === 'port', pt = (x, dy) => ({ x: port ? x : SHIP_W - x, y: g.y + dy });
@@ -141,7 +143,7 @@ function captEngage(B) {
   if (first && crewSize() >= 2 && B.raidAt == null) B.raidAt = B.clock + CAPT_RAID_DELAY;
   captNext(B);
 }
-// Pirates through the blast door: k of them (at most CAPT_DOOR_MAX of theirs alive at once).
+// Pirates through the blast door: k of them (at most captDoorMax() of theirs alive at once).
 function captDoor(B, k, banner) {
   if (B.door) { B.door.queue += k; return; }
   B.door = { state: 'alarm', t: 0, queue: k };
@@ -157,7 +159,7 @@ function captDoorUpdate(B, dt) {
   else if (D.state === 'open') {
     if ((D.next -= dt) <= 0 && D.queue > 0) {
       D.next = 0.8;
-      if (alive < CAPT_DOOR_MAX) {
+      if (alive < captDoorMax()) {
         const S = captSpots(DG()), post = S.posts[dk.pirates.filter(p => p.door).length % S.posts.length];
         dk.pirates.push({ uid: newUid(), x: S.door.x, y: S.door.y, face: d.side === 'port' ? Math.PI : 0, walk: 0, hp: PIRATE_HP, carry: null, state: 'guard', cd: 1.2, aim: 0, route: [], stuck: 0, stun: 0, flash: 0,
                           post: { x: post.x, y: post.y }, mode: 'guard', room: 5, door: true });
@@ -206,7 +208,7 @@ function updateCaptain(dt) {
     return;
   }
   if (B.phase === 2 && !['transition', 'flee'].includes(B.state)) {   // one more pirate through the door every CAPT_TRICKLE s
-    if ((B.trickle += dt) >= CAPT_TRICKLE) { B.trickle = 0; if (dk.pirates.filter(p => p.door).length < CAPT_DOOR_MAX) captDoor(B, 1, 'Another pirate comes through the captain\'s blast door!'); }
+    if ((B.trickle += dt) >= CAPT_TRICKLE) { B.trickle = 0; if (dk.pirates.filter(p => p.door).length < captDoorMax()) captDoor(B, 1, 'Another pirate comes through the captain\'s blast door!'); }
   }
   const tel = (s) => s * CAPT_EASY_K[easy];
   if (B.state === 'buckshot') {

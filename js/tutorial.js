@@ -220,7 +220,7 @@ const TUT_STEPS = {
       combatSpawn('interceptor', 'port', true);
       const e = tutFoe(); e.ampMul = e.ampGoal = 0.7;            // (a bit calmer than usual: it's training)
       tutSay([
-        `You're in the left cannon. Welcome to the pointy end. Aim by ${tutC('moving the mouse', 'holding *A* / *D* (or the arrow keys)')}. Bottom right: your *shots*, and the energy in the capacitor that feeds this cannon.`,
+        `You're in the left cannon. Welcome to the pointy end. Aim by ${tutC('moving the mouse', 'holding the *arrow keys* (or *W A S D*): the barrel turns the way you press, and a thin red *laser sight* shows where it points')}. Bottom right: your *shots*, and the energy in the capacitor that feeds this cannon.`,
         { text: 'And there\'s our interceptor. See the *glowing blue bits*? Those are its *weak spots*. Hitting the hull mostly scratches the paint; hitting a weak spot breaks something that matters.', mark: () => tutFoe() || [] },
         { text: `Shoot its *windshield*: the blue crack at the front of the cockpit (marked). Fire with ${tutC('a *left click*', '*Space*')}. You have exactly *one shot*, so take your time. It isn't shooting back. Yet.`,
           mark: () => { const e = tutFoe(); return e ? tutPoiAt(e, tutPoi(e, 'crack')) : []; } },
@@ -228,7 +228,7 @@ const TUT_STEPS = {
     },
   },
   shoot1: {
-    objective: () => `Shoot the windshield crack (${tutC('left click', 'Space')}) · aim: ${tutC('mouse', 'A / D or arrows')}`,
+    objective: () => `Shoot the windshield crack (${tutC('left click', 'Space')}) · aim: ${tutC('mouse', 'arrows or WASD')}`,
     marker: () => { const e = tutFoe(); return e && tutPoiAt(e, tutPoi(e, 'crack')); },
     allow: allowGun('fire'),
     tick() {
@@ -674,7 +674,7 @@ function tutAskControls() {
     d.innerHTML = `<div class="tut-card"><div class="tut-head"><span>RAIDER ONBOARDING</span></div>
       <p>Before we start: how do you like to play?</p>
       <div class="tut-pick"><button data-c="mouse"><b>MOUSE</b><small>aim with the mouse · click to fire · hold right-click for cover</small></button>
-      <button data-c="keyboard"><b>KEYBOARD</b><small>aim with A / D or the arrows · Space to fire · hold Shift for cover</small></button></div>
+      <button data-c="keyboard"><b>KEYBOARD</b><small>aim with the arrows or WASD · Space to fire · hold Shift for cover</small></button></div>
       <p class="tut-small">Walking is W A S D and E uses things, either way. Both work all the time; this only picks what we tell you.</p>
       <button class="tut-cancel">‹ back</button></div>`;
     document.body.appendChild(d);

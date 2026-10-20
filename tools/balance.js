@@ -518,7 +518,7 @@ function jobsFor(ev, ctx) {
     // per sample (the objective's count): out the hatch nearer the rock where it is then, drill, grab, back in (stowed).
     // The first fetches the drill from the left airlock room; each next one is released when the last one is done.
     const dir = ev.side === 'star' ? -1 : 1, v = g.ROCK_SPEED, x0 = dir > 0 ? g.ROCK_REACH[0] - g.ROCK_FROM : g.ROCK_REACH[1] + g.ROCK_FROM;
-    const from = g.ROCK_FROM / v, until = (g.ROCK_FROM + g.ROCK_REACH[1] - g.ROCK_REACH[0]) / v, need = ctx.objective?.kind === 'ore' ? ctx.objective.count || 1 : 1;
+    const from = g.ROCK_FROM / v, until = (g.ROCK_FROM + g.ROCK_REACH[1] - g.ROCK_REACH[0]) / v, need = ctx.objective?.kind === 'ore' ? (ctx.objective.perPlayer ? ctx.n || 1 : ctx.objective.count || 1) : 1;
     const xAt = (rel) => clamp(x0 + dir * v * rel, g.ROCK_REACH[0], g.ROCK_REACH[1]);
     const trip = (i, rel, first) => {                  // rel: s after the event the trip starts (estimated: the rock's x then, + ~15 s out)
       const x = xAt(rel + 15), hs = x < 22.2 ? 'port' : 'star', e = evaTrip(hs, [[x, g.ROCK_Y + g.ROCK_R]]);
@@ -885,12 +885,12 @@ function finish(build, s, real, bestOf) {
   const crewHave = n * end;
   return { id: build.id, n, end, events: build.events.length, crewNeed, crewHave, load: crewNeed / crewHave, idle: 1 - crewNeed / crewHave,
            radarShare: s.radarBusy / crewHave, leverShare: leverTime / crewHave, fuelShare: fuelTime / crewHave,
-           peak, late: s.lateList.length, lateList: s.lateList, crewHits, energy: real, get best() { return bestOf(); }, objOk: objectiveMet(objective, s.got),
+           peak, late: s.lateList.length, lateList: s.lateList, crewHits, energy: real, get best() { return bestOf(); }, objOk: objectiveMet(objective, s.got, n),
            got: s.got, jumpDelay: s.jumpDelay, done: s.done, factor: build.factor };
 }
-function objectiveMet(o, got) {
+function objectiveMet(o, got, n = 1) {
   if (!o) return true;
-  if (o.kind === 'ore') return (got.ore || 0) >= (o.count || 1);
+  if (o.kind === 'ore') return (got.ore || 0) >= (o.perPlayer ? n : o.count || 1);
   if (o.kind === 'pirates' || o.kind === 'intruder') return (got[o.kind] || 0) >= o.count;
   if (o.kind === 'raiders') return (got.pirates || 0) >= o.count;   // (a raider per pirates event)
   return (got[o.kind] || 0) >= 1;

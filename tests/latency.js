@@ -117,5 +117,25 @@ const atLever = (S, g) => { g.x = S.LEVER.x + 0.9; g.y = S.LEVER.y - 0.3; g.mode
   check(back === 0 && flat === 0, `the sim clock runs every frame and never backwards (${back} back, ${flat} stood still)`);
 }
 
+// 6. a cannon aimed with the keys over the tunnel: your browser turns it at once (netPredict, the same rule as the
+// server: js/game.js gunKeyTurn), the resting mouse doesn't pull it back on either side, and both end up agreeing
+{
+  const W = session(60, 30, (S, g) => { g.mode = 'gun'; g.gun = S.GUNS.find(x => x.id === 'port'); g.x = g.gun.x + 0.75; g.y = g.gun.y; });
+  const G = () => W.S.GUNS.find(x => x.id === 'port');
+  let firstTurn = null, mouseAt = null, a0 = null;
+  W.run(3000, (t, L, mouse) => {
+    const g = W.C.me.gun; if (!g) return;
+    mouseAt ??= [g.x - 10, g.y + 3];                       // the mouse: moved once to the lower left, then resting
+    Object.assign(mouse, { wx: mouseAt[0], wy: mouseAt[1] }); Object.assign(L.mouse, { wx: mouseAt[0], wy: mouseAt[1], moved: 0, look: 0 });
+    if (t < 400) { mouse.moved = mouse.look = L.mouse.moved = L.mouse.look = 1; }
+    L.keys.clear(); if (t > 1000 && t < 1500) L.keys.add('ArrowUp');
+    if (t <= 1000) a0 = g.aim; else if (firstTurn === null && Math.abs(g.aim - a0) > 0.005) firstTurn = t - 1000;
+  });
+  const c = W.C.me.gun.aim, s = G().aim;
+  check(firstTurn !== null && firstTurn < 40, `up turns your cannon on your screen right away (${firstTurn?.toFixed(0)} ms), not a round trip later`);
+  check(Math.sin(c) < -0.3 && W.C.me.gunKeys, `after letting go, the resting mouse doesn't pull it back (${(c * 180 / Math.PI).toFixed(1)}°, laser sight on)`);
+  check(Math.abs(c - s) < 0.03, `your browser and the server agree on the aim (${(c * 180 / Math.PI).toFixed(1)}° / ${(s * 180 / Math.PI).toFixed(1)}°)`);
+}
+
 console.log(failed ? `\n${failed} failed` : '\nall latency tests passed');
 process.exitCode = failed ? 1 : 0;

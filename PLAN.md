@@ -3298,3 +3298,97 @@ The user: a hull breach as one of the random ship failures, and the outside shie
   times a failing part as a walk to an inside part, and chapters 1, 2 and 5 are approved): their draws are unchanged.
 - Tests: tests/mission.js (seam → breach unless serviced, emitter serviced only on a spacewalk, multiplayer index, the
   other missions untouched).
+
+### The Empty Lab: a dead heart stays dead; cast off once the box is aboard (2026-10-20, js/culture.js, js/dock.js)
+The user's playtest of chapter 3: once the heart is frozen it should stay frozen, and with the black box in hand we
+should be allowed to detach.
+- **S-7 dies with its heart** (`s.dead`, plain synced data): the first time the core freezes, the heart opens for good
+  and the whole growth turns to husks (`s.frozen` stays true in every room). Freezer off / out of energy / wrapped /
+  broken: only the frost (`s.cold`) fades; no "stirs again", the heart never closes, the creep never regrows, the
+  tendrils never grab again. The freezer says it isn't needed any more; the sidebar reads S-7: DEAD. A living culture
+  (core never frozen) still thaws and stirs as before.
+- **Casting off the derelict** (`derelictAct` / `derelictCastOff`): once the black box is aboard our ship
+  (`objectiveAboard('blackbox')`, i.e. the objective is met: on our floor or carried by someone standing in our ship),
+  our airlock offers "Click: cast off the derelict", warning "— X is still over there!". It starts the jump's tether
+  countdown (RELEASE_TIME s, the same `detachT` / `undock()`): whoever is still over there is cast adrift and spacewalks
+  back, as at the jump. A derelict without a black box (the engineer rescue) is unchanged. `undock()` no longer loses
+  items lying on our side of the tube's overlap (in one of our rooms).
+- Tests: tests/dock.js (dead heart after the thaw, a living culture still stirs, the cast-off prompt only once the box
+  is aboard, the countdown, B cast adrift, the rescue derelict).
+
+### Solo: one more encounter in chapters 2, 3 and 4 (2026-10-20, js/progress.js, js/mission.js)
+The user's solo playtest: "mission 2 needs one more encounter. Mission 3 as well", and chapter 4 one more easy one,
+ideally a failing part. Solo column only; the 2-8 player tables are unchanged.
+- **c2 / c3**: `crew.events[0]` 3 → 5. (3 asked already played 4: selectEvents adds an optional fight as the finale when
+  the kept fights are all the objective's or the opener; 4 asked would have played the same 4.) Solo now plays
+  c2: swarm (opener), the two aliens, **the mine drone**, the failing part, the frigate; c3: mine drone (opener), the lab,
+  **the second written mine drone**, the failing part, the asteroid swarm.
+- **c4**: a new per-crew-size table `crew.extra` ({ kind: count per crew size }, js/mission.js selectEvents): repeats of
+  that kind on top of `crew.events`, the first thing easy / very easy take out. c4 `extra: {maintenance: [1, 0, …]}`:
+  solo plays the scout, a raider, a failing part, a raider, **a second failing part**, the swarm (raising the count
+  instead would have added the mine drone, next in DROP_ORDER).
+- Energy (tools/balance.js, refitted like --calibrate for the solo column only, expected kit): the fewest cells / mildest
+  reactor in spec are unchanged (c2 3 cells ×0.3, c3 2 overcharged, c4 5 overcharged). Model idle solo: c2 20% → ~10%,
+  c3 15% → ~9%, c4 ~0% → ~-5% (rated impossible by the model: ~6 problems open at once; the playtest says otherwise).
+- Open: c3 ×2 (3 asked, 4 played) now has fewer encounters than solo, so tests/scaling.js's "a smaller crew's events
+  a subset of a bigger one's" fails for c3; at 5 asked ×2 would be in spec with its 3 cells at ~49% idle.
+- Tests (tests/scaling.js): the c2 solo order (+ mines) and its easy / very easy cases (easy drops the mine drone,
+  very easy then half a cat of luck), the per-crew count check counts crew.extra, a new c4 solo / easy / ×2 check.
+
+### Captain Red Comet: one door pirate less solo (2026-10-20, js/captain.js)
+The user: the pirates bursting out of the blast door during the boss fight could be one less solo. The waves were already
+1 solo (whistle at 75 %, the wave at 50 %); what changes is the cap: solo at most 2 door pirates alive at once (was 3), so
+phase 2's trickle (one every 30 s) stops at 2 (`captDoorMax`). 2+ players unchanged (waves 2 / 3, at most 3 alive).
+
+### Ore samples: one per player; drops on a spacewalk float (2026-10-20, js/dock.js, js/systems.js)
+The user: the number of ore samples should scale with the players (1 solo, 2 for two, …), and they mustn't stack: grabbing
+a second sample with one in hand counted the first as aboard. Ore run and chapter 6 now have `objective: { kind: 'ore',
+perPlayer: true }` (was count 2 at every crew size): `oreNeeded()` = the crew size (texts / briefing say "one for each of
+you"). The drop bug: `grab()` drops what you hold onto the nearest ship floor (dropSpot), so on a spacewalk the first
+sample landed inside a room and was stowed; on a spacewalk the dropped item now floats where you are (hz.floating), for
+every item. tools/balance.js counts the samples per player too. Tests: tests/dock.js.
+
+### Out cold: the stim pack and first aid count too (2026-10-20, js/systems.js)
+The user had a stim pack and still waited 20 s to patch up: that was out cold (hit again while down), whose solo crawl was
+a flat SOLO_TREAT 20 s whatever the gear. Now 6 s with a stim pack, 12 s with the first aid course, 20 s without (the
+Locker texts say so). Tests: tests/progress.js.
+
+### S-7's creep: one continuous tentacle (2026-10-20, js/culture.js, drawing only)
+The user's chapter 3 playtest: "the tentacle growth looks weird." In our airlock room the creep fell apart into separate
+little arched worm pieces with gaps and a stepped course: it chained `dock/s7_creep_seg` every 1.0 along a slanted path
+using the 8 baked directions, so every tile's angle snapped to 45° (and the diagonal views don't tile), and the tip
+(centred on the growth point, another layer) floated up to 0.4 units off the last segment. The lab's floor vines
+(S7_VINES, the same tiles at 0.8 spacing) had the same kinks. Now `s7Chain()` draws both: only the seamless east-facing
+tile (flipped when heading left), turned on screen (`rot`) to each 1-unit chord's on-screen direction and stretched
+(`sx`) to its foreshortened length, along a Catmull-Rom smoothing of the path (`s7Smooth()`); tiles stay fixed while it
+grows, a neck tile closes the gap to the tip, which sits on the last unit. The creep starts at the end of the airlock's
+floor vine (so it grows out of the growth instead of an open stump) and is drawn in the 'wall' layer throughout.
+On starboard its path ran straight through the gym's treadmill: the waypoint between our hatch and the capacitor now
+goes round below it (`s7Geom`, starboard only; the in-room path is ~0.4 longer).
+
+### Cannons aimed with the keys, with a laser sight (2026-10-20, js/game.js, js/net.js, js/combat.js)
+The user's playtest: "the key-only control of the cannons is not working." Keys only added A/D / left/right turn speed on
+top of the mouse aim, and `mouse.moved` (set by every mousemove, never cleared in solo, sticky on the server) re-aimed the
+barrel at the resting mouse every tick, so the keys lost; up/down did nothing. Now WASD / the arrows steer the barrel
+towards the screen direction you press (`gunKeyTurn()`: at GUN_TURN, the short way inside the arc, stopping at the
+arc's edge; straight behind, e.g. down on the front cannon, does nothing) and put the cannon in key mode
+(`player.gunKeys`): the mouse is ignored until it really moves again (`mouse.look`, only set by a mousemove event and
+cleared each tick; the camera sliding the world point under a resting mouse doesn't count). The gunner's browser runs
+the same rule in `netPredict` from its own keys / mousemoves. In key mode the gunner (own view only; not in snapshots)
+sees a thin, fading red laser sight from the muzzle along the shell's path (`drawLaserSight()` in drawCombatFront,
+hidden while the cover is up). Tutorial / README texts say "arrows or WASD". Tests: tests/gunner.js (solo and server:
+all three cannons, no snap back, mouse takes over, arc clamp, Space / R / Shift / E), tests/latency.js (prediction
+over a laggy link agrees with the server).
+
+### The Deep: a spore mother more solo (2026-10-20, js/progress.js)
+The user: The Deep could use one more encounter (a spore mother). Solo gets `crew.extra: { mother: 1 }` on top of its 5
+(spores, the alien, two failing parts, a herd): the mother comes last (the finale fight), the herd moves to ~155 s. The
+model still rates c7 solo 'impossible' (~25 problems open at once; it already did, ~21, and the playtest says otherwise);
+the solo reactor goes ×0.7 → ×0.5 so the right cannon doesn't wait for energy (cells unchanged). 2+ players unchanged.
+
+### The Mother of All: one encounter less, the mission a minute shorter (2026-10-20, js/progress.js, js/mission.js)
+The user: c8 can lose one encounter; the leviathan's fight keeps its ~4 min, so the whole mission gets shorter by that.
+Every crew size gets one event less (5 solo / ×2, was 6): the second failing part is written `optional: true` (a new flag:
+an event of an `always` kind that may still be dropped, selectEvents), so solo keeps one breakdown (the user's solo
+minimum: spores, the mother, the grappler, a breakdown, the leviathan). The leviathan comes at 270 s (was 330), finaleLead
+stays 230, length 560 → 500. tests/scaling.js: c8 solo marked PLAYTESTED (the model reads it busier than it likes).

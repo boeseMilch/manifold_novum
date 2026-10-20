@@ -68,7 +68,7 @@ const doorPirates = (G) => G.dk.pirates.filter(p => p.door).length;
   check(B(G).hp === hp - 1, `a shot from behind into the generator hurts (${hp} → ${B(G).hp} of ${B(G).max})`);
   check(G.captMaxHp(1) === 18 && G.captMaxHp(2) === 24 && G.captMaxHp(3) === 36 && G.captMaxHp(4) === 48 && G.captMaxHp(8) === 96 && G.captMaxHp(9) === 96, 'HP scales with the crew (18 solo, 24 with two, then +12 each, up to 8)');
 }
-// --- 75 %: ALL HANDS through the blast door (1 solo, 2 for two, 3 for more; at most 3 alive)
+// --- 75 %: ALL HANDS through the blast door (1 solo, 2 for two, 3 for more; at most 3 alive, solo 2)
 for (const [n, want] of [[1, 1], [2, 2], [4, 3]]) {
   const G = fresh(n); tick(G, 0.1);
   const b = B(G); b.hp = b.max * 0.75 + 0.5; b.state = 'breath'; b.sub = 'pant'; b.t = 0;
@@ -83,6 +83,11 @@ for (const [n, want] of [[1, 1], [2, 2], [4, 3]]) {
     // three already alive: the phase-2 trickle adds none
     b.phase = 2; b.trickle = 29.9; tick(G, 4);
     check(doorPirates(G) === 3, 'never more than 3 of his door pirates alive');
+  }
+  if (n === 1) {                                       // solo: at most 2 alive (2026-10-20, the user: one less for solo)
+    b.door = null; G.dk.dock.blast = 'closed'; b.phase = 2;
+    for (let i = 0; i < 4; i++) { b.trickle = 29.9; tick(G, 4); }
+    check(doorPirates(G) === 2, `solo: the phase-2 trickle stops at 2 door pirates alive (${doorPirates(G)})`);
   }
 }
 // --- 50 %: the bubble (invulnerable), coat off, red lights, a pirate wave; then comet mode

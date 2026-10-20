@@ -360,7 +360,8 @@ function animateLever(dt) {
 // ---------------------------------------------------------------------------
 function grab(kind) {
   const slot = slotOf(kind);
-  if (inv[slot]) ITEMS.push({ kind: inv[slot], ...dropSpot(player.x + (Math.random() - 0.5) * 0.4, player.y + 0.35) });   // drop what you had
+  if (inv[slot] && player.mode === 'eva') hz.floating.push({ uid: newUid(), kind: inv[slot], x: player.x + (Math.random() - 0.5) * 0.4, y: player.y + 0.35, t: 0 });   // on a spacewalk it floats where you are (not onto a floor inside: that stowed a second ore sample, 2026-10-20)
+  else if (inv[slot]) ITEMS.push({ kind: inv[slot], ...dropSpot(player.x + (Math.random() - 0.5) * 0.4, player.y + 0.35) });   // drop what you had
   inv[slot] = kind; sfx.clank();
 }
 // Somewhere on a fixed floor (a room or an airlock chamber), so a dropped item never ends
@@ -507,7 +508,7 @@ function treatInfo(who) {
     if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 6 : SELF_TREAT, label: 'get up' };
     // out: only while nobody else is standing (someone has to treat you) — or to keep up a crawl, or join a
     // treatment, that's already going (who.heal): it adds up with a crewmate's and isn't lost when they get up
-    if (who.health === 'out' && (who.heal != null || crew.every(c => c === who || !standing(c)))) return { time: SOLO_TREAT, label: 'crawl back up' };
+    if (who.health === 'out' && (who.heal != null || crew.every(c => c === who || !standing(c)))) return { time: perk(who, 'stim') ? 6 : perk(who, 'firstAid') ? 12 : SOLO_TREAT, label: 'crawl back up' };   // (the gear counts out cold too: 2026-10-20, the user had a stim pack and still waited 20 s)
     return null;
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
@@ -1092,7 +1093,7 @@ function boltGlyph(x, y, s, col) {
 // Screen space: the inventory (bottom centre) and the power panel (bottom left).
 function drawSystemsHUD(top) {
   const hoverSlot = me.mode === 'inside' && standing(me) && !me.ui.panel ? invSlotAt(mouse.x, mouse.y) : null;
-  for (const b of invSlots()) {
+  for (const b of me.mode === 'gun' ? [] : invSlots()) {   // (in a cannon the hands are busy: no slots over the cannon's prompt and reload panel)
     const { slot, x, y, w, h } = b, kind = inv[slot], hov = hoverSlot === b && kind;
     rr(x, y, w, h, 10); ctx.fillStyle = hov ? 'rgba(40,44,54,0.92)' : 'rgba(10,12,18,0.85)'; ctx.fill(); stroke(hov ? 2.5 : 1.5, hov ? USE_COL : '#5a6272');
     ctx.fillStyle = '#9aa3b5'; ctx.font = '700 14px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';

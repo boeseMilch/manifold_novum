@@ -15,6 +15,9 @@
 //              broken): it stops. The cold spreads room by room (S7_FREEZE s each: lab, then airlock, then core);
 //              in a frozen room the growth turns to grey husks (no grabbing). The heart in the core lets go of the
 //              black box only when the core is frozen. Freezer off: the rooms thaw (S7_THAW s), the growth stirs.
+//   Death      the core freezing kills the heart (s.dead), and S-7 dies with it: for the rest of the mission the heart
+//              stays an open husk, every room's growth stays grey husks (s.frozen stays true; only the frost, s.cold,
+//              fades), the creep never regrows, the black box stays free. Nothing "stirs again" after that.
 //   Creep      from docking, a tendril grows along the tube toward our warm ship (S7_CREEP_TIME s to our airlock
 //              room, twice as fast inside it), then wraps our capacitor on that side: no charging, no using it, no
 //              freezer. Spraying pushes it back a good chunk, a shot a bit; clearing the wrap takes S7_WRAP_SPRAY s of
@@ -46,7 +49,8 @@ const s7Side = (side) => (side === 'port' ? 'left' : 'right');
 function s7Geom(side) {
   const g = dockGeom(side), mx = (x) => (side === 'port' ? x : SHIP_W - x), P = (x, dy) => ({ x: mx(x), y: g.y + dy });
   const h = g.hatch, ci = SIDE_CAP[side], cap = CAPACITORS[ci], hin = { x: h.inside[0], y: h.inside[1] + 0.3 };
-  const capAt = { x: cap.x, y: cap.y - 0.15 }, mid = { x: (hin.x + capAt.x) / 2, y: (hin.y + capAt.y) / 2 - 0.4 };
+  const capAt = { x: cap.x, y: cap.y - 0.15 }, mid = side === 'port' ? { x: (hin.x + capAt.x) / 2, y: (hin.y + capAt.y) / 2 - 0.4 }
+    : { x: hin.x - 2.3, y: capAt.y - 0.55 };          // (starboard: the gym's treadmill stands on the straight line: round below it)
   return {
     g, capIdx: ci, cap,
     tendrils: [
@@ -81,7 +85,7 @@ function s7Make(side) {
   const G = s7Geom(side);
   return {
     tendrils: G.tendrils.map((T0, i) => ({ id: i, room: T0.room, state: 'idle', t: 0, target: null, hold: null, sq: 0, spray: 0, struggle: 0, flash: 0 })),
-    cold: [0, 0, 0], frozen: [false, false, false], heartOpen: false,
+    cold: [0, 0, 0], frozen: [false, false, false], heartOpen: false, dead: false,   // dead: the heart froze (for good)
     j1: false, freezer: false, drawT: 0,
     creep: { d: 0, inRoom: false, wrapped: false, wrapHp: 1, dead: false, flash: 0 },
     said: {},
@@ -138,16 +142,16 @@ function updateS7(dt) {
     if (!s.frozen[i] && s.cold[i] >= 1) {
       s.frozen[i] = true; sfx.crack();
       combatBanner(`${['The lab\'s airlock', 'The lab', 'The core'][i]} is frozen — S-7 shrivels to grey husks there.`);
-    } else if (s.frozen[i] && s.cold[i] < S7_ALIVE_BELOW) {
+    } else if (s.frozen[i] && !s.dead && s.cold[i] < S7_ALIVE_BELOW) {   // (a dead culture stays husks: only its frost fades)
       s.frozen[i] = false; combatBanner(`${['The lab\'s airlock', 'The lab', 'The core'][i]} is thawing — S-7 stirs again!`); sfx.alienHurt();
     }
   }
-  // the heart lets go of the black box when the core is frozen
-  if (s.frozen[2] !== s.heartOpen) {
-    s.heartOpen = s.frozen[2];
-    if (s.heartOpen) { combatBanner(ITEMS.some(it => it.kind === 'blackbox') ? 'The heart let go of the black box — grab it!' : 'S-7\'s heart froze solid.'); sfx.win(); }
-    else combatBanner('S-7\'s heart is warming up — it closes round the core again!');
+  // the heart lets go of the black box when the core is frozen — and dies: S-7 dies with it, for good (s.dead)
+  if (s.frozen[2] && !s.dead) {
+    s.dead = true; s.heartOpen = true; s.frozen = [true, true, true];   // (the whole growth: grey husks from now on)
+    combatBanner(ITEMS.some(it => it.kind === 'blackbox') ? 'The heart froze to death — it let go of the black box. Grab it!' : 'S-7\'s heart froze to death — the growth dies with it.'); sfx.win();
   }
+  if (s.dead) s.heartOpen = true;
   // tendrils
   const fires = (d.fires || []).filter(f => f.hp > 0);
   s.tendrils.forEach((T0, i) => {
@@ -188,7 +192,7 @@ function updateS7(dt) {
   if (s.frozen[2] && !C.dead) {
     C.dead = true; C.wrapped = false;
     if (C.d > 0.5) { combatBanner('The heart froze — S-7\'s creep in the tube withers!'); sfx.crack(); }
-  } else if (!s.frozen[2] && C.dead) { C.dead = false; C.d = 0; C.inRoom = false; C.wrapped = false; }   // (the heart thawed: it grows again)
+  }   // (dead with the heart: it never grows again)
   if (!C.dead && !C.wrapped) {
     const speed = tubeLen / s7CreepTime();
     C.d = Math.min(len, C.d + speed * (C.d >= tubeLen ? 2 : 1) * dt);   // (inside our warm ship: twice as fast)
@@ -283,7 +287,7 @@ function s7ClickTarget(mx, my) {
   if (box && !s.heartOpen && Math.hypot(box.x - G.heart.x, box.y - G.heart.y) < 1.5)
     return { text: 'Black box — S-7\'s heart is wrapped round it, warm. It lets go once the core is frozen (Varga\'s freezer)', ok: false, x: box.x, y: box.y, r: 0.45 };
   if (box) return null;                               // (let go: the item's own click takes it)
-  if (at(G.heart, 0.7)) return { text: s.heartOpen ? 'S-7\'s heart — frozen solid' : `S-7's heart — it lets go when the core is frozen (core cold ${Math.round(s.cold[2] * 100)}%)`, ok: false, x: G.heart.x, y: G.heart.y, r: 0.7 };
+  if (at(G.heart, 0.7)) return { text: s.dead ? 'S-7\'s heart — frozen to death, a grey husk (the growth died with it)' : `S-7's heart — it lets go when the core is frozen (core cold ${Math.round(s.cold[2] * 100)}%)`, ok: false, x: G.heart.x, y: G.heart.y, r: 0.7 };
   if (at(G.j1, 0.55)) {
     const t = { x: G.j1.x, y: G.j1.y, r: 0.55 };
     if (s.j1) return { ...t, text: 'Junction J1 — patched: our tether line feeds Varga\'s freezer', ok: false };
@@ -294,6 +298,7 @@ function s7ClickTarget(mx, my) {
     const t = { x: G.freezer.x, y: G.freezer.y, r: 0.75 };
     if (!s.j1) return { ...t, text: 'Varga\'s freezer "S-7 · KEEP FROZEN" — dead, no power. Patch junction J1 (lab airlock) first', ok: false };
     if (s.freezer) return { ...t, ok: true, text: `Click: switch the freezer off (it draws from our ${side} capacitor)`, run: () => { s.freezer = false; sfx.clank(); combatBanner('Freezer off — the cold will slowly retreat.'); } };
+    if (s.dead) return { ...t, text: 'Varga\'s freezer — S-7 is dead, no need to freeze it any more', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Varga\'s freezer — get closer', ok: false };
     if (s7Wrapped(G.capIdx)) return { ...t, text: `Freezer — S-7 is wrapped round our ${side} capacitor: clear it first`, ok: false };
     if (capBroken(G.capIdx)) return { ...t, text: `Freezer — our ${side} capacitor is broken: repair it first`, ok: false };
@@ -309,7 +314,7 @@ function s7Spots() {
   if (!s) return [];
   const G = s7Geom(dk.dock.side), out = [];
   if (!s.j1) out.push({ x: G.j1.x, y: G.j1.y, r: 0.45 });
-  if (s.j1 && !s.freezer) out.push({ x: G.freezer.x, y: G.freezer.y, r: 0.6 });
+  if (s.j1 && !s.freezer && !s.dead) out.push({ x: G.freezer.x, y: G.freezer.y, r: 0.6 });
   return out;
 }
 // Docking: the state, Varga's own extinguisher on the airlock wall (no need to strip ours).
@@ -404,27 +409,59 @@ const S7_VINES = [
   [[-6.3, -1.9], [-7.6, -1.35], [-9.8, -1.15], [-10.4, -0.5]],                                    // the airlock: from J1's corner to the lab door
 ];
 function s7VinesDraw(d, g, s, G, t, band) {
-  const SEG = 'dock/s7_creep_seg', TIP = 'dock/s7_creep_tip';
-  if (!GFX.on || !GFX.info(SEG) || !GFX.info(TIP)) return;
   const mx = (x) => d.side === 'port' ? x : SHIP_W - x;
   const roomOf = (x, y) => { let best = 0, bd = Infinity; g.rooms.forEach((q, i) => { const dd = Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h)); if (dd < bd) { bd = dd; best = i; } }); return best; };
   S7_VINES.forEach((path, v) => {
-    const P = path.map(([x, y]) => ({ x: mx(x), y: g.y + y })), pts = [];
-    for (let i = 0; i < P.length - 1; i++) {                      // Catmull-Rom through the points
-      const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
-      for (let k = 0; k < 8; k++) { const u = k / 8, u2 = u * u, u3 = u2 * u;
-        const f = (a, b, c, e) => 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - e) * u2 + (-a + 3 * b - 3 * c + e) * u3);
-        pts.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) }); }
-    }
-    pts.push(P[P.length - 1]);
-    const at = s7PointAt.bind(null, pts), len = s7Len(pts);
-    for (let k = 0.45; k < len - 0.5; k += 0.8) {
-      const p = at(k), husk = s.frozen[roomOf(p.x, p.y)];
-      s7Spr(SEG, s7Frame(SEG, p.a), p.x, p.y, 0, { ...band, flip: false, scale: 1.25, desat: husk ? 1 : 0, alpha: husk ? 0.75 : 1, emissive: husk ? 0 : 0.4 });
-    }
-    const e = at(len - 0.3), husk = s.frozen[roomOf(e.x, e.y)];
-    s7Spr(TIP, s7Frame(TIP, e.a, husk ? 0 : Math.floor(t * 6 + v * 2)), e.x, e.y, 0, { ...band, flip: false, scale: 1.25, desat: husk ? 1 : 0, alpha: husk ? 0.75 : 1, emissive: husk ? 0 : 0.45 });
+    const pts = s7Smooth(path.map(([x, y]) => ({ x: mx(x), y: g.y + y })));
+    s7Chain(pts, s7Len(pts), 1.25, (p, tip) => { const husk = s.frozen[roomOf(p.x, p.y)];
+      return { ...band, frame: tip && !husk ? Math.floor(t * 6 + v * 2) : 0, desat: husk ? 1 : 0, alpha: husk ? 0.75 : 1, emissive: husk ? 0 : tip ? 0.45 : 0.4 }; });
   });
+}
+// Catmull-Rom through the points (8 steps per span).
+function s7Smooth(P) {
+  const pts = [];
+  for (let i = 0; i < P.length - 1; i++) {
+    const p0 = P[Math.max(0, i - 1)], p1 = P[i], p2 = P[i + 1], p3 = P[Math.min(P.length - 1, i + 2)];
+    for (let k = 0; k < 8; k++) { const u = k / 8, u2 = u * u, u3 = u2 * u;
+      const f = (a, b, c, e) => 0.5 * (2 * b + (-a + c) * u + (2 * a - 5 * b + 4 * c - e) * u2 + (-a + 3 * b - 3 * c + e) * u3);
+      pts.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) }); }
+  }
+  pts.push(P[P.length - 1]);
+  return pts;
+}
+// A tendril lying on the floor along the polyline pts, from its start to distance e: the creep's segment sprite tiled
+// end to end (fixed in place, so the body doesn't crawl while it grows), the tip sprite on the last `u` units (it slides
+// with the growth; a "neck" tile right behind it closes the gap to the last whole tile). Every tile is the seamless
+// east-facing view (dir 0; flipped when the path heads left) turned on screen to the chord's on-screen direction and
+// stretched to its on-screen length (y foreshortened by the 50° view): the 8 baked directions can't be chained along a
+// slanted path (each is a separate arched piece, and the path's angle snaps to 45°), this keeps one continuous body.
+// opt(p, isTip) gives each tile's sprite options (+ `frame` for the tip's animation). False if a sprite isn't loaded.
+function s7Chain(pts, e, u, opt) {
+  const SEG = 'dock/s7_creep_seg', TIP = 'dock/s7_creep_tip';
+  if (!GFX.on || !GFX.info(SEG) || !GFX.info(TIP)) return false;
+  const L = s7Len(pts);
+  e = Math.min(e, L);
+  const at = (s) => {                                   // (before the start: straight on backwards, the root lies under the tile)
+    if (s >= 0) return s7PointAt(pts, s);
+    const a = s7PointAt(pts, 0);
+    return { x: pts[0].x + Math.cos(a.a) * s, y: pts[0].y + Math.sin(a.a) * s };
+  };
+  let ok = true, lastSort = -Infinity;
+  const tile = (name, s0, s1, tip) => {
+    const A = at(s0), B = at(s1), vx = B.x - A.x, vy = (B.y - A.y) * GFX.SIN, l = Math.hypot(vx, vy);
+    if (l < 1e-4) return;
+    const m = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 }, left = vx < 0, { frame = 0, ...o } = opt(m, tip);
+    if (o.sortY == null) o.sortY = m.y - 0.5;
+    if (tip) o.sortY = Math.max(o.sortY, lastSort + 0.001);
+    lastSort = Math.max(lastSort, o.sortY);
+    ok = s7Spr(name, tip ? frame % 4 : 0, m.x, m.y, 0, { ...o, scale: u, flip: left, rot: left ? Math.atan2(-vy, -vx) : Math.atan2(vy, vx), sx: l / u * 1.05 }) && ok;
+  };
+  const tip0 = e - u;                                   // where the tip begins
+  let s = 0;
+  for (; s + u <= tip0 + 1e-6; s += u) tile(SEG, s, s + u, false);
+  if (tip0 > s - 1e-6 && tip0 > 0) tile(SEG, Math.max(0, tip0 - u), tip0, false);
+  tile(TIP, tip0, e, true);
+  return ok;
 }
 // The cold, as frost spreading over the floor from the freezer's side of each room (storyboard 3): many frost blots,
 // each fading in once the room's cold has reached it. 2D: a wash per room.
@@ -464,12 +501,12 @@ function drawS7Live(t) {
   });
   const C = s.creep, len = s7Len(G.creep);
   if (C.d > 0.05) {
-    const d0 = C.wrapped ? len : C.d;
-    let all = true;
-    for (let k = 0.5; k < d0 - 0.4; k += 1) { const p = s7PointAt(G.creep, k); all = s7Spr('dock/s7_creep_seg', s7Frame('dock/s7_creep_seg', p.a), p.x, p.y, 0, { layer: 'wall', sortY: p.y - 0.5, desat: C.dead ? 1 : 0, alpha: C.dead ? 0.6 : 1 }) && all; }
-    const tip = s7PointAt(G.creep, d0);
-    all = s7Spr('dock/s7_creep_tip', s7Frame('dock/s7_creep_tip', tip.a, Math.floor(t * 8)), tip.x, tip.y, 0, { sortY: tip.y, desat: C.dead ? 1 : 0, emissive: C.dead ? 0 : 0.4 }) && all;
-    if (!all) s7CreepDraw(G, C, d0, t);
+    // (drawn from the end of the long floor vine in the lab's airlock, S7_VINES[0], so it grows out of the growth there)
+    const mx = (x) => (d.side === 'port' ? x : SHIP_W - x), v0 = S7_VINES[0], root = v0.slice(-2).map(([x, y]) => ({ x: mx(x), y: G.g.y + y }));
+    const d0 = C.wrapped ? len : C.d, pts = s7Smooth([...root, ...G.creep]), r0 = s7Len(pts, 16);   // (pts[16] = G.creep[0]: 8 steps per span)
+    const ok = s7Chain(pts, r0 + d0 / len * (s7Len(pts) - r0), 1, (p, tip) => ({ layer: 'wall', frame: Math.floor(t * 8), desat: C.dead ? 1 : 0, alpha: C.dead ? 0.6 : 1,
+      emissive: C.dead ? 0 : tip ? 0.4 : 0.3 }));
+    if (!ok) s7CreepDraw(G, C, d0, t);
   }
   if (C.wrapped && !C.dead && !s7Spr(CAP_MAX > 3 ? 'dock/s7_wrap_capacitor4' : 'dock/s7_wrap_capacitor', 0, G.cap.x, G.cap.y, 0, { sortY: G.cap.y + 0.05, emissive: 0.4, flip: d.side !== 'port' })) s7WrapDraw(G.cap, C, t);
 }
@@ -597,5 +634,5 @@ function s7Plates(add) {
   const boxThere = ITEMS.some(it => it.kind === 'blackbox' && inDock(it.x, it.y));
   const C = s.creep, creep = C.dead ? 'creep withered' : C.wrapped ? `WRAPPED our ${side} capacitor!` : `creep ${Math.round(C.d / s7Len(s7Geom(dk.dock.side).creep) * 100)}%`;
   const held = crew.filter(c => s7Holding(c)).map(c => c.name);
-  add('s7', { icon: 'spore', title: held.length ? `S-7 HAS ${held.join(', ').toUpperCase()}` : 'S-7 GROWTH', sub: `${boxThere ? `box ${s.heartOpen ? 'FREE' : 'held by the heart'} · ` : ''}${creep}`, stripe: '#c46ad8', red: held.length > 0 || C.wrapped, wrap: true });
+  add('s7', { icon: 'spore', title: held.length ? `S-7 HAS ${held.join(', ').toUpperCase()}` : s.dead ? 'S-7: DEAD' : 'S-7 GROWTH', sub: `${boxThere ? `box ${s.heartOpen ? 'FREE' : 'held by the heart'} · ` : ''}${creep}`, stripe: '#c46ad8', red: held.length > 0 || C.wrapped, wrap: true });
 }

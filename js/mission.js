@@ -137,13 +137,13 @@ const MISSIONS = {
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
-    name: 'Ore run', tier: 2, blurb: 'A big asteroid drifts past in front: spacewalk out, drill two samples and haul them in while the front cannon holds off the small ones.',
+    name: 'Ore run', tier: 2, blurb: 'A big asteroid drifts past in front: spacewalk out, drill a sample for each of you and haul them in while the front cannon holds off the small ones.',
     balance: { soloIdle: 0.37, crewIdle: 0.66 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
     crew: {events: [4, 4, 8, 12, 15, 18, 23, 23], cells: [2, 2, 4, 5, 7, 6, 8, 8], reactor: [1, 1, 0.85, 0.5, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2 samples, a failing part at every crew size, 2026-10-16): 37% 68% 67% 66% 66% 67% 69% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8); was 4/4/8/12/15/18/23/23
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 6, 2026-10-16; the interceptor stays: a mining run in the lanes, not the Mire)
-    rules: { breach: true }, objective: { kind: 'ore', count: 2 },
+    rules: { breach: true }, objective: { kind: 'ore', perPlayer: true },   // (one sample per player: oreNeeded, js/dock.js; was 2 at every crew size until 2026-10-20)
     build(target) { return [makeEvent('rock', 8, target), ...shuffledTimeline(['swarm', 'swarm', 'interceptor', 'maintenance', 'canister', 'debris'], target, 35, 38)]; },
   },
   nightmare: {
@@ -192,7 +192,8 @@ function fillSides(written) { for (const e of written) if (e.kind === 'swarm' &&
 // but not an objective: they may be the finale's neighbour and still come back as repeats, like chapters 1-3's
 // failing part), then optional ones in DROP_ORDER (first dropped first),
 // so a solo run of a chapter always has the same kind of content. More events than written: repeats
-// of the mission's most important optional kinds.
+// of the mission's most important optional kinds. MISSIONS[id].crew.extra ({ kind: count per crew size }) adds repeats
+// by hand, on top of crew.events (c4 solo: a second failing part).
 //   A written event with finale: true (the last one, never dropped: c8's leviathan) stays the finale: repeats go before it.
 //   The opener (a written event with opener: true, the first one) is never dropped either, and never the finale:
 // a mission jumps in, gives the crew a calm half minute (the first written time), then something else
@@ -227,7 +228,8 @@ const DROP_ORDER = ['canister', 'antenna', 'debris', 'glitch', 'storm', 'coolant
 const crewSize = () => Math.max(1, crew.length);
 // (a custom skirmish has no calibration: 2 + n/2 fuel cells, rounded up, for any crew size)
 const customCrew = () => { const c = 2 + Math.ceil(customConfig(mission.custom).n / 2); return { cells: Array(8).fill(c) }; };
-const missionCrew = (id, n) => { const C = MISSIONS[id]?.custom ? customCrew() : MISSIONS[id]?.crew, i = Math.min(8, Math.max(1, n)) - 1; return { events: C?.events?.[i], cells: C?.cells?.[i] ?? 4, reactor: C?.reactor?.[i] ?? 1, overcharge: !!C?.overcharge?.[i] }; };
+const missionCrew = (id, n) => { const C = MISSIONS[id]?.custom ? customCrew() : MISSIONS[id]?.crew, i = Math.min(8, Math.max(1, n)) - 1; return { events: C?.events?.[i], cells: C?.cells?.[i] ?? 4, reactor: C?.reactor?.[i] ?? 1, overcharge: !!C?.overcharge?.[i],
+  extra: Object.entries(C?.extra || {}).flatMap(([k, ns]) => Array(ns[i] || 0).fill(k)) }; };
 // The reactor's ENERGY_TIME multiplier: the gap / the written gap, × the crew size's reactor tuning (crew.reactor,
 // < 1 where the energy needs a faster reactor to be in spec).
 const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
@@ -240,17 +242,21 @@ const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
 function selectEvents(id, written, n, target, easy = 0) {
   written = oneTide(MISSIONS[id], written);
   const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]), always = new Set(M.always || []);
-  const base = missionCrew(id, n).events ?? written.length, want = Math.min(base, Math.max(1, base - easy));   // (at least one: the finale)
+  // crew.extra (kind: count per crew size): repeats of that kind on top of the count (2026-10-20, c4 solo: a second failing
+  // part; one more in the count would have been the mine drone); easy / very easy take these out first
+  const C = missionCrew(id, n), forced = C.extra.slice(0, Math.max(0, C.extra.length - easy)), easyLeft = easy - (C.extra.length - forced.length);
+  const base = C.events ?? written.length, wantW = Math.min(base, Math.max(1, base - easyLeft));   // (at least one: the finale)
   const dropRank = (e) => (DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
-  const rank = (e) => (ess.has(e.kind) || e.opener || always.has(e.kind) ? Infinity : dropRank(e));
+  const rank = (e) => (ess.has(e.kind) || e.opener || (always.has(e.kind) && !e.optional) ? Infinity : dropRank(e));   // (optional: a written one of an `always` kind that may still go)
   const order = written.map((e, i) => ({ e, i })).sort((a, b) => rank(b.e) - rank(a.e) || a.i - b.i);   // most important first; ties: the earlier one
-  const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(want, written.length))).map(o => o.e);
+  const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(wantW, written.length))).map(o => o.e);
   // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump), nor the opener
   const objective = new Set(M.essential || []), optionalFight = order.find(o => rank(o.e) !== Infinity && COMBAT_KINDS.has(o.e.kind) && !keep.includes(o.e));
   if ((objective.size || keep.some(e => e.opener)) && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind) || e.opener)) keep.push(optionalFight.e);
   const extra = [...new Set(written.map((e, i) => ({ e, i })).filter(o => !ess.has(o.e.kind) && !o.e.opener && !ONE_OFF_KINDS.has(o.e.kind))   // repeats: most important optional kinds
     .sort((a, b) => dropRank(b.e) - dropRank(a.e) || a.i - b.i).map(o => o.e.kind))];                            // (and `always` ones), in turn
-  for (let i = 0; keep.length < want && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target, M.sides), repeat: true });
+  for (let i = 0; keep.length < wantW && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target, M.sides), repeat: true });
+  for (const k of forced) keep.push({ ...makeEvent(k, Infinity, target, M.sides), repeat: true });
   const kept = written.filter(e => keep.includes(e)), reps = keep.filter(e => e.repeat);
   if (kept.length && kept[kept.length - 1].finale) return kept.slice(0, -1).concat(reps, kept.slice(-1));   // (a written finale: finale: true, stays last)
   return kept.concat(reps);
@@ -535,7 +541,7 @@ function objectiveStatus() {
   if (o.kind === 'blackbox') return { done: objectiveAboard('blackbox'), fail: 'without the black box', text: 'Bring the black box from the derelict aboard' };
   if (o.kind === 'rescue') return { done: dk.npc?.state === 'safe', fail: `without ${npcName()}`, text: `Rescue ${npcName()}` };
   if (o.kind === 'ore') {                                // samples carried inside are stowed (dk.ore, js/dock.js stowOre); count: how many (default 1)
-    const need = o.count || 1, n = Math.min(need, (dk.ore || 0) + (objectiveAboard('ore') ? 1 : 0));
+    const need = oreNeeded(), n = Math.min(need, (dk.ore || 0) + (objectiveAboard('ore') ? 1 : 0));
     if (need === 1) return { done: n >= 1, fail: 'without an ore sample', text: 'Drill an ore sample and bring it aboard' };
     return { done: n >= need, fail: `with only ${n}/${need} ore samples`, text: `Bring ${need} ore samples aboard (${n}/${need})` };
   }

@@ -127,4 +127,64 @@ for (const id of ['port', 'front', 'star']) {
   G.GUNS[0].shots = 1; G.startMission('intro', {});
   check(G.GUNS.every(g => g.shots === 3), `without the upgrade: 3 shots, a fresh load each mission (${G.GUNS.map(g => g.shots)})`);
 }
+
+// --- aiming with the keys: WASD / arrows steer the barrel towards that screen direction and keep it there
+// (key mode: the resting mouse is ignored) until the mouse really moves again; the arc always holds.
+{
+  const deg = (a) => a * 180 / Math.PI, wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  const G = loadGame(NAMES); G.mission.active = false; const me = G.me, m = me.input.mouse, k = me.input.keys;
+  const hold = (keys, n) => { for (const x of keys) k.add(x); tickN(G, n); for (const x of keys) k.delete(x); };
+  const look = (g, wx, wy) => { m.wx = wx; m.wy = wy; m.moved = 1; m.look = 1; G.simTick(DT); };   // a real mouse move (mousemove sets both)
+  for (const [id, up, down] of [['port', 'ArrowUp', 'ArrowDown'], ['star', 'KeyW', 'KeyS']]) {     // the side cannons: up / down turn it up / down the screen
+    const g = G.GUNS.find(g => g.id === id), arc = g.arc ?? 1.3;
+    climbIn(G, me, g);
+    look(g, g.x + Math.cos(g.a) * 10, g.y + Math.sin(g.a) * 10);             // mouse straight out, then resting there
+    check(Math.abs(wrap(g.aim - g.a)) < 1e-6, `${g.name}: the mouse aims it (straight out)`);
+    hold([up], 20);
+    const upAim = g.aim;
+    check(Math.sin(g.aim) < -0.2 && !!me.gunKeys, `${g.name}: holding ${up} turns the barrel up the screen (${deg(wrap(g.aim - g.a)).toFixed(0)}° off centre) — key mode`);
+    tickN(G, 60);                                                            // mouse resting all along (its world point still set)
+    check(g.aim === upAim, `${g.name}: let go, the mouse resting: the barrel stays where the keys left it (no snap back)`);
+    hold([down], 120);
+    check(Math.sin(g.aim) > 0.5 && Math.abs(Math.abs(wrap(g.aim - g.a)) - arc) < 1e-6, `${g.name}: holding ${down} turns it down the screen, up to the arc's edge and no further (${deg(wrap(g.aim - g.a)).toFixed(1)}°)`);
+    hold([g.id === 'port' ? 'ArrowLeft' : 'ArrowRight'], 120);
+    check(Math.abs(wrap(g.aim - g.a)) < 1e-6, `${g.name}: the key pointing out of the ship brings it back to straight out`);
+    m.wx += 0.001; tickN(G, 10);                                             // the camera sliding the world point under a resting mouse
+    check(Math.abs(wrap(g.aim - g.a)) < 1e-6 && me.gunKeys, `${g.name}: the world point under a resting mouse changing doesn't take over`);
+    look(g, g.x + Math.cos(g.a) * 10, g.y + 6);
+    check(!me.gunKeys && Math.abs(g.aim - Math.atan2(6, Math.cos(g.a) * 10)) < 1e-6, `${g.name}: moving the mouse again: it follows the mouse (key mode off)`);
+    me.input.pressed.add('KeyE'); G.simTick(DT);
+    check(me.mode === 'inside', `${g.name}: E still climbs down`);
+  }
+  { const g = G.GUNS.find(g => g.id === 'front'), arc = g.arc;                // the front cannon (up the screen): left / right turn it, up centres it
+    climbIn(G, me, g); look(g, g.x, g.y - 10);
+    hold(['ArrowLeft'], 200);
+    check(Math.abs(g.aim - Math.PI) < 1e-6 || Math.abs(g.aim + Math.PI) < 1e-6, `front cannon: left turns it to point left (${deg(wrap(g.aim - g.a)).toFixed(1)}° off centre)`);
+    hold(['ArrowLeft', 'ArrowDown'], 200);
+    check(Math.abs(wrap(g.aim - g.a) + arc) < 1e-6, `front cannon: down-left: on to the arc's edge and no further (${deg(wrap(g.aim - g.a)).toFixed(1)}°)`);
+    tickN(G, 30); check(Math.abs(wrap(g.aim - g.a) + arc) < 1e-6, 'front cannon: stays there with the mouse resting');
+    hold(['KeyD'], 30); check(Math.abs(wrap(g.aim - g.a) + arc - 30 * DT * 1.6) < 1e-6, 'front cannon: D turns it back right at the turn rate');
+    hold(['ArrowDown'], 30); const a0 = g.aim; hold(['ArrowDown'], 30);
+    check(g.aim === a0, 'front cannon: down (straight behind it) does nothing');
+    hold(['ArrowUp'], 200); check(Math.abs(wrap(g.aim - g.a)) < 1e-6, 'front cannon: up centres it');
+    // Space fires, R reloads, Shift covers — in key mode too
+    g.shots = 3; g.cd = 0; hold(['Space'], 2); check(g.shots === 2, 'key mode: Space fires');
+    g.shots = 0; g.reload = 0; me.input.pressed.add('KeyR'); G.simTick(DT); check(g.reload > 0, 'key mode: R reloads');
+    k.add('ShiftLeft'); tickN(G, 20); check(me.cover > 0.9, 'key mode: Shift raises the cover'); k.delete('ShiftLeft'); tickN(G, 20);
+  }
+  // multiplayer: the server gets keys and mouse moves as inputs and runs the same rule
+  { const S = loadGame(NAMES); S.netServer.init('intro'); S.mission.active = false; S.netServer.addCrew(1, 'A');
+    const A = S.crew[0], g = S.GUNS.find(g => g.id === 'port'), far = [g.x - 10, g.y], send = (keys, mouse) => S.netServer.input(1, { keys, pressed: [], mouse });
+    climbIn(S, A, g, true);
+    send([], { wx: far[0], wy: far[1], moved: 1, look: 1 }); S.simTick(DT);
+    check(A.mode === 'gun' && Math.abs(wrap(g.aim - g.a)) < 1e-6, 'multiplayer: the server aims the cannon at the mouse');
+    send(['ArrowUp'], { wx: far[0], wy: far[1] }); tickN(S, 20);
+    const upAim = g.aim;
+    check(Math.sin(g.aim) < -0.2, 'multiplayer: holding up turns the barrel up the screen');
+    for (let i = 0; i < 60; i++) { send([], { wx: far[0] + i * 0.01, wy: far[1] }); S.simTick(DT); }   // every frame's input: the mouse resting (its world point drifting)
+    check(g.aim === upAim, 'multiplayer: let go, the mouse resting: the server keeps the key aim');
+    send([], { wx: g.x - 10, wy: g.y + 5, moved: 1, look: 1 }); S.simTick(DT);
+    check(Math.abs(g.aim - Math.atan2(5, -10)) < 1e-6, 'multiplayer: the mouse moving again takes over');
+  }
+}
 process.exitCode = failed ? 1 : 0;

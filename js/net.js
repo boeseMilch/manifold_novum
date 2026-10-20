@@ -471,11 +471,13 @@ function netPredict(dt) {
     }
   }
   if (me.mode === 'gun' && me.gun && standing(me) && !debugOpen && !me.ui.panel) {   // aim the cannon you're on locally, same rule as the server
-    const g = me.gun, m = localInput.mouse, arc = gunArc(g), ik = localInput.keys;
-    if (m.moved) g.aim = Math.atan2(m.wy - g.y, m.wx - g.x);
-    g.aim += ((ik.has('KeyD') || ik.has('ArrowRight') ? 1 : 0) - (ik.has('KeyA') || ik.has('ArrowLeft') ? 1 : 0)) * GUN_TURN * dt;
-    g.aim = g.a + clamp(wrapAngle(g.aim - g.a), -arc, arc);
+    const g = me.gun, m = localInput.mouse, ik = localInput.keys, k = (...codes) => (codes.some(x => ik.has(x)) ? 1 : 0);
+    const kx = clamp(k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft'), -1, 1), ky = clamp(k('KeyS', 'ArrowDown') - k('KeyW', 'ArrowUp'), -1, 1);
+    if (m.look) me.gunKeys = false;                  // key mode until the mouse really moves (as updatePlayer)
+    if (kx || ky) me.gunKeys = true;
+    if (m.moved && !me.gunKeys) g.aim = Math.atan2(m.wy - g.y, m.wx - g.x);
+    g.aim = gunKeyTurn(g, kx, ky, dt);
     me.face = g.aim;
-  }
+  } else if (me.mode !== 'gun') me.gunKeys = false;  // (climbed in again: back to the mouse)
 }
 function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }

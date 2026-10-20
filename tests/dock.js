@@ -1,7 +1,7 @@
 // Other ships: pirates (dock, steal, get boarded back, cast off), the derelict (jammed door, S-7 the growth,
 // black box, engineer to rescue) and mining an asteroid. Run: node tests/dock.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
+const NAMES = ['grab', 'simTick', 'me', 'crew', 'dk', 'mission', 'startMission', 'combat', 'combatSpawn', 'dockShip', 'dockGeom', 'walkRects', 'canStand', 'ITEMS', 'power',
   'withCrew', 'inv', 'boarding', 'FUEL_CRATE', 'hz', 'objectiveStatus', 'MISSIONS', 'CAPACITORS', 'hurtCrew', 'evs', 'hurtPirate', 'undock', 'roomAt', 'inDock', 'HATCHES',
   'baseGeom', 'baseGuards', 'PIRATE_AIM', 'lineOfSight', 'GFX', 'segBody', 'sentryLive', 'SENTRY_SPOOL', 'SENTRY_BURST', 'SENTRY_COOL', 'separatePirates', 'pirateOk', 'baseDetach', 'baseRedock', 'openBasePad', 'miniCommand', 'freeAt', 'makeCrew', 'netSerialize', 'netApply', 'ui', 'inBase', 'COMBAT_KINDS', 'ENEMY_TYPES', 'inRect',
   's7Geom', 's7Holding', 's7Wrapped', 'attack', 'spray', 'useEnergy', 'S7_FREEZE', 'S7_DRAW', 'S7_RECOIL_SHOT', 'S7_RECOIL_SPRAY', 'S7_STRUGGLE_PRESSES', 'resetDock', 'SIDE_CAP',
@@ -223,9 +223,26 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   cap.charge = 0; let stopAt = null;
   for (let k = 0; k < 60 * 70 && stopAt === null; k++) { G.simTick(DT); if (!s.freezer) stopAt = k / 60; }
   check(stopAt !== null && stopAt <= G.S7_DRAW[0] + 0.1 && /capacitor/.test(G.combat.banner?.text || ''), `our capacitor empty: the freezer stops (after ${stopAt?.toFixed(0)} s: "${G.combat.banner?.text}")`);
-  let thaw = null; me.x = 37; me.y = 6;
-  for (let k = 0; k < 60 * 40 && thaw === null; k++) { G.simTick(DT); if (!s.frozen[1]) thaw = k / 60; }
-  check(thaw > 10 && thaw < 30, `then the cold slowly retreats: the lab thaws and S-7 stirs again (${thaw?.toFixed(0)} s later)`);
+  // ...but the heart froze to death: S-7 died with it. The frost fades, the growth stays dead (2026-10-20 playtest)
+  let stirred = false; me.x = 37; me.y = 6;
+  for (let k = 0; k < 60 * 90; k++) { G.simTick(DT); if (/stirs again|warming up|closes round/.test(G.combat.banner?.text || '')) stirred = true; }
+  check(s.cold.every(c => c === 0) && s.dead && s.heartOpen && s.frozen.every(f => f), `then the cold retreats (cold ${s.cold.join(' / ')}), but the dead heart stays open and every room stays husks`);
+  for (const T of s.tendrils) { T.state = 'idle'; T.t = 0; } tickN(G, 1);
+  check(!stirred && s.tendrils.every(T => T.state === 'husk') && s.creep.dead, `no "stirs again" for a dead culture: tendrils stay husks, the creep stays withered ("${G.combat.banner?.text}")`);
+  tendrilBy(G, s, S, 4, 0.3); tickN(G, 120);
+  check(!G.s7Holding(me), 'the dead core\'s tendrils don\'t grab, thawed or not');
+  me.x = S.freezer.x; me.y = S.freezer.y + 1;
+  const hov = G.withCrew(me, () => G.clickTarget(S.freezer.x, S.freezer.y));
+  check(hov && !hov.ok && /dead/.test(hov.text), `the freezer isn't needed any more ("${hov?.text}")`);
+}
+{
+  const { G, s, S } = s7Fresh(), me = G.me;          // a living culture (the core never froze) does thaw and stir again
+  me.x = 37; me.y = 6; s.creep.d = 0;
+  Object.assign(s, { j1: true, freezer: true, drawT: 99 }); s.cold = [1, 1, 0.5]; G.CAPACITORS[0].charge = 3; tickN(G, 2);
+  s.freezer = false;
+  let thaw = null, banner = '';
+  for (let k = 0; k < 60 * 40 && thaw === null; k++) { G.simTick(DT); if (!s.frozen[1]) { thaw = k / 60; banner = G.combat.banner?.text || ''; } }
+  check(!s.dead && thaw > 10 && thaw < 30 && /stirs again/.test(banner), `the core not frozen: the lab thaws and S-7 stirs again (${thaw?.toFixed(0)} s later: "${banner}")`);
 }
 {
   const { G, s, S } = s7Fresh(), me = G.me;          // a grab is released when the room freezes
@@ -233,6 +250,36 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   const held = G.s7Holding(me);
   s.cold[1] = 0.999; s.freezer = true; s.j1 = true; G.CAPACITORS[0].charge = 3; tickN(G, 30);
   check(held && !G.s7Holding(me) && s.tendrils[1].state === 'husk', 'when its room freezes, a tendril lets go of whoever it holds');
+}
+// casting off the derelict once the black box is aboard (2026-10-20 playtest: no waiting for the jump)
+{
+  const { G, s, g } = s7Fresh(), me = G.me, d = G.dk.dock, B = G.makeCrew('B'); G.crew.push(B);
+  G.mission.objective = { kind: 'blackbox' };
+  for (const T of s.tendrils) { T.state = 'recoil'; T.t = 999; }
+  B.x = g.rooms[1].x + 2; B.y = g.y;                              // somebody is still over there
+  me.x = G.HATCHES[0].inside[0]; me.y = G.HATCHES[0].inside[1]; G.simTick(DT);
+  check(!/cast off/.test(me.prompt?.text || ''), `the box still in the heart: no casting off ("${me.prompt?.text || ''}")`);
+  const box = G.ITEMS.find(it => it.kind === 'blackbox');
+  box.x = g.rooms[0].x + 1; box.y = g.y; G.simTick(DT);
+  check(!/cast off/.test(me.prompt?.text || ''), 'the box free but still over there: no casting off yet');
+  G.ITEMS.splice(G.ITEMS.indexOf(box), 1); G.withCrew(B, () => { G.inv.item = 'blackbox'; }); G.simTick(DT);
+  check(!/cast off/.test(me.prompt?.text || ''), 'in a crewmate\'s hands over in the lab: not yet either');
+  G.withCrew(B, () => { G.inv.item = null; }); G.ITEMS.push({ kind: 'blackbox', x: 3, y: 17.6 }); G.simTick(DT);
+  check(G.objectiveStatus().done && /cast off the derelict/.test(me.prompt?.text || '') && /B is still over there/.test(me.prompt?.text || ''),
+        `the box aboard: our airlock offers to cast off, and warns who is still over there ("${me.prompt?.text}")`);
+  me.input.pressed.add('KeyE'); G.simTick(DT);
+  check(d.detachT > 0 && G.dk.dock === d && /tether releases/.test(G.combat.banner?.text || ''), `casting off starts the tether's countdown ("${G.combat.banner?.text}")`);
+  G.simTick(DT);
+  check(/Tether releases in/.test(me.prompt?.text || ''), `the airlock shows the countdown ("${me.prompt?.text}")`);
+  tickN(G, 60 * 9);
+  check(!G.dk.dock && B.mode === 'eva' && G.ITEMS.some(it => it.kind === 'blackbox') && G.objectiveStatus().done,
+        `the derelict drifts away: whoever stayed over there is cast adrift (B: ${B.mode}), the box stays aboard`);
+}
+{
+  const { G, g } = s7Fresh('star', { npc: true }), me = G.me, h = G.HATCHES.find(h => h.side === 'star');   // the engineer's derelict: no box, no casting off
+  G.mission.objective = { kind: 'rescue' };
+  me.x = h.inside[0]; me.y = h.inside[1]; G.simTick(DT);
+  check(!/cast off/.test(me.prompt?.text || '') && G.dk.dock.detachT === null, `a derelict without a black box (rescue) can't be cast off early ("${me.prompt?.text || ''}")`);
 }
 // the creep: toward our ship, wraps our capacitor (no charging, no using it); spray / shots push it back
 {
@@ -385,8 +432,10 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   }
 }
 {
-  const G = fresh(); G.startMission('ore'); G.mission.active = false;
-  check(G.MISSIONS.ore.objective.count === 2 && G.MISSIONS.c6.objective.count === 2 && G.objectiveStatus().text === 'Bring 2 ore samples aboard (0/2)', `Ore run and Spore Season want 2 samples: "${G.objectiveStatus().text}"`);
+  { const S = fresh(); S.startMission('ore'); S.mission.active = false;
+    check(S.objectiveStatus().text === 'Drill an ore sample and bring it aboard', `solo: one sample ("${S.objectiveStatus().text}")`); }
+  const G = fresh(); G.crew.push(G.makeCrew('B')); G.startMission('ore'); G.mission.active = false;   // (two players: two samples)
+  check(G.MISSIONS.ore.objective.perPlayer && G.MISSIONS.c6.objective.perPlayer && G.objectiveStatus().text === 'Bring 2 ore samples aboard (0/2)', `Ore run and Spore Season want one sample per player: for two "${G.objectiveStatus().text}"`);
   G.EVENT_RUNNERS.rock({ side: 'port' }); const r = G.dk.rock; r.x = 16;
   const me = G.me, m = me.input.mouse;
   G.withCrew(me, () => { G.inv.weapon = 'drill'; });
@@ -401,6 +450,11 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
     check(G.dk.ore === k && !me.inv.item, `sample ${k}: carried inside it's stowed (${G.dk.ore} aboard, hands free for the next trip)`);
     check(k === 1 ? !G.objectiveStatus().done && /\(1\/2\)/.test(G.objectiveStatus().text) : G.objectiveStatus().done, `objective after ${k}: ${G.objectiveStatus().done ? 'done' : G.objectiveStatus().text}`);
   }
+  // grabbing a sample with one already in hand on a spacewalk: the old one floats there (it used to land on a floor inside: stowed)
+  { const before = G.dk.ore; me.mode = 'eva'; me.x = r.x; me.y = -4.6; G.withCrew(me, () => { G.inv.item = 'ore'; G.grab('ore'); }); G.simTick(DT);
+    check(G.dk.ore === before && me.inv.item === 'ore' && G.hz.floating.some(f => f.kind === 'ore') && !G.ITEMS.some(i => i.kind === 'ore'),
+          'a second sample grabbed on a spacewalk: the one in hand floats away beside you, nothing is stowed');
+    G.hz.floating = G.hz.floating.filter(f => f.kind !== 'ore'); me.inv.item = null; me.mode = 'inside'; me.x = 7.5; me.y = 19; }
   const C = loadGame(NAMES); C.startMission('intro'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   check(C.dk.ore === 2 && C.dk.rock && C.dk.rock.dir === 1 && Math.abs(C.dk.rock.x - r.x) < 1e-9, 'the snapshot carries the drifting rock and the samples aboard');
   G.mission.objective = { kind: 'ore' }; G.dk.ore = 0; G.ITEMS.push({ kind: 'ore', x: 7.5, y: 19 }); G.simTick(DT);

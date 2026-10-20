@@ -2,7 +2,7 @@
 // professions, ship upgrades, campaign objectives, and every practice-panel button.
 // Run: node tests/progress.js
 const { loadGame } = require('./harness');
-const NAMES = ['missionCrew', 'GUNS', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
+const NAMES = ['SOLO_TREAT', 'treatInfo', 'missionCrew', 'GUNS', 'simTick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'CAMPAIGN', 'computeRewards', 'migrateProfile', 'defaultProfile', 'unlockedMissions',
   'applyKit', 'perk', 'hurtCrew', 'SHOTS_PER_ENERGY', 'CAP_MAX', 'power', 'ITEMS', 'dk', 'combat', 'combatSpawn', 'hitPoi', 'enemyToWorld', 'objectiveStatus',
   'PRACTICE', 'runCommand', 'withCrew', 'CAPACITORS', 'treatInfo', 'netServer', 'SHIELD_UP_TIME', 'endMission', 'boarding', 'spawnInvader', 'hurtInvader',
   'gearSpeed', 'creditMission', 'profile', 'lastReward', 'missionSuccess', 'MAX_DAMAGE', 'failGravity', 'ENERGY_TIME', 'REACTOR', 'clickTarget', 'fires', 'SYSTEMS', 'GEAR', 'BLASTER_CHARGE', 'inv', 'evs', 'repairSpeed'];
@@ -120,6 +120,11 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(G.withCrew(me, () => G.treatInfo(me)).time === 6, 'with the first aid course you patch yourself up in 6 s');
   G.applyKit(me, { profession: 'engineer', gear: { stim: true } });
   check(G.withCrew(me, () => G.treatInfo(me)).time === 3, '…in 3 s with a stim pack (anyone can use it)');
+  me.health = 'out';                                    // out cold, alone (2026-10-20: the gear counts here too)
+  const outT = (gear) => { G.applyKit(me, { gear }); return G.withCrew(me, () => G.treatInfo(me))?.time; };
+  check(outT({ stim: true }) === 6 && outT({ firstAid: true }) === 12 && outT({}) === G.SOLO_TREAT,
+    `out cold and alone: crawl back up in 6 s with a stim pack, 12 s with first aid, ${G.SOLO_TREAT} s without (${outT({ stim: true })} / ${outT({ firstAid: true })} / ${outT({})})`);
+  me.health = 'down'; G.applyKit(me, { profession: 'engineer', gear: { stim: true } });
   me.inv.weapon = null; G.applyKit(me, { profession: 'engineer', gear: { ownLaser: true } });
   check(!me.inv.weapon, 'profession gear only works in its profession (an engineer gets no laser from it)');
   me.health = 'ok'; const other = G.crew[0] === me ? (G.netServer.addCrew(9, 'Bob'), G.crew.find(c => c.id === 9)) : G.crew[1]; other.health = 'down';

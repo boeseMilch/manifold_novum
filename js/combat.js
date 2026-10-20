@@ -542,9 +542,33 @@ function drawShields(t) {
   }
 }
 
+// The laser sight: while you aim your cannon with the keys (me.gunKeys: js/game.js gunKeyTurn), a thin red
+// line runs from the muzzle the way a shell would fly (sinking from the muzzle like shellZ), fading out.
+// Only in the gunner's own view; hidden while the cover is up.
+const LASER_LEN = 34;
+function drawLaserSight(t) {
+  const g = me.mode === 'gun' && me.gunKeys && standing(me) && !(me.cover > 0.5) ? me.gun : null;
+  if (!g) return;
+  const dx = Math.cos(g.aim), dy = Math.sin(g.aim), z0 = muzzleZ(g), N = 24;
+  const at = (d) => { const k = clamp(d / SHELL_DROP, 0, 1); return [L(g.x + dx * (1.15 + d)), L(g.y + dy * (1.15 + d) - GFX.lift(z0 * (1 - k * k * (3 - 2 * k))))]; };
+  const flick = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 7.3);
+  ctx.save(); ctx.lineCap = 'round';
+  for (let i = 0; i < N; i++) {                       // (segments: each one fainter, so it fades into space)
+    const d0 = LASER_LEN * i / N, d1 = LASER_LEN * (i + 1) / N, a = (1 - i / N) ** 1.6 * flick;
+    const [x0, y0] = at(d0), [x1, y1] = at(d1);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
+    ctx.strokeStyle = `rgba(255,40,40,${0.2 * a})`; ctx.lineWidth = 5; ctx.stroke();
+    ctx.strokeStyle = `rgba(255,90,80,${0.9 * a})`; ctx.lineWidth = 1.6; ctx.stroke();
+  }
+  const [mx, my] = at(0);                              // a small red dot on the muzzle
+  ctx.fillStyle = `rgba(255,70,60,${0.9 * flick})`; ctx.beginPath(); ctx.arc(mx, my, 2.2, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+
 function drawCombatFront(t) {
   if (GFX.on) { drawAsteroidOverlays(t); drawEnemyOverlays(t); drawOutsideOverlays(t); }   // over the sprite enemies (js/enemies.js, js/organic.js)
   drawShields(t);
+  drawLaserSight(t);
   for (const s of combat.shells) {                 // lifted while they sink from the muzzle (shellZ; 0 in ?classic)
     const dx = s.vx / SHELL_SPEED, dy = s.vy / SHELL_SPEED;
     ctx.beginPath(); ctx.moveTo(L(s.x), L(s.y - GFX.lift(shellZ(s)))); ctx.lineTo(L(s.x - dx * 0.9), L(s.y - dy * 0.9 - GFX.lift(shellZ(s, 0.9))));

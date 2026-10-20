@@ -48,7 +48,7 @@ let LOCK_CYCLE = 1.3;                        // deck airlock: per door, and pres
 const HURT_SPEED = 0.6;                       // walking speed while hurt
 const LOOK_TIME = 1.75;                      // s a crew member keeps looking at the mouse after it moved or they fired with it
 const HATCH_TIME = 1.6;                      // going through an outer airlock
-const GUN_TURN = 1.6;                        // rad/s when aiming with A/D
+const GUN_TURN = 1.6;                        // rad/s when aiming a cannon with the keys (gunKeyTurn)
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
 const CRUISE_SPEED = 260;                    // px/s of starfield drift
 const HUD_H = 36;
@@ -247,6 +247,18 @@ function mouseWorld() { return [mouse.wx, mouse.wy]; }
 // (the ground plane, z = 0: in the tilted sprite view the screen's y is the ground's y × sin 50°)
 function screenToWorld(sx, sy) { const v = camera(); return [(sx - v.ox) / (v.zoom * T), (sy - v.oy) / (v.zoom * T * v.sy)]; }
 
+// A cannon aimed with the keys: kx / ky (-1..1, screen directions: up is -y) is where the barrel turns
+// towards, at GUN_TURN, the short way inside its arc (pressing past the arc's edge stops at the edge;
+// straight behind the cannon, e.g. down on the front cannon, does nothing). Returns the new aim, clamped
+// to the arc either way. Used by the server's sim (updatePlayer) and the gunner's own browser (netPredict).
+function gunKeyTurn(g, kx, ky, dt) {
+  const arc = gunArc(g), d0 = wrapAngle(g.aim - g.a), d = clamp(d0, -arc, arc);
+  let want = d;
+  if (kx || ky) { const w = wrapAngle(Math.atan2(ky, kx) - g.a); if (Math.abs(w) < Math.PI - 0.05) want = clamp(w, -arc, arc); }
+  if (want === d0) return g.aim;                     // (resting inside the arc: exactly as it was, no rounding creep)
+  return g.a + d + clamp(want - d, -GUN_TURN * dt, GUN_TURN * dt);
+}
+
 function updatePlayer(dt) {
   const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
   if (ui.override && !mission.over && keys.has('KeyE') && !player.eUsed && !pressed.has('Escape')) { pressed.delete('KeyE'); overrideHit(); }   // E hits, like the button (held: again after each swing)
@@ -275,14 +287,17 @@ function updatePlayer(dt) {
 
   if (player.mode === 'gun') {
     const g = player.gun;
-    if (mouse.moved) {
+    // aim: WASD / the arrows steer the barrel towards that screen direction (gunKeyTurn) and put the
+    // cannon in key mode (player.gunKeys: the mouse is ignored and a laser sight shows) until the mouse
+    // really moves again (mouse.look: a mousemove event, not the camera sliding the world under it)
+    const kx = clamp(ix + ax, -1, 1), ky = clamp(iy + ay, -1, 1);   // (js/net.js netPredict: the same)
+    if (mouse.look) player.gunKeys = false;
+    if (kx || ky) player.gunKeys = true;
+    if (mouse.moved && !player.gunKeys) {
       const [wx, wy] = mouseWorld();
       g.aim = Math.atan2(wy - g.y, wx - g.x);
     }
-    g.aim += (ix + ax) * GUN_TURN * dt;
-    const d = wrapAngle(g.aim - g.a);
-    const arc = gunArc(g);
-    g.aim = g.a + clamp(d, -arc, arc);
+    g.aim = gunKeyTurn(g, kx, ky, dt);
     // cover: a metal plate that rises in front of you and the cannon; no firing while it's up
     const covering = !block && tutAllows('cover') && (held('ShiftLeft', 'ShiftRight') || mouse.right);
     player.cover = clamp(player.cover + (covering ? dt : -dt) * COVER_SPEED, 0, 1);
@@ -324,7 +339,7 @@ function updatePlayer(dt) {
     if (inIt && !standing(inIt)) act({ text: `Click: pull ${inIt.name} out of the ${ladder.name.toLowerCase()}`, at, run: () => pullOutOfCannon(inIt, ladder) });
     else if (inIt) act({ text: `${inIt.name} is manning the ${ladder.name.toLowerCase()}`, at });
     else act({ text: `Click: climb into the ${ladder.name.toLowerCase()}`, at, noE: crew.some(c => c !== player && c.mode === 'inside' && !standing(c) && near(c.x, c.y)),   // (someone down right here, e.g. just pulled out: E treats them first)
-               run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; player.gunReady = false; } });
+               run: () => { player.mode = 'gun'; player.gun = ladder; player.vx = player.vy = 0; mouse.moved = 0; player.gunReady = false; player.gunKeys = false; } });
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
@@ -516,7 +531,7 @@ function updateDoorways(dt) {
 // ---------------------------------------------------------------------------
 function teleportToGun(id) {
   const g = GUNS.find(g => g.id === id);
-  player.mode = 'gun'; player.gun = g; mouse.moved = 0; player.gunReady = false;
+  player.mode = 'gun'; player.gun = g; mouse.moved = 0; player.gunReady = false; player.gunKeys = false;
 }
 const DEBUG_ITEMS = [
   { key: '1', label: 'Enemy left: Interceptor', run: () => combatSpawn('interceptor', 'port', true) },

@@ -37,7 +37,8 @@ const rockSpeed = () => ROCK_SPEED * ROCK_EASY[clamp(typeof mission !== 'undefin
 const rockInReach = (r) => r.x >= ROCK_REACH[0] && r.x <= ROCK_REACH[1];
 // s until the rock's centre leaves the drillable stretch (0 once past it; before it: the whole stretch still ahead)
 const rockReachLeft = (r) => { const end = r.dir > 0 ? ROCK_REACH[1] : ROCK_REACH[0]; return Math.max(0, (end - r.x) * r.dir) / (r.v || ROCK_SPEED); };
-const oreNeeded = () => (typeof mission !== 'undefined' && mission.objective?.kind === 'ore' ? mission.objective.count || 1 : 1);
+// Ore samples wanted: one per player (objective perPlayer, 2026-10-20, the user: 1 solo, 2 for two, …), else the objective's count
+const oreNeeded = () => { const o = typeof mission !== 'undefined' ? mission.objective : null; return o?.kind !== 'ore' ? 1 : o.perPlayer ? crewSize() : o.count || 1; };
 
 // ---------------------------------------------------------------------------
 // Geometry (world coords; the port layout is mirrored for the starboard side)
@@ -118,7 +119,7 @@ function undock() {
     c.mode = 'eva'; c.x = g.hatch.outside[0] + (d.side === 'port' ? -1.2 : 1.2); c.y = g.hatch.outside[1] + (Math.random() - 0.5);
     combatBanner(`${c.name} was cast adrift — spacewalk back in!`);
   } else if (c.mode === 'inside' && inDock(c.x, c.y)) [c.x, c.y] = g.hatch.inside;
-  for (let i = ITEMS.length - 1; i >= 0; i--) if (inDock(ITEMS[i].x, ITEMS[i].y)) lost.push(ITEMS.splice(i, 1)[0].kind);
+  for (let i = ITEMS.length - 1; i >= 0; i--) if (inDock(ITEMS[i].x, ITEMS[i].y) && !roomAt(ITEMS[i].x, ITEMS[i].y)) lost.push(ITEMS.splice(i, 1)[0].kind);
   dk.pirates = dk.pirates.filter(p => !inDock(p.x, p.y));
   boarding.invaders = boarding.invaders.filter(a => !inDock(a.x, a.y));
   if (dk.npc && inDock(dk.npc.x, dk.npc.y) && !npcAboard(dk.npc)) dk.npc = null;   // (left behind on their ship)
@@ -493,6 +494,7 @@ function dockAct() {
   const d = dk.dock, g = DG();
   if (!d) return false;
   if (d.kind === 'base') return baseAct();
+  if (d.kind === 'derelict' && derelictAct()) return true;
   for (let i = 0; i < 2; i++) {
     if (!d.doors[i]) continue;
     const q = g.doors[i], cx = q.x + q.w / 2, cy = q.y + q.h / 2;
@@ -501,6 +503,29 @@ function dockAct() {
     return true;
   }
   return false;
+}
+// The derelict (chapter 3): once the black box is aboard our ship (objectiveAboard: on our floor, or in the hands of
+// someone standing in our ship), the crew may cast it off at our airlock instead of waiting for the jump. It goes the
+// way the jump's release does: the tether lets go RELEASE_TIME s later (undock: whoever is still over there is cast
+// adrift and spacewalks back). (A derelict without a black box, e.g. the engineer rescue, is untouched.)
+const derelictCrew = () => { const g = DG(); return crew.filter(c => c.mode === 'inside' && [...g.rooms, ...g.doors].some(q => inRect(c.x, c.y, q))); };
+const derelictCastOffOk = () => dk.dock?.kind === 'derelict' && dk.dock.detachT == null && objectiveAboard('blackbox');
+function derelictCastOff() {
+  const d = dk.dock;
+  if (!derelictCastOffOk()) return;
+  d.detachT = RELEASE_TIME; sfx.alarm();
+  const left = derelictCrew();
+  combatBanner(`Casting off the derelict — the tether releases in ${RELEASE_TIME} s.${left.length ? ` ${left.map(c => c.name).join(', ')}: get back aboard!` : ''}`);
+}
+function derelictAct() {
+  const d = dk.dock, h = DG().hatch;
+  if (Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) >= 1.3 || !roomAt(player.x, player.y)) return false;
+  const at = { x: h.x - h.dir * 0.2, y: h.y, r: 1.1 };
+  if (d.detachT != null) { act({ text: `Tether releases in ${Math.max(0, Math.ceil(d.detachT))} s`, at }); return true; }
+  if (!derelictCastOffOk()) return false;
+  const left = derelictCrew();
+  act({ text: `Click: cast off the derelict (the black box is aboard)${left.length ? ` — ${left.map(c => c.name).join(', ')} ${left.length > 1 ? 'are' : 'is'} still over there!` : ''}`, at, run: derelictCastOff });
+  return true;
 }
 function dockEvaTarget(mx, my) {
   const r = dk.rock;
