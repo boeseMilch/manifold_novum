@@ -37,6 +37,7 @@ Tick off what works; note what doesn't.
 - [ ] Missing a window: fewer leeches solo (2), and no new swarm while leeches are still on the hull.
 - [ ] Only one gravity wave.
 - [ ] **Phase 4 (fixed 2026-10-20: it couldn't be won without a laser):** a line under the banner says what to do (MID x/3, lever to MID and hold E to wedge it, load fuel, then hold E at the OVERRIDE panel at the stern, which has a ring now). The brood comes in 3 waves, then the vents go quiet; once you start holding the override MID's energy is in the engine (crawlers can't take it); out of fuel everywhere, an emergency cell drops into the crate. Can you win it solo? Does it feel fair, not too easy?
+- [ ] **Bigger brood + stomp (2026-10-20):** the crawlers are dog-sized now (twice as big, easier to hit), and you squash one by walking into it, no gear needed (standing still it still bites). Does it work for the encounter? (Else the crawlers get reused elsewhere.)
 
 ## Mines (any mission with a mine drone)
 - [ ] The drone always lays 3 mines.

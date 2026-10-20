@@ -546,7 +546,7 @@ const boltDamage = (b) => b.dmg || 1;
 const boltStun = (b) => b.stun ?? (b.wrench ? 1.5 : 0);
 // Our bolt's step vs everyone it can hit (the invaders; the pirates, js/dock.js), as they're drawn (segBody: a
 // capsule from feet to head, the bolt at its muzzle height b.z): the first one along its path that isn't behind a wall.
-const HUMAN_HIT = { r: 0.4, top: 1.05 }, ALIEN_HIT = { r: 0.42, top: 0.45 }, BROOD_HIT = { r: 0.34, top: 0.3 };
+const HUMAN_HIT = { r: 0.4, top: 1.05 }, ALIEN_HIT = { r: 0.42, top: 0.45 };   // (the leviathan's brood: LEVB_BROOD_HIT, js/leviathan.js)
 function boltHitsBody(b, x0, y0) {
   let best = null, bk = 2;
   const test = (o, H, hit) => {
@@ -555,7 +555,7 @@ function boltHitsBody(b, x0, y0) {
   };
   for (const a of boarding.invaders) if (a.state !== 'entering' && a.mode === 'inside') test(a, a.kind === 'saboteur' ? HUMAN_HIT : ALIEN_HIT, () => hurtInvader(a, boltDamage(b), boltStun(b)));
   if (typeof dk !== 'undefined') for (const p of dk.pirates) if (!p.dead) test(p, HUMAN_HIT, () => hurtPirate(p, boltDamage(b), boltStun(b), b));
-  if (typeof levBrood === 'function') for (const w of levBrood()) if (w.hp > 0) test(w, BROOD_HIT, () => levHurtBrood(w, boltDamage(b)));   // the leviathan's brood (js/leviathan.js)
+  if (typeof levBrood === 'function') for (const w of levBrood()) if (w.hp > 0) test(w, LEVB_BROOD_HIT, () => levHurtBrood(w, boltDamage(b)));   // the leviathan's brood (js/leviathan.js)
   if (typeof captainBoltTest === 'function') { const C = captainBoltTest(b, x0, y0); if (C && C.k < bk && freeAt(x0 + (b.x - x0) * C.k, y0 + (b.y - y0) * C.k)) { bk = C.k; best = C.hit; } }   // Captain Red Comet: his generator / his shield (js/captain.js)
   if (!best) { if (typeof s7BoltHit === 'function' && s7BoltHit(b, x0, y0)) { b.dead = true; return true; } return false; }   // (S-7's tendrils and creep: js/culture.js)
   b.dead = true; best(); return true;

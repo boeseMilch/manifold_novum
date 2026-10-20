@@ -3413,3 +3413,22 @@ the next step: lever to MID / hold E to wedge it / load a fuel cell / shoot the 
 when standing at the panel (`levAct`), its use ring (`levUseSpots`), the sidebar plate "engine charged"; drawLevShip now
 runs after the floors. The override stays on click / E (not a repair-kit job). tools/travel.js exports `route` /
 `clearLine` (the test walks with them).
+
+### The leviathan's brood: dog-sized, and gravity boots stomp it (2026-10-20, js/leviathan.js, js/invader.js, js/progress.js)
+(Later the same day, the user: no gravity boots needed: anyone standing who walks into a crawler stomps it; the texts say
+"shoot or stomp", the boots' Locker text is back to what it was.)
+Playtest: "how are you supposed to defeat the brood? They look so small that you could just defeat them by walking over
+them." Both answers, to playtest: (1) the crawlers are drawn LEVB_BROOD_SCALE = 2× the modelled larva (~0.55 → ~1.1 long,
+dog-sized next to a crew member; the sprite scaled with GFX `scale`, still sharp at 96 ppu; the procedural fallback and the
+dead splat the same). What depends on their size follows from it: the bolt hit body LEVB_BROOD_HIT (r 0.34 → 0.5, top 0.3 →
+0.34; was BROOD_HIT in invader.js), the bite reach LEVB_BROOD_REACH (0.55 → 0.75), a spacing LEVB_BROOD_GAP 0.9 (new:
+pairs pushed apart, a wave is a pack, not a pile), the slime burst (more, bigger drops). Speed (0.9) and bite cooldown (2 s)
+stay: the balance model's brood jobs are unchanged. (2) A crew member in gravity boots (perk 'boots', from c.kit: works for
+every crew member on the server) who is inside, standing (not down / out) and walking (≥ LEVB_STOMP_SPEED 1 u/s) within the
+bite reach squashes a crawler (levStomps, checked before its bite, so also mid-bite): levHurtBrood(w, 1, by): a squelch,
+a bigger burst, a flattened splat (dead.stomp), a banner, the stomper's step loses 70 % of its speed (the tiny pause).
+Standing still in boots, or no boots: it bites as before. Told: the boots' Locker text ("…and stomp the leviathan's brood"),
+the phase-4 HUD line ("shoot the brood — or stomp it in your gravity boots", for whoever has boots) and the wave banner
+(", or stomp them in gravity boots" when anyone on board has them). tests/leviathan.js: sizes, a booted walk-in kills, no
+boots / down / standing still don't, the HUD line, multiplayer (netServer.addCrew with a booted kit), a bolt 0.4 off centre
+hits, the spacing.

@@ -5,7 +5,8 @@ const { loadGame } = require('./harness');
 const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'levStationFor', 'levClickTarget', 'combat', 'simTick', 'crew', 'me', 'makeCrew', 'CAPACITORS',
   'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'LEVB_LEECHES', 'netSerialize', 'netApply',
   'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W',
-  'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_LOCKS', 'interactSpots', 'LEVB_BROOD_WAVES'];
+  'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_LOCKS', 'interactSpots', 'LEVB_BROOD_WAVES',
+  'LEVB_BROOD_SCALE', 'LEVB_BROOD_HIT', 'LEVB_BROOD_REACH', 'LEVB_BROOD_GAP', 'applyKit', 'netServer', 'levOverrideStatus', 'withCrew', 'GEAR'];
 const { route, clearLine } = require('../tools/travel');
 const DT = 1 / 60;
 let failed = 0;
@@ -326,5 +327,64 @@ function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   check(B(G).charged && cap.charge === 0, 'starting the hold draws MID\'s 3 energy into the engine');
   B(G).brood.push({ id: 'x', x: 27, y: 16.6, hp: 1, t: 0, bite: 0, face: 0 }); tick(G, 3.3); m.down = false;
   check(B(G).phase === 'blast', 'a crawler at MID mid-hold changes nothing: the blast fires');
+}
+// --- the brood, dog-sized (2026-10-20, the user: "they look so small that you could just defeat them by walking over them"),
+// and anyone stomps them (2026-10-20, the user: no gravity boots needed): walking into one squashes it; down, or standing still: it bites
+{
+  const G0 = fresh(1);
+  check(G0.LEVB_BROOD_SCALE >= 1.8 && G0.LEVB_BROOD_HIT.r >= 0.45 && G0.LEVB_BROOD_REACH >= 0.7 && G0.LEVB_BROOD_GAP >= 0.8,
+    `crawlers drawn ${G0.LEVB_BROOD_SCALE}× (~${(0.55 * G0.LEVB_BROOD_SCALE).toFixed(1)} long); hit body r ${G0.LEVB_BROOD_HIT.r}, bite reach ${G0.LEVB_BROOD_REACH}, spacing ${G0.LEVB_BROOD_GAP}`);
+  // one crawler held still 2 east of the crew member in the reactor room; they walk into it holding D
+  const setup = (health = 'ok', G = fresh(1), c = G.me) => {
+    G.startLevBoss(4); parked(G, 90); B(G).wave.next = 99; B(G).wave.queue = 0; B(G).brood = []; B(G).dead = [];
+    G.applyKit(c, null);
+    Object.assign(c, { mode: 'inside', x: 25.5, y: 20, vx: 0, vy: 0, health });
+    const w = { id: 'w1', x: 27.5, y: 20, hp: 1, t: 0, bite: 0, face: Math.PI, pause: 99 };
+    B(G).brood.push(w);
+    return { G, c, w };
+  };
+  const walk = (G, c, s, send) => { send ? send(['KeyD']) : c.input.keys.add('KeyD'); tick(G, s); send ? send([]) : c.input.keys.delete('KeyD'); };
+  {
+    const { G, c, w } = setup(); walk(G, c, 0.8);
+    check(w.hp <= 0 && !B(G).brood.length && B(G).dead.some(d => d.stomp) && c.health === 'ok', `walking into a crawler squashes it, no gear needed (no bite; a splat: ${B(G).dead.length})`);
+  }
+  {
+    const { G, c, w } = setup('down'); c.x = 27; tick(G, 0.5);
+    check(w.hp === 1 && B(G).brood.length === 1, 'a crew member who is down can\'t stomp one (lying next to it)');
+  }
+  {
+    const { G, c, w } = setup(); c.x = 27; tick(G, 0.5);
+    check(w.hp === 1 && c.health === 'hurt', 'standing still next to one: it bites (a stomp needs a step)');
+    walk(G, c, 0.3);
+    check(w.hp <= 0, '…then a step onto it, mid-bite, squashes it');
+  }
+  {
+    const { G, c } = setup(); G.CAPACITORS[1].charge = 0;
+    const text = G.withCrew(c, () => G.levOverrideStatus().text);
+    check(/shoot or stomp the brood/.test(text), `the HUD line says to shoot or stomp the brood ("…${text.slice(-50)}")`);
+  }
+  // multiplayer: the sim on the server, crew from netServer.addCrew; the second player (not `me`) stomps
+  {
+    const G = loadGame(NAMES); G.netServer.init('practice'); G.power.reactor.fuel = 0; G.power.reserve = 0;
+    G.netServer.addCrew(1, 'A', null); G.netServer.addCrew(2, 'B', null);
+    const A = G.crew.find(c => c.id === 1), Bc = G.crew.find(c => c.id === 2);
+    Object.assign(A, { mode: 'inside', x: 20, y: 6, vx: 0, vy: 0 });
+    const { w } = setup('ok', G, Bc);
+    walk(G, Bc, 0.8, (keys) => G.netServer.input(2, { keys, pressed: [], mouse: {} }));
+    check(w.hp <= 0 && Bc.health === 'ok' && A.health === 'ok' && G.crew.length === 2, `multiplayer: B walks into a crawler on the server and squashes it`);
+  }
+  // the bigger body is easier to hit: a bolt passing 0.4 beside its centre still hits it
+  {
+    const { G, w } = setup(false); w.x = 28; G.me.x = 21;
+    G.boarding.bolts.push({ x: w.x - 1.5, y: w.y + 0.4, z: 0.3, vx: 26, vy: 0, life: 1, owner: 'crew' }); tick(G, 0.1);
+    check(w.hp <= 0, 'a bolt 0.4 off its centre line hits the dog-sized crawler');
+  }
+  // two crawlers spawned on top of each other spread out to the spacing
+  {
+    const { G, w } = setup(false); G.me.x = 21; w.pause = 0;
+    B(G).brood.push({ id: 'w2', x: w.x, y: w.y + 0.01, hp: 1, t: 0, bite: 0, face: 0 });
+    tick(G, 0.3); const [a, b] = B(G).brood;
+    check(Math.hypot(a.x - b.x, a.y - b.y) >= G.LEVB_BROOD_GAP - 0.05, `crawlers keep apart (${Math.hypot(a.x - b.x, a.y - b.y).toFixed(2)} ≥ ${G.LEVB_BROOD_GAP})`);
+  }
 }
 process.exitCode = failed ? 1 : 0;

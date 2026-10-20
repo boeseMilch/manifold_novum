@@ -15,7 +15,7 @@
 //                time: it flinches and swims to the other side. Both sides done → 4.
 //   4 BEHIND     out of every cannon's reach. Its BROOD crawls in through two engine vents in the reactor room (waves
 //                every LEVB_WAVE s: 3 crawlers solo, +1 per extra player, at most 6; LEVB_BROOD_WAVES waves, then the vents
-//                go quiet). Crawlers (one laser hit) head for the MID capacitor and drain 1 energy there, biting crew in
+//                go quiet). Crawlers (dog-sized; one laser hit, or a stomp: walk into it) head for MID and drain 1 energy there, biting crew in
 //                their way. Charge MID to LEVB_NEED (the power lever on MID, wedged) and hold the ENGINE OVERRIDE at the
 //                stern (LEVB_OVERRIDE s; starting the hold draws MID's energy into the engine, safe from the brood; the
 //                HUD line, the panel's ring and its prompt say what's missing; out of fuel everywhere: an emergency cell
@@ -35,6 +35,16 @@ const LEVB_LEECHES = [2, 3, 4, 6];
 // The nest holds LEVB_BROOD_WAVES waves of brood, then the vents go quiet (so MID always fills in the end, even solo without a laser).
 const LEVB_BROOD_WAVES = 3;
 const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 3, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
+// The brood's size (2026-10-20, the user: "they look so small that you could just defeat them by walking over them"): drawn
+// LEVB_BROOD_SCALE x the modelled larva (~0.55 long -> ~1.1, dog-sized next to a crew member). Everything that depends on
+// their size follows from it: the body our bolts hit (js/invader.js boltHitsBody), the reach of a bite (and of a stomp),
+// the room they keep between each other, the dead splat, the slime burst. Speed and bite cooldown stay (balance as before).
+const LEVB_BROOD_SCALE = 2;
+const LEVB_BROOD_HIT = { r: 0.25 * LEVB_BROOD_SCALE, top: 0.17 * LEVB_BROOD_SCALE };   // (scale 1 was r 0.34, top 0.3: generous)
+const LEVB_BROOD_REACH = 0.45 + 0.15 * LEVB_BROOD_SCALE;   // centre to centre: a bite (was 0.55); a booted stomp reaches as far
+const LEVB_BROOD_GAP = 0.45 * LEVB_BROOD_SCALE;            // two crawlers' centres at least this far apart (they don't pile up)
+// Anyone stomps a crawler (2026-10-20, the user: no gravity boots needed): a standing crew member inside, walking at least this fast, within its reach.
+const LEVB_STOMP_SPEED = 1;
 // The swim loop (world units): centre lines left / right / ahead / behind of the ship, corner radius.
 const LEVB_GEO = { X0: -16, X1: SHIP_W + 16, Y0: -22, Y1: 41, R: 16 };
 // The chain (screen units, the sprite contract, tools/blender/models/organic/leviathan_boss.py): every piece at scale 1.
@@ -415,7 +425,7 @@ function levUpdateSide(B, dt) {
 function levUpdateBehind(B, dt) {
   const W = B.wave;
   if (W) {
-    if ((W.next -= dt) <= 0) { W.next = LEVB_WAVE; W.queue += Math.min(6, 3 + crewSize() - 1); W.n++; combatBanner('Brood in the reactor room! They\'re going for the MID capacitor'); sfx.squelch?.(); }
+    if ((W.next -= dt) <= 0) { W.next = LEVB_WAVE; W.queue += Math.min(6, 3 + crewSize() - 1); W.n++; combatBanner(`Brood in the reactor room! They're going for the MID capacitor — shoot them or stomp them`); sfx.squelch?.(); }
     if (W.queue > 0 && (W.spawn -= dt) <= 0) {
       const v = LEVB_VENTS[W.vent++ % LEVB_VENTS.length];
       B.brood.push({ id: newUid(), x: v.x, y: v.y, hp: 1, t: Math.random() * 3, bite: 0, face: -Math.PI / 2 });
@@ -432,7 +442,9 @@ function levUpdateBehind(B, dt) {
   levEmergencyCell(B);
   for (const w of B.brood) {
     w.t += dt; w.bite = Math.max(0, w.bite - dt);
-    const victim = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - w.x, c.y - w.y) < 0.55);
+    const stomper = crew.find(c => levStomps(c, w));   // (before its bite: walking into it squashes it, even mid-bite)
+    if (stomper) { levHurtBrood(w, 1, stomper); continue; }
+    const victim = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - w.x, c.y - w.y) < LEVB_BROOD_REACH);
     if (victim && w.bite <= 0) { hurtCrew(victim, 1); w.bite = LEVB_BITE_CD; w.pause = 0.6; combatBanner(`A brood crawler bit ${victim.name}!`); sfx.spit?.(); }
     if ((w.pause = Math.max(0, (w.pause || 0) - dt)) > 0) continue;
     const dx = LEVB_CAP_AT.x - w.x, dy = LEVB_CAP_AT.y - w.y, d = Math.hypot(dx, dy);
@@ -440,19 +452,41 @@ function levUpdateBehind(B, dt) {
     if (d < 0.25) {
       w.hp = 0; const cap = CAPACITORS[1];
       if (cap.charge > 0) { cap.charge--; combatBanner(`A crawler drained the middle capacitor! MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`); }
-      slimeBurst(w.x, w.y, 10); sfx.spark?.();
+      levSlime(w, 10); sfx.spark?.();
       continue;
     }
     const sp = LEVB_BROOD_SPEED * (0.85 + 0.3 * Math.abs(Math.sin(w.t * 5))) * dt;
     w.x += dx / d * Math.min(d, sp); w.y += dy / d * Math.min(d, sp);
   }
   B.brood = B.brood.filter(w => w.hp > 0);
+  levBroodSpacing(B.brood);
 }
+// They keep LEVB_BROOD_GAP between them (each pair pushed apart by half its overlap): a wave is a pack, not a pile.
+function levBroodSpacing(list) {
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    let dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+    if (d >= LEVB_BROOD_GAP) continue;
+    if (d < 1e-4) { dx = 1; dy = 0; d = 1e-4; }
+    const k = (LEVB_BROOD_GAP - d) / 2 / Math.max(d, 1e-4);
+    a.x -= dx * k; a.y -= dy * k; b.x += dx * k; b.y += dy * k;
+  }
+}
+// Does crew member c stomp crawler w? Standing (not down / out), inside, walking into it.
+const levStomps = (c, w) => c.mode === 'inside' && standing(c) && Math.hypot(c.vx || 0, c.vy || 0) >= LEVB_STOMP_SPEED
+  && Math.hypot(c.x - w.x, c.y - w.y) < LEVB_BROOD_REACH;
+const levSlime = (w, n) => slimeBurst(w.x, w.y, Math.round(n * (1 + LEVB_BROOD_SCALE) / 2), 0.1 * Math.sqrt(LEVB_BROOD_SCALE));
 // Hand lasers / blasters / wrenches (js/invader.js boltHitsBody): the brood they can hit.
 const levBrood = () => (org.boss?.brood || []);
-function levHurtBrood(w, dmg = 1) {
+// by: the crew member who stomped it (levStomps): a flatter splat, a squelch, a stumble.
+function levHurtBrood(w, dmg = 1, by = null) {
   w.hp -= dmg;
-  if (w.hp <= 0) { slimeBurst(w.x, w.y, 12); org.boss?.dead.push({ x: w.x, y: w.y, face: w.face, t: 6 }); }
+  if (w.hp > 0) return;
+  levSlime(w, by ? 16 : 12); org.boss?.dead.push({ x: w.x, y: w.y, face: w.face, t: 6, ...(by ? { stomp: 1 } : {}) });
+  if (by) {
+    by.vx *= 0.3; by.vy *= 0.3;                   // (the tiny pause: the step lands, then you walk on)
+    combatBanner(`${by.name} stomped a brood crawler!`); sfx.clank?.();
+  }
 }
 // The engine override at the stern: hold click (or E) for LEVB_OVERRIDE s with LEVB_NEED energy in MID. Starting the hold
 // draws that energy out of MID into the engine (B.charged, levUpdateBehind): from then on the crawlers can't drain it, and a
@@ -468,7 +502,7 @@ function levOverrideStatus(short = false) {
   const how = broken(LEVER) ? 'repair the power lever' : !onMid ? 'power lever to MID, then hold E on it to wedge it'
     : !lever.jammed ? 'hold E on the power lever to wedge it on MID' : 'lever wedged on MID';
   const more = broken(REACTOR) ? ' · repair the reactor' : power.reactor.fuel > 0 ? '' : ' · reactor empty: load a fuel cell';
-  return { ok: false, text: `needs ${mid}: ${how}${more}${B.brood.length && !short ? ' · shoot the brood' : ''}` };
+  return { ok: false, text: `needs ${mid}: ${how}${more}${B.brood.length && !short ? ` · shoot or stomp the brood` : ''}` };
 }
 function levClickTarget(mx, my) {
   const P = LEVB_PANEL;
@@ -513,7 +547,7 @@ function levBlast() {
 }
 function levFree(B) {
   B.phase = 'freed'; B.freed = LEVB_SINK; B.wave = null; B.parked = true;
-  for (const w of B.brood) slimeBurst(w.x, w.y, 10);
+  for (const w of B.brood) levSlime(w, 10);
   B.brood = [];
   const ch = levChain(B);
   for (const id of ['nest', 'L1', 'L2', 'R1', 'R2', 'E1', 'E2']) { const p = levSpotAt(ch, id); for (let i = 0; i < 6; i++) combatFx(p.wx, p.wy, (Math.random() - 0.5) * 4, Math.random() * 3, 1.4, '#ff6a7a', 0.18); }
@@ -790,12 +824,15 @@ function drawLevShip(t) {
     ctx.fillText('OVERRIDE', L(P.x), L(P.y - 0.05)); ctx.textAlign = 'left';
   }
   if (!B) return;
-  for (const d of B.dead) if (!spr('organic/levb_brood_dead', GFX.frameIndex('organic/levb_brood_dead', d.face), d.x, d.y, 0, { layer: 'decal', alpha: Math.min(1, d.t) })) {
-    ctx.globalAlpha = Math.min(1, d.t); ctx.beginPath(); ctx.ellipse(L(d.x), L(d.y), L(0.3), L(0.15), d.face, 0, TAU); ctx.fillStyle = '#6a7a40'; ctx.fill(); ctx.globalAlpha = 1;
+  const S = LEVB_BROOD_SCALE;
+  for (const d of B.dead) {   // (a stomped one: squashed, spread wider)
+    const a = Math.min(1, d.t), k = d.stomp ? 1.15 : 1;
+    if (spr('organic/levb_brood_dead', GFX.frameIndex('organic/levb_brood_dead', d.face), d.x, d.y, 0, { layer: 'decal', alpha: a, scale: S * k, ...(d.stomp ? { sx: 1.2 } : {}) })) continue;
+    ctx.globalAlpha = a; ctx.beginPath(); ctx.ellipse(L(d.x), L(d.y), L(0.3 * S * k * (d.stomp ? 1.2 : 1)), L(0.15 * S * k), d.face, 0, TAU); ctx.fillStyle = '#6a7a40'; ctx.fill(); ctx.globalAlpha = 1;
   }
   for (const w of B.brood) {
-    if (spr('organic/levb_brood', GFX.frameIndex('organic/levb_brood', w.face, w.t * 8), w.x, w.y, 0, { emissive: 0.4, sortY: w.y })) continue;
-    ctx.save(); ctx.translate(L(w.x), L(w.y)); ctx.rotate(w.face);
+    if (spr('organic/levb_brood', GFX.frameIndex('organic/levb_brood', w.face, w.t * 8), w.x, w.y, 0, { emissive: 0.4, sortY: w.y, scale: S })) continue;
+    ctx.save(); ctx.translate(L(w.x), L(w.y)); ctx.rotate(w.face); ctx.scale(S, S);
     for (let i = 3; i >= 0; i--) { ctx.beginPath(); ctx.ellipse(-i * 6 + Math.sin(w.t * 8 + i) * 1.5, 0, 6 - i * 0.6, 5 - i * 0.6, 0, 0, TAU); ctx.fillStyle = i ? '#e8d8a0' : '#d0606e'; ctx.fill(); stroke(1.2); }
     ctx.restore();
   }
