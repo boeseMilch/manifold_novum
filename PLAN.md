@@ -3273,6 +3273,12 @@ spot as the thing you use there; later: "you can still throw the wrench if there
 - The prompt names both: "Click: climb into the front cannon · hold Space / right click: repair the front cannon (5 s)"
   (multiplayer: the server's hint travels as `prompt.rep`, and the browser's own E prompt keeps it: netLocalPrompt).
 - With nothing to repair in reach, Space / right click throws the wrench as before.
-- Unchanged: the other repair-kit jobs (splicing a power surge, the floor breaker, nailing a hull plate) stay on hold click / E.
+- Later the same day (the user: "ALL repair should use right-click/spacebar now"; jobs that don't need the kit stay on click /
+  E): every job that needs the repair kit is Space / right click too: splicing an arcing line, resetting a gravity
+  breaker, nailing a hull plate down (spacewalk), jamming the pirate reactor, repairing the base's security terminal.
+  They're hold targets marked `kitJob` (actionable() leaves them out, so click / E ignore them); `KIT_SPOTS` (filled by
+  js/hazards.js and js/dock.js) lists where one may be, repairPick asks clickTarget there. Bare-handed jobs stay on click /
+  E: taping a tarp, prying a mine off, cutting tendrils, the sentry gun (the kit only makes those faster), hacking the
+  terminal once it's fixed.
 - Tutorial: the repair step says hold right click / hold Space. Tests: tests/controls.js (Space repairs from every side,
   E doesn't, the wrench only with nothing in reach), emitter / hazards / mission / systems moved to repairPick.

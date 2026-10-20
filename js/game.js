@@ -427,26 +427,28 @@ function updateInteraction(dt) {
     }
   }
   player.eHeld = eDown;
+  if (target?.kit) target = null;                   // (the repair kit's jobs are Space / right click, below)
   if (target?.run && click) { target.run(); mouse.click = false; player.eUsed = true; }
-  updateHold(dt, target, holding);
-  updateTreat(dt, target, holding, click);
-  if (!standing(player)) { player.charge = null; player.repair = null; return; }      // down: no weapons, no repairs
-  // the repair kit: hold Space / right click repairs the part in reach (the one at the mouse with right click, else the
-  // one you face, or the one under the mouse), shown next to whatever E / click would do there
-  const rHeld = mouse.right || keys.has('Space');
-  let rp = repairPick(mx, my, mouse.right || (!keys.has('Space') && !!repairables().some(({ s }) => Math.hypot(mx - s.x, my - s.y) <= s.r)));
+  // the repair kit: hold Space / right click repairs the part (or does the kit job) in reach: the one at the mouse with
+  // right click, else the one you face, or the one under the mouse; shown next to whatever E / click would do there
+  const up = standing(player), rHeld = up && (mouse.right || keys.has('Space'));
+  let rp = up ? repairPick(mx, my, mouse.right || (!keys.has('Space') && overKitTarget(mx, my))) : null;
   if (rp && !tutAllows('target', rp)) rp = null;
+  const kitHold = rHeld && !!rp?.hold;
+  updateHold(dt, kitHold ? rp : target, kitHold || holding);
+  updateTreat(dt, target, holding, click);
+  if (!up) { player.charge = null; player.repair = null; return; }      // down: no weapons, no repairs
   if (rp && !prompt?.screen) {
-    const how = player.repair ? `repairing the ${rp.repair.name.toLowerCase()}…` : `hold Space / right click: ${repairText(rp)}`;
+    const how = player.repair || (kitHold && player.hold) ? `${repairText(rp).replace(/\s*\([^)]*\)$/, '')}…` : `hold Space / right click: ${repairText(rp)}`;
     prompt = prompt?.text ? { ...prompt, text: `${prompt.text}  ·  ${how}`, rep: how } : { text: how[0].toUpperCase() + how.slice(1), ok: true, rep: how, at: { x: rp.x, y: rp.y, r: rp.r } };
   }
-  updateRepair(dt, rp, rHeld && !!rp);
+  updateRepair(dt, rp?.repair ? rp : null, rHeld && !!rp?.repair);
   if (tutAllows('weapon')) updateWeapon(dt, mx, my, !!rp);
 }
 // The prompt that says what E does with target e (also worked out in the browser in multiplayer: js/net.js netLocalPrompt).
 const ePromptOf = (e) => ({ text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, eAct: true, at: { x: e.x, y: e.y, r: e.r, z: e.z, hullTop: e.hullTop } });
 // Something a click (or E) does something with; a prompt's spot (promptHover) is only its tooltip: act() runs it.
-const actionable = (t) => !!t?.ok && !!(t.run || t.repair || t.treat || t.hold);
+const actionable = (t) => !!t?.ok && !t.kit && !!(t.run || t.repair || t.treat || t.hold);   // (kit jobs: Space / right click)
 // The nearest thing in reach that a click would do something with (for E). Rescanned every tick
 // while E is down, otherwise a few times a second (it's only shown as a prompt then); in between, the
 // same spot is asked again, so its text stays fresh (the lever's "turn to …" changes with every turn).

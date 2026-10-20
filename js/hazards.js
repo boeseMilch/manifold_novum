@@ -36,6 +36,10 @@ const BREACH_SPOTS = {
 const VENT_PANELS = { portLock: [0.85, 17.75], starLock: [43.55, 17.95] };
 const PLASMA_ROOMS = new Set(Object.keys(VENT_PANELS));
 const GRAV_PANELS = { portGun: [6.0, 9.6], bridge: [19.0, 8.6], starGun: [36.0, 9.2], portLock: [9.6, 19.6], reactor: [26.6, 21.2], starLock: [35.4, 18.0] };
+// The repair kit's jobs here (Space / right click: js/systems.js repairPick): arcing lines, gravity breakers inside,
+// plated breaches outside
+KIT_SPOTS.push(() => player.mode === 'eva' ? hz.breaches.filter(b => b.plated).map(b => BREACH_SPOTS[b.room].out)
+  : [...hz.surges.map(id => linePoint(LINE[id], 0.5)), ...hz.noGrav.map(id => GRAV_PANELS[id])]);
 const SNACK = { x: 10.5, y: 3.85 };
 const PLATE_CRATES = [{ x: 12.6, y: 22.4 }, { x: 33.1, y: 22.8 }];
 const COFFEE_MUG = { x: 7.52, y: 10.92 };              // on the kitchen counter, between the sink and the stove
@@ -299,8 +303,8 @@ function hazardClickTarget(mx, my) {
     if (!at(x, y, 0.8)) continue;
     if (!near(x, y)) return { text: `Arcing ${lineName(LINE[id])} — get closer`, ok: false, x, y, r: 0.8 };
     if (inv.weapon !== 'repair') return { text: `Arcing ${lineName(LINE[id])} — splice it with the repair kit`, ok: false, x, y, r: 0.8 };
-    return holdTarget('splice' + id, SPLICE_TIME, `Hold click: cut and splice the ${lineName(LINE[id])} (${SPLICE_TIME} s)`, x, y, 0.8,
-                      () => { hz.surges = hz.surges.filter(s => s !== id); hz.stats.repairs++; sfx.win(); });
+    return kitJob(holdTarget('splice' + id, SPLICE_TIME, `Hold Space / right click: cut and splice the ${lineName(LINE[id])} (${SPLICE_TIME} s)`, x, y, 0.8,
+                      () => { hz.surges = hz.surges.filter(s => s !== id); hz.stats.repairs++; sfx.win(); }));
   }
   // failed gravity: the breaker under the floor
   for (const id of hz.noGrav) {
@@ -308,8 +312,8 @@ function hazardClickTarget(mx, my) {
     if (!at(x, y, 0.7)) continue;
     if (!near(x, y)) return { text: 'Gravity breaker — get closer', ok: false, x, y, r: 0.7 };
     if (inv.weapon !== 'repair') return { text: 'Gravity breaker — pry the floor plate up with the repair kit', ok: false, x, y, r: 0.7 };
-    return holdTarget('grav' + id, GRAV_TIME, `Hold click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
-                      () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); });
+    return kitJob(holdTarget('grav' + id, GRAV_TIME, `Hold Space / right click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
+                      () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); }));
   }
   // a fire (plasma or normal) in a lower side room: the panel next to its outer airlock vents the room (vent code:
   // a PIN pad, with the admin password on a sticky note right next to it — js/minigames.js)
@@ -360,8 +364,8 @@ function hazardEvaTarget(mx, my) {
       return { text: 'Click: hold the hull plate over the hole', ok: true, x, y, r: 0.9, run: () => { inv.item = null; b.plated = true; sfx.clank(); combatBanner('Plate in place — now nail it down with the repair kit'); } };
     }
     if (inv.weapon !== 'repair') return { text: 'The plate is loose over the hole — nail it down with the repair kit', ok: false, x, y, r: 0.9 };
-    return holdTarget('weld' + b.room, WELD_TIME, `Hold click: nail the plate down (${WELD_TIME} s)`, x, y, 0.9,   // step 2: the repair kit
-                      () => sealBreach(b.room, 'weld'));
+    return kitJob(holdTarget('weld' + b.room, WELD_TIME, `Hold Space / right click: nail the plate down (${WELD_TIME} s)`, x, y, 0.9,   // step 2: the repair kit
+                      () => sealBreach(b.room, 'weld')));
   }
   for (const f of hz.floating) {
     const [x, y] = floatPos(f);

@@ -2,7 +2,7 @@
 // plasma fire and venting, power surges, failed gravity, snack machine, coffee, intercom, scorch marks.
 // Run: node tests/hazards.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
+const NAMES = ['simTick', 'boarding', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
   'clickTarget', 'repairPick', 'inv', 'fires', 'SYSTEMS', 'igniteSystem', 'spray', 'startVent', 'pressShield', 'combat', 'surgeColumn', 'LINE', 'linePoint',
   'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENT_PANELS', 'CAP_MAX',
   'boarding', 'spawnInvader', 'spawnSaboteur', 'dk', 'HATCHES', 'roomAt', 'makeCrew', 'overrideHit', 'ui', 'netSerialize', 'netApply', 'SYSTEMS'];
@@ -11,11 +11,12 @@ let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
 // hold the left mouse on (x, y) for up to `max` seconds until done() says so
-function holdOn(G, x, y, done, max = 30) {
-  const m = G.me.input.mouse; m.wx = x; m.wy = y; m.down = true; let t = 0;
+function holdOn(G, x, y, done, max = 30, btn = 'down') {
+  const m = G.me.input.mouse; m.wx = x; m.wy = y; m[btn] = true; let t = 0;
   while (!done() && t < max) { G.simTick(DT); t += DT; }
-  m.down = false; return t;
+  m[btn] = false; return t;
 }
+const kitOn = (G, x, y, done, max = 30) => holdOn(G, x, y, done, max, 'right');   // the repair kit's jobs: hold right click (2026-10-20)
 const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; Object.assign(G.mission.rules, rules); G.combat.enemies.length = 0; return G; };
 
 // --- hull breach
@@ -57,8 +58,8 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   { const m = me.input.mouse; m.wx = s.out[0]; m.wy = s.out[1]; m.click = true; G.simTick(DT); }
   check(br.plated && !me.inv.item && G.vacuumRoom('portLock'), 'step 1: click to hold the hull plate over the hole (still leaking)');
   G.withCrew(me, () => { G.inv.weapon = 'repair'; });
-  const tw = holdOn(G, s.out[0], s.out[1], welded);
-  check(welded() && G.hz.hull.port === 0 && Math.abs(tw - 6) < 0.3 && G.hz.patches.some(p => p.room === 'portLock'), `step 2: hold click with the repair kit to nail it down (${tw.toFixed(1)} s); the patch stays visible`);
+  const tw = kitOn(G, s.out[0], s.out[1], welded);
+  check(welded() && G.hz.hull.port === 0 && Math.abs(tw - 6) < 0.3 && G.hz.patches.some(p => p.room === 'portLock'), `step 2: hold right click with the repair kit to nail it down (${tw.toFixed(1)} s); the patch stays visible`);
   // the laser floats out there: grab it
   const f = G.hz.floating.find(f => f.kind === 'drill'); me.x = f.x - 0.4; me.y = f.y; me.vx = me.vy = 0;
   G.hz.floating.splice(0, G.hz.floating.length, f);                       // (the repair kit may be floating right next to it)
@@ -205,8 +206,15 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const none = G.withCrew(me, () => G.clickTarget(x, y));
   check(none && !none.ok, 'splicing needs the repair kit');
   G.withCrew(me, () => { G.inv.weapon = 'repair'; });
-  const t = holdOn(G, x, y, () => !G.hz.surges.length);
-  check(!G.hz.surges.length && Math.abs(t - 5) < 0.3, `holding click with the repair kit splices it in 5 s (${t.toFixed(1)} s)`);
+  const t = kitOn(G, x, y, () => !G.hz.surges.length);
+  check(!G.hz.surges.length && Math.abs(t - 5) < 0.3, `holding right click with the repair kit splices it in 5 s (${t.toFixed(1)} s)`);
+  G.hz.surges.push('shield_port'); me.x = x + 0.8; me.y = y; me.face = Math.PI;
+  holdOn(G, x, y, () => !G.hz.surges.length, 7);
+  check(G.hz.surges.length === 1, 'holding left click on it with the repair kit does nothing any more (the kit\'s jobs are Space / right click)');
+  const k = me.input.keys; me.input.pressed.add('Space'); k.add('Space'); let ts = 0;
+  while (G.hz.surges.length && ts < 8) { G.simTick(DT); ts += DT; me.x = x + 0.8; me.y = y; }
+  k.delete('Space');
+  check(!G.hz.surges.length && !G.boarding.bolts.some(b => b.wrench), `holding Space next to it splices it (${ts.toFixed(1)} s), no wrench thrown`);
 }
 // --- gravity
 {
@@ -217,7 +225,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(v < 2.5 && me.vx > v * 0.5, `without gravity you speed up slowly and keep drifting (v ${v.toFixed(2)} → ${me.vx.toFixed(2)})`);
   const [gx, gy] = G.GRAV_PANELS.bridge; me.x = gx + 0.8; me.y = gy; me.vx = me.vy = 0;
   G.withCrew(me, () => { G.inv.weapon = 'repair'; });
-  const t = holdOn(G, gx, gy, () => !G.hz.noGrav.length);
+  const t = kitOn(G, gx, gy, () => !G.hz.noGrav.length);
   check(!G.hz.noGrav.length && t < 4.5, `the breaker under the floor plate resets it (${t.toFixed(1)} s)`);
 }
 // --- small things

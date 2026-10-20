@@ -590,24 +590,35 @@ function outsideRepairTarget(mx, my) {
 // station, the door, the ladder), so a part's repair spot can be on top of its use spot. With nothing to repair in
 // reach, the same press throws the wrench (attack). Space picks the part you face, right click the one at the mouse.
 const REPAIR_HOW = 'hold Space / right click to repair';
+// Every other job that needs the repair kit (splicing a line, a gravity breaker, nailing a plate down, ...) is a hold
+// target marked kitJob: click and E leave it alone (actionable), Space / right click does it. KIT_SPOTS: functions
+// (added by the files that own the jobs) listing [x, y] where one may be; clickTarget there says what it is.
+const KIT_SPOTS = [];
+const kitJob = (t) => ({ ...t, kit: true });
 function repairables() {
   if (inv.weapon !== 'repair' || !standing(player)) return [];
   if (player.mode === 'eva') return SYSTEMS.filter(s => s.outside && s.broken).map(s => ({ s, service: false }));
   if (player.mode !== 'inside') return [];
   return [...SYSTEMS.filter(s => s.broken && !s.outside && !burning(s)).map(s => ({ s, service: false })), ...serviceTargets().map(s => ({ s, service: true }))];
 }
+function kitJobs() {
+  if (inv.weapon !== 'repair' || !standing(player) || (player.mode !== 'inside' && player.mode !== 'eva')) return [];
+  return KIT_SPOTS.flatMap(f => f()).map(([x, y]) => clickTarget(x, y)).filter(t => t?.ok && t.kit);
+}
 function repairPick(mx, my, byMouse) {
   let best = null, bd = Infinity;
-  for (const { s, service } of repairables()) {
-    if (!near(s.x, s.y, REACH + s.r * 0.6)) continue;
-    const dm = Math.hypot(mx - s.x, my - s.y), f = player.face ?? 0;
-    const d = byMouse ? dm : Math.hypot(s.x - player.x, s.y - player.y) * (1.2 - 0.2 * Math.cos(Math.atan2(s.y - player.y, s.x - player.x) - f));
-    if (player.repair?.sys === s) return { repair: s, service, ok: true, x: s.x, y: s.y, r: s.r };   // (the one you're on stays picked)
-    if (d < bd) { bd = d; best = { repair: s, service, ok: true, x: s.x, y: s.y, r: s.r }; }
+  const cands = [...repairables().filter(({ s }) => near(s.x, s.y, REACH + s.r * 0.6)).map(({ s, service }) => ({ repair: s, service, ok: true, x: s.x, y: s.y, r: s.r })), ...kitJobs()];
+  for (const t of cands) {
+    if (t.repair ? player.repair?.sys === t.repair : player.hold?.id === t.hold.id) return t;   // (the one you're on stays picked)
+    const f = player.face ?? 0;
+    const d = byMouse ? Math.hypot(mx - t.x, my - t.y) : Math.hypot(t.x - player.x, t.y - player.y) * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
+    if (d < bd) { bd = d; best = t; }
   }
   return best;
 }
-const repairText = (t) => `${t.service ? `service the ${t.repair.name.toLowerCase()} before it breaks` : `repair the ${t.repair.name.toLowerCase()}`} (${REPAIR_TIME} s)`;
+const overKitTarget = (mx, my) => repairables().some(({ s }) => Math.hypot(mx - s.x, my - s.y) <= s.r) || kitJobs().some(t => Math.hypot(mx - t.x, my - t.y) <= t.r);
+const repairText = (t) => (t.hold ? t.text.replace(/^Hold Space \/ right click: /, '')
+  : `${t.service ? `service the ${t.repair.name.toLowerCase()} before it breaks` : `repair the ${t.repair.name.toLowerCase()}`} (${REPAIR_TIME} s)`);
 
 // Repairing: holding Space / right click on the picked part (repairPick).
 function updateRepair(dt, target, holding) {

@@ -64,6 +64,13 @@ function dockGeom(side) {
 const dockOn = () => !!dk.dock;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const DG = () => dk.dock && (dk.dock.kind === 'base' ? baseGeom(dk.dock.side) : dockGeom(dk.dock.side));
+// The repair kit's jobs aboard a docked ship (Space / right click: js/systems.js repairPick): the pirate reactor, the
+// base's broken security terminal
+KIT_SPOTS.push(() => {
+  const d = dk.dock, g = d && DG();
+  if (!g || player.mode !== 'inside') return [];
+  return [...(d.kind === 'pirate' && !d.overloaded ? [[g.core.x, g.core.y]] : []), ...(d.kind === 'base' && d.terminal === 'broken' ? [[g.terminal.x, g.terminal.y]] : [])];
+});
 function dockRects() {
   const g = DG();
   if (!g) return [];
@@ -457,8 +464,8 @@ function dockClickTarget(mx, my) {
     if (d.overloaded) return { ...t, text: `Overloading — they cast off in ${Math.ceil(d.detachT)} s. Get out!`, ok: false };
     if (!near(t.x, t.y, REACH + 0.5)) return { ...t, text: 'Pirate reactor — get closer', ok: false };
     if (inv.weapon !== 'repair') return { ...t, text: 'Pirate reactor — bring the repair kit to jam it', ok: false };
-    return holdTarget('overload', OVERLOAD_TIME, `Hold click: jam their reactor into overload (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
-                      () => { d.overloaded = true; d.detachT = DETACH_TIME; sfx.alarm(); combatBanner(`Their reactor is overloading — they'll cast off in ${DETACH_TIME} s! Get back aboard!`); });
+    return kitJob(holdTarget('overload', OVERLOAD_TIME, `Hold Space / right click: jam their reactor into overload (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
+                      () => { d.overloaded = true; d.detachT = DETACH_TIME; sfx.alarm(); combatBanner(`Their reactor is overloading — they'll cast off in ${DETACH_TIME} s! Get back aboard!`); }));
   }
   if (d.kind === 'pirate' && !d.brig && at(g.nav, 0.6)) {        // the nav console beside the reactor (chapter 4: pull its core)
     const t = { x: g.nav.x, y: g.nav.y, r: 0.6 };
@@ -1140,8 +1147,8 @@ function baseClickTarget(mx, my) {
   if (!near(t.x, t.y, REACH + 0.3)) return { ...t, text: `Security terminal (${d.terminal === 'broken' ? 'broken' : 'locked'}) — get closer`, ok: false };
   if (d.terminal === 'broken') {
     if (inv.weapon !== 'repair') return { ...t, text: 'Security terminal is broken — needs the repair kit (there\'s one in the docking bay)', ok: false };
-    return holdTarget('baseFix', REPAIR_TIME, `Hold click: repair the security terminal (${REPAIR_TIME} s)`, t.x, t.y, t.r,
-                      () => { d.terminal = 'fixed'; sfx.poi(); combatBanner('Security terminal repaired — now hack it!'); });
+    return kitJob(holdTarget('baseFix', REPAIR_TIME, `Hold Space / right click: repair the security terminal (${REPAIR_TIME} s)`, t.x, t.y, t.r,
+                      () => { d.terminal = 'fixed'; sfx.poi(); combatBanner('Security terminal repaired — now hack it!'); }));
   }
   return holdTarget('baseHack', HACK_TIME, `Hold click: hack the security terminal (${HACK_TIME} s) — opens the barracks door`, t.x, t.y, t.r,
                     () => { d.terminal = 'hacked'; d.doors[1] = false; sfx.hatch(); combatBanner('Hacked! The barracks door slides open.'); });

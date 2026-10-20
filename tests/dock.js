@@ -12,7 +12,8 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 const inside = (o, q) => q.x >= o.x && q.y >= o.y && q.x + q.w <= o.x + o.w && q.y + q.h <= o.y + o.h;
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
 const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
-function holdOn(G, x, y, done, max = 20) { const m = G.me.input.mouse; m.wx = x; m.wy = y; m.down = true; let t = 0; while (!done() && t < max) { G.simTick(DT); t += DT; } m.down = false; return t; }
+function holdOn(G, x, y, done, max = 20, btn = 'down') { const m = G.me.input.mouse; m.wx = x; m.wy = y; m[btn] = true; let t = 0; while (!done() && t < max) { G.simTick(DT); t += DT; } m[btn] = false; return t; }
+const kitOn = (G, x, y, done, max = 20) => holdOn(G, x, y, done, max, 'right');   // the repair kit's jobs: hold right click (2026-10-20)
 const via = (G, pts, max) => pts.every(([x, y]) => walkTo(G, x, y, max));
 const doorC = (q) => [q.x + q.w / 2, q.y + q.h / 2];
 function walkTo(G, tx, ty, max = 20) {                 // straight-line walking with WASD, axis by axis
@@ -83,7 +84,7 @@ for (const hide of [false, true]) {
   check(me.inv.item === 'fuel', 'their loot crate has fuel cells for the taking');
   via(G, [[g.crate.x + 1, g.y], doorC(g.doors[1]), [g.core.x + 1.4, g.core.y]]);
   G.withCrew(me, () => { G.inv.weapon = 'repair'; });
-  holdOn(G, g.core.x, g.core.y, () => G.dk.dock?.overloaded);
+  kitOn(G, g.core.x, g.core.y, () => G.dk.dock?.overloaded);
   check(G.dk.dock?.overloaded, 'jamming their reactor\'s overload with the repair kit makes them panic');
   tickN(G, 60 * 16);
   check(!G.dk.dock && me.mode === 'eva', 'they cast off 15 s later — and whoever is still aboard is left floating outside');
@@ -526,7 +527,7 @@ for (const side of ['port', 'star']) {
   const m = me.input.mouse; m.wx = g.terminal.x; m.wy = g.terminal.y; G.simTick(DT);
   check(/repair kit/.test(me.hover?.text || '') && !me.hover?.ok, `the broken terminal needs the repair kit ("${me.hover?.text}")`);
   G.withCrew(me, () => { G.inv.weapon = 'repair'; });
-  holdOn(G, g.terminal.x, g.terminal.y, () => d.terminal === 'fixed');
+  kitOn(G, g.terminal.x, g.terminal.y, () => d.terminal === 'fixed');
   check(d.terminal === 'fixed' && d.doors[1], 'repaired: still locked');
   holdOn(G, g.terminal.x, g.terminal.y, () => d.terminal === 'hacked');
   check(d.terminal === 'hacked' && !d.doors[1], 'hacked: the barracks door slides open');

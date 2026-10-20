@@ -82,7 +82,7 @@ this should feel close to playing solo.
 | WASD | move |
 | Arrow keys | aim (8 directions) while held; otherwise you face the way you walk |
 | Left click / E | use what you point at (E: or the nearest thing). Hold to treat. Power lever: tap E to turn, hold E for the wrench |
-| Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), hold to spray the extinguisher. With the repair kit: hold to repair (or service) the broken part in reach; with nothing to repair, it throws the wrench |
+| Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), hold to spray the extinguisher. With the repair kit: hold to repair (or service) the broken part in reach, and every other repair-kit job (splice a line, gravity breaker, nail a plate down, ...); with nothing to repair, it throws the wrench |
 | In a cannon | mouse or A / D to aim, click / Space to fire, hold right click / Shift for cover, R to reload (1 energy), E or CLIMB DOWN to leave |
 | M | mute (or the speaker button, top left) |
 | P | practice panel (in practice mode) |
