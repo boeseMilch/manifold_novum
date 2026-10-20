@@ -2,7 +2,7 @@
 // fires + extinguisher, and the jump / lose rules. Run: node tests/mission.js
 const { loadGame } = require('./harness');
 const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
-  'serviceTarget', 'updateRepair', 'clickTarget', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
+  'serviceTarget', 'updateRepair', 'clickTarget', 'repairPick', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
   'spawnInvader', 'power', 'MAX_DAMAGE', 'MAINT_WARNING', 'MAINT_YELLOW', 'jumpStall', 'PRESS_FIRST', 'PRESS_SHRINK', 'PRESS_FLOOR', 'STRAIN_FIRST',
   'STRAIN_FLOOR', 'STALL_CYCLE', 'shapedTimes', 'simTick', 'startTutorial', 'netSerialize', 'netApply', 'jumpCharge', 'me', 'radarList'];
@@ -123,7 +123,7 @@ const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
   runTo(G, ev.t - 15, calm(G));
   G.inv.weapon = 'repair'; G.player.x = m.target.x + 0.6; G.player.y = m.target.y + 0.6;
   let t = 0;
-  while (!ev.serviced && t < 6) { G.updateRepair(DT, G.clickTarget(m.target.x, m.target.y), true); t += DT; }
+  while (!ev.serviced && t < 6) { G.updateRepair(DT, G.repairPick(m.target.x, m.target.y, true), true); t += DT; }
   runTo(G, ev.t + 2, calm(G, m.target));
   check(ev.serviced && !m.target.broken, `servicing it with the repair kit while orange stops the breakdown (took ${t.toFixed(1)} s)`);
 }
@@ -163,7 +163,7 @@ const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
   check(G.serviceTarget() === b.sys && G.diagState(b.sys)?.orange, 'the second turns orange: it can be serviced');
   G.inv.weapon = 'repair'; G.player.x = b.sys.x + 0.6; G.player.y = b.sys.y + 0.6;
   let t = 0;
-  while (!b.serviced && t < 6) { G.updateRepair(DT, G.clickTarget(b.sys.x, b.sys.y), true); t += DT; }
+  while (!b.serviced && t < 6) { G.updateRepair(DT, G.repairPick(b.sys.x, b.sys.y, true), true); t += DT; }
   check(b.serviced && !a.serviced && G.diagState(b.sys) === null && G.diagState(b.decoy) === null, 'servicing it clears that pair (and only that one)');
   runTo(G, b.t + 2, calmM);
   check(!b.sys.broken && !b.decoy.broken && a.sys.broken, 'the serviced one never breaks: one part broke in all');

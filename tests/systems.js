@@ -2,7 +2,7 @@
 // the invader. Run: node tests/systems.js
 const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'time', 'ui', 'miniCommand', 'player', 'combat', 'combatClear', 'combatSpawn', 'teleportToGun', 'fireCannon', 'pressShield', 'reloadCannon',
-  'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'updateRepair', 'grab', 'lightLevel',
+  'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'repairPick', 'updateRepair', 'grab', 'lightLevel',
   'drawLights', 'fuelFraction', 'CELL_ENERGY', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
   'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires',
   'LEVER_ANGLES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES']);
@@ -122,10 +122,10 @@ cap0.broken = true; G.player.x = cap0.x; G.player.y = cap0.y - 1.0; G.inv.weapon
 check(!G.clickTarget(cap0.x, cap0.y).ok, 'without the repair kit a broken part cannot be repaired');
 G.inv.weapon = 'repair';
 let held = 0;
-for (let i = 0; i < 60 * 6 && cap0.broken; i++) { G.updateRepair(DT, G.clickTarget(cap0.x, cap0.y), true); held += DT; }
-check(!cap0.broken && Math.abs(held - 5) < 0.1, `holding click with the repair kit fixes it in 5 s (took ${held.toFixed(2)} s)`);
-cap0.broken = true; G.updateRepair(DT, G.clickTarget(cap0.x, cap0.y), true); G.updateRepair(DT, G.clickTarget(cap0.x, cap0.y), false);
-for (let i = 0; i < 60 * 3; i++) G.updateRepair(DT, G.clickTarget(cap0.x, cap0.y), true);
+for (let i = 0; i < 60 * 6 && cap0.broken; i++) { G.updateRepair(DT, G.repairPick(cap0.x, cap0.y, true), true); held += DT; }
+check(!cap0.broken && Math.abs(held - 5) < 0.1, `holding Space / right click with the repair kit fixes it in 5 s (took ${held.toFixed(2)} s)`);
+cap0.broken = true; G.updateRepair(DT, G.repairPick(cap0.x, cap0.y, true), true); G.updateRepair(DT, G.repairPick(cap0.x, cap0.y, true), false);
+for (let i = 0; i < 60 * 3; i++) G.updateRepair(DT, G.repairPick(cap0.x, cap0.y, true), true);
 check(cap0.broken, 'letting go restarts the repair');
 fixAll();
 // broken capacitor: no energy out of it

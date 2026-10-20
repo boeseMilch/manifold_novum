@@ -3,7 +3,7 @@
 // Run: node tests/hazards.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
-  'clickTarget', 'inv', 'fires', 'SYSTEMS', 'igniteSystem', 'spray', 'startVent', 'pressShield', 'combat', 'surgeColumn', 'LINE', 'linePoint',
+  'clickTarget', 'repairPick', 'inv', 'fires', 'SYSTEMS', 'igniteSystem', 'spray', 'startVent', 'pressShield', 'combat', 'surgeColumn', 'LINE', 'linePoint',
   'failGravity', 'GRAV_PANELS', 'SNACK', 'COFFEE_MUG', 'hurtCrew', 'vacuumRoom', 'PLATE_CRATES', 'breachRoom', 'updateFires', 'withCrew', 'VENT_PANELS', 'CAP_MAX',
   'boarding', 'spawnInvader', 'spawnSaboteur', 'dk', 'HATCHES', 'roomAt', 'makeCrew', 'overrideHit', 'ui', 'netSerialize', 'netApply', 'SYSTEMS'];
 const DT = 1 / 60;
@@ -90,7 +90,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const r = G.withCrew(me, () => { G.inv.weapon = 'repair'; return G.clickTarget(s.x, s.y); });
   check(r && !r.ok && !r.repair && /fire/i.test(r.text), `a burning broken part can't be repaired ("${r?.text}")`);
   G.fires.length = 0;
-  const r2 = G.withCrew(me, () => G.clickTarget(s.x, s.y));
+  const r2 = G.withCrew(me, () => G.repairPick(s.x, s.y, true));
   check(r2?.ok && r2.repair === s, 'with the fire out, it can be repaired');
 }
 // --- plasma fire and venting (only in the lower side rooms)

@@ -378,12 +378,8 @@ function promptHover(c, mx, my) {
 
 // What you can do with the thing you're next to: shown as a prompt; clicking it (or E) does it.
 // p: { text, at: {x, y, r} (where to click), run?, ok? }
-// With the repair kit in hand and a broken (or failing) part in reach, E repairs it: a door, hatch or button you
-// happen to stand next to doesn't take E first (2026-10-17 playtest; nearbyTarget ranks repairs first too).
-const repairInReach = () => inv.weapon === 'repair' && player.mode === 'inside'
-  && [...SYSTEMS.filter(s => s.broken && !s.outside), ...serviceTargets()].some(s => near(s.x, s.y, REACH + s.r * 0.6));
+// (Repairs are Space / right click with the repair kit since 2026-10-20: E and click always do the thing that's there.)
 function act(p) {
-  if (!p.noE && p.run && repairInReach()) p = { ...p, noE: true };
   prompt = { ok: !!p.run || !!p.ok, ...p };
   if (!p.run) return;
   if (!tutAllows('target', p)) { prompt.ok = false; return; }   // tutorial: not what this step asks for
@@ -432,11 +428,20 @@ function updateInteraction(dt) {
   }
   player.eHeld = eDown;
   if (target?.run && click) { target.run(); mouse.click = false; player.eUsed = true; }
-  updateRepair(dt, target, holding);
   updateHold(dt, target, holding);
   updateTreat(dt, target, holding, click);
-  if (!standing(player)) { player.charge = null; return; }      // down: no weapons
-  if (tutAllows('weapon')) updateWeapon(dt, mx, my);
+  if (!standing(player)) { player.charge = null; player.repair = null; return; }      // down: no weapons, no repairs
+  // the repair kit: hold Space / right click repairs the part in reach (the one at the mouse with right click, else the
+  // one you face, or the one under the mouse), shown next to whatever E / click would do there
+  const rHeld = mouse.right || keys.has('Space');
+  let rp = repairPick(mx, my, mouse.right || (!keys.has('Space') && !!repairables().some(({ s }) => Math.hypot(mx - s.x, my - s.y) <= s.r)));
+  if (rp && !tutAllows('target', rp)) rp = null;
+  if (rp && !prompt?.screen) {
+    const how = player.repair ? `repairing the ${rp.repair.name.toLowerCase()}…` : `hold Space / right click: ${repairText(rp)}`;
+    prompt = prompt?.text ? { ...prompt, text: `${prompt.text}  ·  ${how}`, rep: how } : { text: how[0].toUpperCase() + how.slice(1), ok: true, rep: how, at: { x: rp.x, y: rp.y, r: rp.r } };
+  }
+  updateRepair(dt, rp, rHeld && !!rp);
+  if (tutAllows('weapon')) updateWeapon(dt, mx, my, !!rp);
 }
 // The prompt that says what E does with target e (also worked out in the browser in multiplayer: js/net.js netLocalPrompt).
 const ePromptOf = (e) => ({ text: e.eHold?.text || e.text.replace(/^Hold click:/, 'Hold E:').replace(/^Click:/, 'E:').replace('quick click:', 'tap E:'), ok: true, e: true, eAct: true, at: { x: e.x, y: e.y, r: e.r, z: e.z, hullTop: e.hullTop } });
@@ -458,9 +463,7 @@ function nearbyTarget(now) {
       const t = clickTarget(player.x + gx, player.y + gy);
       if (!actionable(t) || !tutAllows('target', t)) continue;
       const d = Math.hypot(t.x - player.x, t.y - player.y), f = player.face ?? 0;   // (the way you face counts a little)
-      // a broken or failing part in reach comes first (it's only a target with the repair kit in hand: that's what
-      // you came for), before a door, hatch or console that happens to be nearer (2026-10-17 playtest)
-      const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f)) - (t.repair ? 100 : 0);
+      const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
       if (sc < bd) { bd = sc; best = t; at = [player.x + gx, player.y + gy]; }
     }
   player.eScan = { t: time, target: best, at };

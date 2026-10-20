@@ -498,12 +498,12 @@ const TUT_STEPS = {
       tutSay([
         `See? Broken: no left shield until it's fixed. Same everywhere: broken cannons only spark, broken capacitors hold nothing.`,
         'Had you serviced it with the repair kit while its line at the helm was orange, it would never have broken. Next time.',
-        { text: `The ship's one *repair kit* is right here in the left airlock room (marked). Take it, then ${tutC('*hold click* on the broken button', 'stand next to the broken button and *hold E*')} for 5 seconds.`, mark: () => tutItem('repair') },
+        { text: `The ship's one *repair kit* is right here in the left airlock room (marked). Take it, then ${tutC('*hold right click* on the broken button', 'stand next to the broken button and *hold Space*')} for 5 seconds.`, mark: () => tutItem('repair') },
       ], () => tutGo('fix'));
     },
   },
   fix: {
-    objective: () => (me.inv.weapon === 'repair' ? `Repair the ${lc(tutMaint().target)}: ${tutC('hold click on it', 'hold E next to it')} (5 s)` : `Take the repair kit (${tutC('click it', 'E')})`),
+    objective: () => (me.inv.weapon === 'repair' ? `Repair the ${lc(tutMaint().target)}: ${tutC('hold right click on it', 'hold Space next to it')} (5 s)` : `Take the repair kit (${tutC('click it', 'E')})`),
     marker: () => (me.inv.weapon === 'repair' ? tutMaint().target : tutItem('repair')),
     allow: (w, t) => w === 'closePanel' || (w === 'target' && (tt.text(t, /take the repair kit/) || t?.repair === tutMaint().target)),
     tick() {

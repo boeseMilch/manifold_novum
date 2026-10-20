@@ -753,7 +753,7 @@ function missionClickTarget(mx, my) {
     if (Math.hypot(mx - svc.x, my - svc.y) > svc.r) continue;
     if (inv.weapon !== 'repair') return { text: `${svc.name} is failing — service it with the repair kit`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     if (!near(svc.x, svc.y, REACH + svc.r * 0.6)) return { text: `${svc.name} — get closer`, ok: false, x: svc.x, y: svc.y, r: svc.r };
-    return { text: `Hold click: service the ${svc.name.toLowerCase()} before it breaks`, ok: true, repair: svc, service: true, x: svc.x, y: svc.y, r: svc.r };
+    return { text: `${svc.name} is failing — hold Space / right click to service it`, ok: false, x: svc.x, y: svc.y, r: svc.r };   // (repairPick, js/systems.js)
   }
   for (const s of stationSpots()) {
     if (Math.hypot(mx - s.x, my - s.y) > s.r) continue;

@@ -3260,3 +3260,19 @@ count, and a guest's shipyard in a LAN game can't buy anything: it shows the hos
   (lobbyUI.flight.rep). In a guest's room the SHIPYARD is titled "‹host›'s ship · ★ n unspent", the host's upgrades
   show as INSTALLED, the rest locked ("Only ‹host› can upgrade their ship"); the note names the guest's own reputation.
   From the main menu the shipyard is your own ship as before. No save-format change.
+
+### Repairs on Space / right click; the wrench only when there's nothing to repair (2026-10-20, js/systems.js, js/game.js)
+The user: take the wrench throw away and repair with Space / right click instead, so a part's repair spot can be the same
+spot as the thing you use there; later: "you can still throw the wrench if there is nothing selected to repair".
+- With the repair kit in hand, **hold Space or right click** repairs the broken part in reach (or services a failing one),
+  inside and on a spacewalk (the shield emitters). Right click picks the part nearest the mouse, Space the one you face
+  (or the one under the mouse); the part you're working on stays picked (`repairPick`, `repairables` in js/systems.js).
+- **Click and E no longer repair**: they always do the thing that's there (climb into the cannon at its ladder, press the
+  shield button, open the door). The 2026-10-17 workarounds that made E prefer a repair (`repairInReach`, nearbyTarget's
+  repair bonus) are gone. Clicking a broken part just tells you how ("hold Space / right click to repair").
+- The prompt names both: "Click: climb into the front cannon · hold Space / right click: repair the front cannon (5 s)"
+  (multiplayer: the server's hint travels as `prompt.rep`, and the browser's own E prompt keeps it: netLocalPrompt).
+- With nothing to repair in reach, Space / right click throws the wrench as before.
+- Unchanged: the other repair-kit jobs (splicing a power surge, the floor breaker, nailing a hull plate) stay on hold click / E.
+- Tutorial: the repair step says hold right click / hold Space. Tests: tests/controls.js (Space repairs from every side,
+  E doesn't, the wrench only with nothing in reach), emitter / hazards / mission / systems moved to repairPick.

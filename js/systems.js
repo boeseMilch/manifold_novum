@@ -402,7 +402,7 @@ function clickTarget(mx, my) {
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, ...s };
     if (burning(s)) return { text: `${s.name} is on fire — put the fire out before you can repair it`, ok: false, ...s };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, ...s };
-    return { text: `Hold click: repair the ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, ok: true, repair: s, x: s.x, y: s.y, r: s.r };
+    return { text: `${s.name} is broken — ${REPAIR_HOW} (${REPAIR_TIME} s)`, ok: false, x: s.x, y: s.y, r: s.r };   // (Space / right click: repairPick)
   }
   for (const it of ITEMS) {
     if (Math.hypot(mx - it.x, my - it.y) > 0.45) continue;
@@ -574,19 +574,42 @@ function updateHold(dt, target, holding) {
 function evaClickTarget(mx, my) {
   return hazardEvaTarget(mx, my) || evaJobTarget(mx, my) || organicEvaTarget(mx, my) || dockEvaTarget(mx, my) || outsideRepairTarget(mx, my);
 }
-// Broken parts on the outside of the hull (the shield emitters): hold click with the repair kit, as inside.
+// Broken parts on the outside of the hull (the shield emitters): repaired with the repair kit, as inside (repairPick).
 function outsideRepairTarget(mx, my) {
   for (const s of SYSTEMS) {
     if (!s.outside || !s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
     if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, x: s.x, y: s.y, r: s.r };
     if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, x: s.x, y: s.y, r: s.r };
-    return holdTarget('fix' + s.kind + s.ref.side, REPAIR_TIME, `Hold click: repair the ${s.name.toLowerCase()} (${REPAIR_TIME} s)`, s.x, s.y, s.r,
-                      () => { s.broken = false; hz.stats.repairs++; combatBanner(`${s.name} repaired — the shield works again`); sfx.win(); });
+    return { text: `${s.name} is broken — ${REPAIR_HOW} (${REPAIR_TIME} s)`, ok: false, x: s.x, y: s.y, r: s.r };
   }
   return null;
 }
 
-// Repairing: hold the mouse on a broken system with the repair kit.
+// Repairs (2026-10-20, the user): with the repair kit in hand, hold Space or right click (the weapon keys) to repair the
+// broken part in reach, or service a failing one, right where it is. Click and E keep using whatever is there (the
+// station, the door, the ladder), so a part's repair spot can be on top of its use spot. With nothing to repair in
+// reach, the same press throws the wrench (attack). Space picks the part you face, right click the one at the mouse.
+const REPAIR_HOW = 'hold Space / right click to repair';
+function repairables() {
+  if (inv.weapon !== 'repair' || !standing(player)) return [];
+  if (player.mode === 'eva') return SYSTEMS.filter(s => s.outside && s.broken).map(s => ({ s, service: false }));
+  if (player.mode !== 'inside') return [];
+  return [...SYSTEMS.filter(s => s.broken && !s.outside && !burning(s)).map(s => ({ s, service: false })), ...serviceTargets().map(s => ({ s, service: true }))];
+}
+function repairPick(mx, my, byMouse) {
+  let best = null, bd = Infinity;
+  for (const { s, service } of repairables()) {
+    if (!near(s.x, s.y, REACH + s.r * 0.6)) continue;
+    const dm = Math.hypot(mx - s.x, my - s.y), f = player.face ?? 0;
+    const d = byMouse ? dm : Math.hypot(s.x - player.x, s.y - player.y) * (1.2 - 0.2 * Math.cos(Math.atan2(s.y - player.y, s.x - player.x) - f));
+    if (player.repair?.sys === s) return { repair: s, service, ok: true, x: s.x, y: s.y, r: s.r };   // (the one you're on stays picked)
+    if (d < bd) { bd = d; best = { repair: s, service, ok: true, x: s.x, y: s.y, r: s.r }; }
+  }
+  return best;
+}
+const repairText = (t) => `${t.service ? `service the ${t.repair.name.toLowerCase()} before it breaks` : `repair the ${t.repair.name.toLowerCase()}`} (${REPAIR_TIME} s)`;
+
+// Repairing: holding Space / right click on the picked part (repairPick).
 function updateRepair(dt, target, holding) {
   if (!holding || !target?.repair) { player.repair = null; return; }
   if (player.repair?.sys !== target.repair) player.repair = { sys: target.repair, t: 0 };
@@ -602,7 +625,7 @@ function updateRepair(dt, target, holding) {
 
 // The weapon in hand: right click towards the mouse, or Space the way you face (arrow keys aim).
 // The heavy blaster fires when you let go: a quick click is a shot, held until charged a blast.
-function updateWeapon(dt, mx, my) {
+function updateWeapon(dt, mx, my, noThrow = false) {
   const keyHeld = keys.has('Space'), keyPressed = pressed.has('Space');
   const mouseAim = () => Math.atan2(my - player.y, mx - player.x);
   if (inv.weapon !== 'heavy') player.charge = null;
@@ -614,7 +637,8 @@ function updateWeapon(dt, mx, my) {
     if (player.chargeKey ? keyHeld : mouse.right) { player.charge = Math.min(BLASTER_CHARGE, player.charge + dt); player.face = a; return; }
     const blast = player.charge >= BLASTER_CHARGE; player.charge = null;
     attack(a, blast, player.chargeKey ? null : [mx, my]);
-  } else if (mouse.rightClick) attack(mouseAim(), false, [mx, my]);
+  } else if (inv.weapon === 'repair' && noThrow) return;   // (a part to repair in reach: Space / right click repairs it)
+  else if (mouse.rightClick) attack(mouseAim(), false, [mx, my]);
   else if (keyPressed) attack(player.face);
   if (inv.weapon === 'extinguisher' && player.mode === 'inside') {
     if (mouse.right) spray(mx, my, dt);
@@ -641,7 +665,7 @@ function canShoot(ignoreCd = false) {
 }
 const weaponCooldown = (w) => w === 'laser' ? LASER_COOLDOWN : w === 'heavy' ? BLASTER_COOLDOWN : WRENCH_COOLDOWN;
 // Fire the weapon in hand at angle a (from the body; at the point `to` if given). Laser: fast bolt. Heavy
-// blaster: slower 1-2 damage bolt, or a charged blast. Repair kit: throw a wrench (long cooldown). Shots
+// blaster: slower 1-2 damage bolt, or a charged blast. Repair kit: throw a wrench (long cooldown; only with nothing to repair in reach). Shots
 // leave the held weapon's muzzle (z: its height, for drawing).
 function attack(a, blast = false, to = null) {
   if (!canShoot()) return;

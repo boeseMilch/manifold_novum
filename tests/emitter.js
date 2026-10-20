@@ -14,10 +14,10 @@ const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.miss
 const emitter = (G, side) => G.SYSTEMS.find(s => s.kind === 'emitter' && s.ref.side === side);
 const fixAll = (G) => { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); };
 function holdOn(G, x, y, max = 20) {
-  const m = G.me.input.mouse; m.wx = x; m.wy = y; m.down = true; let t = 0;
+  const m = G.me.input.mouse; m.wx = x; m.wy = y; m.right = true; let t = 0;   // (repairs: hold right click, 2026-10-20)
   const s = G.SYSTEMS.find(s => s.x === x && s.y === y);
   while (s.broken && t < max) { G.simTick(DT); t += DT; }
-  m.down = false; return t;
+  m.right = false; return t;
 }
 
 {
@@ -70,7 +70,7 @@ function holdOn(G, x, y, max = 20) {
   check(t1 && !t1.ok && /repair kit/.test(t1.text), 'outside without the repair kit: "needs the repair kit"');
   G.withCrew(G.me, () => { G.inv.weapon = 'repair'; });
   const t = holdOn(G, s.x, s.y);
-  check(!s.broken && Math.abs(t - G.REPAIR_TIME) < 0.3, `on a spacewalk with the repair kit: hold click, repaired in ${t.toFixed(1)} s`);
+  check(!s.broken && Math.abs(t - G.REPAIR_TIME) < 0.3, `on a spacewalk with the repair kit: hold right click, repaired in ${t.toFixed(1)} s`);
   G.CAPACITORS[0].charge = 2;
   check(G.withCrew(G.me, () => G.pressShield('port')) === true, 'and the left shield goes up again');
 }

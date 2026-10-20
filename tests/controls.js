@@ -2,7 +2,7 @@
 // airlocks, consoles, items, treating people); right click uses your weapon. Injuries:
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
-const NAMES = ['tick', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
+const NAMES = ['tick', 'boarding', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
   'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects'];
 const DT = 1 / 60;
 let failed = 0;
@@ -109,24 +109,33 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(/^E: take the laser gun/.test(me.prompt?.text || ''), `the prompt says what E does ("${me.prompt?.text}")`);
   p.add('KeyE'); k.add('KeyE'); G.simTick(DT); k.delete('KeyE'); G.simTick(DT);
   check(me.inv.weapon === 'laser' && !G.ITEMS.length, 'E picks up the item next to you');
-  // hold E to repair
+  // hold Space to repair (2026-10-20: the repair kit's key, not E)
   const s = G.SYSTEMS.find(s => s.kind === 'capacitor'); s.broken = true; me.inv.weapon = 'repair'; me.x = s.x; me.y = s.y - 0.9;
-  G.simTick(DT); p.add('KeyE'); k.add('KeyE');
-  tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
-  check(!s.broken, 'holding E on a broken part repairs it');
-  // …from every side, even standing next to a door / hatch / button (they used to take E first: 2026-10-17 playtest)
+  G.simTick(DT); p.add('Space'); k.add('Space');
+  tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('Space'); G.simTick(DT);
+  check(!s.broken && !G.boarding.bolts.some(b => b.wrench), 'holding Space with the repair kit repairs the broken part in reach (no wrench thrown)');
+  // …from every side, even standing next to a door / hatch / button
   const bad = [];
   for (const q of G.SYSTEMS.filter(q => !q.outside)) for (let a = 0; a < 8; a++) {
     G.SYSTEMS.forEach(o => { o.broken = false; }); q.broken = true; me.inv.weapon = 'repair'; me.repair = null; G.me.ui.panel = null;
     const d = q.r + 0.5, x = q.x + Math.cos(a * Math.PI / 4) * d, y = q.y + Math.sin(a * Math.PI / 4) * d;
     if (!G.canStand(x, y, G.walkRects())) continue;
-    me.mode = 'inside'; me.x = x; me.y = y; k.delete('KeyE'); G.simTick(DT); p.add('KeyE'); k.add('KeyE');
+    me.mode = 'inside'; me.x = x; me.y = y; k.delete('Space'); G.simTick(DT); p.add('Space'); k.add('Space');
     for (let i = 0; i < Math.ceil(G.REPAIR_TIME / DT) + 10; i++) { G.simTick(DT); me.x = x; me.y = y; }
-    k.delete('KeyE'); G.simTick(DT);
+    k.delete('Space'); G.simTick(DT);
     if (q.broken) bad.push(`${q.name} from ${a * 45}°`);
   }
   G.SYSTEMS.forEach(o => { o.broken = false; });
-  check(!bad.length, `holding E next to any broken part repairs it, from every side (${bad.join(', ') || 'all ok'})`);
+  check(!bad.length, `holding Space next to any broken part repairs it, from every side (${bad.join(', ') || 'all ok'})`);
+  // E keeps doing what's there: next to a broken part E doesn't repair it; the prompt names both
+  const q = G.SYSTEMS.find(q => q.kind === 'capacitor'); q.broken = true; me.inv.weapon = 'repair'; me.repair = null; me.x = q.x; me.y = q.y - 0.9;
+  G.simTick(DT); G.simTick(DT);
+  check(/hold Space \/ right click: repair the/i.test(me.prompt?.text || ''), `the prompt says Space / right click repairs ("${me.prompt?.text}")`);
+  p.add('KeyE'); k.add('KeyE'); tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
+  check(q.broken, 'holding E next to a broken part does not repair it (E is for the thing that is there)');
+  // nothing to repair in reach: Space throws the wrench, as before
+  q.broken = false; G.boarding.bolts.length = 0; me.inv.cd = 0; G.simTick(DT); p.add('Space'); k.add('Space'); G.simTick(DT); k.delete('Space'); G.simTick(DT);
+  check(G.boarding.bolts.some(b => b.wrench), 'with nothing to repair in reach, Space throws the wrench');
 }
 // --- E on the power lever: tap (let go before 0.5 s) steps it, hold 0.5 s wedges / pulls the wrench
 {
@@ -207,11 +216,11 @@ process.exitCode = failed ? 1 : 0;
   check(/^E: take the laser gun/.test(me.prompt?.text || ''), `the prompt says what E does ("${me.prompt?.text}")`);
   p.add('KeyE'); k.add('KeyE'); G.simTick(DT); k.delete('KeyE'); G.simTick(DT);
   check(me.inv.weapon === 'laser' && !G.ITEMS.length, 'E picks up the item next to you');
-  // hold E to repair
+  // hold Space to repair (2026-10-20: the repair kit's key, not E)
   const s = G.SYSTEMS.find(s => s.kind === 'capacitor'); s.broken = true; me.inv.weapon = 'repair'; me.x = s.x; me.y = s.y - 0.9;
-  G.simTick(DT); p.add('KeyE'); k.add('KeyE');
-  tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
-  check(!s.broken, 'holding E on a broken part repairs it');
+  G.simTick(DT); p.add('Space'); k.add('Space');
+  tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('Space'); G.simTick(DT);
+  check(!s.broken && !G.boarding.bolts.some(b => b.wrench), 'holding Space with the repair kit repairs the broken part in reach (no wrench thrown)');
 }
 // --- mouse look: after the mouse moved (or you fired at it) you face it for a while; arrows still win
 {
