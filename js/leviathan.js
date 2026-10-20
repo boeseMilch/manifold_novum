@@ -14,9 +14,12 @@
 //                hull, then a slam instead) / a tail slam (room bump + a big hit), alternating, then a new window. In
 //                time: it flinches and swims to the other side. Both sides done → 4.
 //   4 BEHIND     out of every cannon's reach. Its BROOD crawls in through two engine vents in the reactor room (waves
-//                every LEVB_WAVE s: 3 crawlers solo, +1 per extra player, at most 6). Crawlers (one laser hit) head for
-//                the MID capacitor and drain 1 energy there, biting crew in their way. Charge MID to LEVB_NEED and hold
-//                the ENGINE OVERRIDE at the stern (LEVB_OVERRIDE s): the ENGINE BLAST burns the nest on its back →
+//                every LEVB_WAVE s: 3 crawlers solo, +1 per extra player, at most 6; LEVB_BROOD_WAVES waves, then the vents
+//                go quiet). Crawlers (one laser hit) head for the MID capacitor and drain 1 energy there, biting crew in
+//                their way. Charge MID to LEVB_NEED (the power lever on MID, wedged) and hold the ENGINE OVERRIDE at the
+//                stern (LEVB_OVERRIDE s; starting the hold draws MID's energy into the engine, safe from the brood; the
+//                HUD line, the panel's ring and its prompt say what's missing; out of fuel everywhere: an emergency cell
+//                drops into the crate, levEmergencyCell): the ENGINE BLAST burns the nest on its back →
 //                FREED: the last leeches drop off, its teal glow comes back, it sinks (LEVB_SINK s), then the jump
 //                drive spools (with c8's handle rule: someone pulls the handle). The jump never comes before that.
 // State: org.boss (plain data, synced with org). Geometry: a closed swim loop round the ship (levLoop); the body is a
@@ -29,6 +32,8 @@ const LEVB_FIN_HP = 2, LEVB_ZONE_HP = 2, LEVB_FLICK = 25, LEVB_FLICK_WARN = 4, L
 const LEVB_WINDOW = [12, 16, 20], LEVB_PUNISH = 6, LEVB_SLAM_WARN = 3, LEVB_WAVE = 20, LEVB_WAVE_FIRST = 5, LEVB_SPAWN_GAP = 0.9;
 // Phase 3's leech swarm: how many, by crew size (solo, 2, 3, 4+); the regular swarm event is 6.
 const LEVB_LEECHES = [2, 3, 4, 6];
+// The nest holds LEVB_BROOD_WAVES waves of brood, then the vents go quiet (so MID always fills in the end, even solo without a laser).
+const LEVB_BROOD_WAVES = 3;
 const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 3, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
 // The swim loop (world units): centre lines left / right / ahead / behind of the ship, corner radius.
 const LEVB_GEO = { X0: -16, X1: SHIP_W + 16, Y0: -22, Y1: 41, R: 16 };
@@ -242,6 +247,7 @@ function updateLevBoss(dt) {
   } else { B.s = B.sTo; if (!B.parked) { B.parked = true; B.arrive = false; B.out = 0; levParked(B); } }
   // the jump drive waits for the fight
   if (B.phase !== 'freed' && !MISSIONS[mission.id]?.practice && isFinite(mission.jumpAt) && !mission.jump && mission.jumpAt < mission.t + LEVB_HOLD_JUMP) mission.jumpAt = mission.t + LEVB_HOLD_JUMP;
+  if (B.phase === 'blast' || B.phase === 'freed') levEmergencyCell(B);
   if (B.phase === 'freed') {
     B.freed -= dt; B.sink = clamp(1 - B.freed / LEVB_SINK, 0, 1); B.out += dt * 3;
     if (B.freed <= 0) { org.boss = null; }
@@ -290,7 +296,7 @@ function levParked(B) {
   } else if (B.phase === 'p3') levOpenEye(B);
   else if (B.phase === 'p4' && !B.wave) {
     B.where = 'behind'; B.wave = { next: LEVB_WAVE_FIRST, queue: 0, spawn: 0, vent: 0, n: 0 };
-    combatBanner('It settled BEHIND us — out of every cannon\'s reach. Charge MID to 3, engine override at the stern!');
+    combatBanner('It\'s BEHIND us, out of reach — charge MID to 3, then the OVERRIDE at the stern!');
     sfx.say?.('Manual engine override available. Charge the middle capacitor.'); sfx.whale?.();
   }
 }
@@ -415,7 +421,15 @@ function levUpdateBehind(B, dt) {
       B.brood.push({ id: newUid(), x: v.x, y: v.y, hp: 1, t: Math.random() * 3, bite: 0, face: -Math.PI / 2 });
       W.queue--; W.spawn = LEVB_SPAWN_GAP;
     }
+    if (W.n >= LEVB_BROOD_WAVES && !W.queue && !W.spent) { W.spent = true; W.next = Infinity; }   // (the nest's brood is spent)
+    if (W.spent && !W.quiet && !B.brood.length) { W.quiet = true; combatBanner('The vents go quiet — its brood is spent. Charge MID!'); }
   }
+  // the override, once started, has drawn its LEVB_NEED energy out of MID into the engine: the brood can't get at it
+  if (!B.charged && crew.some(c => c.hold?.id === 'levOverride') && CAPACITORS[1].charge >= LEVB_NEED && !broken(CAPACITORS[1])) {
+    CAPACITORS[1].charge -= LEVB_NEED; B.charged = true;
+    combatBanner('Override engaged: MID\'s energy is in the engine now — keep holding!'); sfx.clank();
+  }
+  levEmergencyCell(B);
   for (const w of B.brood) {
     w.t += dt; w.bite = Math.max(0, w.bite - dt);
     const victim = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - w.x, c.y - w.y) < 0.55);
@@ -440,23 +454,61 @@ function levHurtBrood(w, dmg = 1) {
   w.hp -= dmg;
   if (w.hp <= 0) { slimeBurst(w.x, w.y, 12); org.boss?.dead.push({ x: w.x, y: w.y, face: w.face, t: 6 }); }
 }
-// The engine override at the stern: hold click (or E) for LEVB_OVERRIDE s with LEVB_NEED energy in MID.
+// The engine override at the stern: hold click (or E) for LEVB_OVERRIDE s with LEVB_NEED energy in MID. Starting the hold
+// draws that energy out of MID into the engine (B.charged, levUpdateBehind): from then on the crawlers can't drain it, and a
+// hold that's broken off (a bite, a step away) can simply be picked up again.
+const levOverrideOn = (B = org.boss) => !!B && (B.phase === 'p4' || B.phase === 'blast') && B.parked;
+// What still has to be done, for the panel's prompt, the HUD line and the sidebar.
+function levOverrideStatus(short = false) {
+  const B = org.boss, cap = CAPACITORS[1], mid = `MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`;
+  if (B.charged) return { ok: true, text: 'Engine charged — hold E at the OVERRIDE panel (stern)' };
+  if (broken(cap)) return { ok: false, text: `needs ${mid}: repair the middle capacitor first` };
+  if (cap.charge >= LEVB_NEED) return { ok: true, text: `${mid} — quick, hold E at the OVERRIDE panel (stern) before the brood drains it` };
+  const lever = power.lever, onMid = power.patch[lever.pos] === 1;
+  const how = broken(LEVER) ? 'repair the power lever' : !onMid ? 'power lever to MID, then hold E on it to wedge it'
+    : !lever.jammed ? 'hold E on the power lever to wedge it on MID' : 'lever wedged on MID';
+  const more = broken(REACTOR) ? ' · repair the reactor' : power.reactor.fuel > 0 ? '' : ' · reactor empty: load a fuel cell';
+  return { ok: false, text: `needs ${mid}: ${how}${more}${B.brood.length && !short ? ' · shoot the brood' : ''}` };
+}
 function levClickTarget(mx, my) {
   const P = LEVB_PANEL;
   if (Math.hypot(mx - P.x, my - P.y) > 0.7) return null;
-  const t = { x: P.x, y: P.y, r: 0.7 }, B = org.boss, cap = CAPACITORS[1];
+  const t = { x: P.x, y: P.y, r: 0.7 }, B = org.boss;
   if (!near(P.x, P.y)) return { ...t, text: 'Engine manual override — get closer', ok: false };
   if (!B || B.phase === 'freed') return { ...t, text: 'Engine manual override (for emergencies only)', ok: false };
   if (B.phase === 'blast') return { ...t, text: 'The engine is firing!', ok: false };
-  if (B.phase !== 'p4' || !B.parked) return { ...t, text: 'Engine override — nothing behind us to burn', ok: false };
-  if (broken(cap)) return { ...t, text: 'Engine override — fix the middle capacitor first', ok: false };
-  if (cap.charge < LEVB_NEED) return { ...t, text: `Engine override — needs ${LEVB_NEED} energy in MID (now ${cap.charge}/${LEVB_NEED}): lever on MID`, ok: false };
-  return holdTarget('levOverride', LEVB_OVERRIDE, `Hold click: MANUAL OVERRIDE — fire the engine into its back (${LEVB_OVERRIDE} s, ${LEVB_NEED} MID energy)`, P.x, P.y, 0.7, () => levBlast());
+  if (!levOverrideOn(B)) return { ...t, text: 'Engine override — nothing behind us to burn', ok: false };
+  const st = levOverrideStatus(true);
+  if (!st.ok) return { ...t, text: `Override — ${st.text}`, ok: false };
+  return holdTarget('levOverride', LEVB_OVERRIDE, `Hold click: MANUAL OVERRIDE — fire the engine into its back (${LEVB_OVERRIDE} s${B.charged ? ', charged' : `, ${LEVB_NEED} MID energy`})`, P.x, P.y, 0.7, () => levBlast());
+}
+// Standing by the panel while it can't run yet: the prompt says why and what to do (E / click have nothing to do there).
+function levAct() {
+  const P = LEVB_PANEL, B = org.boss;
+  if (!levOverrideOn(B) || B.phase !== 'p4' || Math.hypot(player.x - P.x, player.y - P.y) > REACH) return false;
+  const st = levOverrideStatus(true);
+  if (st.ok) return false;                               // (ready: E's own prompt, "Hold E: MANUAL OVERRIDE …")
+  act({ text: `Override — ${st.text}`, at: { x: P.x, y: P.y, r: 0.7 } });
+  return true;
+}
+// Its use ring (drawUseMarks), while it can be used.
+const levUseSpots = () => (levOverrideOn() ? [{ x: LEVB_PANEL.x, y: LEVB_PANEL.y, r: 0.6 }] : []);
+// No fuel left anywhere (reactor, crate, a cell lying about or carried) and MID can't reach what's still needed (the
+// override's LEVB_NEED, then 1 for the jump): the engine's own emergency cell drops into the crate. Never a softlock.
+function levEmergencyCell(B) {
+  const cap = CAPACITORS[1], coming = power.bolts.filter(b => !b.done && b.to === 1).length;
+  const need = (B.charged || B.phase !== 'p4' ? 0 : LEVB_NEED) + 1;
+  const fuel = power.reactor.fuel > 0 || power.reserve > 0 || ITEMS.some(it => it.kind === 'fuel') || crew.some(c => c.inv?.item === 'fuel');
+  if (fuel || cap.charge + coming >= need) return;
+  power.reserve++;
+  combatBanner('Out of fuel — the engine\'s EMERGENCY CELL drops into the fuel crate: load it into the reactor!'); sfx.clank();
+  sfx.say?.('Emergency fuel cell released.');
 }
 function levBlast() {
   const B = org.boss, cap = CAPACITORS[1];
-  if (!B || B.phase !== 'p4' || cap.charge < LEVB_NEED) return;
-  cap.charge -= LEVB_NEED; B.phase = 'blast'; B.blast = LEVB_BLAST;
+  if (!B || B.phase !== 'p4') return;
+  if (!B.charged) { if (cap.charge < LEVB_NEED) return; cap.charge -= LEVB_NEED; B.charged = true; }
+  B.phase = 'blast'; B.blast = LEVB_BLAST;
   combatBanner('ENGINE BLAST — burning the nest off its back!'); sfx.explosion(); sfx.whoosh?.(); combat.shake = 1;
 }
 function levFree(B) {
@@ -491,7 +543,7 @@ function levBossPlates(add) {
   else if (B.phase === 'p3') {
     const P = B.p3;
     sub = P.state === 'swim' ? `swimming to the ${levSideName(P.side)} side…` : P.state === 'open' ? `Eye + zones in ${Math.ceil(P.win)} s · ${levSideName(P.side).toLowerCase()} cannon (${(P.eye ? 1 : 0) + P.glow.filter(g => g.hit).length}/${1 + P.glow.length})` : 'too slow — brace!';
-  } else if (B.phase === 'p4') sub = !B.parked ? 'swimming round behind us…' : `${B.brood.length ? 'Brood in the reactor room! · ' : ''}MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED} · engine override at the stern`;
+  } else if (B.phase === 'p4') sub = !B.parked ? 'swimming round behind us…' : `${B.brood.length ? 'Brood in the reactor room! · ' : ''}${B.charged ? 'engine charged' : `MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`} · engine override at the stern`;
   else if (B.phase === 'blast') sub = 'ENGINE BLAST';
   else sub = 'It\'s free.';
   add('levboss', { icon: 'unknown', title: B.phase === 'freed' ? 'THE LEVIATHAN' : `LEVIATHAN · ${{ p1: 'THE PASS', gas: 'TOXIC GAS', p3: 'THE SIDE', p4: 'BEHIND', blast: 'BEHIND' }[B.phase] || ''}`, sub, stripe: B.phase === 'freed' ? '#4ad0b0' : '#c8ff6e', red: B.phase !== 'freed', wrap: true });
@@ -720,7 +772,7 @@ function drawLevBossBack(t) {
 }
 // From drawOutsideOverlays (sprites on: on top of everything outside).
 function drawLevBossTop(t) { if (org.boss) { drawLevMarks(t); drawLevBlast(t); } }
-// Inside the ship (from drawOrganicWorld, the 'mid' layer): the vents, the override panel, the brood, the flick's warning.
+// Inside the ship (from drawWorld in js/game.js, after the floors; the 'mid' layer): the vents, the override panel, the brood.
 function drawLevShip(t) {
   const B = org.boss, p4 = B && (B.phase === 'p4' || B.phase === 'blast'), open = p4 && B.parked && !!B.wave;
   for (const v of LEVB_VENTS) if (!spr(`systems/engine_vent_${open ? 'open' : 'closed'}`, 0, v.x, v.y, 0, { layer: 'decal' })) {
@@ -729,7 +781,7 @@ function drawLevShip(t) {
     for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(L(v.x - 0.4 + i * 0.27), L(v.y - 0.28)); ctx.lineTo(L(v.x - 0.4 + i * 0.27), L(v.y + 0.28)); ctx.stroke(); }
     if (open) { ctx.fillStyle = `rgba(200,255,110,${0.3 + 0.2 * Math.sin(t * 4)})`; ctx.fillRect(L(v.x - 0.45), L(v.y - 0.3), L(0.9), L(0.6)); }
   }
-  const P = LEVB_PANEL, cap = CAPACITORS[1], look = B?.phase === 'blast' ? 'active' : p4 && B.parked && cap.charge >= LEVB_NEED ? 'ready' : 'off';
+  const P = LEVB_PANEL, cap = CAPACITORS[1], look = B?.phase === 'blast' ? 'active' : p4 && B.parked && (B.charged || cap.charge >= LEVB_NEED) ? 'ready' : 'off';
   if (!spr(`systems/engine_override_${look}`, 0, P.x, P.y, 0, { emissive: 0.8, sortY: P.y })) {
     rr(L(P.x - 0.45), L(P.y - 0.35), L(0.9), L(0.45), 3); ctx.fillStyle = '#2b303a'; ctx.fill(); stroke(1.5);
     ctx.fillStyle = look === 'active' ? '#ffb347' : look === 'ready' ? (Math.sin(t * 6) > 0 ? '#ff5a4a' : '#ffd0a0') : '#4a515e';
@@ -768,6 +820,14 @@ function drawLevBossScreen(view, t) {
     const G = B.gas;
     if (G.warn > 0) { big(`T-${Math.ceil(G.warn)}`, Math.sin(t * 8) > 0 ? '#c8ff6e' : '#ff6a4a', HUD_H + 110); if (isOutside(me)) big('GET INSIDE!', '#ffe08a', HUD_H + 170); }
     else screenTint([140, 200, 60], isOutside(me) ? 0.35 : 0.08);
+  } else if (B.phase === 'p4' && B.parked) {      // what to do now, in words (the panel's ring shows where)
+    const st = levOverrideStatus();
+    ctx.font = '800 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const y = HUD_H + 96, title = B.charged ? 'ENGINE CHARGED' : `ENGINE OVERRIDE · MID ${Math.min(CAPACITORS[1].charge, LEVB_NEED)}/${LEVB_NEED}`;
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(title, VW / 2, y); ctx.fillStyle = st.ok ? '#ffd25a' : '#c8ff6e'; ctx.fillText(title, VW / 2, y);
+    ctx.font = '600 16px system-ui, sans-serif'; const sub = st.text.replace(/^needs MID \d\/\d: /, '').replace(/^MID \d\/\d — /, '');
+    ctx.lineWidth = 5; ctx.strokeText(sub, VW / 2, y + 26); ctx.fillStyle = '#e8ecf4'; ctx.fillText(sub, VW / 2, y + 26);
+    ctx.textAlign = 'left';
   } else if (B.phase === 'p3' && B.p3.state === 'open') big(`${Math.ceil(B.p3.win)}`, B.p3.win < 4 && Math.sin(t * 10) > 0 ? '#ff6a4a' : '#ffd25a', HUD_H + 110);
   else if (B.phase === 'freed' && B.freed > LEVB_SINK - 3) big('It\'s free.', '#7af0e0', HUD_H + 110);
 }

@@ -3392,3 +3392,24 @@ Every crew size gets one event less (5 solo / ×2, was 6): the second failing pa
 an event of an `always` kind that may still be dropped, selectEvents), so solo keeps one breakdown (the user's solo
 minimum: spores, the mother, the grappler, a breakdown, the leviathan). The leviathan comes at 270 s (was 330), finaleLead
 stays 230, length 560 → 500. tests/scaling.js: c8 solo marked PLAYTESTED (the model reads it busier than it likes).
+
+### The leviathan's phase 4 can always be won (2026-10-20, js/leviathan.js, js/game.js, js/interior.js, js/organic.js)
+The user's playtest of c8: "there was no menu to charge the engine … it was impossible to complete." Played through in the
+sim (tests/leviathan.js `playPhase4`: real WASD / E / clicks from the right cannon) and the browser, the causes were:
+1. **The brood outran the reactor.** Waves of 3 crawlers (+1 per player) every 20 s forever, each eating 1 MID energy; the
+   reactor makes 1 per ~21 s. Without the laser (a solo player usually carries the repair kit) MID never got past 0–1,
+   even with the lever wedged on MID and the reactor fed (checked on the old code: stuck for 800 s).
+2. **Nothing said what to do.** The panel had no use ring, and below MID 3 its "needs 3 energy" text only showed on exact
+   mouse hover (E's prompt skips what it can't do); "lever on MID" didn't say the lever steps on after every energy.
+3. **Classic view drew the vents, panel and crawlers under the floor** (drawLevShip ran before drawFloors).
+4. **A hold could be cut short** by a crawler draining MID mid-hold, and **the fuel could run out** for good (the
+   override takes 3, the jump 1 more, all through a drained MID).
+Fixes: the nest holds `LEVB_BROOD_WAVES` (3) waves, then "the vents go quiet" (the balance model already counted 3);
+starting the override hold draws MID's 3 energy into the engine (`B.charged`, synced in org.boss): the brood can't take it
+and a broken-off hold is picked up again without recharging; out of fuel everywhere (reactor, crate, a cell lying about or
+carried) while MID can't reach what's still needed, the engine's emergency cell drops into the crate (`levEmergencyCell`,
+p4 → freed, repeatable, never a softlock). Shown: a HUD line under the banner in phase 4 ("ENGINE OVERRIDE · MID 1/3" +
+the next step: lever to MID / hold E to wedge it / load a fuel cell / shoot the brood / hold E at the panel), an info prompt
+when standing at the panel (`levAct`), its use ring (`levUseSpots`), the sidebar plate "engine charged"; drawLevShip now
+runs after the floors. The override stays on click / E (not a repair-kit job). tools/travel.js exports `route` /
+`clearLine` (the test walks with them).

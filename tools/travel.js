@@ -217,4 +217,4 @@ if (require.main === module) {
   } else { console.log('usage: node tools/travel.js [from to]'); process.exitCode = 1; }
 }
 
-module.exports = { travel, tableTrip, SPOTS, VARIANTS, TABLE_FILE };
+module.exports = { travel, tableTrip, SPOTS, VARIANTS, TABLE_FILE, route, clearLine };

@@ -520,7 +520,6 @@ function drawTongue(e, t, D, H, outside = false) {
   }
 }
 function drawOrganicWorld(t) {
-  if (typeof drawLevShip === 'function') drawLevShip(t);   // the boss fight's vents, override panel and brood (js/leviathan.js)
   for (const l of org.leeches) {                       // leeches: segmented, wriggling
     const ang = l.state === 'fly' ? Math.atan2(l.ty - l.y, l.tx - l.x) : (l.side === 'port' ? 0 : Math.PI);
     if (l.state === 'fly') for (let k = 1; k < 5; k++) {   // a glistening slime trail

@@ -175,7 +175,7 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
   'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY', 'HIT_FIRE', 'HIT_BREAK', 'PLASMA_TIME',
-  'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_OVERRIDE',
+  'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_BROOD_WAVES', 'LEVB_OVERRIDE',
   'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY', 'podHatchAt',
   'missionCrew', 'crewFuel', 'shipStartExtras', 'BOLT_TIME', 'CANNON_COOLDOWN', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME'];
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -493,7 +493,7 @@ function jobsFor(ev, ctx) {
       A.CLIMB + fightTime(sideShots, g) > win ? { fixed: { small: 0, span: [0, 1], crewHits: 0.5 } } : {}));
     const fixedFlicks = Math.floor((gasAt + 60) / g.LEVB_FLICK);
     job({ label: 'leviathan: tail flicks', work: 0, prio: 3, fixed: { small: fixedFlicks, span: [0, p3 + 60], crewHits: 0.3 * fixedFlicks } });
-    const p4 = p3 + 60, waves = 3, per = Math.min(6, 3 + n - 1), spe = KIT?.spe || g.SHOTS_PER_ENERGY;
+    const p4 = p3 + 60, waves = g.LEVB_BROOD_WAVES, per = Math.min(6, 3 + n - 1), spe = KIT?.spe || g.SHOTS_PER_ENERGY;
     for (let w = 0; w < waves; w++) job({ label: `leviathan: brood wave ${w + 1}`, rel: p4 + 5 + w * g.LEVB_WAVE, trip: H('reactor'), work: per / A.LASER_HIT * A.LASER_SHOT, crewHits: 0.15 * per });
     job({ label: 'leviathan: MID to 3 + engine override', rel: p4, trip: H('reactor'), work: g.LEVB_OVERRIDE + A.LEVER_TURN, energy: [{ cap: 1, shots: g.LEVB_NEED * spe, gun: 'front' }] });
   } else if (k === 'derelict') {

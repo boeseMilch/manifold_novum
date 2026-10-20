@@ -4,7 +4,9 @@
 const { loadGame } = require('./harness');
 const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'levStationFor', 'levClickTarget', 'combat', 'simTick', 'crew', 'me', 'makeCrew', 'CAPACITORS',
   'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'LEVB_LEECHES', 'netSerialize', 'netApply',
-  'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W'];
+  'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W',
+  'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_LOCKS', 'interactSpots', 'LEVB_BROOD_WAVES'];
+const { route, clearLine } = require('../tools/travel');
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -181,7 +183,7 @@ for (const n of [1, 3]) {
   const me = G.me; Object.assign(me, { mode: 'inside', x: G.LEVB_PANEL.x, y: G.LEVB_PANEL.y - 0.8, health: 'ok' });
   cap.charge = 2;
   const no = G.withCrew(me, () => G.clickTarget(G.LEVB_PANEL.x, G.LEVB_PANEL.y));
-  check(no && !no.ok && /needs 3 energy in MID/.test(no.text), `below 3 in MID the override is refused, and says why ("${no && no.text}")`);
+  check(no && !no.ok && /needs MID 2\/3/.test(no.text), `below 3 in MID the override is refused, and says why ("${no && no.text}")`);
   cap.charge = 3;
   const yes = G.withCrew(me, () => G.clickTarget(G.LEVB_PANEL.x, G.LEVB_PANEL.y));
   check(yes && yes.ok && yes.hold?.time === 4, 'at 3 it\'s a 4 s hold');
@@ -231,5 +233,98 @@ for (const n of [1, 3]) {
   }
   G.me.input.mouse.down = false;
   check(B(G)?.phase === 'freed', `solo, by the book it's freed in ${s.toFixed(0)} s (${steps.join(' → ')})`);
+}
+// --- phase 4 solo, played through the real inputs (2026-10-20, the user: "there was no menu to charge the engine … it was
+// impossible to complete"). From the right cannon (where phase 3 ends): E climbs down, walk (WASD along a route) to the power
+// lever, E turns it to MID, hold E wedges it; refuel the reactor from the crate by clicks when it runs dry; at MID 3 walk to
+// the stern and hold E on the override; then walk to the helm and hold E on the jump handle (c8's handle rule). No laser: the
+// brood can't be shot, so it only works because the nest's brood runs out (LEVB_BROOD_WAVES) and the emergency cell.
+function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
+  const G = fresh(n, 'c8'); G.mission.events = []; G.combatClear();
+  const me = G.me, g = G.GUNS.find(q => q.id === 'star');
+  Object.assign(me, { mode: 'gun', gun: g, x: g.x, y: g.y, health: 'ok' });
+  G.power.reactor.fuel = fuel; G.power.reserve = reserve; G.CAPACITORS[1].charge = mid; G.power.lever.pos = 0; G.power.lever.jammed = false;
+  G.startLevBoss(4);
+  const keys = new Set(), down = (k) => { if (!keys.has(k)) { G.listeners.keydown({ code: k, preventDefault() {} }); keys.add(k); } };
+  const up = (k) => { if (keys.has(k)) { G.listeners.keyup({ code: k }); keys.delete(k); } };
+  const out = { G, seen: new Set(), drained: 0, cells: 0, waves: 0, won: false, t: 0 };
+  const b = () => G.org.boss;
+  const tick = () => {
+    const r0 = G.power.reserve, m0 = G.CAPACITORS[1].charge;
+    G.simTick(DT); out.t += DT;
+    if (me.prompt?.text) out.seen.add(me.prompt.text);
+    if (G.power.reserve > r0) out.cells++;
+    if (b()?.phase === 'p4' && G.CAPACITORS[1].charge < m0 && !b().charged) out.drained++;
+    if (b()?.wave) out.waves = b().wave.n;
+  };
+  const selfTreat = () => { if (me.health !== 'down') return false; ['KeyW', 'KeyA', 'KeyS', 'KeyD'].forEach(up); down('KeyE'); while (me.health === 'down' && out.t < 900) tick(); up('KeyE'); tick(); return true; };
+  const walkTo = (x, y, reach = 0.5) => {
+    let path = route(G, [me.x, me.y], [x, y]), idx = 0;
+    for (let guard = 0; Math.hypot(x - me.x, y - me.y) > reach && guard < 60 * 90; guard++) {
+      if (selfTreat()) { path = route(G, [me.x, me.y], [x, y]); idx = 0; }
+      let best = idx, bd = Infinity;
+      for (let j = idx; j < Math.min(path.length, idx + 30); j++) { const d = Math.hypot(path[j][0] - me.x, path[j][1] - me.y); if (d < bd) { bd = d; best = j; } }
+      idx = best; let aim = Math.min(idx + 1, path.length - 1);
+      for (let j = Math.min(path.length - 1, idx + 60); j > idx; j--) if (clearLine(G, me.x, me.y, path[j][0], path[j][1])) { aim = j; break; }
+      const dx = path[aim][0] - me.x, dy = path[aim][1] - me.y, ax = Math.abs(dx), ay = Math.abs(dy), hx = ax > 0.08 && ax > ay * 0.41, hy = ay > 0.08 && ay > ax * 0.41;
+      (hx && dx > 0 ? down : up)('KeyD'); (hx && dx < 0 ? down : up)('KeyA'); (hy && dy > 0 ? down : up)('KeyS'); (hy && dy < 0 ? down : up)('KeyW');
+      tick();
+    }
+    ['KeyW', 'KeyA', 'KeyS', 'KeyD'].forEach(up);
+  };
+  const tapE = () => { down('KeyE'); tick(); up('KeyE'); tick(); tick(); };
+  const holdE = (s, until) => { down('KeyE'); for (let i = 0; i < s * 60 && !until(); i++) tick(); up('KeyE'); tick(); };
+  const clickAt = (x, y) => { Object.assign(me.input.mouse, { wx: x, wy: y, click: true, down: true }); tick(); me.input.mouse.down = false; tick(); };
+  const loadFuel = () => {
+    if (G.power.reactor.fuel > 0 || (!G.power.reserve && me.inv.item !== 'fuel')) return;
+    if (me.inv.item !== 'fuel') { walkTo(G.FUEL_CRATE.x + 0.8, G.FUEL_CRATE.y + 0.6); clickAt(G.FUEL_CRATE.x, G.FUEL_CRATE.y); }
+    walkTo(G.REACTOR.x, G.REACTOR.y + G.REACTOR.h / 2 + 0.6); clickAt(G.REACTOR.x, G.REACTOR.y);
+    walkTo(G.LEVER.x, G.LEVER.y - 0.9);
+  };
+  while (!b().parked && out.t < 60) tick();
+  out.parked = b().parked;
+  tapE();                                                         // climb down from the right cannon
+  walkTo(G.LEVER.x, G.LEVER.y - 0.9);
+  for (let i = 0; i < 4 && G.power.lever.pos !== 1; i++) tapE();  // E: the lever steps on to MID
+  holdE(0.7, () => false);                                        // hold E: wedge it there
+  out.wedged = G.power.lever.pos === 1 && G.power.lever.jammed;
+  while (G.CAPACITORS[1].charge < G.LEVB_NEED && out.t < 600) { loadFuel(); selfTreat(); tick(); }
+  walkTo(G.LEVB_PANEL.x, G.LEVB_PANEL.y - 0.6, 0.3);
+  out.panelPrompt = me.prompt?.text;
+  while (b()?.phase === 'p4' && out.t < 700) { if (!selfTreat()) holdE(5, () => b()?.phase !== 'p4' || me.health === 'down'); loadFuel(); }
+  out.blast = b()?.phase === 'blast';
+  (G.evs.coils || []).forEach(c => { c.ok = true; });            // (c8's coils rule: aligned, so no extra spool time)
+  while (!G.mission.jump && out.t < 750) { loadFuel(); tick(); }
+  walkTo(G.JUMP_HANDLE.x, G.JUMP_HANDLE.y + 0.9, 0.8);
+  while (!G.mission.over && out.t < 900) { if (!selfTreat()) holdE(10, () => !!G.mission.over); loadFuel(); }
+  out.won = !!G.mission.over?.won;
+  return out;
+}
+{
+  const r = playPhase4();
+  const seen = [...r.seen];
+  check(r.parked && r.wedged, 'solo phase 4: it parks behind; E climbs down, at the lever E turns it to MID and holding E wedges it there');
+  check(seen.some(t => /hold E on it to wedge it|hold E on the power lever/.test(t)) || seen.some(t => /wedge the wrench in/.test(t)), 'the prompts say how to keep the lever on MID');
+  check(r.drained > 0 && r.waves === r.G.LEVB_BROOD_WAVES && r.G.org.boss === null, `without a laser the brood drains MID (${r.drained}×), but the nest's brood is spent after ${r.waves} waves`);
+  check(/^Hold E: MANUAL OVERRIDE/.test(r.panelPrompt || ''), `at MID 3, standing at the stern panel: "${r.panelPrompt}"`);
+  check(r.blast && r.won, `solo, real inputs only (no laser): engine blast, it's freed, the handle pulled → mission won (${r.t.toFixed(0)} s into phase 4)`);
+  const c = playPhase4({ n: 2 });
+  check(c.won, `a crew of 2 (one player doing it all, 4 crawlers a wave): won too (${c.t.toFixed(0)} s)`);
+}
+// --- the softlocks found by playing it: no fuel anywhere → the emergency cell; MID drained mid-hold; what the panel says
+{
+  const r = playPhase4({ fuel: 0, reserve: 0, mid: 0 });
+  check(r.cells >= 1 && r.won, `no fuel left anywhere (reactor, crate, carried): the emergency cell drops into the crate (${r.cells}×), and it's still won`);
+  // the hold: once started it has drawn MID's energy into the engine; a crawler reaching MID can't undo it
+  const G = fresh(1, 'c8'); G.mission.events = []; G.combatClear(); G.startLevBoss(4); parked(G, 90);
+  const me = G.me, cap = G.CAPACITORS[1]; Object.assign(me, { mode: 'inside', x: G.LEVB_PANEL.x, y: G.LEVB_PANEL.y - 0.7, health: 'ok' });
+  cap.charge = 1; G.power.lever.pos = 0; G.power.lever.jammed = false; G.simTick(DT);
+  check(me.prompt && !me.prompt.ok && /needs MID 1\/3: power lever to MID/.test(me.prompt.text), `standing at the panel before MID is full: a prompt says what's missing ("${me.prompt?.text}")`);
+  check(G.interactSpots().some(s => s.x === G.LEVB_PANEL.x && s.y === G.LEVB_PANEL.y), 'the panel has its use ring while it settles behind us');
+  cap.charge = 3; G.power.reactor.fuel = 0;
+  const m = me.input.mouse; m.wx = G.LEVB_PANEL.x; m.wy = G.LEVB_PANEL.y; m.down = true; tick(G, 1);
+  check(B(G).charged && cap.charge === 0, 'starting the hold draws MID\'s 3 energy into the engine');
+  B(G).brood.push({ id: 'x', x: 27, y: 16.6, hp: 1, t: 0, bite: 0, face: 0 }); tick(G, 3.3); m.down = false;
+  check(B(G).phase === 'blast', 'a crawler at MID mid-hold changes nothing: the blast fires');
 }
 process.exitCode = failed ? 1 : 0;

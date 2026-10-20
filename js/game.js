@@ -354,6 +354,7 @@ function updatePlayer(dt) {
     else if (hatch.locked) act({ text: 'Click: force the locked outer airlock (manual override) — vents this room!', at, run: () => startOverride(hatch, 'Outer airlock', () => { hatch.locked = false; forceHatchVent(hatch, player); }) });
     else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
   } else if (dockAct()) {
+  } else if (typeof levAct === 'function' && levAct()) {   // the boss fight's engine override, not ready yet: why (js/leviathan.js)
   } else if (doorway && doorway.blast && doorRooms(doorway).some(r => r.id === 'reactor')) {
     act({ text: 'Blast door sealed — vacuum behind it, and the cat lives here. Go around.', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 } });
   } else if (doorway && doorway.blast) {
@@ -800,6 +801,7 @@ function render(t) {
   if (!G) drawLightPools();
   drawLeviathanWarning(t);
   drawFloorDecor(t);
+  if (typeof drawLevShip === 'function') drawLevShip(t);   // the boss fight's vents, override panel and brood (js/leviathan.js; after the floors: classic drew them over it)
   drawJunk();
   drawGoo();
   drawBreaches(t);

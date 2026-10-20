@@ -131,7 +131,7 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
 // --- more self-breaking parts from chapter 4 on (2026-10-16): at every crew size at least one failing part in c4 / c6
 // (and their twins), two in c7 / c8 (and Deep drift), also on very easy
 {
-  const want = { c4: 1, pirates: 1, c6: 1, ore: 1, c7: 2, deep: 2, c8: 1 };   // (c8: two until 2026-10-20) let ok = true; const msg = [];
+  const want = { c4: 1, pirates: 1, c6: 1, ore: 1, c7: 2, deep: 2, c8: 1 }; let ok = true; const msg = [];   // (c8: two until 2026-10-20)
   for (const [id, m0] of Object.entries(want)) for (const n of [1, 2, 3, 4, 8]) for (const easy of [0, 2]) {
     const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(13); try { G.startMission(id, { easy }); } finally { Math.random = keep; }
