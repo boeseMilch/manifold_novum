@@ -243,7 +243,7 @@ const CUSTOM_KINDS = [
   ['canister', 'Fuel canister'], ['flare', 'Solar flare'], ['storm', 'Ion storm'], ['coolant', 'Coolant leak'],
   ['glitch', 'AI glitch'], ['tide', 'Gravity tide'],
 ];
-const CUSTOM_PARTS = () => SYSTEMS.filter(s => !s.outside).map(s => s.name);   // (by name: they're unique, and readable in the lobby)
+const CUSTOM_PARTS = () => ALL_PARTS.map(s => s.name);   // (by name: they're unique, and readable in the lobby; the parts inside, the shield emitters outside, the hull seams)
 const CUSTOM_MAX = 30;
 // Any config (a guest's lobby state, localStorage, an old host) → a valid one; nothing given: everything ticked, 8 encounters.
 function customConfig(c) {

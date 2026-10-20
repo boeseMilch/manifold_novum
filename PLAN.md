@@ -3282,3 +3282,19 @@ spot as the thing you use there; later: "you can still throw the wrench if there
   terminal once it's fixed.
 - Tutorial: the repair step says hold right click / hold Space. Tests: tests/controls.js (Space repairs from every side,
   E doesn't, the wrench only with nothing in reach), emitter / hazards / mission / systems moved to repairPick.
+
+### Hull seams and the shield emitters as failing parts (2026-10-20, js/hazards.js, js/mission.js, js/sidebar.js)
+The user: a hull breach as one of the random ship failures, and the outside shield emitters too.
+- **Hull seams** (`HULL_SEAMS`, js/hazards.js): one per room that can breach, at its hole's inside spot. They're not in
+  SYSTEMS (nothing breaks, burns or counts them as a broken part); `ALL_PARTS` = SYSTEMS + seams is what js/net.js indexes
+  events and repairs by. A failing seam goes yellow / orange at the helm like any part (its row shows where seams can
+  fail, or once one has), can be serviced with the repair kit (Space / right click at the spot) while orange, and if not,
+  gives way: a normal breach of that room (`failSeam`), BREACHED at the helm.
+- **Shield emitters** can now be the failing part too: serviced (or, once broken, fixed) on a spacewalk with the kit.
+- Failing seams and emitters get a problem marker (FAILING, with the off-screen arrow): there's no part to recognize there.
+- Where: `failPool()` (js/mission.js) = the inside parts as before, plus emitters / seams where the mission allows them
+  (`MISSIONS[id].failing: { emitter, seam }`) or in a custom skirmish (the builder's part list now has the emitters and
+  seams; maintAllowed narrows to the ticked ones). **No campaign mission or preset uses them yet** (the balance model
+  times a failing part as a walk to an inside part, and chapters 1, 2 and 5 are approved): their draws are unchanged.
+- Tests: tests/mission.js (seam → breach unless serviced, emitter serviced only on a spacewalk, multiplayer index, the
+  other missions untouched).

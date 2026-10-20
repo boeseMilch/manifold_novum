@@ -329,11 +329,19 @@ function layoutMission(id, n) {
 let maintPrev = [];                                  // (the last layout's pairs: [{ sys, decoy }], in time order)
 // A custom skirmish's failing parts are the ticked ones (the decoy, only shaky, may be any)
 const maintAllowed = (s) => !MISSIONS[mission.id]?.custom || customConfig(mission.custom).parts.includes(s.name);
+// What a failing part can be: the parts inside (every mission), plus where the mission allows it (MISSIONS[id].failing:
+// { emitter, seam }, or a custom skirmish: then maintAllowed narrows it to the ticked ones) the shield emitters outside
+// (serviced or fixed on a spacewalk) and the hull seams (HULL_SEAMS, js/hazards.js: one that fails is a breach).
+// (Missions without them draw from exactly the list they always had: the balance model's seeded builds stay the same.)
+function failPool() {
+  const M = MISSIONS[mission.id] || {}, on = (k) => !!M.custom || !!M.failing?.[k];
+  return [...SYSTEMS.filter(s => !s.outside), ...(on('emitter') ? SYSTEMS.filter(s => s.kind === 'emitter') : []), ...(on('seam') ? HULL_SEAMS : [])];
+}
 // (its target: a ticked part no pair uses, else one whose warning doesn't overlap, else any ticked one; null: not custom,
 // or every ticked part is broken)
 function customTarget(ev, used) {
   if (!MISSIONS[mission.id]?.custom) return null;
-  const A = SYSTEMS.filter(s => !s.broken && !s.outside && maintAllowed(s));
+  const A = failPool().filter(s => !s.broken && maintAllowed(s));
   const t1 = A.filter(s => !used.some(u => u.s === s)), t2 = A.filter(s => !used.some(u => u.s === s && Math.abs(u.t - ev.t) < MAINT_YELLOW));
   const pool = t1.length ? t1 : t2.length ? t2 : A;
   return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
@@ -341,9 +349,10 @@ function customTarget(ev, used) {
 function pickMaintPairs(evs, prev = []) {
   const ms = evs.filter(e => e.kind === 'maintenance').sort((a, b) => a.t - b.t), used = [];
   const free = (ev) => {
-    const ok = SYSTEMS.filter(s => !s.broken && !s.outside && !used.some(u => u.s === s));
-    const apart = SYSTEMS.filter(s => !s.broken && !s.outside && !used.some(u => u.s === s && Math.abs(u.t - ev.t) < MAINT_YELLOW));
-    return ok.length >= 2 ? ok : apart.length >= 2 ? apart : SYSTEMS.filter(s => !s.broken && !s.outside);   // (last resort: any)
+    const pool = failPool().filter(s => !s.broken);
+    const ok = pool.filter(s => !used.some(u => u.s === s));
+    const apart = pool.filter(s => !used.some(u => u.s === s && Math.abs(u.t - ev.t) < MAINT_YELLOW));
+    return ok.length >= 2 ? ok : apart.length >= 2 ? apart : pool;   // (last resort: any)
   };
   ms.forEach((ev, i) => {
     let p = prev[i];
@@ -365,7 +374,7 @@ function armMaintPairs() {
     ev.armed = true;
     if (!ev.sys?.broken && !ev.decoy?.broken) continue;
     const busy = new Set(maintWarnings().filter(w => w.ev !== ev).flatMap(w => [w.sys, w.decoy]));
-    const c = SYSTEMS.filter(s => !s.broken && !s.outside && !busy.has(s) && s !== ev.sys && s !== ev.decoy);
+    const c = failPool().filter(s => !s.broken && !busy.has(s) && s !== ev.sys && s !== ev.decoy);
     const take = (ok = () => true) => { const k = c.filter(ok), x = k.length ? k : c; return c.splice(c.indexOf(x[Math.floor(Math.random() * x.length)]), 1)[0]; };
     if (ev.sys?.broken && c.length) ev.sys = take(maintAllowed);
     if (ev.decoy?.broken && c.length) ev.decoy = take();
@@ -418,7 +427,7 @@ function runEvent(ev) {
   else if (ev.kind === 'swarm') combatSpawn('swarm', ev.side || 'front');
   else if (ev.kind === 'intruder') spawnIntruders(ev);
   else if (ev.kind === 'saboteur') spawnSaboteur(ev.side);
-  else if (ev.kind === 'maintenance') { if (!ev.serviced && ev.sys && !ev.sys.broken) breakSystem(ev.sys); }
+  else if (ev.kind === 'maintenance') { if (!ev.serviced && ev.sys && !ev.sys.broken) (ev.sys.kind === 'seam' ? failSeam : breakSystem)(ev.sys); }
   else if (ev.kind === 'mines') spawnMineDrone(ev.side);
   else if (ev.kind === 'spores') spawnSpores(ev.side);
   else if (ev.kind === 'debris') jamCannon(ev.gun);
@@ -577,7 +586,7 @@ function maintWarnings() {
     .map(ev => ({ ev, sys: ev.sys, decoy: ev.decoy, left: ev.t - mission.t, orange: ev.t - mission.t <= MAINT_WARNING }));
 }
 function diagState(s) {
-  if (s.broken) return { col: '#ff5a4a', text: s.outside ? 'BROKEN — outside, fix it on a spacewalk' : 'BROKEN' };
+  if (s.broken) return { col: '#ff5a4a', text: s.kind === 'seam' ? 'BREACHED' : s.outside ? 'BROKEN — outside, fix it on a spacewalk' : 'BROKEN' };
   const ws = maintWarnings(), pair = ws.length > 1;  // (several pairs at once: each line names its partner)
   const w = ws.find(w => w.sys === s && w.orange);
   if (w) return { col: '#ff9a2e', text: `FAILING — breaks in ${Math.ceil(w.left)} s`, orange: true, ev: w.ev };
@@ -751,6 +760,7 @@ function stationSpots() {
 function missionClickTarget(mx, my) {
   for (const svc of serviceTargets()) {
     if (Math.hypot(mx - svc.x, my - svc.y) > svc.r) continue;
+    if (svc.outside) return { text: `${svc.name} is failing — service it on a spacewalk (repair kit)`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     if (inv.weapon !== 'repair') return { text: `${svc.name} is failing — service it with the repair kit`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     if (!near(svc.x, svc.y, REACH + svc.r * 0.6)) return { text: `${svc.name} — get closer`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     return { text: `${svc.name} is failing — hold Space / right click to service it`, ok: false, x: svc.x, y: svc.y, r: svc.r };   // (repairPick, js/systems.js)
@@ -1057,10 +1067,11 @@ function drawRebootPanel() {
   ctx.textAlign = 'left';
 }
 function drawDiagnosisPanel() {
-  const w = 560, rows = SYSTEMS.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — ship diagnosis');
+  const list = [...SYSTEMS, ...HULL_SEAMS.filter(s => failPool().includes(s) || diagState(s))];   // (seams: where they can fail, or when they do)
+  const w = 560, rows = list.length, h = Math.min(VH - 40, 80 + rows * 19), [x, y] = panelFrame(w, h, enc.glitch ? `HELM — AI REBOOT ORDER: ${enc.glitch.order.map(i => 'ABC'[i]).join(' → ')}` : 'HELM — ship diagnosis');
   const top = 50;
   ctx.font = '12px system-ui, sans-serif'; ctx.textBaseline = 'top';
-  SYSTEMS.forEach((s, i) => {
+  list.forEach((s, i) => {
     const st = diagState(s), yy = y + top + i * 19;
     if (yy > y + h - 24) return;
     ctx.fillStyle = st ? st.col : '#5fd6a0'; ctx.beginPath(); ctx.arc(x + 26, yy + 7, 5, 0, TAU); ctx.fill();

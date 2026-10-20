@@ -273,6 +273,8 @@ function problemSpots() {
   const out = [], where = (x, y, fallback) => roomAt(x, y)?.name || (typeof inDock === 'function' && inDock(x, y) ? dockName() : fallback);
   for (const f of fires) if (f.hp > 0) out.push({ key: 'fire' + uid(f), x: f.x, y: f.y, icon: 'fire', what: f.plasma ? 'PLASMA FIRE' : 'FIRE', room: where(f.x, f.y, f.sys.name), col: '#ff8a2e' });
   for (const s of SYSTEMS) if (s.broken) out.push({ key: 'sys' + s.name, x: s.x, y: s.y, icon: 'wrench', what: 'BROKEN', room: s.name + (s.outside ? ' (outside)' : ''), col: '#ff6a5a' });
+  for (const s of serviceTargets()) if (s.kind === 'seam' || s.outside)   // (no part to recognize there: a hull seam, or an emitter outside)
+    out.push({ key: 'failing' + s.name, x: s.x, y: s.y, icon: s.kind === 'seam' ? 'breach' : 'wrench', what: 'FAILING', room: s.kind === 'seam' ? s.name : `${s.name} (outside)`, col: '#ff9a2e' });
   for (const b of hz.breaches) if (!b.tarp) { const p = BREACH_SPOTS[b.room]; if (p) out.push({ key: 'breach' + b.room, x: p.x, y: p.y, icon: 'breach', what: 'BREACH', room: roomById(b.room).name, col: '#7ab8ff' }); }
   for (const a of boarding.invaders) if (!['dormant', 'sneak', 'cloak'].includes(a.state))
     out.push({ key: 'inv' + uid(a), x: a.x, y: a.y, icon: 'alien', what: a.kind === 'saboteur' ? 'SABOTEUR' : 'INTRUDER', room: where(a.x, a.y, 'airlock'), col: '#c8ff6e' });

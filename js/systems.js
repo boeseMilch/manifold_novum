@@ -577,10 +577,12 @@ function evaClickTarget(mx, my) {
 // Broken parts on the outside of the hull (the shield emitters): repaired with the repair kit, as inside (repairPick).
 function outsideRepairTarget(mx, my) {
   for (const s of SYSTEMS) {
-    if (!s.outside || !s.broken || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
-    if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${s.name} is broken — get closer`, ok: false, x: s.x, y: s.y, r: s.r };
-    if (inv.weapon !== 'repair') return { text: `${s.name} is broken — needs the repair kit`, ok: false, x: s.x, y: s.y, r: s.r };
-    return { text: `${s.name} is broken — ${REPAIR_HOW} (${REPAIR_TIME} s)`, ok: false, x: s.x, y: s.y, r: s.r };
+    const failing = !s.broken && s.outside && serviceTargets().includes(s);   // (a failing emitter: service it out here)
+    if (!s.outside || !(s.broken || failing) || Math.hypot(mx - s.x, my - s.y) > s.r) continue;
+    const what = failing ? `${s.name} is failing` : `${s.name} is broken`;
+    if (!near(s.x, s.y, REACH + s.r * 0.6)) return { text: `${what} — get closer`, ok: false, x: s.x, y: s.y, r: s.r };
+    if (inv.weapon !== 'repair') return { text: `${what} — needs the repair kit`, ok: false, x: s.x, y: s.y, r: s.r };
+    return { text: `${what} — ${failing ? 'hold Space / right click to service it' : REPAIR_HOW} (${REPAIR_TIME} s)`, ok: false, x: s.x, y: s.y, r: s.r };
   }
   return null;
 }
@@ -597,9 +599,9 @@ const KIT_SPOTS = [];
 const kitJob = (t) => ({ ...t, kit: true });
 function repairables() {
   if (inv.weapon !== 'repair' || !standing(player)) return [];
-  if (player.mode === 'eva') return SYSTEMS.filter(s => s.outside && s.broken).map(s => ({ s, service: false }));
+  if (player.mode === 'eva') return [...SYSTEMS.filter(s => s.outside && s.broken).map(s => ({ s, service: false })), ...serviceTargets().filter(s => s.outside).map(s => ({ s, service: true }))];
   if (player.mode !== 'inside') return [];
-  return [...SYSTEMS.filter(s => s.broken && !s.outside && !burning(s)).map(s => ({ s, service: false })), ...serviceTargets().map(s => ({ s, service: true }))];
+  return [...SYSTEMS.filter(s => s.broken && !s.outside && !burning(s)).map(s => ({ s, service: false })), ...serviceTargets().filter(s => !s.outside).map(s => ({ s, service: true }))];
 }
 function kitJobs() {
   if (inv.weapon !== 'repair' || !standing(player) || (player.mode !== 'inside' && player.mode !== 'eva')) return [];

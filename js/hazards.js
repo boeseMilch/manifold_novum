@@ -31,6 +31,17 @@ const BREACH_SPOTS = {
   starGun: { x: 43.5, y: 10.6, out: [45.2, 10.6], side: 'star' },
   starLock: { x: 43.5, y: 21.3, out: [45.2, 21.3], side: 'star' },
 };
+// Hull seams (2026-10-20, the user: a hull breach as one of the random ship failures): one per room that can breach,
+// at its hole's inside spot. Only failing parts use them (never broken, burnt or counted as a broken part): a seam
+// that fails gives way into a breach (failSeam); serviced with the repair kit while it's orange, it holds. A mission
+// lets them fail with MISSIONS[id].failing.seam, a custom skirmish when they're ticked (js/mission.js failPool).
+const HULL_SEAMS = Object.entries(BREACH_SPOTS).map(([room, s]) => ({
+  kind: 'seam', room, name: `Hull seam (${ROOMS.find(r => r.id === room).name.toLowerCase()})`, x: s.x, y: s.y, r: 0.8, outside: false,
+  get broken() { return !!breachAt(room); }, set broken(v) { /* (a seam is "broken" while its room is breached) */ },
+}));
+function failSeam(s) { if (breachRoom(s.room)) combatBanner(`The hull seam gave way — HULL BREACH in the ${roomById(s.room).name.toLowerCase()}!`); }
+// Every part a failing-part event can name, by index (js/net.js sends events, repairs and fires as indices into it)
+const ALL_PARTS = [...SYSTEMS, ...HULL_SEAMS];
 // Emergency vent valves (one per room) and the gravity breaker panels (under a floor plate).
 // Plasma fires only happen in the lower side rooms; the panel next to that room's outer airlock vents it.
 const VENT_PANELS = { portLock: [0.85, 17.75], starLock: [43.55, 17.95] };

@@ -352,5 +352,47 @@ function fireAndJumpTests() {
     G.SYSTEMS[G.MAX_DAMAGE].broken = true; G.tick(DT);
     check(G.mission.over?.won === false && /fell apart/.test(G.mission.over.reason), `more than ${G.MAX_DAMAGE} broken systems at once: mission lost`);
   }
-  process.exitCode = failed ? 1 : 0;
+  // --- hull seams and the shield emitters as failing parts (2026-10-20): only where a mission allows them (the skirmish builder)
+{
+  const N = [...NAMES, 'hz', 'HULL_SEAMS', 'ALL_PARTS', 'serviceTargets', 'problemSpots', 'withCrew', 'tickN'];
+  const custom = (parts) => { const G = loadGame(N); G.startMission('custom', { custom: { n: 1, kinds: [], parts } }); G.mission.active = true; return G; };
+  const quiet = (G) => () => { G.combat.shots.length = 0; G.fires.length = 0; };
+  // a seam nobody services gives way: its room breaches
+  let G = custom(['Hull seam (bridge)']); let ev = maintEv(G);
+  check(ev.sys.kind === 'seam' && ev.sys.room === 'bridge', `a ticked hull seam is the failing part (${ev.sys.name}, decoy ${ev.decoy?.name})`);
+  runTo(G, ev.t - 5, quiet(G));
+  check(G.serviceTargets().includes(ev.sys) && G.problemSpots().some(p => p.what === 'FAILING' && /seam/i.test(p.room)), 'orange: it can be serviced, and it is marked where it is');
+  runTo(G, ev.t + 1, quiet(G));
+  check(G.hz.breaches.some(b => b.room === 'bridge') && ev.sys.broken && G.diagState(ev.sys)?.text === 'BREACHED', 'not serviced: the seam gives way, the bridge breaches (the helm says BREACHED)');
+  // serviced in time: it holds
+  G = custom(['Hull seam (left airlock room)']); ev = maintEv(G);
+  runTo(G, ev.t - 12, quiet(G));
+  G.inv.weapon = 'repair'; G.player.x = ev.sys.x + 0.7; G.player.y = ev.sys.y; let t = 0;
+  while (!ev.serviced && t < 7) { G.updateRepair(DT, G.repairPick(ev.sys.x, ev.sys.y, true), true); t += DT; }
+  runTo(G, ev.t + 2, quiet(G));
+  check(ev.serviced && !G.hz.breaches.length, `serviced with the repair kit while orange (${t.toFixed(1)} s): no breach`);
+  // a failing emitter: serviced on a spacewalk (not from inside)
+  G = custom(['Left shield emitter']); ev = maintEv(G);
+  check(ev.sys.kind === 'emitter' && ev.sys.outside, `a ticked shield emitter is the failing part (${ev.sys.name})`);
+  runTo(G, ev.t - 12, quiet(G));
+  G.inv.weapon = 'repair'; G.player.mode = 'inside'; G.player.x = 1.2; G.player.y = 16;
+  check(!G.repairPick(ev.sys.x, ev.sys.y, true), 'from inside it can\'t be serviced');
+  G.player.mode = 'eva'; G.player.x = ev.sys.x - 0.9; G.player.y = ev.sys.y; t = 0;
+  while (!ev.serviced && t < 7) { G.updateRepair(DT, G.repairPick(ev.sys.x, ev.sys.y, true), true); t += DT; }
+  runTo(G, ev.t + 2, quiet(G));
+  check(ev.serviced && !ev.sys.broken, `on a spacewalk the repair kit services it (${t.toFixed(1)} s): it never breaks`);
+  G = custom(['Right shield emitter']); ev = maintEv(G); runTo(G, ev.t + 1, quiet(G));
+  check(ev.sys.broken, 'not serviced: the emitter breaks (fixed on a spacewalk, as before)');
+  // the browsers get the seam by its index
+  G = custom(['Hull seam (bridge)']); const B = loadGame(N); B.startMission('intro'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  check(B.mission.events[0].sys === B.HULL_SEAMS.find(s => s.room === 'bridge'), 'multiplayer: the browsers see which seam is failing');
+  // every other mission: inside parts only, as before
+  let extra = 0;
+  for (const id of Object.keys(G.MISSIONS).filter(id => !G.MISSIONS[id].custom && !G.MISSIONS[id].tutorial)) for (let k = 0; k < 5; k++) {
+    const H = loadGame(N); H.startMission(id);
+    for (const e of H.mission.events) if (e.kind === 'maintenance' && [e.sys, e.decoy].some(s => s && (s.kind === 'seam' || s.outside))) extra++;
+  }
+  check(!extra, 'the other missions still only fail parts inside (no seams, no emitters) unless they say so');
+}
+process.exitCode = failed ? 1 : 0;
 }

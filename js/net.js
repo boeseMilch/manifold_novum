@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 // Snapshots
 // ---------------------------------------------------------------------------
-const sysIdx = (s) => (s ? SYSTEMS.indexOf(s) : -1);
+const sysIdx = (s) => (s ? ALL_PARTS.indexOf(s) : -1);   // (ALL_PARTS: SYSTEMS, then the hull seams: js/hazards.js)
 function netSerialize() {
   return {
     time,
@@ -68,7 +68,7 @@ function netApply(s, myId) {
     else if (fresh || Math.hypot(c.x - x, c.y - y) > 2.5) { c.x = x; c.y = y; }   // snap on big jumps
     c.nx = x; c.ny = y;                               // where the server has them (others glide there, you get corrected towards it)
     c.gun = GUNS.find(g => g.id === gun) || null; c.hatch = HATCHES[hatch] || null;
-    c.repair = repair ? { sys: SYSTEMS[repair.sys], t: repair.t } : null;
+    c.repair = repair ? { sys: ALL_PARTS[repair.sys], t: repair.t } : null;
     Object.assign(c.inv, dInv);
     c.ui.panel = dUi.panel; c.ui.override = dUi.override;
     c.ui.mini = dUi.mini;
@@ -98,7 +98,7 @@ function netApply(s, myId) {
   if (JSON.stringify(s.mission.upgrades || {}) !== JSON.stringify(mission.upgrades || {})) applyShipUpgrades(s.mission.upgrades || {});   // (HUD numbers like shots per energy)
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
-    events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? SYSTEMS[e.sys] : undefined, decoy: e.decoy !== undefined ? SYSTEMS[e.decoy] : undefined })),
+    events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? ALL_PARTS[e.sys] : undefined, decoy: e.decoy !== undefined ? ALL_PARTS[e.decoy] : undefined })),
   });
   const C2 = s.combat;
   combat.enemies = C2.enemies.map(d => {
