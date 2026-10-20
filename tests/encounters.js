@@ -53,7 +53,8 @@ const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.miss
 // --- AI glitch
 {
   const G = fresh(); G.startGlitch();
-  tickN(G, 60 * 20);
+  // (random doors toggle: waiting a fixed 20 s sometimes saw the same door lock and unlock again, 0 locked: ~1 run in 30)
+  for (let t = 0; t < 60 && !G.lockables().some(l => l.ref.locked); t += 1) tickN(G, 60);
   const locked = G.lockables().filter(l => l.ref.locked);
   check(locked.length > 0 && locked.every(l => l.kind !== 'hatch'), `doors lock themselves (${locked.length} locked; never the outer airlocks)`);
   const order = G.enc.glitch.order;
