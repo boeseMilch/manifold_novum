@@ -972,14 +972,8 @@ function drawFires(t) {
 // difference, sparks / a progress ring while pirates force it (drawDoorPry, also for the deck doors).
 function drawDoorways() {
   for (const d of DOORWAYS) {
-    const x = L(d.x), y = L(d.y), w = L(d.w), h = L(d.h), ph = (h / 2) * (1 - d.open);
-    if (ph > 0.5) for (const s of [0, 1]) {
-      const py = s ? y + h - ph : y;
-      if (d.blast) { hazardStripe(x, py, w, ph); ctx.strokeStyle = OUT; ctx.lineWidth = 3; ctx.strokeRect(x, py, w, ph); continue; }   // heavy blast shutter
-      ctx.fillStyle = '#7a8396'; ctx.fillRect(x + 2, py, w - 4, ph);
-      ctx.fillStyle = d.locked ? '#e2574c' : C.hazard; ctx.fillRect(x + 2, s ? py : py + ph - 5, w - 4, 5);
-      ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(x + 2, py, w - 4, ph);
-    }
+    const x = L(d.x), y = L(d.y), w = L(d.w), h = L(d.h);
+    drawSealedDoor(x, y, w, h, d.open, { blast: d.blast, edge: d.locked ? '#e2574c' : C.hazard });
     if (d.locked) { ctx.beginPath(); ctx.arc(x + w / 2, y - 8, 4, 0, TAU); ctx.fillStyle = '#e2574c'; ctx.fill(); stroke(1.2); }
   }
 }

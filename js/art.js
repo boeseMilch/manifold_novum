@@ -463,8 +463,35 @@ function drawSlideDoor(r, open) {
   }
 }
 
-// Deck door (classic view): the passage through the spine, its floor, and the single sliding door across its
-// middle (two panels into the spine); lamps at both ends: green = works, red = locked / broken, amber blink =
+// A sealed (airtight) sliding door in a wall gap, classic view: leaves as wide as the wall (no gap beside them), rubber
+// gaskets down both long sides, bolted, a heavy frame block at each end of the opening; the leaves meet in the middle
+// (along the long side of the rect, 'v': rect taller than wide) and slide into the frame. Pixels; open 0..1.
+function drawSealedDoor(x, y, w, h, open, o = {}) {
+  const v = h >= w, len = v ? h : w, th = v ? w : h, fr = Math.min(8, len * 0.08);
+  const R = (a, b, c, d) => v ? [x + b, y + a, d, c] : [x + a, y + b, c, d];   // (along, across, length, thickness)
+  ctx.fillStyle = '#14161b'; ctx.fillRect(...R(fr, 0, len - 2 * fr, th));           // the opening (floor in the gap)
+  const pl = (len / 2 - fr) * (1 - clamp(open, 0, 1));
+  if (pl > 0.5) for (const s of [0, 1]) {
+    const a = s ? len - fr - pl : fr;
+    if (o.blast) hazardStripe(...R(a, 0, pl, th));
+    else { ctx.fillStyle = s ? '#6f7889' : '#7a8396'; ctx.fillRect(...R(a, 0, pl, th)); }
+    ctx.fillStyle = '#23262d'; ctx.fillRect(...R(a, 0, pl, 3)); ctx.fillRect(...R(a, th - 3, pl, 3));   // gaskets
+    if (!o.blast) {
+      ctx.fillStyle = '#a3abb8';
+      for (let k = 7; k < pl - 7; k += 9) { ctx.fillRect(...R(s ? a + pl - k - 1 : a + k - 1, 5, 2, 2)); ctx.fillRect(...R(s ? a + pl - k - 1 : a + k - 1, th - 7, 2, 2)); }
+      ctx.fillStyle = o.edge || C.hazard; ctx.fillRect(...R(s ? a : a + pl - 5, 2, 5, th - 4));          // the meeting edge
+    }
+    ctx.strokeStyle = OUT; ctx.lineWidth = o.blast ? 3 : 2; ctx.strokeRect(...R(a, 0, pl, th));
+  }
+  for (const a of [0, len - fr]) {                                                     // frame blocks, a little proud
+    const r = R(a, -2, fr, th + 4);
+    ctx.fillStyle = '#4c5464'; ctx.fillRect(...r); ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(...r);
+    ctx.fillStyle = '#23262d'; ctx.fillRect(...R(a === 0 ? fr - 2 : len - fr, 0, 2, th));
+  }
+}
+
+// Deck door (classic view): the passage through the spine, its floor, and the single sliding door in the spine's
+// front face (two leaves into the spine; drawSealedDoor); lamps at both ends: green = works, red = locked / broken, amber blink =
 // pressure difference; hazard stripes on a shut door with vacuum behind it.
 function drawDeckDoor(d, t) {
   const x = d.x * T, y = d.y * T, w = d.w * T, h = d.h * T, b = doorBroken(d);
@@ -472,17 +499,9 @@ function drawDeckDoor(d, t) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
   for (let k = 8; k < h; k += 10) { ctx.beginPath(); ctx.moveTo(x + 4, y + k); ctx.lineTo(x + w - 4, y + k); ctx.stroke(); }   // tread
   ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
-  const dy = (SPINE_Y1 - 0.8) * T, th = 0.26 * T, pw = (w / 2) * (1 - clamp(d.open, 0, 1));
-  ctx.fillStyle = '#2b303a'; ctx.fillRect(x - 4, dy - th / 2 - 2, w + 8, th + 4);   // the track
-  if (pw > 0.5) for (const side of [0, 1]) {
-    const px = side ? x + w - pw : x;
-    if (d.blast) hazardStripe(px, dy - th / 2, pw, th);
-    else {
-      ctx.fillStyle = '#7a8396'; ctx.fillRect(px, dy - th / 2, pw, th);
-      ctx.fillStyle = d.locked || b ? '#e2574c' : C.hazard; ctx.fillRect(side ? px : px + pw - 5, dy - th / 2, 5, th);
-      ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(px, dy - th / 2, pw, th);
-    }
-  }
+  // the door: in the spine's front face (as in the sprite view, deckdoor.py), sealed, in a heavy frame
+  const dy = (SPINE_Y1 - 0.22) * T, th = 0.3 * T;
+  drawSealedDoor(x - 8, dy - th / 2, w + 16, th, d.open, { blast: d.blast, edge: d.locked || b ? '#e2574c' : C.hazard });
   const st = b || d.locked ? 'closed' : d.blast ? 'busy' : 'open';
   for (const ly of [y - 7, y + h + 7]) lamp(x - 9, ly, st, t);
   if (b && Math.sin(t * 20) > 0.6) { ctx.fillStyle = '#ffd36a'; ctx.fillRect(x + w + 3, dy - 3, 4, 4); }   // sparks

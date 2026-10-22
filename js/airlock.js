@@ -300,19 +300,9 @@ function drawAirlock2D(h, t) {
   if (look === 'cycle' || look === 'vac' || look === 'vent') {
     ctx.fillStyle = look === 'cycle' ? `rgba(150,200,255,${0.12 + 0.1 * Math.sin(t * 18)})` : 'rgba(20,30,60,0.35)'; ctx.fillRect(x, y, w, hh);
   }
-  const door = (r, open, vertical) => {               // two panels sliding apart (along y: they meet in the middle)
-    const rx = r.x * T, ry = r.y * T, rw = r.w * T, rh = r.h * T, ph = (rh / 2) * (1 - open);
-    ctx.fillStyle = '#14161b'; ctx.fillRect(rx, ry, rw, rh);
-    if (ph < 0.5) return;
-    for (const sd of [0, 1]) {
-      const py = sd ? ry + rh - ph : ry;
-      ctx.fillStyle = vertical ? '#6b7486' : '#7a8396'; ctx.fillRect(rx + 2, py, rw - 4, ph);
-      ctx.fillStyle = C.hazard; ctx.fillRect(rx + 2, sd ? py : py + ph - 5, rw - 4, 5);
-      ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(rx + 2, py, rw - 4, ph);
-    }
-  };
-  door(h.inner, h.doors.inner, false);
-  door(h.outer, h.doors.outer, true);
+  const door = (r, open) => drawSealedDoor(r.x * T, r.y * T, r.w * T, r.h * T, open, { edge: look === 'locked' || look === 'broken' ? '#e2574c' : C.hazard });   // (js/art.js: sealed leaves meeting in the middle)
+  door(h.inner, h.doors.inner);
+  door(h.outer, h.doors.outer);
   const P = airlockPanelAt(h), col = { air: '#5fd6a0', vac: '#e2574c', cycle: Math.sin(t * 14) > 0 ? '#ffd36a' : '#7a5a1a', busy: Math.sin(t * 14) > 0 ? '#ffd36a' : '#7a5a1a',
     locked: '#e2574c', broken: Math.sin(t * 30) > 0.6 ? '#ffd28a' : '#30343c', vent: Math.sin(t * 10) > 0 ? '#ff5a4a' : '#5a1a14' }[look];
   ctx.beginPath(); ctx.arc(P.x * T, (P.y - 0.05) * T, 6, 0, TAU); ctx.fillStyle = col; ctx.fill(); stroke(1.5);

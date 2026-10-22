@@ -165,7 +165,8 @@ function buildSpinePieces() {
 }
 
 // Deck doors (tools/blender/models/interior/deckdoor.py): the passage through the spine (base: its floor, the spine
-// ends, the lamp and the beacons by state) and the single sliding door on top.
+// ends, the roof over the passage with the header, the lamps and the beacons by state) and the sliding door, set in
+// the spine's front face (local y -0.22) under the header, its leaves as tall as the wall.
 function drawDeckDoorSprite(d, t) {
   const b = doorBroken(d), k = clamp(d.open, 0, 1);
   const base = b ? `interior/deckdoor_broken_f${Math.floor(t * 6) % 2}` : d.blast ? `interior/deckdoor_blast_f${Math.floor(t * 4) % 4}`
@@ -174,7 +175,7 @@ function drawDeckDoorSprite(d, t) {
   GFX.sprite(base, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y0, emissive: 0.6 });
   const door = b && d.jammed && k > 0.95 ? 'interior/deckdoor_door_forced' : k < 0.05 && d.blast ? 'interior/deckdoor_door_blast'
     : k < 0.05 && d.locked ? 'interior/deckdoor_door_locked' : `interior/deckdoor_door_f${Math.round(k * 5)}`;
-  GFX.sprite(door, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.75, emissive: 0.4 });
+  GFX.sprite(door, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.22, emissive: 0.4 });
   return true;
 }
 

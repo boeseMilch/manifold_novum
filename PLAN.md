@@ -3657,3 +3657,25 @@ SPORES MOVE INSIDE. The hull barnacles are gone (evs.barnacles, BARNACLE_*, SCRA
 - Tests: tests/spores.js (new), tests/eva.js / interact.js (barnacle hold tests → a limpet mine), threats.js (clouds
   popped before they reach the airlock), organic.js (the scream: a cloud, no pods), hazards.js (the panel works without
   a fire).
+
+## Inner doors read as airtight bulkheads (2026-10-22)
+
+The user: "The walls still aren't the same height as the new doors, making them look like salon doors. The doors
+should be airtight, so this should visually be clear."
+- Cause: the doorway / airlock-inner leaves (doors.py, interior/door_v_*) were 0.3 thick and 1.5 tall in a 0.6 x 1.6
+  wall, so you saw the floor beside them and their tops sat below the wall caps; the deck door (deckdoor.py) stood in
+  the middle of an open-topped slot through the spine, 1.48 tall under a thin lintel, its face hanging between the
+  spine top and the wall face: a low door in a gap.
+- Doorways, the airlocks' inner doors and the outer hatches (interior/door_v_*, hatch_*): the leaves are as thick as the
+  wall (rubber gaskets down both sides) and as tall (tops flush with the wall caps), with bolted pressure rims, a rubber
+  seal on the meeting edge (a striped edge plate on it), all states (locked / blast / forced / broken); the north
+  collar's pocket shows the retracted leaf's sealed edge; collars a bit wider (lamp and keypad beside the pocket, where
+  a shut leaf doesn't hide them), gaskets along their tops.
+- Deck doors: the door moved into the spine's front face (the bottom deck's back wall, local y -0.22) under a heavy
+  bolted header flush with the spine top; the leaves run up into the header; gasket channels at the jambs and under the
+  header; the passage through the spine's high block is roofed over (spine top plates, the conduits run straight on),
+  so the spine reads as one sealed wall with a door in it (crew in the roofed part are hidden, like behind any back
+  wall). Top lamp on the roof's back edge. js/sprites.js: the door's sortY follows it (SPINE_Y1 - 0.22).
+- Classic view: drawSealedDoor (js/art.js) for doorways, deck doors (also moved to the front face) and both airlock
+  doors: wall-wide leaves, gaskets, bolts, frame blocks at the ends.
+- Re-rendered doors.py and deckdoor.py, re-packed interior (sprites.json: 1189 entries before and after, 229 interior).

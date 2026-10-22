@@ -1,7 +1,10 @@
 """Doors in up-down walls: the sliding doors between rooms and the outer airlock hatches (inside view).
 
 Both sit in a vertical wall (seen edge-on in the tilted view), so they are built as pocket doors: two
-thick panels slide out of the wall jambs north and south of the opening and meet in the middle, like
+panels slide out of the wall jambs north and south of the opening and meet in the middle. They are airtight
+bulkhead leaves: as thick as the wall (0.6, rubber gaskets down both sides) and as tall (tops flush with the wall
+caps at 1.6), bolted pressure rims on top, a rubber seal on the meeting edge; the pocket slot in the north collar
+shows the retracted leaf's sealed edge (2026-10-22: they were 0.3 x 1.5 in a 0.6 x 1.6 wall), like
 drawSlideDoor/drawDoorways (js/art.js, js/mission.js) and drawHatch (js/art.js). The frame sprite has
 the jamb ends (collars), the threshold and the status lamp; the panel sprites are rendered with the
 jambs as a holdout (cut where the wall is in front), so they go on top of the frame (and of the wall
@@ -35,12 +38,14 @@ OPEN = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 class Spec:
     def __init__(self, kind):
         self.kind = kind
+        # The leaves fill the whole opening: as thick as the wall (0.6, rubber gaskets on both sides included) and as
+        # tall (their tops flush with the wall caps at H_FULL), so a shut door reads as a sealed piece of wall (2026-10-22:
+        # they were 0.3 thick and 1.5 tall in a 0.6 x 1.6 wall: you saw the floor beside them, "salon doors").
+        self.pt = THICK; self.ph = H_FULL - 0.005; self.slot = THICK + 0.01
         if kind == 'door':
-            self.L = 2.2; self.cw = 0.38; self.cdeep = 0.2; self.ch = 1.66
-            self.pt = 0.3; self.ph = 1.5; self.slot = 0.4
+            self.L = 2.2; self.cw = 0.44; self.cdeep = 0.2; self.ch = 1.66
         else:                                    # hatch: shorter opening, heavier everything
-            self.L = 1.8; self.cw = 0.42; self.cdeep = 0.26; self.ch = 1.72
-            self.pt = 0.34; self.ph = 1.55; self.slot = 0.44
+            self.L = 1.8; self.cw = 0.46; self.cdeep = 0.26; self.ch = 1.72
 
 def frame(S, M, side=0, state='ok', t=0.0):
     """Static part. side: 0 = doorway (symmetric), -1 = port hatch (outside is -x), +1 = star hatch."""
@@ -66,20 +71,29 @@ def frame(S, M, side=0, state='ok', t=0.0):
         o.append(gbox('ctop_hz', x0 + 0.05, ya + 0.04, x1 - 0.05, yb - 0.04, ch, ch + 0.012, M['hazard_big' if S.kind == 'hatch' else 'hazard'], 0.004))
         for sx in (x0 + 0.04, x1 - 0.04):
             o.append(rivet(sx, (ya + yb) / 2, ch, M, r=0.025))
-    # the north collar's south face: the pocket slot the panel comes out of, lamp, keypad
-    o.append(gbox('slot', -S.slot / 2, -0.01, S.slot / 2, 0.012, 0.02, S.ph + 0.05, M['hole'], 0.004))
+    # the north collar's south face: the pocket slot the leaf comes out of (wall-wide, full height, rubber-lined), and
+    # beside it (where a shut leaf doesn't hide them) the lamp and the keypad
+    o.append(gbox('slot', -S.slot / 2, -0.01, S.slot / 2, 0.012, 0.02, S.ph + 0.03, M['hole'], 0.004))
+    # in it, the retracted leaf's edge (what the open pocket shows): its rubber seal with the striped edge plate
+    o.append(gbox('pocket_seal', -S.pt / 2 + 0.02, 0.0, S.pt / 2 - 0.02, 0.014, 0.03, S.ph - 0.004, M['rubber'], 0.008))
+    o.append(gbox('pocket_hz', -0.09, 0.012, 0.09, 0.022, 0.1, S.ph - 0.12, M['hazard'], 0.004))
+    o.append(gbox('slot_lintel', -S.slot / 2 - 0.02, -0.005, S.slot / 2 + 0.02, 0.03, S.ph + 0.03, S.ph + 0.06, M['rubber'], 0.006))
     for sx in (-1, 1):
-        o.append(gbox('seal', sx * S.slot / 2 - 0.02, 0.0, sx * S.slot / 2 + 0.02, 0.02, 0.02, S.ph + 0.05, M['rubber'], 0.006))
-    lx = (x1 - 0.1) if side <= 0 else (x0 + 0.1)          # lamp on the room side
+        o.append(gbox('seal', sx * S.slot / 2 - 0.02, 0.0, sx * S.slot / 2 + 0.02, 0.03, 0.02, S.ph + 0.05, M['rubber'], 0.006))
+    # the collar tops: a rubber gasket along the edge at the opening, a bolted rim (the leaves seal against it)
+    for (ya, yb) in ((-0.05, 0.0), (L, L + 0.05)):
+        o.append(gbox('ctop_seal', x0 + 0.03, ya, x1 - 0.03, yb, ch - 0.02, ch + 0.016, M['rubber'], 0.006))
+    lx = (x1 - 0.07) if side <= 0 else (x0 + 0.07)        # lamp on the room side
     lamp_state = {'ok': 'open', 'locked': 'closed', 'blast': 'closed', 'broken': 'off'}[state]
     o.append(gbox('lamp_box', lx - 0.06, -0.01, lx + 0.06, 0.04, 1.2, 1.42, M['dark'], 0.015))
     o.append(mn.sphere('lamp', 0.045, loc=G(lx, 0.04, 1.31), m=lamp_mat(lamp_state), scale=(1, 0.7, 1), segs=16))
-    kx = (x0 + 0.1) if side == 0 else lx                  # hatches: keypad under the lamp, room side
+    kx = (x0 + 0.07) if side == 0 else lx                 # hatches: keypad under the lamp, room side
     o.append(gbox('keypad', kx - 0.055, -0.01, kx + 0.055, 0.03, 0.85, 1.05, M['dark'], 0.01))
     for i in range(3):
         for j in range(2):
             o.append(gbox('key', kx - 0.035 + j * 0.05, 0.03, kx - 0.015 + j * 0.05, 0.04, 0.88 + i * 0.05, 0.91 + i * 0.05, M['steel'], 0.003))
-    o.append(gbox('hz_face', x0 + 0.03, -0.01, x1 - 0.03, 0.025, 0.08, 0.26, M['hazard'], 0.005))
+    for (a, b) in ((x0 + 0.02, -S.slot / 2 - 0.02), (S.slot / 2 + 0.02, x1 - 0.02)):
+        if b - a > 0.03: o.append(gbox('hz_face', a, -0.01, b, 0.025, 0.08, 0.26, M['hazard'], 0.005))
     # threshold floor
     o.append(gbox('thr', -0.3, 0.0, 0.3, L, 0.0, 0.03, M['body'], 0.008))
     o.append(gbox('rail', -0.06, 0.02, 0.06, L - 0.02, 0.03, 0.036, M['hole'], 0.0))
@@ -116,8 +130,8 @@ def panels(S, M, open_k, state='ok', side=0):
     o = []
     L = S.L; half = L / 2
     blast = state == 'blast'
-    pt = (S.slot - 0.02) if blast else S.pt
-    ph = S.ph + (0.06 if blast else 0)
+    pt = S.pt; ph = S.ph                         # wall-thick, flush with the wall top (blast shutters too)
+    gk = 0.045                                   # the rubber gaskets down both long sides
     ext = half * (1 - open_k)                   # how far each panel sticks out of its jamb
     plen = half + 1.2
     cap_m = M['red'] if state == 'locked' else M['yellow']
@@ -128,14 +142,22 @@ def panels(S, M, open_k, state='ok', side=0):
         bent = state in ('forced', 'broken') and s == (0 if state == 'forced' else 1)
         mat = M['blast'] if blast else (M['door'] if s == 0 else M['door2'])
         if S.kind == 'hatch' and not blast: mat = M['door2'] if s == 0 else M['door']
-        objs = [gbox('panel', -pt / 2, ya, pt / 2, yb, 0.02, ph, mat, 0.03)]
-        # top: groove, ribs, bolts
+        objs = [gbox('panel', -pt / 2 + gk, ya, pt / 2 - gk, yb, 0.02, ph, mat, 0.03)]
+        for sx in (-1, 1):                       # gaskets: dark seams along both top edges, pressed against the jambs
+            objs.append(gbox('gasket', sx * (pt / 2 - gk / 2) - gk / 2, ya, sx * (pt / 2 - gk / 2) + gk / 2, yb, 0.02, ph - 0.015, M['rubber'], 0.012))
+        # top: groove, a bolted pressure rim along both edges, the dogging bar
         lead = yb if s == 0 else ya
         dirn = -1 if s == 0 else 1               # from the leading edge back into the panel
         objs.append(gbox('groove', -0.02, min(lead, lead + dirn * 1.0), 0.02, max(lead, lead + dirn * 1.0), ph, ph + 0.004, M['dark'], 0.0))
-        for k in range(3):
-            yy = lead + dirn * (0.3 + 0.35 * k)
-            objs.append(rivet(-pt / 2 + 0.045, yy, ph, M, r=0.018)); objs.append(rivet(pt / 2 - 0.045, yy, ph, M, r=0.018))
+        r0 = 0.32 if S.kind == 'hatch' else 0.12
+        for sx in (-1, 1) if not blast else ():
+            objs.append(gbox('rim', sx * (pt / 2 - gk - 0.035) - 0.025, min(lead + dirn * r0, lead + dirn * 1.6), sx * (pt / 2 - gk - 0.035) + 0.025, max(lead + dirn * r0, lead + dirn * 1.6), ph, ph + 0.012, M['rim'], 0.008))
+            for k in range(5):
+                yy = lead + dirn * (r0 + 0.1 + 0.3 * k)
+                objs.append(rivet(sx * (pt / 2 - gk - 0.035), yy, ph + 0.012, M, r=0.016))
+        if not blast and S.kind == 'door':
+            yy = lead + dirn * 0.6
+            objs.append(gbox('dog', -0.09, yy - 0.04, 0.09, yy + 0.04, ph, ph + 0.03, M['steel'], 0.012))
         if blast:
             objs.append(gbox('bl_top', -pt / 2 + 0.03, min(lead, lead + dirn * 1.3), pt / 2 - 0.03, max(lead, lead + dirn * 1.3), ph, ph + 0.012, M['hazard_big'], 0.004))
             for k in range(4):
@@ -148,11 +170,13 @@ def panels(S, M, open_k, state='ok', side=0):
                 yy = lead + dirn * (0.45 + 0.35 * k)
                 objs.append(gbox('h_cross', -pt / 2 + 0.04, yy - 0.025, pt / 2 - 0.04, yy + 0.025, ph, ph + 0.04, M['steel'], 0.012))
         # leading edge cap on top (yellow; red when locked), like the game's bar at the meeting edge
-        objs.append(gbox('cap', -pt / 2 - 0.005, min(lead, lead + dirn * 0.1), pt / 2 + 0.005, max(lead, lead + dirn * 0.1), ph - 0.06, ph + 0.016, cap_m if not blast else M['ink'], 0.012))
-        # leading face (only the north panel's faces the camera): rubber seal + hazard stripes
+        objs.append(gbox('cap', -pt / 2 + 0.01, min(lead, lead + dirn * 0.1), pt / 2 - 0.01, max(lead, lead + dirn * 0.1), ph - 0.06, ph + 0.016, cap_m if not blast else M['ink'], 0.012))
+        # the meeting edge: a thick rubber seal along it (both leaves; on top it is the black seam between the caps)
+        objs.append(gbox('mseal', -pt / 2 + 0.02, min(lead, lead - dirn * 0.025), pt / 2 - 0.02, max(lead, lead - dirn * 0.025), 0.03, ph - 0.004, M['rubber'], 0.01))
+        # leading face (only the north panel's faces the camera): hazard stripes on the seal
         if s == 0:
-            objs.append(gbox('seal', -pt / 2 + 0.01, lead - 0.01, pt / 2 - 0.01, lead + 0.025, 0.04, ph - 0.07, M['rubber'], 0.01))
-            objs.append(gbox('face_hz', -pt / 2 + 0.03, lead + 0.02, pt / 2 - 0.03, lead + 0.032, 0.1, ph - 0.12, M['hazard_big' if blast else 'hazard'], 0.004))
+            hw = pt / 2 - 0.05 if blast else 0.09     # (a striped edge plate down the middle of the seal)
+            objs.append(gbox('face_hz', -hw, lead + 0.02, hw, lead + 0.032, 0.1, ph - 0.12, M['hazard_big' if blast else 'hazard'], 0.004))
             if state == 'locked':
                 objs.append(gbox('lockbar', -pt / 2 + 0.02, lead + 0.03, pt / 2 - 0.02, lead + 0.05, 0.7, 0.85, glow('lockglow', '#ff4a3a', 1.0), 0.005))
         if bent:                                 # dented, scraped, a bit twisted
