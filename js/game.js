@@ -670,6 +670,7 @@ function updateCamera(dt) {
   const s = combat.shake * combat.shake * 0.35;        // big hits rattle the whole ship
   cam.sx = s * (Math.sin(time * 61) + 0.5 * Math.sin(time * 97)); cam.sy = s * (Math.cos(time * 53) + 0.5 * Math.sin(time * 89));
   const J = jumpCamera(time); cam.sx += J.x; cam.sy += J.y;          // the jump drive's rumble, the jump's lurch (js/mission.js)
+  const [ix, iy] = injuryShake(time); cam.sx += ix; cam.sy += iy;    // a hit on you: the camera jolts (updateInjuryFx)
 }
 // Screen (CSS px) = (ox + x·T·zoom, oy + y·T·zoom·sy) for a point on the ground.
 function camera() {
@@ -701,18 +702,183 @@ function drawDownCross(c, t) {
   ctx.fillStyle = `rgba(226,60,50,${k})`; ctx.fillRect(x - 3, y - 9, 6, 18); ctx.fillRect(x - 9, y - 3, 18, 6);
   ctx.strokeStyle = 'rgba(20,22,27,0.8)'; ctx.lineWidth = 1.5; ctx.strokeRect(x - 3, y - 9, 6, 18); ctx.strokeRect(x - 9, y - 3, 18, 6);
 }
-// This browser's own injury on screen: tunnel vision while hurt, dark red while down, near black while out.
-function drawInjuryOverlay(t) {
-  const h = me.health || 'ok';
-  if (h === 'ok') return;
-  const cx = VW / 2, cy = VH / 2, r = Math.hypot(VW, VH) / 2;
-  const inner = h === 'hurt' ? 0.28 + 0.03 * Math.sin(t * 6) : h === 'down' ? 0.12 : 0.04;   // heartbeat while hurt
-  const col = h === 'hurt' ? [8, 4, 6] : [30, 0, 0];
-  screenGradient(cx, cy, r * inner, r, [[0, col, 0], [0.55, col, h === 'hurt' ? 0.75 : 0.85], [1, col, h === 'out' ? 0.98 : 0.95]]);   // (art.js: in GL with the sprites)
-  if (h === 'hurt') {
-    ctx.fillStyle = 'rgba(255,140,120,0.8)'; ctx.font = '700 13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    ctx.fillText(`HURT — ${Math.ceil(me.hurtT)} s (another hit puts you down)`, cx, HUD_H + 12); ctx.textAlign = 'left';
+// ---------------------------------------------------------------------------
+// Injury feedback (drawing only: every browser works it out from the synced crew state, no extra
+// network traffic). Playtesters played for an hour without noticing they were hurt (2026-10-21), so:
+// - your own screen: a red haze at the border beating with your heart, blood splatter in the corners,
+//   a red flash + a jolt of the camera the moment you're hit (stronger going down), a heartbeat sound;
+// - a status badge above the energy panel (injuryStatus: what it means, how long, what helps);
+// - in the world, for everyone: a hurt crew member drips blood on the floor as they walk (drops that fade
+//   after BLOOD_LIFE s, at most BLOOD_MAX), a pool under the downed, droplets drifting off on a spacewalk,
+//   and a red cross beside their name tag.
+// ---------------------------------------------------------------------------
+const INJURY_RANK = { ok: 0, hurt: 1, down: 2, out: 3 };
+const BLOOD_MAX = 140, BLOOD_LIFE = 14, POOL_LIFE = 25, BLOOD_STEP = 0.38;   // drops: at most, s on the floor; a pool's s after getting up; tiles walked per drop
+const INJ = { seen: new Map(), blood: [], flash: 0, flashDown: false, shake: 0, beat: -1, t: null, missionT: 0 };
+const injuryRank = (c) => INJURY_RANK[c.health || 'ok'] || 0;
+// The heart's lub-dub (0..1) at time t: faster while hurt, slow and heavy while down.
+function heartPulse(t, period) {
+  const p = (((t % period) + period) % period) / period;
+  return Math.max(Math.exp(-(((p - 0.03) * 20) ** 2)), 0.7 * Math.exp(-(((p - 0.25) * 20) ** 2)));
+}
+const heartPeriod = (h) => h === 'down' ? 1.25 : 0.85;
+function addBlood(b) {
+  const d = { age: 0, seed: Math.random() * 1000, ...b };
+  INJ.blood.push(d);
+  if (INJ.blood.length > BLOOD_MAX) INJ.blood.splice(0, INJ.blood.length - BLOOD_MAX);   // (the oldest go first)
+  return d;
+}
+// Once a frame from render(): hits on this browser's own player (flash, shake, sound), blood for everyone.
+function updateInjuryFx(dt, t = time) {
+  if (typeof mission !== 'undefined' && mission.t < INJ.missionT - 1) { INJ.blood.length = 0; INJ.seen.clear(); }   // a new mission
+  INJ.missionT = typeof mission !== 'undefined' ? mission.t : 0;
+  const ids = new Set();
+  for (const c of crew) {
+    ids.add(c.id);
+    const r = injuryRank(c), armor = c.armor || 0;
+    let s = INJ.seen.get(c.id);
+    if (!s) INJ.seen.set(c.id, s = { rank: r, armor, x: c.x, y: c.y, walked: 0, drip: 0, pool: null });
+    const inside = c.mode === 'inside' || c.mode === 'hatch', moved = Math.hypot(c.x - s.x, c.y - s.y);
+    if (r > s.rank) {                                          // hit
+      if (c === me) { INJ.flash = r >= 2 ? 1.5 : 1; INJ.flashDown = r >= 2; INJ.shake = r >= 2 ? 0.5 : 0.28; sfx.ouch(r >= 2); }
+      if (inside) for (let i = 0; i < 5; i++) { const a = Math.random() * TAU, d = 0.15 + Math.random() * 0.45; addBlood({ x: c.x + Math.cos(a) * d, y: c.y + Math.sin(a) * d * 0.8 + 0.15, r: 0.05 + Math.random() * 0.06, life: BLOOD_LIFE }); }
+    } else if (c === me && armor < s.armor) { INJ.flash = 0.45; INJ.flashDown = false; INJ.shake = 0.15; }   // the vest took it: a small jolt
+    if (moved > 4) s.walked = 0;                               // (a teleport, a warp: no trail across)
+    else if (r === 1 && inside) {                              // hurt: drips as they walk (along the way, even on a slow frame), a drop now and then standing still
+      s.walked += moved; s.drip += dt;
+      const drop = (k) => addBlood({ x: lerp(s.x, c.x, k) + (Math.random() - 0.5) * 0.22, y: lerp(s.y, c.y, k) + 0.12 + (Math.random() - 0.5) * 0.1, r: 0.035 + Math.random() * 0.035, life: BLOOD_LIFE });
+      for (let n = 0; s.walked > BLOOD_STEP && n < 10; n++) { s.walked -= BLOOD_STEP; drop(moved > 0 ? clamp(1 - s.walked / moved, 0, 1) : 1); s.drip = 0; }
+      if (s.drip > 2.2) { drop(1); s.drip = 0; }
+    } else if (r === 1 && c.mode === 'eva' && (s.drip += dt) > 0.45) {   // a spacewalk: droplets drift off from the suit's tear
+      s.drip = 0; const a = Math.random() * TAU;
+      addBlood({ air: true, x: c.x, y: c.y, vx: Math.cos(a) * 0.35, vy: Math.sin(a) * 0.35, r: 0.04, life: 2.5 });
+    }
+    if (r >= 2 && inside) {                                    // down: a pool spreads under them
+      if (!s.pool || !INJ.blood.includes(s.pool) || Math.hypot(s.pool.x - c.x, s.pool.y - c.y) > 0.5) s.pool = addBlood({ pool: true, x: c.x, y: c.y + 0.1, grow: 0, life: POOL_LIFE });
+      s.pool.grow = Math.min(1, s.pool.grow + dt / 6); s.pool.age = 0;   // (stays fresh while they're lying in it)
+    } else s.pool = null;
+    Object.assign(s, { rank: r, armor, x: c.x, y: c.y });
   }
+  for (const id of INJ.seen.keys()) if (!ids.has(id)) INJ.seen.delete(id);
+  for (const b of INJ.blood) { b.age += dt; if (b.air) { b.x += b.vx * dt; b.y += b.vy * dt; } }
+  INJ.blood = INJ.blood.filter(b => b.age < b.life);
+  INJ.flash = Math.max(0, INJ.flash - dt * (INJ.flashDown ? 1.1 : 2.2));
+  INJ.shake = Math.max(0, INJ.shake - dt * 1.2);
+  const h = me.health || 'ok';                                 // your heartbeat, heard
+  if (h === 'hurt' || h === 'down') {
+    const n = Math.floor(t / heartPeriod(h));
+    if (n !== INJ.beat && INJ.beat >= 0) sfx.heartbeat(h === 'down' ? 0.9 : 0.4 + 0.5 * clamp((me.hurtT || 0) / HURT_TIME, 0, 1));
+    INJ.beat = n;
+  } else INJ.beat = -1;
+}
+// The camera's jolt from a hit on you (updateCamera adds it).
+const injuryShake = (t) => INJ.shake > 0 ? [INJ.shake ** 2 * 1.6 * Math.sin(t * 71), INJ.shake ** 2 * 1.6 * Math.cos(t * 59)] : [0, 0];
+// Blood on the floor (drawn with the floor decals: under the crew and the walls; lit like the floor).
+function drawBlood() {
+  for (const b of INJ.blood) {
+    if (b.air) continue;
+    const fade = clamp((b.life - b.age) / (b.life * 0.35), 0, 1), x = b.x * T, y = b.y * T;
+    if (b.pool) {
+      const R = T * (0.15 + 0.4 * Math.sqrt(b.grow)), rnd = rng(b.seed | 0);
+      ctx.fillStyle = `rgba(105,8,12,${0.8 * fade})`;
+      ctx.beginPath(); ctx.ellipse(x, y, R, R * 0.8, 0, 0, TAU); ctx.fill();
+      for (let i = 0; i < 4; i++) { const a = rnd() * TAU; ctx.beginPath(); ctx.arc(x + Math.cos(a) * R * 0.75, y + Math.sin(a) * R * 0.6, R * (0.3 + rnd() * 0.25), 0, TAU); ctx.fill(); }
+      ctx.fillStyle = `rgba(190,40,40,${0.35 * fade})`; ctx.beginPath(); ctx.ellipse(x - R * 0.25, y - R * 0.2, R * 0.3, R * 0.15, -0.4, 0, TAU); ctx.fill();   // a wet sheen
+      continue;
+    }
+    const R = T * b.r, rnd = rng(b.seed | 0);
+    ctx.fillStyle = `rgba(150,14,18,${0.9 * fade})`;
+    ctx.beginPath(); ctx.ellipse(x, y, R * (1 + rnd() * 0.4), R, rnd() * 3, 0, TAU); ctx.fill();
+    const a = rnd() * TAU; ctx.beginPath(); ctx.arc(x + Math.cos(a) * R * 1.7, y + Math.sin(a) * R * 1.7, R * 0.35, 0, TAU); ctx.fill();   // a fleck
+  }
+}
+// Droplets drifting off a hurt spacewalker (drawn on top: they're out in space).
+function drawBloodAir() {
+  for (const b of INJ.blood) {
+    if (!b.air) continue;
+    ctx.fillStyle = `rgba(200,30,36,${clamp(1 - b.age / b.life, 0, 1)})`;
+    ctx.beginPath(); ctx.arc(b.x * T, b.y * T, T * b.r * (1 - 0.4 * b.age / b.life), 0, TAU); ctx.fill();
+  }
+}
+// Blood splatter in the screen's corners (made once: blobs and flecks, in units of the splat's size).
+const SCREEN_SPLATS = (() => {
+  const R = rng(4711), at = [[0, 0, 1], [1, 0, 0.8], [0, 1, 0.9], [1, 1, 1.1], [0.5, 0, 0.55], [0, 0.5, 0.6], [1, 0.55, 0.6]];
+  return at.map(([fx, fy, size]) => ({ fx, fy, size, blobs: Array.from({ length: 7 }, (_, i) => ({
+    a: R() * TAU, d: i ? 0.15 + R() * 0.55 : 0, r: i ? 0.06 + R() * 0.12 : 0.42, pts: lumpShape(Math.floor(R() * 1e6), 10, 0.35).pts })) }));
+})();
+function drawScreenSplats(k, n = SCREEN_SPLATS.length) {
+  const S = Math.min(VW, VH) * 0.2;
+  ctx.save();
+  for (const sp of SCREEN_SPLATS.slice(0, n)) {
+    const ox = sp.fx * VW, oy = HUD_H + sp.fy * (VH - HUD_H), s = S * sp.size;
+    ctx.fillStyle = `rgba(125,5,10,${Math.min(0.9, 0.8 * k)})`;
+    for (const b of sp.blobs) {
+      const bx = ox + Math.cos(b.a) * b.d * s, by = oy + Math.sin(b.a) * b.d * s, br = b.r * s;
+      ctx.beginPath(); b.pts.forEach(([px, py, pr], i) => ctx[i ? 'lineTo' : 'moveTo'](bx + px * pr * br, by + py * pr * br)); ctx.closePath(); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+// This browser's own injury on screen: a red haze at the border beating with the heart while hurt (the
+// middle stays clear), dark red tunnel vision while down, near black while out; the hit flash on top.
+function drawInjuryOverlay(t) {
+  const h = me.health || 'ok', cx = VW / 2, cy = VH / 2, r = Math.hypot(VW, VH) / 2;
+  if (h === 'hurt') {
+    const p = heartPulse(t, heartPeriod(h)), fresh = clamp((me.hurtT || 0) / HURT_TIME, 0, 1), k = 0.75 + 0.25 * fresh;
+    screenGradient(cx, cy, r * (0.48 - 0.06 * p), r, [[0, [170, 0, 10], 0], [0.4, [150, 0, 10], (0.4 + 0.3 * p) * k], [1, [95, 0, 6], 0.92 * k]]);   // (art.js: in GL with the sprites)
+    drawScreenSplats((0.55 + 0.35 * p) * k, 4);
+  } else if (h === 'down' || h === 'out') {
+    const p = h === 'down' ? heartPulse(t, heartPeriod(h)) : 0, col = h === 'down' ? [60, 0, 2] : [24, 0, 0];
+    screenGradient(cx, cy, r * (h === 'down' ? 0.14 + 0.03 * p : 0.04), r, [[0, col, 0], [0.5, col, h === 'down' ? 0.78 + 0.1 * p : 0.88], [1, [20, 0, 0], h === 'out' ? 0.98 : 0.96]]);
+    drawScreenSplats(h === 'down' ? 0.8 + 0.2 * p : 0.5);
+  }
+  if (INJ.flash > 0) {                                          // the hit itself
+    const f = Math.min(1, INJ.flash);
+    screenGradient(cx, cy, 0, r, [[0, [255, 40, 30], (INJ.flashDown ? 0.35 : 0.2) * f], [0.6, [230, 20, 16], 0.5 * f], [1, [160, 0, 0], 0.85 * f]]);
+  }
+}
+// What being hurt means right now, and what helps: { title, lines, col } for the badge (null when fine).
+function injuryStatus(c = me) {
+  const h = c.health || 'ok';
+  if (h === 'ok') return null;
+  const mates = crew.filter(o => o !== c && standing(o)).length > 0, heal = c.heal != null ? ` · being treated ${Math.round(c.heal * 100)} %` : '';
+  let self = null; try { self = c === player ? treatInfo(c) : withCrew(c, () => treatInfo(c)); } catch (e) { /* (a synced crew member without input) */ }
+  if (h === 'hurt') {
+    const snack = (c.snackT || 0) > 0 ? `snack machine again in ${Math.ceil(c.snackT)} s` : 'Helps: a snack (10 s sooner)';
+    return { title: 'HURT', col: '#ff5a4a', lines: [
+      'One more hit and you\'re DOWN',
+      `Heals by itself in ${Math.ceil(c.hurtT || 0)} s${heal}`,
+      snack,
+      mates ? '…or a crewmate patches you up' : 'Coffee: walk faster for a while'] };
+  }
+  if (h === 'down') return { title: 'DOWN', col: '#ff3b30', lines: [
+    'You can\'t move. One more hit: OUT COLD',
+    self ? `Hold E: ${self.label} (${self.time} s)${heal}` : `Wait for treatment${heal}`,
+    mates ? 'A crewmate can treat you faster' : ''].filter(Boolean) };
+  return { title: 'OUT COLD', col: '#c9ced8', lines: [
+    self ? `Hold E: ${self.label} (${self.time} s)${heal}` : `A crewmate has to treat you${heal}`] };
+}
+// The badge: above the energy panel (bottom left), clear of the inventory and the screen prompt.
+function drawInjuryBadge(t) {
+  const st = injuryStatus(me);
+  if (!st) return;
+  const p = me.health === 'out' ? 0 : heartPulse(t, heartPeriod(me.health)), w = 262, lh = 17, h = 34 + st.lines.length * lh + 6;
+  const x = 14, y = VH - 104 - 14 - 10 - h;                    // (drawPowerPanel: h 104 at the bottom)
+  ctx.save();
+  rr(x, y, w, h, 10); ctx.fillStyle = 'rgba(28,6,8,0.9)'; ctx.fill(); stroke(2 + 1.5 * p, st.col);
+  const hx = x + 22, hy = y + 18, hs = 7 * (1 + 0.25 * p);     // a beating heart
+  ctx.fillStyle = st.col; ctx.beginPath();
+  ctx.moveTo(hx, hy + hs); ctx.bezierCurveTo(hx - hs * 1.6, hy - hs * 0.2, hx - hs * 0.8, hy - hs * 1.4, hx, hy - hs * 0.5);
+  ctx.bezierCurveTo(hx + hs * 0.8, hy - hs * 1.4, hx + hs * 1.6, hy - hs * 0.2, hx, hy + hs); ctx.fill();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '800 18px system-ui, sans-serif'; ctx.fillStyle = st.col; ctx.fillText(st.title, x + 38, y + 18);
+  ctx.font = '12px system-ui, sans-serif';
+  st.lines.forEach((l, i) => { ctx.fillStyle = i ? '#e6c9c6' : '#ffb0a4'; ctx.fillText(l, x + 12, y + 40 + i * lh, w - 22); });
+  ctx.restore();
+}
+// A small red cross for a hurt crewmate's name tag (down / out: the big one over them, drawDownCross).
+function drawHurtTagCross(x, y, s) {
+  ctx.fillStyle = '#e23c32'; ctx.fillRect(x - s * 0.18, y - s * 0.5, s * 0.36, s); ctx.fillRect(x - s * 0.5, y - s * 0.18, s, s * 0.36);
 }
 
 // Charging the heavy blaster: a growing orb at the muzzle; fully charged it flickers blue-white.
@@ -758,6 +924,7 @@ function drawCrewOutside(c, t) {
 const SCREEN_CTX = ctx;
 let glowLayer = (fn) => fn();                      // (set by render(): draw fn into the unlit 'glow' layer with sprites)
 function render(t) {
+  updateInjuryFx(clamp(t - (INJ.t ?? t), 0, 0.1), t); INJ.t = t;   // (hit flash, heartbeat, blood: from the synced crew state)
   const view = camera(), G = GFX.on;
   const js = jumpSpace();                            // (the jump: stars streak; js/mission.js)
   const space = { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 * view.sy - t * CRUISE_SPEED - js.drift, rot: 0, streak: js.streak };
@@ -801,6 +968,7 @@ function render(t) {
   if (!G) drawLightPools();
   drawLeviathanWarning(t);
   drawFloorDecor(t);
+  drawBlood();                                       // hurt crew drip blood, the downed lie in a pool (updateInjuryFx; over the floors in both views)
   if (typeof drawLevShip === 'function') drawLevShip(t);   // the boss fight's vents, override panel and brood (js/leviathan.js; after the floors: classic drew them over it)
   drawJunk();
   drawGoo();
@@ -851,6 +1019,7 @@ function render(t) {
   }
   for (const c of crew) {
     if (sprited.has(c) && !standing(c)) drawDownCross(c, t);
+    if (c === crew[0]) drawBloodAir();                // (once: droplets drifting off a hurt spacewalker)
     const tr = crew.find(o => o.treat?.id === c.id);                  // someone treating them: the heartbeat ring
     if (tr) {
       const info = withCrew(tr, () => treatInfo(c));
@@ -868,6 +1037,7 @@ function render(t) {
       const dark = labelIsDark(c.color);                     // dark suits (black): a light outline, so the dark name still reads
       ctx.lineWidth = dark ? 5 : 4; ctx.strokeStyle = dark ? 'rgba(226,232,244,0.92)' : 'rgba(10,12,18,0.8)'; ctx.strokeText(c.name, 0, 0);
       ctx.fillStyle = c.color; ctx.fillText(c.name, 0, 0); ctx.textAlign = 'left';
+      if (c.health === 'hurt') drawHurtTagCross(-ctx.measureText(c.name).width / 2 - T * 0.22, -T * 0.14, T * 0.24 * (1 + 0.2 * heartPulse(t, heartPeriod('hurt'))));   // hurt: a red cross by the name
     });
   }
   drawBoarding(t);
@@ -907,6 +1077,7 @@ function render(t) {
   drawSystemsHUD(HUD_H);
   if (me.mode === 'gun' && standing(me)) drawCannonHUD(me.gun);
   drawSidebar(HUD_H);
+  drawInjuryBadge(t);                                // hurt / down / out: what it means and what helps
   drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
   if (hover && !debugOpen && !invSlotAt(mouse.x, mouse.y)) {   // tooltip next to the mouse
     ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';

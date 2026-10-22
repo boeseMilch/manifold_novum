@@ -9,6 +9,12 @@ Tick off what works; note what doesn't.
 - [ ] **Getting up:** when you're down, holding E gets you up wherever the mouse is.
 - [ ] **End screen:** "incl. $X for bringing the ship back in one piece": about $25 with nothing broken, $0 at 5/5 damage.
 
+## Being hurt (practice: "Get hurt", twice for down)
+- [ ] Hurt: a red haze beats at the screen border with a heartbeat sound, blood in the corners, the middle stays readable. A red flash and a jolt when hit; stronger going down.
+- [ ] The HURT badge above the energy panel (heals in N s, a snack helps) is noticed without being told; it doesn't cover anything you need.
+- [ ] Walking hurt leaves a blood trail that fades; downed: a pool. In multiplayer your crewmates see your trail and a red cross by your name.
+- [ ] Too much? (the heartbeat for 30 s, the haze while fighting)
+
 ## Chapter 2 (Strange Cargo): the pods
 - [ ] Two strapped cargo pods sit in the reactor room (bottom right). The objective reads "Deliver the cargo pods to the Xenobiology Institute".
 - [ ] A radar scan doesn't give it away.

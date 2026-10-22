@@ -3432,3 +3432,19 @@ the phase-4 HUD line ("shoot the brood — or stomp it in your gravity boots", f
 (", or stomp them in gravity boots" when anyone on board has them). tests/leviathan.js: sizes, a booted walk-in kills, no
 boots / down / standing still don't, the HUD line, multiplayer (netServer.addCrew with a booted kit), a bolt 0.4 off centre
 hits, the spacing.
+
+### Being hurt is impossible to miss (2026-10-21, js/game.js, js/audio.js)
+Playtest: people played an hour without noticing they had "2 hp" (the hurt state was a faint dark tunnel and a small
+line of text). Now, all drawn in each browser from the synced crew state (health, armor, position: no extra network
+traffic; updateInjuryFx, once a frame from render()): your own screen while hurt gets a red haze at the border beating
+with a lub-dub heart (heartPulse; the middle stays clear, weaker as the 30 s run out) and blood splatter in the corners
+(SCREEN_SPLATS); down: a dark red tunnel + more splatter; the moment you're hit (your health steps up a rank) a red
+flash and a camera jolt (injuryShake, in updateCamera), stronger going down; the armour vest soaking a hit: a small one;
+sounds sfx.ouch / sfx.heartbeat (audio.js, through the mute). A badge above the energy panel (drawInjuryBadge,
+injuryStatus): HURT / DOWN / OUT COLD, "one more hit and you're down", heals in N s, what helps (snack machine or when
+the next snack is, a crewmate patching you up, coffee alone), how to get up. In the world for everyone: a hurt crew member
+drips blood as they walk (BLOOD_STEP 0.38 tiles a drop, interpolated on slow frames, one every 2.2 s standing still; a
+splash on the hit), drops fade after BLOOD_LIFE 14 s, at most BLOOD_MAX 140; the downed lie in a growing pool (fades 25 s
+after they get up); on a spacewalk droplets drift off instead; a hurt crewmate's name tag gets a beating red cross. Blood
+is drawn after the floor decor (classic: over the floors; sprites: the lit 'mid' layer, under walls and crew). No limp
+(the sprite's walk cycle is left alone). tests/injuryfx.js.

@@ -139,6 +139,13 @@ const sfx = (() => {
     // A wet, deflating squelch (organic things dying).
     squelch() { noise(0.35, 400, 0.45, 1.5); tone('sine', 220, 60, 0.45, 0.35); tone('triangle', 140, 50, 0.3, 0.2, 0.1); },
     crack() { noise(0.25, 300, 0.6); tone('triangle', 120, 60, 0.3, 0.4); },
+    // Your own heartbeat while hurt / down (js/game.js updateInjuryFx): a low lub-dub, k 0..1 loudness.
+    heartbeat(k = 1) { tone('sine', 62, 38, 0.16, 0.55 * k, 0, 0.015); tone('sine', 56, 34, 0.18, 0.4 * k, 0.2, 0.015); },
+    // You got hit (js/game.js updateInjuryFx): a dull body thud; going down adds a ringing in the ears.
+    ouch(down) {
+      noise(0.25, 260, 0.8, 0.8); tone('sine', 140, 45, 0.35, 0.8);
+      if (down) { tone('sine', 2600, 2550, 1.6, 0.05, 0.05, 0.05); tone('sine', 70, 30, 0.9, 0.6, 0.05); }
+    },
     // Heavy shot charging: a rising whine everyone on board can hear. Returns a stop function.
     charge(dur) {
       if (!ac) return () => {};
