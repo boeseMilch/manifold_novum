@@ -1,21 +1,32 @@
-// Living enemies. They don't just shoot: weak spots heal, they grab, they chew, they seed.
+// Living enemies. They don't just shoot: weak spots heal, they grab, they suck, they seed.
 //   Grappler      a squid that wraps a tentacle around the hull: that side's shield can't go up, and its
 //                 acid weakens the hull plate. One cannon hit on the tentacle, or a spacewalker hacking it
 //                 off, makes it let go; left alone it rips the plate off (a breach) and swims away with
 //                 it, munching. Weak spots: the poison sac (acid pauses while it heals), the eye (no new
 //                 tentacle while it heals), the beak (spits at spacewalkers; quiet while it heals). All
 //                 three hit at once: it's done for. Cannon and spacewalk work together.
-//   Leech swarm   small biters fly in and latch onto the hull, chewing parts in their column.
-//                 Shoot them on the way in; shields don't stop them; latched ones are pried off on a spacewalk.
-//   Spore mother  far out, puffs spore clouds (barnacles!); after each puff one of its sacs opens
-//                 for a few seconds — that's when you can hit it.
+//   Leech swarm   small biters fly in and latch onto the hull and suck energy (they never break parts): one
+//                 unit at a time from their side's capacitor (SIDE_CAP), a ball of energy creeping out along the
+//                 cannon cable, through the hull and on to one leech, then the next ball to the next leech, and so
+//                 on (LEECH_SUCK_ONE / n s per unit with n latched on that side). Empty capacitor: they wait for the
+//                 reactor's next energy. Shoot them on the way in (shields don't stop them); latched ones are pried
+//                 off on a spacewalk; with none left a ball still on its way rolls back into the capacitor.
+//   Spore mother  far out; every PUFF_EVERY s one mouth opens in a silent scream: a green spore cloud billows
+//                 out and hangs round the hull (spores get in through the airlocks: js/spores.js), and the
+//                 tongue rises in the mouth — that's when you can hit it.
 //   Leviathan     too big to kill. For 30 s it brushes along the ship, bumping one room after another
 //                 (the sidebar warns which); stay out of the room it's about to hit.
 // Grappler and spore mother are enemy kinds (ENEMY_TYPES); leeches and the leviathan live in `org`.
 
-const org = { leeches: [], lev: null, herd: null, boss: null };   // boss: the infested leviathan (js/leviathan.js)
+const org = { leeches: [], suck: [], suckLast: {}, lev: null, herd: null, boss: null };   // suck: the leeches' energy balls; boss: the infested leviathan (js/leviathan.js)
 const HEAL_TIME = 20, TENTACLE_EVERY = 10, TENTACLE_COIL = 2, CUT_TIME = 3, ACID_TIME = 30, BEAK_EVERY = 3.5, BEAK_WIND = 0.7;
-const LEECH_CHEW = 20, LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 4.5, MOTHER_TOSSES = 2, TOSS_REACH = 0.55, TOSS_FLICK = 0.3, TOSS_REST = 0.25, LEV_TIME = 30, LEV_STEP = 4;
+const LEECH_SPEED = 2.4, PUFF_EVERY = 12, SAC_OPEN = 4.5, MOTHER_GUSTS = 2, LEV_TIME = 30, LEV_STEP = 4;
+// Leeches suck one energy in LEECH_SUCK_ONE s alone, n of them n times as fast (scaled with the reactor's pace, like
+// the reactor itself). 24 s: a lone leech eats a bit less than the whole reactor makes (one energy per 20 s), but
+// more than its side ever gets with the lever stepping round (one per 60 s), so even one keeps that side's cannon and
+// shield starved, unless the lever is parked on it; the full swarm of 6 (4 s per unit) empties a full capacitor in
+// 12 s. The ball on its way back when its leeches are gone: LEECH_BACK s for the whole way.
+const LEECH_SUCK_ONE = 24, LEECH_BACK = 1.2;
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
 
 // Organic things die in a burst of green slime.
@@ -23,7 +34,7 @@ function slimeBurst(x, y, n = 14, size = 0.1, z = 0) {   // z: up on something (
   for (let i = 0; i < n; i++) { const a = Math.random() * TAU, sp = 1 + Math.random() * 4; combatFxAt(z, x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.8 + Math.random() * 0.6, ['#9cff5a', '#6ad13a', '#c8ff6e'][i % 3], size + Math.random() * size); }
   sfx.squelch?.();
 }
-function resetOrganic() { org.leeches = []; org.lev = null; org.herd = null; org.boss = null; }
+function resetOrganic() { org.leeches = []; org.suck = []; org.suckLast = {}; org.lev = null; org.herd = null; org.boss = null; }
 
 // ---------------------------------------------------------------------------
 // Grappler
@@ -105,25 +116,26 @@ ENEMY_TYPES.mother = {
   solids: [{ poly: MOTHER_BODY }],
   // the weak spots: a blue tongue in each mouth, only out (and hittable) right after it flings spores
   pois: MOTHER_MOUTHS.map(([x, y], i) => ({ id: 'tongue' + i, name: ['Upper', 'Middle', 'Lower'][i] + ' tongue', effect: 'torn out', shape: { circle: [x + 0.8, y, 0.7] } })),
+  // (2026-10-22, the user: no more spore pods flicked at us, they got in the way of the shots: a SILENT SCREAM. The
+  // mouth stretches wide, the tongue rises and quivers in it (the weak spot, hittable while it screams), and a green
+  // spore cloud billows out of the mouth and hangs round the hull (evs.cloud, js/spores.js). Every gust of it
+  // (MOTHER_GUSTS per scream) may get spores into an outer airlock; using an airlock while the cloud is there will.)
   update(e, dt) {
     e.puffT = (e.puffT ?? 6) - dt; e.open = Math.max(0, (e.open || 0) - dt); e.lash = Math.max(0, (e.lash || 0) - dt);
     if (e.puffT <= 0) {
       e.puffT = PUFF_EVERY;
       const shut = e.pois.map((p, i) => i).filter(i => !e.pois[i].hit);
-      e.openSac = shut[(e.puffs = (e.puffs || 0) + 1) % shut.length]; e.open = SAC_OPEN;
-      e.toss = { n: MOTHER_TOSSES, t: 0, out: false };
-      combatBanner('The spore mother opens a mouth — its tongue is tossing spores, hit it!');
-    }
-    // the tongue reaches back into the throat, comes out with a spore and flicks it at us; then the next one
-    const T1 = e.toss;
-    if (T1 && e.open > 0) {
-      T1.t += dt;
-      if (!T1.out && T1.t >= TOSS_REACH + TOSS_FLICK * 0.6) {
-        T1.out = true; const [mx, my] = MOTHER_MOUTHS[e.openSac];
-        spawnSpores(e.side, enemyToWorld(e, mx + 2.6, my), 1, true); sfx.spit();
+      e.puffs = (e.puffs || 0) + 1;
+      if (shut.length) {                                 // (every tongue torn out: it has nothing left to scream with)
+        e.openSac = shut[e.puffs % shut.length]; e.open = SAC_OPEN; e.gusts = 0;
+        combatBanner('The spore mother screams without a sound — a spore cloud billows out. Hit the tongue in its mouth!');
       }
-      if (T1.t >= TOSS_REACH + TOSS_FLICK + TOSS_REST) { T1.t = 0; T1.out = false; if (--T1.n <= 0) e.toss = null; }
-    } else if (T1) e.toss = null;
+    }
+    if (e.open > 0 && e.openSac != null && !e.pois[e.openSac]?.hit) {
+      motherCloud(e);                                    // the cloud round the hull stays while it screams (js/spores.js)
+      const k = (SAC_OPEN - e.open) / SAC_OPEN;
+      if ((e.gusts || 0) < MOTHER_GUSTS && k >= ((e.gusts || 0) + 1) / (MOTHER_GUSTS + 1)) { e.gusts = (e.gusts || 0) + 1; sporeGust(e); }
+    }
   },
   closed: (e, p) => !(e.open > 0 && e.pois.indexOf(p) === e.openSac),
   draw(e, t) { drawMother(e, t); },
@@ -137,9 +149,9 @@ function spawnLeeches(side, n = 6) {
   for (let i = 0; i < n; i++) {
     const [tx, ty] = HULL_SPOTS[side][i % HULL_SPOTS[side].length];
     org.leeches.push({ uid: newUid(), side, x: (side === 'port' ? -16 : SHIP_W + 16) - (side === 'port' ? 1 : -1) * i * 2.2, y: ty + (Math.random() - 0.5) * 8,
-                       tx: tx + (side === 'port' ? -0.15 : 0.15), ty: ty + (Math.random() - 0.5) * 0.6, state: 'fly', chew: 0, t: Math.random() * 10 });
+                       tx: tx + (side === 'port' ? -0.15 : 0.15), ty: ty + (Math.random() - 0.5) * 0.6, state: 'fly', fed: 0, drank: 0, t: Math.random() * 10 });
   }
-  combatBanner(`Leech swarm on the ${SIDE_LABEL[side].toLowerCase()} side! Shoot them on the way in — shields don't stop them!`);
+  combatBanner(`Leech swarm on the ${SIDE_LABEL[side].toLowerCase()} side! Shoot them on the way in — they suck our energy!`);
 }
 function startLeviathan() {
   const start = Math.floor(Math.random() * LEV_ORDER.length), dir = Math.random() < 0.5 ? 1 : -1;
@@ -177,7 +189,7 @@ function updateOrganic(dt) {
     }
   }
   combat.shells = combat.shells.filter(s => !s.dead);
-  // leeches fly in, latch on, chew
+  // leeches fly in and latch on (then they suck energy: updateLeechSuck)
   for (const l of org.leeches) {
     l.t += dt;
     if (l.state === 'fly') {
@@ -185,16 +197,14 @@ function updateOrganic(dt) {
       if (d < 0.15) { l.state = 'latched'; sfx.spit(); continue; }
       l.x += dx / d * Math.min(d, LEECH_SPEED * dt); l.y += dy / d * Math.min(d, LEECH_SPEED * dt) + Math.sin(l.t * 5) * dt * 0.6;
       for (const s of combat.shells) if (!s.dead && Math.hypot(s.x - l.x, s.y - l.y) < 0.85) { s.dead = true; l.dead = true; sfx.crack(); }
-    } else if ((l.chew += dt) >= LEECH_CHEW) {
-      l.chew = 0;
-      const pool = SYSTEMS.filter(s => s.col === sideCol(l.side) && !s.broken);
-      if (pool.length) { const s = pool[Math.floor(Math.random() * pool.length)]; breakSystem(s); combatBanner(`Leeches chewed through the ${s.name.toLowerCase()}!`); }
     }
+    l.fed = Math.max(0, (l.fed || 0) - dt * 1.2);
     // (shields don't stop them: like spores and mines they slip through. The user, 2026-10-16. Shoot them on the way in, or pry them off outside.)
     if (l.dead) slimeBurst(l.x, l.y, 10);
   }
   combat.shells = combat.shells.filter(s => !s.dead);
   org.leeches = org.leeches.filter(l => !l.dead);
+  updateLeechSuck(dt);
   // the leviathan
   const V = org.lev;
   if (V) {
@@ -211,6 +221,99 @@ function updateOrganic(dt) {
     if (V.t <= 0) { org.lev = null; combatBanner('The leviathan swims off into the dark'); }
   }
   if (typeof updateLevBoss === 'function') updateLevBoss(dt);   // chapter 8's infested leviathan (js/leviathan.js)
+}
+
+// The leeches' energy balls (org.suck, plain data, one per side at most): { side, to: the leech it's for (uid),
+// tx, ty: where that leech sits, k: 0 at the capacitor … 1 at the leech, back: rolling back to the capacitor }.
+// The capacitor gives up the energy as the ball sets off (its pips drop right away, as with any use); the ball
+// creeps along the cannon cable, through the hull wall and along the outside of the hull to the leech, as fast as
+// the leeches on that side drink (n latched: n / LEECH_SUCK_ONE of the way per s, so one unit per
+// LEECH_SUCK_ONE / n s). On arrival that leech swells (l.fed) and the next ball sets off for the next leech in turn.
+// Its leech shot or pried off: the ball heads for another one on that side; none left: it rolls back
+// (LEECH_BACK) and the energy goes back into the capacitor (if there's room; else it fizzles like a wasted delivery).
+// A broken capacitor or one S-7 has wrapped: they can't get at it, they wait (like an empty one).
+const leechesOn = (side) => org.leeches.filter(l => l.state === 'latched' && !l.dead && l.side === side);
+const leechSuckTime = (n) => LEECH_SUCK_ONE * paceFactor() / Math.max(1, n);   // s per energy unit, n latched on a side
+const leechCapSucked = (i) => org.leeches.some(l => l.state === 'latched' && SIDE_CAP[l.side] === i);   // (HUD, sidebar)
+function nextLeech(side, after = -1) {
+  const L = leechesOn(side).sort((a, b) => a.uid - b.uid);
+  return L.find(l => l.uid > after) || L[0] || null;
+}
+function updateLeechSuck(dt) {
+  for (const side of ['port', 'front', 'star']) {
+    const L = leechesOn(side), i = SIDE_CAP[side], c = CAPACITORS[i];
+    let b = org.suck.find(q => q.side === side);
+    if (b && !b.back && !L.some(l => l.uid === b.to)) {     // its leech is gone: the next one, or back home
+      const n = nextLeech(side, b.to);
+      if (n) Object.assign(b, { to: n.uid, tx: n.x, ty: n.y }); else b.back = true;
+    }
+    if (b?.back) {
+      b.k -= dt / LEECH_BACK;
+      if (b.k <= 0) {
+        org.suck = org.suck.filter(q => q !== b);
+        if (!capBroken(i) && !capWrapped(i) && c.charge < CAP_MAX) { c.charge++; c.pulse = 1; sfx.poi(); }
+        else for (let k = 0; k < 10; k++) combatFx(c.x, c.y - 0.3, (Math.random() - 0.5) * 3, -Math.random() * 3, 0.8, POWER_COL, 0.1);
+      }
+      continue;
+    }
+    if (!b && L.length && !capBroken(i) && !capWrapped(i) && c.charge > 0) {   // the next unit sets off, for the next leech in turn
+      const n = nextLeech(side, org.suckLast[side] ?? -1);
+      c.charge--;
+      b = { side, to: n.uid, tx: n.x, ty: n.y, k: 0 };
+      org.suck.push(b);
+    }
+    if (!b) continue;
+    b.k += dt / leechSuckTime(L.length);
+    if (b.k >= 1) {                                          // drunk: it swells, the next one's turn
+      const l = L.find(q => q.uid === b.to);
+      if (l) { l.fed = 1; l.drank = (l.drank || 0) + 1; }
+      org.suckLast[side] = b.to;
+      org.suck = org.suck.filter(q => q !== b);
+      sfx.squelch?.();
+    }
+  }
+}
+// The ball's way: the cannon cable's first stretch out of the capacitor (to where it climbs into the spine), straight
+// out through the hull wall, along the outside of the hull to the leech's height, then out to the leech.
+function leechSuckPath(b) {
+  const gl = LINE['gun_' + b.side];
+  const pts = (b.side === 'front' ? gl.runs[gl.runs.length - 1] : gl.runs[0]).slice();
+  const [ex, ey] = pts[pts.length - 1];
+  if (b.side === 'front') pts.push([ex, -3.75], [b.tx, -3.75]);
+  else { const hx = b.side === 'port' ? -0.55 : SHIP_W + 0.55; pts.push([hx, ey], [hx, b.ty]); }
+  pts.push([b.tx, b.ty]);
+  return pts;
+}
+function leechSuckPoint(b) {
+  const P = leechSuckPath(b), seg = [];
+  let len = 0;
+  for (let i = 1; i < P.length; i++) { const d = Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); seg.push(d); len += d; }
+  let d = clamp(b.k, 0, 1) * len;
+  for (let i = 1; i < P.length; i++) {
+    if (d <= seg[i - 1] || i === P.length - 1) { const q = seg[i - 1] ? Math.min(1, d / seg[i - 1]) : 1; return [lerp(P[i - 1][0], P[i][0], q), lerp(P[i - 1][1], P[i][1], q)]; }
+    d -= seg[i - 1];
+  }
+  return P[P.length - 1];
+}
+// Drawn like the energy pulses on the power lines (drawEnergyBolts): the same glowing orb, with a faint golden trail.
+// part: 'inside' (with sprites: in the glow layer, clipped to the floors, so it vanishes into the wall and comes out
+// on the hull), 'outside' (with sprites: on top, over the leeches it creeps past), or 'all' (the classic view).
+function drawLeechSuck(t, part = 'all') {
+  for (const b of org.suck) {
+    const [x, y] = leechSuckPoint(b), inside = x > 0 && x < SHIP_W && y > -2 && y < SHIP_H;
+    if ((part === 'inside' && !inside) || (part === 'outside' && inside)) continue;
+    ctx.save();
+    if (inside) floorClip(ctx);
+    for (let k = 3; k >= 1; k--) {                           // the trail, behind it on the way
+      const [px, py] = leechSuckPoint({ ...b, k: b.k + (b.back ? 1 : -1) * k * 0.012 });
+      ctx.beginPath(); ctx.arc(L(px), L(py), 9 - k * 2, 0, TAU); ctx.fillStyle = `rgba(${POWER_RGB},${0.3 - k * 0.07})`; ctx.fill();
+    }
+    const r = 15 * (1 + 0.08 * Math.sin(t * 9));
+    const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), r);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#ffe08a'); g.addColorStop(1, 'rgba(255,200,90,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), r, 0, TAU); ctx.fill();
+    ctx.restore();
+  }
 }
 
 // On a spacewalk: hack a tentacle off, pry a leech off.
@@ -240,7 +343,7 @@ EVENT_SIDES.herd = randSide;
 EVENT_RUNNERS.herd = (ev) => startHerd(ev.kinds?.length ? ev.kinds : herdPair(), ev.side || randSide());
 Object.assign(EVENT_LABELS, {
   grappler: (ev) => `Grappler — ${SIDE_NAME[ev.side]}`, leeches: (ev) => `Leech swarm — ${SIDE_NAME[ev.side]}`,
-  mother: (ev) => `Spore mother — ${SIDE_NAME[ev.side]}`, leviathan: () => 'Leviathan — front',
+  mother: (ev) => `Spore mother — ${SIDE_NAME[ev.side]} · spore cloud, airlocks!`, leviathan: () => 'Leviathan — front',
   herd: (ev) => `Herd: ${(ev.kinds || []).map(k => HERD_NAMES[k] || k).join(' + ') || 'organics'} — ${SIDE_NAME[ev.side]}`,
 });
 
@@ -430,54 +533,107 @@ function drawMother(e, t) {
     ctx.beginPath(); ctx.ellipse(L(x), L(y), rad * 1.3, rad * blink, 0, 0, TAU); ctx.fillStyle = '#f0ead2'; ctx.fill(); stroke(2);
     if (blink > 0.5) { ctx.beginPath(); ctx.arc(L(x) + rad * 0.45, L(y), rad * 0.55, 0, TAU); ctx.fillStyle = '#7a3a2a'; ctx.fill(); ctx.beginPath(); ctx.arc(L(x) + rad * 0.55, L(y), rad * 0.25, 0, TAU); ctx.fillStyle = OUT; ctx.fill(); }
   }
-  // the three mouths: recesses in the body itself. Shut: a puckered, creased seam. Open: the flesh parts
-  // into a deep red gullet framed by puffy lips of its own hide, and the blue tongue works inside it.
+  // the three mouths: recesses in the body itself. Shut: a puckered, creased seam. Screaming: the flesh is
+  // stretched wide open, lips peeled back off the bared gum and its nubs, a deep red gullet ringed down to the
+  // black throat, the blue tongue rearing up out of it and quivering; a faint spore haze breathes out.
   e.pois.forEach((p, i) => {
-    const [mx, my] = MOTHER_MOUTHS[i], openNow = e.open > 0 && e.openSac === i && !p.hit;
-    const gape = p.hit ? 0.45 : openNow ? Math.min(1, (SAC_OPEN - e.open) * 5, e.open * 2.5) : 0;
+    const [mx, my] = MOTHER_MOUTHS[i], S = motherScream(e, i);
+    const g = S ? S.gape * (1 - 0.035 * (1 + Math.sin(t * 37 + i * 2))) : 0;   // (trembling while it holds wide)
     ctx.save(); ctx.translate(L(mx), L(my));
-    const H = L(1.6), D = L(1.7);                        // half height of the mouth, depth of the recess into the body
-    const cavity = (k) => {                              // the opening: a lens shape, cut in from the body's edge
-      ctx.beginPath(); ctx.moveTo(L(0.05), -H * k);                                   // (its outer side follows the body's edge)
-      ctx.bezierCurveTo(-D * 0.35, -H * k * 1.05, -D, -H * k * 0.55, -D, 0);
-      ctx.bezierCurveTo(-D, H * k * 0.55, -D * 0.35, H * k * 1.05, L(0.05), H * k);
-      ctx.quadraticCurveTo(L(0.15), 0, L(0.05), -H * k); ctx.closePath();
-    };
-    // puffy lips: swellings of the hide all around the opening (always there; they part when it opens)
-    if (gape > 0.05) for (const sd of [-1, 1]) {           // (shut: no lips, just the crease)
-      ctx.beginPath(); ctx.ellipse(-D * 0.5, sd * H * (0.22 + 0.78 * gape), D * 0.52, L(0.36) * (0.6 + 0.4 * gape), sd * 0.15, 0, TAU);   // (inside the flank, not sticking out)
-      const lg = ctx.createLinearGradient(0, sd * H * gape - L(0.4), 0, sd * H * gape + L(0.4));
-      lg.addColorStop(0, '#b39c62'); lg.addColorStop(1, '#7a6438'); ctx.fillStyle = lg; ctx.fill();
-      ctx.strokeStyle = 'rgba(40,30,15,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
-    }
-    if (gape > 0.02) {
-      cavity(gape);
+    const H = p.hit ? L(1.6 * 0.45) : L(2.4) * g, D = p.hit ? L(1.7) : L(1.7 + 0.6 * g);   // half height of the opening, its depth into the body
+    const cavity = (closed = true) => motherLens(H, D, my, closed);
+    if (H > 2 && S) {                                    // the scream (the stretched lips stay within the body's edge)
+      ctx.save(); ctx.lineJoin = 'round';
+      cavity(false); ctx.strokeStyle = OUT; ctx.lineWidth = L(0.62) * g + 3; ctx.stroke();       // the peeled-back lip: a tight roll all round
+      cavity(false); ctx.strokeStyle = '#a87458'; ctx.lineWidth = L(0.62) * g; ctx.stroke();
+      cavity(false); ctx.strokeStyle = 'rgba(255,220,190,0.35)'; ctx.lineWidth = L(0.12) * g; ctx.stroke();
+      cavity(false); ctx.strokeStyle = '#b8485a'; ctx.lineWidth = L(0.3) * g; ctx.stroke();        // the bared gum
+      ctx.restore();
+      cavity();
+      const cg = ctx.createRadialGradient(L(MOTHER_TONGUE_ROOT), 0, 2, -D * 0.4, 0, D * 1.05);
+      cg.addColorStop(0, '#0a0204'); cg.addColorStop(0.45, '#4a0e18'); cg.addColorStop(1, '#b04450');
+      ctx.fillStyle = cg; ctx.fill(); stroke(2.5);
+      ctx.save(); cavity(); ctx.clip();
+      ctx.strokeStyle = 'rgba(210,100,110,0.4)'; ctx.lineWidth = 2;                    // ridges ringing the throat
+      for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.ellipse(L(MOTHER_TONGUE_ROOT), 0, L(0.56 + k * 0.3) * g, L(1 + k * 0.38) * g, 0, 0, TAU); ctx.stroke(); }
+      const pg = ctx.createRadialGradient(L(MOTHER_TONGUE_ROOT) - 3, 0, 0, L(MOTHER_TONGUE_ROOT), 0, L(1) * g);   // the throat: a pit into the dark
+      pg.addColorStop(0, '#000'); pg.addColorStop(0.6, '#14030a'); pg.addColorStop(1, 'rgba(60,10,20,0)');
+      ctx.fillStyle = pg; ctx.beginPath(); ctx.ellipse(L(MOTHER_TONGUE_ROOT), 0, L(0.62) * g, L(1.05) * g, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(160,50,60,0.5)'; ctx.lineWidth = 1.5;
+      for (const k of [0.75, 0.5]) { ctx.beginPath(); ctx.ellipse(L(MOTHER_TONGUE_ROOT) - 2, 0, L(0.56) * g * k, L(1) * g * k, 0, 0, TAU); ctx.stroke(); }
+      ctx.restore();
+      for (let k = 0; k < 13; k++) {                     // pale nubs along the gum, pointing in
+        const sp = -0.88 + 1.76 * k / 12, [x, y] = motherLensAt(sp, H, D, my), r = 2 + 1.4 * g;
+        ctx.beginPath(); ctx.ellipse(x + 2, y, r, r * 1.3, 0, 0, TAU); ctx.fillStyle = '#efe4c2'; ctx.fill(); ctx.strokeStyle = 'rgba(40,25,10,0.7)'; ctx.lineWidth = 1; ctx.stroke();
+      }
+      ctx.save(); cavity(); ctx.clip(); drawTongue(e, t, i); ctx.restore();          // the tongue: its root deep in the throat…
+      ctx.save(); ctx.beginPath(); ctx.rect(-L(8), -L(8), L(16), L(16));            // …its tip out past the lips, in space
+      ctx.translate(-L(mx), -L(my)); for (const [k, [x, y]] of MOTHER_BODY.entries()) k ? ctx.lineTo(L(x), L(y)) : ctx.moveTo(L(x), L(y)); ctx.closePath(); ctx.translate(L(mx), L(my));
+      ctx.clip('evenodd'); drawTongue(e, t, i, true); ctx.restore();
+      motherHaze(t, i, g);
+    } else if (H > 2) {                                  // torn out (or just closing): puffy lips, a red gullet
+      for (const sd of [-1, 1]) {
+        ctx.beginPath(); ctx.ellipse(-D * 0.5, sd * (H + L(0.1)), D * 0.52, L(0.3), sd * 0.15, 0, TAU);
+        const lg = ctx.createLinearGradient(0, sd * H - L(0.4), 0, sd * H + L(0.4));
+        lg.addColorStop(0, '#b39c62'); lg.addColorStop(1, '#7a6438'); ctx.fillStyle = lg; ctx.fill();
+        ctx.strokeStyle = 'rgba(40,30,15,0.6)'; ctx.lineWidth = 1.5; ctx.stroke();
+      }
+      cavity();
       const cg = ctx.createRadialGradient(-D * 0.6, 0, 2, -D * 0.3, 0, D);
       cg.addColorStop(0, '#1a0408'); cg.addColorStop(0.6, '#5a141e'); cg.addColorStop(1, '#a03a44');
       ctx.fillStyle = cg; ctx.fill(); stroke(2.5);
-      ctx.save(); cavity(gape); ctx.clip();               // ridges of the gullet
-      ctx.strokeStyle = 'rgba(200,90,100,0.35)'; ctx.lineWidth = 2;
-      for (let k = 1; k <= 3; k++) { ctx.beginPath(); ctx.ellipse(-D * 0.15 * k, 0, L(0.2), H * gape * (1 - k * 0.18), 0, 0, TAU); ctx.stroke(); }
-      ctx.restore();
+      if (S) { ctx.save(); cavity(); ctx.clip(); drawTongue(e, t, i); ctx.restore(); }
     } else {                                             // shut: a creased seam with puckered wrinkles around it
       ctx.strokeStyle = 'rgba(40,25,10,0.8)'; ctx.lineWidth = 2.5;
       ctx.beginPath(); ctx.moveTo(L(0.2), -L(0.35)); ctx.quadraticCurveTo(-D * 0.5, 0, L(0.2), L(0.35)); ctx.stroke();   // an inward crease
       ctx.strokeStyle = 'rgba(40,25,10,0.3)'; ctx.lineWidth = 1.3;
       for (let k = -2; k <= 2; k++) { if (!k) continue; ctx.beginPath(); ctx.moveTo(-D * 0.3, k * L(0.12)); ctx.quadraticCurveTo(-D * 0.55, k * L(0.25), -D * 0.8, k * L(0.32)); ctx.stroke(); }
     }
-    if (openNow) {                                       // the tongue lives in the gullet: its root vanishes into the dark throat
-      ctx.save(); cavity(gape); ctx.clip(); drawTongue(e, t, D, H * gape);           // inside the gullet…
-      const tg = ctx.createRadialGradient(-D, 0, 0, -D, 0, D * 0.7); tg.addColorStop(0, 'rgba(20,4,8,0.95)'); tg.addColorStop(1, 'rgba(20,4,8,0)');
-      ctx.fillStyle = tg; ctx.fillRect(-D * 1.2, -H, D, H * 2);
-      ctx.restore();
-      ctx.save(); ctx.beginPath(); ctx.rect(-L(0.15), -L(6), L(8), L(12)); ctx.clip(); drawTongue(e, t, D, H * gape, true); ctx.restore();   // …and out in space
-    }
-    else if (p.hit) for (let k = 0; k < 2; k++) {        // a torn-out tongue: the gullet bleeds slime
+    if (p.hit) for (let k = 0; k < 2; k++) {             // a torn-out tongue: the gullet bleeds slime
       const q = (t * 0.7 + k / 2) % 1; ctx.beginPath(); ctx.arc(L(0.3) + q * 12, (k - 0.5) * 8 + q * 6, 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill();
     }
     ctx.restore();
   });
   ctx.restore();
+}
+// The silent scream of mouth i (null unless it's screaming): gape 0..1 (snaps open in 0.35 s, holds wide,
+// shuts in the last 0.6 s) and rise 0..1 (the tongue rears up out of the throat once it's open, sinks at the end).
+const MOTHER_TONGUE_ROOT = -1.6;                         // where the tongue's root sits in the throat (mouth-local units; the sprites' too)
+function motherScream(e, i) {
+  if (!(e.open > 0 && e.openSac === i && !e.pois[i]?.hit)) return null;
+  const u = SAC_OPEN - e.open, ss = (x) => { x = clamp(x, 0, 1); return x * x * (3 - 2 * x); };
+  return { u, gape: ss(Math.min(u / 0.35, e.open / 0.6)), rise: ss((u - 0.2) / 0.8) * ss(e.open / 0.9) };
+}
+// The opening (mouth-local px, x out of the body): a half lens cut in from the body's edge, as in mother.py's
+// lens(); my: the mouth's y (units), so the opening's ends stop at the body's edge.
+function motherEdgeX(y) {                                // how far out the body reaches at height y (units; its near side)
+  let best = 0;
+  for (let k = 0; k < MOTHER_BODY.length; k++) {
+    const [ax, ay] = MOTHER_BODY[k], [bx, by] = MOTHER_BODY[(k + 1) % MOTHER_BODY.length];
+    if ((ay > y) !== (by > y)) best = Math.max(best, ax + (y - ay) * (bx - ax) / (by - ay));
+  }
+  return best;
+}
+function motherLensAt(sp, H, D, my) {
+  const y = sp * H, [mx] = MOTHER_MOUTHS.find(m => m[1] === my) || [0];
+  return [Math.min(L(0.05) - D * (1 - sp * sp) ** 0.75, L(motherEdgeX(my + y / L(1)) - mx) - 1), y];
+}
+function motherLens(H, D, my, closed = true) {
+  ctx.beginPath();
+  for (let k = 0; k <= 24; k++) { const [x, y] = motherLensAt(-1 + k / 12, H, D, my); k ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  if (!closed) return;
+  const [mx] = MOTHER_MOUTHS.find(m => m[1] === my) || [0];
+  for (let k = 24; k >= 0; k--) { const y = (-1 + k / 12) * H; ctx.lineTo(L(motherEdgeX(my + y / L(1)) - mx) + 1, y); }   // back along the body's edge
+  ctx.closePath();
+}
+// A faint green haze breathing out of a screaming mouth (mouth-local px; the big cloud is js/spores.js's).
+function motherHaze(t, i, k) {
+  for (let j = 0; j < 7; j++) {
+    const q = (t * 0.45 + j / 7 + i * 0.3) % 1, x = lerp(-L(0.9), L(4.5), q), y = Math.sin(j * 2.1 + t * 0.8) * L(0.9) * q, r = L(0.5 + 1.7 * q);
+    const a = 0.2 * k * Math.sin(Math.PI * q), hg = ctx.createRadialGradient(x, y, 0, x, y, r);
+    hg.addColorStop(0, `rgba(170,235,100,${a})`); hg.addColorStop(1, 'rgba(170,235,100,0)');
+    ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+  }
 }
 // Cilia all along the edge, waving in slow travelling waves (under the body: the sprite's back layer too).
 function drawCilia(e, t, scaled = false) {
@@ -493,31 +649,37 @@ function drawCilia(e, t, scaled = false) {
   }
   ctx.restore();
 }
-// The tongue, in mouth-local pixels (x out of the body). While tossing: it curls back deep into the
-// gullet, comes out with a spore stuck to its tip and flicks it out; then it hangs out, wagging.
-function tonguePose(e, t, D) {                           // where its tip is (mouth-local px), and whether it carries a spore
-  const T1 = e.toss;
-  let reach, carry = false;                              // reach: where the tip is (px, + = out of the mouth)
-  if (T1) {
-    const u = T1.t;
-    if (u < TOSS_REACH) { reach = lerp(L(0.6), -D * 0.85, Math.sin(u / TOSS_REACH * Math.PI / 2)); carry = u > TOSS_REACH * 0.6; }
-    else if (u < TOSS_REACH + TOSS_FLICK) { const k = (u - TOSS_REACH) / TOSS_FLICK; reach = lerp(-D * 0.85, L(3.4), k * k); carry = !T1.out; }
-    else reach = lerp(L(3.4), L(1.6), (u - TOSS_REACH - TOSS_FLICK) / TOSS_REST);
-  } else reach = L(1.6) + Math.sin(t * 2) * 4;            // hanging out
-  return { tipX: reach, tipY: Math.sin(t * 5) * 6 * (reach > 0 ? 1 : 0.3), carry };
+// The tongue of a screaming mouth, in mouth-local pixels (x out of the body): it rears up out of the throat
+// and quivers (it's the weak spot: it stays in the open mouth, its tip just past the lips, over its hit circle).
+function tonguePose(e, t, i) {                           // rise 0..1, the quiver q (-1..1), root / tip (px), lift (how high the tip is, px)
+  const S = motherScream(e, i), rise = S ? S.rise : 0;
+  const q = (Math.sin(t * 31 + i) * 0.6 + Math.sin(t * 53 + 1.3) * 0.4) * (0.35 + 0.65 * rise);
+  return { rise, q, rootX: L(MOTHER_TONGUE_ROOT), tipX: L(lerp(0.15, 0.8, rise)) + q * 2, tipY: q * 3, lift: L(lerp(0.1, 1.0, rise)) };
 }
-function drawTongue(e, t, D, H, outside = false) {
-  const { tipX, tipY, carry } = tonguePose(e, t, D), base = -D * 0.95, w0 = Math.min(L(0.55), H * 0.8 + 3);
-  if (outside) blueGlow(0.9, 0, 1.3, t);
-  ctx.beginPath(); ctx.moveTo(base, -w0);
-  ctx.bezierCurveTo(lerp(base, tipX, 0.4), -w0 * 1.1, lerp(base, tipX, 0.85), -w0 * 0.7 + tipY, tipX, tipY);
-  ctx.bezierCurveTo(lerp(base, tipX, 0.85), w0 * 0.7 + tipY, lerp(base, tipX, 0.4), w0 * 1.1, base, w0); ctx.closePath();
-  ctx.fillStyle = bluePaint(0, -0.5, 1.5, 0.5, t, false); ctx.fill(); stroke(2);
-  ctx.strokeStyle = 'rgba(10,40,90,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(base * 0.7, 0); ctx.lineTo(tipX * 0.9, tipY * 0.9); ctx.stroke();   // the groove
-  if (carry) {                                           // the spore, stuck to the tip
-    for (let k = 0; k < 5; k++) { const a = k * 1.3 + t * 2; ctx.beginPath(); ctx.arc(tipX + Math.cos(a) * 5, tipY + Math.sin(a) * 5, 6, 0, TAU); ctx.fillStyle = 'rgba(220,240,170,0.8)'; ctx.fill(); }
-    ctx.beginPath(); ctx.arc(tipX, tipY, 5, 0, TAU); ctx.fillStyle = '#c8b0e0'; ctx.fill(); stroke(1);
-  }
+function drawTongue(e, t, i, outside = false) {                           // (the classic view is straight down: a raised tongue = its shadow on the floor, the tongue
+  const { rise, rootX, tipX, tipY, lift } = tonguePose(e, t, i);   //  shifted up-screen, broadening towards its tip as it comes up towards us)
+  const w0 = L(0.42), w1 = L(0.36 + 0.16 * rise), dy = -lift * 0.55, mid = lerp(rootX, tipX, 0.6);
+  const shape = (oy) => {                                // root (narrow, in the throat) → a broad middle → a rounded, slightly pointed tip
+    const tx = tipX, ty = tipY + oy;
+    ctx.beginPath(); ctx.moveTo(rootX - L(0.4), -w0);
+    ctx.bezierCurveTo(lerp(rootX, tx, 0.35), -w0 * 1.15 + oy * 0.3, mid, -w1 * 1.35 + oy * 0.7 + tipY * 0.5, tx - w1 * 0.4, ty - w1);
+    ctx.quadraticCurveTo(tx + w1 * 1.1, ty, tx - w1 * 0.4, ty + w1);
+    ctx.bezierCurveTo(mid, w1 * 1.35 + oy * 0.7 + tipY * 0.5, lerp(rootX, tx, 0.35), w0 * 1.15 + oy * 0.3, rootX - L(0.4), w0); ctx.closePath();
+  };
+  if (!outside) { shape(0); ctx.fillStyle = 'rgba(10,0,4,0.5)'; ctx.fill(); }   // its shadow on the gullet floor
+  blueGlow(0.4, -0.3 * rise, 1.2, t);
+  shape(dy); const g = ctx.createLinearGradient(rootX, 0, tipX + w1, 0);
+  g.addColorStop(0, BLUE.dark); g.addColorStop(0.5, BLUE.base); g.addColorStop(1, BLUE.light);
+  ctx.fillStyle = g; ctx.fill(); stroke(2);
+  const hg = ctx.createRadialGradient(tipX - w1 * 0.3, tipY + dy - w1 * 0.35, 0, tipX - w1 * 0.3, tipY + dy - w1 * 0.35, w1 * 1.4);   // wet sheen: the raised tip is nearest us
+  hg.addColorStop(0, `rgba(235,248,255,${0.35 + 0.4 * rise})`); hg.addColorStop(1, 'rgba(235,248,255,0)');
+  ctx.save(); shape(dy); ctx.clip(); ctx.fillStyle = hg; ctx.fillRect(tipX - w1 * 2, tipY + dy - w1 * 2, w1 * 4, w1 * 4); ctx.restore();
+  ctx.strokeStyle = 'rgba(10,40,90,0.55)'; ctx.lineWidth = 1.5;              // the groove down its middle
+  ctx.beginPath(); ctx.moveTo(rootX + L(0.1), dy * 0.3); ctx.quadraticCurveTo(mid, dy * 0.75 + tipY * 0.5, tipX - w1 * 0.7, tipY + dy); ctx.stroke();
+  if (outside) return;
+  const tg = ctx.createRadialGradient(rootX - L(0.4), 0, 0, rootX - L(0.4), 0, L(0.9));   // the root vanishes into the dark throat
+  tg.addColorStop(0, 'rgba(10,2,4,0.95)'); tg.addColorStop(1, 'rgba(10,2,4,0)');
+  ctx.fillStyle = tg; ctx.beginPath(); ctx.arc(rootX - L(0.4), 0, L(0.9), 0, TAU); ctx.fill();
 }
 function drawOrganicWorld(t) {
   for (const l of org.leeches) {                       // leeches: segmented, wriggling
@@ -525,9 +687,10 @@ function drawOrganicWorld(t) {
     if (l.state === 'fly') for (let k = 1; k < 5; k++) {   // a glistening slime trail
       ctx.beginPath(); ctx.arc(L(l.x) - Math.cos(ang) * (k + 3) * 13, L(l.y) - Math.sin(ang) * (k + 3) * 13 + Math.sin(l.t * 6 + k) * 3, 6 - k, 0, TAU); ctx.fillStyle = `rgba(200,255,150,${0.35 - k * 0.07})`; ctx.fill();
     }
-    if (GFX.on && drawLeechSprite(l, ang)) { drawLeechChew(l, t); continue; }
+    if (GFX.on && drawLeechSprite(l, ang)) { drawLeechDrink(l, t); continue; }
     const bite = l.state === 'latched' ? (l.side === 'port' ? 1 : -1) * L(0.25) : 0;   // latched: the mouth on the hull's edge (as the sprite)
-    ctx.save(); ctx.translate(L(l.x) + bite, L(l.y)); ctx.rotate(ang); ctx.scale(1.7, 1.7);   // big enough to see from a cannon
+    const swell = 1.7 * (1 + 0.3 * (l.fed || 0));         // big enough to see from a cannon; swollen for a moment after a drink
+    ctx.save(); ctx.translate(L(l.x) + bite, L(l.y)); ctx.rotate(ang); ctx.scale(swell, swell);
     const squirm = l.state === 'latched' ? 1.5 : 3, pulse = l.state === 'latched' ? 1 + 0.12 * Math.sin(l.t * 9) : 1;
     for (let i = 4; i >= 0; i--) {                         // a fat, ringed worm-body, wriggling
       const cx = -i * 9 + Math.sin(l.t * 8 + i) * squirm, cy = Math.sin(l.t * 6 + i * 1.2) * 3, rx = (11 - i * 1.6) * pulse, ry = (9 - i * 1.3) * pulse;
@@ -539,7 +702,7 @@ function drawOrganicWorld(t) {
     ctx.beginPath(); ctx.arc(6, 0, 6, 0, TAU); ctx.fillStyle = '#2a0810'; ctx.fill(); stroke(1.5);   // the round mouth, full of little teeth
     for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + l.t * 2; ctx.beginPath(); ctx.moveTo(6 + Math.cos(a) * 6, Math.sin(a) * 6); ctx.lineTo(6 + Math.cos(a + 0.2) * 2.5, Math.sin(a + 0.2) * 2.5); ctx.lineTo(6 + Math.cos(a + 0.4) * 6, Math.sin(a + 0.4) * 6); ctx.fillStyle = '#f0e8d0'; ctx.fill(); }
     ctx.restore();
-    drawLeechChew(l, t);
+    drawLeechDrink(l, t);
   }
   const V = org.lev;
   if (V && !(GFX.on && drawLeviathanSprites(V, t))) {                                             // the leviathan: a vast dark flank sliding past, an eye the size of a room
@@ -583,9 +746,11 @@ function drawOrganicWorld(t) {
     ctx.restore();
   }
 }
-function drawLeechChew(l, t) {                         // latched: how far it has chewed, and the spacewalk job
+function drawLeechDrink(l, t) {                        // latched: the one the energy ball is on its way to (how far it got), and the spacewalk job
   if (l.state !== 'latched') return;
-  ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 13, -Math.PI / 2, -Math.PI / 2 + l.chew / LEECH_CHEW * TAU); ctx.strokeStyle = '#ff6a7a'; ctx.lineWidth = 2.5; ctx.stroke();
+  const b = org.suck.find(q => q.to === l.uid && !q.back);
+  if (b) { ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 17, -Math.PI / 2, -Math.PI / 2 + b.k * TAU); ctx.strokeStyle = POWER_COL; ctx.lineWidth = 2.5; ctx.stroke(); }
+  if (l.fed > 0) { ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 17 + (1 - l.fed) * 14, 0, TAU); ctx.strokeStyle = `rgba(${POWER_RGB},${l.fed * 0.7})`; ctx.lineWidth = 2; ctx.stroke(); }   // a satisfied pulse
   if (me.mode === 'eva') jobMarker(l.x, l.y, t, Math.hypot(me.x - l.x, me.y - l.y) <= REACH + 1, '#ff6a7a');
 }
 // The room the leviathan will bump next: a red warning wash on its floor.
@@ -599,7 +764,11 @@ function drawLeviathanWarning(t) {
 }
 function organicPlates(add) {
   const latched = org.leeches.filter(l => l.state === 'latched').length;
-  if (org.leeches.length) add('leeches', { icon: 'spore', title: 'LEECH SWARM', sub: `${org.leeches.length - latched} incoming, ${latched} chewing · shoot them / pry them off outside`, stripe: '#ff6a7a', red: true });
+  if (org.leeches.length) {
+    const sides = [...new Set(org.leeches.filter(l => l.state === 'latched').map(l => SIDE_LABEL[l.side].toLowerCase()))];
+    const what = [org.leeches.length - latched ? `${org.leeches.length - latched} incoming` : '', latched ? `${latched} latched, sucking the ${sides.join(' + ')} capacitor` : ''].filter(Boolean).join(', ');
+    add('leeches', { icon: 'spore', title: 'LEECH SWARM', sub: `${what} · ${latched ? 'shoot / pry them off outside' : 'shoot them on the way in'}`, stripe: '#ff6a7a', red: true });
+  }
   for (const e of combat.enemies) if (e.kind === 'grappler' && e.tent?.state === 'attached' && e.phase === 'fighting')
     add('tent' + uid(e), { icon: 'spore', title: 'TENTACLE', sub: `${SIDE_LABEL[e.side].toLowerCase()} · acid ${Math.round(e.tent.acid / ACID_TIME * 100)}%${poiHit(e, 'sac') ? ' (paused)' : ''} · shoot it or hack it off`, stripe: '#c08aff', red: true });
   if (org.herd) add('herd', { icon: 'spore', title: 'THE HERD', sub: `${org.herd.kinds.map(k => HERD_NAMES[k] || k).join(' + ')} · together, ${SIDE_LABEL[org.herd.side].toLowerCase()} side`, stripe: '#4ad0b0', red: true });
@@ -650,43 +819,43 @@ function drawTentacleSprites(e, pts) {
   GFX.sprite(coil, 0, e.tent.x, e.tent.y, 0, { layer: 'main', sortY, depthBias: 1 });   // (in front of the outer wall it wraps round)
   return true;
 }
-// The spore mother: body + mouth patches (g1..g3 by the gape, hit), the tongue stretched and turned to
-// where the game has its tip (with the spore it carries), the nine eyes blinking. Breathing scales it all.
+// The spore mother: body + mouth patches (g1..g4 by the gape; g4 = the silent scream, hit = torn out), the
+// screaming tongue rearing out of the throat (r1..r3 by how far it's up, quivering), the nine eyes blinking.
+// Breathing scales it all.
 function motherSprites(e, t) {
   const sd = sideName(e), b = 1 + 0.012 * Math.sin(t * 0.9), out = [{ n: `organic/mother_${sd}`, scale: b }];
   const at = (lx, ly) => [lx * b, ly * b];
   e.pois.forEach((p, i) => {
-    const openNow = e.open > 0 && e.openSac === i && !p.hit;
-    const gape = p.hit ? 0.45 : openNow ? Math.min(1, (SAC_OPEN - e.open) * 5, e.open * 2.5) : 0;
+    const S = motherScream(e, i), k = S ? 1.5 * S.gape : 0;   // (the sprites' gape: g1..g3 = 0.35 / 0.7 / 1, g4 = 1.5)
     if (p.hit) out.push({ n: `organic/mother_${sd}_m${i}_hit`, scale: b });
-    else if (gape > 0.17) out.push({ n: `organic/mother_${sd}_m${i}_g${gape < 0.525 ? 1 : gape < 0.85 ? 2 : 3}`, scale: b });
-    if (openNow) {
-      const [mx, my] = MOTHER_MOUTHS[i], { tipX, tipY, carry } = tonguePose(e, t, L(1.7)), base = -1.7 * 0.95;
-      const tx = tipX / T, ty = tipY / T, len = tx - base;
-      if (len > 0.4) out.push({ n: `organic/mother_${sd}_tongue`, at: at(mx + base, my), sx: len / 4, rot: e.dir * Math.atan2(ty * GFX.SIN, len), emissive: 0.6 });
-      if (carry) out.push({ n: 'organic/spore_pod', at: at(mx + tx, my + ty), emissive: 0.5 });
+    else if (k > 0.17) out.push({ n: `organic/mother_${sd}_m${i}_g${k < 0.525 ? 1 : k < 0.85 ? 2 : k < 1.25 ? 3 : 4}`, scale: b });
+    if (S && S.gape > 0.5) {
+      const [mx, my] = MOTHER_MOUTHS[i], P = tonguePose(e, t, i);
+      out.push({ n: `organic/mother_${sd}_tongue_r${P.rise < 0.3 ? 1 : P.rise < 0.7 ? 2 : 3}`, at: at(mx + MOTHER_TONGUE_ROOT, my), rot: P.q * 0.035, scale: b * (1 + 0.012 * P.q), emissive: 0.6 });
     }
   });
+  const wide = e.pois.map((p, i) => (motherScream(e, i)?.gape || 0) > 0.55);
   const r1 = rng(77);                                    // the eyes (the same places as drawMother's), on the dome
   for (let i = 0; i < 9; i++) {
     const y = (r1() * 1.7 - 0.85) * MOTHER_RY, edge = MOTHER_RX * Math.sqrt(Math.max(0, 1 - (y / MOTHER_RY) ** 2)), x = edge - 1.2 - r1() * 3, rad = 0.25 + r1() * 0.35;
-    if (MOTHER_MOUTHS.some(([mx, my]) => Math.hypot(mx - x, my - y) < 2.2)) continue;
+    if (MOTHER_MOUTHS.some(([mx, my], j) => Math.hypot(mx - x, my - y) < 2.2 || (wide[j] && Math.abs(my - y) < 3.2 && x > mx - 3.4))) continue;   // (a screaming mouth's stretched lips cover the eyes near it)
     const s = Math.sin(t * 0.7 + i * 2.3), q = Math.hypot(x / MOTHER_RX, y / MOTHER_RY), z = 3 * Math.max(0, 1 - q * q) ** 0.62 * (1 - 0.12 * (1 - q) ** 2);
     out.push({ n: `organic/mother_${sd}_eye_${s > 0.97 ? 'shut' : s > 0.94 ? 'half' : 'open'}`, at: at(x, y), z: z * b, scale: rad / 0.5 * b });
   }
   return out;
 }
-function motherOverlay(e, t) {                           // torn-out tongues: the gullet bleeds slime
+function motherOverlay(e, t) {                           // torn-out tongues: the gullet bleeds slime; a screaming mouth breathes a faint haze
   e.pois.forEach((p, i) => {
+    const [mx, my] = MOTHER_MOUTHS[i], S = motherScream(e, i);
+    if (S) { ctx.save(); ctx.translate(L(mx), L(my)); motherHaze(t, i, S.gape); ctx.restore(); }
     if (!p.hit) return;
-    const [mx, my] = MOTHER_MOUTHS[i];
     for (let k = 0; k < 2; k++) { const q = (t * 0.7 + k / 2) % 1; ctx.beginPath(); ctx.arc(L(mx + 0.3) + q * 12, L(my) + (k - 0.5) * 8 + q * 6, 3, 0, TAU); ctx.fillStyle = `rgba(156,255,90,${1 - q})`; ctx.fill(); }
   });
 }
 // Leeches: organic/leech_fly (16 headings x 6 wriggle frames) / leech_latched (d0 facing right, d1 left).
 function drawLeechSprite(l, ang) {
   if (l.state === 'fly') return GFX.ready('organic/leech_fly') && GFX.sprite('organic/leech_fly', GFX.frameIndex('organic/leech_fly', ang, l.t / 0.8 * 6), l.x, l.y, 0, { layer: 'main', emissive: 0.4 });
-  return GFX.ready('organic/leech_latched') && GFX.sprite('organic/leech_latched', (l.side === 'port' ? 0 : 6) + Math.floor(l.t / 0.7 * 6) % 6, l.x, l.y, 0, { layer: 'main', emissive: 0.4 });
+  return GFX.ready('organic/leech_latched') && GFX.sprite('organic/leech_latched', (l.side === 'port' ? 0 : 6) + Math.floor(l.t / 0.7 * 6) % 6, l.x, l.y, 0, { layer: 'main', emissive: 0.4, scale: 1 + 0.3 * (l.fed || 0) });   // (swollen after a drink)
 }
 // The leviathan, in pieces on one origin: fluke (nearest pose), flippers (turned around their roots),
 // four body bands, the blink patch. Its slow roll turns the whole stack; the spots' pulse is drawn on top.

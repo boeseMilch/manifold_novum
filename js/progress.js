@@ -173,7 +173,7 @@ Object.assign(MISSIONS, {
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
     objective: { kind: 'ore', perPlayer: true }, rules: { breach: true, surge: true, plasma: true },   // (a sample per player: oreNeeded; was 2)
     blurb: 'Drill samples of the living rock in the Mire Nebula, one for each of you, before it drifts past.',
-    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs samples of the living rock they grow on, one for each of us. One will drift right past in front of us, and it won\'t wait: take the mining drill (left airlock room), spacewalk out, drill a sample, bring it inside, and go back for the next before the rock is out of reach. The nebula will notice. Expect spores, barnacles and leeches.',
+    briefing: 'Dr. Varga is grateful — and terrified. The intruders\' DNA matches the spore fields of the Mire Nebula, where those creatures nest.\n\nShe needs samples of the living rock they grow on, one for each of us. One will drift right past in front of us, and it won\'t wait: take the mining drill (left airlock room), spacewalk out, drill a sample, bring it inside, and go back for the next before the rock is out of reach. The nebula will notice. Expect leeches, and spore clouds: they drift to an airlock and seep in. Spores inside jam whatever they settle on and eat it in the end; vent the room (the panel by the outer airlock, the PIN is on the sticky note).',
     // a calm half minute, a leech swarm (the opener: the Mire's own; was an interceptor until 2026-10-16), then the rock
     // drifts in (and past); a part fails on the way (every crew size)
     build: () => [evAt('leeches', 30, { side: randSide(), opener: true }), evAt('rock', 60, { side: randSide() }), evAt('spores', 95, { side: randSide() }), evAt('leeches', 135, { side: randSide() }), evAt('mother', 175, { side: randSide() }),
@@ -219,7 +219,7 @@ Object.assign(MISSIONS, {
     length: 500, finaleLead: 230,
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 80 },
     blurb: 'Meet the spore mother, the grappler and the leviathan itself. Find out what drives the swarms mad.',
-    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing that spits spore pods at the hull (shoot its sac when it opens). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. A tide pulls at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have.\n\nGood luck — and bring the cat.',
+    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing whose silent scream fills space round the hull with spores (shoot the tongue in its open mouth; don\'t open an airlock while the cloud is out there, and vent the spores out once it\'s gone). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. A tide pulls at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have.\n\nGood luck — and bring the cat.',
     // 2026-10-16 (the user: "boring", never saw the spore mother): a fixed, escalating timeline instead of the shuffle,
     // no interceptors: spores, the mother, the grappler while a part breaks, then herds and tides, the leviathan last
     // (2026-10-17, one gravity tide per mission: the rule's, 80 s in, at every crew size. The two written tides at 140 / 225 s are
@@ -251,7 +251,7 @@ const CUSTOM_KINDS = [
   ['interceptor', 'Interceptor'], ['frigate', 'Frigate'], ['swarm', 'Asteroid swarm'], ['stealth', 'Stealth fighter'],
   ['tractor', 'Tractor tug'], ['pirates', 'Pirate raider'], ['intruder', 'Intruder'], ['saboteur', 'Saboteur'],
   ['grappler', 'Grappler'], ['mother', 'Spore mother'], ['leeches', 'Leech swarm'], ['herd', 'Herd (two creatures)'],
-  ['mines', 'Mine drone'], ['spores', 'Spore clouds'], ['debris', 'Debris in a cannon'], ['antenna', 'Antenna strike'],
+  ['mines', 'Mine drone'], ['spores', 'Spore clouds (get inside)'], ['debris', 'Debris in a cannon'], ['antenna', 'Antenna strike'],
   ['canister', 'Fuel canister'], ['flare', 'Solar flare'], ['storm', 'Ion storm'], ['coolant', 'Coolant leak'],
   ['glitch', 'AI glitch'], ['tide', 'Gravity tide'],
 ];

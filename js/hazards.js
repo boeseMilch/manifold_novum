@@ -13,6 +13,7 @@ const hz = {
   vent: null,                              // { room, t } a room being vented
   surges: [],                              // ids of power lines that arc
   noGrav: [],                              // room ids whose gravity plating failed
+  spores: { rooms: {}, glitch: [], doors: {}, shrivel: {} },   // spores inside the ship (js/spores.js)
   tape: 3, plates: 4,                      // duct tape rolls, hull plates left
   coffee: 1,                               // the kitchen mug: 1 = full; refills itself (someone makes more)
   stats: { fires: 0, firesOut: 0, breaches: 0, repairs: 0, pets: 0, treated: {} },
@@ -194,6 +195,9 @@ const inPlasmaRoom = (s) => sysRooms(s).some(r => PLASMA_ROOMS.has(r.id));
 const plasmaPart = (s) => inPlasmaRoom(s) && s.kind === 'capacitor' && s.ref.charge >= 3;   // a well charged capacitor in a lower side room
 const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));
 const fireIn = (roomId) => fires.some(f => f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));   // any fire: venting works on normal fires too
+// The vent panel works any time (2026-10-22: it clears spores, js/spores.js); it lights up when there's a reason to use
+// it: a fire in its room, spores in it, in the cannon room above or on the bridge (vented on through forced doors).
+const ventWanted = (roomId) => fireIn(roomId) || infested(roomId) || infested(roomId === 'portLock' ? 'portGun' : 'starGun') || infested('bridge');
 // operator: whoever typed the vent code — their visor is already down, so they're not hurt.
 // Everyone else in the room takes one hit the moment it opens (the vacuum afterwards only slows you).
 // Hostiles in there (boarders, the saboteur, pirates) take one solid hit each and are stunned (VENT_HIT:
@@ -312,7 +316,7 @@ function updateHazards(dt) {
   for (const c of crew) { c.coffeeT = Math.max(0, (c.coffeeT || 0) - dt); c.snackT = Math.max(0, (c.snackT || 0) - dt); }
 }
 function resetHazards() {
-  Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], patches: [], floating: [], vent: null, surges: [], noGrav: [], tape: 3, plates: 4, coffee: 1, repress: null,
+  Object.assign(hz, { hull: { port: 0, front: 0, star: 0 }, breaches: [], patches: [], floating: [], vent: null, surges: [], noGrav: [], spores: { rooms: {}, glitch: [], doors: {}, shrivel: {} }, tape: 3, plates: 4, coffee: 1, repress: null,
                       stats: { fires: 0, firesOut: 0, breaches: 0, repairs: 0, pets: 0, treated: {} } });
 }
 
@@ -349,14 +353,15 @@ function hazardClickTarget(mx, my) {
     return kitJob(holdTarget('grav' + id, GRAV_TIME, `Hold Space / right click: reset the gravity breaker (${GRAV_TIME} s)`, x, y, 0.7,
                       () => { hz.noGrav = hz.noGrav.filter(r => r !== id); hz.stats.repairs++; combatBanner(`${roomById(id).name}: gravity back on`); sfx.win(); }));
   }
-  // a fire (plasma or normal) in a lower side room: the panel next to its outer airlock vents the room (vent code:
-  // a PIN pad, with the admin password on a sticky note right next to it — js/minigames.js)
+  // the panel next to each outer airlock vents its room, any time (vent code: a PIN pad, with the admin password on a
+  // sticky note right next to it — js/minigames.js). Also with a spore cloud outside (2026-10-22, the user: "it could still
+  // be useful against plasma fires, we should allow the player to make mistakes, a panel is not smart"): the spores just
+  // survive it then, and the cloud gets in through the open airlock (js/spores.js)
   for (const [id, [x, y]] of Object.entries(VENT_PANELS)) {
     if (!at(x, y, 0.5)) continue;
     if (!near(x, y)) return { text: 'Airlock vent panel — get closer', ok: false, x, y, r: 0.5 };
-    if (!fireIn(id)) return { text: 'Airlock vent panel (only when this room is on fire)', ok: false, x, y, r: 0.5 };
     if (hz.vent) return { text: 'The room is already being vented', ok: false, x, y, r: 0.5 };
-    return { text: 'Click: vent the room (code on the sticky note) — puts out fires, hurts anyone else inside, blows boarders out', ok: true, x, y, r: 0.5,
+    return { text: 'Click: vent the room (code on the sticky note) — kills spores, puts out fires, hurts anyone else inside, blows boarders out', ok: true, x, y, r: 0.5,
              run: () => openPinPad(id) };
   }
   // snack machine: free, one snack per minute each, and only worth it when you're hurt (ends it 10 s sooner)
@@ -418,7 +423,7 @@ function hazardSpots() {
     ...hz.breaches.filter(b => !b.tarp).map(b => ({ x: BREACH_SPOTS[b.room].x, y: BREACH_SPOTS[b.room].y, r: 0.6 })),
     ...hz.surges.map(id => { const [x, y] = linePoint(LINE[id], 0.5); return { x, y, r: 0.5 }; }),
     ...hz.noGrav.map(id => ({ x: GRAV_PANELS[id][0], y: GRAV_PANELS[id][1], r: 0.5 })),
-    ...Object.entries(VENT_PANELS).filter(([id]) => fireIn(id)).map(([, [x, y]]) => ({ x, y, r: 0.4 })),
+    ...Object.entries(VENT_PANELS).filter(([id]) => ventWanted(id)).map(([, [x, y]]) => ({ x, y, r: 0.4 })),
     { x: SNACK.x, y: SNACK.y, r: 0.6 }, { x: COFFEE_MUG.x, y: COFFEE_MUG.y, r: 0.3, z: COUNTER_Z },
     ...PLATE_CRATES.filter(() => hz.plates > 0).map(p => ({ x: p.x, y: p.y, r: 0.6 })),
   ];
@@ -625,9 +630,9 @@ function combatFxLocal(x, y, t) {                      // a puff of escaping air
   ctx.fillStyle = `rgba(220,235,250,${0.35 * (1 - k)})`; ctx.fill();
 }
 function drawHazardProps(t) {
-  // the vent panels next to the outer airlocks: dark until a fire burns in that room
+  // the vent panels next to the outer airlocks: dark until there's a reason to vent (a fire, spores: ventWanted)
   for (const [id, [vx, vy]] of Object.entries(VENT_PANELS)) {
-    const x = L(vx), y = L(vy), live = fireIn(id), on = hz.vent?.room === id;
+    const x = L(vx), y = L(vy), live = ventWanted(id), on = hz.vent?.room === id;
     const side = id === 'portLock' ? 'port' : 'star';
     if (spr(`systems/vent_${side}_${on ? 'venting' : live ? `alarm_f${Math.sin(t * 8) > 0 ? 0 : 1}` : 'idle'}`, 0, vx, vy, 0, { emissive: 0.9, pick: [0.25, 0.8] })) {
       if (live) worldText(vx, vy + 0.27, 0, 'VENT', `800 ${T * 0.1}px system-ui, sans-serif`, 'rgba(255,170,150,0.9)', { base: 'top' });

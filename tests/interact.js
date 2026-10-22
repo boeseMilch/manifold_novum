@@ -1,9 +1,9 @@
 // Every interaction works with E (next to it) and with a left click on it: the outer airlocks
 // (inside and on a spacewalk, also with the mouse resting on the airlock / yourself), hold jobs
-// (barnacle scraping, treating) by holding E or the mouse, and the manual-override panel.
+// (prying a limpet mine off, treating) by holding E or the mouse, and the manual-override panel.
 // Run: node tests/interact.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'HATCHES', 'evs', 'startMission', 'mission', 'withCrew', 'inv', 'ui', 'DOORWAYS', 'hurtCrew', 'crew', 'makeCrew', 'SCRAPE_TIME', 'roomAt'];
+const NAMES = ['simTick', 'me', 'HATCHES', 'evs', 'startMission', 'mission', 'withCrew', 'inv', 'ui', 'DOORWAYS', 'hurtCrew', 'crew', 'makeCrew', 'PRY_BARE', 'roomAt'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -39,22 +39,23 @@ for (const [how, mouse] of [['E', 'far away'], ['E', 'on the airlock'], ['E', 'o
   check(me.mode === 'inside' && G.roomAt(me.x, me.y)?.id === 'portLock', `spacewalk: floating at the outer airlock (D) cycles it to you and takes you back in (mode ${me.mode})`);
 }
 
-// --- barnacles: hold E next to one, or hold the mouse on it
+// --- a limpet mine: hold E next to one, or hold the mouse on it (no repair kit: PRY_BARE s)
+// (the hull barnacles that were tested here are gone since 2026-10-22: spores get inside now, js/spores.js)
 for (const [how, side] of [['E', 'left'], ['E', 'below'], ['mouse', 'left'], ['mouse', 'below'], ['mouse', 'above']]) {
-  const G = fresh(), b = { uid: 900, side: 'port', x: -1.6, y: 8, age: 0, drain: 0, hp: 2 };
-  G.evs.barnacles.push(b);
+  const G = fresh(), b = { uid: 900, side: 'port', x: -0.55, y: 12.6, t: 60 };
+  G.evs.mines.push(b);
   const [dx, dy] = { left: [-0.6, 0], below: [0, 0.6], above: [0, -0.6] }[side];
   place(G, 'eva', b.x + dx, b.y + dy);
   if (how === 'E') mouseAt(G, b.x + 8, b.y - 8); else mouseAt(G, b.x, b.y);
   tickN(G, 2);
-  const t = hold(G, how, () => !G.evs.barnacles.includes(b));
-  check(!G.evs.barnacles.includes(b) && Math.abs(t - G.SCRAPE_TIME) < 0.3, `barnacle scraped off by holding ${how} (you ${side === 'left' ? 'left of' : side} it) in ${t.toFixed(1)} s`);
+  const t = hold(G, how, () => !G.evs.mines.includes(b));
+  check(!G.evs.mines.includes(b) && Math.abs(t - G.PRY_BARE) < 0.3, `limpet mine pried off by holding ${how} (you ${side === 'left' ? 'left of' : side} it) in ${t.toFixed(1)} s`);
 }
-{ // a quick tap of E or a click doesn't scrape it
-  const G = fresh(), b = { uid: 901, side: 'port', x: -1.6, y: 8, age: 0, drain: 0, hp: 2 };
-  G.evs.barnacles.push(b); place(G, 'eva', b.x - 0.6, b.y); mouseAt(G, b.x + 8, b.y - 8); tickN(G, 2);
+{ // a quick tap of E or a click doesn't pry it off
+  const G = fresh(), b = { uid: 901, side: 'port', x: -0.55, y: 12.6, t: 60 };
+  G.evs.mines.push(b); place(G, 'eva', b.x - 0.6, b.y); mouseAt(G, b.x + 8, b.y - 8); tickN(G, 2);
   pressE(G); click(G, b.x, b.y); tickN(G, 60);
-  check(G.evs.barnacles.includes(b), 'a tap of E or a single click doesn\'t scrape a barnacle (it is a hold job)');
+  check(G.evs.mines.includes(b), 'a tap of E or a single click doesn\'t pry a mine off (it is a hold job)');
 }
 
 // --- treating a crewmate: hold E or hold the mouse on them

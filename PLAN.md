@@ -3563,3 +3563,97 @@ The user: an unlocked door should still open with a delay the player notices (it
 through). Now a door reacts DOOR_DELAY 0.4 s after someone steps up (a hiss for the crew member who did: sfxFor) and slides
 open in DOOR_TIME 0.6 s (was 0.3): ~0.75 s until you can pass. An already open door stays open for whoever follows (no new
 delay). tools/travel-table.json rebuilt; tests updated to the timing (tests/doors.js checks the delay).
+
+### Leeches drink energy instead of chewing parts (2026-10-22, js/organic.js)
+The user: "The leeches will not damage the ship but steal energy … one of those energy balls gradually travelling to the
+hull and then towards a leech. The speed is proportional to the amount of leeches. Then after they consumed one they go
+after the next and so forth." Latched leeches never break a part now (LEECH_CHEW gone). They drink the capacitor on their
+side (SIDE_CAP: left → LEFT, right → RIGHT, front → MID) one energy at a time: updateLeechSuck keeps one ball per side in
+org.suck (plain data: side, the leech it's for, its spot, k 0..1, back). The capacitor gives the energy up as the ball sets
+off (its pips drop at once, like any use); the ball creeps along the cannon cable's first stretch (LINE.gun_<side>.runs[0],
+to where it climbs into the spine), out through the hull wall, along the outside of the hull to the leech's height and on
+to the leech, at n / LEECH_SUCK_ONE of the way per s with n latched on that side (LEECH_SUCK_ONE 24 s × the reactor's
+pace: one leech eats a bit less than the whole reactor makes, more than its side gets with the lever stepping round; six:
+a unit every 4 s, a full capacitor in 12 s). On arrival the leech swells (l.fed, a golden ring pulse; drank counts) and the
+next ball sets off for the next leech in turn (by uid, round robin). Empty: they wait and take the reactor's next energy as
+it lands. Broken or S-7-wrapped capacitor: they can't get at it, they wait. Its leech shot / pried off: the ball heads for
+another one on that side; none left: it rolls back (LEECH_BACK 1.2 s) and the energy goes back into the capacitor (killing
+them fast pays). Drawn like the power-line pulses (the same orb, a short trail): inside in the glow layer clipped to the
+floors, outside on top of the leech sprites (drawLeechSuck 'inside' / 'outside'; classic: all at once); a golden progress
+ring on the leech it's for (drawLeechDrink, was drawLeechChew). HUD: the capacitor's label throbs leech-red while they
+drink (leechCapSucked); sidebar "N latched, sucking the right capacitor"; banner "they suck our energy!". Everywhere
+leeches come from follows the rule (the event, herds, practice, chapter 8's phase-3 swarm: its banner now says they'll drink
+that cannon's capacitor dry). Removing them is unchanged (shoot on the way in, pry off outside).
+- **Balance**: tools/balance.js models the drain: the pry job carries `suck` (A.LEECH_LATCHED 3 leeches on that side from
+  LEECH_LATCH until pried off) into plan.sucks; energySimGame runs the game's own leeches (updateOrganic), energyFast the
+  same ball tick for tick (tests/balancemodel.js compares them, random plans now include leeches). tools/damage-rates.json
+  rebuilt (leeches: no parts broken). Only chapter 7 solo moves (it was 'impossible' on ~16 parts chewed open at once; now
+  'tight', 82, idle 0 → -10 %, the right cannon starved: never served); c6, c8, Deep drift, Nightmare unchanged (their
+  leeches are shot before they latch in the model).
+- Tests: tests/organic.js (no parts broken; one unit per LEECH_SUCK_ONE / n s; the ball travels and arrives; the next one;
+  three leeches in turn; empty → waits, takes the reactor's next energy; a lone leech; the card; multiplayer sync; prying
+  the last one off returns the ball's energy; broken capacitor; shields; a shell; a herd), tests/leviathan.js (phase 3's
+  swarm drinks that side's capacitor).
+
+### Spores get inside the ship (2026-10-22, js/spores.js)
+The user: mines, spores and leeches should feel different; mines stay the hull spacewalk job, leeches drink energy, and
+SPORES MOVE INSIDE. The hull barnacles are gone (evs.barnacles, BARNACLE_*, SCRAPE_TIME, the scrape job, the drain).
+- **Getting in.** A spore cloud (event 'spores', js/eva.js spawnSpores: three clumps, the ids unchanged) now heads for the
+  outer airlock on its side (from the front: one of the two), sits at the hatch's seals for SPORE_SEEP 2.5 s (shrinking,
+  wisps sucked in) and seeps in: that airlock room is infested (~10-14 s after the banner "it's heading for the airlock!
+  Shoot it down"; radar label "Spore cloud — left airlock"; cannon shells still pop clumps on the way). The spore mother
+  (js/organic.js) no longer flicks spore pods (they got in the way of the shots): every PUFF_EVERY s one mouth opens in a
+  SILENT SCREAM for SAC_OPEN s (its tongue rises in it: the weak spot), and a green cloud billows out of it and hangs round
+  the hull (evs.cloud: k density, hold CLOUD_HOLD 14 s after each scream so it lasts the fight, then CLOUD_FADE 4 s).
+  Each scream has MOTHER_GUSTS 2 gusts, each with MOTHER_SEEP_CHANCE 15 % of getting into the airlock on her side (~28 %
+  per scream; a ~45 s fight ≈ one infestation, like the old one barnacle per pod). Opening ANY outer airlock to space while
+  the cloud is there (cycling out or in, a forced airlock, the vent panel; not a docked ship's tube) infests that airlock's
+  room for sure. Banner "Spore cloud around the hull — don't use the airlocks!", a SPORES OUTSIDE card ("keep the airlocks shut till the cloud clears"), "SPORES
+  OUTSIDE" over both airlocks' control panels and a warning on the airlock prompts; "thinned out — safe again" after.
+- **The scream (drawing).** motherScream(e, i): the mouth opens wide in 0.35 s (lips peeled back, gum line, the throat
+  pit visible), holds trembling, closes over the last 0.6 s; the blue tongue rises out of the throat and quivers (still
+  the weak spot, pois tongue0..2 unchanged), a faint green haze breathes out (motherHaze). Sprites: mother.py's new g4
+  mouth patches (scream) and tongue poses r1..r3 (the old straight tongue is gone), the whole organic group re-rendered
+  (the veins moved back off the mouths) and re-packed; classic: drawMother / drawTongue redrawn. No spore pods.
+- **Spreading.** A door between an infested and a clean room standing passable for SPORE_SPREAD 1.5 s (anyone walking
+  through: it opens after 0.75 s and lingers 1 s) lets them over (puffs drift through the doorway). Never into the reactor
+  room: they shrivel at its doors (browning puffs, embers). Nothing crosses into or out of a room in vacuum.
+- **Effects.** Every SPORE_GLITCH_EVERY 12 s (×0.7-1.3, the first sooner) one part in an infested room glitches for
+  SPORE_GLITCH_TIME 4 s (sporeGlitching): a shield button doesn't press, a capacitor gives no energy (useEnergy), a
+  cannon doesn't fire, a deck door sticks where it is, an outer airlock's doors stay as they are. Spore fuzz on the part
+  with "SPORES · n s", a banner and the prompt say why. After SPORE_BREAK_FIRST 60 s one part in the room breaks for good
+  (breakSystem), then one every SPORE_BREAK_EVERY 30 s. (An outer airlock belongs to its airlock room; a deck door to both
+  rooms it joins; outside parts never.)
+- **Cure: vacuum.** SPORE_CLEAR 2 s of vacuum and the room is clean ("aired out"). The vent panel by each outer airlock
+  now works ANY time (it lights up for a fire or spores: ventWanted), PIN pad as before; venting still hurts others
+  inside, blows boarders out, puts out fires. Not while spores are outside (evs.cloud or a cloud drifting in; the user:
+  "airing out only works if there is not a spore cloud outside"): the vent still vents (the panel isn't smart: no
+  warning, the user's "allow mistakes"), the spores live on ("…but the spore cloud outside blew right back in!"); the
+  card says "spores survive venting while the cloud is outside". Rooms further in: force the door from the vented room
+  (the existing override across a pressure difference). **Fix to make every room clearable solo:** with the vent panel's
+  vent running, a forced door is held open as long as the vent runs, and forcing one keeps the vent open at least
+  VENT_TIME more (js/game.js forceDoor; "a whole room more to pump out"). Before, the deck door's 5 s hold ran out before a
+  lone crew member could cross the cannon room and force the bridge door (t ≈ 10 s vs the hold ending at 9 s), so the
+  bridge needed two people. Paths (tests/spores.js walks each one at vacuum speed with real overrides): airlock rooms:
+  their panel; cannon rooms: vent the airlock room below, force the deck door up; bridge: then force the cannon room's door
+  to the bridge (from either side). The reactor room is never infested and never vented (doors into it can't be forced
+  across a pressure difference: the cat).
+- **Sync / drawing.** hz.spores (rooms, glitch, doors, shrivel) and evs.cloud are plain data in the snapshot. Procedural
+  in both views (drawSporesInside after the vacuum tint: a green-grey tint, drifting clumps filling in from where they came
+  in, motes; puffs through doors; shrivelling at the reactor's; fuzz on glitching parts; drawSporeCloud: the cloud round
+  the hull, the billow from the screaming mouth, gusts at the airlock). Sidebar: "SPORES — Left airlock · vent it:
+  airlock panel, PIN on sticky note" (or how to reach it), problem markers per room. Practice: "Spore clouds → the
+  right airlock", "Spores inside: …", "Spore cloud round the hull". Skirmish kind label "Spore clouds (get inside)".
+  Chapter 6 and 8 briefings rewritten. Event kinds and ids unchanged (saves untouched).
+- **Balance model** (tools/balance.js): the spore-cloud job is unchanged (shoot them), late → `sporeVent` (walk to the
+  outer airlock's panel, A.PIN_TIME 6 s, SPORE_CLEAR, A.SPORE_GLITCH_COST 3 s; past A.SPORE_SPREAD_AT 25 s also a
+  "force the deck door" job; past SPORE_BREAK_FIRST broken parts). The mother: no spore-pod shots any more; the chance her
+  screams infested the room over the fight (≥ 50 %: a vent job once her cloud is gone, aged from her expected first lucky
+  scream). Barnacle drains removed from both energy runs. tools/damage-rates.json rebuilt (spores/mother: first.infest
+  13.7 s / 32.3 s instead of first.barnacle). Moves: c6 solo score 51 → 39 (idle 28 → 32 %), ×3 41 → 32; c7 solo
+  impossible 114 → tight* 83 (idle 0 → -12 %, 16 → 2 open); c8 solo 74 → 89 (idle 12 → -3 %: the mother's infestation
+  waits for her cloud, a part breaks; tests/scaling.js's c8 fixed-minimum check now fails on idle > 0), c8 ×2-8 roughly
+  ±3; Deep drift / Nightmare ×3-8 slightly easier (no pods to shoot). Not retuned (the user: leave balance for now).
+- Tests: tests/spores.js (new), tests/eva.js / interact.js (barnacle hold tests → a limpet mine), threats.js (clouds
+  popped before they reach the airlock), organic.js (the scream: a cloud, no pods), hazards.js (the panel works without
+  a fire).

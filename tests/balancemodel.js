@@ -49,7 +49,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 }
 
 // --- the energy: energyFast (plain numbers) gives exactly what energySimGame (the game's own code) gives, on real
-// plans (both passes, every mode) and on random ones (fights, shields, scrams, ion storms, the freezer, low fuel,
+// plans (both passes, every mode) and on random ones (fights, shields, scrams, ion storms, the freezer, leeches drinking, low fuel,
 // overcharge, the inserter)
 {
   const out = (e) => JSON.stringify([e.waits, e.waitByKey, e.unmet, e.jumpOk, e.jumpWait, e.perSide, e.leverTrips, e.refuels, e.ocFires, e.produced, e.demand, e.supply, e.interval, e.cells]);
@@ -75,7 +75,8 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
       shields: Array.from({ length: Math.floor(rnd() * 8) }, (_, j) => ({ key: 's' + j, side: pick(sides), t: rnd() * jumpAt })),
       scrams: Array.from({ length: Math.floor(rnd() * 3) }, () => { const a = rnd() * jumpAt; return [a, a + rnd() * 40]; }),
       storms: Array.from({ length: Math.floor(rnd() * 3) }, () => rnd() * jumpAt),
-      freezers: rnd() < 0.3 ? [(() => { const t0 = rnd() * jumpAt; return { key: 'z', cap: Math.floor(rnd() * 3), t0, t1: t0 + rnd() * 80, every: 3 + rnd() * 10 }; })()] : [] };
+      freezers: rnd() < 0.3 ? [(() => { const t0 = rnd() * jumpAt; return { key: 'z', cap: Math.floor(rnd() * 3), t0, t1: t0 + rnd() * 80, every: 3 + rnd() * 10 }; })()] : [],
+      sucks: Array.from({ length: rnd() < 0.5 ? Math.floor(rnd() * 3) + 1 : 0 }, (_, j) => { const from = rnd() * jumpAt; return { key: 'l' + j, cap: Math.floor(rnd() * 3), n: 1 + Math.floor(rnd() * 6), from, until: from + rnd() * 70 }; }) };   // (leeches drinking)
     for (const mode of ['real', 'best', 'auto']) cmp(b, plan, mode, `random plan ${i}`);
   }
   check(!bad.length, `the fast energy model = the game's code in ${n} runs (game ${tg} ms, fast ${tf} ms)${bad.length ? ': not ' + bad.slice(0, 4).join('; ') : ''}`);

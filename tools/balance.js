@@ -18,7 +18,7 @@
 // event becomes jobs for the crew (go to the cannon and shoot it down, carry a coolant canister, pry mines off on a
 // spacewalk, ...), with walking times measured by tools/travel.js (saved: tools/travel-table.json) and work times
 // from the game's constants. Enemy damage rates and deadlines (when the first asteroid hits, when a mine blows, when
-// the leeches start chewing) were measured by running each encounter in the game with nobody fighting back
+// a spore cloud seeps in at the airlock) were measured by running each encounter in the game with nobody fighting back
 // (calibrate(), saved: tools/damage-rates.json, --rates).
 //
 // A small scheduler then hands the jobs to the n crew members (urgent first, then repairs, then chores).
@@ -83,7 +83,9 @@ const A = {
   PIN_TIME: 6,            // s to type the vent PIN
   FLARE_COST: 8,          // crew-seconds per crew member to get off the upper deck and wait out a solar flare
   MINES: 3,               // limpet mines per drone (always 3 since 2026-10-17; was a random 1-3, modelled as 2)
-  LEECH_LATCH: 12,        // s until the whole leech swarm has latched on (then they're pried off outside)
+  LEECH_LATCH: 12,        // s until the whole leech swarm has latched on (then they're pried off outside) …
+  LEECH_LATCHED: 3,       // … and how many of the six have, when the gunner was late (the rest shot on the way in: the pry job's 3);
+                          // latched, they drink their side's capacitor (one energy per LEECH_SUCK_ONE / n s; energySim, plan.sucks)
   BOARD_WALK: 24,         // units from our outer airlock to the far end of a docked ship (and back)
   DERELICT_EXTRA: 20,     // s inside a derelict: the jammed door, its fire, finding the box / the engineer
   S7_GRABS: 2,            // S-7 (the derelict's growth, js/culture.js): tendril grabs on the way in, before the cold (black box) …
@@ -105,6 +107,12 @@ const A = {
   S7_CREEP_SHARE: 0.5,    // share of runs where the creep reaches our airlock before the cold kills it (black box: the core freezes)
   BOX_SLOW: 0.7,          // walking speed carrying the black box
   GRAB: 2,                // s to line up on something floating outside and grab it (an ore sample, a nav core)
+  // spores inside (js/spores.js, 2026-10-22): an infested airlock room is vented at the panel by its outer airlock
+  PIN_TIME: 6,            // s at the vent panel: read the sticky note, type the 4-6 digits, OK (and ACCESS GRANTED)
+  SPORE_GLITCH_COST: 3,   // s lost to parts that don't respond (a stuck deck door, a cannon or shield that won't go) before it's vented
+  SPORE_SPREAD_AT: 25,    // s until the crew's own traffic has carried the spores through a door (the deck door up): one more
+                          // room to vent on (force the deck door from the vented room, OVERRIDE_TIME, and wait out SPORE_CLEAR)
+  OVERRIDE_TIME: 2.5,     // s of the manual override on a door (three whacks)
   NAV_BOARD_HITS: 0.3,    // hits on the crew boarding a docked raider for its nav core (the pirates shoot as usual)
   PANIC_OPEN: 1.5,        // broken parts' worth of problems open at which the crew fixes things before taking on new threats
   JUMP_PREP: 40,          // s before the jump someone pins the lever on MID if the middle capacitor is empty …
@@ -168,9 +176,9 @@ const targetIdle = (id, n) => {
 const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
   'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
-  'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'SCRAPE_TIME', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
-  'BARNACLE_GROW', 'BARNACLE_DRAIN', 'FLARE_WARN', 'FLARE_TIME', 'STORM_TIME', 'STORM_ARC', 'COOLANT_RISE', 'COOLANT_FIX', 'SCRAM_TIME',
-  'HEAL_TIME', 'TENTACLE_COIL', 'ACID_TIME', 'LEECH_CHEW', 'PUFF_EVERY', 'SAC_OPEN', 'MOTHER_TOSSES', 'LEV_TIME', 'LEV_STEP', 'TREAT_TIME',
+  'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
+  'SPORE_CLEAR', 'SPORE_BREAK_FIRST', 'SPORE_BREAK_EVERY', 'MOTHER_SEEP_CHANCE', 'MOTHER_GUSTS', 'CLOUD_HOLD', 'CLOUD_FADE', 'FLARE_WARN', 'FLARE_TIME', 'STORM_TIME', 'STORM_ARC', 'COOLANT_RISE', 'COOLANT_FIX', 'SCRAM_TIME',
+  'HEAL_TIME', 'TENTACLE_COIL', 'ACID_TIME', 'LEECH_SUCK_ONE', 'LEECH_BACK', 'PUFF_EVERY', 'SAC_OPEN', 'LEV_TIME', 'LEV_STEP', 'TREAT_TIME',
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'AIRLOCK_DOOR_TIME', 'LOCK_CYCLES', 'OL_W', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
@@ -324,7 +332,7 @@ function calibrate(kind, W = 60, seeds = [1, 2, 3], live = false) {
       const t = i / 60; G.simTick(1 / 60);
       if (G.combat.hits.small) mark('small', t); if (G.combat.hits.large) mark('large', t);
       if (G.SYSTEMS.some(s => s.broken)) mark('broken', t);
-      if (G.evs.barnacles.length) mark('barnacle', t);
+      if (Object.keys(G.hz.spores?.rooms || {}).length) mark('infest', t);
       if (G.enc.scram > 0) mark('scram', t); if (G.hz.breaches.length) mark('breach', t);
       if (G.me.health !== last) { if (G.me.health !== 'ok') { sum.crewHits++; mark('crew', t); } last = G.me.health; if (G.me.health !== 'ok' && G.me.health !== 'hurt') { G.me.health = 'ok'; last = 'ok'; } }
     }
@@ -423,14 +431,14 @@ function jobsFor(ev, ctx) {
     const at = calibrate('mines').first.large ?? g.MINE_TIME, spots = g.HULL_SPOTS[side].slice(0, A.MINES), e = evaTrip(side, spots);
     job({ label: 'limpet mines', trip: e.legs, work: e.extra + A.MINES * g.PRY_BARE, deadline: at, late: () => ({ large: A.MINES, breach: rules.breach ? A.MINES : 0 }) });
   } else if (k === 'spores' || k === 'mother') {
-    if (k === 'spores') {
-      const at = calibrate('spores').first.barnacle ?? 10, shots = 3 / A.HIT_RATE;
+    if (k === 'spores') {                      // shoot the clouds before they reach the airlock; else vent the room they got into
+      const at = calibrate('spores').first.infest ?? 14, shots = 3 / A.HIT_RATE;
       job({ label: 'spore clouds', trip: H(gunOf(side)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[side], shots, gun: side }],
-            deadline: at - A.CLIMB - shots * A.AIM_TIME / 2, late: () => ({ jobs: [scrape(side, 3, at)] }) });
-    } else {
+            deadline: at - A.CLIMB - shots * A.AIM_TIME / 2, late: () => ({ jobs: [sporeVent(side, at)] }) });
+    } else {                                   // its tongues, while it screams (no spore pods to shoot down since 2026-10-22: a cloud)
       const p = A.HIT_RATE, per = Math.max(1, Math.floor(g.SAC_OPEN / A.AIM_TIME)), pWin = 1 - (1 - p) ** per, wins = 3 / pWin;
-      const tongueShots = wins * Math.min(per, 1 / p), sporeShots = Math.ceil(wins) * g.MOTHER_TOSSES / p;
-      job({ label: 'spore mother', trip: H(gunOf(side)), work: 0, energy: [{ cap: CAP[side], shots: tongueShots + sporeShots, gun: side }],
+      const tongueShots = wins * Math.min(per, 1 / p);
+      job({ label: 'spore mother', trip: H(gunOf(side)), work: 0, energy: [{ cap: CAP[side], shots: tongueShots, gun: side }],
             mother: { first: 6, every: g.PUFF_EVERY, open: g.SAC_OPEN, wins }, prio: 0 });
     }
   } else if (k === 'debris') {
@@ -457,10 +465,12 @@ function jobsFor(ev, ctx) {
     job({ label: 'grappler', trip: H(gunOf(side)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[side], shots, gun: side }],
           deadline: rip, late: () => ({ breach: 1 }) });
   } else if (k === 'leeches') {
-    // shields don't stop them (2026-10-16): shoot the six on the way in; any that latch are pried off on a spacewalk (1.5 s each)
-    const chew = calibrate('leeches').first.broken ?? A.LEECH_LATCH + g.LEECH_CHEW, shots = 6 / A.HIT_RATE;
-    const pry = () => { const e = evaTrip(side, g.HULL_SPOTS[side].slice(0, 3)); return { label: 'pry leeches off', prio: 1, trip: e.legs, work: e.extra + 3 * 1.5,
-      deadline: chew, late: (j, done) => ({ breaks: 6 * Math.max(0, done - chew) / g.LEECH_CHEW + 1 }) }; };
+    // shields don't stop them (2026-10-16): shoot the six on the way in; any that latch are pried off on a spacewalk (1.5 s each).
+    // Latched they break nothing (2026-10-22): they drink their side's capacitor from LEECH_LATCH s until they're pried off
+    // (suck: a window in plan.sucks, run in the energy pass like the cannons' draws)
+    const shots = 6 / A.HIT_RATE;
+    const pry = () => { const e = evaTrip(side, g.HULL_SPOTS[side].slice(0, A.LEECH_LATCHED)); return { label: 'pry leeches off', prio: 1, trip: e.legs, work: e.extra + A.LEECH_LATCHED * 1.5,
+      suck: { cap: CAP[side], n: A.LEECH_LATCHED, from: A.LEECH_LATCH } }; };
     job({ label: 'leech swarm', trip: H(gunOf(side)), work: A.CLIMB + fightTime(shots, g), energy: [{ cap: CAP[side], shots, gun: side }],
           deadline: A.LEECH_LATCH, late: () => ({ jobs: [pry()] }) });
   } else if (k === 'herd') {
@@ -561,10 +571,17 @@ function boarders(count, side) {                  // fight `count` pirates aboar
   const g = game(), fight = count * g.PIRATE_HP / A.LASER_HIT * A.LASER_SHOT;
   return { trip: H('starLock') + T('starLock', lockRoom(side)), work: fight + 2 * A.BOARD_WALK / (g.WALK_SPEED * walkMul()) / 2, crewHits: count * A.PIRATE_FIGHT_HITS, prio: 0 };
 }
-function scrape(side, count, rel) {               // barnacles: scrape them off outside before they grow (then they drain power)
-  const g = game(), e = evaTrip(side, game().HULL_SPOTS[side].slice(1, 1 + count));
-  return { label: `barnacles ×${count}`, rel, prio: 1, trip: e.legs, work: e.extra + count * g.SCRAPE_TIME, deadline: g.BARNACLE_GROW,
-           late: (j, done) => ({ drain: { cap: CAP[side], from: j.release + g.BARNACLE_GROW, until: j.release + done, per: count / g.BARNACLE_DRAIN } }) };
+// Spores in the airlock room on that side (js/spores.js): walk to the vent panel by its outer airlock, the PIN, wait out
+// SPORE_CLEAR, plus the time the glitching parts cost meanwhile. age: how long the room has been infested when the job
+// comes up (the spore mother's: from her first lucky gust until her cloud has gone, venting waits). Left SPORE_SPREAD_AT
+// s, the crew's traffic has carried them through the deck door: force it from the vented room as well. Left
+// SPORE_BREAK_FIRST s, a part breaks, then one every SPORE_BREAK_EVERY s (at most the room's three).
+function sporeVent(side, rel, age = 0) {
+  const g = game(), s = side === 'port' ? 'port' : 'star';
+  const breaks = (d) => (d < g.SPORE_BREAK_FIRST ? 0 : Math.min(3, 1 + Math.floor((d - g.SPORE_BREAK_FIRST) / g.SPORE_BREAK_EVERY)));
+  const spread = { label: 'spores: vent on (force the deck door)', prio: 1, trip: H(lockRoom(s)), work: A.OVERRIDE_TIME + g.SPORE_CLEAR + 1 };
+  return { label: 'spores: vent the airlock room', rel, prio: 1, trip: H(`${L(s)} outer airlock`), work: A.PIN_TIME + g.SPORE_CLEAR + 0.5 + A.SPORE_GLITCH_COST,
+           deadline: Math.max(0, A.SPORE_SPREAD_AT - age), late: (j, done) => ({ jobs: [spread], breaks: breaks(age + done) }) };
 }
 
 // ===========================================================================
@@ -728,8 +745,8 @@ function schedule(build, waitByKey) {
   }
   if (rules.handle) push({ label: 'jump handle', trip: H('Helm'), work: n > 1 ? g.JUMP_PULL_TWO : g.JUMP_PULL }, jumpAt - H('Helm'), { kind: 'handle', t: jumpAt });
 
-  const free = Array(n).fill(0), done = [], open = [], scrams = [], drains = [], storms = [], lateList = [], scans = [];
-  const plan = { fights: [], shields: [], freezers: [], jumpAt, window: g.PRESS_FIRST, scrams, drains, storms, end };
+  const free = Array(n).fill(0), done = [], open = [], scrams = [], storms = [], lateList = [], scans = [];
+  const plan = { fights: [], shields: [], freezers: [], sucks: [], jumpAt, window: g.PRESS_FIRST, scrams, storms, end };
   let crewHits = 0, bonusCells = 0, jumpDelay = 0, busy = 0, coilsDone = 0, radarBusy = 0;
   const roomOf = (side) => (side === 'front' ? 'bridge' : side === 'port' ? 'portGun' : 'starGun');
   const sideOf = (j) => j.ev?.side || 'front';
@@ -808,8 +825,14 @@ function schedule(build, waitByKey) {
       const M = j.mother;
       let w = j.release + M.first; while (w + M.open < atJob + A.CLIMB) w += M.every;
       finish = w + (M.wins - 1) * M.every + M.open / 2 + (waitByKey[j.key] || 0);
-      const missed = Math.round((w - j.release - M.first) / M.every);   // puffs before anyone was at the cannon: barnacles
-      if (missed > 0) push(scrape(sideOf(j), Math.min(6, missed * g.MOTHER_TOSSES), 0), w, j.ev);
+      // every scream until the last tongue is torn out: MOTHER_GUSTS gusts, each with MOTHER_SEEP_CHANCE of getting spores into
+      // the airlock room on her side. Likelier than not over the fight: that room is vented once her cloud has gone (it
+      // can't be before), infested since her expected first lucky scream.
+      const screams = Math.max(1, Math.floor((finish - j.release - M.first) / M.every) + 1), q = 1 - (1 - g.MOTHER_SEEP_CHANCE) ** g.MOTHER_GUSTS;
+      if (1 - (1 - q) ** screams >= 0.5) {
+        const infAt = j.release + M.first + M.every * Math.min(screams - 1, (1 - q) / q), clear = finish + g.CLOUD_HOLD + g.CLOUD_FADE;
+        push(sporeVent(sideOf(j), 0, clear - infAt), clear, j.ev);
+      }
     }
     if (j.swarm) {                                            // each big asteroid: shot in time, or a big hit
       let c = since + A.CLIMB, hits = 0;
@@ -827,7 +850,6 @@ function schedule(build, waitByKey) {
       if (res.breach) breach(res.breach, at, sideOf(j), j.ev);
       if (res.crewHits) crewHits += res.crewHits;
       if (res.scram) scrams.push([j.release + res.scram[0], j.release + res.scram[1]]);
-      if (res.drain) drains.push(res.drain);
       if (res.jumpDelay) jumpDelay += res.jumpDelay;
     }
     if (j.optional && j.deadline !== null && since + j.work <= j.deadline && /canister/.test(j.label)) bonusCells++;
@@ -855,6 +877,7 @@ function schedule(build, waitByKey) {
       if (e.shots !== undefined) plan.fights.push({ key: j.key, gun: e.gun, t0: atJob + A.CLIMB, shots: Math.max(1, Math.round(e.shots)), span: Math.max(1, finish - atJob - A.CLIMB - (waitByKey[j.key] || 0)) });
       else if (e.shield) plan.shields.push({ t: j.notBefore ? Math.max(atJob, j.release + j.notBefore) : atJob, side: sideOf(j), key: j.key });
     }
+    if (j.suck) plan.sucks.push({ key: j.key, cap: j.suck.cap, n: j.suck.n, from: j.release + j.suck.from, until: finish });   // (leeches on the hull until pried off)
     if (j.freezer) plan.freezers.push({ key: j.key, cap: j.freezer.cap, t0: atJob + j.freezer.at, t1: finish, every: j.freezer.every });   // (S-7: Varga's freezer on our capacitor)
     if (j.storm) storms.push(j.release);
     if (j.radar) { scans.push(finish); radarBusy += finish - start; nextScan(finish); }
@@ -905,7 +928,7 @@ function objectiveMet(o, got, n = 1) {
 // One sandbox, reset for every run: the real reactor (reactorSpeed with the mission's pace and crew, fuel
 // cells, refuelling, scrams), the real lever (auto stepping, pinned with the wrench), the real capacitors
 // (CAP_MAX, upgrades), the real cannons (shots per energy, reloadCannon) and shields
-// (pressShield: its capacitor, up time, cooldown), barnacles draining (updateEva) and the ion storm
+// (pressShield: its capacitor, up time, cooldown) and the ion storm
 // arcing (updateEncounters). The crew's plan drives it: when which cannon fires, which shield goes up,
 // when the jump wants MID. Mode 'real': the lever is re-routed by someone walking over (a trip each
 // time), fuel cells are fetched by someone. Mode 'best': perfect routing (the lever always points where
@@ -913,7 +936,7 @@ function objectiveMet(o, got, n = 1) {
 // Mode 'auto': nobody touches the lever (it steps on its own; for tests against a direct game run).
 const E_NAMES = ['crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'GUNS', 'combat', 'combatClear', 'reloadCannon', 'fireCannon', 'pressShield',
   'useEnergy', 'resetEncounters', 'resetEva', 'startStorm', 'enc', 'evs', 'updatePower', 'updateCombat', 'updateEncounters', 'updateEva', 'applyShipUpgrades',
-  'SHOTS_PER_ENERGY', 'CELL_ENERGY', 'ENERGY_TIME', 'HULL_SPOTS', 'BARNACLE_GROW', 'BARNACLE_DRILL', 'SYSTEMS', 'reactorSpeed', 'MISSIONS', 'player', 'newUid', 'fires', 'OVERCHARGE_FIRE', 'LEVER_E_HOLD'];
+  'SHOTS_PER_ENERGY', 'CELL_ENERGY', 'ENERGY_TIME', 'org', 'resetOrganic', 'updateOrganic', 'HULL_SPOTS', 'SYSTEMS', 'reactorSpeed', 'MISSIONS', 'player', 'newUid', 'fires', 'OVERCHARGE_FIRE', 'LEVER_E_HOLD'];
 let GE = null;
 const energyGame = () => GE || (GE = loadGame(E_NAMES));
 const CAPI = { port: 0, front: 1, star: 2 };
@@ -924,7 +947,7 @@ function energySimGame(build, plan, mode = 'real', dt = A.ENERGY_DT) {
   G.crew.length = 0; for (let i = 0; i < build.n; i++) G.crew.push(G.makeCrew('P' + i));
   G.mission.gap = build.factor; G.mission.writtenGap = 1;        // (so reactorSpeed() = 1 / factor, the game's own formula)
   G.fires.length = 0;
-  G.combatClear(); G.resetEncounters(); G.resetEva({});
+  G.combatClear(); G.resetEncounters(); G.resetEva({}); G.resetOrganic();
   for (const s of G.SYSTEMS) s.broken = false;
   Object.assign(P, { reactor: { fuel: G.CELL_ENERGY, t: 0 }, reserve: build.energy.cells - 1, lever: { pos: 1, jammed: false, angle: 0 }, bolts: [], pulses: [], patch: [0, 1, 2],
                      overcharge: !!build.overcharge, inserter: build.ship?.inserter ? { on: true, t: 0 } : null });
@@ -941,7 +964,7 @@ function energySimGame(build, plan, mode = 'real', dt = A.ENERGY_DT) {
   const trip = H('Power lever') + A.LEVER_TURN + G.LEVER_E_HOLD, refuelDelay = H('reactor') + A.REFUEL;
   const interval = G.ENERGY_TIME * build.factor / (build.overcharge ? 2 : 1), prepFor = Math.max(A.JUMP_PREP, A.JUMP_PREP_ENERGIES * interval);
   const scrams = [...plan.scrams].sort((a, b) => a[0] - b[0]), storms = [...plan.storms].sort((a, b) => a - b);
-  const drains = plan.drains.map(d => ({ ...d, on: false, uids: [] }));
+  const sucks = (plan.sucks || []).map(s => ({ ...s, on: false, uids: [] }));       // (leeches latched on a side: the game's own leeches, drinking)
   const fzWaits = [], freezers = (plan.freezers || []).filter(f => f.t0 < plan.end).map(f => ({ ...f, next: f.t0 }));   // (S-7: the derelict's freezer draws from our capacitor)
   // where energy is wanted now: fights waiting at their cannon's capacitor, the jump at MID, the freezer's capacitor running dry
   const wanted = (t) => {
@@ -979,17 +1002,17 @@ function energySimGame(build, plan, mode = 'real', dt = A.ENERGY_DT) {
       if (emptyAt === null) emptyAt = t;
       if (mode === 'best' || t >= emptyAt + refuelDelay) { P.reserve--; P.reactor.fuel = G.CELL_ENERGY; P.reactor.t = 0; refuels++; emptyAt = null; }
     }
-    // scrams (a late coolant fix), the ion storm, barnacles draining a capacitor
+    // scrams (a late coolant fix), the ion storm
     while (scrams.length && scrams[0][0] <= t) { const [a, b] = scrams.shift(); G.enc.scram = Math.max(G.enc.scram, b - a); }
     while (storms.length && storms[0] <= t) { storms.shift(); G.startStorm(); }
-    for (const d of drains) {
-      if (!d.on && t >= d.from && t < d.until) {
-        d.on = true;
-        for (let i = 0; i < d.count; i++) { const [x, y] = G.HULL_SPOTS[d.side][(i + 1) % G.HULL_SPOTS[d.side].length], uid = G.newUid(); d.uids.push(uid); G.evs.barnacles.push({ uid, side: d.side, x, y, age: G.BARNACLE_GROW, drain: 0, hp: 2 }); }
+    for (const s of sucks) {
+      const side = ['port', 'front', 'star'][s.cap];
+      if (!s.on && t >= s.from && t < s.until) {
+        s.on = true;
+        for (let i = 0; i < s.n; i++) { const [x, y] = G.HULL_SPOTS[side][i % G.HULL_SPOTS[side].length], uid = G.newUid(); s.uids.push(uid); G.org.leeches.push({ uid, side, x, y, tx: x, ty: y, state: 'latched', fed: 0, drank: 0, t: 0 }); }
       }
-      if (d.on && t >= d.until) { d.on = false; G.evs.barnacles = G.evs.barnacles.filter(b => !d.uids.includes(b.uid)); }
-    }
-    for (const b of G.evs.barnacles) b.age = Math.min(b.age, G.BARNACLE_DRILL - 1);   // (they'd drill through: the repair side of it is the scheduler's)
+      if (s.on && t >= s.until) { s.on = false; G.org.leeches = G.org.leeches.filter(l => !s.uids.includes(l.uid)); }
+    }   // (they'd drill through: the repair side of it is the scheduler's)
     // the crew's plan: cannon fights (one at a time per cannon), shields, the jump
     for (const id of ['port', 'front', 'star']) {
       const f = fights.find(q => q.gun === id && q.left > 0 && q.t0 <= t);
@@ -1015,7 +1038,7 @@ function energySimGame(build, plan, mode = 'real', dt = A.ENERGY_DT) {
       if (G.useEnergy(f.cap)) used[f.cap]++; else fzWaits.push({ key: f.key, wait: f.every / 2 });   // (the derelict job takes longer; not a cannon's wait)
       f.next += f.every;
     }
-    // the game ticks (charges: what arrives, what the storm / barnacles take)
+    // the game ticks (charges: what arrives, what the storm takes)
     const c0 = G.CAPACITORS.map(c => c.charge), f0 = P.reactor.fuel;
     G.updatePower(dt);
     const c1 = G.CAPACITORS.map(c => c.charge);
@@ -1023,7 +1046,7 @@ function energySimGame(build, plan, mode = 'real', dt = A.ENERGY_DT) {
     for (let i = 0; i < 3; i++) if (c1[i] > c0[i]) got[i] += c1[i] - c0[i];
     G.updateCombat(dt);
     const c2 = G.CAPACITORS.map(c => c.charge);
-    G.updateEncounters(dt); G.updateEva(dt);
+    G.updateEncounters(dt); G.updateEva(dt); G.updateOrganic(dt);
     for (let i = 0; i < 3; i++) lost[i] += Math.max(0, c2[i] - G.CAPACITORS[i].charge);
   }
   for (const f of fights) if (f.waitFrom !== null) waits.push({ key: f.key, side: f.gun, t: f.waitFrom, wait: horizon - f.waitFrom, never: true });
@@ -1049,7 +1072,6 @@ function energySimGame(build, plan, mode = 'real', dt = A.ENERGY_DT) {
 // time and cooldown (pressShield); scrams (the reactor stops), the ion storm (a full capacitor loses one at once and
 // every STORM_ARC s). Nothing else in the game touches the energy in these runs (no enemies, no fires), so it gives
 // the same numbers as energySimGame (exactly), 100-200× faster; tests/balancemodel.js checks that it stays so.
-// (Barnacle drains: the plan's drains carry no count / side, so energySimGame adds no barnacles: none here either.)
 // The game's clock in these runs: tick k is at T[k] (t += dt, k times: the same rounding as the game loop), and a
 // timer is a count of ticks: one set to v s (then v -= dt every tick) runs out after downTicks(v) ticks, one that
 // adds `step` every tick reaches `to` after upTicks(step, to) (the reactor, an energy on its way, the inserter, the
@@ -1109,6 +1131,10 @@ function energyFast(build, plan, mode = 'real', dt = A.ENERGY_DT) {
   const jumpK = jumpSet ? kAt(jump.t) : INF, prepK = jumpSet ? kAt(jump.t - prepFor) : INF;
   const scrams = [...plan.scrams].sort((a, b) => a[0] - b[0]), storms = [...plan.storms].sort((a, b) => a - b);
   const fzWaits = [], freezers = (plan.freezers || []).filter(f => f.t0 < plan.end).map(f => ({ ...f, next: f.t0, nextK: kAt(f.t0), winK: kAt(f.t0 - 5) }));
+  // leeches drinking (updateLeechSuck): per capacitor the ball on its way (k 0 → 1, or rolling back), n latched while from <= t < until
+  const sucks = (plan.sucks || []).map(x => ({ ...x, fromK: kAt(x.from), untilK: kAt(x.until) })), balls = [null, null, null];
+  const ONE = g.LEECH_SUCK_ONE, BACK = g.LEECH_BACK;
+  const latchedOn = (c, t) => { let m = 0; for (const x of sucks) if (x.cap === c && t >= x.from && t < x.until) m += x.n; return m; };
   const arcFull = (count) => { for (let i = 0; i < 3; i++) if (charge[i] >= capMax) { charge[i]--; changed = true; if (count) lost[i]++; } };   // (the storm: full capacitors arc)
   const wanted = (k) => {                                                    // where energy is wanted now (as energySimGame's)
     const t = T[k];
@@ -1213,6 +1239,23 @@ function energyFast(build, plan, mode = 'real', dt = A.ENERGY_DT) {
       if (storm.arcs[0] === k) { storm.arcs.shift(); arcFull(true); }
       if (storm.end <= k) storm = null;
     }
+    // the leeches (updateOrganic → updateLeechSuck): a ball sets off with one energy, creeps to them, the next one; none left: it rolls back
+    let sucking = false;
+    if (sucks.length) for (let c = 0; c < 3; c++) {
+      const m = latchedOn(c, t);
+      let b = balls[c];
+      if (b && !b.back && !m) b.back = true;
+      if (b && b.back) {
+        b.k -= dt / BACK;
+        if (b.k <= 0) { balls[c] = null; if (charge[c] < capMax) { charge[c]++; changed = true; } }
+        sucking = true; continue;
+      }
+      if (!b && m && charge[c] > 0) { charge[c]--; lost[c]++; changed = true; b = balls[c] = { k: 0, back: false }; }
+      if (m) sucking = true;
+      if (!b) continue;
+      b.k += dt / (ONE * build.factor / Math.max(1, m));
+      if (b.k >= 1) balls[c] = null;
+    }
     // the next tick where anything can happen
     nx = changed ? k + 1 : INF;
     if (fuel > 0) { if (k + 1 < scramEnd) at(scramEnd); else at(k + nE - cnt); }
@@ -1227,6 +1270,8 @@ function energyFast(build, plan, mode = 'real', dt = A.ENERGY_DT) {
     for (let i = sp; i < shields.length && shields[i].k <= k; i++) if (!shields[i].done) at(shields[i].graceK);
     if (!jump.done) { at(jumpK); at(prepK); }
     for (const f of freezers) { at(f.nextK); at(f.winK); }
+    if (sucking) at(k + 1);                                                  // (leeches on, or a ball on its way: every tick)
+    for (const x of sucks) { at(x.fromK); at(x.untilK); }
     if (leverJob) at(leverJob.k);
     if (emptyAt !== null) at(refuelK);
     if (scrams.length) at(kAt(scrams[0][0]));

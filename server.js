@@ -11,7 +11,7 @@ const http = require('http'), fs = require('fs'), path = require('path'), crypto
 
 const PORT = +process.argv[2] || +process.env.PORT || 8080;
 const ROOT = __dirname;
-const SCRIPTS = ['audio', 'music', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'progress', 'practice', 'sidebar', 'lights', 'sprites', 'game', 'net'];
+const SCRIPTS = ['audio', 'music', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'spores', 'progress', 'practice', 'sidebar', 'lights', 'sprites', 'game', 'net'];
 const TICK = 1 / 60, SEND_EVERY = 2;                // simulate at 60 Hz, send snapshots at 30 Hz
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json', '.ttf': 'font/ttf' };
 

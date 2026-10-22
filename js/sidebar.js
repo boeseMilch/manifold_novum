@@ -281,6 +281,7 @@ function problemSpots() {
     out.push({ key: 'inv' + uid(a), x: a.x, y: a.y, icon: 'alien', what: a.kind === 'saboteur' ? 'SABOTEUR' : 'INTRUDER', room: where(a.x, a.y, 'airlock'), col: '#c8ff6e' });
   for (const id of hz.surges) { const l = LINE[id]; if (l) { const [x, y] = linePoint(l, 0.5); out.push({ key: 'surge' + id, x, y, icon: 'surge', what: 'SURGE', room: where(x, y, lineName(l)), col: '#bfe8ff' }); } }
   for (const id of hz.noGrav) { const [x, y] = roomCenter(roomById(id)); out.push({ key: 'grav' + id, x, y, icon: 'surge', what: 'NO GRAVITY', room: roomById(id).name, col: '#7af0ff' }); }
+  out.push(...sporeSpots());                          // infested rooms (js/spores.js)
   for (const c of crew) if (c !== me && !standing(c) && c.mode !== 'gun') out.push({ key: 'down' + c.id, x: c.x, y: c.y, icon: 'alien', what: `${c.name.toUpperCase()} DOWN`, room: where(c.x, c.y, ''), col: '#ff9ab0' });
   return out;
 }

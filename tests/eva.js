@@ -1,8 +1,8 @@
-// Spacewalk jobs: limpet mines, spore clouds and barnacles, a jammed cannon track, the radar
+// Spacewalk jobs: limpet mines, spore clouds (shot on the way in), a jammed cannon track, the radar
 // antenna, a fuel canister drifting past, and the jump coils. Run: node tests/eva.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'evs', 'hz', 'mission', 'startMission', 'spawnMineDrone', 'spawnSpores', 'jamCannon', 'knockAntenna',
-  'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'BARNACLE_GROW', 'MISSIONS', 'JAM_SPOTS', 'pointInPoly', 'distToPoly',
+  'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'MISSIONS', 'JAM_SPOTS', 'pointInPoly', 'distToPoly',
   'evaOk', 'evaReach', 'EVA_REACH', 'HATCHES', 'HULL', 'dk', 'dockGeom', 'SHIP_W'];
 const DT = 1 / 60;
 let failed = 0;
@@ -48,41 +48,7 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
   const m = G.me.input.mouse; m.wx = -0.55; m.wy = 16.8; m.rightClick = true; tickN(G, 30);
   check(!G.evs.mines.length && G.combat.hits.large === 0, 'shooting a mine with the laser blows it early, as a small hit');
 }
-// --- spores and barnacles
-{
-  const G = fresh();
-  G.spawnSpores('star');
-  tickN(G, 60 * 30);
-  check(G.evs.barnacles.length >= 1, `spore clouds that reach the hull seed barnacles (${G.evs.barnacles.length})`);
-  const b = G.evs.barnacles[0]; b.age = G.BARNACLE_GROW; G.CAPACITORS[2].charge = 3; G.power.reactor.fuel = 0;
-  tickN(G, 60 * 11);
-  check(G.CAPACITORS[2].charge < 3, 'full grown barnacles drain the capacitor on their side');
-  outside(G, b.x + 0.7, b.y);
-  const t = holdOn(G, b.x, b.y, () => !G.evs.barnacles.includes(b));
-  check(!G.evs.barnacles.includes(b) && Math.abs(t - 3) < 0.3, `scraped off on a spacewalk in 3 s (${t.toFixed(1)} s)`);
-}
-{
-  const G = fresh();
-  for (const side of ['port', 'star', 'front']) { G.spawnSpores(side, null, 3, true); }
-  tickN(G, 60 * 30);
-  check(G.evs.barnacles.length >= 3 && G.evs.barnacles.every(b => G.pointInPoly(b.x, b.y) && G.distToPoly(b.x, b.y) < 0.4),
-        `barnacles grow on the hull plating, right at its outer edge, not in space beside it (${G.evs.barnacles.map(b => `${b.side} ${b.x.toFixed(2)},${b.y.toFixed(2)}`).join(' · ')})`);
-  for (const side of ['port', 'front']) {
-    const b = G.evs.barnacles.find(b => b.side === side); if (!b) continue;
-    const away = side === 'port' ? [b.x - 2.6, b.y] : [b.x, b.y - 2.6];
-    outside(G, ...away); G.withCrew(G.me, () => { G.inv.weapon = 'laser'; });
-    const m = G.me.input.mouse; m.wx = b.x; m.wy = b.y;
-    for (let i = 0; i < 4 && G.evs.barnacles.includes(b); i++) { m.rightClick = true; tickN(G, 60); }
-    check(!G.evs.barnacles.includes(b), `laser shots from a spacewalk burn a barnacle off the ${side} hull`);
-  }
-  const b = G.evs.barnacles.find(b => b.side === 'star');
-  if (b) {
-    G.me.mode = 'inside'; G.me.x = 42.5; G.me.y = b.y; G.withCrew(G.me, () => { G.inv.weapon = 'laser'; });
-    const m = G.me.input.mouse; m.wx = b.x; m.wy = b.y;
-    for (let i = 0; i < 4; i++) { m.rightClick = true; tickN(G, 60); }
-    check(G.evs.barnacles.includes(b), 'laser shots from inside the ship hit the wall, not the barnacle on the outside');
-  }
-}
+// --- spore clouds: they head for the airlock and get inside (tests/spores.js); a cannon shell still bursts one on the way
 {
   const G = fresh();
   G.spawnSpores('port'); const s = G.evs.spores[0];

@@ -167,6 +167,12 @@ for (const n of [1, 3]) {
   B(F).p3.fails = 2; const n0 = F.org.leeches.length, l0 = F.combat.hits.large;
   tick(F, 6.2 + F.LEVB_WINDOW[0] + 3.5, () => keepSafe(F));
   check(F.org.leeches.length <= n0 && F.combat.hits.large > l0, 'leeches still on the hull: the next miss is a tail slam, not another swarm');
+  // its leeches drink that side's capacitor (the cannon's energy for the eye)
+  const D = fresh(1); D.startLevBoss(3); parked(D); const dSide = B(D).p3.side, dCap = D.CAPACITORS[dSide === 'port' ? 0 : 2];
+  tick(D, D.LEVB_WINDOW[0] + 0.1, () => keepSafe(D));
+  D.power.reactor.fuel = 0; D.power.bolts = []; dCap.charge = 3;
+  tick(D, 20, () => keepSafe(D));
+  check(D.org.leeches.some(l => l.state === 'latched' && l.drank > 0) && dCap.charge < 3, `the boss's leeches drink the ${dSide === 'port' ? 'left' : 'right'} capacitor (3 → ${dCap.charge})`);
   const E = fresh(1); E.mission.easy = 2; E.startLevBoss(3); parked(E);
   check(Math.abs(B(E).p3.win - 20) < 0.1, 'very easy: a 20 s window');
 }

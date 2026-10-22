@@ -94,7 +94,7 @@ const capWrapped = (i) => typeof s7Wrapped === 'function' && s7Wrapped(i);   // 
 // line: the power line the energy leaves through (a pulse runs along it to the consumer)
 function useEnergy(i, line) {
   const c = CAPACITORS[i];
-  if (capBroken(i) || capWrapped(i) || c.charge <= 0) return false;
+  if (capBroken(i) || capWrapped(i) || c.charge <= 0 || sporeGlitching(c)) return false;   // (spores in it: no energy for a moment, js/spores.js)
   c.charge--;
   if (line) power.pulses.push({ line, t: 0 });
   return true;
@@ -1149,7 +1149,8 @@ function drawPowerPanel() {
   const cy = y + 82;
   CAPACITORS.forEach((c, i) => {
     const cx = x + 12 + i * 82, dead = capBroken(i);
-    ctx.fillStyle = dead ? '#ff9a8a' : '#e8ecf4'; ctx.fillText(['LEFT', 'MID', 'RIGHT'][i], cx, cy);
+    const leech = typeof leechCapSucked === 'function' && leechCapSucked(i);   // leeches drinking it (js/organic.js): the label throbs leech-red
+    ctx.fillStyle = dead ? '#ff9a8a' : leech ? (Math.sin(time * 5) > 0 ? '#ff6a7a' : '#ffb0b8') : '#e8ecf4'; ctx.fillText(['LEFT', 'MID', 'RIGHT'][i], cx, cy);
     pips(cx + (i === 2 ? 40 : 34), cy, c.charge, CAP_MAX, dead);
   });
   ctx.font = '12px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textAlign = 'right';

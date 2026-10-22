@@ -122,7 +122,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
 {
   const G = fresh({}); const me = G.me; const [px, py] = G.VENT_PANELS.starLock; me.x = px - 0.9; me.y = py;
   const t = G.withCrew(me, () => G.clickTarget(px, py));
-  check(t && !t.ok, 'without a plasma fire the vent panel does nothing');
+  check(t?.ok && /vent/i.test(t.text), 'the vent panel works without a fire too (2026-10-22: it clears spores; js/spores.js)');
 }
 // --- venting with hostiles aboard: they take a hit, get dragged to the hatch and blown out; kills count
 {

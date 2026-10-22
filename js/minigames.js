@@ -60,7 +60,8 @@ function updateMinigames(dt) {
         c.ui.panel = null; c.ui.mini = null;
         if (m.door) { baseCodeOk(m.door); continue; } // (the pirate base's keypad doors: js/dock.js)
         if (hz.vent) continue;                           // (someone else got there first)
-        if (fireIn(m.room)) startVent(m.room, c); else combatBanner('The fire is already out — vent cancelled');
+        startVent(m.room, c);                            // (any time: fires, spores, boarders; 2026-10-22. With spores outside the
+                                                         // vent still vents, the spores just survive it: js/spores.js)
         continue;
       }
     }

@@ -30,7 +30,7 @@ engineer · ★★★★ The Mother of All, Nightmare.
 - ✅ Crooked radar antenna (★★★)
 - ✅ Debris in a cannon track (★★★)
 - ✅ Limpet mines (★★ and up)
-- ✅ Spore clouds → hull barnacles (★★★)
+- ✅ Spore clouds: drift to an airlock and seep in (since 2026-10-22: spores inside the ship, see 6.; the hull barnacles are gone)
 - ✅ Jump coils to align before the jump (The Deep and up)
 
 ## 4. Ship-wide encounters
@@ -49,9 +49,10 @@ engineer · ★★★★ The Mother of All, Nightmare.
 - ✅ Jump handle (The Deep and up): hold it while the drive spools
 
 ## 6. Organic ships (★★★ and up)
-- ✅ Leech swarm: latch on and chew; the shield burns them off
+- ✅ Leech swarm: latch on and drink a capacitor dry, one energy ball at a time (2026-10-22; they used to chew parts); shields don't stop them, shoot them on the way in or pry them off outside
 - ✅ Grappler: a tentacle blocks that side's shield and turns the ship; healing weak spots
-- ✅ Spore mother: puffs spores; its sacs only open after a puff
+- ✅ Spore mother: a silent scream fills space round the hull with a spore cloud (don't use the airlocks!); its tongue can only be hit while it screams
+- ✅ Spores inside (2026-10-22): an infested room's parts glitch, then break; spores spread through open doors (never into the reactor room); vent them out (not while a cloud is outside)
 - ✅ Leviathan (★★★★): unkillable; stay out of the rooms it bumps
 
 ## 7. Other ships

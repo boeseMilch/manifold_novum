@@ -56,7 +56,7 @@ function eventLabel(ev) {
   if (ev.kind === 'intruder') return ev.count > 1 ? `${ev.count} intruders — both airlocks` : `Intruder — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'saboteur') return `Saboteur — ${ev.side === 'port' ? 'left' : 'right'} airlock`;
   if (ev.kind === 'mines') return `Mine drone — ${SIDE_NAME[ev.side]}`;
-  if (ev.kind === 'spores') return `Spore cloud — ${SIDE_NAME[ev.side]}`;
+  if (ev.kind === 'spores') return `Spore cloud — ${SIDE_NAME[ev.side] || 'one'} airlock`;   // (it seeps in there: js/spores.js)
   if (ev.kind === 'canister') return `Fuel canister — ${SIDE_NAME[ev.side]}`;
   return EVENT_LABELS[ev.kind]?.(ev) || ev.kind;
 }

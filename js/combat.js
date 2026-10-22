@@ -119,7 +119,7 @@ function combatClear() {
 const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 3;   // s per reload (a weapons specialist gunner: 50% faster)
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
-  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(`${['Left', 'Mid', 'Right'][GUN_CAP[g.id]]} capacitor empty — no reload`); return false; }
+  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(sporeGlitching(CAPACITORS[GUN_CAP[g.id]]) ? `Spores in the ${['left', 'middle', 'right'][GUN_CAP[g.id]]} capacitor — no energy for a moment, no reload` : `${['Left', 'Mid', 'Right'][GUN_CAP[g.id]]} capacitor empty — no reload`); return false; }
   g.reload = RELOAD_TIME; sfx.hatch();
   const gunner = crew.find(c => c.mode === 'gun' && c.gun === g); if (gunner) zap(gunner, 'gun_' + g.id);
   return true;
@@ -129,6 +129,11 @@ function fireCannon(g) {
   if (broken(g)) {                                 // broken cannon: just sparks
     g.cd = 0.5; sfx.spark();
     for (let i = 0; i < 6; i++) combatFx(g.x, g.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.3, '#ffe08a', 0.07);
+    return;
+  }
+  if (sporeGlitching(g)) {                         // spores in its firing circuit (js/spores.js): a fizzle, no shot
+    g.cd = 0.5; sfx.empty(); combatBanner(`Spores in the ${g.name.toLowerCase()}'s firing circuit — it won't fire for a moment`);
+    for (let i = 0; i < 4; i++) combatFx(g.x, g.y, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 0.5, '#c8dc90', 0.1);
     return;
   }
   if (!(g.shots > 0) || g.reload > 0) { g.cd = 0.35; sfx.empty(); return; }   // empty: reload first
@@ -245,10 +250,11 @@ const emitterOf = (side) => SHIELD_EMITTERS.find(e => e.side === side);
 function pressShield(side) {
   const s = combat.shields[side];
   if (broken(SHIELD_BUTTONS.find(b => b.side === side))) return 'broken';
+  if (sporeGlitching(SHIELD_BUTTONS.find(b => b.side === side))) { sfx.empty(); combatBanner(`Spores in the ${SIDE_LABEL[side].toLowerCase()} shield button's contacts — it doesn't press for a moment`); return 'spores'; }
   if (broken(emitterOf(side))) { sfx.empty(); combatBanner(`${SIDE_LABEL[side]} shield emitter (outside) is broken — fix it on a spacewalk`); return 'emitter'; }
   if (grabbed(side)) { sfx.empty(); combatBanner('A tentacle is wrapped around that side — the shield can\'t go up'); return 'grabbed'; }
   if (s.up > 0 || s.cd > 0) return false;
-  if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); return 'noenergy'; }
+  if (!useEnergy(SIDE_CAP[side], 'shield_' + side)) { sfx.empty(); if (sporeGlitching(CAPACITORS[SIDE_CAP[side]])) combatBanner('Spores in the capacitor — no energy for a moment'); return 'noenergy'; }
   s.up = SHIELD_UP_TIME; s.cd = SHIELD_UP_TIME + SHIELD_COOLDOWN; s.age = 0; sfx.shieldUp();
   if (player && player.mode === 'inside') zap(player, 'shield_' + side);
   return true;

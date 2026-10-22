@@ -185,7 +185,7 @@ function doorPressure(d) {
   return rs.length === 2 && vacuumRoom(rs[0].id) !== vacuumRoom(rs[1].id);
 }
 // Why it won't open by itself (null: it works).
-const doorStuck = (d) => doorBroken(d) && !d.jammed ? 'broken' : d.locked ? 'locked' : d.blast ? 'blast' : null;
+const doorStuck = (d) => doorBroken(d) && !d.jammed ? 'broken' : d.locked ? 'locked' : d.blast ? 'blast' : d.axis === 'y' && sporeGlitching(d) ? 'spores' : null;
 function updateDoors(dt) {
   const friends = doorFriends(), bodies = actors();
   for (const d of DOORS) {
@@ -193,6 +193,7 @@ function updateDoors(dt) {
     d.hold = Math.max(0, (d.hold || 0) - dt);
     d.blast = doorPressure(d);
     if (d.pry > 0 && !(d.pryAt > time - 0.25)) d.pry = Math.max(0, d.pry - dt * 0.1);   // (nobody forcing it any more: slowly back)
+    if (d.axis === 'y' && sporeGlitching(d) && !d.hold && !d.jammed) continue;   // spores in its motor (js/spores.js): it sticks where it is
     const auto = !doorStuck(d), at = auto ? friends.find(c => nearDoor(d, c.x, c.y, DOOR_SENSE)) : null;
     const before = d.sense || 0;
     d.sense = at ? Math.min(DOOR_DELAY, before + dt) : d.open > 0 ? DOOR_DELAY : 0;   // (the sensor's reaction; an open door: at once)
@@ -210,11 +211,19 @@ function doorVents(d) {
 }
 // The manual override's last whack: unlocks it, forces a broken deck door open for good (until it's repaired),
 // and holds a pressure door open for DOOR_HOLD s (the pressurized side vents through it meanwhile).
+// With an airlock room venting (hz.vent: the vent panel), the rushing air holds it open as long as the vent runs, and
+// the vent stays open at least VENT_TIME more (there's a whole room more to pump out): so one crew member can vent on
+// through the ship, room after room (2026-10-22: spores further in, js/spores.js; e.g. the left airlock room, the deck
+// door up to the left cannon room, then its door to the bridge). Every door held open by the vent is held as long too.
 function forceDoor(d) {
   const vents = doorVents(d);
   d.locked = false;
   if (doorBroken(d)) d.jammed = true;
-  if (vents) { d.hold = DOOR_HOLD; combatBanner(`${doorName(d)} forced — the ${vents.name.toLowerCase()} vents!`); sfx.whoosh?.(); }
+  if (vents) {
+    d.hold = DOOR_HOLD;
+    if (hz.vent) { hz.vent.t = Math.max(hz.vent.t, VENT_TIME); for (const q of DOORS) if (q.hold > 0) q.hold = Math.max(q.hold, hz.vent.t); }
+    combatBanner(`${doorName(d)} forced — the ${vents.name.toLowerCase()} vents!`); sfx.whoosh?.();
+  }
   else if (doorBroken(d)) d.hold = 0.5;
 }
 // Pirates (js/dock.js pirateStep): a door opens for them like for anyone; a locked or broken one they force (humans can do a
@@ -337,6 +346,8 @@ function updatePlayer(dt) {
   } else if (button) {
     const s = combat.shields[button.side], cap = CAPACITORS[SIDE_CAP[button.side]], at = { x: button.x, y: button.y, r: 0.7 };
     if (broken(button)) act({ text: 'Shield button is broken', at });
+    else if (sporeGlitching(button)) act({ text: `Shield button: ${sporeGlitchText(button, 'it doesn\'t press')}`, at });
+    else if (sporeGlitching(cap) && s.up <= 0 && s.cd <= 0) act({ text: `${['Left', 'Middle', 'Right'][SIDE_CAP[button.side]]} capacitor: ${sporeGlitchText(cap, 'no energy for the shield')}`, at });
     else if (broken(emitterOf(button.side))) act({ text: `${SIDE_LABEL[button.side]} shield emitter (outside) is broken — fix it on a spacewalk`, at });
     else if (s.up > 0) act({ text: `Shield is up! (${Math.ceil(s.up)} s)`, at, ok: true });
     else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
@@ -353,6 +364,7 @@ function doorAct(d) {
   const vents = doorVents(d), here = roomAt(player.x, player.y);
   const warn = vents ? ` — vents the ${vents.name.toLowerCase()}!` : '';
   if (!why) { act({ text: `${name} is broken — forced open (repair it with the kit)`, at }); return; }
+  if (why === 'spores') { act({ text: `${name}: ${sporeGlitchText(d, 'its motor sticks')}`, at }); return; }
   if (vents && vents.id === 'reactor') {             // (never: the cat lives there)
     act({ text: here?.id === 'reactor' ? `${name}: vacuum behind it, and the cat lives here. Go around.` : `${name}: sealed — vacuum on this side, and the cat lives in the reactor room. Go around.`, at });
     return;
@@ -975,6 +987,7 @@ function render(t) {
   glow(() => { for (const s of SYSTEMS) if (s.broken) drawBroken(s, t); });
   glow(() => {
     drawEnergyBolts();
+    drawLeechSuck(t, G ? 'inside' : 'all');            // leeches drinking a capacitor: its energy creeping out to them (js/organic.js)
   });
   // the crew (as sprites when they're loaded, else in 2D)
   const visorOf = (c) => isOutside(c) || inVacuum(c.x, c.y) || airlockVacuum(c.x, c.y);   // (a pumped-out airlock chamber: js/airlock.js)
@@ -990,6 +1003,7 @@ function render(t) {
     ctx.save(); world(DPR);
     drawSpineDecor(t); drawInteriorWalls();
     drawBrokenLabels();                              // (js/systems.js: on top of the machines' sprites)
+    drawLeechSuck(t, 'outside');                     // (the leeches' energy ball out on the hull: over the leech sprites)
     for (const g of gunsSprited) drawMuzzleFlash(g);
   }
   for (const c of crew) {
@@ -1019,6 +1033,8 @@ function render(t) {
   drawDockActors(t);
   if (!G) drawLights(1 / 60);
   drawVacuumTint();
+  drawSporesInside(t);                               // spore haze, puffs through doors, fuzz on glitching parts (js/spores.js)
+  drawSporeCloud(t);                                 // the spore mother's cloud round the hull (js/spores.js)
   drawVentRush(t);                                   // a room being vented: air, papers and mist rushing out (js/hazards.js)
   drawDockDarkness();
   drawCombatFront(t);
@@ -1200,6 +1216,7 @@ function simTick(dt) {
   updateLuck(dt);
   updateHazards(dt);
   updateEva(dt);
+  updateSpores(dt);                                   // spores inside the ship (js/spores.js)
   updateEncounters(dt);
   updateMinigames(dt);
   updateOrganic(dt);

@@ -1,14 +1,14 @@
 // Jobs on the outside of the hull: reasons to go on a spacewalk.
-//   Limpet mines (a drone sticks them on; pry them off or they blow a hole), hull barnacles
-//   (spore clouds seed them; scrape them off before they drill in), debris jamming a cannon's
+//   Limpet mines (a drone sticks them on; pry them off or they blow a hole), debris jamming a cannon's
 //   track, a crooked radar antenna, a fuel canister drifting past (optional loot), and the three
 //   jump coils: part of every ship's jump drive (they light up and spin while it spools, and flare at the
 //   jump); only missions with the `coils` rule start them misaligned (and a gravity tide can knock one off).
+// Spore clouds drift in from outside too, but they're not a spacewalk job any more (2026-10-22, the user: the hull
+// barnacles are gone): they head for the outer airlock on their side and seep in (js/spores.js); shoot them on the way.
 // Everything in `evs` is plain data (sent to browsers as is).
 
-const evs = { mines: [], drones: [], barnacles: [], spores: [], jams: {}, antenna: true, canister: null, coils: [] };
-const MINE_TIME = 30, PRY_TIME = 2, PRY_BARE = 4, SCRAPE_TIME = 3, CLEAR_TIME = 3, ALIGN_TIME = 3, COIL_DELAY = 15;
-const BARNACLE_GROW = 40, BARNACLE_DRAIN = 10, BARNACLE_DRILL = 75;
+const evs = { mines: [], drones: [], spores: [], cloud: null, jams: {}, antenna: true, canister: null, coils: [] };   // (cloud: the spore mother's, js/spores.js)
+const MINE_TIME = 30, PRY_TIME = 2, PRY_BARE = 4, CLEAR_TIME = 3, ALIGN_TIME = 3, COIL_DELAY = 15;
 
 // Spots just outside the hull, per side, where things can stick (and spacewalkers can reach).
 const HULL_SPOTS = {
@@ -27,20 +27,15 @@ const roomNearHull = (side, y, x) => side === 'front' ? 'bridge' : side === 'por
 const sideCol = (side) => side === 'port' ? 0 : side === 'star' ? 2 : 1;
 
 function resetEva(rules = {}) {
-  Object.assign(evs, { mines: [], drones: [], barnacles: [], spores: [], jams: {}, antenna: true, canister: null,
+  Object.assign(evs, { mines: [], drones: [], spores: [], cloud: null, jams: {}, antenna: true, canister: null,
                        coils: COIL_SPOTS.map(c => ({ ...c, ok: !rules.coils, a: rules.coils ? 0.6 + Math.random() * 1.6 : 1.4 })) });   // (always there; misaligned only with the rule; no random draw without it: missions' random builds stay as they were)
 }
 function freeHullSpot(side) {
-  // mines sit just off the hull, barnacles on it (onHullPlating): compare the places along the hull
-  const along = (x, y) => side === 'front' ? x : y, used = [...evs.mines, ...evs.barnacles].filter(u => u.side === side);
+  // mines sit just off the hull: compare the places along the hull
+  const along = (x, y) => side === 'front' ? x : y, used = evs.mines.filter(u => u.side === side);
   const pool = HULL_SPOTS[side].filter(([x, y]) => !used.some(u => Math.abs(along(u.x, u.y) - along(x, y)) < 0.8));
   return pool[Math.floor(Math.random() * pool.length)] || null;
 }
-// Barnacles grow ON the hull: on the outer wall's top over that stretch of hull (the side walls, the nose's
-// back wall), a crust straddling its outer edge, not out in space beside it. (b.x, b.y) is that point on the
-// hull (reach, clicks, drilling); the sprite renderer draws it up at the wall top's height (hullTopZ).
-const onHullPlating = (side, [x, y]) => side === 'port' ? [0.15, y] : side === 'star' ? [SHIP_W - 0.15, y] : [clamp(x, 18.4, 26.0), -2.85];   // (front: clear of the nose's corner posts)
-const BARNACLE_FX_Z = 1.6;                           // (slime bursts: up on the wall top too)
 // Drawing only: how high the top of the hull's outer wall is at (x, y), from the wall runs of js/sprites.js
 // (full height 1.6, the low cutaway 0.35 before a near wall; the spine's high top); 0 without sprites.
 function hullTopZ(x, y) {
@@ -61,14 +56,18 @@ function spawnMineDrone(side) {
   combatBanner(`Mine drone on the ${SIDE_LABEL[side].toLowerCase()} side — it sticks limpet mines on the hull!`);
   sfx.alarm();
 }
-function spawnSpores(side, from = null, n = 3, quiet = false) {   // from: [x, y] where they start (a spore mother's mouth)
-  const sx = from ? from[0] : side === 'port' ? -16 : SHIP_W + 16, sy0 = from ? from[1] : null;
+// A spore cloud: n clumps drifting in on that side, each heading for the outer airlock there (from the front: one of the
+// two), where it seeps in through the seals (js/spores.js). from: [x, y] where they start (default: off that side).
+const sporeTarget = (h) => [h.x + h.dir * 0.9, h.y];   // just off the hatch, against its seals
+function spawnSpores(side, from = null, n = 3, quiet = false) {
+  const s = side === 'port' || side === 'star' ? side : Math.random() < 0.5 ? 'port' : 'star', h = HATCHES.find(q => q.side === s), [tx, ty] = sporeTarget(h);
+  const sx = from ? from[0] : s === 'port' ? -16 : SHIP_W + 16, sy0 = from ? from[1] : null;
   for (let i = 0; i < n; i++) {
-    const [tx, ty] = HULL_SPOTS[side][Math.floor(Math.random() * HULL_SPOTS[side].length)];
-    const y = sy0 !== null ? sy0 + (Math.random() - 0.5) * 1.5 : ty + (Math.random() - 0.5) * 6, d = Math.hypot(tx - sx, ty - y), sp = 1.3 + Math.random() * 0.4;
-    evs.spores.push({ uid: newUid(), side, x: sx - (from ? 0 : i * 3 * Math.sign(tx - sx)), y, vx: (tx - sx) / d * sp, vy: (ty - y) / d * sp, t: Math.random() * 10 });
+    const y = sy0 !== null ? sy0 + (Math.random() - 0.5) * 1.5 : ty + (Math.random() - 0.5) * 12, x = sx - (from ? 0 : i * 3 * Math.sign(tx - sx)), sp = 1.3 + Math.random() * 0.4;
+    const d = Math.hypot(tx - x, ty - y) || 1;
+    evs.spores.push({ uid: newUid(), side: s, x, y, sp, vx: (tx - x) / d * sp, vy: (ty - y) / d * sp, t: Math.random() * 10, seep: 0 });
   }
-  if (!quiet) combatBanner(`Spore cloud drifting in on the ${SIDE_LABEL[side].toLowerCase()} side — shoot the clouds!`);
+  if (!quiet) combatBanner(`Spore cloud drifting in on the ${SIDE_LABEL[s].toLowerCase()} side — it's heading for the airlock! Shoot it down`);
 }
 function jamCannon(id) {
   if (evs.jams[id]) return;
@@ -112,30 +111,15 @@ function updateEva(dt) {
   }
   evs.drones = evs.drones.filter(d => Math.abs(d.x - SHIP_W / 2) < 50);
   for (const m of [...evs.mines]) if ((m.t -= dt) <= 0) explodeMine(m);
-  // spore clouds drift in and seed barnacles where they touch the hull
+  // spore clouds drift to the outer airlock on their side and seep in through its seals (js/spores.js)
   for (const s of evs.spores) {
-    s.x += s.vx * dt; s.y += s.vy * dt; s.t += dt;
-    if (distToPoly(s.x, s.y) < 0.7 || pointInPoly(s.x, s.y)) {
-      s.dead = true;
-      const spot = freeHullSpot(s.side);
-      if (spot) { const [x, y] = onHullPlating(s.side, spot); evs.barnacles.push({ uid: newUid(), side: s.side, x, y, age: 0, drain: 0, hp: 2 }); combatBanner('Spores stuck to the hull — barnacles are growing'); }
-    }
-  }
-  // barnacles grow; full grown ones drain power, and eventually drill through
-  for (const b of [...evs.barnacles]) {
-    b.age += dt;
-    if (b.age < BARNACLE_GROW) continue;
-    if ((b.drain += dt) >= BARNACLE_DRAIN) {
-      b.drain = 0;
-      const cap = CAPACITORS[sideCol(b.side)];
-      if (cap.charge > 0) { cap.charge--; combatBanner(`Barnacles are sucking power from the ${['left', 'middle', 'right'][sideCol(b.side)]} capacitor`); }
-    }
-    if (b.age >= BARNACLE_DRILL) {
-      evs.barnacles = evs.barnacles.filter(q => q !== b);
-      combatBanner('A barnacle drilled through the hull!'); sfx.crack();
-      if (mission.rules?.breach) breachRoom(roomNearHull(b.side, b.y, b.x));
-      else { const pool = SYSTEMS.filter(s => s.col === sideCol(b.side) && !s.broken); if (pool.length) breakSystem(pool[Math.floor(Math.random() * pool.length)]); }
-    }
+    s.t += dt;
+    const h = HATCHES.find(q => q.side === s.side), [tx, ty] = sporeTarget(h), dx = tx - s.x, dy = ty - s.y, d = Math.hypot(dx, dy);
+    if (d > 0.05 && !(s.seep > 0)) { const sp = s.sp || 1.5, step = Math.min(d, sp * dt); s.vx = dx / d * sp; s.vy = dy / d * sp; s.x += dx / d * step; s.y += dy / d * step; continue; }
+    s.vx = s.vy = 0;
+    if (!(s.seep > 0)) combatBanner(`The spore cloud is at the ${SIDE_LABEL[s.side].toLowerCase()} airlock — it's seeping in!`);
+    s.seep = (s.seep || 0) + dt;
+    if (s.seep >= SPORE_SEEP) { s.dead = true; infestRoom(airlockRoomId(h), 'seep', [h.inner.x + h.inner.w / 2, h.y]); }
   }
   // our cannon shells pop spore clouds and drones
   for (const sh of combat.shells) {
@@ -151,15 +135,11 @@ function updateEva(dt) {
   combat.shells = combat.shells.filter(s => !s.dead);
   evs.spores = evs.spores.filter(s => !s.dead && Math.abs(s.x - SHIP_W / 2) < 50);
   evs.drones = evs.drones.filter(d => !d.dead);
-  // laser bolts (on a spacewalk): blow mines early, kill barnacles
+  // laser bolts (on a spacewalk): blow mines early
   for (const bo of boarding.bolts) {
     if (bo.owner !== 'crew' || bo.wrench) continue;
     const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4);
     if (m) { bo.dead = true; explodeMine(m, 'laser'); continue; }
-    // (barnacles sit on the hull, where a bolt stops: it counts from just outside, the last place it was alive;
-    // bolts inside the ship never reach them)
-    const b = !pointInPoly(bo.x, bo.y) && evs.barnacles.find(b => Math.hypot(bo.x - b.x, bo.y - b.y) < 0.75);
-    if (b) { bo.dead = true; if ((b.hp -= boltDamage(bo)) <= 0) { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12, 0.1, BARNACLE_FX_Z); combatBanner('Barnacle burned off'); } sfx.alienHurt(); }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);
   // the canister drifts past, then it's gone
@@ -184,13 +164,6 @@ function evaJobTarget(mx, my) {
     const tool = inv.weapon === 'repair', time = tool ? PRY_TIME : PRY_BARE;
     return holdTarget('pry' + m.uid, time, `Hold click: pry the mine off (${time} s${tool ? '' : ', faster with the repair kit'}) · ${Math.ceil(m.t)} s left!`, m.x, m.y, 0.6,
                       () => { evs.mines = evs.mines.filter(q => q !== m); sfx.clank(); combatBanner('Mine pried off and flung into space'); });
-  }
-  for (const b of evs.barnacles) {
-    if (!at(b.x, b.y, 0.6)) continue;
-    if (!near(b.x, b.y)) return { ...far('Barnacle', b.x, b.y, 0.6), hullTop: true };
-    return { ...holdTarget('scrape' + b.uid, SCRAPE_TIME, `Hold click: scrape the barnacle off (${SCRAPE_TIME} s)`, b.x, b.y, 0.6,
-                           () => { evs.barnacles = evs.barnacles.filter(q => q !== b); slimeBurst(b.x, b.y, 12, 0.1, BARNACLE_FX_Z); combatBanner('Barnacle scraped off'); }),
-             hullTop: true };                       // (its ring is drawn up on the wall top, with the barnacle)
   }
   for (const [id, on] of Object.entries(evs.jams)) {
     if (!on) continue;
@@ -328,25 +301,6 @@ function drawEvaJobs(t) {
     ctx.strokeStyle = '#8a8f99'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - 6, y); ctx.lineTo(x + 12, y - 9); ctx.stroke();
     jobMarker(jx, jy, t, reach(jx, jy), '#ffd84a');
   }
-  // barnacles: grow in three stages, pulse when they drain. They sit on the hull wall's top (hullTopZ), straddling
-  // its outer edge; on screen that is lifted by the wall's height (sy), the marker goes there too
-  for (const b of evs.barnacles) {
-    const z = hullTopZ(b.x, b.y), sy = b.y - GFX.lift(z);
-    const x = L(b.x), y = L(sy), k = Math.min(1, b.age / BARNACLE_GROW), r = 5 + 9 * k;
-    if (GFX.on) {                                        // organic/barnacle_s<stage>_v<variant>, draining when grown
-      const st = Math.min(3, Math.floor(k * 3)), v = b.uid % 2, n = st === 3 ? `organic/barnacle_s3_v${v}_drain` : `organic/barnacle_s${st}_v${v}`;
-      // (pick: pointing at it on screen gives its point on the hull, so clicks find it up there)
-      if (GFX.ready(n) && GFX.sprite(n, st === 3 ? Math.floor(t * 6) : 0, b.x, b.y, z, { layer: 'main', depthBias: 0.04, emissive: 0.5, pick: [0.45, 0.55] })) { jobMarker(b.x, sy, t, reach(b.x, b.y), '#c08aff'); continue; }
-    }
-    for (let i = 0; i < 5; i++) {
-      const a = i / 5 * TAU + b.uid, rr2 = r * (0.5 + 0.2 * (i % 2));
-      ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5, rr2, 0, TAU);
-      ctx.fillStyle = k >= 1 ? '#8a6aa8' : '#a89a7a'; ctx.fill(); stroke(1.5);
-      ctx.beginPath(); ctx.arc(x + Math.cos(a) * r * 0.5, y + Math.sin(a) * r * 0.5, rr2 * 0.35, 0, TAU); ctx.fillStyle = '#3a2a48'; ctx.fill();
-    }
-    if (k >= 1) { const p = 0.5 + 0.5 * Math.sin(t * 6); ctx.beginPath(); ctx.arc(x, y, r + 4 + p * 4, 0, TAU); ctx.strokeStyle = `rgba(190,120,255,${0.6 * p})`; ctx.lineWidth = 2; ctx.stroke(); }
-    jobMarker(b.x, sy, t, reach(b.x, b.y), '#c08aff');
-  }
   // limpet mines: blink faster as they run down
   for (const m of evs.mines) {
     const x = L(m.x), y = L(m.y), rate = 2 + (1 - m.t / MINE_TIME) * 14, on = Math.sin(t * rate) > 0;
@@ -377,15 +331,23 @@ function drawEvaJobs(t) {
     ctx.beginPath(); ctx.arc(0, 0, 3, 0, TAU); ctx.fillStyle = Math.sin(t * 8) > 0 ? '#ff4a3a' : '#5a1a14'; ctx.fill();
     ctx.restore();
   }
-  // spore clouds
+  // spore clouds (at the airlock: shrinking as they seep in through its seals, wisps sucked into the hatch)
   for (const s of evs.spores) {                          // a clump of spore pods in a glowing haze, trailing hair-thin feelers
+    const seep = clamp((s.seep || 0) / SPORE_SEEP, 0, 1), sc = 1 - 0.65 * seep;
+    if (seep > 0) {
+      const h = HATCHES.find(q => q.side === s.side);
+      for (let i = 0; i < 9; i++) {
+        const q = (t * 0.9 + i / 9) % 1, a = i * 2.4, r = (1 - q) * 1.4;
+        sporePuff(s.x + Math.cos(a) * r + (h.x - s.x) * q, s.y + Math.sin(a) * r * 0.8, 0.25 + 0.35 * (1 - q), 0.7 * (1 - q) * (0.4 + seep), 'cloud');   // (js/spores.js)
+      }
+    }
     if (GFX.on && GFX.ready('organic/spore_cloud')) {   // the clump as a sprite (already at the 1.6x scale), the haze stays 2D
-      const x = L(s.x), y = L(s.y), hz0 = ctx.createRadialGradient(x, y, 0, x, y, L(1.1) * 1.6);
-      hz0.addColorStop(0, 'rgba(200,240,150,0.35)'); hz0.addColorStop(1, 'rgba(190,150,230,0)'); ctx.fillStyle = hz0; ctx.beginPath(); ctx.arc(x, y, L(1.1) * 1.6, 0, TAU); ctx.fill();
-      GFX.sprite('organic/spore_cloud', Math.floor(s.t / 0.2), s.x, s.y, 0, { layer: 'main', rot: s.t * 0.8, emissive: 0.6 });
+      const x = L(s.x), y = L(s.y), hz0 = ctx.createRadialGradient(x, y, 0, x, y, L(1.1) * 1.6 * sc);
+      hz0.addColorStop(0, 'rgba(200,240,150,0.35)'); hz0.addColorStop(1, 'rgba(190,150,230,0)'); ctx.fillStyle = hz0; ctx.beginPath(); ctx.arc(x, y, L(1.1) * 1.6 * sc, 0, TAU); ctx.fill();
+      GFX.sprite('organic/spore_cloud', Math.floor(s.t / 0.2), s.x, s.y, 0, { layer: 'main', rot: s.t * 0.8, emissive: 0.6, scale: sc });
       continue;
     }
-    ctx.save(); ctx.translate(L(s.x), L(s.y)); ctx.scale(1.6, 1.6); ctx.translate(-L(s.x), -L(s.y));   // big enough to see from a cannon
+    ctx.save(); ctx.translate(L(s.x), L(s.y)); ctx.scale(1.6 * sc, 1.6 * sc); ctx.translate(-L(s.x), -L(s.y));   // big enough to see from a cannon
     const x = L(s.x), y = L(s.y), hz0 = ctx.createRadialGradient(x, y, 0, x, y, L(1.1));
     hz0.addColorStop(0, 'rgba(200,240,150,0.35)'); hz0.addColorStop(1, 'rgba(190,150,230,0)'); ctx.fillStyle = hz0; ctx.beginPath(); ctx.arc(x, y, L(1.1), 0, TAU); ctx.fill();
     ctx.strokeStyle = 'rgba(210,230,170,0.5)'; ctx.lineWidth = 1.2;
@@ -413,8 +375,8 @@ function jobMarker(x, y, t, close, col) { useExtra.push({ x, y, r: 0.6 }); }
 function evaPlates(add) {
   if (evs.mines.length) add('mines', { icon: 'mine', title: 'LIMPET MINES', sub: `${evs.mines.length} on the hull · next blows in ${Math.ceil(Math.min(...evs.mines.map(m => m.t)))} s`, stripe: '#ff6a5a', red: true });
   if (evs.drones.some(d => !d.leaving)) add('drone', { icon: 'mine', title: 'MINE DRONE', sub: 'shoot it down before it sticks mines on', stripe: '#ff6a5a', red: true });
-  if (evs.spores.length) add('spores', { icon: 'spore', title: 'SPORE CLOUD', sub: `${evs.spores.length} drifting in · shoot them`, stripe: '#c08aff', red: true });
-  if (evs.barnacles.length) add('barnacles', { icon: 'spore', title: 'BARNACLES', sub: `${evs.barnacles.length} on the hull · scrape them off outside`, stripe: '#c08aff', red: evs.barnacles.some(b => b.age >= BARNACLE_GROW) });
+  if (evs.spores.length) add('spores', { icon: 'spore', title: 'SPORE CLOUD', sub: `${evs.spores.length} drifting at the ${SIDE_LABEL[evs.spores[0].side].toLowerCase()} airlock · shoot them before they seep in`, stripe: '#c08aff', red: true, wrap: true });
+  sporePlates(add);                                     // spores inside, the mother's cloud outside (js/spores.js)
   for (const id of Object.keys(evs.jams)) add('jam' + id, { icon: 'wrench', title: 'JAMMED TRACK', sub: `${GUNS.find(g => g.id === id).name} · half arc · clear it outside`, stripe: '#ffd84a', red: true });
   if (!evs.antenna) add('antenna', { icon: 'wrench', title: 'ANTENNA CROOKED', sub: 'radar garbled · straighten it outside', stripe: '#ffd84a' });
   if (evs.canister) add('canister', { icon: 'jump', title: 'FUEL CANISTER', sub: `drifting past, ${SIDE_LABEL[evs.canister.side].toLowerCase()} side · grab it outside`, stripe: '#5fd6a0' });

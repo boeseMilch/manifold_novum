@@ -29,9 +29,12 @@ const PRACTICE = [
   ['Organic', 'Leviathan boss (from phase 4)', () => startLevBoss(4)],
   ['Organic', 'Herd: grappler + leeches (left)', () => startHerd(['grappler', 'leeches'], 'port')],
   ['Organic', 'Herd: spore mother + spore clouds (right)', () => startHerd(['mother', 'spores'], 'star')],
+  ['Organic', 'Spore clouds → the right airlock (they seep in)', () => spawnSpores('star')],
+  ['Organic', 'Spores inside: the left airlock room', () => infestRoom('portLock', 'seep', [HATCHES[0].inner.x + HATCHES[0].inner.w / 2, HATCHES[0].y])],
+  ['Organic', 'Spores inside: the left cannon room and the bridge', () => { infestRoom('portGun', 'door'); infestRoom('bridge', 'door'); }],
+  ['Organic', 'Spore cloud round the hull (as the mother\'s; 20 s)', () => { evs.cloud = { side: 'star', k: 0, hold: 20, t: 0, blow: 0, from: null, gust: null }; combatBanner('Spore cloud around the hull — don\'t use the airlocks!'); }],
   // outside
   ['Spacewalk jobs', 'Mine drone (left)', () => spawnMineDrone('port')],
-  ['Spacewalk jobs', 'Spore clouds → barnacles (right)', () => spawnSpores('star')],
   ['Spacewalk jobs', 'Debris in the left cannon track', () => jamCannon('port')],
   ['Spacewalk jobs', 'Knock the radar antenna crooked', () => knockAntenna()],
   ['Spacewalk jobs', 'Fuel canister drifting past (left)', () => spawnCanister('port')],
@@ -80,7 +83,7 @@ const PRACTICE = [
   // tools
   ['Tools', 'Fill all capacitors', () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; })],
   ['Tools', 'Repair everything, put out fires', () => { SYSTEMS.forEach(s => { s.broken = false; }); fires.length = 0; hz.breaches = []; hz.surges = []; hz.noGrav = []; hz.hull = { port: 0, front: 0, star: 0 }; }],
-  ['Tools', 'Clear all threats', () => { combatClear(); boarding.invaders = []; boarding.bolts = []; resetEva({}); resetEncounters(); resetOrganic(); dk.pirates = []; dk.rock = null; }],
+  ['Tools', 'Clear all threats', () => { combatClear(); boarding.invaders = []; boarding.bolts = []; resetEva({}); resetSpores(); resetEncounters(); resetOrganic(); dk.pirates = []; dk.rock = null; }],
   ['Tools', 'Get hurt (to try treating, snacks, coffee)', () => hurtCrew(player)],
   ['Tools', 'Heal me', () => { player.health = 'ok'; player.hurtT = 0; }],
   ['Tools', 'Give: repair kit', () => give('repair')],

@@ -1,5 +1,6 @@
 """The spore mother (js/organic.js ENEMY_TYPES.mother, drawMother, drawTongue): a vast mottled mass far
-out on one side, three lipped mouths on its near flank, a tongue (the weak spot) that tosses spores.
+out on one side, three lipped mouths on its near flank; one at a time opens in a silent scream (the green spore cloud
+pours out, js/spores.js) and its tongue, the weak spot, rears up inside it.
 
 Sprites (build/renders/organic/), side = port | star (mirrored builds; port = it's left of our ship),
 all sharing the enemy's ground origin (e.x, e.y) through the manifest's ox/oy:
@@ -11,19 +12,22 @@ all sharing the enemy's ground origin (e.x, e.y) through the manifest's ox/oy:
                                    strokes; recolour them to the hide's #d8c48e / #9c8752).
   mother_<side>_m<i>_<state>       patches over mouth i = 0..2 (MOTHER_MOUTHS: y = -6.5, 0, 6.5): exact
                                    windows of the body with that mouth in a state; draw over the body at
-                                   the same origin. state = g1 | g2 | g3 (gape 0.35 / 0.7 / 1: pick by the
-                                   game's gape, 0 = no patch) | hit (torn out: gape 0.45, a ragged stump,
-                                   slime bleeding). Edges feathered over 8 px so they blend into the body.
-  mother_<side>_tongue             the tongue (blue = weak spot, a groove, wet), modelled lying along
-                                   game +x from its root (origin) to its tip 4 units out, 1.1 wide: stretch
-                                   it along x to the game's (tipX - base) / 4 and rotate it by the wag
-                                   (atan2(tipY, length)); clip to the gullet like now. The carried spore is
-                                   organic/spore_pod at the tip.
+                                   the same origin. state = g1 | g2 | g3 (gape 0.35 / 0.7 / 1) | g4 (the
+                                   silent scream: gape 1.5, 2.3 deep, lips peeled back into rolls, gum and
+                                   nubs bared, a ridged throat pit going down at the back) | hit (torn
+                                   out: gape 0.45, a ragged stump, slime bleeding). Pick by the game's
+                                   gape (0 = no patch). Edges feathered over 8 px so they blend into the body.
+  mother_<side>_tongue_<pose>      the screaming tongue (blue = weak spot, a groove, wet) rising out of the
+                                   throat pit: pose = r1 (lifting) | r2 (half up) | r3 (reared, tip curling
+                                   up and back). Origin = the root's ground spot, mouth-local x = -1.6
+                                   (TONGUE_ROOT); the game jitters its rotation a little (the quiver).
+                                   (mother_<side>_tongue, the old straight tongue, is no longer built.)
   mother_<side>_eye_<state>        state = open | half | shut: one of the nine eyes (radius 0.5 in its
                                    socket, looking towards our ship; scale by the game's rad / 0.5 in x and y,
                                    the game already squashes them 1.3 : 1). Origin = the eye's centre.
 
-    blender -b --factory-startup --python tools/blender/models/organic/mother.py [-- quick] [port|star] [body|mouths|tongue|eyes]
+    blender -b --factory-startup --python tools/blender/models/organic/mother.py [-- quick] [port|star] [body|mouths|tongue|eyes] [scream]
+    (scream: only the g4 mouth patches, plus the tongues if 'tongue' is given too)
 """
 import sys, os, math, random, time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..')); sys.path.insert(0, os.path.dirname(__file__))
@@ -37,6 +41,8 @@ RX, RY = 12.0, 17.0
 HGT = 3.0                                   # dome height (the height pass maps 0..4 units)
 MOUTHS = [(RX * math.sqrt(1 - (y / RY) ** 2), y) for y in (-6.5, 0.0, 6.5)]
 MD, MH = 1.7, 1.6                           # mouth recess depth into the body, half height (game D, H)
+SCREAM_K, SCREAM_D = 1.5, 2.3               # the silent scream (g4): gape 1.5 (half height 2.4), recess 2.3 deep
+PIT_Z = -1.7                                # the throat pit at the back of a screaming gullet goes down to here
 
 def wob(a):
     """The game's MOTHER_BODY radius wobble: its 40 vertices, interpolated smoothly in between."""
@@ -62,14 +68,14 @@ def mats():
         stump=O.flesh('stump', '#2a4a78', '#5a7ab0', c2='#101a30', veins='#8a2030', vein_k=0.4, scale=4, coat=0.8),
     )
 
-def gullet_mat(name, centre):
+def gullet_mat(name, centre, reach=MD * 0.8):
     """Wet red throat: pale at the lips, black-red deep inside (by distance from the mouth's edge point)."""
     m = bpy.data.materials.new(name); m.use_nodes = True; nt = m.node_tree; N = nt.nodes; Lk = nt.links.new
     b = N['Principled BSDF']; b.inputs['Roughness'].default_value = 0.35; b.inputs['Coat Weight'].default_value = 0.5
     b.inputs['Subsurface Weight'].default_value = 0.3; b.inputs['Subsurface Scale'].default_value = 0.05
     g = N.new('ShaderNodeNewGeometry'); vm = N.new('ShaderNodeVectorMath'); vm.operation = 'DISTANCE'; vm.inputs[1].default_value = centre
     Lk(g.outputs['Position'], vm.inputs[0])
-    mr = N.new('ShaderNodeMapRange'); mr.inputs['From Min'].default_value = 0.2; mr.inputs['From Max'].default_value = MD * 0.8; Lk(vm.outputs['Value'], mr.inputs['Value'])
+    mr = N.new('ShaderNodeMapRange'); mr.inputs['From Min'].default_value = 0.2; mr.inputs['From Max'].default_value = reach; Lk(vm.outputs['Value'], mr.inputs['Value'])
     ramp = N.new('ShaderNodeValToRGB'); Lk(mr.outputs[0], ramp.inputs[0])
     ramp.color_ramp.elements[0].color = (*mn.hex_rgb('#a03a44'), 1); ramp.color_ramp.elements[1].color = (*mn.hex_rgb('#120204'), 1)
     el = ramp.color_ramp.elements.new(0.35); el.color = (*mn.hex_rgb('#4a0e18'), 1)
@@ -116,7 +122,7 @@ def decorations(M, b, quick):
     # veins: wandering from each mouth inward, branching
     for (mx, my) in MOUTHS:
         for k in range(4):
-            pts = []; x, y = mx - MD - 0.3, my + (k - 1.5) * 0.7
+            pts = []; x, y = mx - SCREAM_D - 0.35, my + (k - 1.5) * 0.7   # (behind even the screaming mouth)
             ang = math.pi + (k - 1.5) * 0.35
             for s in range(28):
                 loc, n = surf(b, x, y); pts.append(loc + n * 0.01)
@@ -152,12 +158,12 @@ def decorations(M, b, quick):
 # ---------------------------------------------------------------------------------------------------------
 # Mouths
 # ---------------------------------------------------------------------------------------------------------
-def lens(mx, my, k, n=24, out=1.2):
+def lens(mx, my, k, n=24, out=1.2, md=MD):
     """The opening in local coords: inner curve (the game's cavity) closed by points outside the body."""
     pts = []
     for i in range(n + 1):
         s = -1 + 2 * i / n
-        pts.append((mx + 0.05 - MD * (1 - s * s) ** 0.75, my + s * MH * k))
+        pts.append((mx + 0.05 - md * (1 - s * s) ** 0.75, my + s * MH * k))
     return pts + [(mx + out, my + MH * k + 0.3), (mx + out, my - MH * k - 0.3)]
 
 def paint_cavity(b, poly, m, zmin=-0.37):
@@ -175,12 +181,19 @@ def paint_cavity(b, poly, m, zmin=-0.37):
         if c.z >= zmin and inside(c.x * O.S, -c.y): f.material_index = idx
     return b
 
-def make_liner(b, inner, floor, mx, my):
+def body_edge(x, y):
+    """How far out the body's rim reaches at local height y (on the near flank, around the point (x, y))."""
+    a = math.atan2(y / RY, x / RX)
+    return RX * wob(a) * math.sqrt(max(0.0, 1 - (y / (RY * wob(a))) ** 2))
+
+def make_liner(b, inner, floor, mx, my, hole=None):
     """The gullet's lining: walls just inside the cut (inner lens curve, closed along the body's edge), from
-    the floor up to just under the hide's surface, plus the floor. Seen from inside (normals inward)."""
+    the floor up to just under the hide's surface, plus the floor. Seen from inside (normals inward).
+    hole = (cx, cy, rx, ry, z1): the floor gets an elliptic hole there and a funnel down to z1 (the throat)."""
     cx = sum(p[0] for p in inner) / len(inner); cy = sum(p[1] for p in inner) / len(inner)
     ring = [(x + (cx - x) * 0.03 / max(1e-3, math.hypot(cx - x, cy - y)), y + (cy - y) * 0.03 / max(1e-3, math.hypot(cx - x, cy - y))) for x, y in inner]
     ring += [(mx + 0.6, inner[-1][1] - 0.02), (mx + 0.6, inner[0][1] + 0.02)]
+    ring = [(min(x, body_edge(x, y) - 0.25), y) for x, y in ring]   # (the floor stops at the body's edge: no slab out in space)
     me = bpy.data.meshes.new('liner'); bm = bmesh.new()
     bot, top, ok = [], [], []
     for x, y in ring:
@@ -190,14 +203,88 @@ def make_liner(b, inner, floor, mx, my):
     n = len(ring)
     for i in range(n - 3):                               # walls along the inner curve only, where there is hide above
         if ok[i] and ok[i + 1]: bm.faces.new((bot[i], bot[i + 1], top[i + 1], top[i]))
-    bm.faces.new(bot[:n - 2])
+    if not hole: bm.faces.new(bot[:n - 2])
+    else:                                                # floor = quads from the hole's rim out to the outline; then the funnel
+        hx, hy, rx, ry, z1 = hole; poly = ring[:n]; NA = 48
+        def hit_out(a):                                  # ray from the hole's centre to the outline
+            dx, dy = math.cos(a), math.sin(a); best = None
+            for j in range(len(poly)):
+                (ax, ay), (bx, by) = poly[j - 1], poly[j]
+                ex, ey = bx - ax, by - ay; den = dx * ey - dy * ex
+                if abs(den) < 1e-9: continue
+                t = ((ax - hx) * ey - (ay - hy) * ex) / den; u = ((ax - hx) * dy - (ay - hy) * dx) / den
+                if t > 0 and 0 <= u <= 1 and (best is None or t < best): best = t
+            return (hx + dx * best, hy + dy * best)
+        rings = []
+        for lev in range(6):                              # 0: the outline, 1: the hole's rim, 2..5: down the funnel
+            row = []
+            for k in range(NA):
+                a = k / NA * math.tau
+                if lev == 0: x, y = hit_out(a); z = floor + 0.01
+                else:
+                    q = (lev - 1) / 4; sc = 1 - 0.55 * q ** 1.3; z = floor + 0.01 + (z1 - floor) * q
+                    x, y = hx + math.cos(a) * rx * sc, hy + math.sin(a) * ry * sc
+                row.append(bm.verts.new(P(x, y, z)))
+            rings.append(row)
+        for r0, r1 in zip(rings, rings[1:]):
+            for k in range(NA): bm.faces.new((r0[k], r0[(k + 1) % NA], r1[(k + 1) % NA], r1[k]))
+        bm.faces.new(rings[-1])
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
     bm.to_mesh(me); bm.free()
     o = mn.link(bpy.data.objects.new('liner', me)); mn.smooth(o)
     return o
 
+def scream(M, b, i):
+    """Mouth i in the silent scream (g4): stretched far wider and deeper than g3, the lips peeled back into
+    tight rolls, the wet gum and a row of pale nubs bared along the rim, and at the back of the gullet the
+    throat: a ridged pit going down into the dark (where the tongue rises from)."""
+    mx, my = MOUTHS[i]; k, md = SCREAM_K, SCREAM_D; extra = []
+    pts = lens(mx, my, k, md=md); floor = -0.35
+    hx, hy = mx + TONGUE_ROOT, my                         # the throat pit, where the tongue's root is
+    liner = make_liner(b, pts[:-2], floor, mx, my, hole=(hx, hy, 0.56, 1.0, PIT_Z))
+    cut = O.poly_prism('cut', [(P(x, y).x, P(x, y).y) for x, y in pts], floor, 6.0)
+    pit = O.poly_prism('pitcut', [(P(x, y).x, P(x, y).y) for x, y in
+                                  [(hx + math.cos(a) * 0.54, hy + math.sin(a) * 0.98) for a in [j / 32 * math.tau for j in range(32)]]], PIT_Z - 0.2, 0.0)
+    gm = gullet_mat(f'gullet{i}s', P(mx + 0.4, my, 0.3), reach=2.6); mn.assign(cut, gm); mn.assign(pit, gm)
+    for c in (cut, pit):
+        md_ = b.modifiers.new('bool', 'BOOLEAN'); md_.object = c; md_.operation = 'DIFFERENCE'; md_.solver = 'MANIFOLD'; md_.material_mode = 'TRANSFER'
+        c.hide_render = True
+        b = O.bake(b); bpy.data.objects.remove(c)
+    mn.assign(liner, gm); extra.append(liner)
+    for kk in (1, 2, 3):                                   # ridges of the gullet floor, ringing the throat
+        rr = []; hh = 1.0 + kk * 0.38
+        for t in range(13):
+            a = -math.pi * 0.62 + t / 12 * math.pi * 1.24
+            rr.append(P(hx + math.cos(a) * (0.56 + kk * 0.3), hy + math.sin(a) * hh, floor + 0.05))
+        extra.append(O.tube('ridge', rr, [0.07] * 13, m=gm, res=3, segs=8))
+    for q in (0.3, 0.62):                                  # ridges going down the throat
+        sc = 1 - 0.55 * q ** 1.3; z = floor + (PIT_Z - floor) * q
+        rr = [P(hx + math.cos(a) * 0.56 * sc, hy + math.sin(a) * 0.98 * sc, z) for a in [j / 24 * math.tau for j in range(25)]]
+        extra.append(O.tube('ridge', rr, [0.05] * 25, m=gm, res=2, segs=8))
+    gum = O.flesh('gum', '#8a2a38', '#c85a64', c2='#3a0a10', veins='#5a0a18', vein_k=0.4, scale=2.5, coat=0.9, sss=0.35, sss_col=(1, 0.3, 0.3))
+    rnd = random.Random(40 + i)
+    gpts, lpts, grad, lrad = [], [], [], []               # all along the rim: the bared gum, nubs on it, the lip peeled back
+    NR = 29
+    for t in range(NR):
+        sp = -0.97 + 1.94 * t / (NR - 1)
+        x = mx + 0.05 - md * (1 - sp * sp) ** 0.75; y = my + sp * MH * k
+        s2 = sp + 0.01; x2 = mx + 0.05 - md * (1 - s2 * s2) ** 0.75; y2 = my + s2 * MH * k
+        tx, ty = x2 - x, y2 - y; ln = math.hypot(tx, ty); nx, ny = -ty / ln, tx / ln
+        if nx * (x - (mx - md * 0.5)) + ny * (y - my) < 0: nx, ny = -nx, -ny      # outward: away from the opening
+        loc, _ = surf(b, x + nx * 0.5, y + ny * 0.5); zs = max(loc.z, 0.05)
+        fade = min(1.0, (1 - abs(sp)) / 0.12) ** 0.5
+        gpts.append(P(x + nx * 0.06, y + ny * 0.06, zs * 0.6)); grad.append(0.05 + 0.12 * fade)
+        lpts.append(P(x + nx * 0.36, y + ny * 0.36, zs * 0.92)); lrad.append(0.06 + 0.17 * fade)
+        if 2 <= t <= NR - 3 and t % 2 == 0:                  # pale nubs on the bared gum, pointing into the gullet
+            extra.append(mn.sphere('nub', 0.08 + rnd.uniform(-0.015, 0.02), loc=P(x - nx * 0.02, y - ny * 0.02, zs * 0.6 + 0.09),
+                                   m=M['tooth'], scale=(1, 1, 1.7), segs=10))
+    extra.append(O.tube('gumline', gpts, grad, m=gum, res=3, segs=10))
+    extra.append(O.tube('lip', lpts, lrad, m=M['lip'], res=3, segs=10))   # the lip, peeled back into a tight roll
+    return b, extra
+
 def mouth(M, b, i, state):
     """Cut mouth i into body b for a state; returns (new body, extra objects)."""
+    if state == 'g4': return scream(M, b, i)
     mx, my = MOUTHS[i]
     gape = {'shut': 0.0, 'g1': 0.35, 'g2': 0.7, 'g3': 1.0, 'hit': 0.45}[state]
     extra = []
@@ -253,12 +340,13 @@ def mouth(M, b, i, state):
         extra.append(sl)
     return b, extra
 
-def mouth_window(i):
+def mouth_window(i, state=None):
     mx, my = MOUTHS[i]
     xs, ys = [], []
-    for lx in (mx - MD - 1.0, mx + 2.0):
-        for ly in (my - MH - 1.0, my + MH + 1.0):
-            for z in (-0.9, 1.6):
+    sc = state == 'g4'; md, mh = (SCREAM_D, MH * SCREAM_K) if sc else (MD, MH)
+    for lx in (mx - md - 1.0, mx + 2.0):
+        for ly in (my - mh - 1.0, my + mh + 1.0):
+            for z in ((PIT_Z - 0.2) if sc else -0.9, 1.6):
                 sx, sy = mn._screen(P(lx, ly, z)); xs.append(sx); ys.append(sy)
     return min(xs), max(xs), min(ys), max(ys)
 
@@ -285,28 +373,61 @@ def join(objs):
     for o in objs: o.select_set(True)
     ctx.view_layer.objects.active = objs[0]; bpy.ops.object.join(); return objs[0]
 
-def tongue(M):
-    L, W = 4.0, 0.55
-    pts, rad = [], []
-    for k in range(16):
-        u = k / 15
-        pts.append(P(u * L, 0.08 * math.sin(u * 3), 0.25 * math.sin(u * math.pi) * 0.6))
-        rad.append(W * (1 - 0.55 * u ** 1.4) * (0.75 if k == 15 else 1))
+# The screaming tongue (mother_<side>_tongue_r1..r3): it rises out of the throat pit and quivers. Centre lines
+# in local (x out of the body from the root, z up); the origin (ground point) is the root's spot in the
+# game (mouth-local x = TONGUE_ROOT); the root itself comes out of the pit's far side (the part the camera sees into). r1: lifting, r2: half up, r3: reared
+# up, its tip curling up and back.
+TONGUE_ROOT = -1.6
+TONGUE_POSES = {
+    'r1': [(-0.05, -0.5, -0.3), (0.3, -0.25, -0.3), (0.8, 0, -0.2), (1.4, 0, 0.0), (1.95, 0, 0.18), (2.35, 0, 0.38)],
+    'r2': [(-0.05, -0.5, -0.3), (0.3, -0.25, -0.22), (0.75, 0, 0.0), (1.3, 0, 0.45), (1.75, 0, 0.85), (2.05, 0, 1.2)],
+    'r3': [(-0.05, -0.5, -0.3), (0.25, -0.25, -0.18), (0.65, 0, 0.2), (1.15, 0, 0.8), (1.6, 0, 1.35), (1.95, 0, 1.75), (2.05, 0, 2.1), (1.9, 0, 2.3)],
+}
+def tongue_up(M, pose):
+    W = 0.55
+    ctl = [Vector(c) for c in TONGUE_POSES[pose]]
+    dense = []                                             # a smooth centre line (Catmull-Rom through the control points)
+    for j in range(len(ctl) - 1):
+        p0, p1, p2, p3 = ctl[max(0, j - 1)], ctl[j], ctl[j + 1], ctl[min(len(ctl) - 1, j + 2)]
+        for q in range(10):
+            u = q / 10
+            dense.append(0.5 * ((2 * p1) + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (-p0 + 3 * p1 - 3 * p2 + p3) * u ** 3))
+    dense.append(ctl[-1])
+    cum = [0.0]
+    for a, b in zip(dense, dense[1:]): cum.append(cum[-1] + (b - a).length)
+    Ltot = cum[-1]
+    radius = lambda u: W * (1 - 0.55 * u ** 1.4)
+    loc = lambda v: P(v.x, v.y, v.z)
+    idx = list(range(0, len(dense), 3)) + ([len(dense) - 1] if (len(dense) - 1) % 3 else [])
+    pts = [loc(dense[j]) for j in idx]; rad = [radius(cum[j] / Ltot) * (0.8 if j == len(dense) - 1 else 1) for j in idx]
     bm_ = O.blue_organ('tongue_blue', 1.1)
     t = O.tube('tongue', pts, rad, m=bm_, res=4, segs=16)
-    tip = mn.sphere('tip', rad[-1], loc=pts[-1], m=bm_, segs=24); t = join([t, tip])
-    for v in t.data.vertices: v.co.z = v.co.z * 0.42 + 0.1           # flattened
-    groove = O.tube('groove', [P(0.2 + u * 3.3, 0.08 * math.sin((0.05 + u * 0.82) * 3), 0.0) + Vector((0, 0, 0.0)) for u in (0, 0.33, 0.66, 1.0)],
-                    [0.06, 0.06, 0.05, 0.03], m=O.plain('groove', '#0a2858', 0.3), res=4, segs=8)
-    for v in groove.data.vertices:
-        u = abs(v.co.x) / L; v.co.z = (0.25 * math.sin(u * math.pi) * 0.6) * 0.55 + 0.1 + W * (1 - 0.55 * u ** 1.4) * 0.55 - 0.03
-    objs = [t, groove]
+    tip = mn.sphere('tip', rad[-1] * 0.95, loc=pts[-1], m=bm_, segs=24); t = join([t, tip])
+    frames = []                                            # (centre, up, tangent) per dense point, Blender coords
+    for j in range(len(dense)):
+        a, b = dense[max(0, j - 1)], dense[min(len(dense) - 1, j + 1)]
+        tg = (loc(b) - loc(a)).normalized()
+        side = tg.cross(Vector((0, 1, 0))).normalized()     # in the x-z plane, perpendicular to the tongue
+        up = side if side.z > 0 else -side
+        frames.append((loc(dense[j]), up, cum[j] / Ltot))
+    for v in t.data.vertices:                              # flatten it across its "up" (a tongue, not a tube)
+        c, up, u = min(frames, key=lambda f: (v.co - f[0]).length_squared)
+        d = v.co - c; v.co = c + d - up * d.dot(up) * 0.45
+    objs = [t]
+    top = lambda j, off=0.0: frames[j][0] + frames[j][1] * (radius(frames[j][2]) * 0.55 + off)
+    gi = [j for j in range(len(dense)) if 0.12 < frames[j][2] < 0.88][::3]
+    objs.append(O.tube('groove', [top(j, -0.03) for j in gi], [0.06 - 0.03 * frames[j][2] for j in gi], m=O.plain('groove', '#0a2858', 0.3), res=3, segs=8))
     rnd = random.Random(3)
-    for k in range(30):                                    # papillae
-        u = rnd.uniform(0.05, 0.9); a = rnd.uniform(-1.0, 1.0)
-        r = W * (1 - 0.55 * u ** 1.4)
-        c = P(u * L, 0.08 * math.sin(u * 3) + a * r * 0.7, 0.0); c.z = (0.25 * math.sin(u * math.pi) * 0.6) * 0.55 + 0.1 + r * 0.55 * math.sqrt(max(0, 1 - a * a)) - 0.01
-        objs.append(mn.sphere('papilla', 0.035, loc=c, m=O.emit_mat('pap', '#bfe6ff', 1.0), segs=8))
+    pap = O.emit_mat('pap', '#bfe6ff', 1.0)
+    for k in range(30):                                    # papillae on the upper face
+        j = rnd.randrange(int(len(dense) * 0.15), int(len(dense) * 0.9)); c, up, u = frames[j]
+        tg = (frames[min(j + 1, len(frames) - 1)][0] - frames[max(j - 1, 0)][0]).normalized(); sd = tg.cross(up).normalized()
+        a = rnd.uniform(-0.9, 0.9); r = radius(u)
+        objs.append(mn.sphere('papilla', 0.035, loc=c + sd * a * r * 0.75 + up * (r * 0.55 * math.sqrt(max(0, 1 - a * a)) - 0.01), m=pap, segs=8))
+    # the root in the throat: a collar of dark wet gullet flesh it slides out of
+    c0 = loc(dense[0]); c1 = loc(dense[min(len(dense) - 1, 6)])
+    gm = gullet_mat('tongue_throat', c0 + Vector((0, 0, 1.3)))
+    objs.append(O.blob('collar', [(c0.lerp(c1, 0.25), W * 1.05, (1.1, 1.3, 0.45)), (c0, W * 1.1, (1.0, 1.4, 0.4))], m=gm, res=0.04))
     return objs
 
 def eye(M, state):
@@ -329,7 +450,7 @@ def eye(M, state):
     return objs
 
 # ---------------------------------------------------------------------------------------------------------
-def render_side(side, what, quick):
+def render_side(side, what, quick, states=('g1', 'g2', 'g3', 'g4', 'hit')):
     O.set_side(side); T0 = time.time()
     if 'body' in what or 'mouths' in what:
         mn.reset(); M = mats()
@@ -347,14 +468,14 @@ def render_side(side, what, quick):
         if 'mouths' in what:
             shut = base
             for i in range(3):
-                for state in ('g1', 'g2', 'g3', 'hit'):
+                for state in states:
                     # rebuild from the shut body: re-cut this mouth wider
                     nb = clean.copy(); nb.data = clean.data.copy(); mn.link(nb); nb.hide_render = False
                     shut.hide_render = True; O.show(shut_ex[i], False)
                     nb, ex = mouth(M, nb, i, state)
                     mn.outline([nb], thickness=0.022)
-                    mn.outline([o for o in ex if o.name.startswith(('lip', 'stump'))], thickness=0.014)
-                    x0, x1, y0, y1 = mouth_window(i)
+                    mn.outline([o for o in ex if o.name.startswith(('lip', 'stump', 'gumline'))], thickness=0.014)
+                    x0, x1, y0, y1 = mouth_window(i, state)
                     name = f'organic/mother_{side}_m{i}_{state}'
                     O.render_window(name, x0, x1, y0, y1)
                     feather(os.path.join(mn.OUT_DIR, name))
@@ -363,9 +484,10 @@ def render_side(side, what, quick):
                     shut.hide_render = False; O.show(shut_ex[i], True)
             print(f'[mother] {side} mouths {time.time() - T0:.1f}s'); T0 = time.time()
     if 'tongue' in what:
-        mn.reset(); M = mats(); objs = tongue(M)
-        mn.outline(objs[:1], thickness=0.016)
-        mn.render(f'organic/mother_{side}_tongue', objs=objs)
+        for pose in TONGUE_POSES:
+            mn.reset(); M = mats(); objs = tongue_up(M, pose)
+            mn.outline(objs[:1], thickness=0.016)
+            mn.render(f'organic/mother_{side}_tongue_{pose}', objs=objs)
     if 'eyes' in what:
         for state in ('open', 'half', 'shut'):
             mn.reset(); M = mats(); objs = eye(M, state)
@@ -378,5 +500,7 @@ if __name__ == '__main__':
     sel = [a for a in O.ARGS if a not in ('quick', 'cpu')]
     sides = [s for s in ('port', 'star') if s in sel] or ['port', 'star']
     what = [w for w in ('body', 'mouths', 'tongue', 'eyes') if w in sel] or ['body', 'mouths', 'tongue', 'eyes']
-    for side in sides: render_side(side, what, O.QUICK)
+    if 'scream' in sel: what = ['mouths'] + (['tongue'] if 'tongue' in sel else [])   # (only the new g4 patches)
+    states = ('g4',) if 'scream' in sel else ('g1', 'g2', 'g3', 'g4', 'hit')
+    for side in sides: render_side(side, what, O.QUICK, states)
     print(f'[mother] total {time.time() - T:.1f}s')

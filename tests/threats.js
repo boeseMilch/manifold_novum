@@ -48,20 +48,21 @@ for (const side of ['port','star']) {
   }
   check(down >= 5, `mine drone (${side}): shot down before it planted all its mines in ${down}/6 tries`);
 }
-// spore clouds from the side: popped before reaching the hull?
+// spore clouds from the side: popped before they reach the airlock (and seep in)?
 for (const side of ['port','star']) {
   let popped = 0, total = 0;
   for (let k = 0; k < 4; k++) {
     const G = G0(); G0gunArc = G.gunArc; G.spawnSpores(side); G.teleportToGun(side); const g = G.player.gun;
-    total += G.evs.spores.length;
+    total += G.evs.spores.length; const seeped = new Set();
     for (let t = 0; t < 30; t += DT) {
+      for (const s of G.evs.spores) if (s.seep > 0) seeped.add(s.uid);
       const s = G.evs.spores.filter(s => inArc(g, s.x, s.y)).sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
       if (s) { aim(G, g, [s.x, s.y], [s.vx, s.vy]); fire(G, g); }
       G.tick(DT);
     }
-    popped += 3 - G.evs.barnacles.length;
+    popped += 3 - seeped.size;
   }
-  check(popped >= total * 0.8, `spore clouds (${side}): ${popped}/${total} popped before they stuck`);
+  check(popped >= total * 0.8, `spore clouds (${side}): ${popped}/${total} popped before they reached the airlock`);
 }
 // the leviathan: every bump comes with at least 3 s of warning on that room's floor
 {

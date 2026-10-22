@@ -131,7 +131,7 @@ function updateAirlock(h, dt) {
     }
     return;
   }
-  if (broken(h)) { if (h.doors.inner > 0 && h.doors.outer > 0) shut('outer'); return; }   // broken: the doors stay as they are (never both open)
+  if (broken(h) || sporeGlitching(h)) { if (h.doors.inner > 0 && h.doors.outer > 0) shut('outer'); return; }   // broken (or spores in its controls for a moment, js/spores.js): the doors stay as they are (never both open)
   if (h.locked) {                                    // locked by security: both shut, no cycling
     if (h.phase !== 'idle') { h.phase = 'idle'; h.target = null; }
     shut('inner'); shut('outer');
@@ -206,11 +206,13 @@ function airlockAct() {
       return true;
     }
     if (h.phase === 'vent') { act({ text: 'Outer airlock open — the room is venting', at, quiet: true }); return true; }
+    if (sporeGlitching(h)) { act({ text: `Outer airlock: ${sporeGlitchText(h, 'the controls don\'t respond')}`, at }); return true; }
+    const cloud = evs.cloud ? ' — SPORE CLOUD OUTSIDE: spores get in!' : '';
     if (h.phase === 'cycling') { act({ text: h.target === 'outer' ? 'Airlock pumping out…' : 'Airlock pumping up…', at, quiet: true }); return true; }
     if (h.phase !== 'idle') { act({ text: 'Airlock doors moving…', at, quiet: true }); return true; }
-    if (inIt) { act({ text: h.air === 'inner' ? 'Click: cycle the airlock (out to space)' : 'Click: cycle the airlock (back inside)', at, run: () => airlockManual(h) }); return true; }
-    if (outside) { act({ text: h.air === 'outer' ? 'Outer airlock — float in' : 'Outer airlock — cycling to you', at, quiet: true }); return true; }
-    act({ text: h.air === 'inner' ? 'Outer airlock — walk in to go outside (spacewalk)' : 'Outer airlock — cycling to you', at, quiet: true });
+    if (inIt) { act({ text: (h.air === 'inner' ? 'Click: cycle the airlock (out to space)' : 'Click: cycle the airlock (back inside)') + cloud, at, run: () => airlockManual(h) }); return true; }
+    if (outside) { act({ text: (h.air === 'outer' ? 'Outer airlock — float in' : 'Outer airlock — cycling to you') + cloud, at, quiet: !cloud }); return true; }
+    act({ text: (h.air === 'inner' ? 'Outer airlock — walk in to go outside (spacewalk)' : 'Outer airlock — cycling to you') + cloud, at, quiet: !cloud });
     return true;
   }
   return false;

@@ -15,6 +15,14 @@ Tick off what works; note what doesn't.
 - [ ] Walking hurt leaves a blood trail that fades; downed: a pool. In multiplayer your crewmates see your trail and a red cross by your name.
 - [ ] Too much? (the heartbeat for 30 s, the haze while fighting)
 
+## Spores inside the ship (2026-10-22)
+- [ ] Practice "Spore clouds → the right airlock": three clumps drift to the right outer airlock, shrink into its seals; the right airlock room fills with a green-grey haze from the airlock's inner door. Readable early enough to shoot them from the right cannon?
+- [ ] Infested room: now and then a part stops responding for 4 s (fuzz + "SPORES · n s" on it, a banner, the prompt says why). After a minute a part breaks. Fair? Too often / too rare?
+- [ ] Walk through the deck door from an infested room: the spores follow you up (puffs through the doorway). The reactor room's doors: they shrivel, never get in.
+- [ ] Vent panel (no fire needed now): PIN from the sticky note, the room vents, "aired out" ~2 s later. Then the cannon room above: from the vented room force the deck door up; then the door to the bridge. Doable alone before the vent closes?
+- [ ] Spore mother: the silent scream (mouth wide, tongue up), the green cloud billowing to the ship and round the hull, "don't use the airlocks!". Go outside anyway: the airlock room gets spores. Vent during the cloud: it vents, puts out fires, but "the spore cloud blew right back in".
+- [ ] Is the sidebar card ("SPORES — Left airlock · vent it: airlock panel, PIN on sticky note") enough to know what to do?
+
 ## Chapter 2 (Strange Cargo): the pods
 - [ ] Two strapped cargo pods sit in the reactor room (bottom right). The objective reads "Deliver the cargo pods to the Xenobiology Institute".
 - [ ] A radar scan doesn't give it away.
@@ -82,3 +90,12 @@ Tick off what works; note what doesn't.
 - [ ] Broken or locked outer airlock: the override vents the room, both doors stand open, then shut again.
 - [ ] Vent panel with an intruder near the airlock: it gets dragged through the chamber and out.
 - [ ] Multiplayer: everyone sees the doors and the pump; a crewmate stepping out shows on the hull.
+
+## Leeches drink energy (2026-10-22, practice "Leech swarm (right)")
+- [ ] Six latch on the right: nothing breaks any more. A glowing energy ball leaves the right capacitor (its pips drop), creeps along the cable, vanishes into the wall, comes out on the hull and crawls to one leech; that leech swells, the next ball sets off for the next leech. Readable? Too subtle / too much?
+- [ ] Speed: with 6 latched a unit goes every ~4 s (a full capacitor in ~12 s); with 1 left, ~24 s per unit. Does the speed-up with more leeches show?
+- [ ] Empty capacitor: no ball, they wait; the reactor's next energy on RIGHT is taken right away. Parking the lever on RIGHT keeps ahead of one leech, not of six.
+- [ ] Pry the last one off (or shoot them all) while a ball is out: it rolls back and the energy is back in the capacitor.
+- [ ] HUD: RIGHT throbs leech-red while they drink; the sidebar card says "N latched, sucking the right capacitor". The banner says they suck our energy.
+- [ ] Chapter 8, phase 3: a missed window's leeches drink that side's capacitor (the cannon you need for the eye). Still a fair punishment?
+- [ ] Both views (sprites and ?classic), and in multiplayer the ball moves the same for everyone.
