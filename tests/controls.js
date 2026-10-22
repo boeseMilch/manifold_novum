@@ -30,7 +30,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const b = G.SHIELD_BUTTONS[0]; G.CAPACITORS[0].charge = 2; me.x = b.x; me.y = b.y + 0.8; G.simTick(DT);
   clickAt(G, b.x, b.y);
   check(G.combat.shields.port.up > 0, 'clicking a shield button raises the shield');
-  const L = G.DECK_DOORS[0]; me.x = L.x + L.w / 2; me.y = G.SPINE_Y1 + 0.6; tickN(G, 30);
+  const L = G.DECK_DOORS[0]; me.x = L.x + L.w / 2; me.y = G.SPINE_Y1 + 0.6; tickN(G, 70);   // (a door reacts after 0.4 s, slides 0.6 s)
   check(L.open > 0.95, 'standing in front of a deck door opens it');
   L.locked = true; tickN(G, 60);
   check(L.open === 0, 'locked, it shuts (and stays shut with you in front of it)');

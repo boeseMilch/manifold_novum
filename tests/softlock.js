@@ -113,6 +113,7 @@ const sysOf = (G, ref) => G.SYSTEMS.find(s => s.ref === ref);
     G.netServer.addCrew(11, 'A'); G.netServer.addCrew(12, 'B');
     const [A, B] = G.crew, L = G.DECK_DOORS[0], cx = L.x + L.w / 2;
     A.x = cx - 0.4; A.y = G.SPINE_Y1 + 0.6; B.x = cx + 0.4; B.y = G.SPINE_Y1 + 0.6;
+    for (let i = 0; i < 64; i++) G.simTick(DT);       // (the door reacts after 0.4 s and slides open in 0.6 s)
     for (let i = 0; i < 60; i++) { G.netServer.input(11, { keys: ['KeyW'], pressed: [], mouse: {} }); G.netServer.input(12, { keys: i < 25 ? ['KeyW'] : [], pressed: [], mouse: {} }); G.simTick(DT); }
     check(A.y < G.SPINE_Y0 && G.inRect(B.x, B.y, L), `A walks through, B stops in the passage (A at ${A.y.toFixed(1)}, B at ${B.y.toFixed(1)})`);
     for (let i = 0; i < 60 * 3; i++) { G.netServer.input(11, { keys: ['KeyW'], pressed: [], mouse: {} }); G.netServer.input(12, { keys: [], pressed: [], mouse: {} }); G.simTick(DT); }

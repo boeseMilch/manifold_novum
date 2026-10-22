@@ -3557,3 +3557,9 @@ The user corrected the revamp: every door opens for anyone by default, aliens an
 override), pirates (they force it, DOOR_PRY_LOCKED 8 s); aliens wait at it. doorFriends now includes intruders and
 pirates inside; alienDoorOk passes any door that isn't stuck; pryDoor only for stuck doors (DOOR_PRY_TIME gone).
 tests/doors.js rewritten for the rule.
+
+### Doors: a noticeable delay (2026-10-22, js/game.js)
+The user: an unlocked door should still open with a delay the player notices (it opened in ~0.2 s: you walked straight
+through). Now a door reacts DOOR_DELAY 0.4 s after someone steps up (a hiss for the crew member who did: sfxFor) and slides
+open in DOOR_TIME 0.6 s (was 0.3): ~0.75 s until you can pass. An already open door stays open for whoever follows (no new
+delay). tools/travel-table.json rebuilt; tests updated to the timing (tests/doors.js checks the delay).

@@ -162,7 +162,10 @@ function updateCrew(c, dt, ix, iy) {
 // (forceDoor). Every door opens for anyone, intruders and pirates too; a locked one only humans override: pirates force it,
 // slowly (pryDoor); intruders wait.
 // ---------------------------------------------------------------------------
-const DOOR_TIME = 0.3, DOOR_SENSE = 1.0, DOOR_LINGER = 1.0;   // s to slide open / shut; reach of the sensor; s it stays open after
+const DOOR_TIME = 0.6, DOOR_SENSE = 1.0, DOOR_LINGER = 1.0;   // s to slide open / shut; reach of the sensor; s it stays open after
+// (2026-10-22, the user: a noticeable delay at a shut door: it reacts DOOR_DELAY s after someone steps up (a hiss), then
+// slides open in DOOR_TIME s: ~0.75 s until you can pass. An open door stays open for whoever follows.)
+const DOOR_DELAY = 0.4;
 const DOOR_HOLD = 5;                                // s a forced pressure door stays open (the rooms equalize meanwhile)
 const DOOR_PRY_LOCKED = 8;                 // s pirates need to force a locked or broken door (an unlocked one opens for them)
 
@@ -190,8 +193,11 @@ function updateDoors(dt) {
     d.hold = Math.max(0, (d.hold || 0) - dt);
     d.blast = doorPressure(d);
     if (d.pry > 0 && !(d.pryAt > time - 0.25)) d.pry = Math.max(0, d.pry - dt * 0.1);   // (nobody forcing it any more: slowly back)
-    const auto = !doorStuck(d);
-    d.stay = auto && friends.some(c => nearDoor(d, c.x, c.y, DOOR_SENSE)) ? DOOR_LINGER : Math.max(0, (d.stay || 0) - dt);
+    const auto = !doorStuck(d), at = auto ? friends.find(c => nearDoor(d, c.x, c.y, DOOR_SENSE)) : null;
+    const before = d.sense || 0;
+    d.sense = at ? Math.min(DOOR_DELAY, before + dt) : d.open > 0 ? DOOR_DELAY : 0;   // (the sensor's reaction; an open door: at once)
+    if (at && before < DOOR_DELAY && d.sense >= DOOR_DELAY && d.open === 0 && crew.includes(at)) sfxFor(at, 'hatch');
+    d.stay = at && d.sense >= DOOR_DELAY ? DOOR_LINGER : Math.max(0, (d.stay || 0) - dt);
     const inIt = d.open > 0.25 && bodies.some(c => inRect(c.x, c.y, d, CREW_R));
     const want = d.hold > 0 || d.jammed || inIt || (auto && d.stay > 0);
     d.open = clamp(d.open + (want ? dt : -dt) / DOOR_TIME, 0, 1);

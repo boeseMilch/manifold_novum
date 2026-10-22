@@ -6,7 +6,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'tick', 'me', 'player', 'crew', 'makeCrew', 'DOORS', 'DOORWAYS', 'DECK_DOORS', 'SYSTEMS', 'SPINE_Y0', 'SPINE_Y1',
   'roomAt', 'inRect', 'walkRects', 'canStand', 'ui', 'overrideHit', 'breachRoom', 'hz', 'vacuumRoom', 'boarding', 'spawnInvader', 'dk', 'ITEMS',
   'FUEL_CRATE', 'power', 'PIRATE_HP', 'newUid', 'mission', 'startMission', 'combat', 'netSerialize', 'netApply', 'netServer', 'roomLinkOpen', 'ROOMS',
-  'DOOR_LINGER', 'DOOR_PRY_LOCKED', 'DOOR_HOLD', 'doorName'];
+  'DOOR_LINGER', 'DOOR_DELAY', 'DOOR_TIME', 'DOOR_PRY_LOCKED', 'DOOR_HOLD', 'doorName'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -30,15 +30,17 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     check(!G.walkRects().includes(L), 'a closed door is a wall');
     me.x = cx; me.y = G.SPINE_Y1 + 2.5; tickN(G, 30);
     check(L.open === 0, '2.5 units away: still closed');
-    me.x = cx; me.y = G.SPINE_Y1 + 0.9; tickN(G, 20);
-    check(L.open === 1, 'within a unit of it (standing still): it slides open');
+    me.x = cx; me.y = G.SPINE_Y1 + 0.9; tickN(G, Math.round(G.DOOR_DELAY * 0.8 / DT));
+    check(L.open === 0, `stepping up, it doesn't open at once (a noticeable delay: it reacts after ${G.DOOR_DELAY} s)`);
+    tickN(G, Math.round((G.DOOR_DELAY * 0.2 + G.DOOR_TIME) / DT) + 2);
+    check(L.open === 1, `within a unit of it (standing still): it slides open (${G.DOOR_DELAY} + ${G.DOOR_TIME} s)`);
     walk(G, me, 'KeyW', 3, () => me.y < G.SPINE_Y0 - 1.6);
     check(me.y < G.SPINE_Y0 - 1.6 && G.roomAt(me.x, me.y)?.deck === 'top', 'you walk straight through to the upper deck');
     tickN(G, Math.round(G.DOOR_LINGER * 0.5 / DT));
     check(L.open > 0.9, 'it stays open for a moment after you left');
-    tickN(G, 60);
+    tickN(G, Math.round((G.DOOR_LINGER * 0.5 + G.DOOR_TIME) / DT) + 4);
     check(L.open === 0, `…and shuts about ${G.DOOR_LINGER} s after nobody is near`);
-    const d = G.DOORWAYS[0]; me.x = d.x - 0.7; me.y = d.y + d.h / 2; tickN(G, 20);
+    const d = G.DOORWAYS[0]; me.x = d.x - 0.7; me.y = d.y + d.h / 2; tickN(G, Math.round((G.DOOR_DELAY + G.DOOR_TIME) / DT) + 2);
     check(d.open === 1, 'a doorway between rooms opens the same way');
     me.x = d.x - 3; tickN(G, 120);
     check(d.open === 0, 'and shuts again');
@@ -165,9 +167,9 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     const [A] = G.crew, L = G.DECK_DOORS[1];
     A.x = L.x + L.w / 2; A.y = G.SPINE_Y1 + 0.6; G.DOORWAYS[1].locked = true; G.DOORWAYS[3].pry = 0.4;
     G.SYSTEMS.find(s => s.ref === G.DECK_DOORS[2]).broken = true; G.DECK_DOORS[2].jammed = true;
-    tickN(G, 30);
+    tickN(G, Math.round((G.DOOR_DELAY + G.DOOR_TIME) / DT) + 4);
     const C = loadGame(NAMES); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), 11);
-    check(C.DECK_DOORS[1].open === 1 && C.DOORWAYS[1].locked && C.DOORWAYS[3].pry > 0.3 && C.DECK_DOORS[2].jammed, 'a browser gets every door\'s state: open, locked, pried, jammed');
+    check(C.DECK_DOORS[1].open === 1 && C.DOORWAYS[1].locked && C.DOORWAYS[3].pry > 0.25 && C.DECK_DOORS[2].jammed, 'a browser gets every door\'s state: open, locked, pried, jammed');
     check(C.walkRects().includes(C.DECK_DOORS[1]) && !C.walkRects().includes(C.DECK_DOORS[0]), 'and walks (predicts) through the open ones only');
     G.breachRoom('portGun'); tickN(G, 5); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), 11);
     check(C.DOORWAYS[0].blast && C.DECK_DOORS[0].blast, 'the blast doors too');
