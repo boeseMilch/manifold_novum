@@ -67,7 +67,7 @@ Tick off what works; note what doesn't.
 - [ ] Security: lock a door. Walking up, the label says "locked. Click / E: manual override"; three whacks open it.
 - [ ] A broken deck door stays shut ("broken, stuck shut"); forced, it stays open until repaired.
 - [ ] Hull breach (practice): the doors of that room stay shut ("pressure difference … vents the bridge!"). Forcing one vents the room you're in until it shuts again (vacuum tint, slow walking). Doors to the reactor room can't be forced (the cat).
-- [ ] Intruder (practice): it can't open doors. Shut out, it waits by the door towards you; open that door and it's there. Fun or annoying? Too easy to keep it boxed in?
+- [ ] Intruder (practice): doors open for it like for anyone; lock them at the security console and it can't get through (it waits by the locked door towards you). Fun? Too easy?
 - [ ] Chapter 2: the two pod aliens are stuck in the reactor room until someone opens a door. Still a fight?
 - [ ] Pirates (practice "Pirates dock"): at a shut door they stop and force it (sparks, "PIRATE · FORCING THE DOOR", an orange ring on the door), ~3 s; a locked one ~8 s.
 - [ ] The spine is thinner and the deck doors look right (sprites and ?classic); nothing sits in a wall in the bottom rooms (toilet, cat, capacitor, dumbbells, shield buttons, cables).

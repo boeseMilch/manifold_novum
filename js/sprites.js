@@ -35,8 +35,8 @@ function buildWalls() {
   const H = [], V = [];
   // (the outer airlocks' chambers too: walled in like a room, but low on both ends, so you see into them: their
   // north wall is the near wall of the room piece above, the south one their own near wall, not the back wall of
-  // the room piece below)
-  const chambers = HATCHES.map(h => h.chamber), inBlock = (x, y) => Object.values(OL_BLOCK).some(b => inRect(x, y, b, -E));
+  // the room piece below; the inner door's strip counts too: the south wall runs on under its jamb, 2026-10-22)
+  const chambers = HATCHES.flatMap(h => [h.chamber, h.inner]), inBlock = (x, y) => Object.values(OL_BLOCK).some(b => inRect(x, y, b, -E));
   for (const r of [...ROOM_RECTS, ...chambers]) {
     const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h, chamber = chambers.includes(r);
     if (Math.abs(y0 - SPINE_Y1) > E && !chamber) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05) && !inBlock(x, y0 - 0.3)))

@@ -159,15 +159,19 @@ function updateCrew(c, dt, ix, iy) {
 // Inner doors (DOORS in js/ship.js: the doorways and the deck doors). Closed until a crew member (or a
 // friendly NPC) is in front of one; shut again DOOR_LINGER s after nobody is; never on anyone in the doorway.
 // Locked, broken or with a pressure difference across it, a door doesn't open by itself: the manual override
-// (forceDoor). Intruders can't open a closed door at all; pirates force it, slowly (pryDoor).
+// (forceDoor). Every door opens for anyone, intruders and pirates too; a locked one only humans override: pirates force it,
+// slowly (pryDoor); intruders wait.
 // ---------------------------------------------------------------------------
 const DOOR_TIME = 0.3, DOOR_SENSE = 1.0, DOOR_LINGER = 1.0;   // s to slide open / shut; reach of the sensor; s it stays open after
 const DOOR_HOLD = 5;                                // s a forced pressure door stays open (the rooms equalize meanwhile)
-const DOOR_PRY_TIME = 3, DOOR_PRY_LOCKED = 8;                 // s pirates need to force a closed door / a locked or broken one
+const DOOR_PRY_LOCKED = 8;                 // s pirates need to force a locked or broken door (an unlocked one opens for them)
 
 // Who the door sensors open for: crew aboard on their feet, and a friendly NPC walking through our ship.
+// (2026-10-21, the user: every door opens for anyone, aliens and pirates too; only a locked one (security, a pressure loss)
+// stays shut, and only humans can override that: the crew, pirates (pryDoor); aliens wait)
 const doorFriends = () => [...crew.filter(c => c.mode === 'inside' && standing(c)),
-  ...(typeof dk !== 'undefined' && dk.npc && dk.npc.state !== 'down' && roomAt(dk.npc.x, dk.npc.y) ? [dk.npc] : [])];
+  ...(typeof dk !== 'undefined' && dk.npc && dk.npc.state !== 'down' && roomAt(dk.npc.x, dk.npc.y) ? [dk.npc] : []),
+  ...boarding.invaders.filter(a => a.mode === 'inside' && roomAt(a.x, a.y)), ...(typeof dk !== 'undefined' ? dk.pirates.filter(p => roomAt(p.x, p.y)) : [])];
 // Everyone a door must not shut on (anything with a body inside the ship).
 const actors = () => [...crew.filter(c => c.mode === 'inside'), ...boarding.invaders.filter(a => a.mode === 'inside'),
   ...(typeof dk !== 'undefined' ? [...dk.pirates, ...(dk.npc ? [dk.npc] : [])] : [])];
@@ -207,14 +211,14 @@ function forceDoor(d) {
   if (vents) { d.hold = DOOR_HOLD; combatBanner(`${doorName(d)} forced — the ${vents.name.toLowerCase()} vents!`); sfx.whoosh?.(); }
   else if (doorBroken(d)) d.hold = 0.5;
 }
-// Pirates (js/dock.js pirateStep) can't walk through a closed door, but they force it: standing at it for DOOR_PRY_TIME s
-// (a locked or broken one DOOR_PRY_LOCKED s; several pirates together are quicker). A door with vacuum behind it they
+// Pirates (js/dock.js pirateStep): a door opens for them like for anyone; a locked or broken one they force (humans can do a
+// manual override): standing at it for DOOR_PRY_LOCKED s (several pirates together are quicker). A door with vacuum behind it they
 // leave alone (they wait: it would blow them about too). True while it's at it. tx, ty: where it's heading.
 function pryDoor(p, dt, tx, ty) {
-  const d = DOORS.find(d => d.open < DOOR_WALK && nearDoor(d, p.x, p.y, 1.2, 0.3) && !d.blast && !(d.hold > 0) &&
+  const d = DOORS.find(d => d.open < DOOR_WALK && doorStuck(d) && nearDoor(d, p.x, p.y, 1.2, 0.3) && !d.blast && !(d.hold > 0) &&
     ((tx - p.x) * (d.x + d.w / 2 - p.x) + (ty - p.y) * (d.y + d.h / 2 - p.y) > 0 || nearDoor(d, tx, ty, 0.3, 0.3)));
   if (!d) { p.pry = -1; return false; }
-  const need = d.locked || doorBroken(d) ? DOOR_PRY_LOCKED : DOOR_PRY_TIME, before = d.pry || 0;
+  const need = DOOR_PRY_LOCKED, before = d.pry || 0;
   d.pry = before + dt / need; d.pryAt = time; p.pry = DOORS.indexOf(d);
   p.face = Math.atan2(d.y + d.h / 2 - p.y, d.x + d.w / 2 - p.x);
   if (!before) combatBanner(`A pirate is forcing the ${doorName(d).replace(/^Door/, 'door')}!`);

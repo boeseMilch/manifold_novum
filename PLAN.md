@@ -3550,3 +3550,10 @@ The user: "for the outer airlocks we actually want the double doors" (while the 
 - Tests: tests/airlock.js (new: out and back through real inputs per side, only one door at a time, the upgrade, the pass
   time vs a real walk, the manual cycle, a docked pirate ship, the derelict, broken + override, locked, the vent, intruders,
   multiplayer); hazards, controls, interact, softlock, clutter, dock updated.
+
+### Doors open for anyone; only a locked one needs a human (2026-10-21, js/game.js, js/invader.js)
+The user corrected the revamp: every door opens for anyone by default, aliens and pirates included; only a locked one
+(security console, or a pressure loss on either side) stays shut, and only humans can override that: the crew (manual
+override), pirates (they force it, DOOR_PRY_LOCKED 8 s); aliens wait at it. doorFriends now includes intruders and
+pirates inside; alienDoorOk passes any door that isn't stuck; pryDoor only for stuck doors (DOOR_PRY_TIME gone).
+tests/doors.js rewritten for the rule.

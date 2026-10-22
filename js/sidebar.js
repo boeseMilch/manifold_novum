@@ -34,7 +34,7 @@ function encounterPlates() {
       : a.state === 'work' ? `wrecking the ${a.task.sys.name.toLowerCase()} · ${Math.ceil(a.task.need - a.task.t)} s`
       : a.state === 'sneak' || a.state === 'cloak' ? `cloaked · somewhere next to the ${room(a.room) || "airlock"}`
       : a.kind === 'saboteur' ? `in the ${room(a.room) || 'ship'}`
-      : DOORS[a.waitDoor] && !a.path?.length ? `waiting at a shut door · in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'ship'}`   // (it can't open doors)
+      : DOORS[a.waitDoor] && !a.path?.length ? `waiting at a locked door · in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'ship'}`   // (it can't open doors)
       : `hunting · in the ${roomAt(a.x, a.y)?.name.toLowerCase() || 'airlock'}`;
     const sab = a.kind === 'saboteur';
     add('inv' + uid(a), { icon: 'alien', title: sab ? 'SABOTEUR' : 'INTRUDER', sub: `${where} · ${a.hp}/${invaderMaxHp(a)} hp`, stripe: sab ? '#5ae0ff' : '#9cff5a', red: true });

@@ -168,7 +168,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   G.mission.t = ev.t - 10; G.radarScan();
   check(!G.mission.revealed.has(ev.id) && G.objectiveStatus().text === pre.text, 'a radar scan just before doesn\'t see it coming (the cover story stays)');
   // the event: pod 1 stirs (banner), bursts POD_STIR s later; pod 2 POD_GAP s after pod 1
-  G.mission.active = false; G.boarding.invaders.length = 0; G.runEvent(ev); G.tick(DT);
+  G.mission.active = false; G.boarding.invaders.length = 0; for (const d of G.DOORS) d.locked = true; G.runEvent(ev); G.tick(DT);   // (security locked every door: aliens can't override that)
   check(G.objectiveStatus().text === 'Kill both intruders (0/2 dead)', `as soon as the first pod stirs it's explicit: "${G.objectiveStatus().text}"`);
   check(pods[0].state === 'stir' && !G.boarding.invaders.length && /moving in the cargo pod/.test(G.combat.banner?.text || ''), `first a warning: the pod stirs ("${G.combat.banner?.text}"), nothing is out yet`);
   let t1 = null, t2 = null;
@@ -188,19 +188,20 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
     H.mission.active = false; H.runEvent({ t: 0, kind: 'intruder', side: 'port', count: 2, pods: true });
     check(H.boarding.invaders.length === 2 && H.boarding.invaders.every(a => a.state === 'entering' && a.hatch), 'with no sealed pod left they come in through the airlocks');
   }
-  // nobody aboard: they can't open the deck doors, so neither gets out of the reactor room; the upper-deck one
-  // waits by the deck door up, the other prowls the room
+  // nobody aboard, every door locked (doors open for aliens, 2026-10-21; a locked one only humans override): neither gets
+  // out of the reactor room; the upper-deck one waits by the deck door up, the other prowls the room
   G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;
   const top = p.zone === 'top' ? p : q, bot = top === p ? q : p, M = G.DECK_DOORS[1], mx = M.x + M.w / 2;
   let out = 0;
   for (let i = 0; i < 60 * 60; i++) { G.tick(DT); G.player.x = -2.5; G.player.y = 10; if ([p, q].some(a => G.roomAt(a.x, a.y)?.id !== 'reactor')) out++; }
-  check(out === 0, `with the doors shut both stay in the reactor room (${out} frames elsewhere)`);
+  check(out === 0, `with the doors locked both stay in the reactor room (${out} frames elsewhere)`);
   check(Math.hypot(top.x - mx, top.y - (M.y + M.h)) < 2.2, `the upper-deck one waits by the middle deck door, up (${top.x.toFixed(1)}, ${top.y.toFixed(1)})`);
-  // you on the upper deck, at that door: it opens, the upper one comes for you, the lower one keeps to its deck ... until it's the last one
+  // the doors unlocked, you on the upper deck at that door: it opens, the upper one comes for you, the lower one keeps to its deck ... until it's the last one
+  for (const d of G.DOORS) d.locked = false;
   G.player.mode = 'inside'; G.player.x = mx; G.player.y = G.SPINE_Y0 - 0.8;
   let botUp = 0;
   for (let i = 0; i < 60 * 40 && top.state !== 'fight'; i++) { G.tick(DT); G.player.x = mx; G.player.y = G.SPINE_Y0 - 0.8; G.player.health = 'ok'; if (G.roomAt(bot.x, bot.y)?.deck === 'top') botUp++; }
-  check(top.state === 'fight' && botUp === 0, `you open the deck door: the upper-deck alien attacks, the lower-deck one stays below (${top.state}, ${botUp} frames up top)`);
+  check(top.state === 'fight' && botUp === 0, `unlocked, the deck door opens: the upper-deck alien attacks, the lower-deck one stays below (${top.state}, ${botUp} frames up top)`);
   G.hurtInvader(top, 99); G.tick(DT);
   check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Kill both intruders (1/2 dead)', `one down: "${G.objectiveStatus().text}"`);
   let t = 0;

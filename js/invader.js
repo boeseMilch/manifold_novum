@@ -1,7 +1,7 @@
 // Boarders that come in through a side outer airlock (boarding.invaders, `kind` 'alien' or 'saboteur'):
-// - the alien (the fighter): hunts the crew room by room and fights whoever it finds. It can't open a door
-//   (since 2026-10-21 they're all closed unless a crew member stands in front of one): it slips through open ones,
-//   and shut out it waits by the door towards its prey (or prowls its room) for someone to open it. It: keeps its distance, strafes, sidesteps incoming shots, spits acid, pounces.
+// - the alien (the fighter): hunts the crew room by room and fights whoever it finds. Doors open for it like for anyone
+//   (2026-10-21); a locked one (security, a pressure loss) it can't override: shut out, it waits by that door towards its
+//   prey (or prowls its room) until it opens. It: keeps its distance, strafes, sidesteps incoming shots, spits acid, pounces.
 // - the saboteur (the sneak): cloaks once inside and pops up next to a part in one of the rooms next to
 //   that airlock (you know the airlock, not which of the two rooms), then wrecks the part. Solo there's
 //   just time to run over from the other room; with a crew you need someone in each. Weak in a fight.
@@ -19,7 +19,7 @@ const boarding = { invaders: [], bolts: [] };
 
 // ---------------------------------------------------------------------------
 // Navigation graph: room spots, doorways, the deck doors (an approach on each deck and the passage between).
-// Nodes on a door (n.door) are only passable while that door is, for whoever can't open doors (navPath's ok).
+// Nodes on a door (n.door) are passable for an alien unless that door is stuck (locked / broken / pressure; navPath's ok).
 // ---------------------------------------------------------------------------
 const NAV_SPOTS = { portGun: [7, 7.6], bridge: [22.2, 9.2], starGun: [37, 7.2], portLock: [7.5, 19], reactor: [22.2, 16.6], starLock: [37, 19.6] };
 const NAV = (() => {
@@ -76,8 +76,9 @@ function nearestNavSeen(x, y) {
   NAV.nodes.forEach((n, i) => { const d = Math.hypot(n.x - x, n.y - y); if (d < bd && lineOfSight(x, y, n.x, n.y)) { bd = d; best = i; } });
   return best >= 0 ? best : nearestNav(x, y);
 }
-// An alien gets through a door only while it stands open (it can't open one).
-const alienDoorOk = (d) => d.open > DOOR_WALK;
+// An alien gets through any door that isn't locked / broken / a pressure door (it opens for it, like for anyone); a stuck one
+// is a wall to it (only humans override).
+const alienDoorOk = (d) => d.open > DOOR_WALK || !doorStuck(d);   // (a door opens for an alien too; a locked / broken / pressure one stays a wall to it)
 
 // Is a straight line between two points free of walls (inside the ship)?
 function lineOfSight(x0, y0, x1, y1) {

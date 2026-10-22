@@ -6,7 +6,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'tick', 'me', 'player', 'crew', 'makeCrew', 'DOORS', 'DOORWAYS', 'DECK_DOORS', 'SYSTEMS', 'SPINE_Y0', 'SPINE_Y1',
   'roomAt', 'inRect', 'walkRects', 'canStand', 'ui', 'overrideHit', 'breachRoom', 'hz', 'vacuumRoom', 'boarding', 'spawnInvader', 'dk', 'ITEMS',
   'FUEL_CRATE', 'power', 'PIRATE_HP', 'newUid', 'mission', 'startMission', 'combat', 'netSerialize', 'netApply', 'netServer', 'roomLinkOpen', 'ROOMS',
-  'DOOR_LINGER', 'DOOR_PRY_TIME', 'DOOR_PRY_LOCKED', 'DOOR_HOLD', 'doorName'];
+  'DOOR_LINGER', 'DOOR_PRY_LOCKED', 'DOOR_HOLD', 'doorName'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -105,33 +105,30 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     me.x = d.x - 0.7; tickN(G, 30);
     check(/cat/.test(me.prompt?.text || '') && !me.prompt.ok, `nor from the vacuum side ("${me.prompt?.text}")`);
   }
-  // --- intruders can't open doors: shut out, it waits by the door to you (no jitter); opened, it comes through
+  // --- intruders (2026-10-21, the user: every door opens for anyone): an unlocked door opens for an alien too; a locked one
+  // stays shut (only humans override): shut out, it waits by the door to you (no jitter); opened, it comes through
   {
     const G = fresh(), me = G.me, d = G.DOORWAYS[2];
     G.spawnInvader('port'); const a = inside(G, G.boarding.invaders[0], 7, 19);
-    me.x = 27; me.y = 22; tickN(G, 60 * 12);
-    check(G.roomAt(a.x, a.y)?.id === 'portLock' && d.open === 0, `with every door shut it stays in its room (${G.roomAt(a.x, a.y)?.name})`);
-    const near = Math.hypot(a.x - (d.x + d.w / 2), a.y - (d.y + d.h / 2));
-    const x0 = a.x, y0 = a.y; tickN(G, 60 * 3);
-    check(near < 2.6 && Math.hypot(a.x - x0, a.y - y0) < 0.3, `it waits by the door towards you (${near.toFixed(1)} from it), keeping still (moved ${Math.hypot(a.x - x0, a.y - y0).toFixed(2)})`);
-    check(d.open === 0, 'its being there doesn\'t open the door');
-    me.x = d.x + d.w + 0.8; me.y = d.y + d.h / 2;   // you walk up to the door from the other side: it opens
-    const hits0 = G.combat.hits.crew;
-    let t = 0, spat = false; for (; t < 10 && !(a.state === 'fight' && spat); t += DT) { G.simTick(DT); me.health = 'ok'; me.x = d.x + d.w + 0.8; me.y = d.y + d.h / 2; spat ||= G.boarding.bolts.some(b => b.owner === 'alien') || G.combat.hits.crew > hits0; }
-    check(t < 10 && d.open === 1, `you open the door: it attacks you through it (${t.toFixed(1)} s)`);
+    me.mode = 'eva'; me.x = -3; me.y = 10;          // nobody aboard: it prowls, through unlocked doors too
+    const rooms = new Set(); tickN(G, 60 * 60, () => rooms.add(G.roomAt(a.x, a.y)?.id));
+    check([...rooms].filter(Boolean).length >= 2, `an unlocked door opens for an alien: it prowls from room to room (${[...rooms].filter(Boolean)})`);
   }
   {
-    const G = fresh(), me = G.me;
+    const G = fresh(), me = G.me, d = G.DOORWAYS[2];
+    for (const q of G.DOORS) q.locked = true;        // security locked every door
     G.spawnInvader('port'); const a = inside(G, G.boarding.invaders[0], 7, 19);
-    me.mode = 'eva'; me.x = -3; me.y = 10;          // nobody aboard: it prowls its own room
-    const rooms = new Set(); let moved = 0, px = a.x, py = a.y;
-    tickN(G, 60 * 40, () => { rooms.add(G.roomAt(a.x, a.y)?.id); moved += Math.hypot(a.x - px, a.y - py); px = a.x; py = a.y; });
-    check(rooms.size === 1 && moved > 8, `nobody aboard: it prowls about its room (walked ${moved.toFixed(0)} units) and never leaves it (${[...rooms]})`);
-    G.DOORWAYS[2].hold = 999;                        // a door held open: now it can go through
-    tickN(G, 60 * 60, () => rooms.add(G.roomAt(a.x, a.y)?.id));
-    check(rooms.has('reactor') && !rooms.has('portGun'), `through an open door it prowls on, only that way (${[...rooms].filter(Boolean)})`);
+    me.x = 27; me.y = 22; tickN(G, 60 * 12);
+    check(G.roomAt(a.x, a.y)?.id === 'portLock' && d.open === 0, `with every door locked it stays in its room (${G.roomAt(a.x, a.y)?.name})`);
+    const near = Math.hypot(a.x - (d.x + d.w / 2), a.y - (d.y + d.h / 2));
+    const x0 = a.x, y0 = a.y; tickN(G, 60 * 3);
+    check(near < 2.6 && Math.hypot(a.x - x0, a.y - y0) < 0.3, `it waits by the locked door towards you (${near.toFixed(1)} from it), keeping still (moved ${Math.hypot(a.x - x0, a.y - y0).toFixed(2)})`);
+    check(d.open === 0, 'an alien can\'t override a locked door');
+    G.DOORWAYS[2].locked = false;                    // unlocked again: it opens for the alien, and it comes for you
+    let t = 0; for (; t < 15 && G.roomAt(a.x, a.y)?.id !== 'reactor'; t += DT) { G.simTick(DT); me.health = 'ok'; }
+    check(G.roomAt(a.x, a.y)?.id === 'reactor', `unlocked, the door opens for it and it comes through (${t.toFixed(1)} s)`);
   }
-  // --- pirates force closed doors, slowly
+  // --- pirates: a door opens for them like for anyone; a locked one they force (a manual override: humans), slowly
   for (const lockIt of [false, true]) {
     const G = fresh(), me = G.me, d = G.DOORWAYS[2];
     me.x = 37; me.y = 7; G.ITEMS.length = 0; G.power.reserve = 3;
@@ -140,8 +137,9 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     G.dk.pirates.push(p);
     let t = 0, forcing = false;
     for (; t < 20 && d.open < 0.6; t += DT) { G.simTick(DT); p.cd = 99; if (p.pry >= 0 && d.pry > 0) forcing = true; }
-    const need = lockIt ? G.DOOR_PRY_LOCKED : G.DOOR_PRY_TIME;
-    check(forcing && t > need && t < need + 5, `a pirate forces a ${lockIt ? 'locked' : 'closed'} door: it stands at it (p.pry), the door gives after ${t.toFixed(1)} s (needs ${need} s)`);
+    const need = G.DOOR_PRY_LOCKED;
+    if (lockIt) check(forcing && t > need && t < need + 5, `a pirate forces a locked door: it stands at it (p.pry), the door gives after ${t.toFixed(1)} s (needs ${need} s)`);
+    else check(!forcing && t < 15, `an unlocked door just opens for a pirate (${t.toFixed(1)} s from where it started), no forcing`);
     if (lockIt) check(!d.locked, '…and the lock is broken');
     for (t = 0; t < 10 && G.roomAt(p.x, p.y)?.id !== 'reactor'; t += DT) { G.simTick(DT); p.cd = 99; }
     check(G.roomAt(p.x, p.y)?.id === 'reactor', 'then it walks through');
