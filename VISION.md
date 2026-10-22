@@ -30,8 +30,9 @@ Six rooms in two decks of three zones (red / white / blue):
 | Lower deck | Port airlock    | Reactor               | Starboard airlock |
 
 - Every lower-deck room has a capacitor, and every capacitor starts with 1 charge.
-- Each zone has one way between the decks: a **deck airlock**, which is slow (in, door
-  closes, chamber cycles, far door opens). The lifts were taken out.
+- Each zone has one way between the decks: a **deck door** through the hull block between them (the
+  lifts were taken out; the deck airlocks that came after them became single doors on 2026-10-21).
+  Every inner door is shut until someone stands in front of it.
 
 ## Presentation
 

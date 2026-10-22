@@ -505,7 +505,7 @@ function handlePull() {
 }
 // Somebody is aboard for the jump (every mission): in a room, an airlock chamber or a cannon seat — not outside, not
 // over on a docked ship. (Down or out still counts: they're carried along.) Nobody aboard: the mission fails.
-const crewAboard = () => !crew.length || crew.some(c => c.mode === 'gun' || c.mode === 'hatch' || (c.mode === 'inside' && (!!roomAt(c.x, c.y) || !(typeof inDock === 'function' && inDock(c.x, c.y)))));
+const crewAboard = () => !crew.length || crew.some(c => c.mode === 'gun' || (c.mode === 'inside' && (!!roomAt(c.x, c.y) || !(typeof inDock === 'function' && inDock(c.x, c.y)))));
 // MID can power the jump: intact, with energy in it.
 const midReady = () => !broken(CAPACITORS[1]) && CAPACITORS[1].charge > 0;
 // Not jumping yet (the jump is due): extra encounters at ever shorter gaps (one queued at a time, on the radar
@@ -717,18 +717,11 @@ function spray(mx, my, dt) {
 // ---------------------------------------------------------------------------
 const lockables = () => [
   ...DOORWAYS.map((d, i) => ({ ref: d, kind: 'door', name: `Door ${['left–bridge', 'bridge–right', 'left–reactor', 'reactor–right'][i]}`, x: d.x + d.w / 2, y: d.y + d.h / 2 })),
-  ...DECK_LOCKS.map(Lk => ({ ref: Lk, kind: 'lock', name: `${['Left', 'Middle', 'Right'][Lk.col]} deck airlock`, x: Lk.x + Lk.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2 })),
-  ...HATCHES.map(h => ({ ref: h, kind: 'hatch', name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock`, x: h.x, y: h.y })),
+  ...DECK_DOORS.map(d => ({ ref: d, kind: 'lock', name: doorName(d), x: d.x + d.w / 2, y: d.y + d.h / 2 })),
+  ...HATCHES.map(h => ({ ref: h, kind: 'hatch', name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock`, x: h.chamber.x + h.chamber.w / 2, y: h.y })),
 ];
-// onDone: what the third bonk does (default: unlock). Broken doors use it to force themselves open.
+// onDone: what the third bonk does (default: unlock). Doors use forceDoor (js/game.js).
 function startOverride(ref, name, onDone) { ui.panel = 'override'; ui.override = { ref, name, hits: 0, swing: 0, onDone }; }
-// Broken deck airlock: force open the closed door nearest to you (it stays stuck open).
-function forceDeckLock(Lk) {
-  const mid = (SPINE_Y0 + SPINE_Y1) / 2, inside = player.y > SPINE_Y0 && player.y < SPINE_Y1;
-  let side = player.y < mid ? 'top' : 'bottom';
-  if (inside && Lk.doors[side] > 0.95) side = side === 'top' ? 'bottom' : 'top';   // that one's already open: the other
-  Lk.doors[side] = 1; Lk.open = side; Lk.phase = 'idle'; Lk.locked = false;
-}
 const OVERRIDE_SWING = 0.55, OVERRIDE_IMPACT = 0.62;
 let ovFx = null;                                     // this browser's sparks / dents for the override panel   // swing length; the slam lands at 62% of it
 function overrideHit() {
@@ -975,7 +968,8 @@ function drawFires(t) {
   }
 }
 
-// Vertical sliding door in a doorway (between rooms); red bar when locked.
+// Vertical sliding door in a doorway (between rooms); red bar when locked, a hazard shutter with a pressure
+// difference, sparks / a progress ring while pirates force it (drawDoorPry, also for the deck doors).
 function drawDoorways() {
   for (const d of DOORWAYS) {
     const x = L(d.x), y = L(d.y), w = L(d.w), h = L(d.h), ph = (h / 2) * (1 - d.open);
@@ -987,6 +981,16 @@ function drawDoorways() {
       ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(x + 2, py, w - 4, ph);
     }
     if (d.locked) { ctx.beginPath(); ctx.arc(x + w / 2, y - 8, 4, 0, TAU); ctx.fillStyle = '#e2574c'; ctx.fill(); stroke(1.2); }
+  }
+}
+// Pirates forcing a door: a ring filling up round its middle (both views; the pirates' sparks are combatFx).
+function drawDoorPry() {
+  for (const d of DOORS) {
+    if (!(d.pry > 0)) continue;
+    const [cx, cy] = doorCenter(d);
+    ctx.beginPath(); ctx.arc(L(cx), L(cy), L(0.42), -Math.PI / 2, -Math.PI / 2 + Math.min(1, d.pry) * TAU);
+    ctx.strokeStyle = 'rgba(20,22,27,0.6)'; ctx.lineWidth = 7; ctx.stroke();
+    ctx.strokeStyle = '#ff8a3a'; ctx.lineWidth = 3.5; ctx.stroke();
   }
 }
 
@@ -1042,7 +1046,7 @@ function drawSecurityPanel() {
     ctx.beginPath(); ctx.arc(bx, by, (big ? 9 : 7) + k * 5, 0, TAU); ctx.fillStyle = col.replace('1)', `${0.25 * (1 - k)})`); ctx.fill();
     ctx.beginPath(); ctx.arc(bx, by, big ? 6 : 5, 0, TAU); ctx.fillStyle = col; ctx.fill(); stroke(1.5);
   };
-  for (const c of crew) if (c.mode === 'inside' || c.mode === 'hatch') blip(c.x, c.y, 'rgba(90,170,255,1)', c === player);
+  for (const c of crew) if (c.mode === 'inside') blip(c.x, c.y, 'rgba(90,170,255,1)', c === player);
   if (dk.npc) blip(dk.npc.x, dk.npc.y, 'rgba(90,170,255,1)', false);
   for (const a of boarding.invaders) if (a.state !== 'dormant' && a.mode !== 'cloaked') blip(a.x, a.y, 'rgba(255,70,60,1)', true);
   for (const p of dk.pirates) blip(p.x, p.y, 'rgba(255,70,60,1)', true);
@@ -1050,13 +1054,13 @@ function drawSecurityPanel() {
     const [cx, cy] = P(l.x, l.y), hover = Math.hypot(mouse.x - cx, mouse.y - cy) < 15;
     ctx.beginPath(); ctx.arc(cx, cy, 13, 0, TAU); ctx.fillStyle = l.ref.locked ? '#7a2420' : '#1d4a36'; ctx.fill(); stroke(hover ? 3 : 1.5, l.ref.locked ? '#ff6a5a' : '#5fd6a0');
     ctx.fillStyle = '#ffffff'; ctx.font = '11px system-ui, sans-serif';
-    ctx.fillText(l.ref.locked ? '🔒' : { door: 'D', lock: 'A', hatch: 'H' }[l.kind], cx, cy + 1);
+    ctx.fillText(l.ref.locked ? '🔒' : { door: 'D', lock: '↕', hatch: 'H' }[l.kind], cx, cy + 1);
     ui.hits.push({ x: cx, y: cy, r: 15, cmd: ['lock', li] });
     if (hover) { ctx.fillStyle = '#e8ecf4'; ctx.fillText(`${l.name}: ${l.ref.locked ? 'locked' : 'open'}`, cx, cy + 24); }
   }
   ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
-  ctx.fillText('D door · A deck airlock · H outer airlock · red: enemies · blue: crew. Locked doors can still be forced.', x + 18, y + h - 18);
+  ctx.fillText('D door · ↕ deck door · H outer airlock · red: enemies · blue: crew. Locked doors stay shut (they can still be forced).', x + 18, y + h - 18);
 }
 // During an AI glitch the console only shows the reboot switches (the order is on the helm).
 function drawRebootPanel() {

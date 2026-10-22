@@ -1,6 +1,6 @@
 """Mock composition of the bridge from the interior kit, every piece at the game's coordinates.
 
-Proves the kit fits the layout in js/ship.js (ROOMS, DOORWAYS, DECK_LOCKS, GUNS, LIGHTS). Plain
+Proves the kit fits the layout in js/ship.js (ROOMS, DOORWAYS, DECK_DOORS, GUNS, LIGHTS). Plain
 Python + PIL (no Blender):   python3 tools/blender/models/interior/mock_bridge.py
 Writes /tmp/mn_interior/mock_bridge.png (96 px/unit), mock_bridge_game.png (48 px/unit, game scale)
 and mock_bridge_overlay.png (the game's rects drawn on the floor plane over the render).
@@ -97,10 +97,10 @@ def spine():
         clip = (S(xa, 0)[0], 0, S(xb, 0)[0], H)
         k = math.floor((xa - 0.6) / 2)
         while 0.6 + 2 * k < xb:
-            put(f"interior/spine_{'ab'[k % 2]}", 0.6 + 2 * k, 15.0, clip); k += 1
+            put(f"interior/spine_{'ab'[k % 2]}", 0.6 + 2 * k, 14.0, clip); k += 1
     tiles(X0, LX - 0.6); tiles(LX + 2.8, X1)
-    put('interior/decklock_bottom', LX, 15.0); put('interior/decklock_topdoor_f0', LX, 15.0); put('interior/decklock_botdoor_f5', LX, 15.0)
-items.append((15.0, spine))
+    put('interior/deckdoor_closed', LX, 14.0); put('interior/deckdoor_door_f0', LX, 14.0)
+items.append((14.0, spine))
 items.append((-1.85 + 0.36, lambda: put('interior/gun_ladder', 25.1, -1.85)))
 
 def plaque():                                              # "BRIDGE" on the back wall: label at (q.x + 0.4, q.y + 0.35)
@@ -128,7 +128,7 @@ def rect(r, col, w=2):
     x0, y0, x1, y1 = r; d.rectangle([*S(x0, y0), *S(x1, y1)], outline=col, width=w)
 for r in FLOORS: rect(r, (95, 214, 160, 255))
 for r in DOORWAYS: rect(r, (255, 200, 60, 255))
-rect(R(LX, 12.0, LX + 2.2, 14.5), (120, 190, 255, 255)); rect(R(LX, 11.5, LX + 2.2, 12.0), (255, 120, 255, 255)); rect(R(LX, 14.5, LX + 2.2, 15.0), (255, 120, 255, 255))
+rect(R(LX, 11.5, LX + 2.2, 14.0), (120, 190, 255, 255))   # the deck door's passage
 rect(R(25.1 - 0.36, -1.85 - 0.36, 25.1 + 0.36, -1.85 + 0.36), (255, 80, 80, 255))
 for lx, ly in ((18.5, 4.5), (26.0, 4.5), (22.2, 9.5)):
     sx, sy = S(lx, ly); d.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], outline=(255, 170, 90, 255), width=2)

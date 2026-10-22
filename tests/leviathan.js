@@ -5,7 +5,7 @@ const { loadGame } = require('./harness');
 const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'levStationFor', 'levClickTarget', 'combat', 'simTick', 'crew', 'me', 'makeCrew', 'CAPACITORS',
   'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'LEVB_LEECHES', 'netSerialize', 'netApply',
   'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W',
-  'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_LOCKS', 'interactSpots', 'LEVB_BROOD_WAVES',
+  'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_DOORS', 'FLOOR_RECTS', 'interactSpots', 'LEVB_BROOD_WAVES',
   'LEVB_BROOD_SCALE', 'LEVB_BROOD_HIT', 'LEVB_BROOD_REACH', 'LEVB_BROOD_GAP', 'applyKit', 'netServer', 'levOverrideStatus', 'withCrew', 'GEAR'];
 const { route, clearLine } = require('../tools/travel');
 const DT = 1 / 60;

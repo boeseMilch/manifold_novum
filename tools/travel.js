@@ -1,5 +1,5 @@
 // Travel times inside the ship, measured by walking a crew member through the real game logic
-// (walking speed and acceleration, doorways, deck-airlock cycles), steered with WASD like a player.
+// (walking speed and acceleration, the doors sliding open in front of you), steered with WASD like a player.
 //
 //   node tools/travel.js                     room-to-room table (middle of room A → middle of room B)
 //   node tools/travel.js reactor portGun     one trip, between rooms (ids: portGun bridge starGun portLock reactor starLock)
@@ -10,13 +10,13 @@
 //                                            sends the crew), with and without the kit (~1-2 min, 4 processes). Rebuild it
 //                                            after moving rooms, doors or stations, or when balance.js warns about a missing trip
 //
-// Each trip is walked twice: with every deck airlock open towards you (best) and towards the far side
-// (worst: you wait for a full cycle). "enter" is when you step into the target room, "at" when you're
-// at the target: within click reach of an interactable, or at the middle of a room.
+// Each trip starts with every door shut (they open as you walk up: there's no worse case since the deck airlocks became
+// single doors on 2026-10-21, so best = worst; the table keeps both for its format). "enter" is when you step into the
+// target room, "at" when you're at the target: within click reach of an interactable, or at the middle of a room.
 // From code: const { travel } = require('../tools/travel'); travel('portGun', 'reactor') → { best, worst, ... }
 const { loadGame } = require('../tests/harness');
 const DT = 1 / 60;
-const NAMES = ['tick', 'player', 'ROOMS', 'SYSTEMS', 'STATIONS', 'DECK_LOCKS', 'NAV', 'NAV_SPOTS', 'navPath', 'nearestNav',
+const NAMES = ['tick', 'player', 'ROOMS', 'SYSTEMS', 'STATIONS', 'DOORS', 'FLOOR_RECTS', 'NAV', 'NAV_SPOTS', 'navPath', 'nearestNav',
   'ROOM_RECTS', 'DOORWAYS', 'roomAt', 'sysRooms', 'sabotageSpot', 'REACH', 'CREW_R', 'SPINE_Y0', 'SPINE_Y1', 'canStand', 'applyShipUpgrades'];
 
 // A target: { name, x, y (where to stand / the middle), room, reach (how close counts as there) }
@@ -36,7 +36,7 @@ function resolve(G, spec) {
 // Where you stand when you start at a target: an interactable's standing spot, else the point itself.
 function standAt(G, t, otherEnd) {
   if (!t.part) return [t.x, t.y];
-  // of the part's rooms, start in the one nearest the other end (a deck airlock is used from either deck)
+  // of the part's rooms, start in the one nearest the other end (a deck door is used from either deck)
   const rooms = [...(t.rooms || [t.room])].sort((a, b) => dist(G.NAV_SPOTS[a.id], otherEnd) - dist(G.NAV_SPOTS[b.id], otherEnd));
   for (const r of rooms) { const s = G.sabotageSpot(t.part, r); if (s) return s; }
   return [t.x, t.y + 0.8];
@@ -48,7 +48,7 @@ const dist = ([x0, y0], [x1, y1]) => Math.hypot(x1 - x0, y1 - y0);
 const CELL = 0.2;
 function standGrid(G) {
   if (G._grid) return G._grid;
-  const rects = [...G.ROOM_RECTS, ...G.DOORWAYS, ...G.DECK_LOCKS.flatMap(L => [L.chamber, L.doorRect.top, L.doorRect.bottom])];
+  const rects = G.FLOOR_RECTS || [...G.ROOM_RECTS, ...(G.DOORWAYS || []), ...(G.DECK_DOORS || [])];   // (every floor, all doors open)
   const x0 = -1, y0 = -4, W = Math.ceil(48 / CELL), H = Math.ceil(32 / CELL), ok = new Uint8Array(W * H);
   const m = 0.08;                                     // keep the route a little off walls and door frames
   const stand = (x, y) => G.canStand(x, y, rects) && G.canStand(x - m, y, rects) && G.canStand(x + m, y, rects) && G.canStand(x, y - m, rects) && G.canStand(x, y + m, rects);
@@ -101,12 +101,11 @@ function clearLine(G, x0, y0, x1, y1) {
 }
 
 // One walk: returns { enter, at } in seconds (null if it never got there within `limit`).
-function walk(G, from, to, lockSide, limit = 90) {
-  for (const L of G.DECK_LOCKS) { L.open = lockSide(L); L.doors.top = +(L.open === 'top'); L.doors.bottom = +(L.open === 'bottom'); L.phase = 'idle'; L.target = null; L.entry = null; L.locked = false; }
+function walk(G, from, to, limit = 90) {
+  for (const d of G.DOORS) Object.assign(d, { open: 0, locked: false, hold: 0, stay: 0 });
   const [sx, sy] = standAt(G, from, [to.x, to.y]);
   const P = G.player;
   Object.assign(P, { x: sx, y: sy, vx: 0, vy: 0, mode: 'inside', health: 'ok' });
-  P.lockSide = {};
   const goal = to.part ? standAt(G, to, [sx, sy]) : [to.x, to.y];
   const path = route(G, [sx, sy], goal);
   if (!path) return { enter: null, at: null };
@@ -142,27 +141,20 @@ function walk(G, from, to, lockSide, limit = 90) {
   return { enter: enter ?? at, at };
 }
 
-// Best and worst case for one trip (fresh game each time, so nothing carries over).
-// opts: { boots } walks with gravity boots (the game's gearSpeed), { airlocks } with the faster airlock pumps.
+// One trip (a fresh game, so nothing carries over): { best, worst } (the same walk: doors have no worse case).
+// opts: { boots } walks with gravity boots (the game's gearSpeed), { airlocks } with the 'airlocks' ship upgrade
+// (the deck airlocks it sped up are gone; kept as a variant for the table's format).
 function travel(fromSpec, toSpec, opts = {}) {
-  const out = {};
-  for (const [k, side] of [['best', 'toward'], ['worst', 'away']]) {
-    const G = loadGame(NAMES);
-    if (opts.airlocks) G.applyShipUpgrades({ airlocks: true });
-    if (opts.boots) G.player.kit = { gear: { boots: true }, profession: null };
-    const from = resolve(G, fromSpec), to = resolve(G, toSpec);
-    const [sx, sy] = standAt(G, from, [to.x, to.y]);
-    const startDeck = sy < G.SPINE_Y0 ? 'top' : 'bottom';
-    const lockSide = () => (side === 'toward') === (startDeck === 'top') ? 'top' : 'bottom';
-    out[k] = walk(G, from, to, lockSide);
-    out.from = from.name; out.to = to.name;
-  }
-  return out;
+  const G = loadGame(NAMES);
+  if (opts.airlocks) G.applyShipUpgrades({ airlocks: true });
+  if (opts.boots) G.player.kit = { gear: { boots: true }, profession: null };
+  const from = resolve(G, fromSpec), to = resolve(G, toSpec), r = walk(G, from, to);
+  return { best: r, worst: { ...r }, from: from.name, to: to.name };
 }
 
 // The travel table: every trip between the places the balance model uses, measured once and saved
 // (tools/travel-table.json), so a balance run doesn't walk them again. Per variant (kit) and pair: [best, worst]
-// seconds to be there (deck airlocks open towards you / the other way; 'at', or 'enter' if never in reach).
+// seconds to be there (two equal numbers since the inner doors are single doors; 'at', or 'enter' if never in reach).
 const SPOTS = ['bridge', 'reactor', 'portGun', 'starGun', 'portLock', 'starLock', 'Reactor', 'Helm', 'Security', 'Power lever',
   'Front cannon', 'Left cannon', 'Right cannon', 'Left shield button', 'Right shield button', 'Left outer airlock', 'Right outer airlock'];
 const VARIANTS = { plain: {}, boots: { boots: true }, airlocks: { airlocks: true }, both: { boots: true, airlocks: true } };
@@ -198,20 +190,19 @@ if (require.main === module) {
       p.on('close', c => (c ? rej(new Error(`variant ${v} failed`)) : res([v, JSON.parse(out)])));
     }))).then(rs => {
       const trips = Object.fromEntries(rs);
-      require('fs').writeFileSync(TABLE_FILE, JSON.stringify({ about: 'travel times in s, [deck airlocks open towards you, the other way]; node tools/travel.js --table', spots: SPOTS, trips }, null, 0).replace(/\],"/g, '],\n"') + '\n');
+      require('fs').writeFileSync(TABLE_FILE, JSON.stringify({ about: 'travel times in s, [best, worst] (equal: the doors open as you walk up); node tools/travel.js --table', spots: SPOTS, trips }, null, 0).replace(/\],"/g, '],\n"') + '\n');
       console.log(`${TABLE_FILE}: ${SPOTS.length} spots, ${Object.keys(VARIANTS).length} variants, ${((Date.now() - t0) / 1000).toFixed(0)} s`);
     });
   } else if (args.length === 2) {
     const r = travel(args[0], args[1], opts);
     console.log(`${r.from} → ${r.to}`);
-    console.log(`  deck airlocks open towards you:   enter ${fmt(r.best.enter)} s   there ${fmt(r.best.at)} s`);
-    console.log(`  deck airlocks open the other way: enter ${fmt(r.worst.enter)} s   there ${fmt(r.worst.at)} s`);
+    console.log(`  enter ${fmt(r.best.enter)} s   there ${fmt(r.best.at)} s`);
   } else if (!args.length) {
     const G = loadGame(NAMES), ids = G.ROOMS.map(r => r.id);
-    console.log('Room middle → room middle, seconds (deck airlocks open towards you / the other way):\n');
+    console.log('Room middle → room middle, seconds:\n');
     console.log(''.padEnd(10) + ids.map(id => id.padStart(13)).join(''));
     for (const a of ids) {
-      const cells = ids.map(b => { if (a === b) return '—'.padStart(13); const r = travel(a, b); return `${r.best.at.toFixed(1)} / ${r.worst.at.toFixed(1)}`.padStart(13); });
+      const cells = ids.map(b => { if (a === b) return '—'.padStart(13); const r = travel(a, b); return r.best.at.toFixed(1).padStart(13); });
       console.log(a.padEnd(10) + cells.join(''));
     }
   } else { console.log('usage: node tools/travel.js [from to]'); process.exitCode = 1; }

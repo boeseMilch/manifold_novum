@@ -8,7 +8,7 @@ let seed = 20261013;
 Math.random = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 const { travel } = require('../tools/travel');
 const NAMES = ['tick', 'player', 'crew', 'makeCrew', 'boarding', 'spawnSaboteur', 'hurtInvader', 'SYSTEMS', 'ROOMS', 'roomAt', 'adjacentRooms',
-  'HATCHES', 'DOORWAYS', 'DECK_LOCKS', 'SAB_FADE', 'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'SAB_SHOT_SPEED', 'SAB_AIM', 'SAB_HP', 'WALK_SPEED', 'combat'];
+  'HATCHES', 'DOORWAYS', 'DECK_DOORS', 'SAB_FADE', 'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'SAB_SHOT_SPEED', 'SAB_AIM', 'SAB_HP', 'WALK_SPEED', 'combat'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -126,7 +126,7 @@ for (const [n, want] of [[1, 'SAB_WORK_SOLO'], [2, 'SAB_WORK_TEAM'], [3, 'SAB_WO
   ok = 0;
   for (let k = 0; k < 6; k++) {
     const G = loadGame(NAMES); away(G.player);
-    G.DOORWAYS[2].locked = true; G.DECK_LOCKS[0].locked = true;           // both ways out of the left airlock room
+    G.DOORWAYS[2].locked = true; G.DECK_DOORS[0].locked = true;           // both ways out of the left airlock room
     if (untilPopUp(G, 'port').room === 'portLock') ok++;
   }
   check(ok === 6, `with both ways locked it is stuck in the left airlock room and sabotages there (${ok}/6)`);
@@ -135,7 +135,7 @@ for (const [n, want] of [[1, 'SAB_WORK_SOLO'], [2, 'SAB_WORK_TEAM'], [3, 'SAB_WO
     const G = loadGame(NAMES); away(G.player);
     G.spawnSaboteur('port'); const a = G.boarding.invaders[0];
     for (let t = 0; t < 10 && a.state !== 'sneak'; t += DT) G.tick(DT);
-    G.DOORWAYS[2].locked = true; G.DECK_LOCKS[0].locked = true;
+    G.DOORWAYS[2].locked = true; G.DECK_DOORS[0].locked = true;
     for (let t = 0; t < 10 && a.state !== 'decloak'; t += DT) G.tick(DT);
     if (a.room === 'portLock' && a.task && G.SYSTEMS.includes(a.task.sys)) ok++;
   }

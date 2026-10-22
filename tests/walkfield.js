@@ -1,9 +1,9 @@
 // The walk field (js/walkfield.js): where the crew walk, which drives the hairline floor scratches
-// (js/gfx.js FW_PATH). Doorways and deck airlock shafts are strong and lined up with the way through,
+// (js/gfx.js FW_PATH). Doorways and deck doors are strong and lined up with the way through,
 // every destination is reachable, crates get box scuffs, and the packing for the shader round-trips.
 // Run: node tests/walkfield.js
 const { loadGame } = require('./harness');
-const G = loadGame(['walkField', 'walkFieldPacked', 'DOORWAYS', 'DECK_LOCKS', 'SPINE_Y0', 'SPINE_Y1', 'CLUTTER', 'GFX', 'drawFloorSprites', 'CAT']);
+const G = loadGame(['walkField', 'walkFieldPacked', 'DOORWAYS', 'DECK_DOORS', 'SPINE_Y0', 'SPINE_Y1', 'CLUTTER', 'GFX', 'drawFloorSprites', 'CAT']);
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const F = G.walkField();
@@ -16,9 +16,9 @@ for (const d of G.DOORWAYS) {                      // doorways: walked through l
   const c = F.cells.get(Math.floor(d.x + d.w / 2) + ',' + Math.floor(d.y + d.h / 2));
   check(c && c.str > 0.4 && offAxis(c.ang, 0) < 20, `doorway at (${d.x}, ${d.y}): strong (${c && c.str.toFixed(2)}), along x (${c && deg(c.ang).toFixed(0)}°)`);
 }
-for (const L of G.DECK_LOCKS) {                    // deck airlocks: up and down
+for (const L of G.DECK_DOORS) {                    // deck doors: up and down
   const c = F.cells.get(Math.floor(L.x + L.w / 2) + ',' + Math.floor((G.SPINE_Y0 + G.SPINE_Y1) / 2));
-  check(c && c.str > 0.5 && offAxis(c.ang, 90) < 20, `deck airlock ${L.col}: strong (${c && c.str.toFixed(2)}), along y (${c && deg(c.ang).toFixed(0)}°)`);
+  check(c && c.str > 0.5 && offAxis(c.ang, 90) < 20, `deck door ${L.col}: strong (${c && c.str.toFixed(2)}), along y (${c && deg(c.ang).toFixed(0)}°)`);
 }
 const fuel = G.CLUTTER.fuel, fc = F.cells.get(Math.floor(fuel.x + 1.1) + ',' + Math.floor(fuel.y));
 check(fc && fc.box > 0.3, 'next to the fuel crate: box scuffs');

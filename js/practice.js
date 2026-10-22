@@ -49,6 +49,9 @@ const PRACTICE = [
   ['Ship-wide', 'Ion storm', () => startStorm()],
   ['Ship-wide', 'Coolant leak', () => startCoolantLeak()],
   ['Ship-wide', 'AI glitch', () => startGlitch()],
+  ['Ship-wide', 'Lock every inner door (security)', () => { for (const d of DOORS) d.locked = true; }],
+  ['Ship-wide', 'Lock both outer airlocks (security)', () => { for (const h of HATCHES) h.locked = true; }],
+  ['Damage', 'Break the left outer airlock', () => breakSystem(SYSTEMS.find(s => s.ref === HATCHES[0]))],
   ['Ship-wide', 'Gravity tide (knocks a jump coil with the coils rule)', () => startTide()],
   // ships
   ['Other ships', 'Pirates dock (left)', () => { dk.dock = null; dockShip('pirate', 'port'); }],

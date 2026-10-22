@@ -78,7 +78,7 @@ for (const hide of [false, true]) {
 }
 {
   const G = fresh(); G.dockShip('pirate', 'port'); G.dk.pirates.length = 0;
-  const g = G.dockGeom('port'), me = G.me; me.x = 3; me.y = g.y;
+  const g = G.dockGeom('port'), me = G.me; me.x = 5; me.y = g.y;
   check(walkTo(G, g.crate.x + 1, g.crate.y + 1.2), 'you can walk through the tube onto their ship');
   const m = me.input.mouse; m.wx = g.crate.x; m.wy = g.crate.y; m.click = true; G.simTick(DT);
   check(me.inv.item === 'fuel', 'their loot crate has fuel cells for the taking');
@@ -264,7 +264,7 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   check(!/cast off/.test(me.prompt?.text || ''), 'the box free but still over there: no casting off yet');
   G.ITEMS.splice(G.ITEMS.indexOf(box), 1); G.withCrew(B, () => { G.inv.item = 'blackbox'; }); G.simTick(DT);
   check(!/cast off/.test(me.prompt?.text || ''), 'in a crewmate\'s hands over in the lab: not yet either');
-  G.withCrew(B, () => { G.inv.item = null; }); G.ITEMS.push({ kind: 'blackbox', x: 3, y: 17.6 }); G.simTick(DT);
+  G.withCrew(B, () => { G.inv.item = null; }); G.ITEMS.push({ kind: 'blackbox', x: 4.5, y: 17.6 }); G.simTick(DT);
   check(G.objectiveStatus().done && /cast off the derelict/.test(me.prompt?.text || '') && /B is still over there/.test(me.prompt?.text || ''),
         `the box aboard: our airlock offers to cast off, and warns who is still over there ("${me.prompt?.text}")`);
   me.input.pressed.add('KeyE'); G.simTick(DT);
@@ -351,13 +351,13 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   check(G.MISSIONS.c4.objective.kind === 'navcore' && G.MISSIONS.pirates.objective.kind === 'navcore' && G.MISSIONS.c1.objective.kind === 'raiders', 'Red Comet Cove and Pirate cove want a nav core; First Contract still two raiders');
   check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Get a Red Comet nav core and install it in our helm', `the objective: "${G.objectiveStatus().text}"`);
   G.dockShip('pirate', 'port'); G.dk.pirates.length = 0;
-  const g = G.dockGeom('port'), me = G.me; me.x = 3; me.y = g.y;
+  const g = G.dockGeom('port'), me = G.me; me.x = 5; me.y = g.y;
   check(G.dk.dock.navcore, 'a docked raider\'s nav console still has its core');
   via(G, [[g.crate.x + 1, g.y], doorC(g.doors[1]), [g.nav.x + 0.6, g.nav.y + 0.9]]);
   const t = holdOn(G, g.nav.x, g.nav.y, () => me.inv.item === 'navcore');
   check(me.inv.item === 'navcore' && !G.dk.dock.navcore && Math.abs(t - G.NAVCORE_PULL) < 0.3, `holding click on the nav console pulls the nav core out (${t.toFixed(1)} s)`);
   check(!G.objectiveStatus().done, 'not done while it is still over on their ship');
-  via(G, [[g.nav.x + 0.6, g.y], doorC(g.doors[1]), [g.crate.x + 1, g.y], doorC(g.doors[0]), [g.entry.x, g.y], [3, g.y]]);
+  via(G, [[g.nav.x + 0.6, g.y], doorC(g.doors[1]), [g.crate.x + 1, g.y], doorC(g.doors[0]), [g.entry.x, g.y], [5, g.y]]);   // (back through our outer airlock's chamber)
   check(G.roomAt(me.x, me.y) && !G.inDock(me.x, me.y) && !G.objectiveStatus().done && G.objectiveStatus().text === 'Install the nav core in our helm (bridge)',
         `carried aboard our ship: not done yet ("${G.objectiveStatus().text}", jumping now: "${G.objectiveStatus().fail}")`);
   const { tg, t: ti } = installAtHelm(G);
@@ -615,14 +615,14 @@ for (const side of ['port', 'star']) {
   G.mission.jump = null; G.mission.t = 10; G.mission.jumpAt = 300;
   me.x = g.hatch.inside[0]; me.y = g.hatch.inside[1]; G.simTick(DT);
   check(!/detach/.test(me.prompt?.text || ''), 'no detach before Dr. Varga is aboard');
-  const N = G.dk.npc; Object.assign(N, { x: 3, y: 20, state: 'safe' });
+  const N = G.dk.npc; Object.assign(N, { x: 5, y: 20, state: 'safe' });
   G.simTick(DT);
   check(/detach/.test(me.prompt?.text || ''), `with her aboard, our airlock offers to detach ("${me.prompt?.text}")`);
   other.x = g.rooms[1].x + 2; other.y = g.y;                            // somebody is still over there
   G.withCrew(me, () => G.baseDetach());
-  check(d.tube === 'detached' && !G.walkRects().includes(g.tube) && G.HATCHES[0].open === 1, 'detached: the tube pulls in, no walking across');
-  G.simTick(DT);
-  check(G.HATCHES[0].open === 0, 'our airlock door closes');
+  check(d.tube === 'detached' && !G.walkRects().includes(g.tube), 'detached: the tube pulls in, no walking across');
+  tickN(G, 60);
+  check(G.HATCHES[0].doors.outer === 0, 'our airlock\'s outer door is shut');
   G.mission.t = G.mission.jumpAt + 0.1; tickN(G, 60);
   check(!G.mission.over && new RegExp(`${other.name} still in the pirate base`).test(G.combat.banner?.text || ''), `jump due, ${other.name} left behind: blocked ("${G.combat.banner?.text}")`);
   other.x = g.console.x; other.y = g.console.y + 0.6; G.simTick(DT);
@@ -635,7 +635,7 @@ for (const side of ['port', 'star']) {
 }
 {
   const G = baseFresh(), d = G.dk.dock; G.dk.pirates.length = 0; G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.t = 100; G.mission.jumpAt = 300;
-  Object.assign(G.dk.npc, { x: 3, y: 20, state: 'safe' }); G.me.x = 3; G.me.y = 19; G.withCrew(G.me, () => G.baseDetach()); G.simTick(DT);
+  Object.assign(G.dk.npc, { x: 5, y: 20, state: 'safe' }); G.me.x = 5; G.me.y = 19; G.withCrew(G.me, () => G.baseDetach()); G.simTick(DT);
   check(Math.abs(G.mission.jumpAt - 115) < 0.1, `clear of the base with her aboard: the jump drive spools up right away (jump at ${G.mission.jumpAt.toFixed(0)} s)`);
 }
 {

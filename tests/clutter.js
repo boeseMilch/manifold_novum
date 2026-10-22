@@ -2,7 +2,7 @@
 // rack, ...) is solid, nothing solid traps anyone, and what you can click stays in reach.
 // Run: node tests/clutter.js
 const { loadGame } = require('./harness');
-const NAMES = ['GFX', 'SOLIDS', 'CLUTTER', 'clutterRect', 'ROOMS', 'ROOM_RECTS', 'DOORWAYS', 'DECK_LOCKS', 'canStand', 'walkRects', 'inRect', 'roomAt',
+const NAMES = ['GFX', 'SOLIDS', 'CLUTTER', 'clutterRect', 'ROOMS', 'ROOM_RECTS', 'DOORWAYS', 'DECK_DOORS', 'DOORS', 'canStand', 'walkRects', 'inRect', 'roomAt',
   'drawPropDecor', 'drawFloorDecor', 'drawInterior', 'drawHazardProps', 'drawEncounterProps', 'drawMinigameProps', 'mission', 'hz',
   'NAV', 'CREW_R', 'REACH', 'ITEMS', 'dropSpot', 'PLATE_CRATES', 'COOLANT_CRATE', 'FUEL_CRATE', 'SNACK', 'PATCH_BOARD', 'GUNS', 'HATCHES',
   'BREACH_SPOTS', 'GRAV_PANELS', 'SHIELD_BUTTONS', 'CAPACITORS', 'CAT', 'LEVER'];
@@ -37,20 +37,20 @@ for (const n of ['props/crate_ammo_star', 'props/crate_misc', 'props/toolbox', '
   check(floor.some(d => d.name === n || d.name.startsWith(n)), `${n} is drawn on the floor (and so covered by the check above)`);
 check(floor.some(d => /^systems\/plates_a_/.test(d.name)) && floor.some(d => /^systems\/plates_b_/.test(d.name)), 'both hull plate crates are drawn (and checked)');
 
-// 2. Clutter boxes stay inside their room and clear of doorways, deck airlock doors and each other's gaps
+// 2. Clutter boxes stay inside their room and clear of doorways, deck doors and each other's gaps
 //    small enough to get stuck in (a gap is either < 2 CREW_R, so nobody fits, or ≥ 2 CREW_R + a bit).
 const boxes = Object.entries(G.CLUTTER).map(([k, c]) => ({ k, r: G.clutterRect(c) }));
 for (const { k, r } of boxes) {
   const inside = G.ROOM_RECTS.some(q => r.x >= q.x - 1e-6 && r.y >= q.y - 1e-6 && r.x + r.w <= q.x + q.w + 1e-6 && r.y + r.h <= q.y + q.h + 1e-6);
   const doorClear = G.DOORWAYS.every(d => !G.inRect(d.x + d.w / 2, d.y + d.h / 2, { x: r.x - 1.2, y: r.y - 0.6, w: r.w + 2.4, h: r.h + 1.2 }));
-  const lockClear = G.DECK_LOCKS.every(L => ['top', 'bottom'].every(s => { const q = L.doorRect[s]; return r.x > q.x + q.w + 0.5 || r.x + r.w < q.x - 0.5 || r.y > q.y + q.h + 0.8 || r.y + r.h < q.y - 0.8; }));
-  check(inside && doorClear && lockClear, `${k}: inside its room, clear of doorways and deck airlock doors`);
+  const lockClear = G.DECK_DOORS.every(q => r.x > q.x + q.w + 0.5 || r.x + r.w < q.x - 0.5 || r.y > q.y + q.h + 0.8 || r.y + r.h < q.y - 0.8);
+  check(inside && doorClear && lockClear, `${k}: inside its room, clear of doorways and deck doors`);
 }
 
 // 3. Walkable area: a flood fill (crew-sized steps, all doors open) from the bridge reaches every free
 //    spot on board (no closed-off pockets behind the clutter) and every room.
-for (const d of G.DOORWAYS) d.open = 1;
-for (const L of G.DECK_LOCKS) { L.doors.top = 1; L.doors.bottom = 1; }
+for (const d of G.DOORS) d.open = 1;
+for (const h of G.HATCHES) h.doors.inner = 1;          // (the outer airlocks' chambers: through their inner doors)
 const rects = G.walkRects(), STEP = 0.1;
 const key = (i, j) => i * 10000 + j, X0 = -1, Y0 = -4;
 const ok = (i, j) => G.canStand(X0 + i * STEP, Y0 + j * STEP, rects);

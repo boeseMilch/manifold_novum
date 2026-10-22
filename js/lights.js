@@ -99,7 +99,7 @@ const ALARM_TUNING = {
 };
 // Beacons (on each room's back wall, clear of the consoles and doors; all walls face +y).
 const BEACONS = { portGun: [[4.0, 3.55]], bridge: [[16.2, 0.75], [28.2, 0.75]], starGun: [[33.4, 2.75]],
-                  portLock: [[9.4, 15.15]], reactor: [[20.6, 15.15], [27.6, 15.15]], starLock: [[40.6, 15.15]] };
+                  portLock: [[9.4, SPINE_Y1 + 0.15]], reactor: [[20.6, SPINE_Y1 + 0.15], [27.6, SPINE_Y1 + 0.15]], starLock: [[40.6, SPINE_Y1 + 0.15]] };
 
 function alarmState() {
   const dmg = typeof SYSTEMS !== 'undefined' ? SYSTEMS.filter(s => s.broken).length : 0;
@@ -215,7 +215,7 @@ function gameLighting(t) {
     if (lvl) color = addTo(color, alarmCol, lvl.wash * pulse * (A.red || A.fireRooms.has(r.id) ? 1 : 0.4));
     for (const q of r.rects) areas.push({ x: q.x - 0.3, y: q.y - 0.3, w: q.w + 0.6, h: q.h + 0.6, color, sun: 0 });
   }
-  COLS.forEach((C, col) => {                        // the spine between the decks, per column (with its deck airlock)
+  COLS.forEach((C, col) => {                        // the spine between the decks, per column (with its deck door)
     areas.push({ x: col ? C.x - 0.3 : -0.2, y: SPINE_Y0, w: C.w + (col ? 0.6 : 1.1) + (col === 2 ? 0.6 : 0), h: SPINE, color: mix3(Lt.spineDark, Lt.spine, lamp[col]), sun: 0.25 * lamp[col] });
   });
   // the docked ship: a dead derelict is dark inside but for its (dying) emergency strips; the
@@ -472,6 +472,11 @@ function gameLighting(t) {
   if ((t % 1.6) < 0.08) add({ x: 22.2, y: -3.2, z: 0.6, color: [1, 1, 1], radius: 3.5, intensity: 2.0 });
 
   if (typeof useLights === 'function') for (const l of useLights()) add(l);   // what E would act on: lit a little (js/systems.js)
+  if (typeof airlockLighting === 'function') {      // the outer airlocks: the chamber's state light, lamps in the room's corners beside it (js/airlock.js)
+    const L = airlockLighting(t, lamp);
+    for (const q of L.areas) areas.push({ ...q, color: mix3(Lt.roomDark, Lt.roomLit, q.k * (0.6 + 0.4 * dim)), sun: 0 });
+    for (const l of L.lights) add(l);
+  }
 
   // --- outside: the distant star (a solar flare makes it glare) ---------------------------------------
   let sunCol = Lt.sun.color, outside = Lt.outside;

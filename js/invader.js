@@ -1,6 +1,7 @@
 // Boarders that come in through a side outer airlock (boarding.invaders, `kind` 'alien' or 'saboteur'):
-// - the alien (the fighter): hunts the crew room by room (using the deck airlocks like the crew does)
-//   and fights whoever it finds: keeps its distance, strafes, sidesteps incoming shots, spits acid, pounces.
+// - the alien (the fighter): hunts the crew room by room and fights whoever it finds. It can't open a door
+//   (since 2026-10-21 they're all closed unless a crew member stands in front of one): it slips through open ones,
+//   and shut out it waits by the door towards its prey (or prowls its room) for someone to open it. It: keeps its distance, strafes, sidesteps incoming shots, spits acid, pounces.
 // - the saboteur (the sneak): cloaks once inside and pops up next to a part in one of the rooms next to
 //   that airlock (you know the airlock, not which of the two rooms), then wrecks the part. Solo there's
 //   just time to run over from the other room; with a crew you need someone in each. Weak in a fight.
@@ -17,7 +18,8 @@ const ALIEN_TOUCH_R = 0.55, ALIEN_TOUCH_COOLDOWN = 1.5;
 const boarding = { invaders: [], bolts: [] };
 
 // ---------------------------------------------------------------------------
-// Navigation graph: room spots, doorways, deck-airlock approaches and chambers.
+// Navigation graph: room spots, doorways, the deck doors (an approach on each deck and the passage between).
+// Nodes on a door (n.door) are only passable while that door is, for whoever can't open doors (navPath's ok).
 // ---------------------------------------------------------------------------
 const NAV_SPOTS = { portGun: [7, 7.6], bridge: [22.2, 9.2], starGun: [37, 7.2], portLock: [7.5, 19], reactor: [22.2, 16.6], starLock: [37, 19.6] };
 const NAV = (() => {
@@ -29,36 +31,53 @@ const NAV = (() => {
   const roomOf = (x, y) => ROOMS.find(r => r.rects.some(q => inRect(x, y, q, 0.7)));
   for (const d of DOORWAYS) {
     const n = add(d.x + d.w / 2, d.y + d.h / 2);
+    nodes[n].door = d;
     for (const r of ROOMS) if (r.rects.some(q => inRect(d.x - 0.3, d.y + 1, q) || inRect(d.x + d.w + 0.3, d.y + 1, q))) link(n, roomNode[r.id]);
   }
-  for (const Lk of DECK_LOCKS) {
-    const cx = Lk.x + Lk.w / 2;
+  for (const d of DECK_DOORS) {
+    const cx = d.x + d.w / 2;
     const top = add(cx, SPINE_Y0 - 0.7), mid = add(cx, (SPINE_Y0 + SPINE_Y1) / 2), bot = add(cx, SPINE_Y1 + 0.7);
     link(top, mid); link(mid, bot);
     link(top, roomNode[roomOf(cx, SPINE_Y0 - 1).id]); link(bot, roomNode[roomOf(cx, SPINE_Y1 + 1).id]);
-    nodes[mid].lock = Lk;
+    nodes[mid].door = d;
   }
   const nb = nodes.map(() => []);
   for (const [a, b] of edges) { nb[a].push(b); nb[b].push(a); }
   return { nodes, nb, roomNode };
 })();
-function navPath(from, to) {                         // BFS over node indices
+// ok(door): may it pass that door (default: any; the crew, pirates and NPCs get doors to open for them)
+function navPath(from, to, ok = null) {             // BFS over node indices
   const prev = new Map([[from, -1]]), q = [from];
   while (q.length) {
     const n = q.shift();
     if (n === to) break;
-    for (const m of NAV.nb[n]) if (!prev.has(m)) { prev.set(m, n); q.push(m); }
+    for (const m of NAV.nb[n]) if (!prev.has(m) && (!ok || !NAV.nodes[m].door || ok(NAV.nodes[m].door))) { prev.set(m, n); q.push(m); }
   }
   if (!prev.has(to)) return [];
   const path = [];
   for (let n = to; n !== -1; n = prev.get(n)) path.unshift(n);
   return path;
 }
+// The nearest node, in the same room if (x, y) is in one (not one on a door, or across a wall: a route to a spot
+// by a door must not lead through that door first).
 function nearestNav(x, y) {
-  let best = 0, bd = Infinity;
-  NAV.nodes.forEach((n, i) => { const d = Math.hypot(n.x - x, n.y - y); if (d < bd) { bd = d; best = i; } });
-  return best;
+  const r = roomAt(x, y)?.id;
+  let best = 0, bd = Infinity, rb = -1, rd = Infinity;
+  NAV.nodes.forEach((n, i) => {
+    const d = Math.hypot(n.x - x, n.y - y);
+    if (d < bd) { bd = d; best = i; }
+    if (r && d < rd && (n.inRoom ??= roomAt(n.x, n.y)?.id || null) === r) { rd = d; rb = i; }
+  });
+  return rb >= 0 ? rb : best;
 }
+// The nearest node it can walk straight to (not one behind a wall or a closed door), else the nearest.
+function nearestNavSeen(x, y) {
+  let best = -1, bd = Infinity;
+  NAV.nodes.forEach((n, i) => { const d = Math.hypot(n.x - x, n.y - y); if (d < bd && lineOfSight(x, y, n.x, n.y)) { bd = d; best = i; } });
+  return best >= 0 ? best : nearestNav(x, y);
+}
+// An alien gets through a door only while it stands open (it can't open one).
+const alienDoorOk = (d) => d.open > DOOR_WALK;
 
 // Is a straight line between two points free of walls (inside the ship)?
 function lineOfSight(x0, y0, x1, y1) {
@@ -80,7 +99,7 @@ function spawnInvader(side, zone = null, banner = true) {
   boarding.invaders.push({
     uid: newUid(), kind: 'alien', x: h.outside[0], y: h.outside[1], vx: 0, vy: 0, face: h.dir < 0 ? 0 : Math.PI, walk: 0, mode: 'outside',
     state: 'entering', hatch: h, t: 0, hp: ALIEN_HP, path: [], linger: 0, stuck: 0,
-    spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0, touchCd: 0, zone,
+    spitT: 1.5, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0, touchCd: 0, zone,
   });
   if (banner) combatBanner(`Intruder alert — something is coming in through the ${side === 'port' ? 'left' : 'right'} airlock!`);
   sfx.hatch();
@@ -143,7 +162,7 @@ function podBurst(p) {
   boarding.invaders.push({
     uid: newUid(), kind: 'alien', x, y, vx: 0, vy: 0, face: -Math.PI / 2, walk: 0, mode: 'inside',
     state: 'wander', hatch: null, t: 0, hp: ALIEN_HP, path: [], linger: 0.6, stuck: 0,
-    spitT: 1.5, lockedOut: 0, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0, touchCd: 0, zone: p.zone, pod: p.id,
+    spitT: 1.5, act: null, dodgeCd: 0, strafe: Math.random() < 0.5 ? 1 : -1, stun: 0, seen: 0, flash: 0, touchCd: 0, zone: p.zone, pod: p.id,
   });
   if (typeof slimeBurst === 'function') slimeBurst(p.x, p.y - 0.1, 26, 0.12, 0.45); else sfx.squelch?.();
   for (let i = 0; i < 14; i++) combatFx(p.x, p.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 4, 0.6, i % 2 ? '#ffb36a' : '#e8e4d8', 0.08);   // shell shards
@@ -180,14 +199,27 @@ const invaderMaxHp = (a) => (a.kind === 'saboteur' ? SAB_HP : ALIEN_HP);
 function alienMove(a, tx, ty, speed, dt) {
   const dx = tx - a.x, dy = ty - a.y, d = Math.hypot(dx, dy);
   const vx = d > 0.01 ? dx / d * speed : 0, vy = d > 0.01 ? dy / d * speed : 0;
-  return alienStep(a, vx, vy, dt);
+  // blocked head-on by something solid (the reactor, a crate; not a shut door: there it stops and thinks again):
+  // it edges sideways round it for a moment (a.detour s), then heads for the target again
+  if (a.detour > 0 && d > 0.01) {                    // (until the way ahead is clear, at most a few seconds)
+    const rects = walkRects(), ux = dx / d, uy = dy / d;
+    const clear = [0.25, 0.45].every(k => canStand(a.x + ux * k, a.y + uy * k, rects));
+    if (clear) a.detour = 0;
+    else {
+      a.detour -= dt;
+      const s = a.strafe || 1, m = alienStep(a, -vy * s, vx * s, dt);
+      if (m < 0.002) a.strafe = -s;                   // that side's blocked too: the other way
+      return 0.003;
+    }
+  }
+  const m = alienStep(a, vx, vy, dt);
+  if (m < 0.002 && d > 0.3 && a.mode === 'inside' && !DOORS.some(q => q.open < DOOR_WALK && nearDoor(q, a.x, a.y, 1.2, 0.5))) { a.detour = 3; return 0.003; }
+  return m;
 }
 function alienStep(a, vx, vy, dt) {
   const rects = walkRects();
   if (a.mode === 'inside') unstick(a, (x, y) => canStand(x, y, rects));    // never frozen in place
-  // while fighting it stays out of airlock chambers (it would get shut in)
-  const inSpine = (y) => y > SPINE_Y0 - 0.25 && y < SPINE_Y1 + 0.25;
-  const ok = (x, y) => canStand(x, y, rects) && (a.state !== 'fight' || inSpine(a.y) || !inSpine(y));
+  const lock = airlockAt(a.x, a.y), ok = (x, y) => canStand(x, y, rects) && (lock || !airlockAt(x, y));   // (it keeps out of the outer airlocks' chambers: it would get shut in)
   let moved = 0;
   const nx = a.x + vx * dt; if (ok(nx, a.y)) { a.x = nx; moved += Math.abs(vx * dt); }
   const ny = a.y + vy * dt; if (ok(a.x, ny)) { a.y = ny; moved += Math.abs(vy * dt); }
@@ -212,12 +244,19 @@ function enterHatch(a, dt) {
     }
     return true;
   }
+  // through the outer airlock's chamber (js/airlock.js), working its doors itself meanwhile (h.forced): the outer door
+  // opens, in, it shuts, the chamber pumps up, the inner door opens, out into the room
   a.t += dt;
-  const k = a.t / HATCH_TIME, h = a.hatch;
-  h.open = Math.max(h.open, Math.sin(Math.PI * clamp(k, 0, 1)));
-  const q = clamp((k - 0.25) / 0.5, 0, 1);
-  a.x = lerp(h.outside[0], h.inside[0], q); a.y = lerp(h.outside[1], h.inside[1], q);
-  if (k >= 1) { a.state = 'wander'; a.mode = 'inside'; }
+  const k = a.t / INTRUDER_ENTER_TIME, h = a.hatch, c = h.chamber, mid = [c.x + c.w / 2, c.y + c.h / 2];
+  const ramp = (k0, k1) => clamp((k - k0) / (k1 - k0), 0, 1);
+  h.forced = 0.1;
+  h.doors.outer = k < 0.4 ? ramp(0, 0.15) : 1 - ramp(0.4, 0.52);
+  h.doors.inner = ramp(0.7, 0.82);
+  h.phase = k >= 0.52 && k < 0.7 ? 'cycling' : 'idle'; h.target = 'inner'; h.t = (k - 0.52) / 0.18 * LOCK_CYCLE;
+  h.air = k < 0.7 ? 'outer' : 'inner';
+  const [p, q] = k < 0.5 ? [h.outside, mid] : [mid, h.inside], u = k < 0.5 ? ramp(0.15, 0.38) : ramp(0.8, 0.98);
+  a.x = lerp(p[0], q[0], u); a.y = lerp(p[1], q[1], u);
+  if (k >= 1) { a.state = 'wander'; a.mode = 'inside'; h.forced = 0; h.phase = 'idle'; h.target = null; h.air = 'inner'; }
   return true;
 }
 
@@ -296,7 +335,7 @@ function updateInvader(a, dt) {
       return;
     }
     // otherwise keep ~4–6 units away and strafe sideways around the player
-    const want = lockAround(a) ? 1 : d > 6 ? 1 : d < 4 ? -0.6 : 0;   // (caught in a deck airlock: get out of it, towards them)
+    const want = d > 6 ? 1 : d < 4 ? -0.6 : 0;
     if (Math.random() < dt * 0.4) a.strafe *= -1;
     const vx = ux * want * ALIEN_SPEED + -uy * a.strafe * ALIEN_SPEED * 0.8, vy = uy * want * ALIEN_SPEED + ux * a.strafe * ALIEN_SPEED * 0.8;
     if (alienStep(a, vx, vy, dt) < 0.01 * dt) a.strafe *= -1;
@@ -305,54 +344,88 @@ function updateInvader(a, dt) {
   }
 
   // it's out for blood: engage whoever it can see in reach
-  if (seesPlayer && Math.hypot(player.x - a.x, player.y - a.y) < HUNT_SIGHT && !lockAround(a)) { a.state = 'fight'; a.seen = 0; a.path = []; return; }   // (not from inside a deck airlock: out first)
+  if (seesPlayer && Math.hypot(player.x - a.x, player.y - a.y) < HUNT_SIGHT) { a.state = 'fight'; a.seen = 0; a.path = []; a.waitDoor = -1; return; }
   if (a.linger > 0) { a.linger -= dt; return; }
-  // hunt: head for the room of the nearest crew member aboard (re-planned as they move); with nobody
-  // aboard, or while every way to them is locked, it prowls from room to room
+  // hunt: head for the room of the nearest crew member aboard (re-planned as they move), through open doors only.
+  // Shut out, it waits by the door that leads to them (a door opening re-plans at once); with nobody aboard it
+  // prowls: into a neighbouring room if a door to it stands open, else about its own room.
   const prey = alienPrey(a);
-  a.replanT = (a.replanT || 0) - dt; a.prowl = Math.max(0, (a.prowl || 0) - dt);
-  if (prey && !a.prowl && (a.replanT <= 0 || !a.path.length)) {
+  a.replanT = (a.replanT || 0) - dt;
+  const wd = DOORS[a.waitDoor] || null;                // (an index: the sync sends invaders as plain data)
+  if (wd && wd.open > DOOR_WALK) { a.replanT = 0; if (!prey) a.waitDoor = -1; }   // (the door it waits at opened: go)
+  const here = roomAt(a.x, a.y);
+  if (prey && (a.replanT <= 0 || (!a.path.length && !a.walkTo && !wd))) {
     a.replanT = HUNT_REPLAN;
     const pr = roomAt(prey.x, prey.y), goal = pr ? NAV.roomNode[pr.id] : nearestNav(prey.x, prey.y);
-    if (!a.path.length || a.path[a.path.length - 1] !== goal) {   // (same goal: keep the route, so being stuck adds up)
-      const path = navPath(nearestNav(a.x, a.y), goal);
-      a.path = path.length > 1 ? path : [];
-      if (!a.path.length) { a.linger = 0.4; a.walkTo = [prey.x, prey.y]; }
+    if (!a.path.length || a.path[a.path.length - 1] !== goal) {   // (same goal: keep the route)
+      const start = nearestNavSeen(a.x, a.y), path = navPath(start, goal, alienDoorOk);
+      a.waitDoor = -1; a.walkTo = null;
+      if (pr && pr === here) { a.path = []; a.walkTo = [prey.x, prey.y]; }   // same room, out of sight (round a corner): go to where they are
+      else if (path.length > 1) a.path = path;
+      else {                                         // shut out: wait by the door on the way to them
+        const full = navPath(start, goal), dn = full.find(n => NAV.nodes[n].door && !alienDoorOk(NAV.nodes[n].door));
+        a.path = []; a.waitDoor = dn != null ? DOORS.indexOf(NAV.nodes[dn].door) : -1;
+        if (a.waitDoor < 0) a.walkTo = [prey.x, prey.y];
+      }
     }
   }
-  if (!a.path.length && a.walkTo) {                 // same room, out of sight (round a corner): go to where they are
+  if (!a.path.length && DOORS[a.waitDoor]) {         // lurking a little way back from the door, facing it
+    const d = DOORS[a.waitDoor], [cx, cy] = doorCenter(d), [sx, sy] = doorWaitSpot(d, a);
+    if (Math.hypot(sx - a.x, sy - a.y) > 0.3 && alienMove(a, sx, sy, ALIEN_SPEED * 0.7, dt) > 0.002) return;
+    a.face = Math.atan2(cy - a.y, cx - a.x);
+    return;
+  }
+  if (!a.path.length && a.walkTo) {
     const [tx, ty] = a.walkTo;
-    if (alienMove(a, tx, ty, ALIEN_SPEED * 0.85, dt) < 0.002 || Math.hypot(tx - a.x, ty - a.y) < 0.4) a.walkTo = null;
+    a.walkT = (a.walkT || 0) + dt;                   // (a spot it can't get to, e.g. behind the toilet stall: give up after a while)
+    if (alienMove(a, tx, ty, ALIEN_SPEED * (prey ? 0.85 : 0.6), dt) < 0.002 || Math.hypot(tx - a.x, ty - a.y) < 0.4 || a.walkT > 8) { a.walkTo = null; a.walkT = 0; a.detour = 0; if (!prey) a.linger = 1 + Math.random() * 1.5; }
     return;
   }
   if (!a.path.length) {
-    const room = roomAt(a.x, a.y) || NAV.nodes[nearestNav(a.x, a.y)].room && ROOMS.find(r => r.id === NAV.nodes[nearestNav(a.x, a.y)].room) || ROOMS[0];
-    // keeping to its zone: off it, head for one of its rooms; on it, prowl its rooms only
+    const room = here || ROOMS.find(r => r.id === NAV.nodes[nearestNav(a.x, a.y)].room) || ROOMS[0];
+    // keeping to its zone: off it, head for one of its rooms; on it, prowl its rooms only (through open doors)
     const zone = zoned(a) ? a.zone : null, adj = adjacentRooms(room).filter(r => !zone || room.deck !== zone || r.deck === zone);
-    const home = zone && room.deck !== zone ? ROOMS.filter(r => r.deck === zone) : null;
-    const next = home || adj.filter(r => r.id !== a.prevRoom);
-    const to = (next.length ? next : adj)[Math.floor(Math.random() * (next.length || adj.length))];
+    const home = zone && room.deck !== zone ? ROOMS.filter(r => r.deck === zone) : null, start = nearestNavSeen(a.x, a.y);
+    const open = (home || adj).map(r => navPath(start, NAV.roomNode[r.id], alienDoorOk)).filter(p => p.length > 1);
     a.prevRoom = room.id;
-    a.path = navPath(nearestNav(a.x, a.y), NAV.roomNode[to.id]);
-    if (!a.path.length) { a.linger = 1.5; return; }
+    if (open.length) a.path = open[Math.floor(Math.random() * open.length)];
+    else if (home) {                                 // off its deck, every way back shut: it waits by the nearest door that way
+      const full = home.map(r => navPath(start, NAV.roomNode[r.id])).filter(p => p.length > 1).sort((p, q) => p.length - q.length)[0] || [];
+      const dn = full.find(n => NAV.nodes[n].door && !alienDoorOk(NAV.nodes[n].door));
+      if (dn != null) { a.waitDoor = DOORS.indexOf(NAV.nodes[dn].door); return; }
+    }
+    if (!a.path.length) a.walkTo = roomWanderSpot(room) || null;
+    if (!a.path.length && !a.walkTo) a.linger = 1.5;
+    return;
   }
   const n = NAV.nodes[a.path[0]];
-  const moved = alienMove(a, n.x, n.y, ALIEN_SPEED * (prey && !a.prowl ? 0.9 : 0.75), dt);
-  if (Math.hypot(n.x - a.x, n.y - a.y) < 0.15) {
-    a.path.shift(); a.stuck = 0;
-    if (n.lock) a.linger = 0.3;
-  } else if (moved < 0.002) {                       // blocked (closed door): wait, try another route, then bash
+  const moved = alienMove(a, n.x, n.y, ALIEN_SPEED * (prey ? 0.9 : 0.75), dt);
+  a.legT = (a.legT || 0) + dt;
+  if (Math.hypot(n.x - a.x, n.y - a.y) < 0.15) { a.path.shift(); a.stuck = 0; a.legT = 0; }
+  else if (a.legT > 10) { a.path = []; a.legT = 0; a.detour = 0; a.linger = 0.5; }   // (never there: plan again)
+  else if (moved < 0.002) {                          // blocked: a door shut in its face (or a crowd): plan again
     a.stuck += dt;
-    // Doors locked by security contain it: it never bashes those, it gives up on that way for a while and
-    // prowls about instead (shut in, it paces the room). Broken / jammed doors it bashes open.
-    const lock = lockAround(a), door = lock ? { lock, side: n.y < (SPINE_Y0 + SPINE_Y1) / 2 ? 'top' : 'bottom' } : blockingDoor(a);
-    const locked = door && (door.doorway?.locked || door.doorway?.blast || door.lock?.locked);
-    if (locked && a.stuck > 2) {
-      a.path = []; a.stuck = 0; a.linger = 1.5;
-      if (++a.lockedOut >= 2) { a.prowl = 8; a.lockedOut = 0; }         // that way is shut: prowl about for a while
-    } else if (door && !locked && a.stuck > (lock ? 3 : 6)) bashDoor(a, dt, door, lock ? 4 : 5);
-    else if (!door && a.stuck > 6) { a.path = []; a.stuck = 0; }
-  } else { a.bash = 0; if (moved > 0.01) a.replanned = false; }
+    if (a.stuck > (DOORS.some(d => d.open < DOOR_WALK && nearDoor(d, a.x, a.y, 1.0, 0.4)) ? 0.3 : 2)) { a.path = []; a.stuck = 0; a.replanT = 0; a.linger = 0.2; }
+  }
+}
+// Where it lurks by a shut door: 1.4 out from the door's mouth on its own side (on free floor).
+function doorWaitSpot(d, a) {
+  const rects = walkRects(), [cx, cy] = doorCenter(d);
+  const s = d.axis === 'y' ? (a.y < cy ? -1 : 1) : (a.x < cx ? -1 : 1);
+  for (const k of [1.4, 1.1, 1.8, 0.8]) {
+    const x = d.axis === 'y' ? cx : cx + s * (d.w / 2 + k), y = d.axis === 'y' ? cy + s * (d.h / 2 + k) : cy;
+    if (canStand(x, y, rects)) return [x, y];
+  }
+  return [a.x, a.y];
+}
+// A random free spot in a room to prowl to.
+function roomWanderSpot(room) {
+  const rects = walkRects();
+  for (let i = 0; i < 12; i++) {
+    const q = room.rects[0], x = q.x + 1 + Math.random() * (q.w - 2), y = q.y + 1 + Math.random() * (q.h - 2);
+    if (canStand(x, y, rects)) return [x, y];
+  }
+  return null;
 }
 
 // Where to stand to sabotage a part: next to it, on free floor inside that room
@@ -372,11 +445,12 @@ function sabotageSpot(sys, room) {
 // Saboteur: cloak → pop up next to a part in a neighbouring room → wreck it → cloak again
 // ---------------------------------------------------------------------------
 // Timings come from tools/travel.js (real walking times): the two rooms next to a side airlock are
-// 7–9.5 s apart, next-door rooms never less than 3.7 s. Solo, the work takes long enough to run over
+// 5–6 s apart, next-door rooms never less than 3.2 s (2026-10-21: single inner doors, a thinner spine; were 7–9.5 s
+// and 3.7 s with the deck airlocks, when the crew's work was 2 s). Solo, the work takes long enough to run over
 // from the other room (tests/saboteur.js checks this against the measured times); with a crew it's too
 // quick to get there from anywhere but that room.
 const SAB_HP = 3, SAB_SPEED = 2.3, SAB_PICK_TIME = 6;
-const SAB_FADE = 0.8, SAB_SNEAK = [3.5, 5], SAB_WORK_SOLO = 12, SAB_WORK_TEAM = 2;
+const SAB_FADE = 0.8, SAB_SNEAK = [3.5, 5], SAB_WORK_SOLO = 12, SAB_WORK_TEAM = 1.8;
 const SAB_NOTICE = 5, SAB_LOSE = 3;                  // spots crew this close (in view); cloaks away once out of sight this long
 const SAB_SHOT_SPEED = 4.5, SAB_SHOT_COOLDOWN = [3.5, 5], SAB_AIM = 1.0;   // slow, telegraphed, easy to sidestep
 const sabWorkTime = () => (crew.length > 1 ? SAB_WORK_TEAM : SAB_WORK_SOLO);
@@ -393,9 +467,10 @@ function spawnSaboteur(side) {
   sfx.hatch();
 }
 
-// Can it slip from one room to a neighbour? Not through a door or deck airlock security has locked.
+// Can it slip from one room to a neighbour? Not through a door or deck door security has locked (or with vacuum
+// behind it); an unlocked closed one the saboteur opens (it's no alien: a sneak in a suit, it works the doors).
 function roomLinkOpen(a, b) {
-  if (a.col === b.col) return !DECK_LOCKS[a.col].locked;
+  if (a.col === b.col) { const d = DECK_DOORS[a.col]; return !(d.locked || d.blast); }
   const x = COLS[Math.max(a.col, b.col)].x - 0.3;
   const d = DOORWAYS.find(d => Math.abs(d.x + d.w / 2 - x) < 0.5 && (d.y < SPINE_Y0) === (a.deck === 'top'));
   return !d || !(d.locked || d.blast);
@@ -491,33 +566,6 @@ function updateSaboteur(a, dt) {
     return;
   }
   sabCloak(a);                                       // (anything else, e.g. a state from an older save of the sync: start over)
-}
-
-// No getting stuck: an intruder that can't get through bashes its way out.
-function lockAround(a) {                            // the deck-airlock chamber it's standing in, if any
-  return DECK_LOCKS.find(L => a.x > L.x && a.x < L.x + L.w && a.y > SPINE_Y0 && a.y < SPINE_Y1) || null;
-}
-function blockingDoor(a) {                          // the nearest closed door it's up against
-  const d = DOORWAYS.find(d => d.open < 0.95 && Math.hypot(a.x - (d.x + d.w / 2), a.y - (d.y + d.h / 2)) < 1.6);
-  if (d) return { doorway: d };
-  for (const L of DECK_LOCKS) for (const side of ['top', 'bottom']) {
-    const r = L.doorRect[side];
-    if (L.doors[side] < 0.95 && Math.hypot(a.x - (r.x + r.w / 2), a.y - (r.y + r.h / 2)) < 1.6) return { lock: L, side };
-  }
-  return null;
-}
-function bashDoor(a, dt, door, time) {
-  const before = a.bash || 0;
-  a.bash = before + dt;
-  if (Math.floor(a.bash / 0.6) !== Math.floor(before / 0.6)) {
-    sfx.clank();
-    for (let i = 0; i < 5; i++) combatFx(a.x + Math.cos(a.face) * 0.4, a.y + Math.sin(a.face) * 0.4, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, '#ffd28a', 0.07);
-  }
-  if (a.bash < time) return;
-  if (door.doorway) { door.doorway.locked = false; door.doorway.open = 1; }
-  else { const L = door.lock; L.doors[door.side] = 1; L.open = door.side; L.phase = 'idle'; L.locked = false; }
-  combatBanner('The intruder bashed a door open!');
-  a.bash = 0; a.stuck = 0; a.replanned = false;
 }
 
 function hurtInvader(a, dmg, stun = 0) {

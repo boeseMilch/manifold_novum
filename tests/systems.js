@@ -5,7 +5,7 @@ const G = loadGame(['tick', 'time', 'ui', 'miniCommand', 'player', 'combat', 'co
   'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'repairPick', 'updateRepair', 'grab', 'lightLevel',
   'drawLights', 'fuelFraction', 'CELL_ENERGY', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
   'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires',
-  'LEVER_ANGLES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES']);
+  'LEVER_ANGLES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES', 'DOORS']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -169,13 +169,14 @@ const shotsBefore = G.combat.shots.length; let fizzled = false;
 for (let i = 0; i < 60 * 5 && e2.shotCount < 0; i++) G.tick(DT);
 check(e2.shotCount === 0 && G.combat.shots.length === shotsBefore, 'after hitting the cable the very next shot fizzles');
 
-// --- invader: comes in, roams, uses deck airlocks, fights back and dodges, dies after 4 hits
+// --- invader: roams (through open doors: it can't open them), fights back and dodges, dies after 4 hits
 reset(); G.spawnInvader('port');
-const a = G.boarding.invaders[0];
+const a = Object.assign(G.boarding.invaders[0], { state: 'wander', mode: 'inside', x: 7, y: 19, path: [], linger: 0, hatch: null });   // (aboard: tests/eva.js and co. do the outer airlock)
+for (const d of G.DOORS) d.hold = 1e9;                    // every door held open
 const seenRooms = new Set();
 for (let i = 0; i < 60 * 300 && seenRooms.size < 2; i++) { if (a.mode === 'inside') seenRooms.add(a.y < 11.5 ? 'top' : 'bottom'); G.tick(DT); }
-check(a.mode === 'inside', 'invader gets in through the outer airlock');
-check(seenRooms.has('top') && seenRooms.has('bottom'), `invader roams both decks via the deck airlocks (${[...seenRooms]})`);
+check(seenRooms.has('top') && seenRooms.has('bottom'), `with the doors open, the invader roams both decks via the deck doors (${[...seenRooms]})`);
+for (const d of G.DOORS) d.hold = 0;
 // fight: put the player in view, provoke it, and count spit + dodges
 G.player.mode = 'inside';
 a.x = 18.5; a.y = 9.0; a.path = []; G.player.x = 24.5; G.player.y = 9.5;   // open floor on the bridge, in view of each other

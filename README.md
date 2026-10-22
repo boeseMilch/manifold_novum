@@ -84,6 +84,7 @@ this should feel close to playing solo.
 | Left click / E | use what you point at (E: or the nearest thing). Hold to treat. Power lever: tap E to turn, hold E for the wrench |
 | Right click / Space | use your weapon (Space fires the way you face): laser gun, heavy blaster (hold to charge), hold to spray the extinguisher. With the repair kit: hold to repair (or service) the broken part in reach, and every other repair-kit job (splice a line, gravity breaker, nail a plate down, ...); with nothing to repair, it throws the wrench |
 | In a cannon | mouse to aim, or the arrow keys / WASD: the barrel turns towards the screen direction you press (up / down / left / right, within its arc) and a red laser sight shows the line of fire until you move the mouse again; click / Space to fire, hold right click / Shift for cover, R to reload (1 energy), E or CLIMB DOWN to leave |
+| Spacewalk | walk into an outer airlock (left / right airlock room): the inner door opens in front of you and shuts behind you, the chamber pumps out, the outer door opens; step out onto the hull. Back in: float up to the hatch and push in. In the chamber, E / click cycles it by hand |
 | M | mute (or the speaker button, top left) |
 | P | practice panel (in practice mode) |
 | ` | debug menu (spawn threats, teleport, …) |

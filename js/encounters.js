@@ -89,7 +89,7 @@ function updateTide(dt) {
   }
   if (T0.t <= 0) { for (const it of ITEMS) delete it.slide; enc.tide = null; }
 }
-const exposed = (c) => c.mode === 'eva' || c.mode === 'gun' || c.mode === 'hatch' || (c.mode === 'inside' && UPPER.has(roomAt(c.x, c.y)?.id));
+const exposed = (c) => c.mode === 'eva' || c.mode === 'gun' || (c.mode === 'inside' && UPPER.has(roomAt(c.x, c.y)?.id));
 function arcFullCaps() {
   CAPACITORS.forEach((c, i) => {
     if (c.charge < CAP_MAX || capBroken(i)) return;

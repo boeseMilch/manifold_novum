@@ -44,7 +44,7 @@ function failSeam(s) { if (breachRoom(s.room)) combatBanner(`The hull seam gave 
 const ALL_PARTS = [...SYSTEMS, ...HULL_SEAMS];
 // Emergency vent valves (one per room) and the gravity breaker panels (under a floor plate).
 // Plasma fires only happen in the lower side rooms; the panel next to that room's outer airlock vents it.
-const VENT_PANELS = { portLock: [0.85, 17.75], starLock: [43.55, 17.95] };
+const VENT_PANELS = { portLock: [0.85, 16.9], starLock: [43.55, 17.1] };   // (on the outer wall, just above the outer airlock's chamber)
 const PLASMA_ROOMS = new Set(Object.keys(VENT_PANELS));
 const GRAV_PANELS = { portGun: [6.0, 9.6], bridge: [19.0, 8.6], starGun: [36.0, 9.2], portLock: [9.6, 19.6], reactor: [26.6, 21.2], starLock: [35.4, 18.0] };
 // The repair kit's jobs here (Space / right click: js/systems.js repairPick): arcing lines, gravity breakers inside,
@@ -59,20 +59,31 @@ const roomById = (id) => ROOMS.find(r => r.id === id);
 // Where the hole shows on the outside of the hull (on the wall itself), and where a patched one stays.
 const holeAt = (roomId) => { const s = BREACH_SPOTS[roomId]; return s.side === 'port' ? [0.55, s.y] : s.side === 'star' ? [SHIP_W - 0.55, s.y] : [s.x, -2.45]; };   // straddling the wall's inner edge: one hole, seen from both sides
 const breachAt = (roomId) => hz.breaches.find(b => b.room === roomId);
-// Vacuum: a breached room (not tarped, not repressurizing) or one being vented.
-function vacuumRoom(roomId) {
+// Vacuum: a breached room (not tarped, not repressurizing) or one being vented ...
+function sealedVacuum(roomId) {
   const b = breachAt(roomId);
   return (b && !b.tarp && !(b.repress > 0)) || hz.vent?.room === roomId;
 }
-function inVacuum(x, y) { const r = roomAt(x, y); return (!!r && vacuumRoom(r.id)) || dockVacuum(x, y); }
-const doorRooms = (d) => ROOMS.filter(r => r.rects.some(q => inRect(d.x - 0.3, d.y + 1, q) || inRect(d.x + d.w + 0.3, d.y + 1, q)));
-// Blast doors drop on every doorway of a room in vacuum (unless someone forced it up for a moment).
-function updateBlastDoors(dt) {
-  for (const d of DOORWAYS) {
-    d.blastHold = Math.max(0, (d.blastHold || 0) - dt);
-    d.blast = d.blastHold <= 0 && doorRooms(d).some(r => vacuumRoom(r.id));
+// ... and every room joined to one by open doors (a door forced open across a pressure difference vents the
+// room behind it too, until it shuts again; js/game.js forceDoor). A closed door between them: a pressure
+// difference (d.blast), and that door won't open by itself.
+function vacuumRoom(roomId) {
+  if (!roomId) return false;
+  if (sealedVacuum(roomId)) return true;
+  const seen = new Set([roomId]), q = [roomId];
+  while (q.length) {
+    const id = q.shift();
+    for (const d of DOORS) {
+      if (d.open < 0.1) continue;
+      const rs = doorRooms(d);
+      if (!rs.some(r => r.id === id)) continue;
+      for (const r of rs) if (!seen.has(r.id)) { if (sealedVacuum(r.id)) return true; seen.add(r.id); q.push(r.id); }
+    }
   }
+  return false;
 }
+function inVacuum(x, y) { const r = roomAt(x, y); return (!!r && vacuumRoom(r.id)) || dockVacuum(x, y); }
+// (Blast doors: every inner door with a pressure difference across it stays shut, d.blast: js/game.js updateDoors.)
 
 // Speed multiplier for walking crew (vacuum, coffee).
 function crewSpeedMul(c) {
@@ -131,6 +142,16 @@ function sealBreach(roomId, how) {
   hz.repress = { room: roomId, t: REPRESS_TIME };
   hz.stats.repairs++; sfx.hatch(); sfx.win();
 }
+// Where a loose item heads for the hole: straight at it, or round the corner of the outer airlock's chamber when
+// that's in the way (the hole sits on the outer wall beside it: js/ship.js OL_BLOCK).
+function suckVia(roomId, it, spot) {
+  const B = roomId === 'portLock' ? OL_BLOCK.port : roomId === 'starLock' ? OL_BLOCK.star : null;
+  if (!B) return [spot.x, spot.y];
+  const hit = [0.2, 0.4, 0.6, 0.8].some(k => inRect(it.x + (spot.x - it.x) * k, it.y + (spot.y - it.y) * k, B, 0.15));
+  if (!hit) return [spot.x, spot.y];
+  const port = B.x < 1, x = port ? B.x + B.w + 0.2 : B.x - 0.2, y = spot.y > B.y + B.h / 2 ? B.y + B.h + 0.35 : B.y - 0.35;
+  return [x, y];
+}
 function updateBreaches(dt) {
   if (hz.repress && (hz.repress.t -= dt) <= 0) hz.repress = null;
   for (const b of hz.breaches) {
@@ -141,7 +162,8 @@ function updateBreaches(dt) {
     for (const it of [...ITEMS]) {
       if (roomAt(it.x, it.y) !== room) continue;
       it.suck = (it.suck || 0) + dt;
-      const dx = spot.x - it.x, dy = spot.y - it.y, d = Math.hypot(dx, dy) || 1, sp = Math.max(0.6, d / Math.max(0.5, BREACH_TIME - it.suck));
+      const [gx, gy] = suckVia(b.room, it, spot);
+      const dx = gx - it.x, dy = gy - it.y, d = Math.hypot(dx, dy) || 1, sp = Math.max(0.6, Math.hypot(spot.x - it.x, spot.y - it.y) / Math.max(0.5, BREACH_TIME - it.suck));
       it.x += dx / d * Math.min(d, sp * dt); it.y += dy / d * Math.min(d, sp * dt);
       if (d < 0.35 || it.suck >= BREACH_TIME) {
         ITEMS.splice(ITEMS.indexOf(it), 1);
@@ -179,11 +201,13 @@ const fireIn = (roomId) => fires.some(f => f.hp > 0 && sysRooms(f.sys).some(r =>
 // open outer airlock: whoever reaches it is blown out into space (a kill, counted like any other).
 const VENT_HIT = { alien: 3, saboteur: 3, pirate: 2 }, VENT_STUN = 2.5, VENT_PULL = 2.2, VENT_OUT = 0.6;
 const ventHatch = (roomId) => HATCHES.find(h => h.side === (roomId === 'portLock' ? 'port' : 'star'));
+// In the vented room, or in its outer airlock's chamber (both doors stand open: js/airlock.js).
+const inVented = (x, y, room) => roomAt(x, y) === room || (!!ventHatch(room.id) && airlockAt(x, y) === ventHatch(room.id));
 function ventFoes(room) {
   return [
-    ...boarding.invaders.filter(a => !a.dead && a.mode === 'inside' && roomAt(a.x, a.y) === room)
+    ...boarding.invaders.filter(a => !a.dead && a.mode === 'inside' && inVented(a.x, a.y, room))
       .map(a => ({ o: a, dmg: VENT_HIT[a.kind] ?? 3, hurt: (d, s) => hurtInvader(a, d, s), ok: (x, y) => canStand(x, y, walkRects()), name: a.kind === 'saboteur' ? 'The saboteur' : 'The intruder' })),
-    ...dk.pirates.filter(p => !p.dead && roomAt(p.x, p.y) === room)
+    ...dk.pirates.filter(p => !p.dead && inVented(p.x, p.y, room))
       .map(p => ({ o: p, dmg: VENT_HIT.pirate, hurt: (d, s) => hurtPirate(p, d, s), ok: pirateOk, name: 'A pirate' })),
   ];
 }
@@ -195,8 +219,10 @@ function ventHostiles(dt) {
   for (const f of ventFoes(room)) {
     const a = f.o;
     if (!v.hit.includes(a.uid)) { v.hit.push(a.uid); f.hurt(f.dmg, VENT_STUN); if (a.dead) continue; }
-    const dx = h.inside[0] - a.x, dy = h.inside[1] - a.y, d = Math.hypot(dx, dy);
-    if (d < VENT_OUT) {                                // at the open hatch: out it goes
+    // dragged to the airlock's inner door, then through the chamber to the hatch (both doors stand open: js/airlock.js)
+    const through = (airlockDepth(h, a.x) < airlockDepth(h, h.inside[0]) + VENT_OUT && Math.abs(a.y - h.y) < OL_H / 2) || Math.hypot(h.inside[0] - a.x, h.inside[1] - a.y) < VENT_OUT;
+    const [gx, gy] = through ? [h.x, h.y] : h.inside, dx = gx - a.x, dy = gy - a.y, d = Math.hypot(dx, dy);
+    if (through && d < VENT_OUT + 0.6) {               // at the open hatch: out it goes
       combatBanner(`${f.name} got blown out of the airlock!`);
       for (let i = 0; i < 12; i++) combatFx(h.x, h.y, h.dir * (2 + Math.random() * 4), (Math.random() - 0.5) * 3, 0.8, '#dfe8f0', 0.15);
       f.hurt(a.hp, 0);
@@ -215,10 +241,9 @@ function startVent(roomId, operator = null, forced = false) {
   combatBanner(forced ? `Outer airlock forced — ${room.name} vents to space! Blast doors down.`
                       : `${room.name} vented to space — everything in there gets blown around!`);
   sfx.explosion(); sfx.hatch(); sfx.whoosh?.(); sfx.say?.(`Venting ${room.name}.`);
-  for (const c of crew) if (c !== operator && c.mode === 'inside' && roomAt(c.x, c.y) === room) { hurtCrew(c); combatFx(c.x, c.y, 0, -3, 0.6, '#c9ced8', 0.2); }
+  for (const c of crew) if (c !== operator && c.mode === 'inside' && inVented(c.x, c.y, room)) { hurtCrew(c); combatFx(c.x, c.y, 0, -3, 0.6, '#c9ced8', 0.2); }
   for (const f of fires) if (sysRooms(f.sys).includes(room)) { f.hp = 0; scorch(f.x, f.y); }
-  ventHostiles(0);
-  const h = ventHatch(roomId); if (h) h.open = 1;
+  ventHostiles(0);                                   // (both doors of the outer airlock stand open meanwhile: js/airlock.js)
 }
 // Forcing an outer airlock by manual override (broken or locked) opens both its doors at once: the
 // airlock room vents to space exactly like the vent panel does (anyone else in there gets hurt,
@@ -236,7 +261,6 @@ function updateVent(dt) {
   const room = roomById(hz.vent.room), [vx, vy] = VENT_PANELS[hz.vent.room] || roomCenter(room);
   hz.vent.hit ||= [];
   if (Math.random() < dt * 20) combatFx(vx + (Math.random() - 0.5), vy + (Math.random() - 0.5), (Math.random() - 0.5) * 2, -2 - Math.random() * 3, 0.7, '#dfe8f0', 0.2);
-  const h = ventHatch(hz.vent.room); if (h) h.open = 1;  // both doors of the outer airlock stand open
   ventHostiles(dt);
   if ((hz.vent.t -= dt) <= 0) {
     const forced = hz.vent.forced; hz.vent = null; hz.repress = { room: room.id, t: REPRESS_TIME };
@@ -282,7 +306,6 @@ function failGravity(roomId) {
 // ---------------------------------------------------------------------------
 function scorch(x, y) { combat.decals.push({ x, y, r: 0.75, scorch: true, seed: Math.floor(Math.random() * 999) }); }
 function updateHazards(dt) {
-  updateBlastDoors(dt);
   updateBreaches(dt);
   updateVent(dt);
   if (hz.coffee < 1) hz.coffee = Math.min(1, hz.coffee + dt / COFFEE_REFILL);
@@ -488,9 +511,11 @@ function drawVentRush(t) {
   const ex = h.x + h.dir * 0.15, ey = h.y;                        // the open hatch: where everything goes
   const S = GFX.on ? ventSprites() : null, junkOk = S && GFX.ready('fx/junk_bolt');
   const at = (r) => [q.x + 0.5 + r() * (q.w - 1), q.y + 0.4 + r() * (q.h - 0.8)];
+  const mx = h.inner.x + h.inner.w / 2, my = h.y;                 // (in through the airlock's open inner door, out of the hatch)
   const path = (sx, sy, k, bend) => {                              // from (sx, sy) to the hatch, speeding up, a slight curve
-    const u = k ** 1.7, side = Math.sin(Math.PI * u) * bend;
-    const dx = ex - sx, dy = ey - sy;
+    if (k > 0.8) { const o = (k - 0.8) / 0.2; return [mx + (ex - mx) * o, my + (ey - my) * o]; }
+    const u = (k / 0.8) ** 1.7, side = Math.sin(Math.PI * u) * bend;
+    const dx = mx - sx, dy = my - sy;
     return [sx + dx * u - dy * side * 0.15, sy + dy * u + dx * side * 0.15];
   };
   ctx.save(); ctx.lineCap = 'round';

@@ -1,16 +1,19 @@
 // Intruder (the alien): hunts the crew room by room and fights whoever it finds; it no longer
-// sabotages anything. Plus luck from petting the cat and the front shield. Run: node tests/intruder.js
+// sabotages anything. It can't open doors (tests/doors.js: shut out, it waits by the door); here the room-to-room
+// hunting runs with every door held open, and the aliens are put aboard directly (not through the outer airlock). Plus luck from petting the cat and the front shield. Run: node tests/intruder.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'player', 'boarding', 'spawnInvader', 'SYSTEMS', 'roomAt', 'adjacentRooms', 'ROOMS',
   'luck', 'lucky', 'petCat', 'clickTarget', 'CAT', 'smallHit', 'fires', 'combat', 'pressShield', 'CAPACITORS', 'makeAsteroid',
-  'shieldYFront', 'combatClear'];
+  'shieldYFront', 'combatClear', 'DOORS', 'DECK_DOORS', 'SPINE_Y0'];
+const aboard = (G, a, x = 7, y = 19) => Object.assign(a, { state: 'wander', mode: 'inside', x, y, path: [], linger: 0, hatch: null, t: 0 });
+const doorsOpen = (G) => { for (const d of G.DOORS) d.hold = 1e9; };
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 
-// nobody aboard: it prowls from room to room (always to an adjacent room) and breaks nothing
+// nobody aboard: it prowls from room to room (always to an adjacent room, through the open doors) and breaks nothing
 {
-  const G = loadGame(NAMES); G.spawnInvader('port'); const a = G.boarding.invaders[0];
+  const G = loadGame(NAMES); G.spawnInvader('port'); const a = aboard(G, G.boarding.invaders[0]); doorsOpen(G);
   G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;   // outside the ship: nobody to hunt
   let room = null, hops = 0, badHop = 0;
   for (let i = 0; i < 60 * 200; i++) {
@@ -18,20 +21,20 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
     const r = G.roomAt(a.x, a.y);
     if (r && r !== room) { if (room && !G.adjacentRooms(room).includes(r)) badHop++; if (room) hops++; room = r; }
   }
-  check(hops >= 4 && badHop === 0, `with nobody aboard it prowls room to room, always to an adjacent room (${hops} hops, ${badHop} non-adjacent)`);
+  check(hops >= 4 && badHop === 0, `with nobody aboard (doors open) it prowls room to room, always to an adjacent room (${hops} hops, ${badHop} non-adjacent)`);
   check(!G.SYSTEMS.some(s => s.broken), 'it never sabotages anything (that is the saboteur\'s job)');
 }
-// hunting: it finds you wherever you are and attacks
+// hunting (doors open): it finds you wherever you are and attacks
 for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the bridge'], [37.5, 21, 'the right airlock room']]) {
-  const G = loadGame(NAMES); G.spawnInvader('port'); const a = G.boarding.invaders[0];
+  const G = loadGame(NAMES); G.spawnInvader('port'); const a = aboard(G, G.boarding.invaders[0]); doorsOpen(G);
   G.player.x = x; G.player.y = y;
   let t = 0;
   for (; t < 60 && a.state !== 'fight'; t += DT) { G.tick(DT); G.player.x = x; G.player.y = y; }
   check(a.state === 'fight' && Math.hypot(a.x - x, a.y - y) < 9, `it hunts you down in ${where} and attacks (after ${t.toFixed(0)} s, from ${Math.hypot(a.x - x, a.y - y).toFixed(1)} away)`);
 }
-// it follows when you leave the room
+// it follows when you leave the room (doors open)
 {
-  const G = loadGame(NAMES); G.spawnInvader('port'); const a = G.boarding.invaders[0];
+  const G = loadGame(NAMES); G.spawnInvader('port'); const a = aboard(G, G.boarding.invaders[0]); doorsOpen(G);
   G.player.x = 7; G.player.y = 7;
   for (let i = 0; i < 60 * 40 && a.state !== 'fight'; i++) { G.tick(DT); G.player.x = 7; G.player.y = 7; }
   G.player.x = 37.5; G.player.y = 21;                          // gone: now in the far corner of the ship
@@ -41,8 +44,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
 }
 // telegraphed moves: spit windup, pounce hits, no dodging right after a lunge
 {
-  const G = loadGame([...NAMES, 'hurtInvader', 'SPIT_WINDUP']); G.spawnInvader('port'); const a = G.boarding.invaders[0];
-  for (let i = 0; i < 120; i++) G.tick(DT);
+  const G = loadGame([...NAMES, 'hurtInvader', 'SPIT_WINDUP']); G.spawnInvader('port'); const a = aboard(G, G.boarding.invaders[0]);
   a.x = 18.5; a.y = 9; a.path = []; a.task = null; G.player.x = 24.5; G.player.y = 9.5; G.player.mode = 'inside';
   G.hurtInvader(a, 0); a.hp = 100; a.spitT = 0;
   let windup = null, firedAt = null;
@@ -98,8 +100,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   check(G.SPIT_SPEED >= 11 && G.SPIT_SPEED <= 12, `its acid spit flies at ${G.SPIT_SPEED} units/s (was 9)`);
   // dodgeable: from its usual 4-6 units away, the windup plus the flight leave over a second to step aside
   check(G.SPIT_WINDUP + 4 / G.SPIT_SPEED > 1, `still dodgeable: ${(G.SPIT_WINDUP + 4 / G.SPIT_SPEED).toFixed(2)} s from the windup to the spit crossing 4 units`);
-  G.spawnInvader('port'); const a = G.boarding.invaders[0];
-  for (let i = 0; i < 120; i++) G.tick(DT);
+  G.spawnInvader('port'); const a = aboard(G, G.boarding.invaders[0]);
   a.x = 18.5; a.y = 9; a.path = []; G.player.x = 24.5; G.player.y = 9.5; G.player.mode = 'inside';
   G.hurtInvader(a, 0); a.spitT = 0; a.hp = 100;
   let bolt = null;
@@ -150,7 +151,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
       const [sx, sy] = G.NAV_SPOTS.reactor, seen = new Set([key(sx, sy)]), q = [[sx, sy]];
       while (q.length) { const [x, y] = q.pop(); for (const [dx, dy] of [[0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]]) { const nx = x + dx, ny = y + dy, k = key(nx, ny); if (!seen.has(k) && ok(nx, ny)) { seen.add(k); q.push([nx, ny]); } } }
       const out = new Set();
-      for (let x = 14.4; x < 30.1; x += 0.2) for (let y = 15.2; y < 25.4; y += 0.2) if (ok(x, y) && !seen.has(key(x, y))) out.add(key(x, y));
+      for (let x = 14.4; x < 30.1; x += 0.2) for (let y = 14.2; y < 25.4; y += 0.2) if (ok(x, y) && !seen.has(key(x, y))) out.add(key(x, y));
       return out;
     };
     const withPods = shutOff(), keep = G.boarding.pods; G.boarding.pods = []; G.syncPodSolids();
@@ -187,26 +188,24 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
     H.mission.active = false; H.runEvent({ t: 0, kind: 'intruder', side: 'port', count: 2, pods: true });
     check(H.boarding.invaders.length === 2 && H.boarding.invaders.every(a => a.state === 'entering' && a.hatch), 'with no sealed pod left they come in through the airlocks');
   }
-  // nobody aboard: each prowls its own deck, they don't clump
+  // nobody aboard: they can't open the deck doors, so neither gets out of the reactor room; the upper-deck one
+  // waits by the deck door up, the other prowls the room
   G.player.mode = 'eva'; G.player.x = -2.5; G.player.y = 10;
-  const deck = (a) => (a.y < 11.5 ? 'top' : 'bottom'); let off = 0, apart = 0, n = 0;
-  for (let i = 0; i < 60 * 120; i++) {
-    G.tick(DT); G.player.x = -2.5; G.player.y = 10;
-    if (i > 60 * 40 && i % 30 === 0) { n++; for (const a of [p, q]) if (a.mode === 'inside' && G.roomAt(a.x, a.y) && deck(a) !== a.zone) off++; if (Math.hypot(p.x - q.x, p.y - q.y) > 8) apart++; }
-  }
-  check(off === 0, `after getting there, each stays on its own deck (${off} samples off it)`);
-  check(apart / n > 0.9, `and they stay apart (more than 8 units ${Math.round(apart / n * 100)}% of the time)`);
-  // you on the upper deck: the upper one comes for you, the lower one keeps to its deck ... until it's the last one
-  G.player.mode = 'inside'; G.player.x = 22; G.player.y = 2;
-  const top = p.zone === 'top' ? p : q, bot = top === p ? q : p;
+  const top = p.zone === 'top' ? p : q, bot = top === p ? q : p, M = G.DECK_DOORS[1], mx = M.x + M.w / 2;
+  let out = 0;
+  for (let i = 0; i < 60 * 60; i++) { G.tick(DT); G.player.x = -2.5; G.player.y = 10; if ([p, q].some(a => G.roomAt(a.x, a.y)?.id !== 'reactor')) out++; }
+  check(out === 0, `with the doors shut both stay in the reactor room (${out} frames elsewhere)`);
+  check(Math.hypot(top.x - mx, top.y - (M.y + M.h)) < 2.2, `the upper-deck one waits by the middle deck door, up (${top.x.toFixed(1)}, ${top.y.toFixed(1)})`);
+  // you on the upper deck, at that door: it opens, the upper one comes for you, the lower one keeps to its deck ... until it's the last one
+  G.player.mode = 'inside'; G.player.x = mx; G.player.y = G.SPINE_Y0 - 0.8;
   let botUp = 0;
-  for (let i = 0; i < 60 * 40 && top.state !== 'fight'; i++) { G.tick(DT); G.player.x = 22; G.player.y = 2; G.player.health = 'ok'; if (G.roomAt(bot.x, bot.y)?.deck === 'top') botUp++; }
-  check(top.state === 'fight' && botUp === 0, `the upper-deck alien hunts you down on the bridge, the lower-deck one stays below (${top.state}, ${botUp} frames up top)`);
+  for (let i = 0; i < 60 * 40 && top.state !== 'fight'; i++) { G.tick(DT); G.player.x = mx; G.player.y = G.SPINE_Y0 - 0.8; G.player.health = 'ok'; if (G.roomAt(bot.x, bot.y)?.deck === 'top') botUp++; }
+  check(top.state === 'fight' && botUp === 0, `you open the deck door: the upper-deck alien attacks, the lower-deck one stays below (${top.state}, ${botUp} frames up top)`);
   G.hurtInvader(top, 99); G.tick(DT);
   check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Kill both intruders (1/2 dead)', `one down: "${G.objectiveStatus().text}"`);
   let t = 0;
-  for (; t < 60 && bot.state !== 'fight'; t += DT) { G.tick(DT); G.player.x = 22; G.player.y = 2; G.player.health = 'ok'; }
-  check(bot.state === 'fight', `the last one left comes up and hunts you (${t.toFixed(0)} s)`);
+  for (; t < 60 && bot.state !== 'fight'; t += DT) { G.tick(DT); G.player.x = mx; G.player.y = G.SPINE_Y0 - 0.8; G.player.health = 'ok'; }
+  check(bot.state === 'fight', `the last one left comes for you (${t.toFixed(0)} s)`);
   G.hurtInvader(bot, 99); G.tick(DT);
   check(G.objectiveStatus().done, 'both down: objective done');
   // other missions' intruders stay single

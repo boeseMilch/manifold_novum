@@ -109,7 +109,7 @@ const key = (G, code) => { G.listeners.keydown({ code, preventDefault() {} }); G
   G.tick(DT);
   check(/manual override/.test(me.prompt?.text || ''), `next to a locked door: manual override ("${me.prompt?.text}")`);
   G.listeners.keydown({ code: 'KeyE', preventDefault() {} }); G.tick(DT); G.listeners.keyup({ code: 'KeyE' });
-  check(me.ui.panel === 'override' && me.ui.override?.name === 'Door' && !me.ui.mini, 'a locked door still opens the bashing override');
+  check(me.ui.panel === 'override' && /^Door/.test(me.ui.override?.name || '') && !me.ui.mini, 'a locked door still opens the bashing override');
 }
 
 console.log(failed ? `\n${failed} check(s) FAILED` : '\nall pin pad checks passed');

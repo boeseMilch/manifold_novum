@@ -64,8 +64,8 @@ const SYSTEMS = [
   ...CAPACITORS.map((c, i) => ({ kind: 'capacitor', ref: c, col: i, x: c.x, y: c.y, name: `${['Left', 'Middle', 'Right'][i]} capacitor` })),
   { kind: 'reactor', ref: REACTOR, col: 1, x: REACTOR.x, y: REACTOR.y, name: 'Reactor', r: 1.9 },
   { kind: 'lever', ref: LEVER, col: 1, x: LEVER.x, y: LEVER.y, name: 'Power lever' },
-  ...DECK_LOCKS.map(L => ({ kind: 'lock', ref: L, col: L.col, x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, name: `${['Left', 'Middle', 'Right'][L.col]} deck airlock`, r: 2.4 })),
-  ...HATCHES.map(h => ({ kind: 'hatch', ref: h, col: h.side === 'port' ? 0 : 2, x: h.inside[0] - h.dir * 0.4, y: h.inside[1], name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock` })),
+  ...DECK_DOORS.map(d => ({ kind: 'lock', ref: d, col: d.col, x: d.x + d.w / 2, y: d.y + d.h / 2, name: `${['Left', 'Middle', 'Right'][d.col]} deck door`, r: 2.0 })),   // (kind 'lock': the deck airlocks they replaced)
+  ...HATCHES.map(h => ({ kind: 'hatch', ref: h, col: h.side === 'port' ? 0 : 2, x: h.inner.x + h.inner.w / 2, y: h.y, name: `${h.side === 'port' ? 'Left' : 'Right'} outer airlock` })),   // (at its inner door: js/airlock.js)
   // outside on the hull (outside: no fires in vacuum, no inside repair, no saboteur; fixed on a spacewalk)
   ...SHIELD_EMITTERS.map(e => ({ kind: 'emitter', ref: e, col: SIDE_CAP[e.side], x: e.x, y: e.y, name: `${SIDE_LABEL[e.side]} shield emitter`, r: 0.7, outside: true })),
 ].map(s => ({ ...s, broken: false, r: s.r || 1.0 }));
@@ -129,18 +129,19 @@ const POWER_ROUTES = [
   // left airlock), MID out of the top and up past the reactor's right side to the middle capacitor (back wall,
   // by the cat), RIGHT out of the right side (over to the right airlock)
   { id: 'feed0', cap: 0, feed: true, route: [leverPort(leverAngle(0)), [20.9, 22.75], [18.6, 21.5], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.5], powerFit('plug', 7.48, 22.6, 'E')] },
-  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [22.3, 21.45], [24.7, 21.25], [25.25, 20.0], [25.25, 16.6], powerFit('plug', 26.12, 15.85, 'W')] },
+  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [22.3, 21.45], [24.7, 21.25], [25.25, 20.0], [25.25, 15.6], powerFit('plug', 26.12, 14.85, 'W')] },
   { id: 'feed2', cap: 2, feed: true, route: [leverPort(leverAngle(2)), [25.8, 22.65], [28.9, 20.9], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
-  { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, 16.4], powerFit('plug', 6.6, 15.4, 'W')] },
+  { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, 15.4], powerFit('plug', 6.6, 14.4, 'W')] },
   // the middle capacitor's lines: the front shield's along the back wall to its button, the front cannon's into
   // a riser right beside the cabinet (up through the spine to the upper deck)
-  { id: 'shield_front', cap: 1, route: [powerFit('plug', 26.12, 15.45, 'W'), powerFit('plug', 22.6, 15.4, 'E')] },
-  { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, 16.4], powerFit('plug', 36.8, 15.4, 'W')] },
-  { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.4, 21.8], [2.5, 18.6], powerFit('riser', 2.5, 15.0, 'S'), 'hide',
+  { id: 'shield_front', cap: 1, route: [powerFit('plug', 26.12, 14.45, 'W'), powerFit('plug', 22.6, 14.4, 'E')] },
+  { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, 15.4], powerFit('plug', 36.8, 14.4, 'W')] },
+  // (the cannon lines run round the outer airlocks' chambers, up the room side of their inner wall: 2026-10-21)
+  { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.9, 21.9], [3.75, 17.2], [2.5, 15.6], powerFit('riser', 2.5, SPINE_Y1, 'S'), 'hide',
                                     powerFit('box', 2.5, 11.5, 'N'), [2.4, 7.2], [1.6, 5.95], powerFit('box', 0.6, 5.95, 'E')] },
-  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 15.65, 'E'), powerFit('riser', 28.9, 15.0, 'S'), 'hide',
+  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 14.65, 'E'), powerFit('riser', 28.9, SPINE_Y1, 'S'), 'hide',
                                      powerFit('box', 28.4, 11.5, 'N'), [28.4, 6.0], [27.2, 1.6], [25.6, 0.3], [24.2, -0.9], powerFit('box', 24.2, -2.4, 'S')] },
-  { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [41.6, 21.6], [42.6, 18.2], [43.35, 16.4], powerFit('riser', 43.35, 15.0, 'S'), 'hide',
+  { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [40.75, 22.4], [40.7, 17.3], [43.35, 15.4], powerFit('riser', 43.35, SPINE_Y1, 'S'), 'hide',
                                     powerFit('box', 42.35, 11.5, 'N'), [42.35, 7.0], [42.8, 5.75], powerFit('box', 43.8, 5.75, 'W')] },
 ];
 const POWER_FITTINGS = [];
@@ -196,7 +197,7 @@ function linePoint(l, k) {
 // the crew), clipped to the floors so it doesn't show over the walls and the spine.
 function floorClip(g) {                               // clip g (world transform set) to the floors, minus the strip the near walls' tops cover
   if (!(GFX.on && typeof WALLS !== 'undefined' && WALLS)) return;
-  g.beginPath(); for (const r of [...ROOM_RECTS, ...DOORWAYS]) g.rect(L(r.x), L(r.y), L(r.w), L(r.h)); g.clip();
+  g.beginPath(); for (const r of [...ROOM_RECTS, ...DOORS]) g.rect(L(r.x), L(r.y), L(r.w), L(r.h)); g.clip();
   const lift = GFX.lift(H_LOW), near = WALLS.hRuns.filter(h => h.kind === 'near');
   g.beginPath(); g.rect(L(-50), L(-50), L(150), L(150));
   for (const h of near) g.rect(L(h.x0), L(h.y - lift), L(h.x1 - h.x0), L(lift));
@@ -364,10 +365,10 @@ function grab(kind) {
   else if (inv[slot]) ITEMS.push({ kind: inv[slot], ...dropSpot(player.x + (Math.random() - 0.5) * 0.4, player.y + 0.35) });   // drop what you had
   inv[slot] = kind; sfx.clank();
 }
-// Somewhere on a fixed floor (a room or an airlock chamber), so a dropped item never ends
-// up somewhere unreachable like a doorway, and never inside a crate or furniture (SOLIDS).
+// Somewhere on a fixed floor (a room), so a dropped item never ends up somewhere unreachable like a
+// doorway (a door shuts there), and never inside a crate or furniture (SOLIDS).
 function dropSpot(x, y) {
-  const floors = [...ROOM_RECTS, ...DECK_LOCKS.map(Lk => Lk.chamber), ...(typeof dockRects === 'function' ? dockRects() : [])];
+  const floors = [...ROOM_RECTS, ...(typeof dockRects === 'function' ? dockRects() : [])];
   const free = (px, py) => floors.some(q => inRect(px, py, q, -0.3)) && !SOLIDS.some(S => inRect(px, py, S, CREW_R + 0.05));
   let best = null, bd = Infinity;
   if (floors.some(q => inRect(x, y, q, -0.3))) best = { x, y };

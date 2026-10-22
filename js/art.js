@@ -390,7 +390,7 @@ function drawShipHull(t, hull, guns, engine) {
 // Hull between the decks: conduits and vents, avoiding the shafts.
 function drawSpine(y0, y1, x0, x1, holes) {
   const ym = (y0 + y1) / 2 * T;
-  for (const [dy, col, w] of [[-0.75, '#3b6f7a', 5], [0.1, '#6a6f7a', 8], [0.8, '#7a5a3b', 5]]) {
+  for (const [dy, col, w] of [[-0.6, '#3b6f7a', 5], [0.05, '#6a6f7a', 8], [0.6, '#7a5a3b', 5]]) {
     ctx.strokeStyle = OUT; ctx.lineWidth = w + 4;
     ctx.beginPath(); ctx.moveTo(x0 * T, ym + dy * T); ctx.lineTo(x1 * T, ym + dy * T); ctx.stroke();
     ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
@@ -398,7 +398,7 @@ function drawSpine(y0, y1, x0, x1, holes) {
   const rand = rng(31);
   for (let x = x0 + 0.8; x < x1 - 0.8; x += 1.3 + rand() * 2.2) {   // pipe clamps
     if (holes.some(h => x > h.x - 0.3 && x < h.x + h.w + 0.3)) continue;
-    rr(x * T - 4, ym - 1.0 * T, 8, 2.0 * T, 2); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(1.5);
+    rr(x * T - 4, ym - 0.85 * T, 8, 1.7 * T, 2); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(1.5);
   }
 }
 
@@ -407,7 +407,7 @@ function drawFloors(rects, tintOf) {
   rects.forEach((r, i) => {
     const base = tintOf(r);
     ctx.save(); ctx.beginPath(); rectPath(r); ctx.clip();
-    const small = Math.min(r.w, r.h) < 3;
+    const small = Math.min(r.w, r.h) < 3 && !ROOM_RECTS.includes(r);   // (doorways and the like: tread; not a room's narrow corner beside an outer airlock)
     for (const p of plates(r, 500 + i * 17, small ? 9 : 2.6)) {
       const x = p.x * T, y = p.y * T, w = p.w * T, h = p.h * T;
       const odd = p.r < 0.07, diamond = p.r > 0.93;   // a few replacement plates that don't match
@@ -463,25 +463,30 @@ function drawSlideDoor(r, open) {
   }
 }
 
-function drawDeckLock(L, t) {
-  const c = L.chamber, x = c.x * T, y = c.y * T, w = c.w * T, h = c.h * T;
-  ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(210,166,46,0.75)'; ctx.lineWidth = 2;
-  ctx.strokeRect(x + 6, y + 6, w - 12, h - 12); ctx.restore();
-  if (L.phase === 'cycling') {                     // air rushing in/out: pulsing glow + progress ring
-    const k = L.t / LOCK_CYCLE;
-    ctx.fillStyle = `rgba(150,200,255,${0.12 + 0.1 * Math.sin(t * 18)})`; ctx.fillRect(x, y, w, h);
-    ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, T * 0.32, -Math.PI / 2, -Math.PI / 2 + k * TAU);
-    ctx.strokeStyle = 'rgba(20,22,27,0.6)'; ctx.lineWidth = 7; ctx.stroke();
-    ctx.strokeStyle = '#ffd36a'; ctx.lineWidth = 3.5; ctx.stroke();
+// Deck door (classic view): the passage through the spine, its floor, and the single sliding door across its
+// middle (two panels into the spine); lamps at both ends: green = works, red = locked / broken, amber blink =
+// pressure difference; hazard stripes on a shut door with vacuum behind it.
+function drawDeckDoor(d, t) {
+  const x = d.x * T, y = d.y * T, w = d.w * T, h = d.h * T, b = doorBroken(d);
+  ctx.fillStyle = '#4a515e'; ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
+  for (let k = 8; k < h; k += 10) { ctx.beginPath(); ctx.moveTo(x + 4, y + k); ctx.lineTo(x + w - 4, y + k); ctx.stroke(); }   // tread
+  ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+  const dy = (SPINE_Y1 - 0.8) * T, th = 0.26 * T, pw = (w / 2) * (1 - clamp(d.open, 0, 1));
+  ctx.fillStyle = '#2b303a'; ctx.fillRect(x - 4, dy - th / 2 - 2, w + 8, th + 4);   // the track
+  if (pw > 0.5) for (const side of [0, 1]) {
+    const px = side ? x + w - pw : x;
+    if (d.blast) hazardStripe(px, dy - th / 2, pw, th);
+    else {
+      ctx.fillStyle = '#7a8396'; ctx.fillRect(px, dy - th / 2, pw, th);
+      ctx.fillStyle = d.locked || b ? '#e2574c' : C.hazard; ctx.fillRect(side ? px : px + pw - 5, dy - th / 2, 5, th);
+      ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(px, dy - th / 2, pw, th);
+    }
   }
-  for (const s of ['top', 'bottom']) {
-    drawSlideDoor(L.doorRect[s], L.doors[s]);
-    const busy = L.phase !== 'idle';
-    const ly = s === 'top' ? L.doorRect.top.y * T - 7 : (L.doorRect.bottom.y + L.doorRect.bottom.h) * T + 7;
-    lamp(x - 9, ly, busy ? 'busy' : L.open === s ? 'open' : 'closed', t);
-  }
+  const st = b || d.locked ? 'closed' : d.blast ? 'busy' : 'open';
+  for (const ly of [y - 7, y + h + 7]) lamp(x - 9, ly, st, t);
+  if (b && Math.sin(t * 20) > 0.6) { ctx.fillStyle = '#ffd36a'; ctx.fillRect(x + w + 3, dy - 3, 4, 4); }   // sparks
 }
-
 
 // Capacitor bank: a cabinet of cells, lit cells hold charge.
 function drawCapacitor(cap, max, t) {
@@ -711,19 +716,7 @@ function drawEngineBell(t, E) {
   ctx.restore();
 }
 
-// Outer airlock hatch set into a side wall; h.open 0..1 slides the doors apart.
-function drawHatch(h) {
-  const x = h.dir < 0 ? h.x * T - 0.4 * T : h.x * T - 0.5 * T, w = 0.9 * T, y = (h.y - 0.9) * T, hh = 1.8 * T;
-  rr(x, y, w, hh, 4); ctx.fillStyle = '#23272f'; ctx.fill(); stroke(2);
-  hazardStripe(x + 4, y + 4, w - 8, hh - 8);
-  ctx.fillStyle = '#080b14'; ctx.fillRect(x + 9, y + 12, w - 18, hh - 24);
-  const ph = (hh - 24) / 2 * (1 - h.open);
-  for (const s of [0, 1]) {
-    const py = s ? y + hh - 12 - ph : y + 12;
-    ctx.fillStyle = '#6b7486'; ctx.fillRect(x + 9, py, w - 18, ph);
-    ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x + 9, py, w - 18, ph);
-  }
-}
+// (The outer airlocks, classic view: js/airlock.js drawAirlock2D.)
 
 // Shield button on the lower deck: a big mushroom button on a pedestal against the wall.
 // state: 'ready' | 'up' | 'cooldown'; k: cooldown progress 0..1 (1 = ready again).

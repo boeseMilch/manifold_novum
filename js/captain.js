@@ -378,8 +378,9 @@ function startRaid(side) {
 function raidRoute(x, y, tx, ty) {
   const H = HATCHES.find(h => h.side === dk.raid.side), hin = { x: H.inside[0], y: H.inside[1] };
   const nav = (ax, ay, bx, by) => navPath(nearestNav(ax, ay), nearestNav(bx, by)).map(n => ({ x: NAV.nodes[n].x, y: NAV.nodes[n].y }));
-  const a = inRaidTube(x, y), b = inRaidTube(tx, ty);
-  let pts = a && b ? [] : a ? [hin, ...nav(hin.x, hin.y, tx, ty)] : b ? [...nav(x, y, hin.x, hin.y), hin] : nav(x, y, tx, ty);
+  const out = (px, py) => inRaidTube(px, py) || airlockAt(px, py) === H, way = airlockWay(H);   // (the tube, or our airlock's chamber: js/airlock.js)
+  const a = out(x, y), b = out(tx, ty);
+  let pts = a && b ? [] : a ? [...way, hin, ...nav(hin.x, hin.y, tx, ty)] : b ? [...nav(x, y, hin.x, hin.y), hin, ...way.slice().reverse()] : nav(x, y, tx, ty);
   pts.push({ x: tx, y: ty });
   const clear = (q) => { const n = Math.ceil(Math.hypot(q.x - x, q.y - y) / 0.15); for (let i = 1; i <= n; i++) if (!pirateOk(x + (q.x - x) * i / n, y + (q.y - y) * i / n)) return false; return true; };
   while (pts.length > 1 && clear(pts[1])) pts.shift();
@@ -391,7 +392,7 @@ function raidPirateMove(p, dt) {
   if (!R || R.state !== 'docked') return;
   let goal = null;
   const loot = ITEMS.filter(it => it.kind === 'fuel' && roomAt(it.x, it.y) && deckOf(it.y) === deckOf(FUEL_CRATE.y));   // (fuel only: the crate, or a cell lying about on the lower deck)
-  if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.8, y: FUEL_CRATE.y, crate: true });
+  if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.95, y: FUEL_CRATE.y, crate: true });   // (just clear of the crate: a spot they can stand on)
   if (!p.carry && !p.done && (p.loots >= PIRATE_LOOT || !loot.length || R.leaveT != null)) { p.done = true; combatBanner('A raider pirate heads back to their ship'); }
   if (p.carry || p.done) goal = { ...raidHome(R), home: true };
   else goal = loot.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0];
@@ -411,7 +412,7 @@ function raidPirateMove(p, dt) {
 function updateRaid(dt) {
   const R = dk.raid;
   if (!R || R.state !== 'docked') return;
-  const H = HATCHES.find(h => h.side === R.side); H.open = 1;
+  const H = HATCHES.find(h => h.side === R.side);   // (docked: its tube connects at our outer airlock, a plain passage: js/airlock.js)
   const P = dk.pirates.filter(p => p.raid);
   if (R.leaveT == null && (P.every(p => p.home) || (typeof mission !== 'undefined' && mission.jump))) {
     R.leaveT = P.length && !mission.jump ? LEAVE_DELAY : 1;
@@ -423,7 +424,7 @@ function updateRaid(dt) {
     for (const it of ITEMS) if (inRect(it.x, it.y, tube) && !roomAt(it.x, it.y)) [it.x, it.y] = H.inside;
     dk.pirates = dk.pirates.filter(p => !p.raid || roomAt(p.x, p.y) && !inRect(p.x, p.y, tube));
     for (const p of dk.pirates) if (p.raid) { delete p.raid; p.done = true; }   // (one left on our ship: stays and fights)
-    R.state = 'gone'; H.open = 0; sfx.hatch();
+    R.state = 'gone'; sfx.hatch();
     const n = R.stolen.length;
     combatBanner(n ? `The raider cast off with ${n === 1 ? 'a' : n} ${n === 1 ? 'fuel cell' : 'stolen things'}.` : 'The raider cast off empty-handed!');
   }

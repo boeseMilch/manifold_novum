@@ -2,7 +2,7 @@
 // fires + extinguisher, and the jump / lose rules. Run: node tests/mission.js
 const { loadGame } = require('./harness');
 const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'combat', 'combatClear', 'mission', 'startMission', 'radarScan', 'radarList', 'diagState',
-  'serviceTarget', 'updateRepair', 'clickTarget', 'repairPick', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_LOCKS',
+  'serviceTarget', 'updateRepair', 'clickTarget', 'repairPick', 'inv', 'SYSTEMS', 'CAPACITORS', 'CAP_MAX', 'DOORWAYS', 'DECK_DOORS', 'SPINE_Y1',
   'HATCHES', 'walkRects', 'startOverride', 'overrideHit', 'ui', 'fires', 'spawnFire', 'spray', 'shipHit', 'boarding',
   'spawnInvader', 'power', 'MAX_DAMAGE', 'MAINT_WARNING', 'MAINT_YELLOW', 'jumpStall', 'PRESS_FIRST', 'PRESS_SHRINK', 'PRESS_FLOOR', 'STRAIN_FIRST',
   'STRAIN_FLOOR', 'STALL_CYCLE', 'shapedTimes', 'simTick', 'startTutorial', 'netSerialize', 'netApply', 'jumpCharge', 'me', 'radarList'];
@@ -204,10 +204,10 @@ const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
   for (let i = 0; i < 80; i++) G.tick(DT);          // the last swing plays out, then the door gives
   setTimeout(() => {
     check(!d.locked && G.ui.panel === null, 'the third bonk opens it (and closes the panel)');
-    // locked lift and deck airlock
-    const G2 = loadGame(NAMES); const lk = G2.DECK_LOCKS[0];
-    lk.locked = true; G2.player.x = lk.x + lk.w / 2; G2.player.y = 15.8; for (let i = 0; i < 300; i++) G2.tick(DT);
-    check(lk.doors.top === 0 && lk.doors.bottom === 0, 'a locked deck airlock keeps both doors shut, even with someone waiting');
+    // locked deck door
+    const G2 = loadGame(NAMES); const lk = G2.DECK_DOORS[0];
+    lk.locked = true; G2.player.x = lk.x + lk.w / 2; G2.player.y = G2.SPINE_Y1 + 0.5; for (let i = 0; i < 300; i++) G2.tick(DT);
+    check(lk.open === 0, 'a locked deck door stays shut, even with someone waiting in front of it');
     // locked outer airlock: the intruder has to bash it for 8 s
     const G3 = loadGame(NAMES); G3.HATCHES[0].locked = true; G3.spawnInvader('port');
     const a = G3.boarding.invaders[0];

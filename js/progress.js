@@ -20,7 +20,7 @@ const SHIP_UPGRADES = [
   { id: 'coffee', name: 'Proper coffee machine', rep: 2, desc: 'The kitchen coffee mug refills in 20 s instead of a minute.' },
   { id: 'inserter', name: 'Reactor fuel inserter', rep: 3, desc: 'Loads a fresh fuel cell into an empty reactor by itself (switch it off at the crate\'s handle).' },
   { id: 'cannons', name: 'Efficient cannons', rep: 3, desc: '4 shots per energy instead of 3.' },
-  { id: 'airlocks', name: 'Faster airlock pumps', rep: 3, desc: 'Deck airlocks cycle in 0.7 s instead of 1.3 s.' },
+  { id: 'airlocks', name: 'Faster airlock pumps', rep: 3, desc: 'The outer airlocks pump in 0.7 s instead of 1.3 s: quicker out on a spacewalk and back.' },   // (2026-10-21: was the deck airlocks, gone now; same id: it's in saves)
   { id: 'radar', name: 'Long-range radar', rep: 4, desc: 'The radar sees 60 s ahead instead of 45 s.' },
   { id: 'shields', name: 'Longer shields', rep: 4, desc: 'Shields stay up 18 s instead of 15 s.' },
   { id: 'caps', name: 'Bigger capacitors', rep: 5, desc: 'Capacitors hold 4 energy instead of 3.' },
@@ -308,7 +308,7 @@ function applyShipUpgrades(ship = {}) {
   CAP_MAX = has('caps') ? 4 : 3;
   FIRE_TIME = has('sprinklers') ? 22 : 15;
   RADAR_RANGE = has('radar') ? 60 : 45;
-  LOCK_CYCLE = has('airlocks') ? 0.7 : 1.3;
+  LOCK_CYCLE = has('airlocks') ? LOCK_CYCLES.fast : LOCK_CYCLES.base;   // (the outer airlocks' pump: js/airlock.js)
   COFFEE_REFILL = has('coffee') ? 20 : 60;
   MAX_DAMAGE = has('hull') ? 6 : 5;
 }

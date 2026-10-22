@@ -130,16 +130,16 @@ function updateTutorial(dt) {
   if (ev) ev.t = mission.t + 30;                                            // the radar contact stays "on its way" until you're in the cannon
   TUT_STEPS[tut.step]?.tick?.(dt);
 }
-// Where to walk: the target, or first the nearest deck airlock when it's on the other deck.
+// Where to walk: the target, or first the nearest deck door when it's on the other deck.
 function tutRoute(x, y) {
-  const deck = (yy) => (yy < SPINE_Y0 ? 'top' : yy > SPINE_Y1 ? 'bottom' : 'lock');
+  const deck = (yy) => (yy < SPINE_Y0 ? 'top' : yy > SPINE_Y1 ? 'bottom' : 'door');
   const md = deck(me.y), td = deck(y);
-  if (me.mode !== 'inside' || md === td || md === 'lock') return { x, y };
-  const mid = (Lk) => Lk.x + Lk.w / 2;
-  const Lk = [...DECK_LOCKS].sort((a, b) => (Math.abs(mid(a) - me.x) + Math.abs(mid(a) - x)) - (Math.abs(mid(b) - me.x) + Math.abs(mid(b) - x)))[0];
-  return { x: mid(Lk), y: (SPINE_Y0 + SPINE_Y1) / 2, via: true, down: md === 'top' };
+  if (me.mode !== 'inside' || md === td || md === 'door') return { x, y };
+  const mid = (d) => d.x + d.w / 2;
+  const d = [...DECK_DOORS].sort((a, b) => (Math.abs(mid(a) - me.x) + Math.abs(mid(a) - x)) - (Math.abs(mid(b) - me.x) + Math.abs(mid(b) - x)))[0];
+  return { x: mid(d), y: (SPINE_Y0 + SPINE_Y1) / 2, via: true, down: md === 'top' };
 }
-const viaText = (p) => (p.via ? ` — first ${p.down ? 'down' : 'up'} through a deck airlock (walk in, it cycles)` : '');
+const viaText = (p) => (p.via ? ` — first ${p.down ? 'down' : 'up'} through a deck door (walk up to it, it opens)` : '');
 function tutBoom() {                                  // a late hit on the left hull (for show)
   combat.bigFlashes.port = 1; combat.shake = 0.7; sfx.explosion();
   combatFlip('fx/explosion_l', -0.4, 9.4, 0.8);
@@ -150,7 +150,7 @@ const tutReactorFast = (k, dt) => { if (power.reactor.fuel > 0 && !broken(REACTO
 // ---------------------------------------------------------------------------
 // The steps
 // ---------------------------------------------------------------------------
-const MIDDLE = [(SPINE_Y0 + SPINE_Y1) / 2];   // (the deck airlocks' middle)
+const MIDDLE = [(SPINE_Y0 + SPINE_Y1) / 2];   // (the deck doors' middle)
 const roomMark = (id) => { const [x, y] = roomCenter(ROOMS.find(r => r.id === id)); return { x, y }; };
 const TUT_STEPS = {
   welcome: {
@@ -161,8 +161,8 @@ const TUT_STEPS = {
         'But don\'t worry: if you follow this tutorial, you will be fine. Probably. And if not, we just use your salary to make another clone of you.',
         { text: 'This is you (marked). Company-issue suit, company-issue legs. Walk with *W A S D*.', mark: () => me },
         { text: 'A quick tour. The ship has two decks. Up top: the *left cannon room*, the *bridge* in the middle and the *right cannon room*.', view: 'ship', mark: () => ['portGun', 'bridge', 'starGun'].map(roomMark) },
-        { text: 'Below: the *left airlock room*, the *reactor room* and the *right airlock room*. The *deck airlocks* are the only way up and down: walk in and they cycle.', view: 'ship',
-          mark: () => [...['portLock', 'reactor', 'starLock'].map(roomMark), ...DECK_LOCKS.map(Lk => ({ x: Lk.x + Lk.w / 2, y: MIDDLE[0] }))] },
+        { text: 'Below: the *left airlock room*, the *reactor room* and the *right airlock room*. The *deck doors* are the only way up and down. Doors open by themselves when you walk up to them.', view: 'ship',
+          mark: () => [...['portLock', 'reactor', 'starLock'].map(roomMark), ...DECK_DOORS.map(d => ({ x: d.x + d.w / 2, y: MIDDLE[0] }))] },
         { text: 'On the job you only see the room you\'re in. The *label above your head* always says what you can do right here.', view: 'ship' },
         `First stop: the *helm*, at the front of the bridge. Walk up to it and ${tutC('click it', 'press *E*')}.`,
       ], () => tutGo('helm'));
@@ -518,9 +518,9 @@ const TUT_STEPS = {
       tutSay([
         { text: 'The *laser gun* (right airlock room). Just in case an intruder walks onto the ship. Unheard of, of course. Pick it up and shoot with ' + tutC('the *right mouse button*', '*Space*') + '.', view: 'ship', mark: () => tutItem('laser') || pt(42.4, 22.4) },
         { text: 'The *outer airlocks* (left and right airlock rooms) take you out on a *spacewalk*. The *shield emitters* sit out there, and so do jobs like mines, jammed cannon tracks and a crooked radar antenna.', view: 'ship', mark: () => HATCHES.map(h => pt(h.x, h.y)) },
-        { text: 'Doors and airlocks that are *locked* or *broken* can be forced with a *manual override*: three good whacks on the handle. Forcing an *outer airlock* opens both its doors at once: the airlock room *vents to space* and the blast doors seal it off for a while.', view: 'ship', mark: () => [...DECK_LOCKS.map(Lk => pt(Lk.x + Lk.w / 2, MIDDLE[0])), ...DOORWAYS.map(d => pt(d.x + d.w / 2, d.y + d.h / 2))] },
+        { text: 'A door that is *locked*, *broken* or has *vacuum behind it* won\'t open by itself: force it with a *manual override*, three good whacks on the handle (with vacuum behind it, your side vents too). Forcing an *outer airlock* opens both its doors at once: the airlock room *vents to space* and the blast doors seal it off for a while.', view: 'ship', mark: () => [...DECK_DOORS.map(d => pt(d.x + d.w / 2, MIDDLE[0])), ...DOORWAYS.map(d => pt(d.x + d.w / 2, d.y + d.h / 2))] },
         { text: 'Next to each outer airlock: a *vent panel*. It blows the room\'s air into space, fires and all. You\'re fine (visor), but anyone else in there gets hurt.', view: 'ship', mark: () => Object.values(VENT_PANELS).map(([x, y]) => pt(x, y)) },
-        { text: 'The *security console* (left cannon room): lock and unlock doors and airlocks (handy to shut an intruder in), and see where everyone is.', view: 'ship', mark: () => pt(SECURITY.x, SECURITY.y + 0.5) },
+        { text: 'The *security console* (left cannon room): lock and unlock doors and airlocks (intruders can\'t open doors anyway, but pirates can: locked ones hold them longer), and see where everyone is.', view: 'ship', mark: () => pt(SECURITY.x, SECURITY.y + 0.5) },
         { text: `The *shield buttons* (left, front, right; lower deck): one energy = that side's shield for ${SHIELD_UP_TIME} s, then ${SHIELD_COOLDOWN} s to recharge. Heavy shot charging? That's what they're for.`, view: 'ship', mark: () => SHIELD_BUTTONS.map(b => pt(b.x, b.y)) },
         { text: `*Injuries*: the first hit leaves you *hurt* for 30 s (slower, tunnel vision). A second one puts you *down*: ${tutC('hold *E* (or click on yourself)', 'hold *E*')} to get back up, or a crewmate treats you. A third, and you're *out cold*.`, view: 'ship' },
         { text: `Hurt or down crewmates: ${tutC('*hold click* on them', 'stand next to them and *hold E*')} for 2 s. ${tutC('Click', 'Tap E')} in time with the heartbeat to go faster.`, view: 'ship' },

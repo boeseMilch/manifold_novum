@@ -1,4 +1,4 @@
-// Main loop, input, crew movement, deck airlocks, spacewalks, cannons,
+// Main loop, input, crew movement, inner doors, spacewalks, cannons,
 // shield buttons, debug menu, camera and HUD.
 // Simulation runs in layout units (see ship.js); rendering scales by T.
 
@@ -43,11 +43,9 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 const WALK_SPEED = 4.2, WALK_ACCEL = 30;     // units/s, units/s²
 const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
 const CREW_R = 0.2;                          // half-size of the crew collision box
-const LOCK_DOOR_TIME = 0.55;
-let LOCK_CYCLE = 1.3;                        // deck airlock: per door, and pressure cycle (upgradeable)
+let LOCK_CYCLE = 1.3;                        // airlock pump time, set by the 'airlocks' ship upgrade (js/progress.js; the deck airlocks are gone: inner doors are single doors since 2026-10-21)
 const HURT_SPEED = 0.6;                       // walking speed while hurt
 const LOOK_TIME = 1.75;                      // s a crew member keeps looking at the mouse after it moved or they fired with it
-const HATCH_TIME = 1.6;                      // going through an outer airlock
 const GUN_TURN = 1.6;                        // rad/s when aiming a cannon with the keys (gunKeyTurn)
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
 const CRUISE_SPEED = 260;                    // px/s of starfield drift
@@ -56,7 +54,7 @@ const HUD_H = 36;
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
-// mode: 'inside' | 'hatch' (going through an outer airlock) | 'eva' | 'gun'
+// mode: 'inside' | 'eva' (a spacewalk: out through an outer airlock, js/airlock.js) | 'gun'
 // The simulation updates crew members one at a time; while it does, the globals below point at
 // that crew member ("acting crew"): player, keys, pressed, mouse, inv, ui, prompt, hover.
 const CREW_COLORS = ['#c4683a', '#3a8fc4', '#5fb04a', '#c43a8f', '#c4b03a', '#8a5ac4', '#3ac4b0', '#c43a3a'];
@@ -142,6 +140,7 @@ function updateCrew(c, dt, ix, iy) {
   if (go(nx, c.y)) c.x = nx; else c.vx = 0;
   const ny = c.y + c.vy * dt;
   if (go(c.x, ny)) c.y = ny; else c.vy = 0;
+  airlockThreshold(c, tx, ty);                        // stepping out of / floating into an open outer airlock (js/airlock.js)
   if (c.mode === 'inside' && inRect(c.x, c.y, TREADMILL)) {          // on the treadmill: the belt carries you back
     const belt = speed * BELT_K, by = c.y + belt * dt;                // (half of this crew member's own walking speed)
     if (ok(c.x, by)) c.y = by;
@@ -157,87 +156,81 @@ function updateCrew(c, dt, ix, iy) {
 }
 
 // ---------------------------------------------------------------------------
-// Deck airlocks: walk in, the door behind you closes, the chamber cycles, the
-// far door opens. Walking up to a closed door cycles an empty chamber to you.
+// Inner doors (DOORS in js/ship.js: the doorways and the deck doors). Closed until a crew member (or a
+// friendly NPC) is in front of one; shut again DOOR_LINGER s after nobody is; never on anyone in the doorway.
+// Locked, broken or with a pressure difference across it, a door doesn't open by itself: the manual override
+// (forceDoor). Intruders can't open a closed door at all; pirates force it, slowly (pryDoor).
 // ---------------------------------------------------------------------------
-const other = (s) => s === 'top' ? 'bottom' : 'top';
+const DOOR_TIME = 0.3, DOOR_SENSE = 1.0, DOOR_LINGER = 1.0;   // s to slide open / shut; reach of the sensor; s it stays open after
+const DOOR_HOLD = 5;                                // s a forced pressure door stays open (the rooms equalize meanwhile)
+const DOOR_PRY_TIME = 3, DOOR_PRY_LOCKED = 8;                 // s pirates need to force a closed door / a locked or broken one
 
-function startCycle(L, target) {
-  L.phase = 'closing'; L.target = target;
+// Who the door sensors open for: crew aboard on their feet, and a friendly NPC walking through our ship.
+const doorFriends = () => [...crew.filter(c => c.mode === 'inside' && standing(c)),
+  ...(typeof dk !== 'undefined' && dk.npc && dk.npc.state !== 'down' && roomAt(dk.npc.x, dk.npc.y) ? [dk.npc] : [])];
+// Everyone a door must not shut on (anything with a body inside the ship).
+const actors = () => [...crew.filter(c => c.mode === 'inside'), ...boarding.invaders.filter(a => a.mode === 'inside'),
+  ...(typeof dk !== 'undefined' ? [...dk.pirates, ...(dk.npc ? [dk.npc] : [])] : [])];
+const doorBroken = (d) => d.axis === 'y' && broken(d);
+// Pressure difference across it: vacuum (a breach, a vent, or let in through an open door) on one side only.
+function doorPressure(d) {
+  const rs = doorRooms(d);
+  return rs.length === 2 && vacuumRoom(rs[0].id) !== vacuumRoom(rs[1].id);
 }
-
-// Everyone the door sensors react to: crew inside the ship and intruders.
-const actors = () => [...crew.filter(c => c.mode === 'inside'), ...boarding.invaders.filter(a => a.mode === 'inside')];
-
-function updateDeckLock(L, dt) {
-  if (broken(L)) return;                           // broken: doors stay as they are
-  if (L.locked && L.phase === 'idle') {            // locked by security: both doors shut (never on someone)
-    for (const s of ['top', 'bottom']) {
-      if (actors().some(c => inRect(c.x, c.y, L.doorRect[s], CREW_R))) continue;
-      L.doors[s] = Math.max(0, L.doors[s] - dt / LOCK_DOOR_TIME);
-    }
-    return;
-  }
-  if (!L.locked && L.phase === 'idle' && L.open && L.doors[L.open] < 1) L.doors[L.open] = Math.min(1, L.doors[L.open] + dt / LOCK_DOOR_TIME);
-  const ch = L.chamber, crew = actors();
-  const occupants = crew.filter(c => c.x > L.x && c.x < L.x + L.w && c.y > SPINE_Y0 && c.y < SPINE_Y1);
-  const insideFully = crew.filter(c => c.x - CREW_R >= ch.x && c.x + CREW_R <= ch.x + ch.w &&
-                                       c.y - CREW_R >= ch.y && c.y + CREW_R <= ch.y + ch.h);
-  // remember which side a crew member stepped in from
-  for (const c of crew) {
-    const inX = c.mode === 'inside' && c.x > L.x && c.x < L.x + L.w;
-    const side = c.y < ch.y ? 'top' : c.y > ch.y + ch.h ? 'bottom' : 'in';
-    const prev = (c.lockSide ||= {})[L.col];
-    if (inX && side === 'in' && prev && prev !== 'in') L.entry = prev;
-    c.lockSide[L.col] = inX ? side : null;
-  }
-
-  if (L.phase === 'idle') {
-    if (insideFully.length && L.entry === L.open) {
-      L.entry = null; startCycle(L, other(L.open));
-    } else if (!occupants.length) {
-      const closed = other(L.open);
-      const waiting = crew.some(c => c.mode === 'inside' && c.x > L.x - 0.2 && c.x < L.x + L.w + 0.2 &&
-        (closed === 'top' ? c.y > SPINE_Y0 - 1.2 && c.y < SPINE_Y0 : c.y > SPINE_Y1 && c.y < SPINE_Y1 + 1.2));
-      if (waiting) startCycle(L, closed);
-    }
-  } else if (L.phase === 'closing') {
-    const s = L.open;
-    // never close on someone standing in the doorway: reopen and wait until it's clear
-    if (actors().some(c => inRect(c.x, c.y, L.doorRect[s], CREW_R))) { L.doors[s] = Math.min(1, L.doors[s] + dt / LOCK_DOOR_TIME); return; }
-    L.doors[s] = Math.max(0, L.doors[s] - dt / LOCK_DOOR_TIME);
-    if (L.doors[s] === 0) { L.phase = 'cycling'; L.t = 0; L.open = null; }
-  } else if (L.phase === 'cycling') {
-    L.t += dt;
-    if (L.t >= LOCK_CYCLE) L.phase = 'opening';
-  } else if (L.phase === 'opening') {
-    const s = L.target;
-    L.doors[s] = Math.min(1, L.doors[s] + dt / LOCK_DOOR_TIME);
-    if (L.doors[s] === 1) { L.phase = 'idle'; L.open = s; L.target = null; }
+// Why it won't open by itself (null: it works).
+const doorStuck = (d) => doorBroken(d) && !d.jammed ? 'broken' : d.locked ? 'locked' : d.blast ? 'blast' : null;
+function updateDoors(dt) {
+  const friends = doorFriends(), bodies = actors();
+  for (const d of DOORS) {
+    if (!doorBroken(d)) d.jammed = false;            // (repaired: works again)
+    d.hold = Math.max(0, (d.hold || 0) - dt);
+    d.blast = doorPressure(d);
+    if (d.pry > 0 && !(d.pryAt > time - 0.25)) d.pry = Math.max(0, d.pry - dt * 0.1);   // (nobody forcing it any more: slowly back)
+    const auto = !doorStuck(d);
+    d.stay = auto && friends.some(c => nearDoor(d, c.x, c.y, DOOR_SENSE)) ? DOOR_LINGER : Math.max(0, (d.stay || 0) - dt);
+    const inIt = d.open > 0.25 && bodies.some(c => inRect(c.x, c.y, d, CREW_R));
+    const want = d.hold > 0 || d.jammed || inIt || (auto && d.stay > 0);
+    d.open = clamp(d.open + (want ? dt : -dt) / DOOR_TIME, 0, 1);
   }
 }
+// The pressurized room a forced door would vent (null: none, both sides alike).
+function doorVents(d) {
+  if (!d.blast) return null;
+  return doorRooms(d).find(r => !vacuumRoom(r.id)) || null;
+}
+// The manual override's last whack: unlocks it, forces a broken deck door open for good (until it's repaired),
+// and holds a pressure door open for DOOR_HOLD s (the pressurized side vents through it meanwhile).
+function forceDoor(d) {
+  const vents = doorVents(d);
+  d.locked = false;
+  if (doorBroken(d)) d.jammed = true;
+  if (vents) { d.hold = DOOR_HOLD; combatBanner(`${doorName(d)} forced — the ${vents.name.toLowerCase()} vents!`); sfx.whoosh?.(); }
+  else if (doorBroken(d)) d.hold = 0.5;
+}
+// Pirates (js/dock.js pirateStep) can't walk through a closed door, but they force it: standing at it for DOOR_PRY_TIME s
+// (a locked or broken one DOOR_PRY_LOCKED s; several pirates together are quicker). A door with vacuum behind it they
+// leave alone (they wait: it would blow them about too). True while it's at it. tx, ty: where it's heading.
+function pryDoor(p, dt, tx, ty) {
+  const d = DOORS.find(d => d.open < DOOR_WALK && nearDoor(d, p.x, p.y, 1.2, 0.3) && !d.blast && !(d.hold > 0) &&
+    ((tx - p.x) * (d.x + d.w / 2 - p.x) + (ty - p.y) * (d.y + d.h / 2 - p.y) > 0 || nearDoor(d, tx, ty, 0.3, 0.3)));
+  if (!d) { p.pry = -1; return false; }
+  const need = d.locked || doorBroken(d) ? DOOR_PRY_LOCKED : DOOR_PRY_TIME, before = d.pry || 0;
+  d.pry = before + dt / need; d.pryAt = time; p.pry = DOORS.indexOf(d);
+  p.face = Math.atan2(d.y + d.h / 2 - p.y, d.x + d.w / 2 - p.x);
+  if (!before) combatBanner(`A pirate is forcing the ${doorName(d).replace(/^Door/, 'door')}!`);
+  if (Math.floor(d.pry * need / 0.6) !== Math.floor(before * need / 0.6)) {
+    sfx.clank();
+    for (let i = 0; i < 4; i++) combatFx(p.x + Math.cos(p.face) * 0.45, p.y + Math.sin(p.face) * 0.45, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, '#ffd28a', 0.07);
+  }
+  if (d.pry >= 1) {
+    d.pry = 0; d.locked = false;
+    if (doorBroken(d)) d.jammed = true; else d.hold = 2;
+    combatBanner(`Pirates forced the ${doorName(d).replace(/^Door/, 'door')} open!`); sfx.clank();
+  }
+  return true;
+}
 
-// ---------------------------------------------------------------------------
-// Outer airlocks (hatches): inside ⇄ spacewalk. Visor goes down outside.
-// ---------------------------------------------------------------------------
-function startHatch(h, dir) {
-  player.mode = 'hatch'; player.hatch = h; player.hatchDir = dir; player.hatchT = 0;
-  player.vx = player.vy = 0; sfx.hatch();
-}
-// Hatches nobody is using swing shut (run once per tick, after the crew).
-function updateHatches(dt) {
-  for (const h of HATCHES) if (!crew.some(c => c.mode === 'hatch' && c.hatch === h)) h.open = Math.max(0, h.open - dt * 2);
-}
-function updateHatch(dt) {
-  if (player.mode !== 'hatch') return;
-  const h = player.hatch, k = (player.hatchT += dt) / HATCH_TIME;
-  h.open = Math.sin(Math.PI * clamp(k, 0, 1));
-  const [a, b] = player.hatchDir === 'out' ? [h.inside, h.outside] : [h.outside, h.inside];
-  const q = clamp((k - 0.25) / 0.5, 0, 1);
-  player.x = lerp(a[0], b[0], q); player.y = lerp(a[1], b[1], q);
-  player.face = player.hatchDir === 'out' ? (h.dir < 0 ? Math.PI : 0) : (h.dir < 0 ? 0 : Math.PI);
-  if (k >= 1) { player.mode = player.hatchDir === 'out' ? 'eva' : 'inside'; h.open = 0; }
-}
+// (Outer airlocks: walked through since 2026-10-21, a chamber with two doors: js/airlock.js.)
 
 // ---------------------------------------------------------------------------
 // Player input and interaction
@@ -272,7 +265,6 @@ function updatePlayer(dt) {
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
 
-  if (player.mode === 'hatch') { updateHatch(dt); prompt = { text: 'Cycling outer airlock…', quiet: true }; return; }
   if (player.health === 'down' || player.health === 'out') {     // can't do anything but get patched up
     const self = treatInfo(player);
     if (player.mode === 'gun') {                                // slumped in the cannon's seat: no aiming, no firing (updateInteraction: patching)
@@ -317,23 +309,15 @@ function updatePlayer(dt) {
 
   updateCrew(player, dt, ix, iy);
 
-  if (player.mode === 'eva') {
-    // (cannons are only manned from inside, via their ladders; spacewalks are for other jobs)
-    const h = HATCHES.find(h => Math.hypot(player.x - h.outside[0], player.y - h.outside[1]) < 1.5);
-    if (h) {
-      const at = { x: h.x, y: h.y, r: 1.2 };
-      if (broken(h)) act({ text: 'Click: force the broken outer airlock (manual override) — vents the airlock room!', at, run: () => startOverride(h, 'Broken outer airlock', () => { forceHatchVent(h, player); startHatch(h, 'in'); }) });
-      else if (h.locked) act({ text: 'Click: force the locked outer airlock (manual override) — vents the airlock room!', at, run: () => startOverride(h, 'Outer airlock', () => { h.locked = false; forceHatchVent(h, player); }) });
-      else act({ text: 'Click: go back inside', at, run: () => startHatch(h, 'in') });
-    }
+  if (player.mode === 'eva') {                        // (cannons are only manned from inside, via their ladders; spacewalks are for other jobs)
+    airlockAct();                                      // back in: the outer airlock (js/airlock.js)
     return;
   }
 
   // inside: whatever you're standing next to
-  const hatch = HATCHES.find(h => Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) < 1.3 && dk.dock?.side !== h.side);   // (docked: walk through)
   const button = SHIELD_BUTTONS.find(b => Math.hypot(player.x - b.x, player.y - (b.y + 0.7)) < 1.1);
   const ladder = GUNS.find(g => Math.hypot(player.x - g.hatch[0], player.y - g.hatch[1]) < 0.9);
-  const doorway = DOORWAYS.find(d => Math.hypot(player.x - (d.x + d.w / 2), player.y - (d.y + d.h / 2)) < 1.3);
+  const door = DOORS.filter(d => doorStuck(d) || d.jammed).find(d => nearDoor(d, player.x, player.y, DOOR_SENSE + 0.3, 0.3));   // one that won't open by itself
   if (ladder) {
     const at = { x: ladder.hatch[0], y: ladder.hatch[1], r: 0.7 }, inIt = crew.find(c => c !== player && c.mode === 'gun' && c.gun === ladder);
     if (inIt && !standing(inIt)) act({ text: `Click: pull ${inIt.name} out of the ${ladder.name.toLowerCase()}`, at, run: () => pullOutOfCannon(inIt, ladder) });
@@ -348,36 +332,24 @@ function updatePlayer(dt) {
     else if (s.cd > 0) act({ text: `Shield recharging (${s.cd.toFixed(1)} s)`, at });
     else if (cap.charge <= 0 || broken(cap)) act({ text: broken(cap) ? 'Capacitor broken — no shield' : 'No energy for the shield (capacitor empty)', at });
     else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
-  } else if (hatch) {
-    const at = { x: hatch.x - hatch.dir * 0.2, y: hatch.y, r: 1.1 };
-    if (broken(hatch)) act({ text: 'Click: force the broken outer airlock (manual override) — vents this room!', at, run: () => startOverride(hatch, 'Broken outer airlock', () => { forceHatchVent(hatch, player); startHatch(hatch, 'out'); }) });
-    else if (hatch.locked) act({ text: 'Click: force the locked outer airlock (manual override) — vents this room!', at, run: () => startOverride(hatch, 'Outer airlock', () => { hatch.locked = false; forceHatchVent(hatch, player); }) });
-    else act({ text: 'Click: go outside (spacewalk)', at, run: () => startHatch(hatch, 'out') });
   } else if (dockAct()) {
+  } else if (airlockAct()) {                         // the outer airlocks (js/airlock.js)
   } else if (typeof levAct === 'function' && levAct()) {   // the boss fight's engine override, not ready yet: why (js/leviathan.js)
-  } else if (doorway && doorway.blast && doorRooms(doorway).some(r => r.id === 'reactor')) {
-    act({ text: 'Blast door sealed — vacuum behind it, and the cat lives here. Go around.', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 } });
-  } else if (doorway && doorway.blast) {
-    act({ text: 'Click: blast door (vacuum behind it) — force it up for 5 s (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 },
-          run: () => startOverride(doorway, 'Blast door', () => { doorway.blastHold = 5; doorway.blast = false; }) });
-  } else if (doorway && doorway.locked) {
-    act({ text: 'Click: force the locked door (manual override)', at: { x: doorway.x + doorway.w / 2, y: doorway.y + doorway.h / 2, r: 1.2 }, run: () => startOverride(doorway, 'Door') });
-  } else {
-    const L = DECK_LOCKS.find(L => player.x > L.x - 0.2 && player.x < L.x + L.w + 0.2 &&
-                                   player.y > SPINE_Y0 - 1.2 && player.y < SPINE_Y1 + 1.2);
-    if (L) {
-      const inside = player.y > SPINE_Y0 && player.y < SPINE_Y1, at = { x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, r: 1.8 };
-      if (broken(L)) {
-        const stuck = !(L.doors.top > 0.95 && L.doors.bottom > 0.95);
-        if (stuck) act({ text: 'Click: force the broken deck airlock (manual override)', at, run: () => startOverride(L, 'Broken deck airlock', () => forceDeckLock(L)) });
-        else act({ text: 'Deck airlock is broken (doors forced open)', at });
-      }
-      else if (L.locked) act({ text: 'Click: force the locked deck airlock (manual override)', at, run: () => startOverride(L, 'Deck airlock') });
-      else if (L.phase === 'cycling') act({ text: 'Airlock cycling…', at, quiet: true });   // (quiet: only as the tooltip, not over your head)
-      else if (L.phase !== 'idle') act({ text: 'Airlock doors moving…', at, quiet: true });
-      else if (inside) act({ text: 'Click: cycle the airlock', at, run: () => startCycle(L, other(L.open)) });
-    }
+  } else if (door) doorAct(door);
+}
+// In front of a door that won't open by itself: why, and the manual override (E / click).
+function doorAct(d) {
+  const [cx, cy] = doorCenter(d), at = { x: cx, y: cy, r: d.axis === 'y' ? 1.6 : 1.2 }, name = doorName(d), why = doorStuck(d);
+  const vents = doorVents(d), here = roomAt(player.x, player.y);
+  const warn = vents ? ` — vents the ${vents.name.toLowerCase()}!` : '';
+  if (!why) { act({ text: `${name} is broken — forced open (repair it with the kit)`, at }); return; }
+  if (vents && vents.id === 'reactor') {             // (never: the cat lives there)
+    act({ text: here?.id === 'reactor' ? `${name}: vacuum behind it, and the cat lives here. Go around.` : `${name}: sealed — vacuum on this side, and the cat lives in the reactor room. Go around.`, at });
+    return;
   }
+  const reason = why === 'broken' ? 'broken, stuck shut' : why === 'locked' ? 'locked' : 'pressure difference (vacuum on one side)';
+  act({ text: `${name}: ${reason}. Click / E: manual override${warn}`, at,
+        run: () => startOverride(d, why === 'blast' ? `${name} (vacuum)` : name, () => forceDoor(d)) });
 }
 
 // What the mouse is on: a specific click target wins over the (larger) spot of the current prompt.
@@ -418,7 +390,7 @@ function updateInteraction(dt) {
     updateTreat(dt, info && { treat: player, time: info.time }, mouse.down || keys.has('KeyE'));
     return;
   }
-  if (player.mode === 'gun' || player.mode === 'hatch') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
+  if (player.mode === 'gun') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
   const [mx, my] = mouseWorld();
   hover = player === me && invSlotAt(mouse.x, mouse.y) ? null : pickHover(player, mx, my);   // (on the inventory: that's a HUD click)
   if (hover?.ok && !tutAllows('target', hover)) hover = { text: hover.text, ok: false, x: hover.x, y: hover.y, r: hover.r };   // tutorial: only what the step asks for
@@ -517,15 +489,6 @@ function runCommand(cmd) {
 const tutAllows = (what, arg) => typeof tutorialAllows !== 'function' || tutorialAllows(what, arg);
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
 
-// Doors between rooms: open unless locked; never close on someone standing in them.
-function updateDoorways(dt) {
-  for (const d of DOORWAYS) {
-    // only an open door waits for someone standing in it; a shut door never reopens for someone pushing on it
-    const blocked = d.open > 0.5 && actors().some(c => inRect(c.x, c.y, d, CREW_R));
-    const target = (d.locked || d.blast) && !blocked ? 0 : 1;
-    d.open = clamp(d.open + Math.sign(target - d.open) * dt / 0.35, 0, 1);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Debug menu (` key)
@@ -578,7 +541,7 @@ const DEBUG_ITEMS = [
   { key: 'p', label: '', hidden: true, run: () => pressShield('port') },          // debug only
   { key: 'y', label: '', hidden: true, run: () => radarScan() },
   { key: 'w', label: '', hidden: true, run: () => { power.lever.jammed = true; } },
-  { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; DECK_LOCKS[1].locked = true; } },
+  { key: 'u', label: '', hidden: true, run: () => { ui.panel = 'security'; DOORWAYS[2].locked = true; DECK_DOORS[1].locked = true; } },
   { key: 'g', label: '', hidden: true, run: () => openDiagnosis() },
   { key: 'v', label: '', hidden: true, run: () => { startOverride(DOORWAYS[0], 'Door'); ui.override.hits = 2; } },
   { key: 'q', label: '', hidden: true, run: () => pressShield('star') },          // debug only
@@ -642,7 +605,7 @@ function cameraTarget() {
     const [cx, cy, w] = player.gun.view;
     return [cx, cy, Math.min(VW / (w * T), vh / (w * 0.62 * T * vsy))];
   }
-  if (player.mode === 'eva' || (player.mode === 'hatch' && player.hatchDir === 'out' && player.hatchT > HATCH_TIME / 2))
+  if (player.mode === 'eva')
     return [player.x, player.y, zRoom * 0.75];
   let sw = 0, sx = 0, sy = 0;
   for (const room of [...ROOMS, ...dockRoomsForCamera()]) {
@@ -962,7 +925,7 @@ function render(t) {
   drawDock(t);
   const gunsSprited = GUNS.filter(g => G && drawGunSprite(g));
   for (const g of GUNS) if (!gunsSprited.includes(g)) drawGun(g.x * T, g.y * T, g.aim, g.flash);
-  if (!parts.walls) drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_LOCKS);
+  if (!parts.walls) drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_DOORS);
   if (!G) { drawSpineDecor(t); drawInteriorWalls(); }
   if (!parts.floors) drawFloors(FLOOR_RECTS, (r) => zoneAtX(r.x + 0.01).tint);
   if (!G) drawLightPools();
@@ -976,9 +939,10 @@ function render(t) {
   drawPowerLines(t);
   if (G) glow(() => drawPowerGlow(t));
   glow(() => drawJumpCrackle(t));                    // the jump drive charging: blue crackle on the cables and the hull
-  if (!parts.locks) for (const L of DECK_LOCKS) drawDeckLock(L, t);
+  if (!parts.locks) for (const d of DECK_DOORS) drawDeckDoor(d, t);
   if (!parts.doors) drawDoorways();
-  if (!parts.hatches) for (const h of HATCHES) drawHatch(h);
+  if (!parts.hatches) for (const h of HATCHES) drawAirlock2D(h, t);   // (the outer airlocks: js/airlock.js)
+  else drawAirlockRings();
   for (const g of GUNS) drawGunLadder(g);
   drawReactor(REACTOR, t);
   drawLever(t);
@@ -997,17 +961,18 @@ function render(t) {
   drawInserter(t);
   glow(() => drawItems(t));
   drawFires(t);
+  drawDoorPry();                                       // pirates forcing a door: its progress ring
   glow(() => { for (const s of SYSTEMS) if (s.broken) drawBroken(s, t); });
   glow(() => {
     drawEnergyBolts();
   });
   // the crew (as sprites when they're loaded, else in 2D)
-  const visorOf = (c) => isOutside(c) || (c.mode === 'hatch' && c.hatchDir === 'out' ? c.hatchT > HATCH_TIME * 0.3 : c.mode === 'hatch' ? c.hatchT < HATCH_TIME * 0.7 : inVacuum(c.x, c.y));
+  const visorOf = (c) => isOutside(c) || inVacuum(c.x, c.y) || airlockVacuum(c.x, c.y);   // (a pumped-out airlock chamber: js/airlock.js)
   const sprited = new Set();
   for (const c of crew) {
     if (G && drawCrewSprite(c, visorOf(c), t)) { sprited.add(c); if (c.mode === 'eva') drawSafetyLine(c); continue; }
     if (!standing(c)) drawCrewDown(c, t);
-    else if (c.mode === 'inside' || c.mode === 'hatch') drawCrew(c.x * T, c.y * T, c.face, c.walk, visorOf(c), c.color);
+    else if (c.mode === 'inside') drawCrew(c.x * T, c.y * T, c.face, c.walk, visorOf(c), c.color);
     else drawCrewOutside(c, t);
   }
   if (G) {                                           // the rest goes on top, on `c`
@@ -1138,8 +1103,8 @@ function drawHUD() {
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
   ctx.fillText('WASD move · E / click: use · Space / right click: weapon · arrows: aim · M: mute', 200, 18);
   const room = roomAt(player.x, player.y);
-  const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk' : player.mode === 'hatch' ? 'Outer airlock'
-    : room ? room.name : inDock(player.x, player.y) ? dockName() : 'Deck airlock';
+  const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk'
+    : room ? room.name : airlockAt(player.x, player.y) ? 'Outer airlock' : inDock(player.x, player.y) ? dockName() : DECK_DOORS.some(d => inRect(player.x, player.y, d)) ? 'Deck door' : 'Doorway';
   ctx.textAlign = 'right'; ctx.fillStyle = '#e8ecf4'; ctx.fillText(where, VW - 14, 18);
   const ww = ctx.measureText(where).width;
   const song = sfx.muted ? '♪ muted' : `♪ ${music.title}`;
@@ -1215,12 +1180,11 @@ function simTick(dt) {
     if (typeof s7Struggle === 'function') s7Struggle(player, pressed);   // held by S-7: mashing the keys wriggles you free (js/culture.js)
     pressed.clear(); mouse.click = false; mouse.rightClick = false; mouse.look = 0;
   });
-  updateHatches(dt);
-  for (const L of DECK_LOCKS) updateDeckLock(L, dt);
+  updateAirlocks(dt);                                 // (the outer airlocks: js/airlock.js)
   updateCombat(dt);
   updatePower(dt);
   updateBoarding(dt);
-  updateDoorways(dt);
+  updateDoors(dt);
   updateFires(dt);
   updateMission(dt);
   updateLuck(dt);

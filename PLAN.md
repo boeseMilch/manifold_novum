@@ -3448,3 +3448,105 @@ splash on the hit), drops fade after BLOOD_LIFE 14 s, at most BLOOD_MAX 140; the
 after they get up); on a spacewalk droplets drift off instead; a hurt crewmate's name tag gets a beating red cross. Blood
 is drawn after the floor decor (classic: over the floors; sprites: the lit 'mid' layer, under walls and crew). No limp
 (the sprite's walk cycle is left alone). tests/injuryfx.js.
+
+### Inner doors: single doors that open in front of you (2026-10-21)
+The user: "the inner doors all are single doors, not airlocks, but only open once you're in front of them (unless they're
+locked or there is a pressure difference between the rooms, in which case one needs to use the manual override). If doors
+are closed alien intruders cannot open them at all, but pirates still can (very slowly). Take away a little from the inner
+wall so it doesn't look weird." (The outer airlocks became double-door chambers in the same change, by another agent:
+js/airlock.js.)
+- **The doors** (js/ship.js): DOORS = the four DOORWAYS (`axis: 'x'`) + three DECK_DOORS (`axis: 'y'`, replacing DECK_LOCKS:
+  one per zone column at the same x, a passage through the whole spine). Each is its passage rect + open 0..1, locked, blast
+  (pressure difference, set every tick), hold (s held open after a forced override), jammed (a broken deck door forced
+  open), pry (pirates forcing it). Walkable while open > DOOR_WALK 0.6. doorRooms / nearDoor / doorName helpers.
+- **Behaviour** (js/game.js updateDoors): CLOSED by default; opens (DOOR_TIME 0.3 s) while a standing crew member or a friendly
+  NPC (Dr. Varga aboard our ship) is within DOOR_SENSE 1 unit of the passage (either side, not off to the side), shuts
+  DOOR_LINGER 1 s after nobody is; never on anyone in the doorway (crew, downed crew, intruders, pirates, NPCs). No
+  auto-open when locked (security / AI glitch), broken (deck doors; stuck shut) or with a pressure difference. Then the
+  prompt in front of it says why and offers the manual override (doorAct: "Middle deck door: locked. Click / E: manual
+  override"); forceDoor: unlocks; a broken deck door is jammed open until repaired; a pressure door is held open DOOR_HOLD
+  5 s ("— vents the bridge!" in the prompt, a banner when it gives). Doors into the reactor room with a pressure difference
+  can't be forced from either side (the cat).
+- **Vacuum spreads through open doors** (js/hazards.js): sealedVacuum (breach / vent) + vacuumRoom = any room joined to a
+  sealed-vacuum room by doors open > 0.1. So a forced pressure door vents the room behind it until it shuts again; then
+  that room has air at once. Both sides in vacuum = no pressure difference = a normal door. updateBlastDoors is gone (blast
+  is set in updateDoors).
+- **Intruders can't open doors** (js/invader.js): NAV door nodes (n.door) pass only while that door is open (navPath's ok,
+  alienDoorOk). Shut out, the alien waits 1.4 out from the door towards its prey, facing it (a.waitDoor: a DOORS index, the
+  sync sends invaders as plain data), and goes the moment it opens; with nobody aboard it prowls into rooms behind open
+  doors, else about its own room (roomWanderSpot); a zoned pod alien off its deck waits by the deck door up. No more door
+  bashing (bashDoor / blockingDoor / lockAround gone). Also: nearestNav prefers nodes in the point's own room (routes to a
+  spot by a door no longer lead through that door first), nearestNavSeen, and alienMove edges sideways round solids (the
+  reactor) instead of jittering; legs / walkTo give up after 8-10 s. The saboteur (a human sneak in a suit) still slips
+  through shut doors unless they're locked or a blast door (roomLinkOpen).
+- **Pirates force doors** (js/game.js pryDoor, from js/dock.js pirateStep, so every pirate: looters, base rushers, the
+  captain's raiders): up against a shut door they stand at it DOOR_PRY_TIME 3 s (locked or broken: DOOR_PRY_LOCKED 8 s;
+  several together faster), with clanks and sparks, a banner, the tag "PIRATE · FORCING THE DOOR" and the aim pose, and an
+  orange progress ring on the door (drawDoorPry, both views). Then the lock is broken / a broken one jammed / an ordinary one
+  held open 2 s. A door with vacuum behind it they leave alone (they wait). The fuel crate's loot spot moved to x + 0.95
+  (x + 0.8 was inside the crate's footprint: reachable only from the side).
+- **The spine** got 1 unit thinner: SPINE_Y1 15 → 14 (2.5 thick; the bottom rooms gain a unit at their top). Moved with
+  it: the reactor capacitor (14.65), the cat (14.75), the toilet stall / toilet / plunger / magazine / WC stencil, the
+  dumbbell rack, the power lines' points by that wall and the risers (POWER_ROUTES), wall beacons (lights.js), the steam
+  puff; shield buttons, wall lamps and the toilet sign follow SPINE_Y1.
+- **Removed**: the deck-airlock cycle (phases, CYCLE button, entry/target, forceDeckLock, updateDoorways, LOCK_DOOR_TIME).
+  LOCK_CYCLE stays as a variable the 'airlocks' ship upgrade sets (now the outer airlocks'). SYSTEMS keep kind 'lock'
+  ("Left / Middle / Right deck door"). Security console: ↕ marks the deck doors. Tutorial, sidebar ("waiting at a shut
+  door"), HUD ("Deck door" / "Doorway" as the place name), practice ("Lock every inner door"), multiplayer (doors: one
+  array for all seven doors: open, locked, blast, hold, jammed, pry, stay).
+- **Art**: tools/blender/models/interior/deckdoor.py (new; decklock.py deleted): interior/deckdoor_closed / open / locked /
+  blast_f0..3 / broken_f0..1 (the passage floor, spine ends, lintel, lamps, beacons, light strips) and deckdoor_door_f0..5 /
+  _locked / _blast / _forced (one sliding double-leaf door across the middle of the spine's high block). structure.py: the
+  spine re-rendered 2.5 deep (its conduits, clamps, plates and the DECK 2 stencil moved into the narrower top; PIPES shared
+  with deckdoor.py). Classic view: drawDeckDoor (js/art.js), drawSpine's pipes closer together. hulllib.py's SPINE_Y1 too
+  (no hull re-render needed: the outline didn't change).
+- **Balance**: trips got shorter (no cycle wait, a thinner spine): tools/travel-table.json rebuilt, on average 1.6 s
+  shorter than the old best/worst mean (best = worst now; the table keeps both). The saboteur's crew work time
+  SAB_WORK_TEAM 2 → 1.8 s (the quickest room-to-room trip is 3.2 s now, was 3.7). tests/scaling.js: idle shares rose
+  (solo -7.5 → -1.6 points off target on average; crews mostly 5-10 points over 45 %): to retune.
+- Tests: tests/doors.js (new: auto-open / linger / never on someone / locked / broken / pressure + venting + the cat /
+  aliens wait and come through when you open it, prowl through open doors only / pirates force closed and locked doors,
+  leave vacuum doors alone / the saboteur / multiplayer sync); softlock, controls, mission, hazards, intruder (room-to-room
+  hunting with the doors held open; the pod aliens with shut doors), systems, saboteur, clutter, walkfield, pinpad,
+  leviathan updated.
+
+## Outer airlocks: real airlocks with two doors (2026-10-21)
+The user: "for the outer airlocks we actually want the double doors" (while the inner deck airlocks became single doors).
+- **The chamber** (js/ship.js HATCHES, OL_BLOCK; logic js/airlock.js): in each bottom side room, a 2.2 x 2.2 chamber against
+  the hull wall, centred on the old hatch (port y 19.2, star y 19.4), walled off with 0.6 walls like every wall (the room's
+  floor goes round it: the room is three rects now, outerLockCarve, the big piece first). INNER door: in the chamber's
+  room-side wall (a doorway's sliding door, 2.2 long); OUTER door: the old hatch in the hull wall (1.8). Only one is ever
+  open; the chamber is pressurized or pumped out (h.air). No scripted 'hatch' mode any more: you walk through.
+- **Use** (all automatic, like the old deck airlocks): walk up to the inner door, it opens; step in, it shuts behind you, the
+  pump runs (LOCK_CYCLE 1.3 s; 0.7 s with the 'airlocks' upgrade, "Faster airlock pumps": same id, now about these), the outer
+  door opens as the pump finishes; step past the hull's face onto the doorstep = spacewalk (airlockThreshold). Back: float up
+  to the hatch, an empty chamber cycles to you, push in. In the chamber E / click cycles it by hand (turning back). Visor down
+  in a pumped-out chamber. Timing (tests/airlock.js, real WASD): in front of the inner door → on the hull 2.3 s (1.7 s with
+  the upgrade), just off the hatch → in front of the inner door 2.6 s; the old scripted hatch was 1.6 s + the walk to it.
+- **Docked ships**: their tube ends at our hull (was: 0.7 into the room). Pirate ship / pirate base / the chapter-5 raider:
+  air on both sides, a plain passage (each door opens for whoever comes, no pumping; it works even broken or locked, like the
+  old hatch stood open while docked). Pirates and Dr. Varga route through it (airlockWay). The derelict's tube is airless:
+  the chamber cycles, its outer door opens into the tube. Cast off with the outer door open: it shuts.
+- **Broken / locked / venting**: broken: doors stay as they are; locked: both shut; the manual override (from the room, the
+  chamber or outside) vents the airlock room: both doors stand open during any vent (also the vent panel's), then both shut
+  and the chamber has air again. Vented hostiles are dragged to the inner door, then through the chamber out of the hatch;
+  crew in the chamber get hurt like those in the room. Items sucked to a breach go round the chamber (suckVia).
+- **Intruders** come in through the chamber (outer door, pump, inner door: INTRUDER_ENTER_TIME 2.4 s, enterHatch) and never
+  step into a chamber afterwards (alienStep). The saboteur the same way.
+- **Moved**: the vent panels (above the chamber, on the hull wall), the cannon power lines (round the chamber, up the room
+  side of its wall), the dumbbell rack (x 41.5 → 40.25: clear of the chamber block), the airlock part's spot (at the inner
+  door), the derelict / base detach prompts (at the inner door).
+- **Art**: tools/blender/models/interior/outerlock.py: interior/outerlock_<side>_floor_* (grated floor plate, hazard
+  thresholds, light strips: air green / pumped out red / pumping amber pulse / doors moving amber blink / locked / broken
+  flicker) and _panel_* (the control box on the inner door's jamb: status dome, CYCLE button, pressure gauge; + venting).
+  The inner door reuses interior/door_v_*, the outer one interior/hatch_<side>_*, the walls the wall kit (buildWalls: the
+  chamber's north and south walls are low near walls so you see in). Lighting: the chamber glows in its state's colour, a
+  lamp in each corner beside it (airlockLighting). Classic view: drawAirlock2D (dashed chamber, two sliding doors, lamp,
+  pump ring).
+- **Multiplayer**: the snapshot carries each airlock's doors, air, phase, pump time, target, lock, forced; mode changes at
+  the threshold happen on the server only (a client waits for it).
+- **Balance**: tools/balance.js counts airlockPass() per pass (door + pump + the walk through) instead of HATCH_TIME: twice per
+  spacewalk and per derelict visit.
+- Tests: tests/airlock.js (new: out and back through real inputs per side, only one door at a time, the upgrade, the pass
+  time vs a real walk, the manual cycle, a docked pirate ship, the derelict, broken + override, locked, the vent, intruders,
+  multiplayer); hazards, controls, interact, softlock, clutter, dock updated.

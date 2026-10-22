@@ -154,11 +154,11 @@ function bunkRoom(t) {
 // --- the toilet ----------------------------------------------------------------
 function toiletStall(t) {
   if (sprReady('props/toilet_stall', 'props/toilet', 'props/plunger', 'props/magazine')) {
-    spr('props/toilet_stall', 0, 11.625, 16.0);
+    spr('props/toilet_stall', 0, 11.625, 15.0);
     spr('props/toilet', 0, ...fc(FURNITURE.toilet));
-    spr('props/plunger', 0, 13.25, 16.6);
-    spr('props/magazine', 0, 12.05, 16.4, 0, { layer: 'decal' });
-    stencil(U(12.95), U(17.8), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');   // (clear of the open door's swing)
+    spr('props/plunger', 0, 13.25, 15.6);
+    spr('props/magazine', 0, 12.05, 15.4, 0, { layer: 'decal' });
+    stencil(U(12.95), U(16.8), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');   // (clear of the open door's swing)
     return;
   }
   const w1 = FURNITURE.stallWall, w2 = FURNITURE.stallFront;
@@ -182,20 +182,20 @@ function toiletStall(t) {
     ctx.fillStyle = `rgba(230,230,220,${0.6 * (1 - k)})`; ctx.fill();
   }
   // toilet paper on the wall, a plunger, a magazine
-  ctx.beginPath(); ctx.arc(U(11.6), U(15.85), 6, 0, TAU); ctx.fillStyle = '#f4f5f6'; ctx.fill(); stroke(1.2);
-  ctx.beginPath(); ctx.arc(U(11.6), U(15.85), 2.2, 0, TAU); ctx.fillStyle = '#b9a07a'; ctx.fill();
-  ctx.beginPath(); ctx.arc(U(13.25), U(16.6), 6, 0, TAU); ctx.fillStyle = '#b8402e'; ctx.fill(); stroke(1.2);
-  ctx.fillStyle = '#b8874f'; ctx.fillRect(U(13.25) - 2, U(16.6) - 14, 4, 12);
-  ctx.save(); ctx.translate(U(12.05), U(16.4)); ctx.rotate(-0.4);
+  ctx.beginPath(); ctx.arc(U(11.6), U(14.85), 6, 0, TAU); ctx.fillStyle = '#f4f5f6'; ctx.fill(); stroke(1.2);
+  ctx.beginPath(); ctx.arc(U(11.6), U(14.85), 2.2, 0, TAU); ctx.fillStyle = '#b9a07a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(U(13.25), U(15.6), 6, 0, TAU); ctx.fillStyle = '#b8402e'; ctx.fill(); stroke(1.2);
+  ctx.fillStyle = '#b8874f'; ctx.fillRect(U(13.25) - 2, U(15.6) - 14, 4, 12);
+  ctx.save(); ctx.translate(U(12.05), U(15.4)); ctx.rotate(-0.4);
   ctx.fillStyle = '#e8e4dc'; ctx.fillRect(-10, -7, 20, 14); stroke(1); ctx.fillStyle = '#7b5fd6'; ctx.fillRect(-8, -5, 16, 5);
   ctx.restore();
-  stencil(U(12.75), U(17.4), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');
+  stencil(U(12.75), U(16.4), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');
 }
 // The sign on the wall above it (drawn with the spine, on the wall itself).
 function toiletSign() {
   if (wallSign('props/plaque_toilet', 12.45, SPINE_Y1, 1.35) || GFX.on) return;   // above the toilet's tank (sprite view: nothing until it's loaded;
                                                                                    // the 2D plaque goes on top of everything, crew included)
-  plaque(U(12.45), U(14.55), U(2.05), U(0.72),
+  plaque(U(12.45), U(SPINE_Y1 - 0.45), U(2.05), U(0.72),
     [['PLEASE CLOSE THE LID', 0.14], ['OR THE AIR RUNS OUT', 0.12], ['— the management', 0.085, 600]]);
 }
 
@@ -292,10 +292,9 @@ function interactSpots() {
     { x: REACTOR.x, y: REACTOR.y, w: REACTOR.w, h: REACTOR.h },
     ...SHIELD_BUTTONS.map(b => ({ x: b.x, y: b.y, r: 0.55 })),
     ...GUNS.map(g => ({ x: g.hatch[0], y: g.hatch[1], r: 0.55 })),
-    ...HATCHES.map(h => ({ x: h.x - h.dir * 0.45, y: h.y, r: 0.7, probe: h.inside })),
-    ...DECK_LOCKS.map(L => ({ x: L.x + L.w / 2, y: (SPINE_Y0 + SPINE_Y1) / 2, w: L.w + 0.2, h: SPINE - 0.2, both: true })),
+    // (the outer airlocks: nothing to click, you walk through; in the chamber E / click cycles it: js/airlock.js)
     ...hazardSpots(), ...minigameSpots(), ...dockSpots(), ...(typeof levUseSpots === 'function' ? levUseSpots() : []),
-    ...DOORWAYS.filter(d => d.locked || d.blast).map(d => ({ x: d.x + d.w / 2, y: d.y + d.h / 2, w: d.w + 0.3, h: d.h, both: true })),
+    ...DOORS.filter(d => doorStuck(d)).map(d => ({ x: d.x + d.w / 2, y: d.y + d.h / 2, w: d.w + (d.axis === 'x' ? 0.3 : 0.2), h: d.h + (d.axis === 'y' ? 0.2 : 0), both: true })),   // (doors that won't open by themselves: the override)
   ];
   return out;
 }

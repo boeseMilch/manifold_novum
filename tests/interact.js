@@ -3,7 +3,7 @@
 // (barnacle scraping, treating) by holding E or the mouse, and the manual-override panel.
 // Run: node tests/interact.js
 const { loadGame } = require('./harness');
-const NAMES = ['simTick', 'me', 'HATCHES', 'evs', 'startMission', 'mission', 'withCrew', 'inv', 'ui', 'DOORWAYS', 'hurtCrew', 'crew', 'makeCrew', 'SCRAPE_TIME'];
+const NAMES = ['simTick', 'me', 'HATCHES', 'evs', 'startMission', 'mission', 'withCrew', 'inv', 'ui', 'DOORWAYS', 'hurtCrew', 'crew', 'makeCrew', 'SCRAPE_TIME', 'roomAt'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -21,25 +21,22 @@ function hold(G, how, done, max = 10) {
   i.keys.delete('KeyE'); i.mouse.down = false; return t;
 }
 
-// --- the outer airlock, from a spacewalk: E (mouse anywhere, also on the airlock or on yourself) and click
+// --- the outer airlock (js/airlock.js): walked through; in its chamber E (mouse anywhere) or a click on it cycles it by hand
 for (const [how, mouse] of [['E', 'far away'], ['E', 'on the airlock'], ['E', 'on yourself'], ['click', 'on the airlock']]) {
+  const G = fresh(), h = G.HATCHES[0], me = G.me, c = h.chamber, mid = [c.x + c.w / 2, c.y + c.h / 2];
+  place(G, 'inside', ...mid);
+  mouseAt(G, ...(mouse === 'far away' ? [h.x + 8, h.y - 8] : mouse === 'on yourself' ? mid : mid));
+  tickN(G, 2);
+  check(/cycle the airlock/.test(me.prompt?.text || ''), `in the chamber the prompt offers the cycle ("${me.prompt?.text}")`);
+  if (how === 'E') pressE(G); else click(G, ...mid);
+  tickN(G, 150);
+  check(h.air === 'outer' && h.doors.outer === 1 && h.doors.inner === 0, `chamber: ${how} (mouse ${mouse}) cycles it: pumped out, the outer door open, the inner one shut`);
+}
+{
   const G = fresh(), h = G.HATCHES[0], me = G.me;
   place(G, 'eva', ...h.outside);
-  mouseAt(G, ...(mouse === 'far away' ? [h.x + 8, h.y - 8] : mouse === 'on yourself' ? h.outside : [h.x, h.y]));
-  tickN(G, 2);
-  if (how === 'E') pressE(G); else click(G, h.x, h.y);
-  tickN(G, 150);
-  check(me.mode === 'inside', `spacewalk: ${how} (mouse ${mouse}) takes you back in through the outer airlock (mode ${me.mode})`);
-}
-// --- the outer airlock, from inside
-for (const [how, mouse] of [['E', 'far away'], ['E', 'on the airlock'], ['click', 'on the airlock']]) {
-  const G = fresh(), h = G.HATCHES[0], me = G.me;
-  place(G, 'inside', ...h.inside);
-  mouseAt(G, ...(mouse === 'far away' ? [h.x + 8, h.y - 8] : [h.x, h.y]));
-  tickN(G, 2);
-  if (how === 'E') pressE(G); else click(G, h.x, h.y);
-  tickN(G, 150);
-  check(me.mode === 'eva', `inside: ${how} (mouse ${mouse}) takes you out on a spacewalk (mode ${me.mode})`);
+  me.input.keys.add('KeyD'); tickN(G, 60 * 5); me.input.keys.delete('KeyD');
+  check(me.mode === 'inside' && G.roomAt(me.x, me.y)?.id === 'portLock', `spacewalk: floating at the outer airlock (D) cycles it to you and takes you back in (mode ${me.mode})`);
 }
 
 // --- barnacles: hold E next to one, or hold the mouse on it

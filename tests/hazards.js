@@ -46,7 +46,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const tape0 = G.hz.tape, t = holdOn(G, s.x, s.y, () => G.hz.breaches[0].tarp);
   check(G.hz.breaches[0].tarp && G.hz.tape === tape0 - 1 && Math.abs(t - 15) < 0.3, `holding click on the hole tapes a tarp over it in 15 s, using a roll of tape (${t.toFixed(1)} s)`);
   tickN(G, 60 * 3);
-  check(!G.vacuumRoom('portLock') && G.DOORWAYS[2].open > 0.9, 'tarped: air comes back and the blast doors lift');
+  check(!G.vacuumRoom('portLock') && !G.DOORWAYS[2].blast, 'tarped: air comes back and the blast doors lift (the doors work again)');
   G.shipHit('port', 0, 20, true);
   check(!G.hz.breaches[0].tarp && G.vacuumRoom('portLock'), 'the next hit on that side tears the tarp');
   // weld from outside
@@ -75,7 +75,7 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
 {
   const G = fresh({ breach: true }); G.breachRoom('portGun'); tickN(G, 30);
   const me = G.me, d = G.DOORWAYS[0]; me.x = d.x + d.w + 0.5; me.y = d.y + d.h / 2; G.simTick(DT);
-  check(/force it up/.test(me.prompt?.text || ''), `next to a blast door (not to the reactor room) you can force it ("${me.prompt?.text}")`);
+  check(/manual override/.test(me.prompt?.text || '') && /vents the bridge/.test(me.prompt.text), `next to a blast door (not to the reactor room) you can force it, with a warning ("${me.prompt?.text}")`);
 }
 // --- a normal fire can be vented too; a burning broken part can't be repaired until the fire is out
 {
@@ -129,10 +129,10 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const G = fresh({}); const me = G.me; me.x = 22; me.y = 9;          // the operator is on the bridge
   const put = (spawn, side, x, y) => { G[spawn](side); const a = G.boarding.invaders[G.boarding.invaders.length - 1]; Object.assign(a, { mode: 'inside', state: 'wander', x, y }); return a; };
   const far = put('spawnInvader', 'port', 10, 21);                    // in the left airlock room, far from the hatch
-  const near = put('spawnInvader', 'port', 2.6, 19.2);                // right next to the outer hatch
+  const near = put('spawnInvader', 'port', 5.3, 19.2);                // right in front of the outer airlock's inner door
   const sab = put('spawnSaboteur', 'port', 8, 20);
   const other = put('spawnInvader', 'star', 37, 19.6);                // in the other airlock room
-  const pirate = { uid: 9001, x: 3, y: 20.5, face: 0, walk: 0, hp: 3, carry: 'drill', state: 'steal', cd: 5, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 };
+  const pirate = { uid: 9001, x: 4.6, y: 20.0, face: 0, walk: 0, hp: 3, carry: 'drill', state: 'steal', cd: 5, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 };
   const pirate2 = { ...pirate, uid: 9002, x: 22, y: 16.6, carry: null, route: [] };     // in the reactor room
   G.dk.pirates.push(pirate, pirate2);
   G.mission.kills = 0;
@@ -141,9 +141,10 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(sab.dead && G.mission.kills === 1, 'a saboteur in the room goes down at once, and it counts as a kill');
   check(pirate.hp === 1 && pirate2.hp === 3, 'a pirate in the room takes a hit, one in another room doesn\'t');
   check(other.hp === 4 && !other.stun, 'an intruder in the other airlock room is untouched');
-  check(G.HATCHES.find(h => h.side === 'port').open === 1, 'both doors of the outer airlock stand open');
   const x0 = far.x;
-  tickN(G, 60 * 3);
+  tickN(G, 30);
+  { const h = G.HATCHES.find(h => h.side === 'port'); check(h.doors.inner === 1 && h.doors.outer === 1, 'both doors of the outer airlock stand open (the chamber in between)'); }
+  tickN(G, 60 * 2.5);
   check(near.dead && pirate.dead, 'the ones near the hatch get dragged to it and blown out into space');
   check(G.mission.kills === 2 && G.dk.defeated === 1, `those count: kills ${G.mission.kills}, pirates defeated ${G.dk.defeated}`);
   check(G.ITEMS.some(it => it.kind === 'drill'), 'the pirate drops what it was carrying');
@@ -162,14 +163,14 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   const mate = G.makeCrew('Mate', 9, 20.5); mate.mode = 'inside'; G.crew.push(mate);
   me.x = h.inside[0]; me.y = h.inside[1]; me.mode = 'inside'; me.vx = me.vy = 0; G.simTick(DT);
   check(/force the broken outer airlock/.test(me.prompt?.text || '') && /vents/.test(me.prompt.text), `the prompt warns before you force it ("${me.prompt?.text}")`);
-  clickAt(h.x, h.y);
-  check(G.withCrew(me, () => G.ui.panel) === 'override', 'clicking opens the manual override');
+  clickAt(h.inner.x + h.inner.w / 2, h.y);
+  check(G.withCrew(me, () => G.ui.panel) === 'override', 'clicking (on its inner door) opens the manual override');
   bonk();
   check(G.hz.vent?.room === 'portLock' && G.hz.vent.forced && G.vacuumRoom('portLock'), 'forcing it vents the left airlock room: vacuum');
   check(/forced/.test(G.combat.banner?.text || '') && /vents/.test(G.combat.banner.text), `a banner says so ("${G.combat.banner?.text}")`);
   check(me.health === 'ok' && mate.health === 'hurt', 'the one who forced it is fine (visor down), a crewmate in the room gets hurt');
-  tickN(G, 60 * 2);
-  check(me.mode === 'eva', 'and you still get out on your spacewalk');
+  me.input.keys.add('KeyA'); tickN(G, 60 * 2); me.input.keys.delete('KeyA');
+  check(me.mode === 'eva', 'and you still get out on your spacewalk (both doors open: straight through the chamber)');
   check(G.DOORWAYS[2].blast && G.DOORWAYS[2].open < 0.1, 'the blast door to the reactor room drops');
   const C2 = loadGame(['netApply', 'hz', 'DOORWAYS', 'vacuumRoom']); C2.netApply(JSON.parse(JSON.stringify(G.netSerialize())), me.id);
   check(C2.hz.vent?.forced && C2.vacuumRoom('portLock') && C2.DOORWAYS[2].blast, 'multiplayer: the forced vent and the blast door are in the snapshot');
@@ -182,15 +183,15 @@ const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('intro'); G
   check(/vents/.test(me.prompt?.text || ''), `outside, the prompt warns too ("${me.prompt?.text}")`);
   clickAt(h.x, h.y); bonk();
   check(G.hz.vent?.room === 'portLock' && mate.health === 'hurt', 'forcing it from outside vents the room as well');
-  tickN(G, 60 * 2);
-  check(me.mode === 'inside', 'and you are back inside');
-  // crew sealed in the vented room: the deck airlock up to the spine still works
+  me.input.keys.add('KeyD'); tickN(G, 60 * 2); me.input.keys.delete('KeyD');
+  check(me.mode === 'inside' && G.roomAt(me.x, me.y)?.id === 'portLock', 'and you float in, through the chamber, back into the room');
+  // (crew sealed in the vented room: the deck door up through the spine is a pressure door now, forced with the override)
   tickN(G, 60 * 12); mate.health = 'ok';
   // a locked outer airlock: forcing it unlocks it and vents the room too
   G.SYSTEMS.find(s => s.ref === h).broken = false; h.locked = true;
   me.x = h.inside[0]; me.y = h.inside[1]; me.vx = me.vy = 0; G.simTick(DT);
   check(/locked outer airlock/.test(me.prompt?.text || '') && /vents/.test(me.prompt.text), 'a locked outer airlock warns the same way');
-  clickAt(h.x, h.y); bonk();
+  clickAt(h.inner.x + h.inner.w / 2, h.y); bonk();
   check(!h.locked && G.hz.vent?.forced && G.vacuumRoom('portLock'), 'forcing the locked one unlocks it and vents the room');
   // one vent at a time: forcing the other airlock closes the first one's vent
   G.startVent('starLock', null, true);

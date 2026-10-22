@@ -2,7 +2,7 @@
 // airlocks, consoles, items, treating people); right click uses your weapon. Injuries:
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
-const NAMES = ['tick', 'boarding', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_LOCKS', 'combat', 'CAPACITORS', 'hurtCrew',
+const NAMES = ['tick', 'boarding', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_DOORS', 'combat', 'CAPACITORS', 'hurtCrew',
   'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects'];
 const DT = 1 / 60;
 let failed = 0;
@@ -14,9 +14,9 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 {
   const G = loadGame(NAMES); const h = G.HATCHES[0], me = G.me;
   me.x = h.inside[0]; me.y = h.inside[1]; G.simTick(DT);
-  check(/^Click: go outside/.test(me.prompt?.text || ''), `prompts say what clicking does ("${me.prompt?.text}")`);
-  clickAt(G, h.x, h.y); tickN(G, 120);
-  check(me.mode === 'eva', 'clicking the outer airlock takes you outside');
+  check(/walk in/.test(me.prompt?.text || '') && !me.prompt.run, `the outer airlock says how it works: you walk through it ("${me.prompt?.text}")`);
+  me.input.keys.add('KeyA'); tickN(G, 60 * 4); me.input.keys.delete('KeyA');
+  check(me.mode === 'eva', 'walking into the outer airlock takes you outside (the chamber cycles by itself)');
   const g = G.GUNS.find(g => g.id === 'port'); me.mode = 'inside'; me.x = g.hatch[0]; me.y = g.hatch[1] - 0.3; G.simTick(DT);
   clickAt(G, g.hatch[0], g.hatch[1]);
   check(me.mode === 'gun' && me.gun === g, 'clicking a ladder climbs into the cannon');
@@ -30,9 +30,13 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const b = G.SHIELD_BUTTONS[0]; G.CAPACITORS[0].charge = 2; me.x = b.x; me.y = b.y + 0.8; G.simTick(DT);
   clickAt(G, b.x, b.y);
   check(G.combat.shields.port.up > 0, 'clicking a shield button raises the shield');
-  const L = G.DECK_LOCKS[0]; me.x = L.x + L.w / 2; me.y = (G.SPINE_Y0 + G.SPINE_Y1) / 2; tickN(G, 120);
-  const open0 = L.open; clickAt(G, L.x + L.w / 2, (G.SPINE_Y0 + G.SPINE_Y1) / 2);
-  check(L.phase !== 'idle' || L.open !== open0, 'clicking the airlock you stand in cycles it');
+  const L = G.DECK_DOORS[0]; me.x = L.x + L.w / 2; me.y = G.SPINE_Y1 + 0.6; tickN(G, 30);
+  check(L.open > 0.95, 'standing in front of a deck door opens it');
+  L.locked = true; tickN(G, 60);
+  check(L.open === 0, 'locked, it shuts (and stays shut with you in front of it)');
+  clickAt(G, L.x + L.w / 2, (G.SPINE_Y0 + G.SPINE_Y1) / 2);
+  check(G.me.ui.panel === 'override', 'clicking the locked door in front of you starts the manual override');
+  G.me.ui.panel = null; G.me.ui.override = null; L.locked = false;
   me.x = 22.2; me.y = 4.5; G.simTick(DT);
   const far = G.HATCHES[0]; const wasMode = me.mode; clickAt(G, far.x, far.y);
   check(me.mode === wasMode, 'clicking something far away does nothing');

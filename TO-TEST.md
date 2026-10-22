@@ -60,3 +60,25 @@ Tick off what works; note what doesn't.
 - Build the new leeches/spores/mines set?
 - Leviathan phase 4: start the first crawler wave later (or smaller solo)? (The energy way out is built: 3 brood waves, the hold keeps its energy, an emergency cell.)
 - Chapter 4 timing (5 min, 6 min, or the second raider earlier), and whether solo chapter 4 may stay that busy.
+
+## Inner doors (2026-10-21): single doors that open in front of you
+- [ ] Every door between rooms and the three deck doors are shut until you walk up to one; it slides open as you arrive (no bump, no waiting) and shuts about a second after you've gone. Does it feel snappy or fiddly?
+- [ ] Standing in a doorway (or lying down in one) it never shuts on you.
+- [ ] Security: lock a door. Walking up, the label says "locked. Click / E: manual override"; three whacks open it.
+- [ ] A broken deck door stays shut ("broken, stuck shut"); forced, it stays open until repaired.
+- [ ] Hull breach (practice): the doors of that room stay shut ("pressure difference … vents the bridge!"). Forcing one vents the room you're in until it shuts again (vacuum tint, slow walking). Doors to the reactor room can't be forced (the cat).
+- [ ] Intruder (practice): it can't open doors. Shut out, it waits by the door towards you; open that door and it's there. Fun or annoying? Too easy to keep it boxed in?
+- [ ] Chapter 2: the two pod aliens are stuck in the reactor room until someone opens a door. Still a fight?
+- [ ] Pirates (practice "Pirates dock"): at a shut door they stop and force it (sparks, "PIRATE · FORCING THE DOOR", an orange ring on the door), ~3 s; a locked one ~8 s.
+- [ ] The spine is thinner and the deck doors look right (sprites and ?classic); nothing sits in a wall in the bottom rooms (toilet, cat, capacitor, dumbbells, shield buttons, cables).
+- [ ] Multiplayer: doors open for whoever is in front of them, on every screen.
+
+## Outer airlocks (2026-10-21): a chamber with two doors
+- [ ] Walk into the left / right outer airlock: the inner door opens in front of you, shuts behind you, the chamber pumps (amber, a ring), the outer door opens; step out and you're on a spacewalk. Quick enough? (about 2.3 s from the door to the hull)
+- [ ] Back in: float to the hatch and push towards it. It cycles to you, you're on your feet in the chamber, it pumps up, the inner door opens.
+- [ ] Turning back: in the chamber press E (or click it).
+- [ ] The chamber looks right in both views (sprites and ?classic): floor plate lights green / red / amber, the panel beside the inner door, the walls round it, nothing sitting in it (vent panel above it now, cables round it).
+- [ ] Pirates docked: they come through the chamber; you can walk over to their ship and back without waiting. The derelict: the chamber cycles on the way.
+- [ ] Broken or locked outer airlock: the override vents the room, both doors stand open, then shut again.
+- [ ] Vent panel with an intruder near the airlock: it gets dragged through the chamber and out.
+- [ ] Multiplayer: everyone sees the doors and the pump; a crewmate stepping out shows on the hull.

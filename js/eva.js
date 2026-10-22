@@ -290,8 +290,8 @@ function drawEvaJobs(t) {
   // outer face, as tall as the wall, on the hull's doorstep; the inside view is interior/hatch_*, js/sprites.js,
   // and their tops line up): in the wall layer, depth-sorted at its south jamb
   if (GFX.on) for (const h of HATCHES) {
-    const s = `hull/hatch_${h.side}`, n = broken(h) ? s + '_broken' : h.locked && h.open < 0.05 ? s + '_locked' : s;
-    GFX.sprite(n, n === s ? Math.round(clamp(h.open, 0, 1) * 5) : 0, h.x, h.y, 0, { layer: 'wall', sortY: h.y + 1.16, emissive: 0.5 });
+    const s = `hull/hatch_${h.side}`, n = broken(h) ? s + '_broken' : h.locked && h.doors.outer < 0.05 ? s + '_locked' : s;
+    GFX.sprite(n, n === s ? Math.round(clamp(h.doors.outer, 0, 1) * 5) : 0, h.x, h.y, 0, { layer: 'wall', sortY: h.y + 1.16, emissive: 0.5 });
   }
   // jump coils: a ring with a dial, red until aligned; the dials spin up while the drive spools (coilFx; the
   // glow, energy rings and the flare at the jump are drawn in the glow layer: drawCoilEnergy, js/mission.js)

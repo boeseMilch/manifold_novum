@@ -46,7 +46,7 @@ const oreNeeded = () => { const o = typeof mission !== 'undefined' ? mission.obj
 function dockGeom(side) {
   const h = HATCHES.find(h => h.side === side), y = h.y;
   const P = [
-    R(-5.6, y - 0.6, 0.7, y + 0.6),               // tube (overlaps our room so you can walk straight in)
+    R(-5.6, y - 0.6, 0, y + 0.6),                 // tube (up to our outer airlock's hatch: in through its chamber, js/airlock.js)
     R(-10.2, y - 2.4, -5.6, y + 2.4),             // their airlock
     R(-18.4, y - 4.0, -10.8, y + 4.0),            // cargo
     R(-25.0, y - 2.8, -19.0, y + 2.8),            // core (reactor)
@@ -214,12 +214,15 @@ function pirateStep(p, tx, ty, dt) {
   if (pirateOk(p.x + vx, p.y)) { p.x += vx; moved += Math.abs(vx); }
   if (pirateOk(p.x, p.y + vy)) { p.y += vy; moved += Math.abs(vy); }
   p.face = Math.atan2(dy, dx); p.walk += moved * 3;
+  // up against one of our closed doors: they force it (slowly; js/game.js pryDoor) and count that as headway
+  if (moved < sp * 0.3 && typeof pryDoor === 'function' && pryDoor(p, dt, tx, ty)) return sp;
+  if (moved > sp * 0.3) p.pry = -1;
   return moved;
 }
 // A route of points from (x, y) to (tx, ty) across both ships.
 function dockRoute(x, y, tx, ty) {
   const g = DG();
-  const chain = g?.chain || (g ? [g.core, ...g.doors.slice().reverse().map(q => ({ x: q.x + q.w / 2, y: q.y + q.h / 2 })), { x: g.rooms[0].x + g.rooms[0].w / 2, y: g.y }, g.tubeMid, { x: g.hatch.inside[0], y: g.hatch.inside[1] }] : []);
+  const chain = g?.chain || (g ? [g.core, ...g.doors.slice().reverse().map(q => ({ x: q.x + q.w / 2, y: q.y + q.h / 2 })), { x: g.rooms[0].x + g.rooms[0].w / 2, y: g.y }, g.tubeMid, ...airlockWay(g.hatch), { x: g.hatch.inside[0], y: g.hatch.inside[1] }] : []);
   // chain order: core → door(cargo–core) → door(airlock–cargo) → airlock → tube → our side
   const nearIdx = (px, py) => chain.reduce((b, q, i) => Math.hypot(q.x - px, q.y - py) < Math.hypot(chain[b].x - px, chain[b].y - py) ? i : b, 0);
   const navPts = (ax, ay, bx, by) => navPath(nearestNav(ax, ay), nearestNav(bx, by)).map(n => ({ x: NAV.nodes[n].x, y: NAV.nodes[n].y }));
@@ -311,7 +314,7 @@ function updatePirate(p, dt) {
   // looting: grab something, carry it to their crate, PIRATE_LOOT times; then head home and stay there
   let goal = null;
   const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox' && it.kind !== 'navcore');   // (not the objective)
-  if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.8, y: FUEL_CRATE.y, crate: true });
+  if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.95, y: FUEL_CRATE.y, crate: true });   // (just clear of the crate: a spot they can stand on)
   if (!p.carry && !p.done && (p.loots >= PIRATE_LOOT || !loot.length)) { p.done = true; combatBanner('A pirate is done looting and heads back to their ship'); }
   if (leaving || p.carry || p.done) { if (g) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }
   else goal = loot.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0] || null;
@@ -335,7 +338,6 @@ function updatePirate(p, dt) {
 function updateDock(dt) {
   const d = dk.dock;
   if (d) {
-    const h = DG().hatch; h.open = d.tube === 'detached' ? 0 : 1;
     if (d.detachT !== null && (d.detachT -= dt) <= 0) undock();
     for (const f of d.fires || []) {                  // derelict fire: hurts anyone standing in it
       f.t += dt;
@@ -520,7 +522,7 @@ function derelictCastOff() {
 function derelictAct() {
   const d = dk.dock, h = DG().hatch;
   if (Math.hypot(player.x - h.inside[0], player.y - h.inside[1]) >= 1.3 || !roomAt(player.x, player.y)) return false;
-  const at = { x: h.x - h.dir * 0.2, y: h.y, r: 1.1 };
+  const at = { x: h.inner.x + h.inner.w / 2, y: h.y, r: 1.1 };   // (at our airlock's inner door)
   if (d.detachT != null) { act({ text: `Tether releases in ${Math.max(0, Math.ceil(d.detachT))} s`, at }); return true; }
   if (!derelictCastOffOk()) return false;
   const left = derelictCrew();
@@ -890,11 +892,11 @@ function pirateHalo(p) {                              // a red halo so they read
   glow.addColorStop(0, 'rgba(255,60,40,0.35)'); glow.addColorStop(1, 'rgba(255,60,40,0)');
   ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.75), 0, TAU); ctx.fill();
 }
-// Pirate sprite: stunned (2 frames) > aiming > carrying loot (walk cycle, frame 0 standing) > walking > idle.
+// Pirate sprite: stunned (2 frames) > aiming / forcing a door > carrying loot (walk cycle, frame 0 standing) > walking > idle.
 function drawPirateSprite(p, t) {
   if (!GFX.on) return false;
   const moving = actorMoving(p.uid, p.walk), wf = Math.floor((p.walk / TAU) * 8);
-  const [name, f] = p.stun > 0 ? ['chars/pirate/stunned', Math.floor(t * 2.5)] : p.aim > 0 ? ['chars/pirate/aim', 0]
+  const [name, f] = p.stun > 0 ? ['chars/pirate/stunned', Math.floor(t * 2.5)] : p.aim > 0 || p.pry >= 0 ? ['chars/pirate/aim', 0]   // (forcing a door: carbine butt against it)
     : p.carry ? ['chars/pirate/carry', moving ? wf : 0] : moving ? ['chars/pirate/walk', wf] : ['chars/pirate/idle', 0];
   return GFX.sprite(name, GFX.frameIndex(name, p.face, f), p.x, p.y, 0, { emissive: 0.3, pick: [0.32, 1.25] });
 }
@@ -918,7 +920,8 @@ function drawPirate(p, t) {
     if (p.carry) upright(view, p.x, p.y, 1.0, () => drawItemIcon(p.carry, L(0.5), 0, 0.7));
     upright(view, p.x, p.y, 1.4, () => {
       ctx.font = `800 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('PIRATE', 0, 0); ctx.fillStyle = '#ff7a6a'; ctx.fillText('PIRATE', 0, 0); ctx.textAlign = 'left';
+      const tag = p.pry >= 0 ? 'PIRATE · FORCING THE DOOR' : 'PIRATE';
+      ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(tag, 0, 0); ctx.fillStyle = '#ff7a6a'; ctx.fillText(tag, 0, 0); ctx.textAlign = 'left';
       pirateHpPips(p, 0, 2);
     });
     if (p.stun > 0) for (let i = 0; i < 3; i++) {     // dazed stars
@@ -933,7 +936,8 @@ function drawPirate(p, t) {
   ctx.fillStyle = '#2b303a'; ctx.fillRect(L(0.15), 4, L(0.35), 5); ctx.restore();
   ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.arc(L(p.x), L(p.y) - 2, 6, Math.PI, TAU); ctx.fill();
   ctx.font = `800 ${T * 0.22}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText('PIRATE', L(p.x), L(p.y) - L(0.62)); ctx.fillStyle = '#ff7a6a'; ctx.fillText('PIRATE', L(p.x), L(p.y) - L(0.62)); ctx.textAlign = 'left';
+  const tag = p.pry >= 0 ? 'PIRATE · FORCING THE DOOR' : 'PIRATE';
+  ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(tag, L(p.x), L(p.y) - L(0.62)); ctx.fillStyle = '#ff7a6a'; ctx.fillText(tag, L(p.x), L(p.y) - L(0.62)); ctx.textAlign = 'left';
   if (p.carry) drawItemIcon(p.carry, L(p.x) + L(0.45), L(p.y) - L(0.3), 0.7);
   if (p.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${p.flash * 0.7})`; ctx.beginPath(); ctx.arc(L(p.x), L(p.y), L(0.38), 0, TAU); ctx.fill(); }
   pirateHpPips(p, L(p.x), L(p.y) - L(0.6));
@@ -991,7 +995,7 @@ function baseGeom(side) {
   if (BASE_GEOM[side]) return BASE_GEOM[side];
   const h = HATCHES.find(h => h.side === side), y = h.y;
   const P = [
-    R(-5.6, y - 0.6, 0.7, y + 0.6),               // tube
+    R(-5.6, y - 0.6, 0, y + 0.6),                 // tube (up to our outer airlock's hatch)
     R(-12.4, y - 3.0, -5.6, y + 3.0),             // docking bay
     R(-21.4, y - 4.0, -13.0, y + 4.0),            // server room
     R(-22.4, y - 12.4, -11.6, y - 4.6),           // barracks
@@ -1030,7 +1034,7 @@ function baseGeom(side) {
             [{ ...pt(-32.7, -7.5), room: 4 }, { ...pt(-34.6, -15.4), room: 5 }]],
     // the walking line, brig → our airlock (dockRoute): the rooms are in a row, so a chain does (zig-zagging past the cover)
     chain: [pt(-34.0, -25.2), pt(-32.6, -22.4), pt(-32.6, -21.0), pt(-32.6, -19.4), pt(-33.8, -12.0), pt(-33.8, -10.4), pt(-33.3, -9.6), pt(-30.7, -9.4), pt(-27.9, -7.6), pt(-24.9, -9.4), pt(-22.7, -8.5),
-            pt(-17.2, -8.5), pt(-17.2, -4.3), pt(-17.2, 0), pt(-12.7, 0), pt(-9.0, 0), pt(-2.5, 0), { x: h.inside[0], y: h.inside[1] }],
+            pt(-17.2, -8.5), pt(-17.2, -4.3), pt(-17.2, 0), pt(-12.7, 0), pt(-9.0, 0), pt(-2.5, 0), ...airlockWay(h), { x: h.inside[0], y: h.inside[1] }],
   });
 }
 // A room's floor with holes cut out, as rects (slabs between the holes' x edges, split around them).
@@ -1068,7 +1072,7 @@ function dockBase(side) {
 }
 const BASE_ROOMS = ['Docking bay', 'Server room', 'Barracks', 'Brig', 'Gun corridor', 'Captain\'s quarters'];
 const inBase = (x, y) => { const g = dk.dock?.kind === 'base' && DG(); return !!g && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
-const baseCrew = () => crew.filter(c => (c.mode === 'inside' || c.mode === 'hatch') && inBase(c.x, c.y));
+const baseCrew = () => crew.filter(c => c.mode === 'inside' && inBase(c.x, c.y));
 // The base's walls stop shots (projectile space outside our hull is otherwise free: js/invader.js freeAt).
 const dockSolid = (x, y) => dk.dock?.kind === 'base' && [...DG().rooms, ...DG().doors].some(q => inRect(x, y, q, 0.7));
 // Guards hold their post and come at whoever walks into their room; the two from the bay hunt the nearest
@@ -1182,7 +1186,7 @@ function baseClickTarget(mx, my) {
 function baseAct() {
   const d = dk.dock, g = DG(), h = g.hatch, close = (p, r) => Math.hypot(player.x - p.x, player.y - p.y) < r;
   if (close({ x: h.inside[0], y: h.inside[1] }, 1.3) && !inBase(player.x, player.y)) {
-    const at = { x: h.x - h.dir * 0.2, y: h.y, r: 1.1 }, safe = dk.npc?.state === 'safe';
+    const at = { x: h.inner.x + h.inner.w / 2, y: h.y, r: 1.1 }, safe = dk.npc?.state === 'safe';
     if (d.tube === 'detached') { act({ text: 'Click: dock to the pirate base again', at, run: baseRedock }); return true; }
     if (safe || mission.jump) { act({ text: `Click: detach from the pirate base (it stays close by)${safe ? '' : ` — ${npcName().replace(/^the /, '')} isn't aboard!`}`, at, run: baseDetach }); return true; }
     return false;

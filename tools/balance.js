@@ -50,7 +50,7 @@ const A = {
   REACT: 4,               // s from an event nobody saw coming to someone heading off (sidebar, ???? plate, shouting);
                           // an event the radar has shown (scan within RADAR_RANGE before it): they set off early and are there when it starts
   HOME: ['bridge', 'reactor'],   // where a free crew member is when a job comes up: trips are averaged from both
-  CYCLE: 0.5,             // deck airlocks: 0 = always open towards you (travel best case), 1 = always the other way
+  CYCLE: 0.5,             // blend of the travel table's [best, worst] (equal since the deck airlocks became single doors, 2026-10-21)
   EVA_DETOUR: 1.4,        // a spacewalk path vs the straight line outside
   STEALTH_SEEN: 0.5,      // share of the time a stealth fighter is visible enough to hit (muzzle flashes, radar pings)
   SHIELD_DETOUR: 6,       // s the gunner loses leaving the cannon to raise a shield against a heavy shot (solo)
@@ -171,7 +171,7 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'SCRAPE_TIME', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
   'BARNACLE_GROW', 'BARNACLE_DRAIN', 'FLARE_WARN', 'FLARE_TIME', 'STORM_TIME', 'STORM_ARC', 'COOLANT_RISE', 'COOLANT_FIX', 'SCRAM_TIME',
   'HEAL_TIME', 'TENTACLE_COIL', 'ACID_TIME', 'LEECH_CHEW', 'PUFF_EVERY', 'SAC_OPEN', 'MOTHER_TOSSES', 'LEV_TIME', 'LEV_STEP', 'TREAT_TIME',
-  'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'HATCH_TIME', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
+  'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'AIRLOCK_DOOR_TIME', 'LOCK_CYCLES', 'OL_W', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
   'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY', 'HIT_FIRE', 'HIT_BREAK', 'PLASMA_TIME',
@@ -210,13 +210,16 @@ const L = (side) => (side === 'port' ? 'Left' : 'Right');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const gunOf = (side) => (side === 'front' ? 'Front cannon' : `${L(side)} cannon`);
 const lockRoom = (side) => (side === 'port' ? 'portLock' : 'starLock');
-// A spacewalk: to the outer airlock, out, along the hull to (x, y), the job, and back in.
+// One pass through an outer airlock's chamber (js/airlock.js airlockPass: the door behind you shuts, the pump, the
+// door ahead opens, a few steps; the kit's faster pumps: LOCK_CYCLES.fast). tests/airlock.js checks it against a real walk.
+const lockPass = () => { const g = game(); return g.AIRLOCK_DOOR_TIME + (KIT?.airlocks ? g.LOCK_CYCLES.fast : g.LOCK_CYCLES.base) + g.OL_W / g.WALK_SPEED; };
+// A spacewalk: to the outer airlock, out (through its chamber), along the hull to (x, y), the job, and back in.
 function evaTrip(side, pts) {
   const g = game(), h = g.HATCHES.find(h => h.side === side) || g.HATCHES[0];
   let d = 0, [x, y] = h.outside;
   for (const [px, py] of pts) { d += Math.hypot(px - x, py - y); [x, y] = [px, py]; }
   d += Math.hypot(h.outside[0] - x, h.outside[1] - y);
-  return { legs: H(`${L(h.side)} outer airlock`), extra: 2 * g.HATCH_TIME + d * A.EVA_DETOUR / (g.EVA_SPEED * evaMul()) };
+  return { legs: H(`${L(h.side)} outer airlock`), extra: 2 * lockPass() + d * A.EVA_DETOUR / (g.EVA_SPEED * evaMul()) };
 }
 const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
 
@@ -228,8 +231,8 @@ const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
 // in A.SHIP_ORDER as soon as the reputation does (each in order: saving up for the next rather than skipping it). Plus the mission's prerequisites (needs: the lobby recommends them; overcharge is
 // the only profession perk counted, professions are mixed in a crew). Every player is assumed to have it.
 // Skirmish twins (SKIRMISH_TWIN) get their chapter's kit; intro / rush / practice none.
-// Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; deck airlock cycles
-// unchanged), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 6 s / 3 s instead of 10 s,
+// Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; the doors open as you
+// walk up either way), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 6 s / 3 s instead of 10 s,
 // treating 1.2 s instead of 2 s: CREW_HIT_COST scaled), armor vest (one crew hit fewer per player; not in the expected kit: weapons specialists only), and the ship:
 // cannons (4 shots per energy: the energy runs and the fights' reloads), inserter, spare cell, caps, shields, radar
 // (the energy runs / the radar range, from the game), airlocks (0.7 s cycles: trips measured with them), hull (6
@@ -498,7 +501,7 @@ function jobsFor(ev, ctx) {
     job({ label: 'leviathan: MID to 3 + engine override', rel: p4, trip: H('reactor'), work: g.LEVB_OVERRIDE + A.LEVER_TURN, energy: [{ cap: 1, shots: g.LEVB_NEED * spe, gun: 'front' }] });
   } else if (k === 'derelict') {
     const ws = g.WALK_SPEED * walkMul(), walk = 2 * A.BOARD_WALK / ws, obj = ctx.objective?.kind;
-    let work = walk + A.DERELICT_EXTRA + g.HATCH_TIME * 2;
+    let work = walk + A.DERELICT_EXTRA + lockPass() * 2;   // (the derelict's tube is airless: our airlock cycles both ways)
     if (obj === 'blackbox') work += A.BOARD_WALK / ws * (1 / A.BOX_SLOW - 1);
     if (obj === 'rescue') work += g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED - A.BOARD_WALK / ws;
     // S-7: tendrils grab on the way in (freed by a shot, a spray or wriggling); the black box needs J1 patched, the
@@ -507,7 +510,7 @@ function jobsFor(ev, ctx) {
     const box = obj !== 'rescue', grabs = box ? A.S7_GRABS : A.S7_GRABS_RESCUE;
     work += grabs * A.S7_FREE;
     if (box) work += A.S7_PATCH + g.S7_FREEZER_HOLD + Math.max(0, g.S7_FREEZE[2] - A.S7_TO_CORE);
-    const freezerAt = A.BOARD_WALK * 0.6 / ws + g.HATCH_TIME + A.S7_PATCH + grabs * A.S7_FREE / 2;   // (s after arriving at our airlock)
+    const freezerAt = A.BOARD_WALK * 0.6 / ws + lockPass() + A.S7_PATCH + grabs * A.S7_FREE / 2;   // (s after arriving at our airlock)
     job({ label: `derelict (${obj || 'explore'})`, prio: 1, trip: H(`${L(side)} outer airlock`), work, crewHits: grabs * A.S7_GRAB_HITS, objective: obj ? { [obj]: 1 } : null,
           freezer: box ? { cap: CAP[side], at: freezerAt, every: g.S7_DRAW[0] } : null });
     const reach = g.S7_CREEP_TIME * (n > 1 ? 1 : 1.5), lock = H(lockRoom(side));

@@ -3,7 +3,7 @@
 // caller draws the old 2D version instead (render() in js/game.js), so nothing ever disappears.
 //
 // Converted so far: the hull body, floors, walls (built from the room layout in js/ship.js), the
-// spine, the deck airlocks, the doors between rooms, the outer airlock hatches (inside view) and
+// spine, the deck doors, the doors between rooms, the outer airlock hatches (inside view) and
 // the crew. Sprite names and origins: the model scripts' headers in tools/blender/models/<group>/.
 
 // ---------------------------------------------------------------------------------------------
@@ -15,7 +15,7 @@
 //   up-down walls: ship/wall_v tiles (the top strip; origin = north end, wall centre), stepping down
 //               (interior/wall_v_step) to ship/wall_v_low ~1.4 before a near wall (the cutaway rule)
 //   junctions:  interior/wall_j_[low_]<arms> where walls meet (arms = the directions they continue)
-// The spine (between the decks) is its own block (interior/spine_*), with the deck airlock shafts in it.
+// The spine (between the decks) is its own block (interior/spine_*), with the deck doors' passages through it.
 // ---------------------------------------------------------------------------------------------
 const WALL_T = 0.6, H_LOW = 0.35, SPINE_HI = 12.549;   // spine: high block from 12.549 (see models/interior/structure.py)
 let WALLS = null;
@@ -33,9 +33,13 @@ function buildWalls() {
   };
   const xs = floors.flatMap(r => [r.x, r.x + r.w]), ys = floors.flatMap(r => [r.y, r.y + r.h]);
   const H = [], V = [];
-  for (const r of ROOM_RECTS) {
-    const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h;
-    if (Math.abs(y0 - SPINE_Y1) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05)))
+  // (the outer airlocks' chambers too: walled in like a room, but low on both ends, so you see into them: their
+  // north wall is the near wall of the room piece above, the south one their own near wall, not the back wall of
+  // the room piece below)
+  const chambers = HATCHES.map(h => h.chamber), inBlock = (x, y) => Object.values(OL_BLOCK).some(b => inRect(x, y, b, -E));
+  for (const r of [...ROOM_RECTS, ...chambers]) {
+    const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h, chamber = chambers.includes(r);
+    if (Math.abs(y0 - SPINE_Y1) > E && !chamber) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05) && !inBlock(x, y0 - 0.3)))
       H.push({ kind: 'back', y: y0, x0: isFloor(a - 0.05, y0 + 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y0 + 0.05) ? b : b + WALL_T });
     if (Math.abs(y1 - SPINE_Y0) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y1 + 0.05)))
       H.push({ kind: 'near', y: y1, x0: isFloor(a - 0.05, y1 - 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y1 - 0.05) ? b : b + WALL_T });
@@ -64,6 +68,7 @@ function buildWalls() {
   const cuts = [
     ...DOORWAYS.map(d => ({ x: d.x + d.w / 2, a: d.y - 0.6, b: d.y + d.h + 0.2 })),
     ...HATCHES.map(h => ({ x: h.x - h.dir * 0.3, a: h.y - 0.9 - 0.6, b: h.y + 0.9 + 0.26 })),
+    ...HATCHES.map(h => ({ x: h.inner.x + h.inner.w / 2, a: h.inner.y - 0.6, b: h.inner.y + h.inner.h + 0.2 })),   // (their inner doors)
   ];
   for (const c of cuts) vRuns = vRuns.flatMap(r => {
     if (Math.abs(r.x - c.x) > E || c.b <= r.y0 || c.a >= r.y1) return [r];
@@ -131,7 +136,7 @@ function buildWallPieces() {
 }
 
 // The spine between the decks (interior/spine_a/b, 2 units per tile, origin at y = SPINE_Y1), with
-// the deck airlocks cut out (their sprites bring the spine ends next to the shaft); the deck stencils on top.
+// the deck doors cut out (their sprites bring the spine ends next to the passage); the deck stencils on top.
 let spinePieces = null;                               // (worked out once, like the walls')
 function drawSpineSprites() {
   if (!spinePieces) spinePieces = buildSpinePieces();
@@ -139,7 +144,7 @@ function drawSpineSprites() {
 }
 function buildSpinePieces() {
   const out = [];
-  const gaps = DECK_LOCKS.map(L => [L.x - 0.6, L.x + L.w + 0.6]).sort((a, b) => a[0] - b[0]);
+  const gaps = DECK_DOORS.map(d => [d.x - 0.6, d.x + d.w + 0.6]).sort((a, b) => a[0] - b[0]);
   let x = 0;
   const segs = [];
   for (const [a, b] of gaps) { segs.push([x, a]); x = b; }
@@ -150,7 +155,7 @@ function buildSpinePieces() {
       out.push([name, t, SPINE_Y1, { layer: 'wall', clip: [Math.max(a, t), null, Math.min(b, t + 2), null], sortY: SPINE_Y1 - 0.3 }]);
     }
     // one DECK 2 stencil on the top per segment (interior/spine_label), mid-segment and clear of the wall
-    // lamps and the toilet sign below its front edge (never cut by an airlock gap)
+    // lamps and the toilet sign below its front edge (never cut by a deck door's gap)
     if (b - a < 3) continue;
     const busy = [...WALL_LAMPS.filter(([, wy]) => wy === SPINE_Y1).map(([lx]) => [lx, 0.8]), [12.45, 1.5]];
     const mid = (a + b) / 2, lx = [0, -1, 1, -2, 2, -3, 3].map(d => mid + d).find(x => x > a + 0.8 && x < b - 0.8 && busy.every(([bx, r]) => Math.abs(x - bx) >= r));
@@ -159,19 +164,17 @@ function buildSpinePieces() {
   return out;
 }
 
-// Deck airlocks: the shaft (base: lamps and beacons by state) and its two doors on top.
-function drawDeckLockSprite(L, t) {
-  const b = broken(L), f8 = Math.floor(t * 8) % 8;
-  const base = b ? `interior/decklock_broken_f${Math.floor(t * 6) % 2}` : L.locked ? 'interior/decklock_locked'
-    : L.phase === 'cycling' ? `interior/decklock_cycle_f${f8}` : L.phase !== 'idle' ? `interior/decklock_busy_f${f8}`
-    : L.open === 'bottom' ? 'interior/decklock_bottom' : 'interior/decklock_top';
+// Deck doors (tools/blender/models/interior/deckdoor.py): the passage through the spine (base: its floor, the spine
+// ends, the lamp and the beacons by state) and the single sliding door on top.
+function drawDeckDoorSprite(d, t) {
+  const b = doorBroken(d), k = clamp(d.open, 0, 1);
+  const base = b ? `interior/deckdoor_broken_f${Math.floor(t * 6) % 2}` : d.blast ? `interior/deckdoor_blast_f${Math.floor(t * 4) % 4}`
+    : d.locked ? 'interior/deckdoor_locked' : k > 0.05 ? 'interior/deckdoor_open' : 'interior/deckdoor_closed';
   if (!GFX.ready(base)) return false;
-  GFX.sprite(base, 0, L.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y0, emissive: 0.6 });
-  for (const s of ['top', 'bottom']) {
-    const k = L.doors[s], pre = `interior/decklock_${s === 'top' ? 'top' : 'bot'}door`;
-    const name = b && k > 0.95 ? pre + '_forced' : L.locked && k < 0.05 ? pre + '_locked' : `${pre}_f${Math.round(clamp(k, 0, 1) * 5)}`;
-    GFX.sprite(name, 0, L.x, SPINE_Y1, 0, { layer: 'wall', sortY: s === 'top' ? SPINE_Y0 + 0.25 : SPINE_Y1 - 0.25, emissive: 0.4 });
-  }
+  GFX.sprite(base, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y0, emissive: 0.6 });
+  const door = b && d.jammed && k > 0.95 ? 'interior/deckdoor_door_forced' : k < 0.05 && d.blast ? 'interior/deckdoor_door_blast'
+    : k < 0.05 && d.locked ? 'interior/deckdoor_door_locked' : `interior/deckdoor_door_f${Math.round(k * 5)}`;
+  GFX.sprite(door, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.75, emissive: 0.4 });
   return true;
 }
 
@@ -188,18 +191,7 @@ function drawDoorSprites(t) {
   return true;
 }
 
-// Outer airlock hatches, inside view: frame + panels (h.open), locked / broken states.
-function drawHatchSprites(t) {
-  if (!GFX.ready('interior/hatch_port_frame')) return false;
-  for (const h of HATCHES) {
-    const s = `interior/hatch_${h.side}`, x = h.x - h.dir * 0.3, y = h.y - 0.9, b = broken(h);
-    const frame = b ? `${s}_frame_broken_f${Math.floor(t * 8) % 2}` : h.locked ? `${s}_frame_locked` : `${s}_frame`;
-    const panels = b ? `${s}_broken` : h.locked && h.open < 0.05 ? `${s}_locked` : `${s}_f${Math.round(clamp(h.open, 0, 1) * 5)}`;
-    GFX.sprite(frame, 0, x, y, 0, { layer: 'wall', sortY: h.y, emissive: 0.6, depthBias: PIECE_BIAS });
-    GFX.sprite(panels, 0, x, y, 0, { layer: 'wall', sortY: h.y + 0.01, depthBias: PIECE_BIAS });
-  }
-  return true;
-}
+// (The outer airlocks, chamber, doors and all: js/airlock.js drawAirlockSprites.)
 
 // Floors: every floor rect tiled with the 2 x 2 tiles of its zone (variants mixed by a hash of the
 // tile's place on one ship-wide grid, so the seams line up), clipped to the rect. Doorways get tread.
@@ -216,8 +208,9 @@ let floorWearSpots = null;
 function floorWear(base, x, y) {
   if (!floorWearSpots) floorWearSpots = [
     ...DOORWAYS.map(d => [d.x + d.w / 2, d.y + d.h / 2, 1.1, 5]),
-    ...DECK_LOCKS.flatMap(L => [[L.x + L.w / 2, SPINE_Y0, 0.9, 4], [L.x + L.w / 2, SPINE_Y1, 0.9, 4]]),
+    ...DECK_DOORS.flatMap(d => [[d.x + d.w / 2, SPINE_Y0, 0.9, 4], [d.x + d.w / 2, SPINE_Y1, 0.9, 4]]),
     ...HATCHES.map(h => [h.inside[0], h.inside[1], 0.8, 4]),
+    ...HATCHES.map(h => [h.chamber.x + h.chamber.w / 2, h.y, 0.9, 2]),   // (the outer airlocks' chambers)
     ...STATIONS.map(s => [s.x, s.y + 1, 0.9, 3]),
     [REACTOR.x, REACTOR.y + REACTOR.h / 2 + 0.6, 0.6, 5],
   ];
@@ -230,7 +223,7 @@ const floorCache = new Map();
 function floorTiles(r) {
   let tiles = floorCache.get(r);
   if (tiles) return tiles;
-  const small = Math.min(r.w, r.h) < 3, zone = zoneAtX(r.x + 0.01).name;
+  const small = Math.min(r.w, r.h) < 3 && !ROOM_RECTS.includes(r), zone = zoneAtX(r.x + 0.01).name;   // (doorways get tread; a room's narrow corner beside an outer airlock doesn't)
   const room = ROOMS.find(R => R.rects.includes(r)), base = room ? FLOOR_ROOM_WEAR[room.id] || 1 : 1.5;
   floorCache.set(r, tiles = []);
   for (let ty = Math.floor(r.y / 2) * 2; ty < r.y + r.h - 1e-4; ty += 2) for (let tx = Math.floor(r.x / 2) * 2; tx < r.x + r.w - 1e-4; tx += 2) {
@@ -244,7 +237,8 @@ function floorTiles(r) {
 function drawFloorSprites() {
   if (!GFX.ready('interior/floor_white_a')) return false;
   const walk = GFX.pathScratches && typeof walkFieldPacked === 'function';
-  for (const rs of [ROOM_RECTS, DOORWAYS]) for (const r of rs) {
+  const lockFloor = GFX.ready('interior/outerlock_port_floor_air');   // (the outer airlocks' chambers have a floor plate of their own: js/airlock.js)
+  for (const rs of [ROOM_RECTS, DOORWAYS, HATCHES.flatMap(h => lockFloor ? [h.inner] : [h.chamber, h.inner])]) for (const r of rs) {
     if (!GFX.onScreen(r.x + r.w / 2, r.y + r.h / 2, 0, Math.hypot(r.w, r.h) / 2 + 3)) continue;   // (the whole rect off screen)
     for (const [name, tx, ty, o] of floorTiles(r)) {
       const floor = o.floor;
@@ -268,9 +262,9 @@ function drawHullSprites() {
 function drawShipSprites(t) {
   const done = { hull: drawHullSprites(), floors: drawFloorSprites(), walls: false, locks: false, doors: false, hatches: false };
   if (GFX.ready('ship/wall_h') && GFX.ready('interior/spine_a')) { drawWallSprites(); drawSpineSprites(); done.walls = true; }
-  done.locks = DECK_LOCKS.every(L => GFX.ready('interior/decklock_top')) && DECK_LOCKS.map(L => drawDeckLockSprite(L, t)).every(Boolean);
+  done.locks = GFX.ready('interior/deckdoor_closed') && DECK_DOORS.map(d => drawDeckDoorSprite(d, t)).every(Boolean);
   done.doors = drawDoorSprites(t);
-  done.hatches = drawHatchSprites(t);
+  done.hatches = drawAirlockSprites(t);              // (the outer airlocks: js/airlock.js)
   return done;
 }
 

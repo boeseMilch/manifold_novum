@@ -1,9 +1,9 @@
 // Where the crew walk: a travel-direction field over the floor, for the hairline floor scratches
 // (boot scuffs follow the paths people take; js/gfx.js FLOOR_WEAR). Computed once, on first use.
 //
-// How: the floor (FLOOR_RECTS: rooms, doorways, deck airlock chambers, all doors open) on a fine grid
+// How: the floor (FLOOR_RECTS: rooms, the doors' passages, all doors open) on a fine grid
 // (WF_RES), minus everything solid (SOLIDS, grown by a body radius). A list of destinations
-// (WALK_DESTS: doorways' rooms, deck airlocks, outer hatches, consoles, the reactor, the cannon ladders,
+// (WALK_DESTS: doorways' rooms, deck doors, outer hatches, consoles, the reactor, the cannon ladders,
 // the kitchen, the cat, ...), each with a weight for how often someone goes there. Shortest paths between every
 // pair (Dijkstra from each destination, 8 neighbours; a step costs more near walls, so people keep
 // to the middle of a corridor), weighted by the product of both ends' weights, smoothed (people don't
@@ -19,8 +19,9 @@ const WF_RES = 0.2, WF_BODY = 0.25;
 // destinations: [x, y, weight, what]; a point in front of the thing (snapped to the nearest free cell)
 const WALK_DESTS = () => [
   ...ROOMS.map(r => { const c = typeof NAV_SPOTS !== 'undefined' && NAV_SPOTS[r.id] || roomCenter(r); return [c[0], c[1], 1.0, r.id]; }),
-  ...DECK_LOCKS.flatMap(L => [[L.x + L.w / 2, SPINE_Y0 - 0.4, 0.8, 'lock top'], [L.x + L.w / 2, SPINE_Y1 + 0.4, 0.8, 'lock bottom']]),
+  ...DECK_DOORS.flatMap(d => [[d.x + d.w / 2, SPINE_Y0 - 0.4, 0.8, 'deck door top'], [d.x + d.w / 2, SPINE_Y1 + 0.4, 0.8, 'deck door bottom']]),
   ...HATCHES.map(h => [h.inside[0], h.inside[1], 0.8, 'hatch']),
+  ...HATCHES.map(h => [h.chamber.x + h.chamber.w / 2, h.y, 0.5, 'airlock chamber']),   // (through the inner door into the chamber: js/airlock.js)
   ...STATIONS.map(s => [s.x, s.y + 0.9, 1.2, s.name]),
   [REACTOR.x, REACTOR.y + REACTOR.h / 2 + 0.5, 1.4, 'reactor front'],
   [CAT.x - 0.6, CAT.y + 0.7, 1.5, 'cat'],                       // (asleep in its corner, never moves: everyone stops by to pet it)
