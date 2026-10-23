@@ -165,8 +165,8 @@ function buildSpinePieces() {
 }
 
 // Deck doors (tools/blender/models/interior/deckdoor.py): the passage through the spine (base: its floor, the spine
-// ends, the roof over the passage with the header, the lamps and the beacons by state) and the sliding door, set in
-// the spine's front face (local y -0.22) under the header, its leaves as tall as the wall.
+// ends, the lamps and the beacons by state; open from above, so the crew in it stay visible) and the sliding door, set
+// in the spine's front face (local y -0.22), its leaves as tall as the wall (their tops: the cutaway, flush).
 function drawDeckDoorSprite(d, t) {
   const b = doorBroken(d), k = clamp(d.open, 0, 1);
   const base = b ? `interior/deckdoor_broken_f${Math.floor(t * 6) % 2}` : d.blast ? `interior/deckdoor_blast_f${Math.floor(t * 4) % 4}`

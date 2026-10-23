@@ -3679,3 +3679,9 @@ should be airtight, so this should visually be clear."
 - Classic view: drawSealedDoor (js/art.js) for doorways, deck doors (also moved to the front face) and both airlock
   doors: wall-wide leaves, gaskets, bolts, frame blocks at the ends.
 - Re-rendered doors.py and deckdoor.py, re-packed interior (sprites.json: 1189 entries before and after, 229 interior).
+- Follow-up (the user: no roof, it makes the passage unreadable; "the ship also has a roof: cut it just below the door's
+  roof"): the deck door's passage is open from above again (the cutaway view; crew in it stay visible all the way
+  through; the spine conduits end in elbows at the passage again, hazard rims on the cut). No header or roof: the
+  door stays in the spine's front face, its leaves go up to the wall top and are cut off there like the walls (a dark
+  cut section with the skins and the rubber core, flush with the spine top). The rest of the ship's walls are unchanged.
+  Re-rendered deckdoor.py, re-packed interior (sprites.json still 1189 entries).

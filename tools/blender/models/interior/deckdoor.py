@@ -3,15 +3,14 @@ js/ship.js, drawDeckDoorSprite in js/sprites.js; the classic view: drawDeckDoor 
 in js/game.js). Replaced the deck airlocks (decklock.py: a chamber with a door at each end and a CYCLE button) on
 2026-10-21; the spine got 1 unit thinner with it (SPINE_Y1 15 -> 14, see structure.py).
 
-Each door: passage R(d.x, 11.5, d.x + 2.2, 14.0) (the whole spine, 2.5 deep). The door sits in the spine's front face
-(the bottom deck's back wall; local y -0.22) under a heavy header flush with the spine top: two leaves as tall as the
-wall (their tops run up into the header) sliding sideways (x) into the spine, rubber gasket channels at both jambs and
-under the header. The passage through the spine's high block is roofed over (spine top plates, the conduits run on
-across), so the spine reads as one sealed wall with an airtight door in it (2026-10-22: the door used to stand in the
-middle of an open-topped slot, 1.48 high in a 1.6 wall, under a thin lintel: it read as a low door in a gap, "salon
-doors"). Crew in the roofed part of the passage are hidden by the roof, like behind any back wall. Lamps: one on the
-front post (bottom deck), one on the roof's back edge (seen from the top deck, over the conduits); beacons on the
-spine top's front corners.
+Each door: passage R(d.x, 11.5, d.x + 2.2, 14.0) (the whole spine, 2.5 deep), open from above like every room (the
+cutaway view: crew in it stay visible). The door sits in the spine's front face (the bottom deck's back wall; local
+y -0.22): two airtight leaves sliding sideways (x) into the spine, rubber gasket channels at both jambs, as tall as the
+wall: the cutaway plane cuts them where it cuts the walls, so their tops are a cut section (dark, the skins and the
+rubber core showing) flush with the spine top. History (2026-10-22): a 1.48 high door in the middle of an open slot
+read as a low door in a gap ("salon doors"); then a roofed tunnel with a header hid the crew in the passage (the user:
+"the ship also has a roof; cut it just below the door's roof"). Lamps: one on the front post (bottom deck), one on the
+spine top's back edge by the passage (seen from the top deck); beacons on the spine top's front corners.
 
 Every sprite: origin = (d.x, SPINE_Y1 = 14), the passage's bottom-left corner on the floor; one shared canvas
 (game y 11.5 .. 14.12, up to 2.05 high) from d.x - 0.6 to d.x + 2.8 (it brings the 0.6 spine ends on both sides:
@@ -32,14 +31,12 @@ Door (rendered with the spine as a holdout; draw over the base):
 import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ilib import *
-from structure import PIPES, CLAMP, SPINE_Y0, SPINE_Y1, SPINE_HI
+from structure import PIPES, SPINE_Y0, SPINE_Y1, SPINE_HI
 
 W = 2.2
 Y_TOP0 = SPINE_Y0 - SPINE_Y1                      # -2.5: the passage's north end (local y, origin at the spine front)
 Y_HI = SPINE_HI - SPINE_Y1                        # -1.451: the high block's north edge
 Y_DOOR, DOOR_T = -0.22, 0.26                      # the door's centre line and thickness (in the spine's front face)
-Z_HEAD = 1.3                                      # the header's underside: the leaves run up into it
-Y_HEAD0, Y_HEAD1 = -0.42, 0.09                    # the header beam (front flush with the posts)
 OPEN = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 FRAMES4 = [i / 4 for i in range(4)]
 
@@ -55,10 +52,18 @@ def spine_end(M, x0, x1, side):
     fx = -0.6 if side < 0 else W + 0.6                # the front pipes go into the post: flanges
     for (pz, py, pr) in ((0.84, 0.08, 0.055), (0.94, 0.06, 0.035)):
         o.append(mn.cyl('pflange', pr + 0.035, 0.05, loc=(fx - 0.025, -py, pz), m=M['rim'], rot=RY90, bevel=0.01, verts=20))
-    # top plates (the conduits run on over the door's roof: base())
+    # top plates and the three spine conduits ending in elbows down into the top next to the passage
+    xe = -0.22 if side < 0 else W + 0.22
     far = x0 if side < 0 else x1
     for (p0, p1) in ((Y_HI + 0.08, -0.74), (-0.68, -0.08)):
-        o.append(gbox('tplate', min(far, 0.0 if side < 0 else W), p0, max(far, 0.0 if side < 0 else W), p1, H_FULL, H_FULL + 0.02, M['panel'], 0.01))
+        o.append(gbox('tplate', min(far, xe), p0, max(far, xe), p1, H_FULL, H_FULL + 0.02, M['panel'], 0.01))
+    for y, m, r in PIPES:
+        z = H_FULL + 0.02 + r
+        o.append(pipe('conduit', [G(far, y, z), G(xe, y, z), G(xe, y, H_FULL - 0.05)], r, m=M[m], corner=0.16))
+        o.append(mn.cyl('flange', r + 0.04, 0.04, loc=G(xe, y, H_FULL + 0.015), m=M['rim'], bevel=0.01))
+    # the cut face of the spine end along the passage, on its top: hazard rim (the cutaway, like every wall top)
+    inner = 0.0 if side < 0 else W
+    o.append(gbox('rim_hz', inner - 0.1 if side < 0 else inner, Y_HI + 0.02, inner if side < 0 else inner + 0.1, 0.0, H_FULL, H_FULL + 0.015, M['hazard'], 0.004))
     # the low lip's end at the passage (the top deck's side): a hazard-painted kerb
     lin = 0.0 if side < 0 else W
     o.append(gbox('lip_edge', lin - 0.06 if side < 0 else lin, Y_TOP0 - 0.01, lin if side < 0 else lin + 0.06, Y_HI, 0.0, H_LOW + 0.01, M['hazard'], 0.008))
@@ -72,7 +77,7 @@ def spine_end(M, x0, x1, side):
     for z in (0.6, 1.4):
         for xx in (px0 + 0.1, px1 - 0.1): o.append(rivet(xx, 0.08, z, M, 'front', 0.02))
     # the gasket channel at the opening's side (the leaves seal into it): dark rubber, full height
-    o.append(gbox('jamb_seal', inner if side < 0 else inner - 0.05, Y_DOOR - DOOR_T / 2 - 0.05, inner + 0.05 if side < 0 else inner, Y_DOOR + DOOR_T / 2 + 0.05, 0.0, Z_HEAD + 0.02, M['rubber'], 0.008))
+    o.append(gbox('jamb_seal', inner if side < 0 else inner - 0.05, Y_DOOR - DOOR_T / 2 - 0.05, inner + 0.05 if side < 0 else inner, Y_DOOR + DOOR_T / 2 + 0.05, 0.0, H_FULL, M['rubber'], 0.008))
     return o, hold
 
 def base(M, state, t=0.0):
@@ -91,35 +96,11 @@ def base(M, state, t=0.0):
         for i in range(n):
             a = 0.08 + (W - 0.16) * i / n; b = a + (W - 0.16) / n * 0.6
             o.append(gbox('dash', a, ya, b, yb, 0.03, 0.05, M['yellow'], 0.006))
-    # The door sits in the spine's front face (the bottom deck's back wall) under a heavy header, and the passage
-    # through the spine's high block is roofed over flush with the spine top (2026-10-22: the door used to stand in
-    # the middle of an open-topped slot, its leaves 1.48 high in a 1.6 wall: it read as a gap with a low door in it).
-    # The roof: a slab over the high block's passage, its top the spine top (plates, the conduits running on).
-    roof = gbox('roof', -0.02, Y_HI, W + 0.02, Y_HEAD0 + 0.02, Z_HEAD + 0.1, H_FULL, M['body'], 0.02)
-    rcap = gbox('roof_cap', -0.02, Y_HI - 0.02, W + 0.02, Y_HEAD0 + 0.02, H_FULL - 0.06, H_FULL, M['cap'], 0.02)
-    head = gbox('header', -0.05, Y_HEAD0, W + 0.05, Y_HEAD1, Z_HEAD, H_FULL, M['panel2'], 0.02)
-    o += [roof, rcap, head]; hold += [roof, rcap, head]
-    for (p0, p1) in ((Y_HI + 0.08, -0.74), (-0.68, Y_HEAD0 - 0.02)):
-        o.append(gbox('tplate', -0.02, p0, W + 0.02, p1, H_FULL, H_FULL + 0.02, M['panel'], 0.01))
-    o.append(gbox('head_top', 0.0, Y_HEAD0 + 0.03, W, Y_HEAD1 - 0.03, H_FULL, H_FULL + 0.02, M['panel'], 0.01))
-    for xx in (-0.02, W + 0.02):                       # bolt rows along the roof's seams with the spine ends
-        for k in range(5): o.append(rivet(xx, Y_HI + 0.15 + k * 0.27, H_FULL + 0.02, M, r=0.02))
-    # the roof's back edge (seen from the top deck: the passage runs in under it): hazard band
-    o.append(gbox('roof_hz', 0.02, Y_HI - 0.01, W - 0.02, Y_HI + 0.07, H_FULL, H_FULL + 0.025, M['hazard'], 0.004))
-    # the header's face: pressure-seal stripes, a bolted rim, a rubber lip along its underside
-    fy = Y_HEAD1
-    o.append(gbox('head_face', 0.06, fy - 0.01, W - 0.06, fy + 0.012, Z_HEAD + 0.03, H_FULL - 0.03, M['panel'], 0.008))
-    o.append(gbox('head_hz', 0.12, fy, W - 0.12, fy + 0.02, Z_HEAD + 0.09, Z_HEAD + 0.19, M['hazard'], 0.004))
-    for k in range(7):
-        xx = 0.14 + k * (W - 0.28) / 6
-        for z in (Z_HEAD + 0.06, H_FULL - 0.06): o.append(rivet(xx, fy + 0.012, z, M, 'front', 0.018))
-    o.append(gbox('head_lip', -0.02, Y_DOOR - DOOR_T / 2 - 0.05, W + 0.02, fy - 0.02, Z_HEAD - 0.03, Z_HEAD + 0.005, M['rubber'], 0.008))
-    # the conduits, running on along the spine top over the roof, clamped where it meets the spine ends
-    for y, m, r in PIPES:
-        o.append(mn.cyl('conduit', r, W + 7.2, loc=(-3.6, -y, H_FULL + 0.02 + r), m=M[m], rot=RY90, bevel=0, verts=24))
-    for xx in (-0.2, W + 0.2):
-        o.append(gbox('clamp', xx - 0.05, CLAMP[0], xx + 0.05, CLAMP[1], H_FULL + 0.02, H_FULL + 0.27, M['rim'], 0.02))
-        for y in (CLAMP[0] + 0.05, CLAMP[1] - 0.05): o.append(rivet(xx, y, H_FULL + 0.27, M, r=0.02))
+    # The door sits in the spine's front face (the bottom deck's back wall); the passage behind it is open from above
+    # like every room (the cutaway view), and the door is cut off by the same plane as the walls: its leaves are as
+    # tall as the wall, their tops a cut section flush with the spine top (door()). No roof, no header beam (2026-10-22:
+    # a roofed tunnel hid the crew in the passage; before that, a 1.48 high door in the middle of an open slot read as a
+    # low door in a gap).
     # light strips along both sides of the passage floor
     if state == 'blast': s_col, s_k = '#ffb347', 0.5 + 0.6 * (0.5 + 0.5 * math.sin(t * 2 * math.pi))
     elif state == 'locked': s_col, s_k = '#ff4a3a', 0.9
@@ -133,7 +114,7 @@ def base(M, state, t=0.0):
     # status lamps (lamp() in js/art.js): top one on the spine top by the passage, bottom one on the front post
     blink = math.sin(t * 2 * math.pi * 2) > 0
     lamp = {'closed': 'open', 'open': 'open', 'locked': 'closed', 'blast': 'busy' if blink else 'busy_off', 'broken': 'off'}[state]
-    # (the top one behind the conduits, on the roof's back edge, so the top deck sees it over them)
+    # (the top one at the spine top's back edge by the passage, so the top deck sees it over the conduits)
     o.append(gbox('lamp_box_t', -0.32, Y_HI + 0.0, -0.08, Y_HI + 0.17, H_FULL, H_FULL + 0.1, M['dark'], 0.015))
     o.append(mn.sphere('lamp_t', 0.07, loc=G(-0.2, Y_HI + 0.085, H_FULL + 0.11), m=lamp_mat(lamp), scale=(1, 1, 0.75), segs=16))
     o.append(gbox('lamp_box_b', -0.3, 0.07, -0.1, 0.12, 1.12, 1.36, M['dark'], 0.015))
@@ -167,7 +148,7 @@ def base(M, state, t=0.0):
 def door(M, k, state='ok'):
     """Two full-height panels sliding into the spine from the middle of the passage."""
     o = []
-    yc, th, h = Y_DOOR, DOOR_T, Z_HEAD + 0.08          # full height: the tops run up into the header
+    yc, th, h = Y_DOOR, DOOR_T, H_FULL - 0.005          # full height: the tops are the cut, flush with the wall tops
     half = W / 2; ext = half * (1 - k); plen = half + 1.3
     cap_m = M['red'] if state == 'locked' else M['yellow']
     if state == 'forced': ext = 0.2
@@ -176,9 +157,15 @@ def door(M, k, state='ok'):
         if s == 0: xa, xb = ext - plen, ext; lead, dirn = xb, -1
         else: xa, xb = W - ext, W - ext + plen; lead, dirn = xa, 1
         mat = M['door'] if s == 0 else M['door2']
-        objs = [gbox('panel', xa, yc - th / 2, xb, yc + th / 2, 0.02, h, mat, 0.03)]
+        objs = [gbox('panel', xa, yc - th / 2, xb, yc + th / 2, 0.02, h - 0.05, mat, 0.03)]
         fy = yc + th / 2                            # the south face (towards the camera)
-        objs.append(gbox('cap', min(lead, lead + dirn * 0.12), yc - th / 2 - 0.005, max(lead, lead + dirn * 0.12), fy + 0.012, 0.02, h + 0.012, cap_m, 0.012))
+        # the top is the cutaway: a cut section like the wall tops (dark cap), showing the leaf's skins and its
+        # rubber core seal; flush with the spine top
+        objs.append(gbox('cut', xa, yc - th / 2, xb, yc + th / 2, h - 0.05, h, M['cap'], 0.008))
+        objs.append(gbox('cut_core', xa, yc - 0.035, xb, yc + 0.035, h - 0.02, h + 0.002, M['rubber'], 0.004))
+        for sy in (-1, 1):
+            objs.append(gbox('cut_skin', xa, yc + sy * (th / 2 - 0.025) - 0.012, xb, yc + sy * (th / 2 - 0.025) + 0.012, h - 0.02, h + 0.002, M['rim'], 0.004))
+        objs.append(gbox('cap', min(lead, lead + dirn * 0.12), yc - th / 2 - 0.005, max(lead, lead + dirn * 0.12), fy + 0.012, 0.02, h + 0.004, cap_m, 0.012))
         objs.append(gbox('mseal', min(lead, lead - dirn * 0.03), yc - th / 2 + 0.01, max(lead, lead - dirn * 0.03), fy + 0.004, 0.03, h, M['rubber'], 0.008))
         objs.append(gbox('lead_hz', min(lead + dirn * 0.12, lead + dirn * 0.32), fy - 0.005, max(lead + dirn * 0.12, lead + dirn * 0.32), fy + 0.012, 0.06, h - 0.05, M['hazard'], 0.005))
         cx = lead + dirn * 0.62
