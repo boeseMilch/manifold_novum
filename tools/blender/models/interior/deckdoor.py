@@ -3,17 +3,18 @@ js/ship.js, drawDeckDoorSprite in js/sprites.js; the classic view: drawDeckDoor 
 in js/game.js). Replaced the deck airlocks (decklock.py: a chamber with a door at each end and a CYCLE button) on
 2026-10-21; the spine got 1 unit thinner with it (SPINE_Y1 15 -> 14, see structure.py).
 
-Each door: passage R(d.x, 11.5, d.x + 2.2, 14.0) (the whole spine, 2.5 deep), open from above like every room (the
-cutaway view: crew in it stay visible). The door sits in the spine's front face (the bottom deck's back wall; local
-y -0.22): two airtight leaves sliding sideways (x) into the spine, rubber gasket channels at both jambs, as tall as the
+Each door: passage R(d.x, 11.5, d.x + 2.2, 13.3) (the whole spine, 1.8 deep), open from above like every room (the
+cutaway view: crew in it stay visible). The door fills the spine's tall block from face to face (y 12.55 .. 13.3, 0.73
+thick: the door IS the wall where it stands; 2026-10-23, the user: "make the wall thinner and the door thicker"; before
+it was a 0.26 leaf in the front face of a 1.45 deep block): two airtight leaves sliding sideways (x) into the spine, rubber gasket channels at both jambs, as tall as the
 wall: the cutaway plane cuts them where it cuts the walls, so their tops are a cut section (dark, the skins and the
 rubber core showing) flush with the spine top. History (2026-10-22): a 1.48 high door in the middle of an open slot
 read as a low door in a gap ("salon doors"); then a roofed tunnel with a header hid the crew in the passage (the user:
 "the ship also has a roof; cut it just below the door's roof"). Lamps: one on the front post (bottom deck), one on the
 spine top's back edge by the passage (seen from the top deck); beacons on the spine top's front corners.
 
-Every sprite: origin = (d.x, SPINE_Y1 = 14), the passage's bottom-left corner on the floor; one shared canvas
-(game y 11.5 .. 14.12, up to 2.05 high) from d.x - 0.6 to d.x + 2.8 (it brings the 0.6 spine ends on both sides:
+Every sprite: origin = (d.x, SPINE_Y1 = 13.3), the passage's bottom-left corner on the floor; one shared canvas
+(game y 11.5 .. 13.42, up to 2.05 high) from d.x - 0.6 to d.x + 2.8 (it brings the 0.6 spine ends on both sides:
 the game draws the spine tiles up to d.x - 0.6 and from d.x + 2.8).
 
 Base (passage floor, spine ends, frame, lamps, beacons, light strips):
@@ -34,9 +35,9 @@ from ilib import *
 from structure import PIPES, SPINE_Y0, SPINE_Y1, SPINE_HI
 
 W = 2.2
-Y_TOP0 = SPINE_Y0 - SPINE_Y1                      # -2.5: the passage's north end (local y, origin at the spine front)
-Y_HI = SPINE_HI - SPINE_Y1                        # -1.451: the high block's north edge
-Y_DOOR, DOOR_T = -0.22, 0.26                      # the door's centre line and thickness (in the spine's front face)
+Y_TOP0 = SPINE_Y0 - SPINE_Y1                      # -1.8: the passage's north end (local y, origin at the spine front)
+Y_HI = SPINE_HI - SPINE_Y1                        # -0.751: the high block's north edge
+Y_DOOR, DOOR_T = Y_HI / 2, -Y_HI - 0.02          # the door fills the spine's tall block, face to face (2026-10-23: as thick as the wall)
 OPEN = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
 FRAMES4 = [i / 4 for i in range(4)]
 
@@ -53,9 +54,9 @@ def spine_end(M, x0, x1, side):
     for (pz, py, pr) in ((0.84, 0.08, 0.055), (0.94, 0.06, 0.035)):
         o.append(mn.cyl('pflange', pr + 0.035, 0.05, loc=(fx - 0.025, -py, pz), m=M['rim'], rot=RY90, bevel=0.01, verts=20))
     # top plates and the three spine conduits ending in elbows down into the top next to the passage
-    xe = -0.22 if side < 0 else W + 0.22
+    xe = -0.5 if side < 0 else W + 0.5
     far = x0 if side < 0 else x1
-    for (p0, p1) in ((Y_HI + 0.08, -0.74), (-0.68, -0.08)):
+    for (p0, p1) in ((Y_HI + 0.04, -0.37), (-0.34, -0.03)):
         o.append(gbox('tplate', min(far, xe), p0, max(far, xe), p1, H_FULL, H_FULL + 0.02, M['panel'], 0.01))
     for y, m, r in PIPES:
         z = H_FULL + 0.02 + r
@@ -88,7 +89,7 @@ def base(M, state, t=0.0):
     o.append(gbox('floor', 0.0, Y_TOP0, W, 0.0, 0.0, 0.03, M['body'], 0.008))
     for i in range(15):                                # tread ribs
         y = Y_TOP0 + 0.12 + i * 0.165
-        if abs(y - Y_DOOR) < 0.2: continue
+        if abs(y - Y_DOOR) < DOOR_T / 2 + 0.05: continue
         o.append(gbox('rib', 0.12, y - 0.02, W - 0.12, y + 0.02, 0.03, 0.045, M['rim'], 0.006))
     o.append(gbox('track', 0.02, Y_DOOR - DOOR_T / 2 - 0.04, W - 0.02, Y_DOOR + DOOR_T / 2 + 0.04, 0.03, 0.036, M['hole'], 0.0))
     for (ya, yb) in ((Y_TOP0 + 0.05, Y_TOP0 + 0.11),):
@@ -121,23 +122,23 @@ def base(M, state, t=0.0):
     o.append(mn.sphere('lamp_b', 0.06, loc=G(-0.2, 0.13, 1.24), m=lamp_mat(lamp), scale=(1, 0.6, 1), segs=16))
     # beacons on the spine top's front corners: turning with a pressure difference
     turning = state == 'blast'
-    for i, bx in enumerate((-0.32, W + 0.32)):
-        by = -0.32
-        o.append(mn.cyl('bc_base', 0.11, 0.06, loc=G(bx, by, H_FULL), m=M['dark'], bevel=0.015))
+    for i, bx in enumerate((-0.3, W + 0.3)):
+        by = -0.27
+        o.append(mn.cyl('bc_base', 0.09, 0.06, loc=G(bx, by, H_FULL), m=M['dark'], bevel=0.015))
         if state == 'broken' and i == 1:              # smashed: dome gone, a bulb stump
             o.append(mn.cyl('bc_stump', 0.04, 0.08, loc=G(bx, by, H_FULL + 0.06), m=M['steel'], bevel=0.01))
             continue
         dome = pmat('bc_dome', '#d08a2a', 0.2, 0.0, emit='#ffaa30', emit_strength=0.6 if turning else 0.0)
         if state == 'locked': dome = pmat('bc_dome_r', '#a83a30', 0.25, 0.0)
-        o.append(mn.sphere('bc_dome', 0.095, loc=G(bx, by, H_FULL + 0.07), m=dome, scale=(1, 1, 1.0), segs=20))
+        o.append(mn.sphere('bc_dome', 0.08, loc=G(bx, by, H_FULL + 0.07), m=dome, scale=(1, 1, 1.0), segs=20))
         if turning:
             a = t * 2 * math.pi + i * math.pi
             o.append(mn.box('bc_beam', (0.07, 0.15, 0.06), loc=(bx + 0.06 * math.cos(a), -by + 0.06 * math.sin(a), H_FULL + 0.05), m=glow('bc_beam', '#ffc860', 1.5), bevel=0.012, rot=(0, 0, a + math.pi / 2)))
-        o.append(mn.cyl('bc_cage', 0.1, 0.02, loc=G(bx, by, H_FULL + 0.12), m=M['steel'], bevel=0.005))
+        o.append(mn.cyl('bc_cage', 0.085, 0.02, loc=G(bx, by, H_FULL + 0.12), m=M['steel'], bevel=0.005))
     # wear: duct tape on the left post
     o.append(tape_front(-0.3, 0.07, 0.95, 0.3, 12, M))
     if state == 'broken':
-        sc = mn.cyl('scorch', 0.4, 0.004, loc=G(0.8, -1.95, 0.05), m=pmat('scorch2', '#15130f', 0.95, grime=0.9, grime_scale=9), bevel=0, verts=24)
+        sc = mn.cyl('scorch', 0.4, 0.004, loc=G(0.8, -1.4, 0.05), m=pmat('scorch2', '#15130f', 0.95, grime=0.9, grime_scale=9), bevel=0, verts=24)
         sc.scale = (1.0, 0.5, 1.0); o.append(sc)
         o.append(pipe('wire', [G(W + 0.08, 0.1, 1.3), G(W + 0.2, 0.2, 0.9), G(W + 0.12, 0.25, 0.6)], 0.014, m=M['cables'][0], corner=0.1))
         if t < 0.5:
@@ -165,6 +166,7 @@ def door(M, k, state='ok'):
         objs.append(gbox('cut_core', xa, yc - 0.035, xb, yc + 0.035, h - 0.02, h + 0.002, M['rubber'], 0.004))
         for sy in (-1, 1):
             objs.append(gbox('cut_skin', xa, yc + sy * (th / 2 - 0.025) - 0.012, xb, yc + sy * (th / 2 - 0.025) + 0.012, h - 0.02, h + 0.002, M['rim'], 0.004))
+            objs.append(gbox('cut_web', xa, yc + sy * th / 4 - 0.01, xb, yc + sy * th / 4 + 0.01, h - 0.02, h + 0.001, M['rim'], 0.004))   # (a bulkhead leaf: stiffener webs inside)
         objs.append(gbox('cap', min(lead, lead + dirn * 0.12), yc - th / 2 - 0.005, max(lead, lead + dirn * 0.12), fy + 0.012, 0.02, h + 0.004, cap_m, 0.012))
         objs.append(gbox('mseal', min(lead, lead - dirn * 0.03), yc - th / 2 + 0.01, max(lead, lead - dirn * 0.03), fy + 0.004, 0.03, h, M['rubber'], 0.008))
         objs.append(gbox('lead_hz', min(lead + dirn * 0.12, lead + dirn * 0.32), fy - 0.005, max(lead + dirn * 0.12, lead + dirn * 0.32), fy + 0.012, 0.06, h - 0.05, M['hazard'], 0.005))

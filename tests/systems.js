@@ -192,6 +192,7 @@ run(8, () => {
     G.boarding.bolts.push({ x: G.player.x, y: G.player.y, vx: dx / d * 26, vy: dy / d * 26, life: 0.9, owner: 'crew' });
   }
 });
+for (let k = 0; k < 12 && spat === 0; k++) run(1, () => { G.player.health = 'ok'; if (G.boarding.bolts.some(b => b.owner === 'alien' && !b.counted && (b.counted = true))) spat++; });   // (8 s of random shooting sometimes saw no spit yet: up to 12 s more)
 check(a.state === 'fight' && spat > 0, `provoked invader fights back (spat ${spat} times)`);
 check(dodged > 0, `invader dodges incoming shots (${dodged} dodges)`);
 a.hp = 4;

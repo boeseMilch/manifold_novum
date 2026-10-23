@@ -3685,3 +3685,21 @@ should be airtight, so this should visually be clear."
   door stays in the spine's front face, its leaves go up to the wall top and are cut off there like the walls (a dark
   cut section with the skins and the rubber core, flush with the spine top). The rest of the ship's walls are unchanged.
   Re-rendered deckdoor.py, re-packed interior (sprites.json still 1189 entries).
+
+### Deck doors as thick as the wall; the spine thinner (2026-10-23, js/ship.js, deckdoor.py, structure.py)
+The user: "The door needs to be as thick as the wall too. Make the wall thinner and the door thicker." SPINE_Y1 14 → 13.3
+(SPINE_Y0 11.5 and the top deck stay). What you see of the spine is its tall block (SPINE_HI 12.549 .. SPINE_Y1): now
+0.75 deep (was 1.45); the 1.05 low lip in front of it (11.5 .. 12.549) stays, because it is what keeps the top deck's
+south strip as visible as behind any near wall (a tall block reaching to 11.5 would hide the kitchen counter and crew
+standing there) and it never shows (the tall top hides it). The deck door's leaves fill the tall block face to face
+(DOOR_T 0.73, centred at SPINE_HI..SPINE_Y1; they were 0.26 thick in the front face): the door is the wall where it stands,
+its top still the cut section (skins, rubber core, two stiffener webs), no roof. The spine's top: two conduits at the
+back (teal, grey) with clamps, the DECK 2 stencil's strip, a thin copper line on the front edge (the vent grilles and
+access plates had no room); the deck door's spine ends bring the conduits down further out (x ∓0.5), smaller beacons.
+Everything on that wall now hangs off SPINE_Y1 (moved 0.7 up with it): the reactor capacitor (SPINE_Y1 + 0.65), the cat
+(+0.75), the toilet stall / toilet / plunger / magazine / WC stencil, the dumbbell rack, the power lines' points and
+plugs by that wall (POWER_ROUTES); shield buttons, wall lamps, beacons, the deck doors' NAV approaches and walk-field
+spots already did. Classic view: drawDeckDoor's door fills SPINE_HI..SPINE_Y1, drawSpine's pipes closer. hulllib.py,
+mock_bridge.py follow. Re-rendered structure.py (spine_a/b/label) and deckdoor.py, interior group packed (1189 sprites,
+229 interior). tools/travel-table.json rebuilt (trips change by -0.29 .. +0.17 s, mean -0.03 s). tests/spores.js: its
+stand spots in front of the deck doors follow (y 14.7 → 14.0).

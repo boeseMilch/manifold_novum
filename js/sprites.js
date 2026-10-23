@@ -175,7 +175,7 @@ function drawDeckDoorSprite(d, t) {
   GFX.sprite(base, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y0, emissive: 0.6 });
   const door = b && d.jammed && k > 0.95 ? 'interior/deckdoor_door_forced' : k < 0.05 && d.blast ? 'interior/deckdoor_door_blast'
     : k < 0.05 && d.locked ? 'interior/deckdoor_door_locked' : `interior/deckdoor_door_f${Math.round(k * 5)}`;
-  GFX.sprite(door, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.22, emissive: 0.4 });
+  GFX.sprite(door, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.375, emissive: 0.4 });   // (the door fills the tall block: 12.55 .. SPINE_Y1)
   return true;
 }
 

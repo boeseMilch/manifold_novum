@@ -154,11 +154,11 @@ function bunkRoom(t) {
 // --- the toilet ----------------------------------------------------------------
 function toiletStall(t) {
   if (sprReady('props/toilet_stall', 'props/toilet', 'props/plunger', 'props/magazine')) {
-    spr('props/toilet_stall', 0, 11.625, 15.0);
+    spr('props/toilet_stall', 0, 11.625, SPINE_Y1 + 1);
     spr('props/toilet', 0, ...fc(FURNITURE.toilet));
-    spr('props/plunger', 0, 13.25, 15.6);
-    spr('props/magazine', 0, 12.05, 15.4, 0, { layer: 'decal' });
-    stencil(U(12.95), U(16.8), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');   // (clear of the open door's swing)
+    spr('props/plunger', 0, 13.25, SPINE_Y1 + 1.6);
+    spr('props/magazine', 0, 12.05, SPINE_Y1 + 1.4, 0, { layer: 'decal' });
+    stencil(U(12.95), U(SPINE_Y1 + 2.8), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');   // (clear of the open door's swing)
     return;
   }
   const w1 = FURNITURE.stallWall, w2 = FURNITURE.stallFront;
@@ -182,14 +182,14 @@ function toiletStall(t) {
     ctx.fillStyle = `rgba(230,230,220,${0.6 * (1 - k)})`; ctx.fill();
   }
   // toilet paper on the wall, a plunger, a magazine
-  ctx.beginPath(); ctx.arc(U(11.6), U(14.85), 6, 0, TAU); ctx.fillStyle = '#f4f5f6'; ctx.fill(); stroke(1.2);
-  ctx.beginPath(); ctx.arc(U(11.6), U(14.85), 2.2, 0, TAU); ctx.fillStyle = '#b9a07a'; ctx.fill();
-  ctx.beginPath(); ctx.arc(U(13.25), U(15.6), 6, 0, TAU); ctx.fillStyle = '#b8402e'; ctx.fill(); stroke(1.2);
-  ctx.fillStyle = '#b8874f'; ctx.fillRect(U(13.25) - 2, U(15.6) - 14, 4, 12);
-  ctx.save(); ctx.translate(U(12.05), U(15.4)); ctx.rotate(-0.4);
+  ctx.beginPath(); ctx.arc(U(11.6), U(SPINE_Y1 + 0.85), 6, 0, TAU); ctx.fillStyle = '#f4f5f6'; ctx.fill(); stroke(1.2);
+  ctx.beginPath(); ctx.arc(U(11.6), U(SPINE_Y1 + 0.85), 2.2, 0, TAU); ctx.fillStyle = '#b9a07a'; ctx.fill();
+  ctx.beginPath(); ctx.arc(U(13.25), U(SPINE_Y1 + 1.6), 6, 0, TAU); ctx.fillStyle = '#b8402e'; ctx.fill(); stroke(1.2);
+  ctx.fillStyle = '#b8874f'; ctx.fillRect(U(13.25) - 2, U(SPINE_Y1 + 1.6) - 14, 4, 12);
+  ctx.save(); ctx.translate(U(12.05), U(SPINE_Y1 + 1.4)); ctx.rotate(-0.4);
   ctx.fillStyle = '#e8e4dc'; ctx.fillRect(-10, -7, 20, 14); stroke(1); ctx.fillStyle = '#7b5fd6'; ctx.fillRect(-8, -5, 16, 5);
   ctx.restore();
-  stencil(U(12.75), U(16.4), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');
+  stencil(U(12.75), U(SPINE_Y1 + 2.4), 'WC', 0, 0.22, 'rgba(232,236,244,0.35)');
 }
 // The sign on the wall above it (drawn with the spine, on the wall itself).
 function toiletSign() {

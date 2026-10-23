@@ -520,7 +520,7 @@ function drawHullDecor(t) {
 }
 
 function drawSpineDecor(t) {
-  steamPuff(U(22.0), U(12.9), t);                      // a leaky pipe between the decks
+  steamPuff(U(22.0), U(12.6), t);                      // a leaky pipe between the decks
 }
 
 function drawFloorDecor(t) {

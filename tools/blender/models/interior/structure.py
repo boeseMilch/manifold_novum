@@ -22,14 +22,15 @@ Step
                          step's position, wall centre, on the floor. Shows the step face and the
                          last 0.4 units of the high top; draw it over the wall_v / wall_v_low tiles.
 
-Spine (SPINE_Y0 = 11.5 .. SPINE_Y1 = 14 in js/ship.js; drawSpine in js/art.js; 2.5 thick since the deck airlocks
-became single deck doors, 2026-10-21: it was 3.5)
+Spine (SPINE_Y0 = 11.5 .. SPINE_Y1 = 13.3 in js/ship.js; drawSpine in js/art.js; 1.8 thick since 2026-10-23, the
+deck doors as thick as its tall block: it was 3.5 with the deck airlocks, 2.5 with the first deck doors)
   interior/spine_a, spine_b   tileable along x, 2 units per tile (192 px). Origin = left end, on the
                               floor at y = SPINE_Y1 (the bottom deck's back wall front-face line).
   interior/spine_label        the DECK 2 stencil on the spine top, placed by the game (no baked text in
                               the tiles: the deck airlocks clip them).
   The spine is the top deck's near wall and the bottom deck's back wall in one block: a full-height
-  block from y = 12.55 to 14 with a cut-down (0.35) lip from 11.5 to 12.55. 12.55 is where a 1.6
+  block from y = 12.55 to 13.3 (0.75: what you see of the wall, and the deck doors' thickness) with a cut-down (0.35)
+  lip from 11.5 to 12.55. 12.55 is where a 1.6
   high top hides exactly as much of the top rooms as a 0.35 near wall does (0.29 units), so the
   lip never shows; only the high top (the conduits from drawSpine: teal, grey, copper, with clamps)
   and the front face (the bottom rooms' back wall). Top-deck up-down walls run at full height
@@ -41,7 +42,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ilib import *
 
 ARMLEN = 3.0
-SPINE_Y0, SPINE_Y1 = 11.5, 14.0
+SPINE_Y0, SPINE_Y1 = 11.5, 13.3
 SPINE_HI = SPINE_Y0 - H_LOW * COS / SIN + COVER           # 12.549: the high block's north edge
 
 def cross_pts(arms, a=-0.3, b=0.3, n=-0.6, s=0.0, L=ARMLEN):
@@ -114,23 +115,23 @@ def render_step():
                        'Draw over wall_v (north of the step) and wall_v_low (south) tiles.'})
 
 # The high top's furniture, in local y (origin at the front face, y = SPINE_Y1; the high block runs from
-# SPINE_HI - SPINE_Y1 = -1.451 to 0): the three conduits (teal, grey, copper, like drawSpine), their clamps, the
-# vent / access plates. Shared with deckdoor.py (its spine ends bring the conduits down into the top).
-PIPES = [(-1.18, 'teal', 0.075), (-0.82, 'greyp', 0.11), (-0.48, 'copper', 0.075)]
-CLAMP = (-1.36, -0.3)
+# SPINE_HI - SPINE_Y1 = -0.751 to 0): two conduits (teal, grey) with clamps at the back, the DECK 2 stencil's strip,
+# a thin copper line along the front edge. Shared with deckdoor.py (its spine ends bring the conduits down into the top).
+PIPES = [(-0.62, 'teal', 0.06), (-0.45, 'greyp', 0.075), (-0.08, 'copper', 0.045)]
+CLAMP = (-0.72, -0.36)
 
 def spine(variant):
     mn.reset(); M = mats(); objs = []
     A, B = -3.0, 5.0                                      # build wide, render [0, 2]
-    d = SPINE_Y1                                          # local y: origin at the front-face line (game y 14)
-    yl0, yh0 = SPINE_Y0 - d, SPINE_HI - d                 # -2.5, -1.451
+    d = SPINE_Y1                                          # local y: origin at the front-face line (game y 13.3)
+    yl0, yh0 = SPINE_Y0 - d, SPINE_HI - d                 # -1.8, -0.751
     objs.append(gbox('lip', A, yl0, B, yh0 + 0.02, 0, H_LOW, M['cut'], 0.02))
     objs.append(gbox('body', A, yh0, B, 0, 0, H_FULL - 0.08, M['body'], 0.02))
     objs.append(gbox('cap', A, yh0 - 0.02, B, 0.02, H_FULL - 0.08, H_FULL, M['cap'], 0.02))
     objs += wall_x(M, A, B, 0.0, H_FULL, tray_on=False, body=False)
-    # top: hull plates with seams, then the three conduits of drawSpine
+    # top: hull plates with seams, then the conduits
     for u in range(int(A), int(B)):
-        for (p0, p1) in ((yh0 + 0.08, -0.74), (-0.68, -0.08)):
+        for (p0, p1) in ((yh0 + 0.04, -0.37), (-0.34, -0.03)):
             objs.append(gbox('tplate', u + 0.04, p0, u + 0.96, p1, H_FULL, H_FULL + 0.02, M['panel'], 0.01))
     for y, m, r in PIPES:
         objs.append(mn.cyl('pipe', r, B - A, loc=(A, -y, H_FULL + 0.02 + r), m=M[m], rot=RY90, bevel=0, verts=24))
@@ -138,19 +139,13 @@ def spine(variant):
     for x in rnd:                                         # pipe clamps (drawSpine draws them every 1.3-3.5 units)
         for k in (-2, 0, 2):
             xx = x + k
-            objs.append(gbox('clamp', xx - 0.05, CLAMP[0], xx + 0.05, CLAMP[1], H_FULL + 0.02, H_FULL + 0.27, M['rim'], 0.02))
-            for y in (CLAMP[0] + 0.05, CLAMP[1] - 0.05): objs.append(rivet(xx, y, H_FULL + 0.27, M, r=0.02))
-    if variant == 'a':
-        for k in (-2, 0, 2):                              # a vent grille between the clamps, and duct tape on the teal pipe
-            gx = 1.0 + k
-            objs.append(gbox('vent', gx - 0.22, -0.36, gx + 0.22, -0.12, H_FULL + 0.02, H_FULL + 0.05, M['dark'], 0.01))
-            for j in range(4): objs.append(gbox('slat', gx - 0.2, -0.34 + j * 0.06, gx + 0.2, -0.32 + j * 0.06, H_FULL + 0.05, H_FULL + 0.065, M['rim'], 0.004))
-            objs.append(mn.cyl('tape', 0.083, 0.14, loc=(gx - 0.6, -PIPES[0][0], H_FULL + 0.02 + 0.075), m=M['tape'], rot=RY90, bevel=0.01, verts=24))
-    else:
-        for k in (-2, 0, 2):                              # a hazard-edged access plate (the DECK 2 stencil: spine_label)
-            gx = 0.8 + k
-            objs.append(gbox('acc', gx - 0.3, -1.43, gx + 0.3, -1.29, H_FULL + 0.02, H_FULL + 0.04, M['hazard'], 0.006))
-            for sx in (-1, 1): objs.append(rivet(gx + sx * 0.25, -1.36, H_FULL + 0.04, M, r=0.02))
+            objs.append(gbox('clamp', xx - 0.05, CLAMP[0], xx + 0.05, CLAMP[1], H_FULL + 0.02, H_FULL + 0.22, M['rim'], 0.02))
+            for y in (CLAMP[0] + 0.04, CLAMP[1] - 0.04): objs.append(rivet(xx, y, H_FULL + 0.22, M, r=0.018))
+            objs.append(gbox('cclip', xx - 0.03, -0.14, xx + 0.03, -0.02, H_FULL + 0.02, H_FULL + 0.11, M['steel'], 0.01))   # the copper line's clip
+    for k in (-2, 0, 2):                                  # duct tape on a conduit
+        gx = (1.0 if variant == 'a' else 0.8) + k
+        y, _, r = PIPES[0 if variant == 'a' else 1]
+        objs.append(mn.cyl('tape', r + 0.008, 0.14, loc=(gx - 0.6, -y, H_FULL + 0.02 + r), m=M['tape'], rot=RY90, bevel=0.01, verts=24))
     mn.outline(objs, thickness=0.012)
     top = -yh0 * SIN + H_FULL * COS + 0.3                 # screen units above the origin
     return top
@@ -162,7 +157,7 @@ def render_spine(variant):
     render_exact(f'interior/spine_{variant}', 0, 2, -0.06, -0.06 + h / mn.PPU,
                  extra={'tile': [2, 0], 'height': H_FULL, 'depth': SPINE_Y1 - SPINE_Y0,
                         'note': 'spine (hull block between the decks); repeat every w px along x (2 units); origin = left end, '
-                                'on the floor at y = SPINE_Y1 (14). Variants a/b mix freely.'})
+                                'on the floor at y = SPINE_Y1 (13.3). Variants a/b mix freely.'})
 
 def render_spine_label():
     # the DECK 2 stencil on the spine's top, near its front edge (it used to be baked into spine_b, where the
@@ -172,7 +167,7 @@ def render_spine_label():
     objs = [label('stencil', 'DECK 2', 0.13, G(0.0, -0.24, H_FULL + 0.021), m=M['paint_w'])]
     mn.outline(objs, thickness=0.012)
     win('interior/spine_label', -0.45, 0.45, -0.38, -0.1, H_FULL + 0.04, origin=(0.0, 0.0), zmin=H_FULL,
-        extra={'note': 'DECK 2 stencil for the spine top; origin = label centre x, on the floor at y = SPINE_Y1 (14)'})
+        extra={'note': 'DECK 2 stencil for the spine top; origin = label centre x, on the floor at y = SPINE_Y1 (13.3)'})
 
 JUNCTIONS = ['es', 'sw', 'ne', 'nw', 'esw', 'nes', 'nsw', 'new', 'nesw', 'ew', 'ns', 'e', 's', 'w', 'n']
 

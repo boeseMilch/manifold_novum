@@ -4,7 +4,7 @@
 // add or remove rectangles as they open and close.
 // The rooms are deliberately not uniform: this ship was built out of whatever was lying around.
 
-const SPINE_Y0 = 11.5, SPINE_Y1 = 14;            // hull between the decks (2.5 thick since the deck doors: 3.5 with the old deck airlocks)
+const SPINE_Y0 = 11.5, SPINE_Y1 = 13.3;          // hull between the decks (1.8 deep: the 1.05 low lip the top deck sees as a near wall + the 0.75 tall block, as thick as the deck doors; 2026-10-23, was 14 / 15)
 const SPINE = SPINE_Y1 - SPINE_Y0;
 const COLS = [{ x: 0.6, w: 13 }, { x: 14.2, w: 16 }, { x: 30.8, w: 13 }];   // zone columns
 const SHIP_W = 44.4, SHIP_H = 26.1;              // bounding box of the hull body (excluding guns/engine)
@@ -83,7 +83,7 @@ const doorName = (d) => d.axis === 'y' ? `${['Left', 'Middle', 'Right'][d.col]} 
 let CAP_MAX = 3;                                   // (ship upgrades can raise it; see progress.js)
 const CAPACITORS = [
   { room: 'portLock', x: 6.6, y: 22.6, charge: 1 },
-  { room: 'reactor', x: 27.0, y: 14.65, charge: 1 },   // against the back wall, next to the cat (its lines: js/systems.js POWER_ROUTES)
+  { room: 'reactor', x: 27.0, y: SPINE_Y1 + 0.65, charge: 1 },   // against the back wall, next to the cat (its lines: js/systems.js POWER_ROUTES)
   { room: 'starLock', x: 37.6, y: 23.0, charge: 1 },
 ];
 
@@ -95,7 +95,7 @@ const STATIONS = [
 ];
 // Reactor: a pizza-oven / vending-machine hybrid with a fuel-cell slot. Center + footprint.
 const REACTOR = { x: 22.2, y: 19.3, w: 3.8, h: 2.6 };
-const CAT = { x: 29.45, y: 14.75 };                // the ship cat's favourite corner (reactor room)
+const CAT = { x: 29.45, y: SPINE_Y1 + 0.75 };                // the ship cat's favourite corner (reactor room)
 // Engine: only the bell, sticking out of the stern (the housing in the reactor room was removed).
 const ENGINE = { x: 22.2, y: 23.9, w: 5.6 };
 
@@ -172,9 +172,9 @@ const FURNITURE = {
   bunks: R(36.9, 2.6, 39.7, 4.9),                  // bunk beds (right cannon room)
   lockers: R(40.1, 2.6, 41.5, 3.4),
   couch: R(29.1, 3.3, 30.2, 5.5),                  // bridge
-  stallWall: R(11.3, 14.0, 11.45, 16.0),           // toilet (left airlock room)
-  stallFront: R(11.3, 15.85, 11.95, 16.0),
-  toilet: R(12.5, 14.0, 13.3, 15.0),
+  stallWall: R(11.3, SPINE_Y1, 11.45, SPINE_Y1 + 2),           // toilet (left airlock room)
+  stallFront: R(11.3, SPINE_Y1 + 1.85, 11.95, SPINE_Y1 + 2),
+  toilet: R(12.5, SPINE_Y1, 13.3, SPINE_Y1 + 1),
   treadBar: R(39.3, 20.9, 40.3, 21.15),           // treadmill (right airlock room): handlebar and side rails;
   treadRailL: R(39.3, 21.15, 39.51, 22.0),         // you step onto the belt from the back (see TREADMILL)
   treadRailR: R(40.09, 21.15, 40.3, 22.0),
@@ -206,7 +206,7 @@ const CLUTTER = {
   tape: { x: 32.0, y: 22.6, w: 1.0, h: 0.9, a: 0.2 },         // gym (right airlock): supply crates, bottom left
   platesB: { x: 33.1, y: 22.8, w: 0.9, h: 0.8, a: -0.1 },     //   hull plates (PLATE_CRATES[1])
   blankStar: { x: 32.4, y: 21.6, w: 0.7, h: 0.7, a: 0.5 },
-  weightRack: { x: 40.25, y: 14.36, w: 1.5, h: 0.62, a: 0 },   //   the dumbbell rack against the back wall (left of the outer airlock: x 41.5 → 40.25, 2026-10-21)
+  weightRack: { x: 40.25, y: SPINE_Y1 + 0.36, w: 1.5, h: 0.62, a: 0 },   //   the dumbbell rack against the back wall (left of the outer airlock: x 41.5 → 40.25, 2026-10-21)
 };
 function clutterRect(c) {
   const C = Math.abs(Math.cos(c.a)), S = Math.abs(Math.sin(c.a));

@@ -170,10 +170,10 @@ function forceAt(G, d, stand) {
 const PATHS = {
   portLock: { lock: 'portLock', steps: [] },
   starLock: { lock: 'starLock', steps: [] },
-  portGun: { lock: 'portLock', steps: [[0, null, [4.2, 14.7]]] },
-  starGun: { lock: 'starLock', steps: [[2, null, [34.4, 14.7]]] },
-  bridge: { lock: 'portLock', steps: [[0, null, [4.2, 14.7]], [null, ['portGun', 'bridge'], [13.0, 7.3]]] },
-  'bridge (from the right)': { room: 'bridge', lock: 'starLock', steps: [[2, null, [34.4, 14.7]], [null, ['starGun', 'bridge'], [31.4, 6.9]]] },
+  portGun: { lock: 'portLock', steps: [[0, null, [4.2, 14.0]]] },
+  starGun: { lock: 'starLock', steps: [[2, null, [34.4, 14.0]]] },
+  bridge: { lock: 'portLock', steps: [[0, null, [4.2, 14.0]], [null, ['portGun', 'bridge'], [13.0, 7.3]]] },
+  'bridge (from the right)': { room: 'bridge', lock: 'starLock', steps: [[2, null, [34.4, 14.0]], [null, ['starGun', 'bridge'], [31.4, 6.9]]] },
 };
 for (const [name, P] of Object.entries(PATHS)) {
   const G = fresh(), room = P.room || name; G.infestRoom(room, 'seep');

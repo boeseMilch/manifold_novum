@@ -97,10 +97,10 @@ def spine():
         clip = (S(xa, 0)[0], 0, S(xb, 0)[0], H)
         k = math.floor((xa - 0.6) / 2)
         while 0.6 + 2 * k < xb:
-            put(f"interior/spine_{'ab'[k % 2]}", 0.6 + 2 * k, 14.0, clip); k += 1
+            put(f"interior/spine_{'ab'[k % 2]}", 0.6 + 2 * k, 13.3, clip); k += 1
     tiles(X0, LX - 0.6); tiles(LX + 2.8, X1)
-    put('interior/deckdoor_closed', LX, 14.0); put('interior/deckdoor_door_f0', LX, 14.0)
-items.append((14.0, spine))
+    put('interior/deckdoor_closed', LX, 13.3); put('interior/deckdoor_door_f0', LX, 13.3)
+items.append((13.3, spine))
 items.append((-1.85 + 0.36, lambda: put('interior/gun_ladder', 25.1, -1.85)))
 
 def plaque():                                              # "BRIDGE" on the back wall: label at (q.x + 0.4, q.y + 0.35)
@@ -128,7 +128,7 @@ def rect(r, col, w=2):
     x0, y0, x1, y1 = r; d.rectangle([*S(x0, y0), *S(x1, y1)], outline=col, width=w)
 for r in FLOORS: rect(r, (95, 214, 160, 255))
 for r in DOORWAYS: rect(r, (255, 200, 60, 255))
-rect(R(LX, 11.5, LX + 2.2, 14.0), (120, 190, 255, 255))   # the deck door's passage
+rect(R(LX, 11.5, LX + 2.2, 13.3), (120, 190, 255, 255))   # the deck door's passage
 rect(R(25.1 - 0.36, -1.85 - 0.36, 25.1 + 0.36, -1.85 + 0.36), (255, 80, 80, 255))
 for lx, ly in ((18.5, 4.5), (26.0, 4.5), (22.2, 9.5)):
     sx, sy = S(lx, ly); d.ellipse([sx - 5, sy - 5, sx + 5, sy + 5], outline=(255, 170, 90, 255), width=2)

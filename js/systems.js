@@ -129,19 +129,19 @@ const POWER_ROUTES = [
   // left airlock), MID out of the top and up past the reactor's right side to the middle capacitor (back wall,
   // by the cat), RIGHT out of the right side (over to the right airlock)
   { id: 'feed0', cap: 0, feed: true, route: [leverPort(leverAngle(0)), [20.9, 22.75], [18.6, 21.5], [16.2, 20.8], [13.9, 19.4], [11.0, 20.6], [8.6, 21.5], powerFit('plug', 7.48, 22.6, 'E')] },
-  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [22.3, 21.45], [24.7, 21.25], [25.25, 20.0], [25.25, 15.6], powerFit('plug', 26.12, 14.85, 'W')] },
+  { id: 'feed1', cap: 1, feed: true, route: [leverPort(leverAngle(1)), [22.3, 21.45], [24.7, 21.25], [25.25, 20.0], [25.25, SPINE_Y1 + 1.6], powerFit('plug', 26.12, SPINE_Y1 + 0.85, 'W')] },
   { id: 'feed2', cap: 2, feed: true, route: [leverPort(leverAngle(2)), [25.8, 22.65], [28.9, 20.9], [30.5, 19.6], [33.5, 20.6], [35.2, 21.5], [35.55, 23.2], powerFit('plug', 36.72, 23.2, 'W')] },
-  { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, 15.4], powerFit('plug', 6.6, 14.4, 'W')] },
+  { id: 'shield_port', cap: 0, route: [powerFit('plug', 5.72, 22.35, 'W'), [5.1, 21.2], [5.4, SPINE_Y1 + 1.4], powerFit('plug', 6.6, SPINE_Y1 + 0.4, 'W')] },
   // the middle capacitor's lines: the front shield's along the back wall to its button, the front cannon's into
   // a riser right beside the cabinet (up through the spine to the upper deck)
-  { id: 'shield_front', cap: 1, route: [powerFit('plug', 26.12, 14.45, 'W'), powerFit('plug', 22.6, 14.4, 'E')] },
-  { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, 15.4], powerFit('plug', 36.8, 14.4, 'W')] },
+  { id: 'shield_front', cap: 1, route: [powerFit('plug', 26.12, SPINE_Y1 + 0.45, 'W'), powerFit('plug', 22.6, SPINE_Y1 + 0.4, 'E')] },
+  { id: 'shield_star', cap: 2, route: [powerFit('plug', 36.72, 22.8, 'W'), [36.05, 21.8], [36.05, SPINE_Y1 + 1.4], powerFit('plug', 36.8, SPINE_Y1 + 0.4, 'W')] },
   // (the cannon lines run round the outer airlocks' chambers, up the room side of their inner wall: 2026-10-21)
-  { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.9, 21.9], [3.75, 17.2], [2.5, 15.6], powerFit('riser', 2.5, SPINE_Y1, 'S'), 'hide',
+  { id: 'gun_port', cap: 0, route: [powerFit('plug', 5.72, 22.85, 'W'), [3.9, 21.9], [3.75, 17.2], [2.5, SPINE_Y1 + 1.6], powerFit('riser', 2.5, SPINE_Y1, 'S'), 'hide',
                                     powerFit('box', 2.5, 11.5, 'N'), [2.4, 7.2], [1.6, 5.95], powerFit('box', 0.6, 5.95, 'E')] },
-  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, 14.65, 'E'), powerFit('riser', 28.9, SPINE_Y1, 'S'), 'hide',
+  { id: 'gun_front', cap: 1, route: [powerFit('plug', 27.88, SPINE_Y1 + 0.65, 'E'), powerFit('riser', 28.9, SPINE_Y1, 'S'), 'hide',
                                      powerFit('box', 28.4, 11.5, 'N'), [28.4, 6.0], [27.2, 1.6], [25.6, 0.3], [24.2, -0.9], powerFit('box', 24.2, -2.4, 'S')] },
-  { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [40.75, 22.4], [40.7, 17.3], [43.35, 15.4], powerFit('riser', 43.35, SPINE_Y1, 'S'), 'hide',
+  { id: 'gun_star', cap: 2, route: [powerFit('plug', 38.48, 23.0, 'E'), [40.75, 22.4], [40.7, 17.3], [43.35, SPINE_Y1 + 1.4], powerFit('riser', 43.35, SPINE_Y1, 'S'), 'hide',
                                     powerFit('box', 42.35, 11.5, 'N'), [42.35, 7.0], [42.8, 5.75], powerFit('box', 43.8, 5.75, 'W')] },
 ];
 const POWER_FITTINGS = [];

@@ -390,7 +390,7 @@ function drawShipHull(t, hull, guns, engine) {
 // Hull between the decks: conduits and vents, avoiding the shafts.
 function drawSpine(y0, y1, x0, x1, holes) {
   const ym = (y0 + y1) / 2 * T;
-  for (const [dy, col, w] of [[-0.6, '#3b6f7a', 5], [0.05, '#6a6f7a', 8], [0.6, '#7a5a3b', 5]]) {
+  for (const [dy, col, w] of [[-0.5, '#3b6f7a', 5], [0.05, '#6a6f7a', 8], [0.5, '#7a5a3b', 5]]) {
     ctx.strokeStyle = OUT; ctx.lineWidth = w + 4;
     ctx.beginPath(); ctx.moveTo(x0 * T, ym + dy * T); ctx.lineTo(x1 * T, ym + dy * T); ctx.stroke();
     ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
@@ -398,7 +398,7 @@ function drawSpine(y0, y1, x0, x1, holes) {
   const rand = rng(31);
   for (let x = x0 + 0.8; x < x1 - 0.8; x += 1.3 + rand() * 2.2) {   // pipe clamps
     if (holes.some(h => x > h.x - 0.3 && x < h.x + h.w + 0.3)) continue;
-    rr(x * T - 4, ym - 0.85 * T, 8, 1.7 * T, 2); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(1.5);
+    rr(x * T - 4, ym - 0.7 * T, 8, 1.4 * T, 2); ctx.fillStyle = '#4a515e'; ctx.fill(); stroke(1.5);
   }
 }
 
@@ -499,8 +499,8 @@ function drawDeckDoor(d, t) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 2;
   for (let k = 8; k < h; k += 10) { ctx.beginPath(); ctx.moveTo(x + 4, y + k); ctx.lineTo(x + w - 4, y + k); ctx.stroke(); }   // tread
   ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
-  // the door: in the spine's front face (as in the sprite view, deckdoor.py), sealed, in a heavy frame
-  const dy = (SPINE_Y1 - 0.22) * T, th = 0.3 * T;
+  // the door: it fills the spine's tall block face to face (as in the sprite view, deckdoor.py), sealed, in a heavy frame
+  const dy = (SPINE_HI + SPINE_Y1) / 2 * T, th = (SPINE_Y1 - SPINE_HI) * T;
   drawSealedDoor(x - 8, dy - th / 2, w + 16, th, d.open, { blast: d.blast, edge: d.locked || b ? '#e2574c' : C.hazard });
   const st = b || d.locked ? 'closed' : d.blast ? 'busy' : 'open';
   for (const ly of [y - 7, y + h + 7]) lamp(x - 9, ly, st, t);
