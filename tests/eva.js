@@ -138,7 +138,7 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
     check(G.evaReach(G.me.x, G.me.y).e < e1 - 0.02, `let go out there (${dir}): you drift gently back towards the ship`);
   }
   const G = fresh();
-  check(G.evaOk(-1.1, 19.2) && G.evaOk(-8, 19.2) && G.evaOk(22, -9) && !G.evaOk(-14, 19.2) && !G.evaOk(22, -14) && !G.evaOk(20, 10),
+  check(G.evaOk(...G.HATCHES[0].outside) && G.evaOk(-8, 19.2) && G.evaOk(22, -9) && !G.evaOk(-14, 19.2) && !G.evaOk(22, -14) && !G.evaOk(20, 10),
     'evaOk: far wider than before, still not inside the hull nor off past the screen edge');
   // a docked ship's rooms: you can't float through them, and someone it docks onto can float out
   G.dk.dock = { kind: 'pirates', side: 'port', doors: [true, true], tube: 'docked' };

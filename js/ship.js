@@ -18,18 +18,19 @@ const ZONES = [
 const zoneAtX = (x) => ZONES[x < COLS[1].x ? 0 : x < COLS[2].x ? 1 : 2];
 
 const R = (x0, y0, x1, y1) => ({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
-// The outer airlocks' chambers (HATCHES below) stand in the outer wall's corner of the bottom side rooms, walled
-// off with 0.6 walls like every other wall: OL_BLOCK is a chamber with its walls (a hole in the room's floor), the
-// room's floor goes around it (outerLockCarve: the room's rect minus the block, the big piece first).
+// The outer airlocks (HATCHES below) are sealed MODULES that stick halfway out of the hull (2026-10-23, the user: "an
+// airlock needs to be able to lock in some air … make it half protruding to the outside"): a chamber OL_W x OL_H
+// centred on the hull's side wall, with 0.6 walls on all four sides, half in the airlock room, half outside as a pod
+// on the hull (HULL's bump there). OL_BLOCK: the whole module, walls included; the room's floor goes round its inner
+// half (outerLockCarve: the room's rect minus the block, the big piece first, then the corners above and below it).
 const OL_Y = { port: 19.2, star: 19.4 }, OL_W = 2.2, OL_H = 2.2, OL_WALL = 0.6;
-const OL_BLOCK = {
-  port: R(0.6, OL_Y.port - OL_H / 2 - OL_WALL, 0.6 + OL_W + OL_WALL, OL_Y.port + OL_H / 2 + OL_WALL),
-  star: R(43.8 - OL_W - OL_WALL, OL_Y.star - OL_H / 2 - OL_WALL, 43.8, OL_Y.star + OL_H / 2 + OL_WALL),
-};
+const OL_MID = { port: 0.3, star: 44.1 };          // the hull's side wall's middle (x)
+const OL_BLOCK = Object.fromEntries(['port', 'star'].map(s => [s,
+  R(OL_MID[s] - OL_W / 2 - OL_WALL, OL_Y[s] - OL_H / 2 - OL_WALL, OL_MID[s] + OL_W / 2 + OL_WALL, OL_Y[s] + OL_H / 2 + OL_WALL)]));
 function outerLockCarve(r, b) {
   const port = b.x <= r.x + 1e-6, x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h;
-  return [port ? R(b.x + b.w, y0, x1, y1) : R(x0, y0, b.x, y1),
-          R(b.x, y0, b.x + b.w, b.y), R(b.x, b.y + b.h, b.x + b.w, y1)];
+  const a = port ? x0 : b.x, z = port ? b.x + b.w : x1;   // (the corners beside the module: from the outer wall to its inner wall)
+  return [port ? R(b.x + b.w, y0, x1, y1) : R(x0, y0, b.x, y1), R(a, y0, z, b.y), R(a, b.y + b.h, z, y1)];
 }
 const ROOMS = [
   { id: 'portGun', name: 'Left cannon room', col: 0, deck: 'top', rects: [R(0.6, 3.4, 13.6, SPINE_Y0)] },
@@ -99,28 +100,32 @@ const CAT = { x: 29.45, y: SPINE_Y1 + 0.75 };                // the ship cat's f
 // Engine: only the bell, sticking out of the stern (the housing in the reactor room was removed).
 const ENGINE = { x: 22.2, y: 23.9, w: 5.6 };
 
-// Outer airlocks (2026-10-21: real airlocks, "for the outer airlocks we actually want the double doors"): in each
-// bottom side room, a chamber (OL_W x OL_H) against the outer wall with two doors, only ever one of them open: the
-// INNER door (in the chamber's 0.6 wall towards the room, as long as the chamber) and the OUTER door (the hatch in
-// the hull wall, 1.8 long). Walk up to the inner door and it opens, step in, it shuts behind you, the chamber pumps
-// out (LOCK_CYCLE), the outer door opens, step out onto the hull: a spacewalk. Back in the same way. The logic:
-// js/airlock.js. x: the hull wall's outer face (the hatch); dir: which way is out (-1 = -x); y: the chamber's middle.
-// inside: in front of the inner door (in the room); outside: just off the hatch, on a spacewalk.
-// chamber, inner (the inner door's passage), outer (the hatch's passage, through the hull wall), step (the
-// doorstep outside the hatch: walkable while the outer door is open, the way out onto the hull).
+// Outer airlocks (2026-10-21: real airlocks, "for the outer airlocks we actually want the double doors"; 2026-10-23: a
+// sealed module half out of the hull, OL_BLOCK above): in each bottom side room, a chamber (OL_W x OL_H) centred on the
+// hull's side wall with two doors, only ever one of them open: the INNER door (in the module's wall towards the room, as
+// long as the chamber) and the OUTER door (the hatch in the module's outer end wall, 1.8 long). Walk up to the inner door
+// and it opens, step in, it shuts behind you, the chamber pumps out (LOCK_CYCLE), the outer door opens, step out onto
+// the doorstep: a spacewalk. Back in the same way. The logic: js/airlock.js. x: the module's outer face (the hatch);
+// dir: which way is out (-1 = -x); y: the chamber's middle. inside: in front of the inner door (in the room); outside:
+// just off the hatch, on a spacewalk. chamber, inner (the inner door's passage), outer (the hatch's passage, through
+// the end wall), step (the doorstep outside the hatch: walkable while the outer door is open, the way out onto the hull).
 // doors: openness 0..1; air: the side the chamber is open to ('inner': pressurized like the room, 'outer':
 // pumped out); phase 'idle' | 'closing' | 'cycling' | 'opening' (see js/airlock.js), t, target, entry.
 const HATCHES = ['port', 'star'].map(side => {
-  const dir = side === 'port' ? -1 : 1, x = side === 'port' ? 0 : SHIP_W, y = OL_Y[side], b = OL_BLOCK[side];
-  const cx0 = side === 'port' ? b.x : b.x + OL_WALL, cy0 = y - OL_H / 2;
-  const chamber = R(cx0, cy0, cx0 + OL_W, cy0 + OL_H);
-  const inner = side === 'port' ? R(cx0 + OL_W, cy0, cx0 + OL_W + OL_WALL, cy0 + OL_H) : R(b.x, cy0, b.x + OL_WALL, cy0 + OL_H);
-  const outer = side === 'port' ? R(0, y - 0.9, 0.6, y + 0.9) : R(SHIP_W - 0.6, y - 0.9, SHIP_W, y + 0.9);
-  const step = side === 'port' ? R(-0.45, y - 0.9, 0, y + 0.9) : R(SHIP_W, y - 0.9, SHIP_W + 0.45, y + 0.9);
+  const dir = side === 'port' ? -1 : 1, b = OL_BLOCK[side], y = OL_Y[side], cy0 = y - OL_H / 2;
+  const x = side === 'port' ? b.x : b.x + b.w;
+  const chamber = R(b.x + OL_WALL, cy0, b.x + OL_WALL + OL_W, cy0 + OL_H);
+  const inner = side === 'port' ? R(b.x + b.w - OL_WALL, cy0, b.x + b.w, cy0 + OL_H) : R(b.x, cy0, b.x + OL_WALL, cy0 + OL_H);
+  const outer = side === 'port' ? R(x, y - 0.9, x + OL_WALL, y + 0.9) : R(x - OL_WALL, y - 0.9, x, y + 0.9);
+  const step = side === 'port' ? R(x - 0.45, y - 0.9, x, y + 0.9) : R(x, y - 0.9, x + 0.45, y + 0.9);
   const ix = side === 'port' ? inner.x + inner.w + 0.65 : inner.x - 0.65;
   return { side, x, y, dir, chamber, inner, outer, step, inside: [ix, y], outside: [x + dir * 1.1, y],
            doors: { inner: 0, outer: 0 }, air: 'inner', phase: 'idle', t: 0, target: null, entry: null, locked: false };
 });
+// Docked ships sit off our outer airlock's hatch: their layouts (js/dock.js, js/captain.js, js/culture.js) are written for
+// the port side in x relative to the hatch (x <= 0 out from it) and mirrored for starboard.
+const dockX = (side, x) => { const h = HATCHES.find(h => h.side === side); return side === 'port' ? h.x + x : h.x - x; };
+const dockR = (side, q) => side === 'port' ? R(dockX(side, q.x), q.y, dockX(side, q.x + q.w), q.y + q.h) : R(dockX(side, q.x + q.w), q.y, dockX(side, q.x), q.y + q.h);
 
 // Shield buttons: one on each side of the lower deck. Raises that side's shield.
 const SHIELD_BUTTONS = [
@@ -139,15 +144,15 @@ const SHIELD_EMITTERS = [
 const SIDE_CAP = { port: 0, front: 1, star: 2 };    // which capacitor powers that side's shield / cannon
 const SIDE_LABEL = { port: 'Left', front: 'Front', star: 'Right' };
 
-// Hull outline: a nose for the bridge, blisters for the side guns, a skirt for the engine, a doorstep
-// at each outer airlock hatch. It contains every wall (the outer walls are flush with it; the corner
+// Hull outline: a nose for the bridge, blisters for the side guns, a skirt for the engine, a pod round
+// each outer airlock module (its outer wall flush with it, chamfered, with a 0.45 doorstep in front of the hatch). It contains every wall (the outer walls are flush with it; the corner
 // chamfers start at the walls' corners), so no wall hangs over space.
 const HULL = [
   [17.4, -3.2], [27, -3.2], [30.8, 0], [43.4, 1.6], [44.4, 2.0],
   [44.4, 4.6], [46, 5.5], [46, 8.5], [44.4, 9.4],
-  [44.4, 17.95], [44.85, 18.25], [44.85, 20.55], [44.4, 20.85],
+  [44.4, 17.4], [45.5, 17.4], [46.25, 18.15], [46.25, 20.65], [45.5, 21.4], [44.4, 21.4],   // (the right outer airlock's pod)
   [44.4, 24.2], [44.0, 24.6], [31.2, 24.6], [30.8, 26.1], [13.6, 26.1], [13.2, 24.1],
-  [0.3, 24.1], [0, 23.8], [0, 20.65], [-0.45, 20.35], [-0.45, 18.05], [0, 17.75],
+  [0.3, 24.1], [0, 23.8], [0, 21.2], [-1.1, 21.2], [-1.85, 20.45], [-1.85, 17.95], [-1.1, 17.2], [0, 17.2],   // (the left outer airlock's pod)
   [0, 9.6], [-1.6, 8.6], [-1.6, 5.6], [0, 4.6], [0, 2.8],
   [0.4, 2.4], [13.6, 2.4], [13.6, 0],
 ];

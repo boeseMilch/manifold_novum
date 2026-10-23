@@ -53,8 +53,8 @@ function dockGeom(side) {
     R(-10.8, y - 0.8, -10.2, y + 0.8),            // door airlock–cargo
     R(-19.0, y - 0.8, -18.4, y + 0.8),            // door cargo–core
   ];
-  const M = side === 'port' ? P : P.map(q => R(SHIP_W - q.x - q.w, q.y, SHIP_W - q.x, q.y + q.h));
-  const mx = (x) => side === 'port' ? x : SHIP_W - x;
+  const M = P.map(q => dockR(side, q));            // (port layout, x relative to our hatch: js/ship.js dockX / dockR)
+  const mx = (x) => dockX(side, x);
   return {
     tube: M[0], rooms: [M[1], M[2], M[3]], doors: [M[4], M[5]], hatch: h, y,
     crate: { x: mx(-14.6), y: y - 2.6 }, core: { x: mx(-23.6), y }, nav: { x: mx(-20.4), y: y - 1.9 }, boxSpot: { x: mx(-22.4), y: y + 1.8 },
@@ -797,7 +797,7 @@ const DOCK_DECOR = {
   },
 };
 function drawDockDecor(d, g, t) {
-  const set = DOCK_DECOR[d.kind === 'derelict' ? 'derelict' : d.kind === 'base' ? 'base' : d.brig ? 'brig' : 'pirate'], mx = (x) => d.side === 'port' ? x : SHIP_W - x;
+  const set = DOCK_DECOR[d.kind === 'derelict' ? 'derelict' : d.kind === 'base' ? 'base' : d.brig ? 'brig' : 'pirate'], mx = (x) => dockX(d.side, x);
   for (const [x, y, text, size, col] of set.stencils) stencil(L(mx(x)), L(g.y + y), text, 0, size, col || 'rgba(210,166,46,0.5)');
   for (const [name, draw, x, y, a, flat, classic] of set.props) {
     if (classic && GFX.on) continue;                   // (2D view only: the sprite view has its own: BASE_PROPS)
@@ -824,7 +824,7 @@ function drawDockClutter(d, g, t, list) {
   list.forEach(([name0, x, y, mode, o = {}], k) => {
     const name = !port && o.star ? o.star : name0, info = GFX.info(name);
     if (!info) return;
-    const wx = port ? x : SHIP_W - x, flip = !port && !!o.flip, n = (info.f || []).length || 1;
+    const wx = dockX(port ? 'port' : 'star', x), flip = !port && !!o.flip, n = (info.f || []).length || 1;
     const f = o.seq ? o.seq[Math.floor(t * o.fps) % o.seq.length] % n : o.dir !== undefined ? GFX.frameIndex(name, port ? o.dir : Math.PI - o.dir, 0) : 0;
     let ok;
     if (mode === 'w') { const ry = g.rooms[y].y; ok = GFX.sprite(name, f, wx, ry, 0, { layer: 'wall', sortY: ry + 0.04, flip, emissive: o.em ?? 0.15 }); }
@@ -1015,9 +1015,9 @@ function baseGeom(side) {
   // the quarters' cover (tools/blender/models/base/quarters.py footprints): his desk kicked over (2.4 x 0.8), the
   // treasure chest (1.4 x 0.9), a pillar (0.9 x 0.9); holes like the corridor's crates
   const Q = [R(-38.6, y - 14.2, -36.2, y - 13.4), R(-31.3, y - 13.35, -29.9, y - 12.45), R(-31.8, y - 17.85, -30.9, y - 16.95)];
-  const mr = (q) => side === 'port' ? q : R(SHIP_W - q.x - q.w, q.y, SHIP_W - q.x, q.y + q.h);
+  const mr = (q) => dockR(side, q);
   const M = P.map(mr), holes = H.map(mr), qholes = Q.map(mr);
-  const pt = (x, dy) => ({ x: side === 'port' ? x : SHIP_W - x, y: y + dy });
+  const pt = (x, dy) => ({ x: dockX(side, x), y: y + dy });
   const rooms = M.slice(1, 7);                     // [bay, server room, barracks, brig, gun corridor, quarters]
   return (BASE_GEOM[side] = {
     tube: M[0], rooms, doors: M.slice(7, 12), blast: M[12], hatch: h, y,
@@ -1267,7 +1267,7 @@ function baseDoorFrame(d, i, t) {
 }
 function drawBaseSprites(d, g, t) {
   if (!GFX.on) return false;
-  const side = d.side, port = side === 'port', h = g.hatch, mx = (x) => port ? x : SHIP_W - x, idx = GFX.info(`base/walls_${side}`);
+  const side = d.side, port = side === 'port', h = g.hatch, mx = (x) => dockX(side, x), idx = GFX.info(`base/walls_${side}`);
   const floors = ['bay', 'server', 'barracks', 'corridor', 'quarters', 'brig'].map(r => `base/floor_${r}_${side}`);
   const need = [...floors, ...(idx?.tiles || []), `dock/tube_${side}`, 'base/terminal_broken', 'base/keypad_locked', 'base/console_docked', 'base/cell_bars_closed', 'base/door_h_locked', `base/brig_${side}_locked`];
   if (!idx || !need.every(n => GFX.ready(n))) { GFX.preload(['base', 'dock']); return false; }
@@ -1325,7 +1325,7 @@ function drawBaseSprites(d, g, t) {
 // the cell bars and the code.
 function drawBase(d, g, t) {
   if (drawBaseSprites(d, g, t)) return;
-  const docked = d.tube !== 'detached', port = d.side === 'port', mx = (x) => port ? x : SHIP_W - x;
+  const docked = d.tube !== 'detached', port = d.side === 'port', mx = (x) => dockX(d.side, x);
   for (const q of g.rooms) { rr(L(q.x - 0.7), L(q.y - 0.7), L(q.w + 1.4), L(q.h + 1.4), 16); ctx.fillStyle = '#41383c'; ctx.fill(); stroke(4); }
   for (const q of g.doors) { ctx.fillStyle = '#41383c'; ctx.fillRect(L(q.x - 0.2), L(q.y - 0.2), L(q.w + 0.4), L(q.h + 0.4)); }
   for (const q of g.rooms) { rr(L(q.x - 0.4), L(q.y - 0.4), L(q.w + 0.8), L(q.h + 0.8), 12); ctx.strokeStyle = '#a83a3a'; ctx.lineWidth = 3; ctx.stroke(); }

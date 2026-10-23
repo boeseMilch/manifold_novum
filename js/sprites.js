@@ -33,21 +33,24 @@ function buildWalls() {
   };
   const xs = floors.flatMap(r => [r.x, r.x + r.w]), ys = floors.flatMap(r => [r.y, r.y + r.h]);
   const H = [], V = [];
-  // (the outer airlocks' chambers too: walled in like a room, but low on both ends, so you see into them: their
-  // north wall is the near wall of the room piece above, the south one their own near wall, not the back wall of
-  // the room piece below; the inner door's strip counts too: the south wall runs on under its jamb, 2026-10-22)
+  // (the outer airlocks' modules, 2026-10-23: walled in on all four sides like a room of their own, half out of the hull:
+  // a full-height back (north) wall, a low near (south) wall so you see in, like every room; the module's walls belong
+  // to it, not to the room's corner pieces above and below it (theirs stop at the module: inBlock); the inner door's
+  // strip counts as the module's too: its south wall runs on under the door's jamb)
   const chambers = HATCHES.flatMap(h => [h.chamber, h.inner]), inBlock = (x, y) => Object.values(OL_BLOCK).some(b => inRect(x, y, b, -E));
+  const lockFloor = new Set(HATCHES.map(h => h.chamber));
   for (const r of [...ROOM_RECTS, ...chambers]) {
     const x0 = r.x, x1 = r.x + r.w, y0 = r.y, y1 = r.y + r.h, chamber = chambers.includes(r);
-    if (Math.abs(y0 - SPINE_Y1) > E && !chamber) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05) && !inBlock(x, y0 - 0.3)))
+    if (Math.abs(y0 - SPINE_Y1) > E && (!chamber || lockFloor.has(r))) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y0 - 0.05) && (chamber || !inBlock(x, y0 - 0.3))))
       H.push({ kind: 'back', y: y0, x0: isFloor(a - 0.05, y0 + 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y0 + 0.05) ? b : b + WALL_T });
-    if (Math.abs(y1 - SPINE_Y0) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y1 + 0.05)))
+    if (Math.abs(y1 - SPINE_Y0) > E) for (const [a, b] of intervals(x0, x1, xs, x => !isFloor(x, y1 + 0.05) && (chamber || !inBlock(x, y1 + 0.3))))
       H.push({ kind: 'near', y: y1, x0: isFloor(a - 0.05, y1 - 0.05) ? a : a - WALL_T, x1: isFloor(b + 0.05, y1 - 0.05) ? b : b + WALL_T });
     for (const [ex, out, inside] of [[x0, x0 - 0.05, x0 + 0.05], [x1, x1 + 0.05, x1 - 0.05]]) {
       for (const [a, b] of intervals(y0, y1, ys, y => !isFloor(out, y))) {
-        const top = Math.abs(a - SPINE_Y1) < E ? a : isFloor(inside, a - 0.05) ? a : a - WALL_T;
-        const bot = Math.abs(b - SPINE_Y0) < E ? SPINE_HI : isFloor(inside, b + 0.05) ? b : b + WALL_T;
-        V.push({ x: ex === x0 ? x0 - WALL_T / 2 : x1 + WALL_T / 2, y0: top, y1: bot, toSpine: Math.abs(b - SPINE_Y0) < E });
+        const top = Math.abs(a - SPINE_Y1) < E ? a : isFloor(inside, a - 0.05) || (!chamber && inBlock(inside, a - 0.3)) ? a : a - WALL_T;
+        const bot = Math.abs(b - SPINE_Y0) < E ? SPINE_HI : isFloor(inside, b + 0.05) || (!chamber && inBlock(inside, b + 0.3)) ? b : b + WALL_T;
+        V.push({ x: ex === x0 ? x0 - WALL_T / 2 : x1 + WALL_T / 2, y0: top, y1: bot, toSpine: Math.abs(b - SPINE_Y0) < E,
+                 belowLock: !chamber && inBlock(inside, a - 0.3) });   // (it starts at an airlock module's near wall: low all along)
       }
     }
   }
@@ -88,6 +91,7 @@ function buildWalls() {
     const near = J.filter(j => j.v === v && j.low);
     v.step = Math.min(Infinity, ...near.map(j => j.y - WALL_T), ...near.filter(j => Math.abs(j.y - v.y1) < 1e-6).map(j => j.y - 1.4));
     if (v.toSpine && Math.abs(v.y1 - SPINE_HI) < E) v.step = Infinity;
+    if (v.belowLock) v.step = v.y0;
   }
   return { hRuns, vRuns, J };
 }

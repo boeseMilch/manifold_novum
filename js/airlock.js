@@ -248,7 +248,7 @@ function airlockLighting(t, lamp) {
     lights.push({ x: c.x + c.w / 2, y: c.y + c.h / 2, z: 1.3, color: col, radius: 2.4, intensity: 0.75 * f * Math.max(0.25, k), shadow: false });
     const B = OL_BLOCK[h.side];
     for (const y of [(B.y + (SPINE_Y1)) / 2, (B.y + B.h + 23.2) / 2])
-      lights.push({ x: B.x + B.w / 2, y, z: 1.6, color: LIGHT_TUNING.lamp.color, radius: 3.2, intensity: 0.45 * k, shadow: false });
+      lights.push({ x: h.side === 'port' ? (0.6 + B.x + B.w) / 2 : (B.x + 43.8) / 2, y, z: 1.6, color: LIGHT_TUNING.lamp.color, radius: 3.2, intensity: 0.45 * k, shadow: false });
   }
   return { areas, lights };
 }

@@ -27,10 +27,10 @@ const PLASMA_TIME = 6;
 // Where each room can be holed: a spot on its outer wall (inside), and where to weld it from outside.
 const BREACH_SPOTS = {
   portGun: { x: 0.9, y: 10.4, out: [-0.8, 10.4], side: 'port' },
-  portLock: { x: 0.9, y: 21.3, out: [-0.8, 21.3], side: 'port' },
+  portLock: { x: 0.9, y: 21.9, out: [-0.8, 21.9], side: 'port' },   // (below the outer airlock's pod: y 21.3 → 21.9, 2026-10-23)
   bridge: { x: 20.2, y: -2.0, out: [20.2, -3.9], side: 'front' },
   starGun: { x: 43.5, y: 10.6, out: [45.2, 10.6], side: 'star' },
-  starLock: { x: 43.5, y: 21.3, out: [45.2, 21.3], side: 'star' },
+  starLock: { x: 43.5, y: 21.9, out: [45.2, 21.9], side: 'star' },
 };
 // Hull seams (2026-10-20, the user: a hull breach as one of the random ship failures): one per room that can breach,
 // at its hole's inside spot. Only failing parts use them (never broken, burnt or counted as a broken part): a seam

@@ -24,9 +24,9 @@ SHIP_W, SHIP_H = 44.4, 26.1
 SPINE_Y0, SPINE_Y1 = 11.5, 13.3          # (js/ship.js; 15 with the deck airlocks, 14 with the first deck doors)
 HULL = [(17.4, -3.2), (27, -3.2), (30.8, 0), (43.4, 1.6), (44.4, 2.0),
         (44.4, 4.6), (46, 5.5), (46, 8.5), (44.4, 9.4),
-        (44.4, 17.95), (44.85, 18.25), (44.85, 20.55), (44.4, 20.85),
+        (44.4, 17.4), (45.5, 17.4), (46.25, 18.15), (46.25, 20.65), (45.5, 21.4), (44.4, 21.4),
         (44.4, 24.2), (44.0, 24.6), (31.2, 24.6), (30.8, 26.1), (13.6, 26.1), (13.2, 24.1),
-        (0.3, 24.1), (0, 23.8), (0, 20.65), (-0.45, 20.35), (-0.45, 18.05), (0, 17.75),
+        (0.3, 24.1), (0, 23.8), (0, 21.2), (-1.1, 21.2), (-1.85, 20.45), (-1.85, 17.95), (-1.1, 17.2), (0, 17.2),
         (0, 9.6), (-1.6, 8.6), (-1.6, 5.6), (0, 4.6), (0, 2.8),
         (0.4, 2.4), (13.6, 2.4), (13.6, 0)]
 def R(x0, y0, x1, y1): return (x0, y0, x1, y1)
@@ -35,7 +35,10 @@ ROOM_RECTS = [R(0.6, 3.4, 13.6, SPINE_Y0), R(14.2, 0.6, 30.2, SPINE_Y0), R(18.2,
               R(30.8, SPINE_Y1, 43.8, 23.6)]
 GUNS = {'front': (22.2, -3.6, -math.pi / 2), 'port': (-0.9, 7.1, math.pi), 'star': (45.3, 6.9, 0.0)}
 ENGINE = dict(x=22.2, y=23.9, w=5.6)
-HATCHES = {'port': dict(x=0.0, y=19.2, dir=-1), 'star': dict(x=SHIP_W, y=19.4, dir=1)}
+# the outer airlock modules (js/ship.js OL_BLOCK, 2026-10-23): a chamber centred on the side wall, walled all round,
+# half out of the hull as a pod (HULL's bumps there); the hatch (h.x) is the module's outer face
+OL_BLOCK = {'port': R(-1.4, 17.5, 2.0, 20.9), 'star': R(42.4, 17.7, 45.8, 21.1)}
+HATCHES = {'port': dict(x=-1.4, y=19.2, dir=-1), 'star': dict(x=SHIP_W + 1.4, y=19.4, dir=1)}
 ANTENNA = (34.6, -0.15)
 COIL_SPOTS = {'left': (-0.6, 13.4), 'right': (45.0, 13.2), 'stern': (16.2, 26.75)}
 JAM_SPOTS = {'port': (-1.7, 9.4), 'star': (46.1, 9.2), 'front': (24.0, -4.1)}

@@ -47,7 +47,7 @@ const s7Side = (side) => (side === 'port' ? 'left' : 'right');
 // (the old "cargo" room), 2 core. Tendrils: root on the floor by a wall, head where it lies (its reach is measured
 // from the head); at least one lies across each inner doorway.
 function s7Geom(side) {
-  const g = dockGeom(side), mx = (x) => (side === 'port' ? x : SHIP_W - x), P = (x, dy) => ({ x: mx(x), y: g.y + dy });
+  const g = dockGeom(side), mx = (x) => dockX(side, x), P = (x, dy) => ({ x: mx(x), y: g.y + dy });
   const h = g.hatch, ci = SIDE_CAP[side], cap = CAPACITORS[ci], hin = { x: h.inside[0], y: h.inside[1] + 0.3 };
   const capAt = { x: cap.x, y: cap.y - 0.15 }, mid = side === 'port' ? { x: (hin.x + capAt.x) / 2, y: (hin.y + capAt.y) / 2 - 0.4 }
     : { x: hin.x - 2.3, y: capAt.y - 0.55 };          // (starboard: the gym's treadmill stands on the straight line: round below it)
@@ -409,7 +409,7 @@ const S7_VINES = [
   [[-6.3, -1.9], [-7.6, -1.35], [-9.8, -1.15], [-10.4, -0.5]],                                    // the airlock: from J1's corner to the lab door
 ];
 function s7VinesDraw(d, g, s, G, t, band) {
-  const mx = (x) => d.side === 'port' ? x : SHIP_W - x;
+  const mx = (x) => dockX(d.side, x);
   const roomOf = (x, y) => { let best = 0, bd = Infinity; g.rooms.forEach((q, i) => { const dd = Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h)); if (dd < bd) { bd = dd; best = i; } }); return best; };
   S7_VINES.forEach((path, v) => {
     const pts = s7Smooth(path.map(([x, y]) => ({ x: mx(x), y: g.y + y })));
@@ -502,7 +502,7 @@ function drawS7Live(t) {
   const C = s.creep, len = s7Len(G.creep);
   if (C.d > 0.05) {
     // (drawn from the end of the long floor vine in the lab's airlock, S7_VINES[0], so it grows out of the growth there)
-    const mx = (x) => (d.side === 'port' ? x : SHIP_W - x), v0 = S7_VINES[0], root = v0.slice(-2).map(([x, y]) => ({ x: mx(x), y: G.g.y + y }));
+    const mx = (x) => dockX(d.side, x), v0 = S7_VINES[0], root = v0.slice(-2).map(([x, y]) => ({ x: mx(x), y: G.g.y + y }));
     const d0 = C.wrapped ? len : C.d, pts = s7Smooth([...root, ...G.creep]), r0 = s7Len(pts, 16);   // (pts[16] = G.creep[0]: 8 steps per span)
     const ok = s7Chain(pts, r0 + d0 / len * (s7Len(pts) - r0), 1, (p, tip) => ({ layer: 'wall', frame: Math.floor(t * 8), desat: C.dead ? 1 : 0, alpha: C.dead ? 0.6 : 1,
       emissive: C.dead ? 0 : tip ? 0.4 : 0.3 }));

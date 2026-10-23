@@ -45,7 +45,7 @@ const captWave = (n) => Math.min(captDoorMax(), Math.max(1, n - captEasy()));
 const captDoorMax = () => (crewSize() <= 1 ? CAPT_DOOR_MAX - 1 : CAPT_DOOR_MAX);
 // Spots in the quarters (port coords like baseGeom: x absolute, y relative to the hatch; mirrored for starboard).
 function captSpots(g) {
-  const port = dk.dock.side === 'port', pt = (x, dy) => ({ x: port ? x : SHIP_W - x, y: g.y + dy });
+  const port = dk.dock.side === 'port', pt = (x, dy) => ({ x: dockX(dk.dock.side, x), y: g.y + dy });
   return { throne: pt(-36.2, -18.9), pod: pt(-38.4, -18.9), mid: pt(-34.0, -16.0), door: pt(-28.9, -18.3),
            posts: [pt(-30.0, -15.0), pt(-29.4, -11.9), pt(-33.0, -15.6)], extinguisher: pt(-19.6, -10.4) };
 }

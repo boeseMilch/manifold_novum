@@ -3703,3 +3703,36 @@ spots already did. Classic view: drawDeckDoor's door fills SPINE_HI..SPINE_Y1, d
 mock_bridge.py follow. Re-rendered structure.py (spine_a/b/label) and deckdoor.py, interior group packed (1189 sprites,
 229 interior). tools/travel-table.json rebuilt (trips change by -0.29 .. +0.17 s, mean -0.03 s). tests/spores.js: its
 stand spots in front of the deck doors follow (y 14.7 → 14.0).
+
+### Outer airlocks: a sealed module half out of the hull (2026-10-23)
+The user: "The airlock still looks like it is maybe missing some walls? An airlock needs to be able to lock in some air. …
+Maybe make it half protruding to the outside." (The sprite view showed the chamber's north side as a black hole and a low
+south wall: an open pit.)
+- **Geometry** (js/ship.js OL_BLOCK / OL_MID / HATCHES): the 2.2 x 2.2 chamber is centred on the hull's side wall (x 0.3 /
+  44.1), with 0.6 walls on ALL FOUR sides: the module is 3.4 x 3.4, half in the airlock room, half outside as a pod.
+  Port: chamber x -0.8..1.4, inner door 1.4..2.0, outer door (hatch) -1.4..-0.8, h.x = -1.4 (the module's outer face);
+  star: chamber 43.0..45.2, inner 42.4..43.0, hatch 45.2..45.8, h.x = 45.8. The room gets back 1.4 units (its floor goes
+  round the module's inner half: a corner above and below it, 1.4 wide). Everything relative to h.x is unchanged, so
+  js/airlock.js works as before (depths, doors, the doorstep, EVA in / out).
+- **HULL**: the 0.45 doorsteps became pods round the modules (flush with their walls, chamfered corners, a 0.45 doorstep
+  in front of the hatch): port x to -1.85 (y 17.2..21.2), star to 46.25 (y 17.4..21.4). Hull art re-rendered:
+  models/hull/hulllib.py (HULL, OL_BLOCK, HATCHES at the module's outer face), body.py (greebles kept off the pods and the
+  module walls), fixtures.py (hull/hatch_* at the new hatch), emitter.py (its hull holdout); hull group re-packed
+  (sprites.json 1189 entries before and after, 85 hull).
+- **Walls** (js/sprites.js buildWalls): the module is walled like a room of its own: a full-height back (north) wall from the
+  hatch's wall to the inner door, a low near (south) wall (the cutaway rule: you see in), the end walls with the doors
+  (inner: the doorways' bulkhead door interior/door_v_*; outer: the hatch interior/hatch_<side>_*, both wall-thick and
+  full height). The room's walls stop at the module (the corner pieces' near / back walls and the hull wall's runs don't
+  reach into it); the hull wall south of a module is low all along (it would stand full height right in front of the
+  chamber). Classic view: the module's walls are hull like every wall (the pod is in HULL), the doors drawSealedDoor.
+- **Docked ships** sit off the new hatch: js/ship.js dockX / dockR (port layout, x relative to our hatch, mirrored for
+  starboard) replace the absolute `port ? x : SHIP_W - x` in js/dock.js (dockGeom, baseGeom, decor), js/captain.js and
+  js/culture.js: the docked ship, the base, the tube and everything aboard moved 1.4 out with the hatch (sprites already
+  drew at h.x).
+- **Moved**: the airlock rooms' breach spots below the pods (y 21.3 → 21.9, both sides; their seams too), the EVA floor
+  stencils to in front of the inner doors, the corner lamps beside the module.
+- Timing unchanged: in front of the inner door → on the hull 2.27 s, just off the hatch → in front of the inner door 2.63 s
+  (1.7 s out with the 'airlocks' upgrade).
+- tools/damage-rates.json rebuilt (shots hit the pods: first small hit 3.55 → 3.49 s; spores reach the hatch sooner:
+  13.7 → 12.8 s; intruder / saboteur numbers shift a little); tools/travel-table.json rebuilt (no trip changed).
+- Tests: tests/eva.js (evaOk's spot just off the hatch). All suites pass; tests/scaling.js has its 6 known balance lines.

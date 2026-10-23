@@ -541,7 +541,7 @@ function drawFloorDecor(t) {
   if (!solid('props/toolbox', K.toolbox.x, K.toolbox.y)) toolbox(U(K.toolbox.x), U(K.toolbox.y), K.toolbox.a);
   if (!flat('props/crack_stargun', 34.0, 8.4)) { crack(U(34.0), U(8.4), U(1.4), 1.0, 61); tapeX(U(34.0), U(8.4), U(0.6), 62); }
   // --- Left airlock room
-  stencil(U(1.45), U(19.2), 'EVA', -Math.PI / 2, 0.45);                 // (by the hatch, clear of the power line to the cannon)
+  stencil(U(HATCHES[0].inside[0] + 0.15), U(19.2), 'EVA', -Math.PI / 2, 0.45);   // (in front of the outer airlock's inner door)
   // --- Reactor
   ctx.save(); ctx.setLineDash([12, 8]);
   ctx.strokeStyle = 'rgba(210,166,46,0.55)'; ctx.lineWidth = 5;
@@ -551,7 +551,7 @@ function drawFloorDecor(t) {
   // (the two orange cables from the reactor to the engine, props/cable_engine_l/r, are gone: the power lever's
   // branches had to cross them)
   // --- Right airlock room
-  stencil(U(42.95), U(19.4), 'EVA', Math.PI / 2, 0.45);
+  stencil(U(HATCHES[1].inside[0] - 0.15), U(19.4), 'EVA', Math.PI / 2, 0.45);
   if (!flat('props/crack_starlock', 39.2, 17.6)) { crack(U(39.2), U(17.6), U(1.4), 0.2, 91); tapeX(U(39.2), U(17.6), U(0.6), 92); }
 }
 

@@ -45,6 +45,8 @@ def visible(x, y, m=0.0):
     under a wall (WALL_T around every room) and not behind a back wall (WALL_H tall, so it hides the deck
     up to WALL_H * COT north of itself)."""
     if not point_in_poly(x, y) or dist_to_poly(x, y) < m: return False
+    for x0, y0, x1, y1 in OL_BLOCK.values():          # the outer airlock modules' walls (their pods' tops)
+        if x0 - m <= x <= x1 + m and y0 - WALL_H * COT - m <= y <= y1 + m: return False
     for x0, y0, x1, y1 in ROOM_RECTS:
         if x0 - WALL_T - m <= x <= x1 + WALL_T + m and y0 - WALL_T - WALL_H * COT - m <= y <= y1 + WALL_T + m: return False
     return True
@@ -259,7 +261,7 @@ def build():
         if any(math.hypot(x - a, y - b) < 2.2 for a, b in spots): continue
         if any(math.hypot(x - gx, y - gy) < 1.0 for gx, gy, _ in GUNS.values()): continue
         if (16.1 < x < 17.7 and -2.3 < y < -1.1) or (26.7 < x < 28.2 and -2.8 < y < -1.1): continue   # grille, sensor, tape
-        if abs(y - 19.3) < 1.6 and (x < 1 or x > 43.4): continue                   # the outer airlock hatches
+        if abs(y - 19.3) < 2.4 and (x < 1 or x > 43.4): continue                   # the outer airlock pods
         if any(math.hypot(x - a, y - b) < 0.6 for a, b in ((-0.35, 6.1), (44.75, 8.1), (-1.25, 6.0), (45.65, 6.0))): continue
         if any(abs(x - gx) < 1.0 and (abs(y - (gy - 1.9)) < 0.6 or abs(y - (gy + 1.9)) < 0.6) for gx, gy, _ in GUNS.values()): continue  # blister stripes
         if math.hypot(x - ANTENNA[0], y - (ANTENNA[1] + 1.25)) < 0.8: continue
