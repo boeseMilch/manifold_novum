@@ -421,6 +421,9 @@ function updateRaid(dt) {
   if (R.leaveT != null && (R.leaveT -= dt) <= 0) {
     const tube = raidGeom(R).tube;
     for (const c of crew) if (c.mode === 'inside' && inRect(c.x, c.y, tube) && !roomAt(c.x, c.y)) [c.x, c.y] = H.inside;
+    for (const c of crew) if (c.mode === 'inside' && inDockEntry(c.x, c.y, 'raid')) {   // (in its smashed cockpit: cast adrift, js/dockentry.js)
+      const e = dockEntries().find(e => e.ship === 'raid'); c.mode = 'eva'; [c.x, c.y] = e.outside; combatBanner(`${c.name} was left in the raider's cockpit — cast adrift!`);
+    }
     for (const it of ITEMS) if (inRect(it.x, it.y, tube) && !roomAt(it.x, it.y)) [it.x, it.y] = H.inside;
     dk.pirates = dk.pirates.filter(p => !p.raid || roomAt(p.x, p.y) && !inRect(p.x, p.y, tube));
     for (const p of dk.pirates) if (p.raid) { delete p.raid; p.done = true; }   // (one left on our ship: stays and fights)

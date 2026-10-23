@@ -37,8 +37,8 @@ const airlockWay = (h) => [{ x: h.outer.x + h.outer.w / 2, y: h.y }, { x: h.cham
 function airlockTube(h) {
   if (typeof dk === 'undefined') return null;
   const d = dk.dock;
-  if (d && d.side === h.side && d.tube !== 'detached') return d.kind === 'derelict' ? 'vacuum' : 'air';
-  if (dk.raid?.state === 'docked' && dk.raid.side === h.side) return 'air';
+  if (d && d.side === h.side && d.tube !== 'detached') return d.kind === 'derelict' || shipBreached(d) ? 'vacuum' : 'air';   // (a raider with its canopy smashed is airless: js/dockentry.js)
+  if (dk.raid?.state === 'docked' && dk.raid.side === h.side) return shipBreached(dk.raid) ? 'vacuum' : 'air';
   return null;
 }
 const airlockVenting = (h) => typeof hz !== 'undefined' && hz.vent?.room === airlockRoomId(h);
@@ -80,7 +80,7 @@ function airlockFriends(h) {
   const out = crew.filter(c => standing(c) && (c.mode === 'inside' || c.mode === 'eva'));
   if (typeof dk !== 'undefined') {
     if (dk.npc && dk.npc.state !== 'down') out.push(dk.npc);
-    if (airlockTube(h) === 'air') out.push(...dk.pirates.filter(p => !p.dead && !(p.stun > 0)));
+    if (airlockTube(h)) out.push(...dk.pirates.filter(p => !p.dead && !(p.stun > 0)));   // (pirates use it while their ship is docked here, airless or not)
   }
   return out;
 }
@@ -100,7 +100,7 @@ function airlockManual(h) {
   for (const o of airlockFriends(h)) if (inAirlock(h, o.x, o.y)) { const rec = airlockEntries.get(o) || {}; rec[h.side] = h.air; rec['@' + h.side] = 'in'; airlockEntries.set(o, rec); }
   h.manual = true; startAirlockCycle(h);
 }
-function updateAirlocks(dt) { for (const h of HATCHES) updateAirlock(h, dt); }
+function updateAirlocks(dt) { for (const h of HATCHES) updateAirlock(h, dt); if (typeof updateDockEntries === 'function') updateDockEntries(dt); }
 function updateAirlock(h, dt) {
   const bodies = airlockBodies(), friends = airlockFriends(h);
   const inDoor = (s) => bodies.some(c => inRect(c.x, c.y, h[s], CREW_R));
@@ -172,6 +172,7 @@ function updateAirlock(h, dt) {
 // (tx, ty: where the crew member is pushing.)
 function airlockThreshold(c, tx, ty) {
   if (typeof netLive !== 'undefined' && netLive) return;   // (a multiplayer client: the server says when you're out, js/net.js)
+  if (typeof dockEntryThreshold === 'function') dockEntryThreshold(c, tx, ty);   // (a docked ship's way in from space: js/dockentry.js)
   for (const h of HATCHES) {
     if (h.doors.outer <= DOOR_WALK || airlockTube(h)) continue;
     const a = airlockDepth(h, c.x);
@@ -194,6 +195,10 @@ function airlockAct() {
     if (!reg) continue;
     const inIt = reg === 'in', outside = p.mode === 'eva';
     const atDoor = inIt || (outside ? Math.hypot(p.x - h.outside[0], p.y - h.outside[1]) < 1.5 : reg === 'inner' && airlockWaiting(h, 'inner', p.x, p.y));
+    if (atDoor && outside && airlockTube(h) && typeof dockEntryHint === 'function') {   // (a ship's tube over our hatch: where to get in instead)
+      const hint = dockEntryHint(h);
+      if (hint) { act({ text: hint, at: { x: h.x, y: h.y, r: 1.2 }, quiet: true }); return true; }
+    }
     if (!atDoor || airlockTube(h) === 'air') continue;   // (docked: just walk through)
     const [cx, cy] = [h.chamber.x + h.chamber.w / 2, h.chamber.y + h.chamber.h / 2];
     const at = inIt ? { x: cx, y: cy, r: 1.3 } : outside ? { x: h.x, y: h.y, r: 1.2 } : { x: h.inner.x + h.inner.w / 2, y: h.y, r: 1.2 };

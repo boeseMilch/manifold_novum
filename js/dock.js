@@ -77,14 +77,16 @@ function dockRects() {
   if (!g) return [];
   return [...(dk.dock.tube === 'detached' ? [] : [g.tube]), ...(g.floor || g.rooms), ...g.doors.filter((d, i) => !dk.dock.doors[i]), ...(typeof raidRects === 'function' ? raidRects() : [])];   // (raidRects: the captain's raider's tube, js/captain.js)
 }
-const inDock = (x, y) => { const g = DG(); return !!g && [g.tube, ...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
+const inDock = (x, y) => { const g = DG(); return !!g && ([g.tube, ...g.rooms, ...g.doors].some(q => inRect(x, y, q)) || inDockEntry(x, y, 'dock')); };   // (+ its way in from space: js/dockentry.js)
 // A spacewalker can't float through the docked ship's (or the pirate base's) rooms; over the tube is fine.
-const dockBlocksEva = (x, y) => { const g = DG(); return !!g && [...g.rooms, ...g.doors].some(q => inRect(x, y, q, CREW_R)); };
+const dockBlocksEva = (x, y) => { const g = DG(); return (!!g && [...g.rooms, ...g.doors].some(q => inRect(x, y, q, CREW_R))) || raidBlocksEva(x, y); };   // (and the raider at our other airlock: js/dockentry.js)
 const dockRoomsForCamera = () => { const g = DG(); return g ? g.rooms.map(q => ({ rects: [q] })) : []; };
 function dockVacuum(x, y) {
+  if (dk.raid?.state === 'docked' && (inRect(x, y, raidGeom(dk.raid).tube) || inDockEntry(x, y, 'raid'))) return true;   // (the captain's raider: its tube; smashed in, its cockpit)
   const g = DG();
   if (!g) return false;
-  return inRect(x, y, g.tube) || (dk.dock.kind === 'derelict' && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)));
+  const airless = dk.dock.kind === 'derelict' || shipBreached(dk.dock);   // (the derelict; a raider with its canopy smashed: js/dockentry.js)
+  return inRect(x, y, g.tube) || inDockEntry(x, y, 'dock') || (airless && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)));
 }
 const dockName = () => dk.dock ? (dk.dock.kind === 'pirate' ? 'Pirate ship' : dk.dock.kind === 'base' ? 'Pirate base' : 'Derelict') : null;
 

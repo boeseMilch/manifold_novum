@@ -329,7 +329,7 @@ function updatePlayer(dt) {
   updateCrew(player, dt, ix, iy);
 
   if (player.mode === 'eva') {                        // (cannons are only manned from inside, via their ladders; spacewalks are for other jobs)
-    airlockAct();                                      // back in: the outer airlock (js/airlock.js)
+    dockEntryAct() || airlockAct();                    // back in: a docked ship's way in (js/dockentry.js), the outer airlock (js/airlock.js)
     return;
   }
 
@@ -355,6 +355,7 @@ function updatePlayer(dt) {
     else act({ text: `Click: raise the ${SIDE_LABEL[button.side].toLowerCase()} shield (${SHIELD_UP_TIME} s, 1 energy)`, at, run: () => pressShield(button.side) });
   } else if (dockAct()) {
   } else if (airlockAct()) {                         // the outer airlocks (js/airlock.js)
+  } else if (dockEntryAct()) {                       // the base's service hatch from inside (js/dockentry.js)
   } else if (typeof levAct === 'function' && levAct()) {   // the boss fight's engine override, not ready yet: why (js/leviathan.js)
   } else if (door) doorAct(door);
 }
@@ -945,6 +946,7 @@ function render(t) {
   drawEvaJobs(t);
   drawOrganicWorld(t);
   drawDock(t);
+  drawDockEntries(t);                                 // the docked ships' ways in from space (js/dockentry.js)
   const gunsSprited = GUNS.filter(g => G && drawGunSprite(g));
   for (const g of GUNS) if (!gunsSprited.includes(g)) drawGun(g.x * T, g.y * T, g.aim, g.flash);
   if (!parts.walls) drawSpine(SPINE_Y0, SPINE_Y1, 0.2, SHIP_W - 0.2, DECK_DOORS);

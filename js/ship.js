@@ -260,12 +260,14 @@ const EVA_REACH = { x: 9.5, y: 6.5 }, EVA_SOFT = 0.6;
 function evaReach(x, y) {
   const sx = EVA_REACH.x, sy = EVA_REACH.y;
   let best = Infinity, bx = 0, by = 0;
-  for (let i = 0, j = HULL.length - 1; i < HULL.length; j = i++) {
-    const ax = HULL[j][0] / sx, ay = HULL[j][1] / sy, dx = HULL[i][0] / sx - ax, dy = HULL[i][1] / sy - ay;
-    const k = clamp(((x / sx - ax) * dx + (y / sy - ay) * dy) / (dx * dx + dy * dy), 0, 1);
-    const ex = x / sx - ax - dx * k, ey = y / sy - ay - dy * k, d = Math.hypot(ex, ey);
-    if (d < best) { best = d; bx = ex; by = ey; }
-  }
+  // (a ship docked to ours counts as hull too: you can float round it and reach its way in: js/dockentry.js)
+  for (const poly of [HULL, ...(typeof dockReachPolys === 'function' ? dockReachPolys() : [])])
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const ax = poly[j][0] / sx, ay = poly[j][1] / sy, dx = poly[i][0] / sx - ax, dy = poly[i][1] / sy - ay;
+      const k = clamp(((x / sx - ax) * dx + (y / sy - ay) * dy) / (dx * dx + dy * dy), 0, 1);
+      const ex = x / sx - ax - dx * k, ey = y / sy - ay - dy * k, d = Math.hypot(ex, ey);
+      if (d < best) { best = d; bx = ex; by = ey; }
+    }
   const gx = bx / sx, gy = by / sy, g = Math.hypot(gx, gy) || 1;   // (the gradient of e: scaled back to world coords)
   return { e: best, nx: gx / g, ny: gy / g };
 }
@@ -289,7 +291,7 @@ const roomCenter = (room) => {                   // center of the room's boundin
 
 // Rectangles a crew member may stand in right now.
 function walkRects() {
-  return [...ROOM_RECTS, ...DOORS.filter(d => d.open > DOOR_WALK), ...(typeof dockRects === 'function' ? dockRects() : []), ...airlockRects()];
+  return [...ROOM_RECTS, ...DOORS.filter(d => d.open > DOOR_WALK), ...(typeof dockRects === 'function' ? dockRects() : []), ...airlockRects(), ...(typeof dockEntryRects === 'function' ? dockEntryRects() : [])];   // (+ a docked ship's way in from space, once open: js/dockentry.js)
 }
 // The outer airlocks: the chamber, and each door's passage while it's open (the outer one with the doorstep outside).
 function airlockRects() {

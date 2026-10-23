@@ -3736,3 +3736,36 @@ south wall: an open pit.)
 - tools/damage-rates.json rebuilt (shots hit the pods: first small hit 3.55 → 3.49 s; spores reach the hatch sooner:
   13.7 → 12.8 s; intruder / saboteur numbers shift a little); tools/travel-table.json rebuilt (no trip changed).
 - Tests: tests/eva.js (evaOk's spot just off the hatch). All suites pass; tests/scaling.js has its 6 known balance lines.
+
+### Docked ships have a way in from space: no spacewalker is ever stranded (2026-10-23, js/dockentry.js)
+A docked ship's tube covers our pod's hatch, so a spacewalker couldn't come back in at that airlock; with both taken
+(chapter 5: the base and the raider) they were stranded. The user: "Maybe make an airlock on most ships that dock? … Or
+some other way to enter through that ship so you can't get deadlocked if both airlocks are occupied." and "I.e. hit the
+windshield or something to get into the other ship." Every ship that docks now has a way in, forced from a spacewalk
+with the manual override (three good whacks / heaves, E or click), the kind that fits it:
+- **The Red Comet raider** (docked pirates, the brig barge, chapter 5's raider at our other airlock): SMASH ITS CANOPY
+  (the glass cockpit on its beak beside the tube). It stays smashed: the raider vents (dockVacuum; its crew aboard take a
+  hit and are stunned), the tube is airless, so our pod cycles like to space (airlockTube 'vacuum'; pirates still use
+  it). In through the cockpit (crawling under the beak's roof: you're hidden for a moment) and down into the tube.
+- **The derelict lab** (airless and dead already): PRY ITS CRACKED VIEWPORT, in the hull's roof over its airlock room.
+  Stays open, nothing to vent.
+- **The pirate base**: CRANK ITS SERVICE HATCH, in the docking bay's low south wall: a cramped hand-cranked lock, so the
+  bay keeps its air; open ENTRY_HATCH_OPEN 4 s (held while someone's in it), then it shuts. From inside the bay the same
+  crank lets you out.
+- Mechanics: DOCK_ENTRY_SPEC (port layout, relative to the hatch: js/ship.js dockX / dockR); state in dk.dock / dk.raid
+  (entry, entryT: plain data, in the snapshot). In / out at the opening like at our hatch (dockEntryThreshold: push in on a
+  spacewalk, step out past its face). The opening is walkable while open (walkRects). Cast-off / detach with someone in it:
+  cast adrift (undock: inDock includes it; the raid's leaving: updateRaid). Spacewalk reach counts a docked ship as hull
+  (evaReach: dockReachPolys), so you can float round it to its way in; you can't float through the raider at our other
+  airlock (dockBlocksEva). The tube itself is no way in from space.
+- Prompts: at a blocked pod "A ship is docked here — get in through the raider's canopy (or the other airlock)"; at the
+  entry the override prompt (what it does); a WAY IN problem marker on each entry while you're out and an airlock is taken;
+  a job marker ring on it.
+- Art: tools/blender/models/dock/entries.py (new): dock/canopy_smashed_<side>, dock/viewport_<side>_shut / _open,
+  base/service_hatch_<side>_shut / _open (drawn over the ship at our hatch like it); classic: drawDockEntries draws the
+  canopy (glass / smashed), the viewport, the hatch. dock + base groups packed (sprites.json 1189 → 1199).
+- Tests: tests/dockentry.js (new): the deadlock matrix (nothing docked; pirate / brig / derelict / base at either airlock;
+  chapter 5's base + raider both ways round) × (from just outside each pod, from off the bow): planned floating with WASD,
+  E for the override, on foot through the ship into our room, all 33 pass. Plus: the tube is no way in, the hint, venting,
+  the base hatch shutting, cast adrift from the cockpit, the snapshot. Travel table / damage rates: unchanged (no room,
+  door, hull or hazard moved).

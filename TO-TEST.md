@@ -99,3 +99,10 @@ Tick off what works; note what doesn't.
 - [ ] HUD: RIGHT throbs leech-red while they drink; the sidebar card says "N latched, sucking the right capacitor". The banner says they suck our energy.
 - [ ] Chapter 8, phase 3: a missed window's leeches drink that side's capacitor (the cannon you need for the eye). Still a fair punishment?
 - [ ] Both views (sprites and ?classic), and in multiplayer the ball moves the same for everyone.
+
+## Getting back in when a ship is docked at our airlock (2026-10-23)
+- [ ] Pirates docked: on a spacewalk, float to the raider's glass canopy (blue ring), E / click: three whacks smash it. The raider vents (its pirates get thrown about), climb in, drop into the tube, through our airlock. Fun? In-world enough?
+- [ ] Derelict docked: pry the cracked viewport in its roof (over its airlock room), climb in, out through its airlock room and the tube.
+- [ ] Chapter 5 (base + the raider at the other airlock): the base's service hatch in the docking bay's south wall (crank it: three heaves, it shuts again after you), and the raider's canopy. Never stranded.
+- [ ] At our blocked airlock the prompt tells you where to go; the WAY IN marker points there.
+- [ ] Both views (sprites and ?classic).

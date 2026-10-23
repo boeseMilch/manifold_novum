@@ -282,6 +282,9 @@ function problemSpots() {
   for (const id of hz.surges) { const l = LINE[id]; if (l) { const [x, y] = linePoint(l, 0.5); out.push({ key: 'surge' + id, x, y, icon: 'surge', what: 'SURGE', room: where(x, y, lineName(l)), col: '#bfe8ff' }); } }
   for (const id of hz.noGrav) { const [x, y] = roomCenter(roomById(id)); out.push({ key: 'grav' + id, x, y, icon: 'surge', what: 'NO GRAVITY', room: roomById(id).name, col: '#7af0ff' }); }
   out.push(...sporeSpots());                          // infested rooms (js/spores.js)
+  // on a spacewalk with a ship's tube over one of our airlocks: where that ship lets you in (js/dockentry.js)
+  if (me?.mode === 'eva' && typeof dockEntries === 'function' && HATCHES.some(h => airlockTube(h)))
+    for (const e of dockEntries()) out.push({ key: 'wayin' + e.ship, x: e.cx, y: e.face, icon: 'wrench', what: 'WAY IN', room: e.spec.what.replace(/^the /, ''), col: '#9cd8ff' });
   for (const c of crew) if (c !== me && !standing(c) && c.mode !== 'gun') out.push({ key: 'down' + c.id, x: c.x, y: c.y, icon: 'alien', what: `${c.name.toUpperCase()} DOWN`, room: where(c.x, c.y, ''), col: '#ff9ab0' });
   return out;
 }
