@@ -247,7 +247,12 @@ function airlockLighting(t, lamp) {
   const areas = [], lights = [];
   for (const h of HATCHES) {
     const k = lamp[h.side === 'port' ? 0 : 2], c = h.chamber, look = airlockLook(h), blink = Math.sin(t * 12) > 0 ? 1 : 0.35;
-    areas.push({ x: c.x, y: c.y, w: c.w, h: c.h, k });
+    // the room's light over the whole module, its walls too (the near wall's top and face read like any room's near
+    // wall, not as a dark band), and over the hull's low wall running on south of it (the strip the room's area misses)
+    const M = OL_BLOCK[h.side];
+    areas.push({ x: M.x, y: M.y, w: M.w, h: M.h + 0.15, k });
+    if (typeof buildWalls === 'function') for (const v of (WALLS ||= buildWalls()).vRuns) if (v.belowLock && v.x > M.x && v.x < M.x + M.w)
+      areas.push({ x: v.x - WALL_T / 2 - 0.05, y: v.y0 - 0.1, w: WALL_T + 0.1, h: v.y1 - v.y0 + 0.4, k });
     const col = { air: [0.55, 1.0, 0.65], vac: [1.0, 0.3, 0.22], cycle: [1.0, 0.7, 0.25], busy: [1.0, 0.7, 0.25], locked: [1.0, 0.25, 0.2], broken: [1.0, 0.75, 0.45], vent: [1.0, 0.25, 0.18] }[look];
     const f = look === 'cycle' || look === 'busy' || look === 'vent' ? blink : look === 'broken' ? (Math.sin(t * 37) > 0.7 ? 1 : 0.1) : 1;
     lights.push({ x: c.x + c.w / 2, y: c.y + c.h / 2, z: 1.3, color: col, radius: 2.4, intensity: 0.75 * f * Math.max(0.25, k), shadow: false });
@@ -289,7 +294,34 @@ function drawAirlockSprites(t) {
   return true;
 }
 // Over the sprites (js/game.js render, in the 2D world layer): the pump's progress ring.
-function drawAirlockRings() { for (const h of HATCHES) if (h.phase === 'cycling') airlockRing(h, h.t / LOCK_CYCLE); }
+function drawAirlockRings() { drawAirlockWallTops(); for (const h of HATCHES) if (h.phase === 'cycling') airlockRing(h, h.t / LOCK_CYCLE); }
+// Sprite view ('mid' layer, over the wall sprites, lit like the floor): the module's low near (south) wall and the hull's
+// low wall running on south of it read as a wall, not a dark band: a brushed-steel sheen on their caps and a catch light
+// along the edges, like the rooms' near walls under their lamps.
+let LOCK_CAPS = null;
+function drawAirlockWallTops() {
+  if (typeof buildWalls !== 'function') return;
+  if (!LOCK_CAPS) {
+    const W = WALLS || (WALLS = buildWalls());
+    LOCK_CAPS = [
+      ...HATCHES.map(h => ({ x: h.chamber.x, y: h.chamber.y + h.chamber.h, w: h.chamber.w, h: WALL_T, along: 'x' })),   // (the chamber's span: the end walls stand full height)
+      ...W.vRuns.filter(v => v.belowLock).map(v => ({ x: v.x - WALL_T / 2, y: v.y0, w: WALL_T, h: v.y1 - v.y0, along: 'y' })),
+    ];
+  }
+  const up = GFX.lift(H_LOW);
+  ctx.save();
+  for (const q of LOCK_CAPS) {
+    const x = L(q.x), y = L(q.y - up), w = L(q.w), h = L(q.h);
+    const g = q.along === 'x' ? ctx.createLinearGradient(0, y, 0, y + h) : ctx.createLinearGradient(x, 0, x + w, 0);
+    g.addColorStop(0, 'rgba(150,165,190,0.38)'); g.addColorStop(0.5, 'rgba(110,122,145,0.22)'); g.addColorStop(1, 'rgba(150,165,190,0.32)');
+    ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(205,218,240,0.55)'; ctx.beginPath();
+    if (q.along === 'x') { ctx.moveTo(x, y + 1); ctx.lineTo(x + w, y + 1); ctx.moveTo(x, y + h - 1); ctx.lineTo(x + w, y + h - 1); }
+    else { ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + h); ctx.moveTo(x + w - 1, y); ctx.lineTo(x + w - 1, y + h); }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 // The pump's progress: a ring over the chamber (UI, procedural in both views).
 function airlockRing(h, k) {
   const c = h.chamber, x = (c.x + c.w / 2) * T, y = (c.y + c.h / 2) * T;

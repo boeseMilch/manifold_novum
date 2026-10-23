@@ -1050,9 +1050,13 @@ function render(t) {
   const working = workProgress(me);
   if (prompt && !prompt.screen && !prompt.quiet && !working) upright(view, me.x, me.y, G && sprited.has(me) ? 1.45 : 0.55, () => {
     ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    const w = ctx.measureText(prompt.text).width + 18;
-    rr(-w / 2, -T * 0.42, w, T * 0.46, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? USE_COL : '#6b7486');
-    ctx.fillStyle = prompt.ok ? '#ffffff' : '#c9ced8'; ctx.fillText(prompt.text, 0, -T * 0.06);
+    // on screen whatever the width: wrapped onto more lines when it's wider than the screen, and kept off its edges
+    const z = view.zoom || 1, room = (VW - 24) / z - 18, measure = (s) => ctx.measureText(s).width;
+    const lines = measure(prompt.text) <= room ? [prompt.text] : wrapText(prompt.text, room, measure);
+    const w = Math.max(...lines.map(measure)) + 18, lh = T * 0.34, sx = view.ox + me.x * T * z;
+    const dx = clamp(0, (12 - sx) / z + w / 2, Math.max((12 - sx) / z + w / 2, (VW - 12 - sx) / z - w / 2));
+    rr(dx - w / 2, -T * 0.42 - (lines.length - 1) * lh, w, T * 0.46 + (lines.length - 1) * lh, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? USE_COL : '#6b7486');
+    ctx.fillStyle = prompt.ok ? '#ffffff' : '#c9ced8'; lines.forEach((l, i) => ctx.fillText(l, dx, -T * 0.06 - (lines.length - 1 - i) * lh));
     ctx.textAlign = 'left';
   });
   ctx.restore();
@@ -1074,10 +1078,11 @@ function render(t) {
   drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
   if (hover && !debugOpen && !invSlotAt(mouse.x, mouse.y)) {   // tooltip next to the mouse
     ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';
-    const w = ctx.measureText(hover.text).width + 16;
-    const tx = Math.min(mouse.x + 16, VW - w - 6), ty = mouse.y + 22;
-    rr(tx, ty - 12, w, 24, 6); ctx.fillStyle = 'rgba(12,14,20,0.88)'; ctx.fill(); stroke(1.5, hover.ok ? USE_COL : '#6b7486');
-    ctx.fillStyle = hover.ok ? '#ffffff' : '#c9ced8'; ctx.fillText(hover.text, tx + 8, ty);
+    const measure = (s) => ctx.measureText(s).width, lines = measure(hover.text) + 16 <= VW - 12 ? [hover.text] : wrapText(hover.text, VW - 28, measure);   // (wider than the screen: wrapped)
+    const w = Math.max(...lines.map(measure)) + 16, h = 24 + (lines.length - 1) * 17;
+    const tx = Math.max(6, Math.min(mouse.x + 16, VW - w - 6)), ty = Math.min(mouse.y + 22, VH - h - 6);
+    rr(tx, ty - 12, w, h, 6); ctx.fillStyle = 'rgba(12,14,20,0.88)'; ctx.fill(); stroke(1.5, hover.ok ? USE_COL : '#6b7486');
+    ctx.fillStyle = hover.ok ? '#ffffff' : '#c9ced8'; lines.forEach((l, i) => ctx.fillText(l, tx + 8, ty + i * 17));
   }
   drawHUD();
   if (typeof drawTutorialHUD === 'function') drawTutorialHUD(t);
@@ -1128,8 +1133,8 @@ function drawHUD() {
   drawMuteButton();
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
-  ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText('WASD move · E / click: use · Space / right click: weapon · arrows: aim · M: mute', 200, 18);
+  const helpX = 44 + ctx.measureText('MANIFOLD NOVUM').width + 16;
+  ctx.font = '13px system-ui, sans-serif';
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk'
     : room ? room.name : airlockAt(player.x, player.y) ? 'Outer airlock' : inDock(player.x, player.y) ? dockName() : DECK_DOORS.some(d => inRect(player.x, player.y, d)) ? 'Deck door' : 'Doorway';
@@ -1137,8 +1142,12 @@ function drawHUD() {
   const ww = ctx.measureText(where).width;
   const song = sfx.muted ? '♪ muted' : `♪ ${music.title}`;
   ctx.fillStyle = '#6b7486'; ctx.fillText(song, VW - 30 - ww, 18);
-  drawAlarmHUD(VW - 46 - ww - ctx.measureText(song).width, 18, time);   // fire / red alert (js/lights.js)
-  ctx.textAlign = 'left';
+  const sw = ctx.measureText(song).width, aw = drawAlarmHUD(VW - 46 - ww - sw, 18, time) || 0;   // fire / red alert (js/lights.js)
+  ctx.textAlign = 'left'; ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
+  // the controls, as many as fit before the right-hand group (narrow screens: the last ones drop off)
+  const help = ['WASD move', 'E / click: use', 'Space / right click: weapon', 'arrows: aim', 'M: mute'], room2 = VW - 46 - ww - sw - aw - 16 - helpX;
+  while (help.length && ctx.measureText(help.join(' · ')).width > room2) help.pop();
+  if (help.length) ctx.fillText(help.join(' · '), helpX, 18);
 }
 
 // Cannon ammo panel (bottom right while manning a cannon): shells, energy left, RELOAD button.

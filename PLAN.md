@@ -3769,3 +3769,46 @@ with the manual override (three good whacks / heaves, E or click), the kind that
   E for the override, on foot through the ship into our room, all 33 pass. Plus: the tube is no way in, the hint, venting,
   the base hatch shutting, cast adrift from the cockpit, the snapshot. Travel table / damage rates: unchanged (no room,
   door, hull or hazard moved).
+
+#### Polish: docked-ship entries (2026-10-23)
+- Art (tools/blender/models/dock/entries.py, re-rendered, dock + base packed: sprites.json 1199 → 1207): the derelict's
+  viewport is an old science vessel's (rounded off-white frame, teal band, bolts, VIEW 2): crazed glass (spokes and rings
+  of cracks from an impact, frost spots), pried open: glass teeth left in the frame, the outer edge bent up in bare
+  steel, the pry bar lying across it, ice bits; the smashed canopy got the raider's gold trim; the base's service hatch
+  is a heavy bolted lid with a spoked crank wheel (and a smaller one on the bay side), base/service_hatch_<side>_crank_f0..3
+  turning while someone heaves at it (e.ref.crankT, in the snapshot). Classic view: the same (frame, crazed / pried
+  glass, the wheel turning).
+- Never hidden: a crew member at, in or right outside an entry is drawn in front of the ship (dockEntryReveal → a depth
+  bias in drawCrewSprite): the spacewalker smashing the canopy and anyone crawling under the beak stay visible.
+- Feedback: per whack a crack (sfx.crack) and glass sparkle / a ratchet (sfx.ratchet, new) on the hatch; the smash:
+  sfx.shatter (new), a whoosh, a screen shake (0.45), glass shards flung off that drift for ~3 s and the raider's air
+  puffing out of the hole for 3 s (ventT); the viewport: shatter + clank, a small shake, ice bits; the hatch: the
+  ratchet running out, the lid's clang, again when it swings shut. Prompts: "Click / E: smash the canopy (vents their
+  ship)", "Click / E: pry the cracked viewport open", "Click / E: crank the service hatch open (it shuts behind you)".
+- In-world: the brig barge's canopy smashed: "Dr. Varga's cell is sealed: she's safe" (banner, once). Pirates aboard a
+  vented ship are thrown about (a hit, stunned 2.5 s), then carry on in their masks (no change in behaviour: their
+  ship's airless now, they don't care).
+- Tests: tests/dockentry.js + the prompt, the reveal (outside and in the cockpit), the smash's shake and air, the brig
+  cell banner, the crank turning, a guest smashing in on the server with the host's browser seeing it.
+
+### Polish: leech drink ring, spores inside, the override prompt, airlock module walls, banners (2026-10-23)
+- **Leeches** (js/organic.js drawLeechDrink): the drink's progress ring was drawn before the leech sprites were
+  composited, so it hid under them. Sprite view: queued (leechDrinkLater) and drawn from drawOutsideOverlays, over the
+  sprites. Both views: a ring round the whole worm (its body lies outward of the mouth), a dark track, the golden drink
+  with a glow and a bright head, the "satisfied" pulse after a drink.
+- **Spores inside** (js/spores.js): an infested room gets a haze clinging to its walls (sporeEdgeHaze: dense at the edges,
+  the middle stays readable), greener puffs and floating spores (sporeMote: fuzzy balls with a halo; browned and sinking
+  while vacuum kills them). Through an open door: 14 puffs plus a stream of spores; at the reactor room's doors they brown,
+  crumble into embers and a heat shimmer glows there.
+- **Leviathan phase 4**: the override panel's own prompt is short (levOverrideStatus(true): "Override needs MID 1/3: power
+  lever to MID, wedge it · refuel the reactor"; the HUD line keeps the long form); the HUD's ENGINE OVERRIDE lines sit
+  right of the sidebar and wrap to fit. The in-world prompt over your head (js/game.js) and the mouse tooltip wrap when
+  wider than the screen and stay on it.
+- **Outer airlock modules** (sprite view, js/airlock.js): the module's low near wall and the hull's low wall running on
+  south of it read as walls, not a dark band: a steel sheen and catch-light edges on their caps (drawAirlockWallTops, the
+  'mid' layer); the room's ambient light covers the whole module (its walls too) and that low hull wall.
+- **Banners** (js/combat.js): combatBanner fits the free gap between the sidebar and the PRACTICE button / shields list:
+  one line if it fits, else two (22, 19, 16 px: bannerLayout, wrapText), on a narrow screen under the right-hand HUD;
+  short ones stay in the middle; heavy-shot warnings move down under a two-line banner. tests/sidebar.js checks the layout.
+- **HUD bar**: the controls line starts after the title (it ran into "MANIFOLD NOVUM") and drops its last items when the
+  room name / music / alarm on the right need the space.

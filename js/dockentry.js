@@ -64,21 +64,60 @@ const raidBlocksEva = (x, y) => !!dk.raid && dk.raid.state === 'docked' && (() =
 
 // Forced open (the override's last whack / heave).
 function openDockEntry(e) {
-  if (e.kind === 'hatch') { e.ref.entryT = ENTRY_HATCH_OPEN; sfx.hatch(); combatBanner('The service hatch grinds open — quick, through!'); return; }
-  e.ref.entry = 'open';
-  if (e.kind === 'viewport') { sfx.clank(); combatBanner('The cracked viewport gives — climb in.'); return; }
-  sfx.explosion(); sfx.whoosh?.();
-  combatBanner(e.ship === 'raid' ? 'You smashed the raider\'s canopy — it vents into space!' : 'Canopy smashed — the pirate ship vents! Its crew get thrown about.');
-  const aboard = (p) => e.ship === 'raid' ? (p.raid && inRect(p.x, p.y, raidGeom(e.ref).tube)) : (inDock(p.x, p.y) && !roomAt(p.x, p.y));
-  for (const p of dk.pirates) if (!p.dead && aboard(p)) hurtPirate(p, 1, 2.5);
-  for (let i = 0; i < 16; i++) combatFx(e.cx + (Math.random() - 0.5), e.face, (Math.random() - 0.5) * 3, e.out * (1 + Math.random() * 3), 0.7, '#dfe8f0', 0.15);
-}
-function updateDockEntries(dt) {
-  for (const e of dockEntries()) if (e.kind === 'hatch' && e.ref.entryT > 0) {
-    const inIt = crew.some(c => inRect(c.x, c.y, e.slot, CREW_R) || inRect(c.x, c.y, e.step, CREW_R));
-    e.ref.entryT = inIt ? Math.max(e.ref.entryT - dt, 0.5) : e.ref.entryT - dt;
-    if (e.ref.entryT <= 0) { e.ref.entryT = 0; sfx.hatch(); }
+  const burst = (n, col, sp, size, life) => { for (let i = 0; i < n; i++) combatFx(e.cx + (Math.random() - 0.5) * 1.2, e.face, (Math.random() - 0.5) * sp, e.out * (0.5 + Math.random()) * sp, life * (0.6 + 0.8 * Math.random()), col, size); };
+  if (e.kind === 'hatch') {                         // the crank's last heave: the ratchet runs out, the lid swings up
+    e.ref.entryT = ENTRY_HATCH_OPEN; sfx.ratchet(8); sfx.hatch(); combat.shake = Math.max(combat.shake, 0.12);
+    combatBanner('The service hatch grinds open — through, quick: it swings shut again!'); return;
   }
+  e.ref.entry = 'open';
+  if (e.kind === 'viewport') {                      // the frozen glass gives under the bar
+    sfx.shatter(); sfx.clank(); combat.shake = Math.max(combat.shake, 0.18); burst(14, '#b8c8d8', 2.2, 0.07, 2.2);
+    combatBanner('The cracked viewport gives — climb in.'); return;
+  }
+  // the canopy: glass everywhere, the raider's air roaring out of the hole (ventT: the puff in updateDockEntries)
+  sfx.shatter(); sfx.whoosh?.(); combat.shake = Math.max(combat.shake, 0.45); e.ref.ventT = 3;
+  burst(26, '#cfe6ff', 3.5, 0.06, 3.0); burst(10, '#ffffff', 5, 0.04, 1.2);
+  combatBanner(e.ship === 'raid' ? 'Canopy smashed — the raider vents!' : 'Canopy smashed — their ship vents!');
+  const aboard = (p) => e.ship === 'raid' ? (p.raid && inRect(p.x, p.y, raidGeom(e.ref).tube)) : (inDock(p.x, p.y) && !roomAt(p.x, p.y));
+  for (const p of dk.pirates) if (!p.dead && aboard(p)) hurtPirate(p, 1, 2.5);   // (stunned; then they carry on in their masks)
+  if (e.ship === 'dock' && e.ref.brig && dk.npc && inDock(dk.npc.x, dk.npc.y) && !e.ref.brigNote) {
+    e.ref.brigNote = true;
+    combatBanner('Canopy smashed! Dr. Varga\'s cell is sealed: she\'s safe.');
+  }
+}
+// Per tick: the base's hatch shutting again; the override at an entry (the crank turning, a crack / a ratchet per whack);
+// the canopy's air puffing out for a few s after it's smashed.
+function updateDockEntries(dt) {
+  for (const e of dockEntries()) {
+    e.ref.crankT = Math.max(0, (e.ref.crankT || 0) - dt);
+    for (const c of crew) {
+      const o = c.ui?.override;
+      if (!o?.ref || o.ref.dockEntry !== e.ship) continue;
+      if (e.kind === 'hatch') e.ref.crankT = 0.3;
+      if ((o.seen || 0) < o.hits) {                 // a whack / heave just landed
+        o.seen = o.hits;
+        if (e.kind === 'hatch') sfx.ratchet(3);
+        else { sfx.crack(); for (let i = 0; i < 5; i++) combatFx(e.cx + (Math.random() - 0.5) * 0.8, e.face + e.out * 0.1, (Math.random() - 0.5) * 2, e.out * Math.random() * 2, 0.5, '#e8f0f8', 0.05); }
+      }
+    }
+    if (e.ref.ventT > 0) {
+      e.ref.ventT -= dt;
+      const k = Math.max(0, e.ref.ventT / 3);
+      if (Math.random() < dt * 40 * k) combatFx(e.cx + (Math.random() - 0.5) * 1.6, e.face + e.out * 0.2, (Math.random() - 0.5) * 2.5, e.out * (2 + Math.random() * 3) * (0.4 + k), 0.9, 'rgba(222,232,245,0.55)', 0.06 + 0.06 * k);
+    }
+    if (e.kind === 'hatch' && e.ref.entryT > 0) {
+      const inIt = crew.some(c => inRect(c.x, c.y, e.slot, CREW_R) || inRect(c.x, c.y, e.step, CREW_R));
+      e.ref.entryT = inIt ? Math.max(e.ref.entryT - dt, 0.5) : e.ref.entryT - dt;
+      if (e.ref.entryT <= 0) { e.ref.entryT = 0; sfx.hatch(); sfx.ratchet(4); }
+    }
+  }
+}
+// Is this crew member at an entry (in it, on its lip, or right outside it)? Their sprite is drawn in front of the ship
+// there, so the beak / the hull roof never hides them (js/sprites.js drawCrewSprite).
+function dockEntryReveal(c) {
+  if (c.mode !== 'inside' && c.mode !== 'eva') return false;
+  return dockEntries().some(e => inRect(c.x, c.y, e.slot, 0.2) || inRect(c.x, c.y, e.step, 0.2) ||
+    (c.mode === 'eva' && Math.abs(c.x - e.cx) < e.half + 0.8 && (c.y - e.face) * e.out > -0.3 && (c.y - e.face) * e.out < 1.8));
 }
 
 // Spacewalk ⇄ on your feet at an open entry (like our hatch: js/airlock.js airlockThreshold). Out: stepping past its
@@ -104,10 +143,10 @@ function dockEntryAct() {
     if (!near) continue;
     if (entryOpen(e)) { act({ text: e.kind === 'hatch' ? 'Service hatch open — through, quick!' : `Climb in through ${e.spec.what}`, at, quiet: true }); return true; }
     const label = e.kind === 'canopy' ? 'Raider canopy' : e.kind === 'viewport' ? 'Cracked viewport' : 'Service hatch';
-    const text = e.kind === 'canopy' ? 'Click: smash the raider\'s canopy (manual override) — it vents the whole ship'
-      : e.kind === 'viewport' ? 'Click: pry the cracked viewport open (manual override)'
-      : eva ? 'Click: crank the base\'s service hatch open (three heaves) — it shuts again behind you' : 'Click: crank the service hatch open (out onto the hull)';
-    act({ text, at, run: () => startOverride({ dockEntry: true }, label, () => openDockEntry(e)) });
+    const text = e.kind === 'canopy' ? 'Click / E: smash the canopy (vents their ship)'
+      : e.kind === 'viewport' ? 'Click / E: pry the cracked viewport open'
+      : eva ? 'Click / E: crank the service hatch open (it shuts behind you)' : 'Click / E: crank the service hatch open (out onto the hull)';
+    act({ text, at, run: () => startOverride({ dockEntry: e.ship }, label, () => openDockEntry(e)) });
     return true;
   }
   return false;
@@ -127,7 +166,8 @@ function drawDockEntries(t) {
   for (const e of dockEntries()) {
     const h = HATCHES.find(q => q.side === e.side), open = entryOpen(e);
     const name = e.kind === 'canopy' ? (open ? `dock/canopy_smashed_${e.side}` : null)
-      : e.kind === 'viewport' ? `dock/viewport_${e.side}_${open ? 'open' : 'shut'}` : `base/service_hatch_${e.side}_${open ? 'open' : 'shut'}`;
+      : e.kind === 'viewport' ? `dock/viewport_${e.side}_${open ? 'open' : 'shut'}`
+      : open ? `base/service_hatch_${e.side}_open` : e.ref.crankT > 0 ? `base/service_hatch_${e.side}_crank_f${Math.floor(t * 10) % 4}` : `base/service_hatch_${e.side}_shut`;
     if (GFX.on && (!name || GFX.ready(name))) {
       if (name) GFX.sprite(name, 0, h.x, h.y, 0, { layer: 'wall', sortY: e.face + (e.out > 0 ? 0.2 : 0.9), emissive: 0.3, depthBias: 0.5 });
       if (!open) jobMarker(e.cx, e.face + e.out * 0.4, t, crew.some(c => c.mode === 'eva' && Math.hypot(c.x - e.outside[0], c.y - e.outside[1]) < 3), '#9cd8ff');
@@ -144,10 +184,35 @@ function drawDockEntries(t) {
       else { ctx.strokeStyle = 'rgba(200,220,240,0.85)'; ctx.lineWidth = 2; for (let i = 0; i < 14; i++) { const a = i / 14 * TAU; ctx.beginPath(); ctx.moveTo(X + Math.cos(a) * L(1.15), Y + Math.sin(a) * L(0.75)); ctx.lineTo(X + Math.cos(a + 0.1) * L(0.85), Y + Math.sin(a + 0.1) * L(0.5)); ctx.stroke(); } }
       continue;
     }
-    rr(x - 4, y - 4, w + 8, hh + 8, 4); ctx.fillStyle = e.kind === 'hatch' ? '#4a4440' : '#5c626c'; ctx.fill(); stroke(2);
-    if (open) { ctx.fillStyle = '#07080a'; ctx.fillRect(x, y, w, hh); }
-    else if (e.kind === 'viewport') { ctx.fillStyle = '#6f8296'; ctx.fillRect(x, y, w, hh); ctx.strokeStyle = '#1a1c20'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + 4, y + 3); ctx.lineTo(x + w - 6, y + hh - 2); ctx.moveTo(x + w - 4, y + 2); ctx.lineTo(x + 6, y + hh - 4); ctx.stroke(); }
-    else { hazardStripe(x, y, w, hh); ctx.beginPath(); ctx.arc(x + w / 2, y + hh / 2, 7, 0, TAU); ctx.fillStyle = '#a83a3a'; ctx.fill(); stroke(1.5); }
+    if (e.kind === 'viewport') {                    // the derelict's roof viewport: a rounded white frame with a teal band
+      const vx = L(r.x), vy = L(r.y), vw = L(r.w), vh = L(r.h);
+      rr(vx - 7, vy - 2, vw + 14, vh + 6, 12); ctx.fillStyle = '#d8d6cc'; ctx.fill(); stroke(2);
+      ctx.fillStyle = '#3b7a8a'; ctx.fillRect(vx - 4, vy + vh + 1, vw + 8, 3);
+      rr(vx + 3, vy + 9, vw - 6, vh - 12, 8); ctx.fillStyle = open ? '#07080a' : '#6f8296'; ctx.fill(); stroke(1.5);
+      const cxp = vx + vw / 2 + 5, cyp = vy + vh / 2 - 6;
+      if (!open) {                                   // crazed: spokes from the impact and rings of cross cracks
+        ctx.strokeStyle = 'rgba(235,242,250,0.9)'; ctx.lineWidth = 1.1; ctx.beginPath();
+        for (let i = 0; i < 11; i++) { const a = i / 11 * TAU + 0.2, Lr = (0.55 + 0.4 * ((i * 37) % 10) / 10) * vw * 0.55; ctx.moveTo(cxp, cyp); ctx.lineTo(cxp + Math.cos(a) * Lr, cyp + Math.sin(a) * Lr * 1.2);
+          for (const k of [0.3, 0.6]) { const b = a + 0.45; ctx.moveTo(cxp + Math.cos(a) * Lr * k, cyp + Math.sin(a) * Lr * k * 1.2); ctx.lineTo(cxp + Math.cos(b) * Lr * k * 1.05, cyp + Math.sin(b) * Lr * k * 1.25); } }
+        ctx.stroke();
+      } else {                                       // pried: glass teeth round the frame, the outer edge bent up
+        ctx.fillStyle = 'rgba(190,210,230,0.9)';
+        for (let i = 0; i < 6; i++) { const tx = vx + 6 + i * (vw - 12) / 5; ctx.beginPath(); ctx.moveTo(tx - 4, vy + 9); ctx.lineTo(tx + 4, vy + 9); ctx.lineTo(tx, vy + 16); ctx.fill(); ctx.beginPath(); ctx.moveTo(tx - 4, vy + vh - 3); ctx.lineTo(tx + 4, vy + vh - 3); ctx.lineTo(tx, vy + vh - 10); ctx.fill(); }
+        ctx.fillStyle = '#a3abb8'; ctx.fillRect(vx - 7, vy - 7, vw + 14, 6); ctx.strokeStyle = '#1a1c20'; ctx.lineWidth = 1.5; ctx.strokeRect(vx - 7, vy - 7, vw + 14, 6);
+      }
+    } else {                                         // the base's service hatch in the bay's low south wall
+      const hx = L(r.x), hy = L(r.y), hw = L(r.w), hh2 = L(r.h);
+      rr(hx - 7, hy - 2, hw + 14, hh2 + 4, 4); ctx.fillStyle = '#4a4440'; ctx.fill(); stroke(2);
+      hazardStripe(hx - 6, hy + hh2 - 6, hw + 12, 6);
+      if (open) { ctx.fillStyle = '#07080a'; ctx.fillRect(hx + 2, hy + 2, hw - 4, hh2 - 10); ctx.fillStyle = '#6a6458'; ctx.fillRect(hx + 2, hy - 8, hw - 4, 8); stroke(1.5); }
+      else {
+        rr(hx + 2, hy + 2, hw - 4, hh2 - 10, 3); ctx.fillStyle = '#6a6458'; ctx.fill(); stroke(1.5);
+        const wx = hx + hw / 2, wy = hy + (hh2 - 8) / 2 + 2, a0 = e.ref.crankT > 0 ? t * 8 : 0, rW = 9;
+        ctx.strokeStyle = '#a83a3a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(wx, wy, rW, 0, TAU); ctx.stroke();
+        ctx.lineWidth = 2; ctx.beginPath(); for (let k = 0; k < 4; k++) { const a = a0 + k * Math.PI / 2; ctx.moveTo(wx, wy); ctx.lineTo(wx + Math.cos(a) * rW, wy + Math.sin(a) * rW); } ctx.stroke();
+        ctx.beginPath(); ctx.arc(wx + Math.cos(a0) * rW, wy + Math.sin(a0) * rW, 2.5, 0, TAU); ctx.fillStyle = '#a3abb8'; ctx.fill();
+      }
+    }
     if (!open) jobMarker(e.cx, e.face + e.out * 0.4, t, false, '#9cd8ff');
   }
 }

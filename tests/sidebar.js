@@ -3,7 +3,7 @@
 // with. Run: node tests/sidebar.js
 const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'render', 'mission', 'startMission', 'radarScan', 'encounterPlates', 'sidePlates', 'combat', 'combatSpawn',
-  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines']);
+  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines', 'bannerLayout', 'wrapText']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -71,4 +71,18 @@ const cut = G.plateLines('reactor heat 21% · canister in the left airlock room'
 check(cut.length === 1 && cut[0].endsWith('…') && cut[0].length * 7 <= 157, `without wrapping it's cut off with an ellipsis ("${cut[0]}")`);
 measured = 0;
 check(G.plateLines('rushed out of the base - five pirates', 150, true, w7) === two && measured === 0, 'the same text again comes from the cache (no measuring)');
+// the top banner fits the free gap between the sidebar and the right-hand HUD: short ones as they were, long ones on two
+// lines (smaller if need be), never wider than the gap
+const wpx = (s, px) => s.length * px * 0.55;              // (a character: 0.55 of the font size)
+const shortB = G.bannerLayout('Shields up!', 600, wpx);
+check(shortB.size === 22 && shortB.lines.length === 1, `a short banner stays one line at 22 px (${shortB.size} px)`);
+const LONG = 'Canopy smashed — the pirate ship vents! Its crew are thrown about, then put their masks on.';
+for (const room of [700, 520, 430]) {
+  const b = G.bannerLayout(LONG, room, wpx);
+  check(b.lines.length === 2 && b.lines.every(l => wpx(l, b.size) <= room) && b.lines.join(' ') === LONG,
+    `a long banner in ${room} px: two lines at ${b.size} px, none wider ("${b.lines.join(' / ')}")`);
+}
+const tight = G.bannerLayout(LONG, 260, wpx);
+check(tight.size === 16 && tight.lines.length >= 3 && tight.lines.every(l => wpx(l, 16) <= 260), `very little room: more lines at 16 px (${tight.lines.length})`);
+check(G.wrapText('one two three', 1000, (s) => s.length).length === 1 && G.wrapText('one two three', 7, (s) => s.length).join('|') === 'one two|three', 'wrapText wraps on words');
 process.exitCode = failed ? 1 : 0;

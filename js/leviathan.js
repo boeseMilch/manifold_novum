@@ -499,9 +499,10 @@ function levOverrideStatus(short = false) {
   if (broken(cap)) return { ok: false, text: `needs ${mid}: repair the middle capacitor first` };
   if (cap.charge >= LEVB_NEED) return { ok: true, text: `${mid} — quick, hold E at the OVERRIDE panel (stern) before the brood drains it` };
   const lever = power.lever, onMid = power.patch[lever.pos] === 1;
-  const how = broken(LEVER) ? 'repair the power lever' : !onMid ? 'power lever to MID, then hold E on it to wedge it'
-    : !lever.jammed ? 'hold E on the power lever to wedge it on MID' : 'lever wedged on MID';
-  const more = broken(REACTOR) ? ' · repair the reactor' : power.reactor.fuel > 0 ? '' : ' · reactor empty: load a fuel cell';
+  // (short: the panel's own prompt, which has to fit over your head at any screen width; the HUD line says it in full)
+  const how = broken(LEVER) ? 'repair the power lever' : !onMid ? (short ? 'power lever to MID, wedge it' : 'power lever to MID, then hold E on it to wedge it')
+    : !lever.jammed ? (short ? 'wedge the power lever on MID' : 'hold E on the power lever to wedge it on MID') : (short ? 'lever wedged, charging' : 'lever wedged on MID');
+  const more = broken(REACTOR) ? (short ? ' · fix the reactor' : ' · repair the reactor') : power.reactor.fuel > 0 ? '' : (short ? ' · refuel the reactor' : ' · reactor empty: load a fuel cell');
   return { ok: false, text: `needs ${mid}: ${how}${more}${B.brood.length && !short ? ` · shoot or stomp the brood` : ''}` };
 }
 function levClickTarget(mx, my) {
@@ -513,7 +514,7 @@ function levClickTarget(mx, my) {
   if (B.phase === 'blast') return { ...t, text: 'The engine is firing!', ok: false };
   if (!levOverrideOn(B)) return { ...t, text: 'Engine override — nothing behind us to burn', ok: false };
   const st = levOverrideStatus(true);
-  if (!st.ok) return { ...t, text: `Override — ${st.text}`, ok: false };
+  if (!st.ok) return { ...t, text: `Override ${st.text}`, ok: false };
   return holdTarget('levOverride', LEVB_OVERRIDE, `Hold click: MANUAL OVERRIDE — fire the engine into its back (${LEVB_OVERRIDE} s${B.charged ? ', charged' : `, ${LEVB_NEED} MID energy`})`, P.x, P.y, 0.7, () => levBlast());
 }
 // Standing by the panel while it can't run yet: the prompt says why and what to do (E / click have nothing to do there).
@@ -522,7 +523,7 @@ function levAct() {
   if (!levOverrideOn(B) || B.phase !== 'p4' || Math.hypot(player.x - P.x, player.y - P.y) > REACH) return false;
   const st = levOverrideStatus(true);
   if (st.ok) return false;                               // (ready: E's own prompt, "Hold E: MANUAL OVERRIDE …")
-  act({ text: `Override — ${st.text}`, at: { x: P.x, y: P.y, r: 0.7 } });
+  act({ text: `Override ${st.text}`, at: { x: P.x, y: P.y, r: 0.7 } });
   return true;
 }
 // Its use ring (drawUseMarks), while it can be used.
@@ -861,9 +862,15 @@ function drawLevBossScreen(view, t) {
     const st = levOverrideStatus();
     ctx.font = '800 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const y = HUD_H + 96, title = B.charged ? 'ENGINE CHARGED' : `ENGINE OVERRIDE · MID ${Math.min(CAPACITORS[1].charge, LEVB_NEED)}/${LEVB_NEED}`;
-    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(title, VW / 2, y); ctx.fillStyle = st.ok ? '#ffd25a' : '#c8ff6e'; ctx.fillText(title, VW / 2, y);
-    ctx.font = '600 16px system-ui, sans-serif'; const sub = st.text.replace(/^needs MID \d\/\d: /, '').replace(/^MID \d\/\d — /, '');
-    ctx.lineWidth = 5; ctx.strokeText(sub, VW / 2, y + 26); ctx.fillStyle = '#e8ecf4'; ctx.fillText(sub, VW / 2, y + 26);
+    const sub = st.text.replace(/^needs MID \d\/\d: /, '').replace(/^MID \d\/\d — /, '');
+    // between the sidebar and the right edge (centred on the screen when that fits), the line under it wrapped to fit
+    const x0 = SIDEBAR_X + PLATE_W + 14, x1 = VW - 14, room = x1 - x0;
+    ctx.font = '600 16px system-ui, sans-serif'; const subs = wrapText(sub, room, (s) => ctx.measureText(s).width), sw = Math.max(...subs.map(s => ctx.measureText(s).width));
+    ctx.font = '800 22px system-ui, sans-serif'; const bw = Math.max(sw, ctx.measureText(title).width);
+    const cx = Math.abs(VW / 2 - (x0 + x1) / 2) + bw / 2 <= room / 2 ? VW / 2 : (x0 + x1) / 2;
+    ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(title, cx, y); ctx.fillStyle = st.ok ? '#ffd25a' : '#c8ff6e'; ctx.fillText(title, cx, y);
+    ctx.font = '600 16px system-ui, sans-serif'; ctx.lineWidth = 5;
+    subs.forEach((l, i) => { ctx.strokeText(l, cx, y + 26 + i * 20); ctx.fillStyle = '#e8ecf4'; ctx.fillText(l, cx, y + 26 + i * 20); });
     ctx.textAlign = 'left';
   } else if (B.phase === 'p3' && B.p3.state === 'open') big(`${Math.ceil(B.p3.win)}`, B.p3.win < 4 && Math.sin(t * 10) > 0 ? '#ff6a4a' : '#ffd25a', HUD_H + 110);
   else if (B.phase === 'freed' && B.freed > LEVB_SINK - 3) big('It\'s free.', '#7af0e0', HUD_H + 110);

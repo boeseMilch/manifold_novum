@@ -362,7 +362,8 @@ function drawCrewSprite(c, visor, t) {
   let name = `crew/${pose}${V}`;
   if (!GFX.has(name)) name = `crew/${pose}`;
   if (!GFX.has(name)) { name = `crew/idle${V}`; pose = 'idle'; f = 0; }
-  const out = c.health === 'out', k = GFX.frameIndex(name, c.face, f), gz = c.mode === 'gun' ? gunZ(c.gun) : 0, [gx, gy] = c.mode === 'gun' ? gunnerAt(c) : [c.x, c.y], bias = c.mode === 'gun' ? gunBias(c.gun) : 0, alpha = out ? 0.85 : 1;
+  // (bias 4 at a docked ship's way in from space: drawn in front of its beak / hull roof, never hidden: js/dockentry.js)
+  const out = c.health === 'out', k = GFX.frameIndex(name, c.face, f), gz = c.mode === 'gun' ? gunZ(c.gun) : 0, [gx, gy] = c.mode === 'gun' ? gunnerAt(c) : [c.x, c.y], bias = c.mode === 'gun' ? gunBias(c.gun) : typeof dockEntryReveal === 'function' && dockEntryReveal(c) ? 4 : 0, alpha = out ? 0.85 : 1;
   const desat = out ? 0.75 : 0;                     // out cold: suit, visor and worn gear all greyed
   if (!GFX.sprite(name, k, gx, gy, gz, { tint, emissive: out ? 0.15 : 0.4, pick: down ? [0.6, 0.7] : [0.32, 1.25], alpha, depthBias: bias, desat })) return false;
   const head = visor && !down && name === `crew/${pose}` && GFX.info(name).head;

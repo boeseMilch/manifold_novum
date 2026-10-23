@@ -326,7 +326,7 @@ function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   const G = fresh(1, 'c8'); G.mission.events = []; G.combatClear(); G.startLevBoss(4); parked(G, 90);
   const me = G.me, cap = G.CAPACITORS[1]; Object.assign(me, { mode: 'inside', x: G.LEVB_PANEL.x, y: G.LEVB_PANEL.y - 0.7, health: 'ok' });
   cap.charge = 1; G.power.lever.pos = 0; G.power.lever.jammed = false; G.simTick(DT);
-  check(me.prompt && !me.prompt.ok && /needs MID 1\/3: power lever to MID/.test(me.prompt.text), `standing at the panel before MID is full: a prompt says what's missing ("${me.prompt?.text}")`);
+  check(me.prompt && !me.prompt.ok && /needs MID 1\/3: power lever to MID/.test(me.prompt.text) && me.prompt.text.length <= 80, `standing at the panel before MID is full: a short prompt says what's missing ("${me.prompt?.text}", ${me.prompt?.text.length} chars)`);
   check(G.interactSpots().some(s => s.x === G.LEVB_PANEL.x && s.y === G.LEVB_PANEL.y), 'the panel has its use ring while it settles behind us');
   cap.charge = 3; G.power.reactor.fuel = 0;
   const m = me.input.mouse; m.wx = G.LEVB_PANEL.x; m.wy = G.LEVB_PANEL.y; m.down = true; tick(G, 1);

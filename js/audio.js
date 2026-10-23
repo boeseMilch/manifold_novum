@@ -139,6 +139,10 @@ const sfx = (() => {
     // A wet, deflating squelch (organic things dying).
     squelch() { noise(0.35, 400, 0.45, 1.5); tone('sine', 220, 60, 0.45, 0.35); tone('triangle', 140, 50, 0.3, 0.2, 0.1); },
     crack() { noise(0.25, 300, 0.6); tone('triangle', 120, 60, 0.3, 0.4); },
+    // A canopy / viewport giving way (js/dockentry.js): the crunch, then glass tinkling off
+    shatter() { noise(0.35, 2600, 0.55, 0.8); noise(0.2, 5200, 0.35, 2); for (let i = 0; i < 7; i++) tone('sine', 2600 + i * 410, 2300 + i * 380, 0.09, 0.08, 0.08 + i * 0.07); },
+    // A hand crank's ratchet (the base's service hatch): a run of hard clicks
+    ratchet(n = 6) { for (let i = 0; i < n; i++) tone('square', 1400, 900, 0.025, 0.12, i * 0.09); },
     // Your own heartbeat while hurt / down (js/game.js updateInjuryFx): a low lub-dub, k 0..1 loudness.
     heartbeat(k = 1) { tone('sine', 62, 38, 0.16, 0.55 * k, 0, 0.015); tone('sine', 56, 34, 0.18, 0.4 * k, 0.2, 0.015); },
     // You got hit (js/game.js updateInjuryFx): a dull body thud; going down adds a ringing in the ears.

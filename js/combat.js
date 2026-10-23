@@ -56,6 +56,42 @@ function drawFlip(p) {
   GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, p.z || 0, { layer: 'top', unlit: true, scale: p.size || 1 });
 }
 function combatBanner(text) { combat.banner = { text, t: 3 }; }
+// Greedy word wrap: the lines of `text` no wider than maxW (measure: the width of a string; a single word wider than
+// maxW gets a line of its own).
+function wrapText(text, maxW, measure) {
+  const lines = [];
+  for (const w of String(text).split(' ')) {
+    const last = lines.length ? lines[lines.length - 1] + ' ' + w : null;
+    if (last != null && measure(last) <= maxW) lines[lines.length - 1] = last; else lines.push(w);
+  }
+  return lines;
+}
+// The top banner in `room` px of free width (between the sidebar and the right-hand HUD): one line at 22 px if it fits,
+// else two lines (22, then 19, then 16 px), else as many lines as it takes at 16 px. measure(s, px): s's width at px.
+const BANNER_SIZES = [22, 19, 16];
+function bannerLayout(text, room, measure) {
+  if (measure(text, 22) <= room) return { size: 22, lines: [text] };
+  for (const size of BANNER_SIZES) {
+    const lines = wrapText(text, room, (s) => measure(s, size));
+    if (lines.length <= 2 && lines.every(l => measure(l, size) <= room)) return { size, lines };
+  }
+  return { size: 16, lines: wrapText(text, room, (s) => measure(s, 16)) };
+}
+// The free band at the top of the screen for banners: right of the sidebar (its header and plates), left of the
+// PRACTICE button and the shields list (list: that list's box, x and bottom). On a narrow screen, where that gap is
+// too small for a readable banner, it moves down under them instead, as wide as the screen right of the sidebar.
+const BANNER_MIN_ROOM = 340;
+function bannerBand(list, top) {
+  const x0 = SIDEBAR_X + PLATE_W + 14;
+  let x1 = Math.min(VW - 14, list.x - 12), y = top + 10, below = list.bottom;
+  const pb = typeof document !== 'undefined' && document.getElementById ? document.getElementById('practice-btn') : null;
+  if (pb && !pb.hidden && pb.getBoundingClientRect) {
+    const r = pb.getBoundingClientRect();
+    if (r.width > 0 && r.left > VW / 2) { x1 = Math.min(x1, r.left - 12); below = Math.max(below, r.bottom); }
+  }
+  if (x1 - x0 - 40 < BANNER_MIN_ROOM) { x1 = VW - 14; y = below + 8; }
+  return { x0, x1, y };
+}
 // The sides of the asteroids a swarm still has to send (a swarm from before sides existed: all front).
 const swarmSides = (S) => (S.sides?.length === S.left ? S.sides : Array(S.left).fill(S.side || 'front'));
 
@@ -619,29 +655,6 @@ function drawCombatHUD(view, top) {
   bar(bk(combat.bigFlashes.star), VW * 0.65, top, VW * 0.35, VH - top, false);
   bar(bk(combat.bigFlashes.front), 0, top, VW, (VH - top) * 0.35, true);
 
-  // heavy shot warnings: everyone sees and hears these
-  let wy = top + 54;
-  for (const e of combat.enemies) {
-    if (e.charge < 0) continue;
-    const text = `⚠ HEAVY SHOT CHARGING — ${e.side === 'port' ? 'LEFT' : 'RIGHT'} — RAISE SHIELD`;
-    ctx.font = '700 14px system-ui, sans-serif';
-    const k = e.charge / HEAVY_CHARGE, w = ctx.measureText(text).width + 40, x = VW / 2 - w / 2;
-    rr(x, wy, w, 44, 8); ctx.fillStyle = 'rgba(40,10,25,0.85)'; ctx.fill(); stroke(2, '#ff8ac0');
-    ctx.fillStyle = '#ffd0e6'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(text, VW / 2, wy + 14);
-    rr(x + 12, wy + 27, w - 24, 8, 4); ctx.fillStyle = '#2a1020'; ctx.fill();
-    rr(x + 12, wy + 27, (w - 24) * k, 8, 4); ctx.fillStyle = '#ff8ac0'; ctx.fill();
-    ctx.textAlign = 'left'; wy += 52;
-  }
-  if (combat.banner) {
-    ctx.globalAlpha = clamp(combat.banner.t, 0, 1);
-    ctx.font = '800 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(10,12,18,0.7)'; const w = ctx.measureText(combat.banner.text).width + 40;
-    rr(VW / 2 - w / 2, top + 10, w, 36, 8); ctx.fill();
-    ctx.fillStyle = '#ffe08a'; ctx.fillText(combat.banner.text, VW / 2, top + 28);
-    ctx.textAlign = 'left'; ctx.globalAlpha = 1;
-  }
-
   // shields + enemy weak points (the hits-taken tally is on the end screen)
   const lines = [];
   for (const side of ['port', 'front', 'star']) {
@@ -663,6 +676,33 @@ function drawCombatHUD(view, top) {
   const w = Math.max(...lines.map(l => ctx.measureText(l.text).width)) + 20, h = lines.length * 17 + 12;
   rr(VW - w - 14, top + 10, w, h, 6); ctx.fillStyle = 'rgba(10,12,18,0.7)'; ctx.fill();
   lines.forEach((l, i) => { ctx.fillStyle = l.col; ctx.fillText(l.text, VW - w - 4, top + 17 + i * 17); });
+
+  let bannerBottom = 0;
+  if (combat.banner) {                               // (after the shields list: it fits between that, the PRACTICE button and the sidebar)
+    const text = combat.banner.text, { x0, x1, y: by } = bannerBand({ x: VW - w - 14, bottom: top + 10 + h }, top), room = x1 - x0 - 40;
+    const lay = bannerLayout(text, room, (s, px) => { ctx.font = `800 ${px}px system-ui, sans-serif`; return ctx.measureText(s).width; });
+    ctx.font = `800 ${lay.size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const bw = Math.max(...lay.lines.map(l => ctx.measureText(l).width)) + 40, lh = Math.round(lay.size * 1.25), bh = lay.lines.length * lh + 36 - lh;
+    const cx = Math.abs(VW / 2 - (x0 + x1) / 2) + bw / 2 <= (x1 - x0) / 2 ? VW / 2 : (x0 + x1) / 2;   // short ones stay in the middle
+    ctx.globalAlpha = clamp(combat.banner.t, 0, 1);
+    ctx.fillStyle = 'rgba(10,12,18,0.7)'; rr(cx - bw / 2, by, bw, bh, 8); ctx.fill();
+    ctx.fillStyle = '#ffe08a'; lay.lines.forEach((l, i) => ctx.fillText(l, cx, by + 18 + i * lh));
+    ctx.textAlign = 'left'; ctx.globalAlpha = 1; bannerBottom = by + bh;
+  }
+  // heavy shot warnings: everyone sees and hears these
+  let wy = Math.max(top + 54, bannerBottom + 8);   // (under a two-line banner)
+  for (const e of combat.enemies) {
+    if (e.charge < 0) continue;
+    const text = `⚠ HEAVY SHOT CHARGING — ${e.side === 'port' ? 'LEFT' : 'RIGHT'} — RAISE SHIELD`;
+    ctx.font = '700 14px system-ui, sans-serif';
+    const k = e.charge / HEAVY_CHARGE, w = ctx.measureText(text).width + 40, x = VW / 2 - w / 2;
+    rr(x, wy, w, 44, 8); ctx.fillStyle = 'rgba(40,10,25,0.85)'; ctx.fill(); stroke(2, '#ff8ac0');
+    ctx.fillStyle = '#ffd0e6'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, VW / 2, wy + 14);
+    rr(x + 12, wy + 27, w - 24, 8, 4); ctx.fillStyle = '#2a1020'; ctx.fill();
+    rr(x + 12, wy + 27, (w - 24) * k, 8, 4); ctx.fillStyle = '#ff8ac0'; ctx.fill();
+    ctx.textAlign = 'left'; wy += 52;
+  }
 
   // edge arrows towards threats that are off screen
   const threats = [...combat.enemies.filter(e => e.phase === 'fighting' && !e.D.backdrop && (!e.D.stealth || stealthAlpha(e) > 0.3)), ...combat.asteroids];

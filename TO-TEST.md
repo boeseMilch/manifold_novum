@@ -106,3 +106,6 @@ Tick off what works; note what doesn't.
 - [ ] Chapter 5 (base + the raider at the other airlock): the base's service hatch in the docking bay's south wall (crank it: three heaves, it shuts again after you), and the raider's canopy. Never stranded.
 - [ ] At our blocked airlock the prompt tells you where to go; the WAY IN marker points there.
 - [ ] Both views (sprites and ?classic).
+- [ ] Polish: smash the raider's canopy: shake, glass shards, air puffing out; you stay visible all the way in. The derelict's viewport reads as a cracked science-vessel window, then pried open. The base's hatch wheel turns while you crank (ratchet clicks). Sounds right?
+- [ ] The brig barge: smashing its canopy says Dr. Varga's cell is sealed.
+- [ ] Multiplayer: a guest smashes in while the host watches (the canopy, the guest climbing in, on both screens).

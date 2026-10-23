@@ -182,10 +182,43 @@ function sporeBlob(kind = 'live') {
   const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
   const [a, b, e] = kind === 'dead' ? ['rgba(150,120,80,1)', 'rgba(120,96,64,0.5)', 'rgba(100,80,60,0)']
     : kind === 'cloud' ? ['rgba(170,215,120,1)', 'rgba(130,180,95,0.5)', 'rgba(110,150,90,0)']
-    : ['rgba(190,205,150,1)', 'rgba(150,170,115,0.5)', 'rgba(130,145,100,0)'];
+    : ['rgba(196,222,128,1)', 'rgba(150,186,92,0.5)', 'rgba(120,160,80,0)'];
   gr.addColorStop(0, a); gr.addColorStop(0.5, b); gr.addColorStop(1, e);
   g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
   return (SPORE_BLOBS[kind] = c);
+}
+// One floating spore (a fuzzy ball with a halo, lit from the top left): 'mote' alive, 'mote_dead' browned by vacuum.
+function sporeMoteImg(dead) {
+  const key = dead ? 'mote_dead' : 'mote';
+  if (SPORE_BLOBS[key] !== undefined) return SPORE_BLOBS[key];
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') return (SPORE_BLOBS[key] = null);
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const g = c.getContext('2d'), halo = g.createRadialGradient(24, 24, 0, 24, 24, 24);
+  halo.addColorStop(0, dead ? 'rgba(170,130,80,0.45)' : 'rgba(220,250,140,0.5)'); halo.addColorStop(1, 'rgba(200,240,120,0)');
+  g.fillStyle = halo; g.fillRect(0, 0, 48, 48);
+  g.strokeStyle = dead ? 'rgba(110,80,50,0.9)' : 'rgba(150,200,80,0.9)'; g.lineWidth = 1.5;   // its hairs
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.beginPath(); g.moveTo(24 + Math.cos(a) * 7, 24 + Math.sin(a) * 7); g.lineTo(24 + Math.cos(a) * 11, 24 + Math.sin(a) * 11); g.stroke(); }
+  const core = g.createRadialGradient(21, 21, 0, 24, 24, 8);
+  core.addColorStop(0, dead ? '#d8b888' : '#f4ffd0'); core.addColorStop(0.55, dead ? '#9a7448' : '#b8dc68'); core.addColorStop(1, dead ? '#4e3a22' : '#3e6a1c');
+  g.fillStyle = core; g.beginPath(); g.arc(24, 24, 8, 0, Math.PI * 2); g.fill();
+  return (SPORE_BLOBS[key] = c);
+}
+function sporeMote(x, y, r, a, dead) {                   // r: the ball's radius, world units
+  if (!(a > 0.01)) return;
+  const B = sporeMoteImg(dead), R = r * 3;
+  if (B) { ctx.globalAlpha = Math.min(1, a); ctx.drawImage(B, L(x - R), L(y - R), L(2 * R), L(2 * R)); ctx.globalAlpha = 1; return; }
+  ctx.fillStyle = dead ? `rgba(160,120,70,${a})` : `rgba(220,245,150,${a})`; ctx.beginPath(); ctx.arc(L(x), L(y), L(r), 0, TAU); ctx.fill();
+}
+// The haze clinging to a room's walls (denser at the edges, the middle stays readable).
+function sporeEdgeHaze(q, up, a, dead) {
+  const x0 = L(q.x), y0 = L(q.y - up), w = L(q.w), h = L(q.h + up), d = Math.min(L(2.4), w / 3, h / 3);
+  const col = dead ? '140,112,72' : '140,178,86';
+  for (const [gx0, gy0, gx1, gy1, rx, ry, rw, rh] of [[x0, 0, x0 + d, 0, x0, y0, d, h], [x0 + w, 0, x0 + w - d, 0, x0 + w - d, y0, d, h],
+    [0, y0, 0, y0 + d, x0, y0, w, d], [0, y0 + h, 0, y0 + h - d, x0, y0 + h - d, w, d]]) {
+    const g = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    g.addColorStop(0, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.fillStyle = g; ctx.fillRect(rx, ry, rw, rh);
+  }
 }
 function sporePuff(x, y, r, a, kind) {                    // a soft blob, world units
   if (!(a > 0.004) || !(r > 0)) return;
@@ -205,15 +238,25 @@ function drawSporesInside(t) {
     const vac = vacuumRoom(id), k = clamp(r.t / SPORE_FILL, 0, 1), dying = vac ? 1 - clamp(r.vac / SPORE_CLEAR, 0, 1) : 1;
     ctx.fillStyle = vac ? `rgba(130,110,80,${0.12 * k * dying})` : `rgba(120,150,80,${(0.2 + 0.03 * Math.sin(t * 1.3)) * k})`;
     ctx.beginPath(); for (const q of room.rects) ctx.rect(L(q.x), L(q.y - up), L(q.w), L(q.h + up)); ctx.fill();
+    for (const q of room.rects) sporeEdgeHaze(q, up, (vac ? 0.16 : 0.2 + 0.04 * Math.sin(t * 0.9)) * k * dying, vac);   // thick along the walls
     const from = r.from || roomCenter(room), reach = 2 + k * 18;   // (filling in: from where they came in)
     room.rects.forEach((q, qi) => {
+      const nm = Math.max(3, Math.round(q.w * (q.h + up) / 2.2));
+      for (let i = 0; i < nm; i++) {                      // floating spores: slow, bobbing (browned and sinking in vacuum)
+        const s1 = fract(Math.sin((i + 7) * 39.346 + qi * 11.135 + id.length * 5.7) * 24634.6), s2 = fract(s1 * 67.1 + 0.53), s3 = fract(s2 * 37.9 + 0.29);
+        const x = q.x + 0.3 + fract(s1 + t * (0.006 + 0.012 * s3) * (s2 < 0.5 ? 1 : -1) + Math.sin(t * 0.5 + i) * 0.01) * (q.w - 0.6);
+        const fall = vac ? (1 - dying) * (0.6 + s3) * 2 : 0;
+        const y = q.y - up + 0.3 + fract(s2 + t * 0.01 * (s3 - 0.5)) * (q.h + up - 0.6) + Math.sin(t * (0.8 + s3) + i * 1.7) * 0.18 + fall;
+        const near = clamp((reach - Math.hypot(x - from[0], y - from[1])) / 2, 0, 1);
+        sporeMote(x, y, 0.05 + 0.04 * s3, (0.55 + 0.35 * s1) * near * dying * (0.8 + 0.2 * Math.sin(t * 2 + i)), vac);
+      }
       const n = Math.max(2, Math.round(q.w * (q.h + up) / 5));
       for (let i = 0; i < n; i++) {
         const s1 = fract(Math.sin((i + 1) * 12.9898 + qi * 78.233 + id.length * 3.1) * 43758.5), s2 = fract(s1 * 91.7 + 0.37), s3 = fract(s2 * 53.3 + 0.11);
         const x = q.x + fract(s1 + t * (0.012 + 0.02 * s3) * (s2 < 0.5 ? 1 : -1)) * q.w;
         const y = q.y - up + fract(s2 + t * 0.008 * (s3 - 0.5)) * (q.h + up) + Math.sin(t * 0.7 + i) * 0.25;
         const near = clamp((reach - Math.hypot(x - from[0], y - from[1])) / 2, 0, 1);
-        sporePuff(x, y, 0.9 + 0.8 * s3 + 0.15 * Math.sin(t * 1.1 + i), (0.3 + 0.14 * s1) * near * dying, vac ? 'dead' : 'live');
+        sporePuff(x, y, 0.9 + 0.8 * s3 + 0.15 * Math.sin(t * 1.1 + i), (0.36 + 0.16 * s1) * near * dying, vac ? 'dead' : 'live');
         if (i % 2 === 0 && !vac) {                        // motes
           const mx = x + Math.sin(t * 1.7 + i * 2.1) * 0.6, my = y + Math.cos(t * 1.3 + i) * 0.5;
           ctx.fillStyle = `rgba(225,240,170,${0.55 * near})`; ctx.beginPath(); ctx.arc(L(mx), L(my), L(0.045), 0, TAU); ctx.fill();
@@ -226,14 +269,26 @@ function drawSporesInside(t) {
     const d = DOORS[+key]; if (!d) return;
     const rs = doorRooms(d), src = rs.find(r => infested(r.id)); if (!src || rs.length < 2) return;
     const [cx, cy] = doorCenter(d), sgn = d.axis === 'x' ? Math.sign(cx - roomCenter(src)[0]) : Math.sign(cy - roomCenter(src)[1]);
-    for (let i = 0; i < 10; i++) {
-      const q = fract(t * 0.55 + i / 10), along = -1.4 + q * (dead ? 2.6 : 3.6), off = (fract(i * 0.618) - 0.5) * (d.axis === 'x' ? d.h : d.w) * 0.8;
+    const span = d.axis === 'x' ? d.h : d.w;
+    for (let i = 0; i < 14; i++) {                         // the cloud pushing through
+      const q = fract(t * 0.55 + i / 14), along = -1.4 + q * (dead ? 2.6 : 3.8), off = (fract(i * 0.618) - 0.5) * span * 0.8;
       const x = d.axis === 'x' ? cx + sgn * along : cx + off, y = (d.axis === 'x' ? cy + off : cy + sgn * along) - GFX.lift(0.5);
-      const fade = dead ? clamp(1.3 - q * 1.4, 0, 1) : Math.min(1, q * 3) * (1 - q * 0.8) * (0.5 + k);
-      sporePuff(x, y, dead ? 0.75 * (1 - q) + 0.15 : 0.6 + q * 0.6, 0.8 * fade, dead && q > 0.35 ? 'dead' : 'live');
-      if (dead && q > 0.45 && i % 2) {                    // the heat crisps them: little embers
-        ctx.fillStyle = `rgba(255,${150 + 60 * Math.sin(t * 9 + i)},70,${0.9 * (1 - q)})`; ctx.beginPath(); ctx.arc(L(x + Math.sin(i * 3.1) * 0.2), L(y - 0.4 * q), L(0.07), 0, TAU); ctx.fill();
+      const fade = dead ? clamp(1.3 - q * 1.4, 0, 1) : Math.min(1, q * 3) * (1 - q * 0.7) * (0.6 + 0.6 * k);
+      sporePuff(x, y, dead ? 0.8 * (1 - q) + 0.2 : 0.65 + q * 0.7, Math.min(1, 1.1 * fade), dead && q > 0.35 ? 'dead' : 'live');
+      if (dead && q > 0.45 && i % 2) {                    // the heat crisps them: little embers rising
+        ctx.fillStyle = `rgba(255,${150 + 60 * Math.sin(t * 9 + i)},70,${(1 - q)})`; ctx.beginPath(); ctx.arc(L(x + Math.sin(i * 3.1) * 0.2), L(y - 0.6 * q), L(0.09), 0, TAU); ctx.fill();
       }
+    }
+    for (let i = 0; i < 12; i++) {                         // the spores themselves, streaming over (browning and crumbling at the reactor's heat)
+      const q = fract(t * 0.42 + i / 12 + 0.03 * i), along = -1.6 + q * (dead ? 2.4 : 4.2), off = (fract(i * 0.382 + 0.2) - 0.5) * span * 0.9 + Math.sin(t * 2 + i) * 0.12;
+      const x = d.axis === 'x' ? cx + sgn * along : cx + off, y = (d.axis === 'x' ? cy + off : cy + sgn * along) - GFX.lift(0.5);
+      const a = dead ? clamp(1.2 - q * 1.3, 0, 1) : Math.min(1, q * 4) * Math.min(1, (1 - q) * 3) * (0.7 + 0.3 * k);
+      sporeMote(x, y, dead ? 0.07 * (1 - q * 0.6) : 0.07, a, dead && q > 0.4);
+    }
+    if (dead) {                                            // the heat shimmer at that door, where they die
+      const g = ctx.createRadialGradient(L(cx), L(cy - GFX.lift(0.5)), 0, L(cx), L(cy - GFX.lift(0.5)), L(1.3));
+      g.addColorStop(0, `rgba(255,140,60,${0.18 + 0.06 * Math.sin(t * 7)})`); g.addColorStop(1, 'rgba(255,140,60,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(cx), L(cy - GFX.lift(0.5)), L(1.3), 0, TAU); ctx.fill();
     }
   };
   for (const [key, v] of Object.entries(S.doors)) through(key, clamp(v / SPORE_SPREAD, 0, 1), false);

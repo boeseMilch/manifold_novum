@@ -687,7 +687,7 @@ function drawOrganicWorld(t) {
     if (l.state === 'fly') for (let k = 1; k < 5; k++) {   // a glistening slime trail
       ctx.beginPath(); ctx.arc(L(l.x) - Math.cos(ang) * (k + 3) * 13, L(l.y) - Math.sin(ang) * (k + 3) * 13 + Math.sin(l.t * 6 + k) * 3, 6 - k, 0, TAU); ctx.fillStyle = `rgba(200,255,150,${0.35 - k * 0.07})`; ctx.fill();
     }
-    if (GFX.on && drawLeechSprite(l, ang)) { drawLeechDrink(l, t); continue; }
+    if (GFX.on && drawLeechSprite(l, ang)) { leechDrinkLater.push(l); continue; }   // (its drink ring: over the sprite, drawOutsideOverlays)
     const bite = l.state === 'latched' ? (l.side === 'port' ? 1 : -1) * L(0.25) : 0;   // latched: the mouth on the hull's edge (as the sprite)
     const swell = 1.7 * (1 + 0.3 * (l.fed || 0));         // big enough to see from a cannon; swollen for a moment after a drink
     ctx.save(); ctx.translate(L(l.x) + bite, L(l.y)); ctx.rotate(ang); ctx.scale(swell, swell);
@@ -746,11 +746,26 @@ function drawOrganicWorld(t) {
     ctx.restore();
   }
 }
+let leechDrinkLater = [];                             // sprite leeches: their drink rings go on top (drawOutsideOverlays)
 function drawLeechDrink(l, t) {                        // latched: the one the energy ball is on its way to (how far it got), and the spacewalk job
   if (l.state !== 'latched') return;
+  // A ring on the hull round the whole worm (its body lies outward of its mouth): a dark track, the golden
+  // drink filling it with a glow, and a satisfied pulse after a drink. Drawn over the leech, so it reads.
+  const out = l.side === 'port' ? -1 : 1, cx = L(l.x + out * (GFX.on ? 0.5 : 0.35)), cy = L(l.y), r = L(GFX.on ? 1.15 : 0.9);
   const b = org.suck.find(q => q.to === l.uid && !q.back);
-  if (b) { ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 17, -Math.PI / 2, -Math.PI / 2 + b.k * TAU); ctx.strokeStyle = POWER_COL; ctx.lineWidth = 2.5; ctx.stroke(); }
-  if (l.fed > 0) { ctx.beginPath(); ctx.arc(L(l.x), L(l.y), 17 + (1 - l.fed) * 14, 0, TAU); ctx.strokeStyle = `rgba(${POWER_RGB},${l.fed * 0.7})`; ctx.lineWidth = 2; ctx.stroke(); }   // a satisfied pulse
+  if (b) {
+    const a0 = -Math.PI / 2, a1 = a0 + b.k * TAU, pulse = 0.75 + 0.25 * Math.sin(t * 8);
+    ctx.save(); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.strokeStyle = 'rgba(10,8,4,0.6)'; ctx.lineWidth = 9; ctx.stroke();   // the track
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.strokeStyle = `rgba(${POWER_RGB},0.22)`; ctx.lineWidth = 3; ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.strokeStyle = `rgba(${POWER_RGB},${0.28 * pulse})`; ctx.lineWidth = 16; ctx.stroke();   // its glow
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.strokeStyle = POWER_COL; ctx.lineWidth = 5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx + Math.cos(a1) * r, cy + Math.sin(a1) * r, 5.5, 0, TAU); ctx.fillStyle = '#fff6c8'; ctx.fill();   // the head of the drink
+    ctx.restore();
+  }
+  if (l.fed > 0) { ctx.beginPath(); ctx.arc(cx, cy, r + (1 - l.fed) * L(0.5), 0, TAU); ctx.strokeStyle = `rgba(${POWER_RGB},${l.fed * 0.8})`; ctx.lineWidth = 3; ctx.stroke(); }   // a satisfied pulse
   if (me.mode === 'eva') jobMarker(l.x, l.y, t, Math.hypot(me.x - l.x, me.y - l.y) <= REACH + 1, '#ff6a7a');
 }
 // The room the leviathan will bump next: a red warning wash on its floor.
@@ -889,6 +904,8 @@ function drawHerdCall(t) {
 }
 function drawOutsideOverlays(t) {
   if (typeof drawLevBossTop === 'function') drawLevBossTop(t);   // the boss's target rings, missing details, the engine blast
+  for (const l of leechDrinkLater) if (org.leeches.includes(l)) drawLeechDrink(l, t);   // (the sprite leeches' drink rings, over them)
+  leechDrinkLater = [];
   const S = levSpots; levSpots = null;
   if (!S || !org.lev) return;
   ctx.save(); ctx.globalCompositeOperation = 'lighter';
