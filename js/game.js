@@ -1048,15 +1048,20 @@ function render(t) {
   ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
   const prompt = me.prompt, hover = me.hover;
   const working = workProgress(me);
-  if (prompt && !prompt.screen && !prompt.quiet && !working) upright(view, me.x, me.y, G && sprited.has(me) ? 1.45 : 0.55, () => {
+  const promptAbove = G && sprited.has(me) ? 1.45 : 0.55;
+  if (prompt && !prompt.screen && !prompt.quiet && !working) upright(view, me.x, me.y, promptAbove, () => {
     ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     // on screen whatever the width: wrapped onto more lines when it's wider than the screen, and kept off its edges
     const z = view.zoom || 1, room = (VW - 24) / z - 18, measure = (s) => ctx.measureText(s).width;
     const lines = measure(prompt.text) <= room ? [prompt.text] : wrapText(prompt.text, room, measure);
     const w = Math.max(...lines.map(measure)) + 18, lh = T * 0.34, sx = view.ox + me.x * T * z;
-    const dx = clamp(0, (12 - sx) / z + w / 2, Math.max((12 - sx) / z + w / 2, (VW - 12 - sx) / z - w / 2));
-    rr(dx - w / 2, -T * 0.42 - (lines.length - 1) * lh, w, T * 0.46 + (lines.length - 1) * lh, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? USE_COL : '#6b7486');
-    ctx.fillStyle = prompt.ok ? '#ffffff' : '#c9ced8'; lines.forEach((l, i) => ctx.fillText(l, dx, -T * 0.06 - (lines.length - 1 - i) * lh));
+    let dx = clamp(0, (12 - sx) / z + w / 2, Math.max((12 - sx) / z + w / 2, (VW - 12 - sx) / z - w / 2));
+    // never under the left-hand panels (drawn on top of it): moved right of / below / above them (js/sidebar.js)
+    const by = -T * 0.42 - (lines.length - 1) * lh, bh = T * 0.46 + (lines.length - 1) * lh, sy = view.oy + me.y * T * z * view.sy - promptAbove * T * z;
+    const off = keepOffPanels({ x: sx + (dx - w / 2) * z, y: sy + by * z, w: w * z, h: bh * z }, leftPanelRects(HUD_H), VW, VH);
+    dx += off.dx / z; const dy = off.dy / z;
+    rr(dx - w / 2, by + dy, w, bh, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? USE_COL : '#6b7486');
+    ctx.fillStyle = prompt.ok ? '#ffffff' : '#c9ced8'; lines.forEach((l, i) => ctx.fillText(l, dx, dy - T * 0.06 - (lines.length - 1 - i) * lh));
     ctx.textAlign = 'left';
   });
   ctx.restore();

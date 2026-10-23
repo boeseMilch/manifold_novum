@@ -248,7 +248,7 @@ function airlockLighting(t, lamp) {
   for (const h of HATCHES) {
     const k = lamp[h.side === 'port' ? 0 : 2], c = h.chamber, look = airlockLook(h), blink = Math.sin(t * 12) > 0 ? 1 : 0.35;
     // the room's light over the whole module, its walls too (the near wall's top and face read like any room's near
-    // wall, not as a dark band), and over the hull's low wall running on south of it (the strip the room's area misses)
+    // wall, not as a dark band), and over the hull wall running on south of it (the strip the room's area misses)
     const M = OL_BLOCK[h.side];
     areas.push({ x: M.x, y: M.y, w: M.w, h: M.h + 0.15, k });
     if (typeof buildWalls === 'function') for (const v of (WALLS ||= buildWalls()).vRuns) if (v.belowLock && v.x > M.x && v.x < M.x + M.w)
@@ -295,18 +295,23 @@ function drawAirlockSprites(t) {
 }
 // Over the sprites (js/game.js render, in the 2D world layer): the pump's progress ring.
 function drawAirlockRings() { drawAirlockWallTops(); for (const h of HATCHES) if (h.phase === 'cycling') airlockRing(h, h.t / LOCK_CYCLE); }
-// Sprite view ('mid' layer, over the wall sprites, lit like the floor): the module's low near (south) wall and the hull's
-// low wall running on south of it read as a wall, not a dark band: a brushed-steel sheen on their caps and a catch light
-// along the edges, like the rooms' near walls under their lamps.
+// Sprite view ('mid' layer, over the wall sprites, lit like the floor): the module's low near (south) wall reads as a
+// wall, not a dark band: a brushed-steel sheen on its cap and a catch light along the edges, like the rooms' near walls
+// under their lamps. (The hull wall running on south of it is the wall kit's own: tall from where its top clears the
+// chamber, js/sprites.js buildWalls rise.)
 let LOCK_CAPS = null;
 function drawAirlockWallTops() {
   if (typeof buildWalls !== 'function') return;
   if (!LOCK_CAPS) {
-    const W = WALLS || (WALLS = buildWalls());
-    LOCK_CAPS = [
-      ...HATCHES.map(h => ({ x: h.chamber.x, y: h.chamber.y + h.chamber.h, w: h.chamber.w, h: WALL_T, along: 'x' })),   // (the chamber's span: the end walls stand full height)
-      ...W.vRuns.filter(v => v.belowLock).map(v => ({ x: v.x - WALL_T / 2, y: v.y0, w: WALL_T, h: v.y1 - v.y0, along: 'y' })),
-    ];
+    // the chamber's span (the end walls stand full height); where the hull wall runs on south its tall top stands in
+    // front of the cap's southern part: there only the strip north of that top (lift(H_LOW) deep, no south edge line)
+    const hull = (WALLS ||= buildWalls()).vRuns.filter(v => v.belowLock).map(v => [v.x - WALL_T / 2, v.x + WALL_T / 2]);
+    LOCK_CAPS = HATCHES.flatMap(h => {
+      let segs = [[h.chamber.x, h.chamber.x + h.chamber.w, false]];
+      for (const [a, b] of hull) segs = segs.flatMap(([p, q, part]) => b <= p || a >= q ? [[p, q, part]]
+        : [[p, a, part], [Math.max(a, p), Math.min(b, q), true], [b, q, part]].filter(([u, w]) => w - u > 0.01));
+      return segs.map(([p, q, part]) => ({ x: p, y: h.chamber.y + h.chamber.h, w: q - p, h: part ? H_LOW / Math.tan(50 * Math.PI / 180) : WALL_T, along: 'x', part }));
+    });
   }
   const up = GFX.lift(H_LOW);
   ctx.save();
@@ -316,7 +321,7 @@ function drawAirlockWallTops() {
     g.addColorStop(0, 'rgba(150,165,190,0.38)'); g.addColorStop(0.5, 'rgba(110,122,145,0.22)'); g.addColorStop(1, 'rgba(150,165,190,0.32)');
     ctx.fillStyle = g; ctx.fillRect(x, y, w, h);
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(205,218,240,0.55)'; ctx.beginPath();
-    if (q.along === 'x') { ctx.moveTo(x, y + 1); ctx.lineTo(x + w, y + 1); ctx.moveTo(x, y + h - 1); ctx.lineTo(x + w, y + h - 1); }
+    if (q.along === 'x') { ctx.moveTo(x, y + 1); ctx.lineTo(x + w, y + 1); if (!q.part) { ctx.moveTo(x, y + h - 1); ctx.lineTo(x + w, y + h - 1); } }
     else { ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + h); ctx.moveTo(x + w - 1, y); ctx.lineTo(x + w - 1, y + h); }
     ctx.stroke();
   }

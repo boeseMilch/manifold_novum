@@ -17,7 +17,8 @@
 //   junctions:  interior/wall_j_[low_]<arms> where walls meet (arms = the directions they continue)
 // The spine (between the decks) is its own block (interior/spine_*), with the deck doors' passages through it.
 // ---------------------------------------------------------------------------------------------
-const WALL_T = 0.6, H_LOW = 0.35, SPINE_HI = 12.549;   // spine: high block from 12.549 (see models/interior/structure.py)
+const WALL_T = 0.6, H_LOW = 0.35, SPINE_HI = 12.549;
+const H_FULL_LIFT = 1.6 / Math.tan(50 * Math.PI / 180);   // how far north a full-height (1.6) top shows (GFX.lift(1.6), the 50° camera)   // spine: high block from 12.549 (see models/interior/structure.py)
 let WALLS = null;
 function buildWalls() {
   const floors = FLOOR_RECTS, E = 1e-6;
@@ -50,7 +51,7 @@ function buildWalls() {
         const top = Math.abs(a - SPINE_Y1) < E ? a : isFloor(inside, a - 0.05) || (!chamber && inBlock(inside, a - 0.3)) ? a : a - WALL_T;
         const bot = Math.abs(b - SPINE_Y0) < E ? SPINE_HI : isFloor(inside, b + 0.05) || (!chamber && inBlock(inside, b + 0.3)) ? b : b + WALL_T;
         V.push({ x: ex === x0 ? x0 - WALL_T / 2 : x1 + WALL_T / 2, y0: top, y1: bot, toSpine: Math.abs(b - SPINE_Y0) < E,
-                 belowLock: !chamber && inBlock(inside, a - 0.3) });   // (it starts at an airlock module's near wall: low all along)
+                 belowLock: !chamber && inBlock(inside, a - 0.3) });   // (it starts at an airlock module's near wall: see rise below)
       }
     }
   }
@@ -91,7 +92,11 @@ function buildWalls() {
     const near = J.filter(j => j.v === v && j.low);
     v.step = Math.min(Infinity, ...near.map(j => j.y - WALL_T), ...near.filter(j => Math.abs(j.y - v.y1) < 1e-6).map(j => j.y - 1.4));
     if (v.toSpine && Math.abs(v.y1 - SPINE_HI) < E) v.step = Infinity;
-    if (v.belowLock) v.step = v.y0;
+    // a hull wall running on south of an airlock module (belowLock): the room's outer wall at full height like north of
+    // the module, but its tall top would stand in front of the chamber in the 3/4 view: it rises only where its top
+    // (lifted by H_FULL_LIFT) clears the chamber, i.e. its top's north edge meets the chamber's south edge (the module's
+    // near wall: the low run north of that hides behind the tall top). Cutaway rule at its south end as usual.
+    v.rise = v.belowLock ? Math.min(v.y1, v.y0 - WALL_T + H_FULL_LIFT) : v.y0;
   }
   return { hRuns, vRuns, J };
 }
@@ -124,12 +129,13 @@ function buildWallPieces() {
     tileX(out, name, h.x0, h.x1, y, per, { layer: 'wall', sortY: back ? h.y - 0.3 : h.y + 0.3 });
   }
   for (const v of WALLS.vRuns) {
-    const step = clamp(v.step, v.y0, v.y1);
-    // full height north of the step, low south of it; tiles are the top strip, clipped at the ends
-    for (const [name, a, b, hz] of [['ship/wall_v', v.y0, step, 1.6], ['ship/wall_v_low', step, v.y1, H_LOW]]) {
+    const rise = clamp(v.rise, v.y0, v.y1), step = clamp(v.step, rise, v.y1);
+    // full height north of the step, low south of it (and north of a rise: under an airlock module); tiles are the top
+    // strip, clipped at the ends
+    for (const [name, a, b, hz] of [['ship/wall_v_low', v.y0, rise, H_LOW], ['ship/wall_v', rise, step, 1.6], ['ship/wall_v_low', step, v.y1, H_LOW]]) {
       for (let y = a; y < b - 1e-4; y += PV) out.push([name, v.x, y, { layer: 'wall', clip: [null, y, null, Math.min(y + PV, b), hz], sortY: y + PV / 2 }]);
     }
-    if (v.step > v.y0 + 0.05 && v.step < v.y1 - 0.05) out.push(['interior/wall_v_step', v.x, v.step, { layer: 'wall', sortY: v.step + 0.01, depthBias: PIECE_BIAS }]);
+    if (v.step > rise + 0.05 && v.step < v.y1 - 0.05) out.push(['interior/wall_v_step', v.x, v.step, { layer: 'wall', sortY: v.step + 0.01, depthBias: PIECE_BIAS }]);
   }
   // (the junction square is also covered by the wall tiles running through it: PIECE_BIAS)
   for (const j of WALLS.J) {

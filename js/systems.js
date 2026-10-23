@@ -1124,8 +1124,9 @@ function drawSystemsHUD(top) {
   drawPowerPanel();
 }
 // Bottom left: the energy the ship has left (big, in the power colour), where it is, and the repair supplies.
+const powerPanelRect = () => ({ x: 14, y: VH - 104 - 14, w: 262, h: 104 });   // (js/sidebar.js leftPanelRects keeps the in-world prompt off it)
 function drawPowerPanel() {
-  const E = shipEnergy(), R = power.reactor, x = 14, w = 262, h = 104, y = VH - h - 14;
+  const E = shipEnergy(), R = power.reactor, { x, w, h, y } = powerPanelRect();
   rr(x, y, w, h, 10); ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fill(); stroke(1.5, '#5a6272');
   const low = E.total <= 3;
   boltGlyph(x + 24, y + 26, 1.25, low && Math.sin(time * 6) > 0 ? '#ff6a4a' : POWER_COL);

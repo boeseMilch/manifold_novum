@@ -3812,3 +3812,16 @@ with the manual override (three good whacks / heaves, E or click), the kind that
   short ones stay in the middle; heavy-shot warnings move down under a two-line banner. tests/sidebar.js checks the layout.
 - **HUD bar**: the controls line starts after the title (it ran into "MANIFOLD NOVUM") and drops its last items when the
   room name / music / alarm on the right need the space.
+
+### Fixes: the hull wall under the airlock modules, the in-world prompt off the panels (2026-10-23)
+- **Airlock module corner** (sprite view, js/sprites.js buildWalls / buildWallPieces): the room's outer hull wall south of
+  each module was low all along (a narrow grey strip that made a "T" with the module's low near wall). Now it's the wall
+  kit's full-height wall with its pipes, like north of the module: low only where a tall top would stand in front of the
+  chamber (v.rise = the chamber's south edge + the 1.6 top's lift, H_FULL_LIFT; that low bit hides behind the tall top),
+  then the usual cutaway step down before the room's near wall. drawAirlockWallTops no longer paints that strip; the
+  module's cap keeps its sheen except in front of the hull wall (only the sliver north of its top). Classic: unchanged.
+  No walkable rect moved (travel table unchanged).
+- **In-world prompt** (js/game.js): never under the panels drawn over the world: the sidebar's header and plates, "+n
+  more", the energy panel and the inventory slots (js/sidebar.js leftPanelRects; systems.js powerPanelRect). It moves the
+  least it can, right of / below / above them, staying on screen (keepOffPanels, pure). tests/sidebar.js: the layout and
+  a sweep at 760 / 1024 / 1400 / 1920 px.

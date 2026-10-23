@@ -114,6 +114,36 @@ function drawSidebar(top) {
   }
 }
 
+// The screen rects (CSS px) the left-hand panels cover right now: the sidebar's header, its plates (where they are,
+// sliding ones too), the "+n more" line and the energy panel at the bottom left. The in-world prompt keeps out from
+// under them (js/game.js, keepOffPanels).
+function leftPanelRects(top) {
+  const out = [];
+  if (mission.active) out.push({ x: SIDEBAR_X, y: top + 10, w: PLATE_W, h: HEAD_H });
+  for (const k of sideOrder) { const p = sidePlates.get(k); if (p && p.alpha > 0.01 && p.y != null) out.push({ x: SIDEBAR_X + p.x, y: p.y, w: PLATE_W, h: PLATE_H }); }
+  if (sideMore > 0) out.push({ x: SIDEBAR_X, y: (updateSidebar.bottom || 0) + 4, w: 140, h: 22 });
+  if (typeof powerPanelRect === 'function') out.push(powerPanelRect());
+  if (typeof invSlots === 'function' && me.mode !== 'gun') for (const b of invSlots()) out.push({ x: b.x, y: b.y, w: b.w, h: b.h });
+  return out;
+}
+// Where a screen box (x, y, w, h) has to move so it's under none of the `avoid` rects and stays on a W x H screen
+// (pad px clear of both): {dx, dy}, the smallest shift right of / below / above them (or none: {0, 0} when it's
+// clear already, or when nothing fits). Pure: tests/sidebar.js.
+function keepOffPanels(box, avoid, W, H, pad = 8) {
+  const hits = (dx, dy) => avoid.some(r => box.x + dx < r.x + r.w + pad && box.x + box.w + dx > r.x - pad && box.y + dy < r.y + r.h + pad && box.y + box.h + dy > r.y - pad);
+  if (!hits(0, 0)) return { dx: 0, dy: 0 };
+  const xs = [0, ...avoid.map(r => r.x + r.w + pad - box.x)];
+  const ys = [0, ...avoid.flatMap(r => [r.y + r.h + pad - box.y, r.y - pad - box.y - box.h])];
+  const onScreen = (dx, dy) => (box.x + dx >= pad || dx <= 0) && box.x + box.w + dx <= W - pad && box.y + dy >= pad && box.y + box.h + dy <= H - pad;
+  let best = null;
+  for (const dx of xs) for (const dy of ys) {
+    if (!onScreen(dx, dy) || hits(dx, dy)) continue;
+    const cost = Math.abs(dx) + Math.abs(dy);
+    if (!best || cost < best.cost) best = { dx, dy, cost };
+  }
+  return best ? { dx: best.dx, dy: best.dy } : { dx: 0, dy: 0 };
+}
+
 function plateBody(x, y, w, h) {
   rr(x, y, w, h, 8); ctx.fillStyle = 'rgba(12,14,20,0.9)'; ctx.fill();
   ctx.lineWidth = 1.5; ctx.strokeStyle = '#4b5263'; ctx.stroke();

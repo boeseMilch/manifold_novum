@@ -3,7 +3,7 @@
 // with. Run: node tests/sidebar.js
 const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'render', 'mission', 'startMission', 'radarScan', 'encounterPlates', 'sidePlates', 'combat', 'combatSpawn',
-  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines', 'bannerLayout', 'wrapText']);
+  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines', 'bannerLayout', 'wrapText', 'keepOffPanels', 'leftPanelRects']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -85,4 +85,26 @@ for (const room of [700, 520, 430]) {
 const tight = G.bannerLayout(LONG, 260, wpx);
 check(tight.size === 16 && tight.lines.length >= 3 && tight.lines.every(l => wpx(l, 16) <= 260), `very little room: more lines at 16 px (${tight.lines.length})`);
 check(G.wrapText('one two three', 1000, (s) => s.length).length === 1 && G.wrapText('one two three', 7, (s) => s.length).join('|') === 'one two|three', 'wrapText wraps on words');
+// the in-world prompt keeps out from under the left-hand panels (and the inventory slots), at every screen width
+const over = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+const moved = (b, o) => ({ x: b.x + o.dx, y: b.y + o.dy, w: b.w, h: b.h });
+const side = [{ x: 12, y: 46, w: 268, h: 62 }, { x: 12, y: 115, w: 268, h: 58 }, { x: 14, y: 782, w: 262, h: 104 }];
+const clear = { x: 400, y: 300, w: 200, h: 30 };
+check(JSON.stringify(G.keepOffPanels(clear, side, 760, 900)) === '{"dx":0,"dy":0}', 'a prompt clear of the panels stays where it is');
+const under = { x: 60, y: 120, w: 330, h: 30 }, o1 = G.keepOffPanels(under, side, 760, 900), b1 = moved(under, o1);
+check(!side.some(r => over(b1, r)) && b1.x + b1.w <= 760 && (o1.dx > 0 || o1.dy > 0), `under a plate on a 760 px screen: moved off it (dx ${o1.dx}, dy ${o1.dy})`);
+const wide = { x: 30, y: 120, w: 600, h: 30 }, o2 = G.keepOffPanels(wide, side, 760, 900), b2 = moved(wide, o2);
+check(!side.some(r => over(b2, r)) && o2.dx === 0 && b2.y >= 173, `too wide to go right of them: moved below the plates (y ${b2.y})`);
+const low = { x: 40, y: 800, w: 300, h: 30 }, o3 = G.keepOffPanels(low, side, 760, 900), b3 = moved(low, o3);
+check(!side.some(r => over(b3, r)) && b3.y + b3.h <= 900 - 8, `over the energy panel: moved off it, still on screen (dx ${o3.dx}, dy ${o3.dy})`);
+for (const W of [760, 1024, 1400, 1920]) {
+  G.window.innerWidth = W; G.window.innerHeight = 900; G.listeners.resize?.(); step(30);
+  const rects = G.leftPanelRects(G.HUD_H);
+  let bad = 0;
+  for (let x = 0; x < W - 200; x += 37) for (let y = 40; y < 860; y += 29) {
+    const b = { x, y, w: 200, h: 30 }, m = moved(b, G.keepOffPanels(b, rects, W, 900));
+    if (rects.some(r => over(m, r)) || m.x + m.w > W) bad++;
+  }
+  check(G.VW === W && rects.length >= 2 && !bad, `${W} px wide: a prompt anywhere ends up under none of the ${rects.length} panels (${bad} bad)`);
+}
 process.exitCode = failed ? 1 : 0;
