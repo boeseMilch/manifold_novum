@@ -204,11 +204,11 @@ for (const n of [1, 3]) {
   const box = G.levCinema(), nest = G.levSpotAt(G.levChain(B(G)), 'nest'), inBox = (b, x, y) => b && x > b[0] && x < b[2] && y > b[1] && y < b[3];
   check(inBox(box, G.LEVB_ENGINE.x, G.LEVB_ENGINE.y) && inBox(box, nest.wx, nest.wy), `the blast: the camera frames the engine and the nest it burns ([${box && box.map(v => v.toFixed(0))}])`);
   tick(G, G.LEVB_BLAST + 0.2);
-  (G.evs.coils || []).forEach(c => { c.ok = false; });   // (c8's coils rule: even misaligned coils don't hold it up now)
+  (G.evs.coils || []).forEach(c => { c.ok = false; });   // (even misaligned jump coils wouldn't hold it up)
   check(B(G)?.phase === 'freed' && G.mission.autoJump && Math.abs(G.mission.jumpAt - (G.mission.t + G.LEVB_OUTRO - 0.2)) < 0.3, `it's free: it swims off, and ${G.LEVB_OUTRO} s later the ship jumps by itself (was due at ${jump0.toFixed(0)} s)`);
   const wide = G.levCinema();
   check(inBox(wide, 0, 0) && inBox(wide, 44, 26), `freed: the camera pulls out to the whole ship and the creature ([${wide && wide.map(v => v.toFixed(0))}])`);
-  check(!G.minigameSpots().some(q => q.x === G.JUMP_HANDLE.x && q.y === G.JUMP_HANDLE.y), 'nothing to do at the helm: the jump handle has no use ring (c8\'s handle rule notwithstanding)');
+  check(!G.minigameSpots().some(q => q.x === G.JUMP_HANDLE.x && q.y === G.JUMP_HANDLE.y), 'nothing to do at the helm: the jump handle has no use ring');
   tick(G, G.LEVB_OUTRO - 0.5);
   check(!G.mission.over && !G.mission.jump, 'the cutscene plays (no jump yet, no drive waiting for a handle)');
   tick(G, 0.6);
@@ -233,12 +233,15 @@ for (const n of [1, 3]) {
 // --- nothing sends anyone to the helm for the engine: the panel's place in every text, an arrow to it off-screen
 {
   const G = fresh(1, 'c8'); G.mission.events = []; G.combatClear(); G.startLevBoss(4); parked(G, 90);
-  const texts = [G.levOverrideStatus().text, G.withCrew(G.me, () => G.clickTarget(G.JUMP_HANDLE.x, G.JUMP_HANDLE.y))?.text || '', G.MISSIONS.c8.briefing,
-    ...G.encounterPlates().filter(q => q.key === 'levboss').map(q => q.sub)];
-  check(texts.every(t => !/helm/i.test(t) || /not needed/.test(t)) && /reactor room/.test(G.MISSIONS.c8.briefing) && texts.filter(t => /reactor room/i.test(t)).length >= 3,
-    `the override is in the reactor room, everywhere it's mentioned; the jump handle says it isn't needed (${texts.slice(0, 2).map(t => `"${t}"`).join(', ')})`);
+  const plate = G.encounterPlates().find(q => q.key === 'levboss')?.sub || '';
+  const texts = [G.levOverrideStatus().text, G.MISSIONS.c8.briefing, plate];
+  check(texts.every(t => !/helm/i.test(t)) && /reactor room/.test(G.MISSIONS.c8.briefing) && /reactor room/.test(plate),
+    `the override is in the reactor room (briefing, the boss's plate "${plate}"); nothing mentions the helm`);
+  check(!G.MISSIONS.c8.rules.handle && !G.MISSIONS.c8.rules.coils, 'c8 has no jump handle or jump coils to see to: it jumps by itself after the fight');
   check(G.problemSpots().some(q => q.key === 'levOverride' && q.room === 'Reactor room'), 'an arrow at the screen\'s edge points to the ENGINE OVERRIDE in the reactor room');
-  check(G.levHoldsJump() && !G.minigameSpots().some(q => q.x === G.JUMP_HANDLE.x), 'no use ring at the helm\'s jump handle in c8, from the start');
+  G.mission.rules.handle = true;                          // (a mission with the handle rule and the leviathan as its finale)
+  check(G.levHoldsJump() && !G.minigameSpots().some(q => q.x === G.JUMP_HANDLE.x) && /not needed/.test(G.withCrew(G.me, () => G.clickTarget(G.JUMP_HANDLE.x, G.JUMP_HANDLE.y))?.text || ''),
+    'even with a handle rule, the jump handle has no use ring while the leviathan holds the drive, and says it isn\'t needed');
 }
 // --- it swims continuously (2026-10-24, the user: "when it swims to the left the first time it's not continuous, it just
 // jumps"): every piece of it, every frame, through a scripted fight: how far it moves, and how much that changes frame to frame

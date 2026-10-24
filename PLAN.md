@@ -3936,3 +3936,27 @@ The user heard "the awkward loop at the end": the arc reached its climax at ~83%
 on it, repeating its sections, for the last ~50 s. The game now lays the arc out for a mission `MUSIC_TAIL` (30 s,
 js/game.js) longer than it is: the piece is still rising into its climax when the drive spools (climax at ~90%
 instead). music.html's player does the same (its marks stop where the spool starts).
+
+### The leviathan's ending: the engine burn seen, a smooth swim, the override's place, no jump button (2026-10-24, js/leviathan.js)
+Playtest notes for chapter 8 ("8 · The Mother of All"):
+- "Need to get a vision of how the engine burns the brute away": the blast (LEVB_BLAST 3 → 4 s) is a short cutscene
+  for everyone. The camera glides (updateCamera's cinema frame, levCinema) to the stern, the flame and the nest; the
+  exhaust sprite is aimed and stretched to reach the nest, with a white-hot core and a splash where it hits; flames on
+  the nest, its leeches writhing, blackening and flung off burning one after another, embers and smoke; the live nest
+  chars into the burnt one; the creature writhes (B.wr, a stronger ripple). Freed, the charred crust peels off and
+  tumbles away over a scar, and the camera pulls out to the whole ship and the creature swimming off (drawLevBurn;
+  drawing only, worked out from the synced B.blast / B.freed clocks: nothing extra in the snapshot).
+- "When it swims to the left the first time it's not continuous, it just jumps": swimming in, it was pushed 40 out
+  along the loop's normal, which flung it round the first corner at ~3x speed and then slowed it all at once; it went
+  from rest to full speed in one frame (now LEVB_ACCEL); its ripple snapped between parked and swimming (now eased,
+  B.amp); a station just behind it snapped it back (levNext); the joints' hard bend limits jolted the tail round in
+  turns (now a soft limit). tests/leviathan.js samples every piece every frame through a scripted fight: at most
+  0.37 a frame, a frame-to-frame change of at most ~0.12 (the old snaps: 0.4-1.8).
+- "Something still tells you to go to the helm to engage the engine": the override panel's place is said as "reactor
+  room" (banner, ship voice, HUD line, prompts, the boss's plate, the briefing); an arrow at the screen's edge points
+  to it (levProblemSpots); c8's jump handle at the helm had a use ring the whole mission (the handle rule).
+- "Pressing the button to jump out is pointless": once it's free the ship jumps by itself LEVB_OUTRO (6) s later
+  (mission.autoJump, js/mission.js: no handle, nav fix, coils or MID energy; the drive's wind-up plays meanwhile);
+  Esc skips the cutscene (solo, or the host: mission.shipOf; levSkip). c8 lost its `handle` and `coils` rules (they
+  only served the jump; the balance model's c8 idle: solo -3% → 2%, ×2 40 → 50%, ×3 58 → 63%, ×4 61 → 65%). The
+  emergency cell no longer keeps 1 energy for the jump.

@@ -599,14 +599,14 @@ function levCinema() {
   if (!B || B.skip || mission.over || !(B.phase === 'blast' || B.phase === 'freed')) return null;
   const ch = levChain(B), n = levSpotAt(ch, 'nest');
   if (B.phase === 'blast') {
-    const y0 = 17, y1 = Math.max(n.wy + 9, 40), x = (LEVB_ENGINE.x + n.wx) / 2, w = (y1 - y0) * 1.3;
+    const y0 = 18, y1 = Math.max(n.wy + 14, 40), x = (LEVB_ENGINE.x + n.wx) / 2, w = (y1 - y0) * 1.3;
     return [x - w / 2, y0, x + w / 2, y1];
   }
   let x0 = -4, y0 = -6, x1 = SHIP_W + 4, y1 = SHIP_H + 8;          // (the ship)
   const sink = B.sink || 0;
   for (const p of [ch.nose, ...ch.J]) {                             // (the creature, while it's still to be seen)
     if (sink > 0.7) break;
-    x0 = Math.min(x0, p[0] - 8); x1 = Math.max(x1, p[0] + 8); y0 = Math.min(y0, p[1] / GFX.SIN - 8); y1 = Math.max(y1, p[1] / GFX.SIN + 8);
+    x0 = Math.min(x0, p[0] - 12); x1 = Math.max(x1, p[0] + 12); y0 = Math.min(y0, p[1] / GFX.SIN - 14); y1 = Math.max(y1, p[1] / GFX.SIN + 12);
   }
   return [Math.max(x0, -50), Math.max(y0, -45), Math.min(x1, SHIP_W + 50), Math.min(y1, SHIP_H + 60)];
 }
@@ -876,7 +876,7 @@ function drawLevBlast(t) {
   const tb = LEVB_BLAST - B.blast, k = Math.min(1, tb * 4, B.blast * 2), E = LEVB_ENGINE, SIN = GFX.SIN;
   const n = levSpotAt(levBodyState.ch, 'nest'), reach = Math.pow(clamp(tb / 0.5, 0, 1), 0.6);
   const dx = n.x - E.x, dy = n.y - E.y * SIN, dist = Math.hypot(dx, dy) + 2;   // (screen units, to just past the nest)
-  const sc = Math.max(0.15, dist * reach / 22);                                // (the sprite's flame is ~22 long)
+  const sc = Math.max(0.15, dist * reach / 15);                                // (the sprite's flame shows ~15 long)
   const drawn = GFX.on && GFX.sprite('fx/engine_blast', Math.floor(t * 16) % 6, E.x, E.y, 0, { layer: 'top', unlit: true, alpha: k, rot: Math.atan2(-dx, dy), scale: sc, sx: 1 + 0.6 * (1 - reach) });
   ctx.save(); ctx.scale(1, 1 / SIN);
   const x = L(E.x), y = L(E.y * SIN);
@@ -887,6 +887,19 @@ function drawLevBlast(t) {
     g.addColorStop(0, `rgba(255,255,230,${k})`); g.addColorStop(0.3, `rgba(255,200,80,${0.9 * k})`); g.addColorStop(1, `rgba(255,90,30,${0.3 * k})`);
     ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-L(2.4), 0);
     ctx.quadraticCurveTo(-L(4 + Math.sin(t * 30)), len * 0.5, 0, len); ctx.quadraticCurveTo(L(4 + Math.cos(t * 27)), len * 0.5, L(2.4), 0); ctx.fill();
+    ctx.restore();
+  }
+  {                                                    // the jet's white-hot core, right down onto the nest
+    const len = L(dist * reach), a = Math.atan2(dy, dx), s0 = L(1.2);   // (from just below the bell)
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a - Math.PI / 2); ctx.globalCompositeOperation = 'lighter';
+    for (const [w, al] of [[2.6, 0.35], [1.1, 0.7]]) {
+      const g = ctx.createLinearGradient(0, s0, 0, len);
+      g.addColorStop(0, 'rgba(255,250,220,0)'); g.addColorStop(0.12, `rgba(255,250,220,${al * k})`); g.addColorStop(0.7, `rgba(255,200,90,${al * k})`); g.addColorStop(1, `rgba(255,120,40,${0.5 * al * k})`);
+      const wob = Math.sin(t * 41) * 0.25;
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-L(w * 0.5), s0);
+      ctx.quadraticCurveTo(-L(w * (1.1 + wob)), len * 0.5, -L(w * 0.5), len); ctx.lineTo(L(w * 0.5), len);
+      ctx.quadraticCurveTo(L(w * (1.1 - wob)), len * 0.5, L(w * 0.5), s0); ctx.fill();
+    }
     ctx.restore();
   }
   const hit = k * clamp((tb - 0.35) / 0.2, 0, 1);       // the splash on the nest
@@ -1019,10 +1032,9 @@ function drawLevBossScreen(view, t) {
   const B = org.boss;
   if (!B) return;
   if (levCinema() && !(mission.shipOf && me && me.id !== mission.shipOf.id)) {   // the cutscene: who can skip it is told how
-    const y = (typeof invSlots === 'function' ? invSlots()[0].y : VH) - 16;
-    ctx.font = '700 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText('Esc: skip', VW / 2, y);
-    ctx.fillStyle = 'rgba(232,236,244,0.8)'; ctx.fillText('Esc: skip', VW / 2, y); ctx.textAlign = 'left';
+    ctx.font = '700 15px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';   // (bottom right: clear of the view's middle)
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText('Esc: skip', VW - 20, VH - 22);
+    ctx.fillStyle = 'rgba(232,236,244,0.8)'; ctx.fillText('Esc: skip', VW - 20, VH - 22); ctx.textAlign = 'left';
   }
   const big = (text, col, y) => {
     ctx.font = '900 64px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
