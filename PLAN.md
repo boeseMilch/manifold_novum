@@ -3906,3 +3906,33 @@ MAX_DAMAGE, mission.over, `time`), so multiplayer needs nothing new on the wire;
   mission.over.at: the same break-up in every browser; late joiners skip the past blasts. Behind the end
   screen the ship stays torn open and dark. New sounds: sfx.creak, sfx.tear, sfx.breakup.
 - tests/jumpfx.js: a loss now plays the break-up, then the end screen after BREAKUP_T.
+
+### Doors: a lock that turns first, a faster-doors upgrade, airlocks that pump one way or the other (2026-10-24, js/game.js, js/art.js, js/airlock.js, js/progress.js)
+Playtest notes: "make an upgrade for faster doors", "the doors also have some animation while they're not open, maybe
+... some kind of lock or bar becoming undone", "airlock animations need to distinguish between air going out or in,
+should be consistent with rooms venting".
+- The inner doors' lock (d.bolt, 1 = bolted; updateDoors, sent in the snapshot): the sensor's reaction delay
+  (DOOR_DELAY) is now the lock coming undone: a hand wheel on one leaf turns half a turn, then a bolt bar across the
+  seam slides back into its housing; the bolts are out exactly when the leaves start to move. Shut again, the bar
+  shoots home and the wheel turns back (DOOR_DELAY s, drawing only: re-approaching then opens as before). Hub light:
+  red bolted, amber blinking while it works, green free. Each part rides on its leaf, clipped to the opening.
+  js/art.js drawDoorLocks: both views (sprite view on the 'mid' layer: the doorways' lock on the leaves' tops, the
+  deck doors' on their front face). Timings unchanged.
+- New ship upgrade 'doors' (Fast door actuators, 3 rep): DOOR_TIMES.fast, unbolt 0.24 s + slide 0.36 s (0.6 s until
+  you can pass instead of 1 s). applyShipUpgrades, so solo and the server's sim alike. Balance model: last in
+  A.SHIP_ORDER (no expected kit reaches it), trips measured with the plain doors (on the safe side).
+- Outer airlocks pumping (drawAirlockPump, both views, from phase / t / target): out = streaks pulled across the
+  chamber into the grilles by the hatch, thinning as the pressure drops, mist puffing out into space beside the hatch
+  (the vent rush's air sprite), frost creeping over the floor and the vacuum's cold tint (kept while it stands
+  pumped out); in = puffs billowing from grilles in the long walls and a white haze filling it (as a repressurizing
+  room fogs over) that clears as it finishes, the frost melting. The classic view's pumping glow is fainter (the
+  direction is the effect's job now).
+- tests/doors.js: the lock (bolted when shut, half back mid-delay, never open while bolted, bolted again after), the
+  upgrade (0.6 s, not leaking into the next mission), the bolt in the snapshot.
+
+### Music runs 30 s past the mission (2026-10-24)
+
+The user heard "the awkward loop at the end": the arc reached its climax at ~83% of the way to the jump and then sat
+on it, repeating its sections, for the last ~50 s. The game now lays the arc out for a mission `MUSIC_TAIL` (30 s,
+js/game.js) longer than it is: the piece is still rising into its climax when the drive spools (climax at ~90%
+instead). music.html's player does the same (its marks stop where the spool starts).

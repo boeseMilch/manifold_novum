@@ -46,6 +46,7 @@ const CREW_R = 0.2;                          // half-size of the crew collision 
 let LOCK_CYCLE = 1.3;                        // airlock pump time, set by the 'airlocks' ship upgrade (js/progress.js; the deck airlocks are gone: inner doors are single doors since 2026-10-21)
 const HURT_SPEED = 0.6;                       // walking speed while hurt
 const LOOK_TIME = 1.75;                      // s a crew member keeps looking at the mouse after it moved or they fired with it
+const MUSIC_TAIL = 30;                       // s the music's arc runs past the jump (it's laid out for a mission that much longer)
 const GUN_TURN = 1.6;                        // rad/s when aiming a cannon with the keys (gunKeyTurn)
 const COVER_SPEED = 6;                       // raising / lowering the cover plate (1/s)
 const CRUISE_SPEED = 260;                    // px/s of starfield drift
@@ -1295,7 +1296,9 @@ function clientUpdate(dt) {
   music.setThreat(!lobby && (combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0
     || (!!mission.press && !mission.over)));             // not jumping yet: the hot zone keeps the threat up
   music.setMission(lobby ? 'menu' : mission.id || 'intro');   // each mission has its own piece, building up towards the jump
-  music.setIntensity(lobby || !mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / mission.jumpAt, 0, 1), 1.3) : 0.3);
+  // (the arc is laid out for a mission MUSIC_TAIL s longer than this one: the piece is still rising when the drive
+  //  spools, instead of sitting on its climax, repeating it, for the last minute; 2026-10-24, the user: "the awkward loop at the end")
+  music.setIntensity(lobby || !mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / (mission.jumpAt + MUSIC_TAIL), 0, 1), 1.3) : 0.3);
   music.setJump(!lobby && !!mission.jump && !mission.over);
   if (mission.over?.survived && !lobby) music.jumped();    // the big final hit as we jump out
   else if (!mission.over || lobby) music.rearm();          // a new mission, the menu or the lobby: the music plays again
