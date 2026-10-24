@@ -507,6 +507,58 @@ function drawDeckDoor(d, t) {
   if (b && Math.sin(t * 20) > 0.6) { ctx.fillStyle = '#ffd36a'; ctx.fillRect(x + w + 3, dy - 3, 4, 4); }   // sparks
 }
 
+// The inner doors' locks (2026-10-24, the user: "something that needs to turn first, some kind of lock or bar becoming
+// undone"): on the leaves' meeting seam a hand wheel on one leaf and a bolt bar across the seam into a keeper on the
+// other. d.bolt (js/game.js updateDoors) runs 1 (bolted) -> 0 while the sensor reacts: first the wheel turns, then
+// the bar slides back into its housing; only then do the leaves move (each part rides on its leaf, clipped to the
+// opening). Shut again: the bar shoots home, then the wheel turns back. Both views; in the sprite view drawn on the
+// 'mid' layer over the door sprites: the doorways' on the leaves' tops, the deck doors' on the front face.
+const DOOR_LOCK = { doorway: { half: 0.86, z: 1.6 }, deck: { half: 1.05, z: 0.5, face: 0.22 } };
+function drawDoorLocks(t) {
+  const sprite = GFX.on, k = GFX.COS / GFX.SIN;            // (a vertical face: its heights show foreshortened)
+  for (const d of DOORS) {
+    const deck = DECK_DOORS.includes(d), S = deck ? DOOR_LOCK.deck : DOOR_LOCK.doorway, half = S.half;
+    const open = sprite ? Math.round(clamp(d.open, 0, 1) * 5) / 5 : clamp(d.open, 0, 1);   // (the sprites' leaves move in 5 steps)
+    if (open >= 0.999) continue;
+    ctx.save();
+    // local frame: u along the door (the leaves slide along it; 0 = the seam), v across it, in world units
+    if (!deck) ctx.transform(0, T, T, 0, L(d.x + d.w / 2), L(d.y + d.h / 2 - GFX.lift(S.z)));
+    else if (sprite) ctx.transform(T, 0, 0, -T * k, L(d.x + d.w / 2), L(SPINE_Y1 - S.face - GFX.lift(S.z)));
+    else ctx.transform(T, 0, 0, T, L(d.x + d.w / 2), L((SPINE_HI + SPINE_Y1) / 2));
+    ctx.beginPath(); ctx.rect(-half, -0.5, 2 * half, 1); ctx.clip();          // (the opening: what slides into the wall is gone)
+    drawLockParts(d, open * half, t);
+    ctx.restore();
+  }
+}
+function drawLockParts(d, off, t) {
+  const b = clamp(d.bolt ?? 1, 0, 1), turn = clamp(b * 2 - 1, 0, 1), slide = clamp(b * 2, 0, 1);   // (opening: the wheel first, then the bar)
+  const lw = 1 / T;                                                          // one screen-ish pixel in local units
+  const box = (x, y, w, h, fill, line = 1.5) => { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); ctx.lineWidth = line * lw; ctx.strokeStyle = OUT; ctx.strokeRect(x, y, w, h); };
+  // leaf -1 (u < 0): the keeper the bar shoots into
+  ctx.save(); ctx.translate(-off, 0);
+  box(-0.34, -0.085, 0.14, 0.17, '#4c5464');
+  box(-0.32, -0.04, 0.1, 0.08, '#14161b', 1);                               // its slot
+  ctx.restore();
+  // leaf +1 (u > 0): the bar's housing, the bar, the wheel
+  ctx.save(); ctx.translate(off, 0);
+  box(0.06, -0.075, 0.5, 0.15, '#3a404c');                                   // housing
+  const bx = -0.3 + (1 - slide) * 0.34;                                     // the bar: across the seam (bolted) .. back in its housing
+  box(bx, -0.04, 0.5, 0.08, b > 0.99 ? '#c9ced8' : '#e6c55a', 1.2);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(bx + 0.02, -0.035, 0.46, 0.02);   // a glint along it
+  ctx.fillStyle = C.hazard; ctx.fillRect(bx, -0.04, 0.05, 0.08);             // its yellow tip
+  // the hand wheel, turning half a turn before the bar can move
+  const wx = 0.4, a = turn * Math.PI + Math.PI / 4;
+  ctx.beginPath(); ctx.arc(wx, 0, 0.13, 0, TAU); ctx.fillStyle = '#5a6272'; ctx.fill(); ctx.lineWidth = 2 * lw; ctx.strokeStyle = OUT; ctx.stroke();
+  ctx.beginPath(); ctx.arc(wx, 0, 0.1, 0, TAU); ctx.lineWidth = 3 * lw; ctx.strokeStyle = '#9aa3b2'; ctx.stroke();   // rim
+  ctx.strokeStyle = '#9aa3b2'; ctx.lineWidth = 2.5 * lw; ctx.beginPath();
+  for (let i = 0; i < 3; i++) { const q = a + i * TAU / 3; ctx.moveTo(wx, 0); ctx.lineTo(wx + Math.cos(q) * 0.1, Math.sin(q) * 0.1); }
+  ctx.stroke();
+  const moving = b > 0.001 && b < 0.999;                                      // hub light: red bolted, amber turning, green free
+  ctx.beginPath(); ctx.arc(wx, 0, 0.035, 0, TAU); ctx.fillStyle = moving ? (Math.sin(t * 30) > 0 ? '#ffd36a' : '#a0782a') : b >= 0.999 ? '#e2574c' : '#5fd6a0'; ctx.fill();
+  ctx.lineWidth = lw; ctx.strokeStyle = OUT; ctx.stroke();
+  ctx.restore();
+}
+
 // Capacitor bank: a cabinet of cells, lit cells hold charge.
 function drawCapacitor(cap, max, t) {
   const name = broken(cap) ? `systems/cap${max}_broken` : `systems/cap${max}_c${clamp(cap.charge, 0, max)}${cap.pulse > 0 && cap.charge > 0 ? '_pulse' : ''}`;

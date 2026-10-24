@@ -89,7 +89,36 @@ function lineOfSight(x0, y0, x1, y1) {
   }
   return true;
 }
-const freeAt = (x, y) => walkRects().some(r => inRect(x, y, r)) || (!pointInPoly(x, y) && !(typeof dockSolid === 'function' && dockSolid(x, y)));   // projectile space (the pirate base's walls stop shots too)
+// Projectile space: shots stop where walking stops. Inside, the same geometry as walking (js/game.js canStand): the
+// walkable rects right now (rooms, open doors and airlock doors, a docked ship's floor) minus SOLIDS (furniture,
+// consoles, crates, the cargo pods); outside the hull it's free, except for the pirate base's walls and cover.
+// shotFree() builds the test once (walkRects() per point would be slow), freeAt(x, y) is the one-off.
+function shotFree() {
+  const rects = walkRects(), dock = typeof dockSolid === 'function';
+  return (x, y) => rects.some(r => inRect(x, y, r)) ? !SOLIDS.some(S => inRect(x, y, S, 0)) : !pointInPoly(x, y) && !(dock && dockSolid(x, y));
+}
+const freeAt = (x, y) => shotFree()(x, y);
+// A shot's step (x0, y0) → (x1, y1) against walls, closed doors and solid props: how far along (0..1) it first runs
+// into one (-1: the way is clear). Sampled every SHOT_STEP units, so a fast shot can't skip through a thin wall or a
+// treadmill rail (the thinnest solid: 0.15).
+const SHOT_STEP = 0.05;
+function shotBlock(x0, y0, x1, y1, free = shotFree()) {
+  const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / SHOT_STEP));
+  for (let i = 1; i <= n; i++) if (!free(x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n)) return Math.max(0, (i - 1) / n);   // (the last free point)
+  return -1;
+}
+// A shot stopping at a wall or a prop (at x, y, flying dx, dy): a spark flash and sparks bouncing back off it, at the
+// height it flew (b.z), in its colour.
+function shotImpact(b, x, y) {
+  const sp = Math.hypot(b.vx, b.vy) || 1, dx = b.vx / sp, dy = b.vy / sp;
+  const col = b.wrench ? '#c8ccd4' : b.owner === 'alien' ? '#9cff5a' : b.owner === 'saboteur' ? '#5ae0ff' : b.heavy ? '#bfe4ff' : '#ffb0a0';
+  for (let i = 0; i < 8; i++) {
+    const a = Math.atan2(-dy, -dx) + (Math.random() - 0.5) * 2.4, v = 1 + Math.random() * 2.5;
+    combatFxAt(b.z || 0, x, y, Math.cos(a) * v, Math.sin(a) * v, 0.25 + Math.random() * 0.15, i % 3 ? col : '#fff6e8', 0.07);
+  }
+  if (b.owner !== 'alien' && !b.wrench) combatFlip(b.heavy || b.owner === 'saboteur' ? 'fx/hit_spark_blue' : 'fx/hit_spark', x, y, b.heavy ? 0.9 : 0.6, b.z || 0);
+  else if (b.wrench && typeof sfx !== 'undefined' && sfx.clank) sfx.clank();
+}
 
 // ---------------------------------------------------------------------------
 // Invaders
@@ -613,26 +642,27 @@ function updateBoarding(dt) {
   updatePods(dt);
   for (const a of boarding.invaders) updateInvader(a, dt);
   boarding.invaders = boarding.invaders.filter(a => !a.dead);
+  const free = shotFree();
   for (const b of boarding.bolts) {
     const x0 = b.x, y0 = b.y;
     b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt; if (b.wrench) b.spin += dt * 18;
-    if (b.fast && !freeAt((x0 + b.x) / 2, (y0 + b.y) / 2)) { b.x = (x0 + b.x) / 2; b.y = (y0 + b.y) / 2; }   // (fast shots: don't skip through a wall)
-    if (b.owner === 'crew' && boltHitsBody(b, x0, y0)) continue;   // (before the wall: someone standing right at one)
-    if (!freeAt(b.x, b.y)) {                       // hit a wall
-      b.dead = true;
-      for (let i = 0; i < 5; i++) combatFx(x0, y0, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.3, b.owner === 'alien' ? '#9cff5a' : b.owner === 'saboteur' ? '#5ae0ff' : '#ffb0a0', 0.07);
-      continue;
-    }
-    if (b.owner === 'crew') {
-      // a near miss still gets its attention
-      for (const a of boarding.invaders) if (a.mode === 'inside' && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) {
-        if (a.kind === 'saboteur') sabProvoke(a); else if (a.state === 'wander') { a.state = 'fight'; a.seen = 0; }
-      }
-    } else {
+    // walls, closed doors and solid props stop it (sampled along the step: shotBlock); it only flies up to there
+    const k = shotBlock(x0, y0, b.x, b.y, free), wall = k >= 0;
+    if (wall) { b.x = x0 + (b.x - x0) * k; b.y = y0 + (b.y - y0) * k; }
+    if (b.owner === 'crew' && boltHitsBody(b, x0, y0)) continue;   // (anyone this side of the wall)
+    if (b.owner !== 'crew') {
       const c = crew.find(c => c.mode === 'inside' && segCircle(x0, y0, b.x, b.y, c.x, c.y, 0.35));
       if (c) {
         b.dead = true; combat.hits.crew++; combat.flashes[b.vx > 0 ? 'port' : 'star'] = 1; sfx.hit(false); hurtCrew(c);
         for (let i = 0; i < 10; i++) combatFx(c.x, c.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, b.owner === 'saboteur' ? '#5ae0ff' : b.owner === 'alien' ? '#9cff5a' : '#ff8a6a', 0.1);
+        continue;
+      }
+    }
+    if (wall) { b.dead = true; shotImpact(b, b.x, b.y); continue; }   // hit a wall, a closed door or a prop
+    if (b.owner === 'crew') {
+      // a near miss still gets its attention
+      for (const a of boarding.invaders) if (a.mode === 'inside' && Math.hypot(a.x - b.x, a.y - b.y) < 1.5) {
+        if (a.kind === 'saboteur') sabProvoke(a); else if (a.state === 'wander') { a.state = 'fight'; a.seen = 0; }
       }
     }
   }

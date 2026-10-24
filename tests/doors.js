@@ -47,6 +47,27 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     me.x = d.x - 0.7; me.y = d.y - 1.2; tickN(G, 30);
     check(d.open === 0, 'walking past along the wall, off to the side of it, doesn\'t open it');
   }
+  // --- the lock (2026-10-24): bolted while shut; the bolts slide back while the sensor reacts, gone exactly when the
+  // leaves move; they shoot home again once it's shut. And the 'doors' ship upgrade: all of it 40% quicker
+  for (const fast of [false, true]) {
+    const G = loadGame(NAMES); G.startMission('intro', fast ? { ship: { doors: true } } : {}); G.mission.active = false; G.combat.enemies.length = 0;
+    const me = G.me, L = G.DECK_DOORS[0], cx = L.x + L.w / 2, total = G.DOOR_DELAY + G.DOOR_TIME, tag = fast ? 'fast doors' : 'plain doors';
+    if (fast) check(Math.abs(total - 0.6) < 1e-9 && Math.abs(G.DOOR_TIME - 0.36) < 1e-9, `the fast door actuators: unbolt + slide in ${total.toFixed(2)} s (instead of 1 s)`);
+    else check(Math.abs(total - 1) < 1e-9, `plain doors: unbolt + slide in ${total.toFixed(2)} s`);
+    tickN(G, 30);
+    check(G.DOORS.every(d => d.bolt === 1), `${tag}: every shut door is bolted`);
+    me.x = cx; me.y = G.SPINE_Y1 + 0.9;
+    let honest = true, mid = null;
+    for (let t = 0; t < total + 0.1; t += DT) { G.simTick(DT); if (L.open > 0 && L.bolt > 0) honest = false; if (mid === null && t >= G.DOOR_DELAY / 2) mid = L.bolt; }
+    check(mid > 0.3 && mid < 0.7, `${tag}: halfway through the delay the bolts are half back (${mid?.toFixed(2)})`);
+    check(honest && L.open === 1 && L.bolt === 0, `${tag}: the leaves only move once the bolts are out; open after ${total.toFixed(2)} s`);
+    me.x = cx; me.y = G.SPINE_Y1 + 4; tickN(G, Math.round((G.DOOR_LINGER + G.DOOR_TIME) / DT) + 4);
+    check(L.open === 0 && L.bolt < 0.5, `${tag}: shut again, the bolts are still sliding home (${L.bolt.toFixed(2)})`);
+    tickN(G, Math.round(G.DOOR_DELAY / DT) + 2);
+    check(L.bolt === 1, `${tag}: …and then it's bolted`);
+    G.startMission('intro');
+    if (fast) check(Math.abs(G.DOOR_DELAY + G.DOOR_TIME - 1) < 1e-9, 'the next mission without the upgrade: back to 1 s (it doesn\'t leak between missions)');
+  }
   // --- never shuts on someone in the doorway
   {
     const G = fresh(), me = G.me, d = G.DOORWAYS[2];
@@ -171,6 +192,7 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     const C = loadGame(NAMES); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), 11);
     check(C.DECK_DOORS[1].open === 1 && C.DOORWAYS[1].locked && C.DOORWAYS[3].pry > 0.25 && C.DECK_DOORS[2].jammed, 'a browser gets every door\'s state: open, locked, pried, jammed');
     check(C.walkRects().includes(C.DECK_DOORS[1]) && !C.walkRects().includes(C.DECK_DOORS[0]), 'and walks (predicts) through the open ones only');
+    check(C.DECK_DOORS[1].bolt === 0 && C.DECK_DOORS[0].bolt === 1, 'and the locks: the open door unbolted, the shut ones bolted');
     G.breachRoom('portGun'); tickN(G, 5); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), 11);
     check(C.DOORWAYS[0].blast && C.DECK_DOORS[0].blast, 'the blast doors too');
   }

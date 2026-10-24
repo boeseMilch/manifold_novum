@@ -1749,6 +1749,14 @@ Per-player state in `ui.mini`; actions are commands `['mini', action, …]` (sam
   - Cost: one extra hash per hairline on a walked cell; bridge view, half resolution, SwiftShader (machine under load):
     median frame 400–417 ms on vs 400–450 ms off, i.e. lost in the noise. The field: ~0.2 s once on the first floor draw
     (only with path scratches on). tests/walkfield.js checks the field and the floor data.
+- **Regression fixed 2026-10-24** (playtest: "right end of the ship has one repeating scratch again"): not the shader.
+  The interior atlas repack in 74a054b (ship doors revamp) was made from a render folder that still had the old
+  `floor_blue_a` (three baked scuffs) and `floor_red_b` (baked tape strip), so every blue tile of layout a again showed
+  the same scuffs (and every red b tile the same tape). Fix: re-rendered both from `floors.py` (clean) and copied just
+  those two rects (beauty, normal, height, mask, with their padding) into `assets/sprites/interior/page0*.webp` in place;
+  no other interior sprite changed (pixel diff limited to those two rects). A full `pack.py interior` from a local
+  `build/renders/` is only safe when that folder is current (on the dev machine it is not: deck/outer airlocks missing).
+  Before repacking interior, check the floor tiles in the packed page are clean.
 
 ### 9q. Floor nuts with a real normal map (request: "the littered nuts on the ground still need a normal map")
 
@@ -3825,3 +3833,76 @@ with the manual override (three good whacks / heaves, E or click), the kind that
   more", the energy panel and the inventory slots (js/sidebar.js leftPanelRects; systems.js powerPanelRect). It moves the
   least it can, right of / below / above them, staying on screen (keepOffPanels, pure). tests/sidebar.js: the layout and
   a sweep at 760 / 1024 / 1400 / 1920 px.
+
+### Shots stop where walking stops (2026-10-24, js/invader.js, js/systems.js)
+- Playtest: "all the collision boxes for walking should also work for shooting". Projectile space (`shotFree` /
+  `freeAt`, js/invader.js) is now the walking geometry itself: the walkable rects right now (`walkRects`: rooms, open
+  doors and airlock doors, a docked ship's floor) minus `SOLIDS` (furniture, consoles, the reactor, crates and other
+  clutter, the cargo pods), same test as `canStand`; outside the hull as before (free but for the pirate base's walls and
+  cover). So crates, consoles, the map table, the treadmill rails... stop every indoor shot, ours (laser, heavy blaster,
+  thrown wrench) and theirs (spit, the saboteur, pirates, the sentry, the captain) alike; open doorways let shots through,
+  closed doors don't.
+- No tunnelling: each step of a shot is sampled every 0.05 units (`shotBlock`; the thinnest solid, the stall wall, is
+  0.15), the shot flies only up to the first blocked point, and bodies are hit only on that side of it (replaces the
+  fast shots' midpoint check). Firing with the muzzle poking into a wall / crate (body → muzzle blocked): the shot hits
+  there instead of starting on the far side.
+- Impact (`shotImpact`): sparks bouncing back off the surface at the shot's height in its colour, plus the hit-spark
+  flipbook (blue for the heavy blaster / saboteur); a wrench clanks. Enemy AI's line of sight (`lineOfSight`) is
+  unchanged: it still only sees walls, so a pirate may shoot at you behind a crate and hit the crate.
+- S-7 wrapped round a capacitor (js/culture.js s7BoltHit): a shot stopped by that capacitor hits the wrap (it covers it).
+- tests/shotcollision.js; tests/captain.js (shots from behind him start where you could stand, not in the back wall),
+  tests/controls.js (the wrench thrown away from the capacitor), tests/dock.js (the creep in the airlock's inner
+  doorway: the door held open for the shot).
+
+### Playtest fixes: jump hint, 4-shell ammo panel, first aid vs stim (2026-10-24, js/mission.js, js/game.js, js/systems.js, js/progress.js)
+- "Only say 'needs one energy mid' if there is no energy": the stall marks (ring, NO ENERGY label, red light, sidebar)
+  already only showed with MID empty or broken, but the spool-up banner said "needs 1 energy in MID" every time, and
+  (with MID charged) the jump happens the same tick, so it hung over the jump-out. Now the spool banner names the need
+  only when MID can't power it (broken: "fix the middle capacitor, then 1 energy"), else just "Jump drive spooling up!";
+  and a leftover "Jump failed"/"needs energy" banner is dropped as soon as MID has energy (handle not pulled yet, or a
+  docked ship holding the jump).
+- Efficient cannons' ammo panel (drawCannonHUD): the 4th shell sat under the "energy: x/y" text at the old 26 px pitch,
+  so a spent 4th shell looked like it vanished (4 → "3" → "2 full, 1 empty"). The shells now squeeze to fit left of the
+  text: always SHOTS_PER_ENERGY of them, full or empty.
+- First aid course vs stim pack: first aid is the treat-others item (crewmates 1.2 s instead of 2 s); on yourself only a
+  bit faster now: 8 s down (was 6; default 10), 16 s out cold alone (was 12; default 20). The stim pack (3 s / 6 s) stays
+  the self-heal item and wins when owned together (tests/progress.js checks both). Balance model's selfPatch follows.
+
+### Solo playtest, chapters 1, 2, 3, 6 (2026-10-24, js/progress.js, js/mission.js, js/dock.js)
+- **c1 First Contract, one more encounter**: a second pirate interceptor solo (`crew.extra`, the c4 way: 3 asked / 4 were
+  played, 4 asked would play the same 4, 5 would add the asteroid swarm rather than pirates): 5 played (×2 plays 6, also
+  with two interceptors). Refitted like --calibrate: ×0.85 left the port cannon waiting 6 s, so reactor ×0.7 and 4 cells
+  (were ×0.85, 3): ~18% idle solo (was 32%), in spec.
+- **c6 Spore Season, one more encounter**: a spore mother (crew.events 6 solo and ×2: 5 asked would play the same 5, the
+  swarm already being the finale; ×2 played 5 and mustn't get fewer than solo). Solo refitted (×0.5 / 3 cells went out of
+  spec): ×0.7, 6 cells, ~11% idle (was 31%; model 'tight', listed PLAYTESTED in tests/scaling.js); ×2 kept (×0.5, 3 cells,
+  in spec, ~46% idle, was 57%).
+- **c2 Strange Cargo, the aliens break out later**: the shaped timeline ignores written times, so the pods (the written
+  second event) burst at ~75 s solo and 28 s with a crew. New `pin: true` on a written event (layoutMission): it keeps its
+  written time (scaled to the length, ±10 s jitter, never after the finale), the others are shaped around it; never swapped
+  into the finale. The intruder is written at 160 s after the mine drone and the jammed cannon: solo now swarm 15, mines
+  ~100, pods 150-170, failing part, frigate 230, at every crew size. Cells / reactor refitted and unchanged; ~16% idle solo
+  (was 14%), ×2 56% (55%), ×4 47% (50%).
+- **c3 The Empty Lab, the lab casts off once you're done** (dock.js autoCastOff): in a black-box mission, the box aboard
+  and nobody over there (its rooms, the tube, its viewport way in) for 5 s, the derelict casts off by itself: the same
+  8 s release and undock as the hand cast-off. Anyone stepping back over during that countdown holds the tether again
+  ("Tether held"), so the automatic release never strands a crewmate. State lives in dk.dock (detachT, auto, doneT), in
+  the snapshot. tests/dock.js covers it.
+
+### The ship looks it when it's about to fall apart, and breaks up when it does (2026-10-24, js/breakup.js)
+Playtest: "need animation for ship falling apart, and also already show it in a bad state when it has no
+life left". Looks and sound only, worked out in every browser from synced state (broken parts vs
+MAX_DAMAGE, mission.over, `time`), so multiplayer needs nothing new on the wire; not in the server's sim.
+- Strain (life left = MAX_DAMAGE − broken parts): nothing at 3+; at 2 a first hairline crack; at 1 a few
+  dark cracks, rare sparks, a creak now and then; at 0 (ONE MORE = LOST) 16 cracks on floors and outer
+  wall tops glowing hot and smouldering, sparks spitting from them, bits of plating drifting off the hull,
+  short brown-outs of the ceiling lamps (lights.js strainFlicker: brief, never dark), a metal groan
+  (sfx.creak) with a camera shudder. Eased in and out per browser as parts break and get fixed.
+- Break-up (mission.over.breakup, set with the damage loss in updateMission): BREAKUP_T = 4.75 s before the
+  end screen (endScreenReady waits, like the jump-out): the camera pulls out to the whole ship and shakes
+  harder; 19 seeded blasts (fx/explosion_l + hitfx sparks/smoke/debris) tear hull plates off that tumble
+  away; air vents in white jets; a glowing fracture runs across the ship and tears open to space; the
+  reactor goes (sfx.breakup, a blinding bloom) and the end screen fades in out of it. Seeded by
+  mission.over.at: the same break-up in every browser; late joiners skip the past blasts. Behind the end
+  screen the ship stays torn open and dark. New sounds: sfx.creak, sfx.tear, sfx.breakup.
+- tests/jumpfx.js: a loss now plays the break-up, then the end screen after BREAKUP_T.

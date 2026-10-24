@@ -138,7 +138,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   p.add('KeyE'); k.add('KeyE'); tickN(G, Math.ceil(G.REPAIR_TIME / DT) + 5); k.delete('KeyE'); G.simTick(DT);
   check(q.broken, 'holding E next to a broken part does not repair it (E is for the thing that is there)');
   // nothing to repair in reach: Space throws the wrench, as before
-  q.broken = false; G.boarding.bolts.length = 0; me.inv.cd = 0; G.simTick(DT); p.add('Space'); k.add('Space'); G.simTick(DT); k.delete('Space'); G.simTick(DT);
+  q.broken = false; G.boarding.bolts.length = 0; me.inv.cd = 0; G.simTick(DT); me.face = -Math.PI / 2; p.add('Space'); k.add('Space'); G.simTick(DT); k.delete('Space'); G.simTick(DT);
   check(G.boarding.bolts.some(b => b.wrench), 'with nothing to repair in reach, Space throws the wrench');
 }
 // --- E on the power lever: tap (let go before 0.5 s) steps it, hold 0.5 s wedges / pulls the wrench

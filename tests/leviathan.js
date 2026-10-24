@@ -6,7 +6,8 @@ const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'le
   'mission', 'startMission', 'withCrew', 'boarding', 'GUNS', 'hz', 'SYSTEMS', 'power', 'LEVB_PANEL', 'LEVB_NEED', 'LEVB_WINDOW', 'LEVB_SINK', 'LEVB_VENTS', 'LEVB_LEECHES', 'netSerialize', 'netApply',
   'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W',
   'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_DOORS', 'FLOOR_RECTS', 'interactSpots', 'LEVB_BROOD_WAVES',
-  'LEVB_BROOD_SCALE', 'LEVB_BROOD_HIT', 'LEVB_BROOD_REACH', 'LEVB_BROOD_GAP', 'applyKit', 'netServer', 'levOverrideStatus', 'withCrew', 'GEAR'];
+  'LEVB_BROOD_SCALE', 'LEVB_BROOD_HIT', 'LEVB_BROOD_REACH', 'LEVB_BROOD_GAP', 'applyKit', 'netServer', 'levOverrideStatus', 'withCrew', 'GEAR',
+  'LEVB_BLAST', 'LEVB_OUTRO', 'LEVB_ENGINE', 'levBlast', 'levCinema', 'levSkip', 'levHoldsJump', 'minigameSpots', 'SHIP_H', 'player', 'problemSpots', 'encounterPlates'];
 const { route, clearLine } = require('../tools/travel');
 const DT = 1 / 60;
 let failed = 0;
@@ -176,7 +177,8 @@ for (const n of [1, 3]) {
   const E = fresh(1); E.mission.easy = 2; E.startLevBoss(3); parked(E);
   check(Math.abs(B(E).p3.win - 20) < 0.1, 'very easy: a 20 s window');
 }
-// --- phase 4: the brood drains MID; the override is refused below 3, works at 3; freed → it sinks, the jump spools
+// --- phase 4: the brood drains MID; the override is refused below 3, works at 3; freed → a short cutscene, then the ship
+// jumps by itself (2026-10-24, the user: pressing the button to jump out was pointless once it's beaten)
 {
   const G = fresh(1, 'c8'); G.mission.events = []; G.combatClear();
   G.startLevBoss(4); parked(G, 90);
@@ -198,11 +200,70 @@ for (const n of [1, 3]) {
   const m = me.input.mouse; m.wx = G.LEVB_PANEL.x; m.wy = G.LEVB_PANEL.y; m.down = true; tick(G, 4.3); m.down = false;
   check(B(G).phase === 'blast' && cap.charge === 0, 'holding it 4 s: the ENGINE BLAST, the 3 charges used');
   const jump0 = G.mission.jumpAt;
-  tick(G, 3.2);
-  check(B(G)?.phase === 'freed' && Math.abs(G.mission.jumpAt - (G.mission.t + G.LEVB_SINK - 0.2)) < 0.3, `it's free: it sinks, and the jump drive spools in ${G.LEVB_SINK} s (was due at ${jump0.toFixed(0)} s)`);
-  (G.evs.coils || []).forEach(c => { c.ok = true; });   // (c8's coils rule: aligned, so no extra spool time)
-  tick(G, G.LEVB_SINK + 0.5);
-  check(!B(G) && G.mission.jump, 'it\'s gone; the drive spools (c8: someone pulls the handle)');
+  // the blast, seen: the camera frames the stern, the flame and the nest on its back
+  const box = G.levCinema(), nest = G.levSpotAt(G.levChain(B(G)), 'nest'), inBox = (b, x, y) => b && x > b[0] && x < b[2] && y > b[1] && y < b[3];
+  check(inBox(box, G.LEVB_ENGINE.x, G.LEVB_ENGINE.y) && inBox(box, nest.wx, nest.wy), `the blast: the camera frames the engine and the nest it burns ([${box && box.map(v => v.toFixed(0))}])`);
+  tick(G, G.LEVB_BLAST + 0.2);
+  (G.evs.coils || []).forEach(c => { c.ok = false; });   // (c8's coils rule: even misaligned coils don't hold it up now)
+  check(B(G)?.phase === 'freed' && G.mission.autoJump && Math.abs(G.mission.jumpAt - (G.mission.t + G.LEVB_OUTRO - 0.2)) < 0.3, `it's free: it swims off, and ${G.LEVB_OUTRO} s later the ship jumps by itself (was due at ${jump0.toFixed(0)} s)`);
+  const wide = G.levCinema();
+  check(inBox(wide, 0, 0) && inBox(wide, 44, 26), `freed: the camera pulls out to the whole ship and the creature ([${wide && wide.map(v => v.toFixed(0))}])`);
+  check(!G.minigameSpots().some(q => q.x === G.JUMP_HANDLE.x && q.y === G.JUMP_HANDLE.y), 'nothing to do at the helm: the jump handle has no use ring (c8\'s handle rule notwithstanding)');
+  tick(G, G.LEVB_OUTRO - 0.5);
+  check(!G.mission.over && !G.mission.jump, 'the cutscene plays (no jump yet, no drive waiting for a handle)');
+  tick(G, 0.6);
+  check(G.mission.over?.won && G.mission.over.survived && !G.mission.jump && cap.charge === 0, `then it jumps by itself and the mission is won: no handle, no nav fix, no MID energy ("${G.mission.over?.reason}")`);
+  check(G.levCinema() === null, 'the cutscene makes way for the jump\'s own animation');
+}
+// --- the cutscene: Esc skips it (solo, or the host); the other players can't; every browser gets the jump from the snapshot
+{
+  const G = fresh(2, 'c8'); G.mission.events = []; G.combatClear(); G.startLevBoss(4); parked(G, 90);
+  const other = G.crew.find(c => c !== G.me);
+  G.mission.shipOf = { id: G.me.id, name: G.me.name };   // (the host: whose ship flies, js/net.js netServer.init)
+  G.CAPACITORS[1].charge = 3; G.levBlast(); tick(G, 1);
+  check(G.withCrew(other, () => G.levSkip()) === false && B(G).phase === 'blast', 'a guest\'s Esc doesn\'t skip the host\'s cutscene');
+  const H = fresh(2, 'c8'); H.netApply(JSON.parse(JSON.stringify(G.netSerialize())), other.id);
+  check(H.org.boss?.phase === 'blast' && JSON.stringify(H.levCinema()) === JSON.stringify(G.levCinema()), 'a guest\'s browser frames the same shot (from the snapshot)');
+  check(G.withCrew(G.me, () => G.levSkip()) === true && B(G).phase === 'freed' && G.mission.autoJump, 'the host\'s Esc skips it: freed at once…');
+  G.simTick(DT);
+  check(G.mission.over?.won, '…and the ship jumps right away (won)');
+  H.netApply(JSON.parse(JSON.stringify(G.netSerialize())), other.id);
+  check(H.mission.over?.won && H.mission.autoJump, 'the guests\' browsers follow: the jump-out and the win come with the snapshot');
+}
+// --- nothing sends anyone to the helm for the engine: the panel's place in every text, an arrow to it off-screen
+{
+  const G = fresh(1, 'c8'); G.mission.events = []; G.combatClear(); G.startLevBoss(4); parked(G, 90);
+  const texts = [G.levOverrideStatus().text, G.withCrew(G.me, () => G.clickTarget(G.JUMP_HANDLE.x, G.JUMP_HANDLE.y))?.text || '', G.MISSIONS.c8.briefing,
+    ...G.encounterPlates().filter(q => q.key === 'levboss').map(q => q.sub)];
+  check(texts.every(t => !/helm/i.test(t) || /not needed/.test(t)) && /reactor room/.test(G.MISSIONS.c8.briefing) && texts.filter(t => /reactor room/i.test(t)).length >= 3,
+    `the override is in the reactor room, everywhere it's mentioned; the jump handle says it isn't needed (${texts.slice(0, 2).map(t => `"${t}"`).join(', ')})`);
+  check(G.problemSpots().some(q => q.key === 'levOverride' && q.room === 'Reactor room'), 'an arrow at the screen\'s edge points to the ENGINE OVERRIDE in the reactor room');
+  check(G.levHoldsJump() && !G.minigameSpots().some(q => q.x === G.JUMP_HANDLE.x), 'no use ring at the helm\'s jump handle in c8, from the start');
+}
+// --- it swims continuously (2026-10-24, the user: "when it swims to the left the first time it's not continuous, it just
+// jumps"): every piece of it, every frame, through a scripted fight: how far it moves, and how much that changes frame to frame
+{
+  const G = fresh(1); G.startLevBoss(1);
+  const PIECES = ['head', 0, 1, 2, 3, 4, 5, 'tail', 'fluke'];
+  let prev = null, pv = null, maxD = 0, maxJ = 0, where = '', t = 0;
+  while (B(G) && B(G).phase !== 'blast' && t < 400) {
+    keepSafe(G); G.org.leeches = [];
+    if (B(G).parked) for (const id of G.levTargets(B(G))) shoot(G, id); else G.simTick(DT);
+    t += DT;
+    const ch = G.levChain(B(G)), pts = PIECES.map(k => [ch.pieces[k].x, ch.pieces[k].y]);
+    if (prev) {
+      const v = pts.map((q, i) => [q[0] - prev[i][0], q[1] - prev[i][1]]);
+      v.forEach((q, i) => {
+        maxD = Math.max(maxD, Math.hypot(...q));
+        const j = pv ? Math.hypot(q[0] - pv[i][0], q[1] - pv[i][1]) : 0;
+        if (j > maxJ) { maxJ = j; where = `${PIECES[i]}, ${B(G).phase} ${B(G).step}`; }
+      });
+      pv = v;
+    }
+    prev = pts;
+  }
+  check(B(G)?.phase === 'p4' || B(G)?.phase === 'blast' || t >= 400 ? maxD < 0.5 : false, `no piece jumps: at most ${maxD.toFixed(2)} a frame (swimming at ${(10 / 60).toFixed(2)} a frame)`);
+  check(maxJ < 0.15, `no jolts: a piece's step changes by at most ${maxJ.toFixed(3)} from one frame to the next (${where}; the old snaps: 0.4-1.8)`);
 }
 // --- the jump never comes before the fight is over
 {
@@ -244,7 +305,7 @@ for (const n of [1, 3]) {
 // --- phase 4 solo, played through the real inputs (2026-10-20, the user: "there was no menu to charge the engine … it was
 // impossible to complete"). From the right cannon (where phase 3 ends): E climbs down, walk (WASD along a route) to the power
 // lever, E turns it to MID, hold E wedges it; refuel the reactor from the crate by clicks when it runs dry; at MID 3 walk to
-// the stern and hold E on the override; then walk to the helm and hold E on the jump handle (c8's handle rule). No laser: the
+// the stern and hold E on the override; freed, the ship jumps by itself (no handle since 2026-10-24). No laser: the
 // brood can't be shot, so it only works because the nest's brood runs out (LEVB_BROOD_WAVES) and the emergency cell.
 function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   const G = fresh(n, 'c8'); G.mission.events = []; G.combatClear();
@@ -300,11 +361,8 @@ function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   out.panelPrompt = me.prompt?.text;
   while (b()?.phase === 'p4' && out.t < 700) { if (!selfTreat()) holdE(5, () => b()?.phase !== 'p4' || me.health === 'down'); loadFuel(); }
   out.blast = b()?.phase === 'blast';
-  (G.evs.coils || []).forEach(c => { c.ok = true; });            // (c8's coils rule: aligned, so no extra spool time)
-  while (!G.mission.jump && out.t < 750) { loadFuel(); tick(); }
-  walkTo(G.JUMP_HANDLE.x, G.JUMP_HANDLE.y + 0.9, 0.8);
-  while (!G.mission.over && out.t < 900) { if (!selfTreat()) holdE(10, () => !!G.mission.over); loadFuel(); }
-  out.won = !!G.mission.over?.won;
+  while (!G.mission.over && out.t < 750) tick();                  // (the cutscene, then the jump: nobody goes anywhere)
+  out.won = !!G.mission.over?.won && !G.mission.jump;
   return out;
 }
 {
@@ -312,9 +370,9 @@ function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   const seen = [...r.seen];
   check(r.parked && r.wedged, 'solo phase 4: it parks behind; E climbs down, at the lever E turns it to MID and holding E wedges it there');
   check(seen.some(t => /hold E on it to wedge it|hold E on the power lever/.test(t)) || seen.some(t => /wedge the wrench in/.test(t)), 'the prompts say how to keep the lever on MID');
-  check(r.drained > 0 && r.waves === r.G.LEVB_BROOD_WAVES && r.G.org.boss === null, `without a laser the brood drains MID (${r.drained}×), but the nest's brood is spent after ${r.waves} waves`);
+  check(r.drained > 0 && r.waves === r.G.LEVB_BROOD_WAVES && r.blast, `without a laser the brood drains MID (${r.drained}×), but the nest's brood is spent after ${r.waves} waves`);
   check(/^Hold E: MANUAL OVERRIDE/.test(r.panelPrompt || ''), `at MID 3, standing at the stern panel: "${r.panelPrompt}"`);
-  check(r.blast && r.won, `solo, real inputs only (no laser): engine blast, it's freed, the handle pulled → mission won (${r.t.toFixed(0)} s into phase 4)`);
+  check(r.blast && r.won, `solo, real inputs only (no laser): engine blast, it's freed, it jumps by itself → mission won (${r.t.toFixed(0)} s into phase 4)`);
   const c = playPhase4({ n: 2 });
   check(c.won, `a crew of 2 (one player doing it all, 4 crawlers a wave): won too (${c.t.toFixed(0)} s)`);
 }

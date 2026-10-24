@@ -340,7 +340,8 @@ function updatePirate(p, dt) {
 function updateDock(dt) {
   const d = dk.dock;
   if (d) {
-    if (d.detachT !== null && (d.detachT -= dt) <= 0) undock();
+    autoCastOff(d, dt);                               // (the derelict, once the black box is aboard: below)
+    if (d.detachT != null && (d.detachT -= dt) <= 0) undock();
     for (const f of d.fires || []) {                  // derelict fire: hurts anyone standing in it
       f.t += dt;
       for (const c of crew) if (c.mode === 'inside' && Math.hypot(c.x - f.x, c.y - f.y) < 0.8 && f.t > 1.5) { f.t = 0; hurtCrew(c); combatBanner(`${c.name} walked into the fire!`); }
@@ -520,6 +521,24 @@ function derelictCastOff() {
   d.detachT = RELEASE_TIME; sfx.alarm();
   const left = derelictCrew();
   combatBanner(`Casting off the derelict — the tether releases in ${RELEASE_TIME} s.${left.length ? ` ${left.map(c => c.name).join(', ')}: get back aboard!` : ''}`);
+}
+// 2026-10-24 (solo playtest: "detach the derelict lab sooner, once you're done with it"): in a black-box mission, once the box
+// is aboard and nobody is over there (its rooms, the tube, its viewport way in) for AUTO_CAST_OFF s, the derelict casts off by
+// itself, the same way (RELEASE_TIME s, then undock). Never with a crewmate over there: anyone who steps back over during that
+// countdown holds the tether again (d.auto: only this automatic release is held; the jump's and the hand cast-off's are not).
+const AUTO_CAST_OFF = 5;
+const derelictOccupied = () => crew.filter(c => (c.mode === 'inside' && inDock(c.x, c.y)) || inDockEntry(c.x, c.y, 'dock'));
+function autoCastOff(d, dt) {
+  if (d.kind !== 'derelict' || typeof mission === 'undefined' || !mission.active || mission.over || mission.objective?.kind !== 'blackbox') return;
+  const over = derelictOccupied();
+  if (d.detachT != null) {
+    if (d.auto && over.length) { d.detachT = null; d.auto = false; d.doneT = 0; combatBanner(`Tether held — ${over.map(c => c.name).join(', ')} went back over to the derelict.`); }
+    return;
+  }
+  if (over.length || !objectiveAboard('blackbox')) { d.doneT = 0; return; }
+  if ((d.doneT = (d.doneT || 0) + dt) < AUTO_CAST_OFF) return;
+  d.detachT = RELEASE_TIME; d.auto = true; sfx.alarm();
+  combatBanner(`The black box is aboard — casting off the derelict, the tether releases in ${RELEASE_TIME} s.`);
 }
 function derelictAct() {
   const d = dk.dock, h = DG().hatch;

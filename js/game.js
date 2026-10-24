@@ -162,10 +162,13 @@ function updateCrew(c, dt, ix, iy) {
 // (forceDoor). Every door opens for anyone, intruders and pirates too; a locked one only humans override: pirates force it,
 // slowly (pryDoor); intruders wait.
 // ---------------------------------------------------------------------------
-const DOOR_TIME = 0.6, DOOR_SENSE = 1.0, DOOR_LINGER = 1.0;   // s to slide open / shut; reach of the sensor; s it stays open after
+const DOOR_SENSE = 1.0, DOOR_LINGER = 1.0;          // reach of the sensor; s it stays open after
 // (2026-10-22, the user: a noticeable delay at a shut door: it reacts DOOR_DELAY s after someone steps up (a hiss), then
 // slides open in DOOR_TIME s: ~0.75 s until you can pass. An open door stays open for whoever follows.)
-const DOOR_DELAY = 0.4;
+// (2026-10-24: the delay is the lock: its bolts slide back (d.bolt 1 -> 0) before the leaves move, and shoot home again
+// once they're shut. The 'doors' ship upgrade (js/progress.js applyShipUpgrades) makes both 40% quicker: DOOR_TIMES.fast.)
+const DOOR_TIMES = { base: { slide: 0.6, delay: 0.4 }, fast: { slide: 0.36, delay: 0.24 } };
+let DOOR_TIME = DOOR_TIMES.base.slide, DOOR_DELAY = DOOR_TIMES.base.delay;   // s to slide open / shut; s to unbolt first
 const DOOR_HOLD = 5;                                // s a forced pressure door stays open (the rooms equalize meanwhile)
 const DOOR_PRY_LOCKED = 8;                 // s pirates need to force a locked or broken door (an unlocked one opens for them)
 
@@ -202,6 +205,9 @@ function updateDoors(dt) {
     const inIt = d.open > 0.25 && bodies.some(c => inRect(c.x, c.y, d, CREW_R));
     const want = d.hold > 0 || d.jammed || inIt || (auto && d.stay > 0);
     d.open = clamp(d.open + (want ? dt : -dt) / DOOR_TIME, 0, 1);
+    // the lock (drawing only, js/art.js drawDoorLock): bolted while shut; someone at it: the bolts slide back as the
+    // sensor reacts (gone exactly when the leaves start to move); shut again: they shoot home in DOOR_DELAY s
+    d.bolt = d.open > 0 ? 0 : at ? Math.min(clamp((d.bolt ?? 1) + dt / DOOR_DELAY, 0, 1), 1 - d.sense / DOOR_DELAY) : clamp((d.bolt ?? 1) + dt / DOOR_DELAY, 0, 1);
   }
 }
 // The pressurized room a forced door would vent (null: none, both sides alike).
@@ -274,6 +280,7 @@ function gunKeyTurn(g, kx, ky, dt) {
 function updatePlayer(dt) {
   const block = (debugOpen && player === me) || !!ui.panel || !!mission.over;
   if (ui.override && !mission.over && keys.has('KeyE') && !player.eUsed && !pressed.has('Escape')) { pressed.delete('KeyE'); overrideHit(); }   // E hits, like the button (held: again after each swing)
+  if (!ui.panel && pressed.has('Escape') && typeof levSkip === 'function' && levSkip()) pressed.delete('Escape');   // skips the leviathan's ending (js/leviathan.js)
   if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape')) && tutAllows('closePanel')) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); player.eUsed = true; }
   if (!keys.has('KeyE')) player.eUsed = false;           // (E that did something stays used until it's let go)
   const ix = block ? 0 : (held('KeyD') ? 1 : 0) - (held('KeyA') ? 1 : 0);   // WASD walks, the arrow keys aim
@@ -642,7 +649,8 @@ function cameraTarget() {
 function updateCamera(dt) {
   const [tx, ty, tz] = cameraTarget();
   const tutView = typeof tutorialOverview === 'function' && tutorialOverview();   // (the tutorial's ship tour)
-  const jumping = !!mission.over?.survived && isFinite(jumpOutT());                // (jumping out: the whole ship in view)
+  const jumping = !!mission.over?.survived && isFinite(jumpOutT())                 // (jumping out: the whole ship in view)
+    || (typeof breakupOverview === 'function' && breakupOverview());                 // (breaking up, js/breakup.js: the same)
   cam.overview = clamp(cam.overview + (DEBUG_OVERVIEW || tutView || jumping ? dt : -dt) * 4, 0, 1);
   const o = cam.overview * cam.overview * (3 - 2 * cam.overview);
   const vh = VH - HUD_H;
@@ -653,9 +661,21 @@ function updateCamera(dt) {
   cam.zoom = cam.baseZoom * Math.pow(zShip / cam.baseZoom, o);
   cam.ox = lerp(0, (VIEW_SHIP.x0 + VIEW_SHIP.x1) / 2 - cam.x, o);
   cam.oy = lerp(0, (VIEW_SHIP.y0 + VIEW_SHIP.y1) / 2 - cam.y, o);
+  // a cutscene's frame (the leviathan's engine blast and farewell, js/leviathan.js levCinema): [x0, y0, x1, y1], glided to
+  // and back from; it makes way for the jump's whole-ship view (levCinema is null once the mission's over)
+  const C = typeof levCinema === 'function' ? levCinema() : null;
+  if (C) cam.cineBox = cam.cineBox && cam.cine > 0 ? cam.cineBox.map((v, i) => lerp(v, C[i], 1 - Math.exp(-3 * dt))) : C;
+  cam.cine = clamp((cam.cine || 0) + (C ? dt : -dt) * 1.4, 0, 1);
+  if (cam.cine > 0 && cam.cineBox) {
+    const c = cam.cine * cam.cine * (3 - 2 * cam.cine), [x0, y0, x1, y1] = cam.cineBox;
+    const zC = Math.min(VW / ((x1 - x0) * T), (vh - INV_RESERVE * (1 - cam.overview)) / ((y1 - y0) * T * viewSy()));   // (above the inventory: camera())
+    cam.zoom *= Math.pow(zC / cam.zoom, c);
+    cam.ox = lerp(cam.ox, (x0 + x1) / 2 - cam.x, c); cam.oy = lerp(cam.oy, (y0 + y1) / 2 - cam.y, c);
+  }
   const s = combat.shake * combat.shake * 0.35;        // big hits rattle the whole ship
   cam.sx = s * (Math.sin(time * 61) + 0.5 * Math.sin(time * 97)); cam.sy = s * (Math.cos(time * 53) + 0.5 * Math.sin(time * 89));
   const J = jumpCamera(time); cam.sx += J.x; cam.sy += J.y;          // the jump drive's rumble, the jump's lurch (js/mission.js)
+  if (typeof breakupCamera === 'function') { const B = breakupCamera(time); cam.sx += B.x; cam.sy += B.y; }   // the hull groaning, the ship breaking up (js/breakup.js)
   const [ix, iy] = injuryShake(time); cam.sx += ix; cam.sy += iy;    // a hit on you: the camera jolts (updateInjuryFx)
 }
 // Screen (CSS px) = (ox + x·T·zoom, oy + y·T·zoom·sy) for a point on the ground.
@@ -942,6 +962,7 @@ function render(t) {
     drawHullDecor(t);
   }
   drawShipDecals();
+  if (typeof drawStrainCracks === 'function') drawStrainCracks(t);   // the ship near falling apart: cracks in the hull and floors (js/breakup.js)
   drawBreachesOutside(t);
   drawEvaJobs(t);
   drawOrganicWorld(t);
@@ -963,8 +984,10 @@ function render(t) {
   drawPowerLines(t);
   if (G) glow(() => drawPowerGlow(t));
   glow(() => drawJumpCrackle(t));                    // the jump drive charging: blue crackle on the cables and the hull
+  if (typeof drawBreakupRift === 'function') glow(() => drawBreakupRift(t));   // breaking up: the fracture tearing open (js/breakup.js)
   if (!parts.locks) for (const d of DECK_DOORS) drawDeckDoor(d, t);
   if (!parts.doors) drawDoorways();
+  drawDoorLocks(t);                                  // the doors' bolts and wheels (js/art.js; over the door sprites)
   if (!parts.hatches) for (const h of HATCHES) drawAirlock2D(h, t);   // (the outer airlocks: js/airlock.js)
   else drawAirlockRings();
   for (const g of GUNS) drawGunLadder(g);
@@ -1038,8 +1061,10 @@ function render(t) {
   drawSporesInside(t);                               // spore haze, puffs through doors, fuzz on glitching parts (js/spores.js)
   drawSporeCloud(t);                                 // the spore mother's cloud round the hull (js/spores.js)
   drawVentRush(t);                                   // a room being vented: air, papers and mist rushing out (js/hazards.js)
+  drawAirlockPump(t);                                // an outer airlock pumping: air out (streaks, exhaust, frost) or in (puffs, haze) (js/airlock.js)
   drawDockDarkness();
   drawCombatFront(t);
+  if (typeof drawBreakupFront === 'function') drawBreakupFront(t);   // breaking up / under strain: hull plates, vented air, explosions (js/breakup.js)
   drawUseMarks(t);                                   // rings round what you can use, over everything in the world (js/systems.js)
   drawWalkFieldDebug();                              // debug: where the crew walk (js/walkfield.js; ?walkfield or the debug menu)
   if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
@@ -1165,10 +1190,13 @@ function drawCannonHUD(g) {
   rr(b.x - 10, b.y - 70, b.w + 20, b.h + 80, 10); ctx.fillStyle = 'rgba(10,12,18,0.8)'; ctx.fill(); stroke(1.5, '#4b5263');
   ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5'; ctx.textBaseline = 'middle';
   ctx.fillText('SHOTS', b.x, b.y - 56);
-  for (let i = 0; i < SHOTS_PER_ENERGY; i++) {        // shells
-    const sx = b.x + 4 + i * 26, sy = b.y - 44, on = i < g.shots;
-    rr(sx, sy, 14, 30, 6); ctx.fillStyle = on ? '#e8c34f' : '#2b303a'; ctx.fill(); stroke(1.5);
-    if (on) { ctx.fillStyle = '#b8862a'; ctx.fillRect(sx + 2, sy + 20, 10, 5); }
+  // shells: always SHOTS_PER_ENERGY of them (4 with the efficient cannons), full or empty, squeezed to fit left of
+  // the energy text (b.x + 86): 4 at the old 26 px pitch ran under it and the last one seemed to vanish when spent
+  const step = Math.min(26, 78 / SHOTS_PER_ENERGY), sw = Math.min(14, step - 6);
+  for (let i = 0; i < SHOTS_PER_ENERGY; i++) {
+    const sx = b.x + 4 + i * step, sy = b.y - 44, on = i < g.shots;
+    rr(sx, sy, sw, 30, Math.min(6, sw / 2)); ctx.fillStyle = on ? '#e8c34f' : '#2b303a'; ctx.fill(); stroke(1.5);
+    if (on) { ctx.fillStyle = '#b8862a'; ctx.fillRect(sx + 2, sy + 20, sw - 4, 5); }
   }
   ctx.fillStyle = cap.charge ? POWER_COL : '#ff8a7a'; ctx.font = '11px system-ui, sans-serif';
   ctx.fillText(`energy: ${cap.charge}/${CAP_MAX}`, b.x + 86, b.y - 38);
@@ -1273,6 +1301,7 @@ function clientUpdate(dt) {
   else if (!mission.over || lobby) music.rearm();          // a new mission, the menu or the lobby: the music plays again
   if (mission.over) creditMission();                 // rewards for this browser's player (once per run; early, before anything else can throw)
   jumpFxUpdate(dt);                                        // the jump's animation clock (js/mission.js)
+  if (typeof breakupUpdate === 'function') breakupUpdate(dt);   // strain and break-up: clock, particles, creaks (js/breakup.js)
   try { sfx.hum(jumpCharge()); } catch (e) { /* no audio */ }   // the drive's hum
   miniClient(dt);
   practiceClient();

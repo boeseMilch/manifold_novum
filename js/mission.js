@@ -306,16 +306,21 @@ function layoutMission(id, n) {
     sys: e.kind === 'maintenance' ? null : e.sys }));
   if (!evs.length) { Object.assign(mission, { events: [], lead: Infinity, gap: null, writtenGap: null, paceN: n, jumpAt: M.practice ? Infinity : JUMP_DELAY, overcharge: false }); return; }
   const L = M.length || MISSION_LENGTH, shaped = M.spacing !== 'even' && !M.practice, fl = finaleLead(id);
-  const times = shaped ? shapedTimes(evs.length, n, L, Math.random, M.finaleLead || 0) : null;
+  // pin: true (a written event): it keeps its written time (scaled to the mission's length, ±SHAPE.jitter s) instead of a
+  // slot in the shaped timeline; the others are shaped around it (2026-10-24, c2: the aliens break out of the cargo pods late)
+  const pinned = (e) => shaped && e.pin && !e.repeat, free = evs.filter(e => !pinned(e));
+  const pin = free.length ? pinned : () => false, slots = free.length ? free : evs;
+  const times = shaped ? shapedTimes(slots.length, n, L, Math.random, M.finaleLead || 0) : null;
   const lead = shaped ? times[0] : Math.min(...written.map(e => e.t)), end = shaped ? times[times.length - 1] : L - fl;
   const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
-  evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = shaped ? times[i] : evs.length > 1 ? lead + i * gap : end; });   // (t1: the time as written; a lone event is the finale)
+  evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = pin(e) ? Math.min(end - 5, e.t * L / MISSION_LENGTH + (Math.random() * 2 - 1) * SHAPE.jitter)
+    : shaped ? times[slots.indexOf(e)] : evs.length > 1 ? lead + i * gap : end; });   // (t1: the time as written; a lone event is the finale)
   // the finale: the last event is a fight, and the jump comes while it's still going
   // (and not an objective's event: it needs more than the 22 s before the jump)
   const sorted = () => [...evs].sort((a, b) => a.t - b.t), objective = new Set(M.essential || []);
   let last = sorted().pop();
   if (last && (!COMBAT_KINDS.has(last.kind) || objective.has(last.kind) || last.opener)) {
-    const fight = sorted().filter(e => e !== last && COMBAT_KINDS.has(e.kind) && !objective.has(e.kind) && !e.opener).pop();
+    const fight = sorted().filter(e => e !== last && COMBAT_KINDS.has(e.kind) && !objective.has(e.kind) && !e.opener && !pin(e)).pop();
     if (fight) [fight.t, last.t] = [last.t, fight.t];
   }
   const wLead = Math.min(...written.map(e => e.t));                     // (the written timeline's own spread)
@@ -411,7 +416,7 @@ function startMission(id = 'intro', opts = {}) {
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.intro).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.intro).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.intro).objective || null,
-    id, active: true, coilsChecked: false, autoPull: null, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
+    id, active: true, coilsChecked: false, autoPull: null, autoJump: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
     crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
     custom: (MISSIONS[id] || {}).custom ? customConfig(opts.custom) : null,
   });
@@ -448,6 +453,14 @@ function updateMission(dt) {
   if (crewSize() !== mission.paceN) crewChanged(crewSize());            // someone joined or left
   armMaintPairs();
   for (const ev of mission.events) if (!ev.done && mission.t >= ev.t) runEvent(ev);
+  // a jump of its own (autoJump: the finale's beaten, its cutscene plays: the leviathan freed, js/leviathan.js levFree): the
+  // drive winds up (jumpCharge) and jumps at jumpAt with no handle, nav fix, coils or MID energy, everyone aboard carried along
+  if (mission.autoJump && !mission.jump) {
+    if (mission.t < mission.jumpAt) return;
+    const obj = objectiveStatus();
+    if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out ${obj.fail}: objective failed.`, true);
+    return;
+  }
   // jump: after the last encounter the drive spools up; it jumps as soon as MID has energy (and the handle is
   // pulled, rule handle). There's no time limit, but every second it doesn't, things get worse (updatePressure).
   if (mission.t >= mission.jumpAt && !mission.jump && !mission.coilsChecked) {          // misaligned jump coils: the drive takes longer
@@ -464,7 +477,8 @@ function updateMission(dt) {
     mission.jump = { t: 0, st: 0, fails: 0 };
     mission.press = MISSIONS[mission.id]?.practice ? null : { n: 0, strain: 0, strainAt: mission.t + STRAIN_FIRST };   // (practice's jump handle: no hot zone)
     if (mission.rules?.handle) { combatBanner('No nav fix out here — someone pull the jump handle!'); sfx.say?.('No navigation fix. Manual jump required.'); }
-    else combatBanner('Jump drive spooling up — needs 1 energy in MID!');
+    else if (!midReady()) combatBanner(broken(CAPACITORS[1]) ? 'Jump drive spooling up — fix the middle capacitor, then 1 energy!' : 'Jump drive spooling up — needs 1 energy in MID!');
+    else combatBanner('Jump drive spooling up!');   // (MID has energy: no "needs energy" hint, it jumps right away)
   }
   if (mission.jump) {
     const j = mission.jump;
@@ -480,6 +494,7 @@ function updateMission(dt) {
       if (obj.done) endMission(true, 'Jumped out safely.'); else endMission(false, `Jumped out ${obj.fail}: objective failed.`, true);
       return;
     }
+    if (midReady() && /^Jump (failed|drive spooling up —)/.test(combat.banner?.text || '')) combat.banner = null;   // energy's in: drop the "no energy" hint
     if (!midReady()) {                                   // stalled: the drive charges, sputters out, tries again (jumpStall)
       j.st = (j.st || 0) + dt;
       if (j.st >= STALL_RISE + (j.fails || 0) * STALL_CYCLE) {
@@ -492,7 +507,10 @@ function updateMission(dt) {
     updatePressure();
   }
   const dmg = SYSTEMS.filter(s => s.broken).length;
-  if (dmg > MAX_DAMAGE) endMission(false, mission.press ? `The ship fell apart waiting for the jump (${dmg} parts broken).` : `The ship fell apart (${dmg} parts broken at once).`);
+  if (dmg > MAX_DAMAGE) {
+    endMission(false, mission.press ? `The ship fell apart waiting for the jump (${dmg} parts broken).` : `The ship fell apart (${dmg} parts broken at once).`);
+    mission.over.breakup = true;                       // (every browser plays the ship breaking up before the end screen: js/breakup.js)
+  }
 }
 // When the drive will spool up (mission time): jumpAt, plus the misaligned coils' delay while it isn't added yet.
 const jumpDueAt = () => mission.jumpAt + (!mission.coilsChecked && typeof coilDelay === 'function' ? coilDelay() : 0);
@@ -1199,7 +1217,7 @@ function jumpOutT() {
   return jumpClock && jumpClock.at === o.at ? jumpClock.t : Math.max(0, time - o.at);
 }
 // The end screen (results) shows: the mission is over and the jump animation (if any) has played.
-const endScreenReady = () => !!mission.over && jumpOutT() >= JUMP_OUT;
+const endScreenReady = () => !!mission.over && jumpOutT() >= JUMP_OUT && !(typeof breakupT === 'function' && breakupT() < BREAKUP_T);   // (and the break-up, js/breakup.js)
 // The stalled jump (due, but MID is empty or broken): null, or { phase: 'charge' | 'sputter' | 'dead', p: 0..1
 // through that phase, k: the charge it shows, n: the attempt }. The loop runs on mission.jump.st (synced), so
 // every browser sees the same attempt; it charges to STALL_PEAK, sputters out, lies dead, and tries again.
@@ -1380,6 +1398,8 @@ function drawEndScreen() {
   const o = mission.over;
   const u = jumpOutT();                                  // jumped out: the jump itself first (JUMP_OUT s)
   if (u < JUMP_FLASH) { drawJumpOut(u); return; }
+  const bu = typeof breakupT === 'function' ? breakupT() : Infinity;   // broken up: the ship breaking apart first (js/breakup.js)
+  if (bu < BREAKUP_SHOW) { drawBreakupScreen(bu); return; }
   ctx.fillStyle = o.won ? 'rgba(10,30,20,0.75)' : 'rgba(40,8,8,0.78)'; ctx.fillRect(0, 0, VW, VH);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = o.won ? '#7af0b0' : '#ff7a6a'; ctx.font = '800 48px system-ui, sans-serif';
@@ -1399,6 +1419,7 @@ function drawEndScreen() {
   ctx.textAlign = 'left';
   drawRewards(VW / 2, VH / 2 + 160);
   if (u < JUMP_OUT) { ctx.fillStyle = `rgba(255,255,255,${1 - (u - JUMP_FLASH) / (JUMP_OUT - JUMP_FLASH)})`; ctx.fillRect(0, 0, VW, VH); }   // fading in from the flash
+  if (bu < BREAKUP_T) drawBreakupFade(bu);               // (out of the reactor's flash)
 }
 // Click handling for panels (screen coords). Returns true if the click was used.
 function panelClick(mx, my) {

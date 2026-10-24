@@ -201,7 +201,8 @@ function gameLighting(t) {
     const dark = CAPACITORS[col].charge <= 0 || capBroken(col);
     if (lightFx.dark[col] && !dark) lightFx.back[col] = t;
     lightFx.dark[col] = dark;
-    return (lightFx.lamp[col] = lampFactor(col, t) * (storm ? 0.08 : 1));
+    const strain = typeof strainFlicker === 'function' ? strainFlicker(col, t) : 1;   // (the ship near falling apart: brown-outs; js/breakup.js)
+    return (lightFx.lamp[col] = lampFactor(col, t) * (storm ? 0.08 : 1) * strain);
   });
   const A = alarmState(), AT = ALARM_TUNING, lvl = A.level ? AT.levels[A.level] : null;
   const dim = lvl ? lvl.dim : 1;
@@ -370,6 +371,7 @@ function gameLighting(t) {
     for (const s of combat.shots) add({ x: s.x, y: s.y, z: 0.8 + shotZ(s), color: s.heavy ? [1.0, 0.45, 0.78] : [1.0, 0.35, 0.25], radius: s.heavy ? 4.5 : 2.4, intensity: s.heavy ? 2.4 : 1.1 });
     for (const h of combat.shieldHits) { const q = clamp(1 - h.t / 0.8, 0, 1); if (q > 0) add({ x: h.x, y: h.y, z: 0.8, color: [0.7, 0.88, 1.0], radius: h.heavy ? 5 : 3.5, intensity: 2.2 * q }); }
     if (typeof hitFxLights === 'function') hitFxLights(add);   // hull hits: flash, hot spots, spark clouds (js/hitfx.js)
+    if (typeof breakupLights === 'function') breakupLights(add);   // hot stress cracks, the fracture (js/breakup.js)
     // explosions and debris: the particles, clustered on a coarse grid
     const cells = new Map();
     for (const p of combat.fx) {

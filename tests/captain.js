@@ -6,7 +6,7 @@
 // Run: node tests/captain.js
 const { loadGame } = require('./harness');
 const NAMES = ['dk', 'DG', 'simTick', 'crew', 'me', 'makeCrew', 'mission', 'startMission', 'boarding', 'captainPractice', 'captGen', 'baseCodeOk', 'openBasePad', 'miniCommand',
-  'power', 'netSerialize', 'netApply', 'CAPT_BREATH', 'CAPT_TEL', 'CAPT_DAZE', 'captMaxHp', 'withCrew', 'walkRects', 'canStand', 'ITEMS', 'combat', 'roomAt', 'inBase', 'HATCHES', 'FUEL_CRATE', 'inRect'];
+  'power', 'netSerialize', 'netApply', 'CAPT_BREATH', 'CAPT_TEL', 'CAPT_DAZE', 'captMaxHp', 'withCrew', 'walkRects', 'canStand', 'ITEMS', 'combat', 'roomAt', 'inBase', 'HATCHES', 'FUEL_CRATE', 'inRect', 'freeAt'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -23,9 +23,11 @@ function fresh(n = 1, phase = 1, easy = 0) {
 const keepSafe = (G) => { for (const c of G.crew) c.health = 'ok'; };
 const tick = (G, s, each) => { for (let i = 0; i < Math.round(s * 60); i++) { each?.(); G.simTick(DT); keepSafe(G); } };
 const until = (G, cond, max = 30, each) => { let t = 0; while (!cond() && t < max) { each?.(); G.simTick(DT); keepSafe(G); t += DT; } return t; };
-// A crew bolt from (fx, fy) straight at (tx, ty).
+// A crew bolt from (fx, fy) straight at (tx, ty). (A start in a wall, like right behind him on his throne by the back
+// wall, moves forward along the line to where a shooter could stand: walls stop shots, js/invader.js shotBlock.)
 function shoot(G, fx, fy, tx, ty, dmg) {
   const a = Math.atan2(ty - fy, tx - fx);
+  for (let i = 0; i < 60 && !G.freeAt(fx, fy); i++) { fx += Math.cos(a) * 0.05; fy += Math.sin(a) * 0.05; }
   G.boarding.bolts.push({ x: fx, y: fy, z: 0.9, ox: fx, oy: fy, vx: Math.cos(a) * 26, vy: Math.sin(a) * 26, life: 0.9, owner: 'crew', ...(dmg ? { dmg } : {}) });
   for (let i = 0; i < 12; i++) G.simTick(DT);
 }

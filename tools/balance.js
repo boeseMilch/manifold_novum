@@ -136,7 +136,7 @@ const A = {
   BOUNTY_PIRATES: 2,      // pirates paid for in a mission with a bounty (rewards.perPirate): modest, the two raiders' worth
   GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'stim'],   // bought in this order, each as soon as the money allows (general
                           // gear only: the armor vest is weapons-specialist gear since 2026-10-16, and the model ignores professions)
-  SHIP_ORDER: ['cannons', 'inserter', 'caps', 'spareCell', 'airlocks', 'shields', 'radar', 'hull', 'sprinklers', 'coffee'],   // (reputation; the
+  SHIP_ORDER: ['cannons', 'inserter', 'caps', 'spareCell', 'airlocks', 'shields', 'radar', 'hull', 'sprinklers', 'coffee', 'doors'],   // (reputation; the
                           // prerequisites first, so a later chapter's needs aren't blocked by something bought before them)
   FUEL_MARGIN: 1,         // --calibrate: fuel cells on top of what the energy runs need
   AMPLE_CELLS: 30,        // --calibrate: 'plenty of fuel' while choosing the event count
@@ -240,12 +240,13 @@ const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
 // the only profession perk counted, professions are mixed in a crew). Every player is assumed to have it.
 // Skirmish twins (SKIRMISH_TWIN) get their chapter's kit; intro / rush / practice none.
 // Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; the doors open as you
-// walk up either way), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 6 s / 3 s instead of 10 s,
+// walk up either way), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 8 s / 3 s instead of 10 s,
 // treating 1.2 s instead of 2 s: CREW_HIT_COST scaled), armor vest (one crew hit fewer per player; not in the expected kit: weapons specialists only), and the ship:
 // cannons (4 shots per energy: the energy runs and the fights' reloads), inserter, spare cell, caps, shields, radar
 // (the energy runs / the radar range, from the game), airlocks (0.7 s cycles: trips measured with them), hull (6
 // broken parts to lose), sprinklers (fires burn their part a third slower: a fire counts less as an open problem).
-// Not modelled: the coffee machine; the boots' walking where gravity fails.
+// Not modelled: the coffee machine; the boots' walking where gravity fails; the fast door actuators ('doors': last in
+// A.SHIP_ORDER, so no expected kit reaches it; the trips are measured with the plain doors, a little slower: on the safe side).
 let KIT = null;                                   // the effects of the kit of the build being run (kitEffects), or null
 const evaMul = () => (KIT?.thrusters ? 1.3 : 1);
 const walkMul = () => (KIT?.boots ? 1.15 : 1);    // (walking inside a docked ship / the derelict: not measured, scaled)
@@ -284,7 +285,7 @@ function kitEffects(kit, ship = {}) {
   if (!kit) return null;
   const g = game(), has = (x) => kit.gear.includes(x);
   return { boots: has('boots'), thrusters: has('thrusters'), armor: has('armor'),
-           selfPatch: has('stim') ? 3 : has('firstAid') ? 6 : g.SELF_TREAT, treat: has('firstAid') ? 1.2 : g.TREAT_TIME,
+           selfPatch: has('stim') ? 3 : has('firstAid') ? 8 : g.SELF_TREAT, treat: has('firstAid') ? 1.2 : g.TREAT_TIME,
            spe: ship.cannons ? 4 : 3, airlocks: !!ship.airlocks, maxDamage: ship.hull ? 6 : 5, fireSlow: ship.sprinklers ? 15 / 22 : 1 };
 }
 // Crew-seconds per hit on the crew (A.CREW_HIT_COST, scaled by the kit's patching up)

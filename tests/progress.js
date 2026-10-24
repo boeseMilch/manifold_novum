@@ -117,13 +117,15 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G.applyKit(me, {}); me.x = x0; me.vx = 0; me.input.keys.add('KeyD'); tickN(G, 60); me.input.keys.delete('KeyD');
   check(fast > (me.x - x0) * 1.1, `gravity boots: faster walking (${fast.toFixed(2)} vs ${(me.x - x0).toFixed(2)})`);
   G.applyKit(me, { gear: { firstAid: true } }); me.health = 'down';
-  check(G.withCrew(me, () => G.treatInfo(me)).time === 6, 'with the first aid course you patch yourself up in 6 s');
+  check(G.withCrew(me, () => G.treatInfo(me)).time === 8, 'with the first aid course you patch yourself up in 8 s (it\'s for treating others: only a bit faster on yourself)');
+  G.applyKit(me, { gear: { firstAid: true, stim: true } });
+  check(G.withCrew(me, () => G.treatInfo(me)).time === 3, 'first aid course and stim pack together: the stim pack wins (3 s)');
   G.applyKit(me, { profession: 'engineer', gear: { stim: true } });
   check(G.withCrew(me, () => G.treatInfo(me)).time === 3, '…in 3 s with a stim pack (anyone can use it)');
   me.health = 'out';                                    // out cold, alone (2026-10-20: the gear counts here too)
   const outT = (gear) => { G.applyKit(me, { gear }); return G.withCrew(me, () => G.treatInfo(me))?.time; };
-  check(outT({ stim: true }) === 6 && outT({ firstAid: true }) === 12 && outT({}) === G.SOLO_TREAT,
-    `out cold and alone: crawl back up in 6 s with a stim pack, 12 s with first aid, ${G.SOLO_TREAT} s without (${outT({ stim: true })} / ${outT({ firstAid: true })} / ${outT({})})`);
+  check(outT({ stim: true }) === 6 && outT({ firstAid: true }) === 16 && outT({ firstAid: true, stim: true }) === 6 && outT({}) === G.SOLO_TREAT,
+    `out cold and alone: crawl back up in 6 s with a stim pack, 16 s with first aid (6 s with both), ${G.SOLO_TREAT} s without (${outT({ stim: true })} / ${outT({ firstAid: true })} / ${outT({})})`);
   me.health = 'down'; G.applyKit(me, { profession: 'engineer', gear: { stim: true } });
   me.inv.weapon = null; G.applyKit(me, { profession: 'engineer', gear: { ownLaser: true } });
   check(!me.inv.weapon, 'profession gear only works in its profession (an engineer gets no laser from it)');

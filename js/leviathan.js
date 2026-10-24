@@ -20,8 +20,10 @@
 //                stern (LEVB_OVERRIDE s; starting the hold draws MID's energy into the engine, safe from the brood; the
 //                HUD line, the panel's ring and its prompt say what's missing; out of fuel everywhere: an emergency cell
 //                drops into the crate, levEmergencyCell): the ENGINE BLAST burns the nest on its back →
-//                FREED: the last leeches drop off, its teal glow comes back, it sinks (LEVB_SINK s), then the jump
-//                drive spools (with c8's handle rule: someone pulls the handle). The jump never comes before that.
+//                FREED: the last leeches drop off, its teal glow comes back, it swims off and sinks (LEVB_SINK s). The
+//                jump never comes before that; after it, it needs nobody: a short cutscene (the camera on the blast, then
+//                on the ship and the creature: levCinema; Esc skips: levSkip) and LEVB_OUTRO s later the ship jumps by
+//                itself (mission.autoJump: no handle, no nav fix, no MID energy).
 // State: org.boss (plain data, synced with org). Geometry: a closed swim loop round the ship (levLoop); the body is a
 // chain of pieces hung back from the nose along it in SCREEN space (x, y·sin50), as the sprites are modelled
 // (levChain: head, 6 segments, tail stock, fluke; ~140 units nose to fluke tips, joints bent at most LEVB_BEND). Targets and the shell tests use the same chain, in screen space. Drawing (tunable in one place):
@@ -34,7 +36,16 @@ const LEVB_WINDOW = [12, 16, 20], LEVB_PUNISH = 6, LEVB_SLAM_WARN = 3, LEVB_WAVE
 const LEVB_LEECHES = [2, 3, 4, 6];
 // The nest holds LEVB_BROOD_WAVES waves of brood, then the vents go quiet (so MID always fills in the end, even solo without a laser).
 const LEVB_BROOD_WAVES = 3;
-const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 3, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
+const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 4, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
+// Swimming (2026-10-24, the user: "when it swims to the left the first time it's not continuous, it just jumps"): it speeds
+// up at most LEVB_ACCEL units/s² (it used to go from rest to LEVB_SWIM in one frame), its ripple eases between parked and
+// swimming (it used to snap), and swimming in from LEVB_COME units out it keeps its speed round the first corner (it was
+// flung round it at ~3x speed, then slowed down all at once).
+const LEVB_ACCEL = 6, LEVB_COME = 40;
+// The ending (2026-10-24, the user: let us see the engine burn the nest off; no jump button once it's beaten): the blast
+// (LEVB_BLAST s, the camera on the stern and the nest), then it's free and swims off healed (the camera pulls out to the
+// ship and the creature) and LEVB_OUTRO s later the ship jumps by itself (mission.autoJump, js/mission.js). Esc skips.
+const LEVB_OUTRO = 6;
 // The brood's size (2026-10-20, the user: "they look so small that you could just defeat them by walking over them"): drawn
 // LEVB_BROOD_SCALE x the modelled larva (~0.55 long -> ~1.1, dog-sized next to a crew member). Everything that depends on
 // their size follows from it: the body our bolts hit (js/invader.js boltHitsBody), the reach of a bite (and of a stomp),
@@ -106,6 +117,8 @@ const LEVB_LOOP = (() => {
   let s0 = 0; for (const p of parts) { p.s0 = s0; s0 += p.len; }
   return { parts, P: s0 };
 })();
+// Is loop position s on one of its corners?
+const levOnArc = (s) => { const P = LEVB_LOOP.P, u = ((s % P) + P) % P; return LEVB_LOOP.parts.some(p => p.arc && u >= p.s0 && u < p.s0 + p.len); };
 // Point and heading on the loop: [x, y, tx, ty] (world).
 function levLoop(s) {
   const P = LEVB_LOOP.P; s = ((s % P) + P) % P;
@@ -121,12 +134,15 @@ function levLoop(s) {
 // The body behind the nose leaves the loop and curls outward (it never wraps round the ship), a slow ripple runs
 // down it. v: world distance behind the nose along the loop.
 const levSpiral = (v) => (v > 70 ? 40 * ((v - 70) / 80) ** 2 : 0);
+// B.amp: the ripple (eased between parked 0.4 and swimming 0.9: updateLevBoss); B.wr: writhing in the engine's flame;
+// B.out: off the loop, outward (swimming in from out there; swimming off once it's free).
 function levPath(B, tt) {
-  const SIN = GFX.SIN, out = [], amp = B.parked ? 0.4 : 0.9;
+  const SIN = GFX.SIN, out = [], amp = B.amp ?? (B.parked ? 0.4 : 0.9), wr = B.wr || 0;
   let len = 0, px = 0, py = 0;
   for (let v = 0; v <= 210; v += 1.5) {
     const [x, y, tx, ty] = levLoop(B.s - v), ix = ty, iy = -tx;   // (inward: the creature's left)
-    const off = -(B.out || 0) - levSpiral(v) + amp * Math.sin(0.09 * v - 1.4 * tt) * Math.min(1, v / 25);
+    const off = -(B.out || 0) - levSpiral(v) + amp * Math.sin(0.09 * v - 1.4 * tt) * Math.min(1, v / 25)
+      + (wr ? wr * 2.2 * Math.sin(0.22 * v - 7 * tt) * Math.min(1, v / 30) : 0);
     const sx = x + ix * off, sy = (y + iy * off) * SIN;
     if (out.length) len += Math.hypot(sx - px, sy - py);
     out.push([sx, sy, len]); px = sx; py = sy;
@@ -148,19 +164,22 @@ function levChain(B, tt = B.t) {
   const path = levPath(B, tt), nose = levAlong(path, 0), D = [...LEVB_JOINTS, LEVB_BODY];
   const ang = (a, b) => Math.atan2(a[1] - b[1], a[0] - b[0]);        // the heading from b towards a
   const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+  // a joint bends as the path wants up to 60% of its limit, then gives way softly towards it (a hard clamp swung the tail
+  // round in a jolt each time a joint hit or left its limit in a turn)
+  const bend = (d, lim) => { const x = Math.abs(d) / lim, a = 0.6; return Math.sign(d) * lim * (x <= a ? x : a + (1 - a) * Math.tanh((x - a) / (1 - a))); };
   const J = [levAlong(path, D[0])];
   const ahead = ang(nose, J[0]), body = ang(J[0], levAlong(path, D[1]));
   const rots = [ahead + 0.35 * wrap(body - ahead)];
   for (let k = 0; k < D.length - 1; k++) {
     const want = ang(J[k], levAlong(path, D[k + 1])), lim = LEVB_BEND[k] * Math.PI / 180;
-    const r = rots[k] + clamp(wrap(want - rots[k]), -lim, lim), L = D[k + 1] - D[k];
+    const r = rots[k] + bend(wrap(want - rots[k]), lim), L = D[k + 1] - D[k];
     rots.push(r); J.push([J[k][0] - Math.cos(r) * L, J[k][1] - Math.sin(r) * L]);
   }
   const n = LEVB_SEGS, head = rots[0], lim = LEVB_BEND[n + 1] * Math.PI / 180;
   const pieces = { head: { name: 'head', x: J[0][0], y: J[0][1], rot: head, scale: 1 } };
   for (let k = 0; k < n; k++) pieces[k] = { name: 'seg_' + k, x: J[k][0], y: J[k][1], rot: rots[k + 1], scale: 1 };
   pieces.tail = { name: 'seg_tail', x: J[n][0], y: J[n][1], rot: rots[n + 1], scale: 1 };
-  const flk = rots[n + 1] + clamp(wrap(ang(J[n + 1], levAlong(path, LEVB_BODY + 8)) - rots[n + 1]), -lim, lim);
+  const flk = rots[n + 1] + bend(wrap(ang(J[n + 1], levAlong(path, LEVB_BODY + 8)) - rots[n + 1]), lim);
   pieces.fluke = { name: 'fluke', x: J[n + 1][0], y: J[n + 1][1], rot: flk, scale: 1 };
   const hc = Math.cos(head), hs = Math.sin(head);
   return { path, nose: [J[0][0] + hc * LEVB_HEAD, J[0][1] + hs * LEVB_HEAD], J, pieces };
@@ -198,7 +217,8 @@ function levStation(key, ids, want, frame) {
   levStationCache.set(k, best);
   return best;
 }
-const levNext = (B, base) => { const P = LEVB_LOOP.P; let s = base; while (s < B.s - 0.5) s += P; return s; };
+// (a station just behind where it is now, within half a unit: it stays put; it used to snap back to it in one frame)
+const levNext = (B, base) => { const P = LEVB_LOOP.P; let s = base; while (s < B.s - 0.5) s += P; return Math.max(s, B.s); };
 const levZoneIds = (side, n) => (side === 'port' ? ['L1', 'L2', 'L3'] : ['R1', 'R2', 'R3']).slice(0, n);
 function levStationFor(B, step) {
   const { X0, X1, Y0, Y1 } = LEVB_GEO;
@@ -229,7 +249,7 @@ function startLevBoss(from = 1) {
   else if (from === 3) { B.phase = 'p3'; levStartSide(B, 'port', true); }
   if (from === 2) levStartGas(B);
   B.sTo = levStationFor(B, B.step === 'behind' ? 'behind' : B.phase === 'p3' ? B.p3.side : B.step);
-  B.s = B.sTo - 70; B.out = 40; B.arrive = true;
+  B.s = B.sTo - 70; B.out = LEVB_COME; B.arrive = true; B.v = LEVB_SWIM; B.amp = 0.9;
   if (from === 1) {
     combatBanner('THE LEVIATHAN — it\'s sick, leeches in its hide! Front cannon: hit its FIN');
     sfx.say?.('Leviathan. Very large. It appears to be. Injured.');
@@ -249,17 +269,23 @@ function updateLevBoss(dt) {
   const B = org.boss;
   if (!B) return;
   B.t += dt; B.splat = Math.max(0, B.splat - dt);
-  // swimming along the loop; parked at its station
+  // swimming along the loop (speeding up gently, slowing down as it arrives); parked at its station
   if (B.s < B.sTo - 0.02) {
     const left = B.sTo - B.s;
-    B.s = Math.min(B.sTo, B.s + Math.min(LEVB_SWIM, 1.2 + left * 0.7) * dt); B.parked = false;
-    if (B.arrive) B.out = 40 * clamp((B.sTo - B.s) / 70, 0, 1);
-  } else { B.s = B.sTo; if (!B.parked) { B.parked = true; B.arrive = false; B.out = 0; levParked(B); } }
+    B.v = Math.min(B.phase === 'freed' ? LEVB_SWIM : Math.min(LEVB_SWIM, 1.2 + left * 0.7), (B.v || 0) + LEVB_ACCEL * dt);
+    // (out there, B.out off the loop, round a corner: slower along it, so the head itself keeps its speed: it used to be
+    // flung round the first corner at ~3x speed and then slow down all at once)
+    const g = B.out > 0 && levOnArc(B.s) ? LEVB_GEO.R / (LEVB_GEO.R + B.out) : 1;
+    B.s = Math.min(B.sTo, B.s + B.v * g * dt); B.parked = false;
+    if (B.arrive) B.out = Math.max(0, B.out - LEVB_COME / 70 * B.v * dt);   // (closing in as the head swims: an even pace)
+  } else { B.s = B.sTo; B.v = 0; if (!B.parked) { B.parked = true; B.arrive = false; B.out = 0; levParked(B); } }
+  const ease = (v, to, rate) => v + clamp(to - v, -rate * dt, rate * dt);
+  B.amp = ease(B.amp ?? 0.9, B.parked ? 0.4 : 0.9, 0.8);                       // (the ripple: no snap when it stops or sets off)
+  B.wr = ease(B.wr || 0, B.phase === 'blast' ? 1 : 0, B.phase === 'blast' ? 2 : 0.5);   // (writhing in the flame)
   // the jump drive waits for the fight
   if (B.phase !== 'freed' && !MISSIONS[mission.id]?.practice && isFinite(mission.jumpAt) && !mission.jump && mission.jumpAt < mission.t + LEVB_HOLD_JUMP) mission.jumpAt = mission.t + LEVB_HOLD_JUMP;
-  if (B.phase === 'blast' || B.phase === 'freed') levEmergencyCell(B);
   if (B.phase === 'freed') {
-    B.freed -= dt; B.sink = clamp(1 - B.freed / LEVB_SINK, 0, 1); B.out += dt * 3;
+    B.freed -= dt; B.sink = clamp(1 - B.freed / LEVB_SINK, 0, 1); B.out += dt * (2 + 5 * B.sink);   // (swimming on and away, faster and faster)
     if (B.freed <= 0) { org.boss = null; }
     return;
   }
@@ -276,7 +302,9 @@ function updateLevBoss(dt) {
   else if (B.phase === 'p3') levUpdateSide(B, dt);
   else if (B.phase === 'p4') levUpdateBehind(B, dt);
   else if (B.phase === 'blast') {
+    const was = B.blast;
     B.blast -= dt; combat.shake = Math.max(combat.shake, 0.5);
+    if (was > LEVB_BLAST * 0.5 && B.blast <= LEVB_BLAST * 0.5) { sfx.whale?.(); sfx.alienHurt?.(); combatBanner('The nest is burning — the leeches are letting go!'); }   // (the nest chars: levState)
     if (B.blast <= 0) levFree(B);
   }
   B.dead = B.dead.filter(d => (d.t -= dt) > 0);
@@ -306,8 +334,8 @@ function levParked(B) {
   } else if (B.phase === 'p3') levOpenEye(B);
   else if (B.phase === 'p4' && !B.wave) {
     B.where = 'behind'; B.wave = { next: LEVB_WAVE_FIRST, queue: 0, spawn: 0, vent: 0, n: 0 };
-    combatBanner('It\'s BEHIND us, out of reach — charge MID to 3, then the OVERRIDE at the stern!');
-    sfx.say?.('Manual engine override available. Charge the middle capacitor.'); sfx.whale?.();
+    combatBanner('It\'s BEHIND us, out of reach — charge MID to 3, then hold the engine OVERRIDE in the REACTOR ROOM!');
+    sfx.say?.('Manual engine override available. In the reactor room. Charge the middle capacitor.'); sfx.whale?.();
   }
 }
 function levOpenEye(B) {
@@ -488,16 +516,16 @@ function levHurtBrood(w, dmg = 1, by = null) {
     combatBanner(`${by.name} stomped a brood crawler!`); sfx.clank?.();
   }
 }
-// The engine override at the stern: hold click (or E) for LEVB_OVERRIDE s with LEVB_NEED energy in MID. Starting the hold
+// The engine override (the reactor room's stern wall, by the engine): hold click (or E) for LEVB_OVERRIDE s with LEVB_NEED energy in MID. Starting the hold
 // draws that energy out of MID into the engine (B.charged, levUpdateBehind): from then on the crawlers can't drain it, and a
 // hold that's broken off (a bite, a step away) can simply be picked up again.
 const levOverrideOn = (B = org.boss) => !!B && (B.phase === 'p4' || B.phase === 'blast') && B.parked;
 // What still has to be done, for the panel's prompt, the HUD line and the sidebar.
 function levOverrideStatus(short = false) {
   const B = org.boss, cap = CAPACITORS[1], mid = `MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`;
-  if (B.charged) return { ok: true, text: 'Engine charged — hold E at the OVERRIDE panel (stern)' };
+  if (B.charged) return { ok: true, text: 'Engine charged — hold E at the OVERRIDE panel (reactor room, by the engine)' };
   if (broken(cap)) return { ok: false, text: `needs ${mid}: repair the middle capacitor first` };
-  if (cap.charge >= LEVB_NEED) return { ok: true, text: `${mid} — quick, hold E at the OVERRIDE panel (stern) before the brood drains it` };
+  if (cap.charge >= LEVB_NEED) return { ok: true, text: `${mid} — quick, hold E at the OVERRIDE panel (reactor room) before the brood drains it` };
   const lever = power.lever, onMid = power.patch[lever.pos] === 1;
   // (short: the panel's own prompt, which has to fit over your head at any screen width; the HUD line says it in full)
   const how = broken(LEVER) ? 'repair the power lever' : !onMid ? (short ? 'power lever to MID, wedge it' : 'power lever to MID, then hold E on it to wedge it')
@@ -526,13 +554,17 @@ function levAct() {
   act({ text: `Override ${st.text}`, at: { x: P.x, y: P.y, r: 0.7 } });
   return true;
 }
+// An arrow at the screen's edge while it's behind us and the override is to be done (drawProblemMarkers, js/sidebar.js):
+// where the panel is, so nobody goes looking for the engine at the helm.
+const levProblemSpots = () => (org.boss?.phase === 'p4' && org.boss.parked ? [{ key: 'levOverride', x: LEVB_PANEL.x, y: LEVB_PANEL.y, icon: 'surge', what: 'ENGINE OVERRIDE', room: 'Reactor room', col: '#ffd25a' }] : []);
 // Its use ring (drawUseMarks), while it can be used.
 const levUseSpots = () => (levOverrideOn() ? [{ x: LEVB_PANEL.x, y: LEVB_PANEL.y, r: 0.6 }] : []);
 // No fuel left anywhere (reactor, crate, a cell lying about or carried) and MID can't reach what's still needed (the
-// override's LEVB_NEED, then 1 for the jump): the engine's own emergency cell drops into the crate. Never a softlock.
+// override's LEVB_NEED; the jump needs none: it jumps by itself once it's free): the engine's own emergency cell drops into
+// the crate. Never a softlock.
 function levEmergencyCell(B) {
   const cap = CAPACITORS[1], coming = power.bolts.filter(b => !b.done && b.to === 1).length;
-  const need = (B.charged || B.phase !== 'p4' ? 0 : LEVB_NEED) + 1;
+  const need = B.charged || B.phase !== 'p4' ? 0 : LEVB_NEED;
   const fuel = power.reactor.fuel > 0 || power.reserve > 0 || ITEMS.some(it => it.kind === 'fuel') || crew.some(c => c.inv?.item === 'fuel');
   if (fuel || cap.charge + coming >= need) return;
   power.reserve++;
@@ -546,16 +578,50 @@ function levBlast() {
   B.phase = 'blast'; B.blast = LEVB_BLAST;
   combatBanner('ENGINE BLAST — burning the nest off its back!'); sfx.explosion(); sfx.whoosh?.(); combat.shake = 1;
 }
+// Freed: it swims on round the ship and away, sinking out of sight; LEVB_OUTRO s later the ship jumps by itself (no
+// handle, no nav fix, no MID energy needed: the fight was the finale). The drive's wind-up plays meanwhile (jumpCharge).
 function levFree(B) {
-  B.phase = 'freed'; B.freed = LEVB_SINK; B.wave = null; B.parked = true;
+  B.phase = 'freed'; B.freed = LEVB_SINK; B.wave = null; B.parked = false; B.v = 0; B.sTo = B.s + LEVB_LOOP.P;
   for (const w of B.brood) levSlime(w, 10);
   B.brood = [];
   const ch = levChain(B);
-  for (const id of ['nest', 'L1', 'L2', 'R1', 'R2', 'E1', 'E2']) { const p = levSpotAt(ch, id); for (let i = 0; i < 6; i++) combatFx(p.wx, p.wy, (Math.random() - 0.5) * 4, Math.random() * 3, 1.4, '#ff6a7a', 0.18); }
+  for (const id of ['L1', 'L2', 'R1', 'R2', 'E1', 'E2']) { const p = levSpotAt(ch, id); for (let i = 0; i < 6; i++) combatFx(p.wx, p.wy, (Math.random() - 0.5) * 4, Math.random() * 3, 1.4, '#ff6a7a', 0.18); }
   combatBanner('It\'s free.'); sfx.whale?.();
   sfx.say?.('The creature is. Free.');
-  if (!MISSIONS[mission.id]?.practice && !mission.jump) mission.jumpAt = mission.t + LEVB_SINK;   // the drive spools once it's gone
+  if (!MISSIONS[mission.id]?.practice && !mission.jump && !mission.over) {
+    mission.autoJump = true; mission.coilsChecked = true; mission.jumpAt = mission.t + LEVB_OUTRO;   // (js/mission.js updateMission)
+  }
 }
+// The cutscene (the blast, then freed until the jump): the camera's frame (updateCamera in js/game.js), world
+// [x0, y0, x1, y1], or null. The blast: the stern, the flame and the nest; freed: the whole ship and the creature.
+function levCinema() {
+  const B = org.boss;
+  if (!B || B.skip || mission.over || !(B.phase === 'blast' || B.phase === 'freed')) return null;
+  const ch = levChain(B), n = levSpotAt(ch, 'nest');
+  if (B.phase === 'blast') {
+    const y0 = 17, y1 = Math.max(n.wy + 9, 40), x = (LEVB_ENGINE.x + n.wx) / 2, w = (y1 - y0) * 1.3;
+    return [x - w / 2, y0, x + w / 2, y1];
+  }
+  let x0 = -4, y0 = -6, x1 = SHIP_W + 4, y1 = SHIP_H + 8;          // (the ship)
+  const sink = B.sink || 0;
+  for (const p of [ch.nose, ...ch.J]) {                             // (the creature, while it's still to be seen)
+    if (sink > 0.7) break;
+    x0 = Math.min(x0, p[0] - 8); x1 = Math.max(x1, p[0] + 8); y0 = Math.min(y0, p[1] / GFX.SIN - 8); y1 = Math.max(y1, p[1] / GFX.SIN + 8);
+  }
+  return [Math.max(x0, -50), Math.max(y0, -45), Math.min(x1, SHIP_W + 50), Math.min(y1, SHIP_H + 60)];
+}
+// Esc during the cutscene: the blast's done, the jump comes now (solo, or the host in multiplayer: mission.shipOf).
+function levSkip() {
+  const B = org.boss;
+  if (!levCinema() || (mission.shipOf && player.id !== mission.shipOf.id)) return false;
+  if (B.phase === 'blast') levFree(B);
+  B.skip = true;
+  if (mission.autoJump && !mission.jump && !mission.over) mission.jumpAt = Math.min(mission.jumpAt, mission.t);
+  return true;
+}
+// A mission with the leviathan as its finale: the fight holds the jump drive and it jumps by itself after it, so nobody
+// ever has to go to the jump handle at the helm (c8's handle rule): no use ring there, its prompt says so.
+const levHoldsJump = () => !!mission.autoJump || (!MISSIONS[mission.id]?.practice && (!!org.boss || mission.events?.some(e => e.kind === 'leviathan_boss')));
 
 // ---------------------------------------------------------------------------
 // Hooks into the mission
@@ -578,9 +644,9 @@ function levBossPlates(add) {
   else if (B.phase === 'p3') {
     const P = B.p3;
     sub = P.state === 'swim' ? `swimming to the ${levSideName(P.side)} side…` : P.state === 'open' ? `Eye + zones in ${Math.ceil(P.win)} s · ${levSideName(P.side).toLowerCase()} cannon (${(P.eye ? 1 : 0) + P.glow.filter(g => g.hit).length}/${1 + P.glow.length})` : 'too slow — brace!';
-  } else if (B.phase === 'p4') sub = !B.parked ? 'swimming round behind us…' : `${B.brood.length ? 'Brood in the reactor room! · ' : ''}${B.charged ? 'engine charged' : `MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`} · engine override at the stern`;
+  } else if (B.phase === 'p4') sub = !B.parked ? 'swimming round behind us…' : `${B.brood.length ? 'Brood in the reactor room! · ' : ''}${B.charged ? 'engine charged' : `MID ${Math.min(cap.charge, LEVB_NEED)}/${LEVB_NEED}`} · engine override in the reactor room`;
   else if (B.phase === 'blast') sub = 'ENGINE BLAST';
-  else sub = 'It\'s free.';
+  else sub = mission.autoJump ? 'It\'s free — the jump drive takes us out' : 'It\'s free.';
   add('levboss', { icon: 'unknown', title: B.phase === 'freed' ? 'THE LEVIATHAN' : `LEVIATHAN · ${{ p1: 'THE PASS', gas: 'TOXIC GAS', p3: 'THE SIDE', p4: 'BEHIND', blast: 'BEHIND' }[B.phase] || ''}`, sub, stripe: B.phase === 'freed' ? '#4ad0b0' : '#c8ff6e', red: B.phase !== 'freed', wrap: true });
 }
 
@@ -625,8 +691,16 @@ function drawLevBody(t) {
     const S = LEVB_SPOTS[id], pc = P[S.piece], look = st[id];
     detail(`organic/levb_${look === 'scar' ? 'scar' : look === 'glow' ? 'zone_glow' : look === 'hit1' ? 'zone_hit1' : 'zone'}`, look === 'zone' || look === 'glow' ? Math.floor(t * 4) % 4 : 0, pc, S.at, { emissive: look === 'scar' ? 0.2 : 0.7, scale: LEVB_ZONE_SCALE }, () => levZoneFallback(pc, S.at, look, t));
   }
-  const N = LEVB_SPOTS.nest;
-  if (B.phase === 'p4' || B.phase === 'blast' || B.phase === 'freed' || B.where === 'behind') detail(`organic/levb_nest${st.nest === 'burnt' ? '_burnt' : ''}`, 0, P[N.piece], N.at, { emissive: 0.5, scale: LEVB_ZONE_SCALE }, () => levNestFallback(P[N.piece], N.at, st.nest, t));
+  const N = LEVB_SPOTS.nest, NP = P[N.piece], nz = LEVB_ZONE_SCALE;
+  if (B.phase === 'blast') {                            // charring in the flame: the live nest turns into the burnt one
+    const c = levChar(B);
+    if (c < 1) detail('organic/levb_nest', 0, NP, N.at, { emissive: 0.5 + 0.5 * c, scale: nz, alpha: 1 - c * c }, () => levNestFallback(NP, N.at, 'live', t, 1 - c * c));
+    if (c > 0) detail('organic/levb_nest_burnt', 0, NP, N.at, { emissive: 0.5, scale: nz, alpha: c }, () => levNestFallback(NP, N.at, 'burnt', t, c));
+  } else if (B.phase === 'freed') {                     // torn off: the charred crust peels off its back and tumbles away, a scar under it
+    const f = levPeel(B), at = levPeelAt(f);
+    detail('organic/levb_scar', 0, NP, N.at, { emissive: 0.2, scale: nz * 1.6, alpha: Math.min(1, f * 3) }, () => levZoneFallback(NP, N.at, 'scar', t));
+    if (f < 1) detail('organic/levb_nest_burnt', 0, NP, at, { emissive: 0.5, scale: nz * (1 - 0.3 * f), rotAdd: 1.8 * f, alpha: 1 - f * f }, () => levNestFallback(NP, at, 'burnt', t, 1 - f * f));
+  } else if (B.phase === 'p4' || B.where === 'behind') detail('organic/levb_nest', 0, NP, N.at, { emissive: 0.5, scale: nz }, () => levNestFallback(NP, N.at, 'live', t));
   for (const f of [0, 1]) detail(`organic/levb_eye_${st.eye}`, f, P.head, [0, 0], { emissive: 0.6 }, () => levEyeFallback(P.head, f ? 1 : -1, st.eye));
   levBodyState = { ch, st };
 }
@@ -736,9 +810,9 @@ function levZoneFallback(pc, at, look, t) {
     ctx.beginPath(); ctx.arc(0, 0, r * 0.75 * big * pulse, 0, TAU); ctx.fillStyle = look === 'glow' ? '#eaff8a' : '#b8e070'; ctx.fill(); stroke(2);
   });
 }
-function levNestFallback(pc, at, look, t) {
+function levNestFallback(pc, at, look, t, alpha = 1) {
   levPieceCtx(pc, () => {
-    ctx.translate(L(at[0]), L(at[1]));
+    ctx.translate(L(at[0]), L(at[1])); ctx.globalAlpha *= alpha;
     const r = L(2.6 * LEVB_ZONE_SCALE);
     ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fillStyle = look === 'burnt' ? '#2a1a14' : '#8a4a50'; ctx.fill(); stroke(2.5);
     if (look !== 'burnt') for (let i = 0; i < 12; i++) { const a = i / 12 * TAU + t * 0.3; ctx.beginPath(); ctx.ellipse(Math.cos(a) * r * 0.55, Math.sin(a) * r * 0.55, r * 0.35, r * 0.12, a, 0, TAU); ctx.fillStyle = i % 2 ? '#e8d8a0' : '#d0606e'; ctx.fill(); }
@@ -786,27 +860,122 @@ function drawLevGas(t) {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), r, 0, TAU); ctx.fill();
   }
 }
-// The engine blast: a huge exhaust flame from the bell into its back.
+// The burn's clock: how charred the nest is (0..1, during the blast), how far its crust has peeled off once it's free
+// (0..1), and where that crust is then (piece-local, drifting away from the ship: +y is the creature's right).
+const levChar = (B) => clamp((LEVB_BLAST - B.blast - 1) / 2, 0, 1);
+const levPeel = (B) => clamp((LEVB_SINK - B.freed) / 2.5, 0, 1);
+const levPeelAt = (f) => { const N = LEVB_SPOTS.nest.at; return [N[0] - 5 * f, N[1] + 2 * f + 9 * f * f]; };
+const levHash = (i, k) => { const v = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return v - Math.floor(v); };
+// Seconds since the engine began to fire (Infinity: it hasn't).
+const levBurnT = (B) => (B.phase === 'blast' ? LEVB_BLAST - B.blast : B.phase === 'freed' ? LEVB_BLAST + LEVB_SINK - B.freed : Infinity);
+// The engine blast: a huge exhaust flame from the bell, shooting out to the nest on its back in half a second and
+// staying on it (aimed and stretched to reach it, wherever it lies), a white-hot splash where it hits.
 function drawLevBlast(t) {
   const B = org.boss;
-  if (!B || B.phase !== 'blast') return;
-  const k = Math.min(1, (LEVB_BLAST - B.blast) * 4, B.blast * 2), E = LEVB_ENGINE;
-  if (GFX.on && GFX.sprite('fx/engine_blast', Math.floor(t * 16) % 6, E.x, E.y, 0, { layer: 'top', unlit: true, alpha: k })) return;
-  const len = 17 * k, x = L(E.x), y = L(E.y);
-  const g = ctx.createLinearGradient(x, y, x, y + L(len));
-  g.addColorStop(0, `rgba(255,255,230,${k})`); g.addColorStop(0.3, `rgba(255,200,80,${0.9 * k})`); g.addColorStop(1, 'rgba(255,90,30,0)');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - L(2.4), y);
-  ctx.quadraticCurveTo(x - L(4 + Math.sin(t * 30)), y + L(len * 0.5), x, y + L(len)); ctx.quadraticCurveTo(x + L(4 + Math.cos(t * 27)), y + L(len * 0.5), x + L(2.4), y); ctx.fill();
+  if (!B || B.phase !== 'blast' || !levBodyState) return;
+  const tb = LEVB_BLAST - B.blast, k = Math.min(1, tb * 4, B.blast * 2), E = LEVB_ENGINE, SIN = GFX.SIN;
+  const n = levSpotAt(levBodyState.ch, 'nest'), reach = Math.pow(clamp(tb / 0.5, 0, 1), 0.6);
+  const dx = n.x - E.x, dy = n.y - E.y * SIN, dist = Math.hypot(dx, dy) + 2;   // (screen units, to just past the nest)
+  const sc = Math.max(0.15, dist * reach / 22);                                // (the sprite's flame is ~22 long)
+  const drawn = GFX.on && GFX.sprite('fx/engine_blast', Math.floor(t * 16) % 6, E.x, E.y, 0, { layer: 'top', unlit: true, alpha: k, rot: Math.atan2(-dx, dy), scale: sc, sx: 1 + 0.6 * (1 - reach) });
+  ctx.save(); ctx.scale(1, 1 / SIN);
+  const x = L(E.x), y = L(E.y * SIN);
+  if (!drawn) {                                        // (classic: a drawn flame along the same line)
+    const len = L(dist * reach), a = Math.atan2(dy, dx);
+    ctx.save(); ctx.translate(x, y); ctx.rotate(a - Math.PI / 2);
+    const g = ctx.createLinearGradient(0, 0, 0, len);
+    g.addColorStop(0, `rgba(255,255,230,${k})`); g.addColorStop(0.3, `rgba(255,200,80,${0.9 * k})`); g.addColorStop(1, `rgba(255,90,30,${0.3 * k})`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-L(2.4), 0);
+    ctx.quadraticCurveTo(-L(4 + Math.sin(t * 30)), len * 0.5, 0, len); ctx.quadraticCurveTo(L(4 + Math.cos(t * 27)), len * 0.5, L(2.4), 0); ctx.fill();
+    ctx.restore();
+  }
+  const hit = k * clamp((tb - 0.35) / 0.2, 0, 1);       // the splash on the nest
+  if (hit > 0) {
+    const r = L(5.5 + 1.2 * Math.sin(t * 23) + 0.8 * Math.sin(t * 37)), hx = L(n.x), hy = L(n.y);
+    const g = ctx.createRadialGradient(hx, hy, 0, hx, hy, r);
+    g.addColorStop(0, `rgba(255,255,235,${0.95 * hit})`); g.addColorStop(0.35, `rgba(255,190,70,${0.75 * hit})`); g.addColorStop(1, 'rgba(255,80,20,0)');
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
+}
+// The nest burning: flames on it, its leeches writhing, charring and letting go (flung off, burning, tumbling away),
+// embers and smoke; once it's free the charred crust tears off (drawLevBody) and the fire dies down on it. Drawing
+// only, worked out from the synced clocks (B.blast, B.freed): every browser sees the same, nothing extra is sent.
+function drawLevBurn(t) {
+  const B = org.boss, tb = B ? levBurnT(B) : Infinity;
+  if (!isFinite(tb) || !levBodyState) return;
+  const SIN = GFX.SIN, ch = levBodyState.ch, NP = ch.pieces[LEVB_SPOTS.nest.piece], f = B.phase === 'freed' ? levPeel(B) : 0;
+  const [nx, ny] = levLocal(NP, ...levPeelAt(f)), fade = 1 - (B.sink || 0), H = levHash;
+  const [ax, ay] = (() => { const [x0, y0] = levLocal(NP, 0, 0), [x1, y1] = levLocal(NP, 0, 1), d = Math.hypot(x1 - x0, y1 - y0) || 1; return [(x1 - x0) / d, (y1 - y0) / d]; })();   // (away from the ship)
+  const heat = clamp((tb - 0.45) / 0.6, 0, 1) * (tb < LEVB_BLAST ? 1 : clamp(1 - (tb - LEVB_BLAST) / 3, 0, 1)) * fade;
+  // flames on the nest (sprites: on top of everything outside)
+  if (heat > 0.02) for (let i = 0; i < 7; i++) {
+    const a = i / 7 * TAU + H(i, 9), r = i ? 1.6 + 1.6 * H(i, 8) : 0, x = nx + Math.cos(a) * r, y = ny + Math.sin(a) * r * 0.8;
+    const big = (0.75 + 0.5 * H(i, 10)) * (0.5 + 0.5 * heat) * (i ? 1 : 1.4);
+    if (GFX.on && GFX.sprite(i % 2 ? 'fx/fire_m' : 'fx/fire_l', Math.floor(t * 12 + i * 3) % 8, x, y / SIN, 0, { layer: 'top', unlit: true, alpha: heat, scale: big * 1.5 })) continue;
+    ctx.save(); ctx.scale(1, 1 / SIN);
+    const g = ctx.createRadialGradient(L(x), L(y - 1), 0, L(x), L(y - 1), L(2.2 * big));
+    g.addColorStop(0, `rgba(255,230,120,${0.9 * heat})`); g.addColorStop(1, 'rgba(255,90,20,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y - 1), L(2.2 * big), 0, TAU); ctx.fill(); ctx.restore();
+  }
+  ctx.save(); ctx.scale(1, 1 / SIN); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // smoke: dark puffs rising (up the screen) and drifting off, from the charring on
+  for (let i = 0; i < 14; i++) {
+    const b = 1 + i * 0.45 + 0.3 * H(i, 11), s = tb - b, life = 2.6;
+    if (s < 0 || s > life) continue;
+    const u = s / life, x = nx + (H(i, 12) - 0.5) * 4 + ax * 3 * s, y = ny - 4 * s - 0.6 * s * s + ay * 3 * s, r = L(1.5 + 4 * u);
+    const g = ctx.createRadialGradient(L(x), L(y), 0, L(x), L(y), r);
+    g.addColorStop(0, `rgba(40,32,30,${0.45 * (1 - u) * fade})`); g.addColorStop(1, 'rgba(40,32,30,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(L(x), L(y), r, 0, TAU); ctx.fill();
+  }
+  // its leeches: writhing in the heat, blackening, then flung off one after another, burning, tumbling away
+  for (let i = 0; i < 14; i++) {
+    const a0 = i / 14 * TAU + 0.4 * H(i, 1), r0 = 1.8 + 1.8 * H(i, 2), td = 0.9 + 2.5 * (i / 14) + 0.3 * H(i, 3);
+    const hot = clamp((tb - 0.4) / Math.max(0.3, td - 0.4), 0, 1);
+    let x = nx + Math.cos(a0) * r0, y = ny + Math.sin(a0) * r0 * 0.8, rot = a0, al = fade;
+    const s = tb - td;
+    if (s > 0) {                                       // let go: off along its own way and away from the ship
+      if (s > 1.8) continue;
+      let vx = Math.cos(a0) * 0.6 + ax, vy = Math.sin(a0) * 0.6 + ay; const vd = Math.hypot(vx, vy) || 1; vx /= vd; vy /= vd;
+      const d = (8 + 6 * H(i, 4)) * (s - 0.25 * s * s);
+      x += vx * d; y += vy * d - 2 * s * s; rot += s * (5 + 6 * H(i, 5)) * (i % 2 ? 1 : -1); al *= 1 - s / 1.8;
+      for (let j = 1; j <= 3; j++) {                   // its burning trail
+        const q = Math.max(0, s - j * 0.06), dq = (8 + 6 * H(i, 4)) * (q - 0.25 * q * q);
+        ctx.beginPath(); ctx.arc(L(nx + Math.cos(a0) * r0 + vx * dq), L(ny + Math.sin(a0) * r0 * 0.8 + vy * dq - 2 * q * q), L(0.35 - j * 0.07), 0, TAU);
+        ctx.fillStyle = `rgba(255,${150 - j * 30},40,${0.7 * al})`; ctx.fill();
+      }
+    } else if (B.phase !== 'blast') continue;          // (none left on it once it's free)
+    const wig = (0.18 + 0.55 * hot) * (s > 0 ? 0.6 : 1), fq = 5 + 16 * hot, len = 2.4, seg = 6;
+    const col = [lerp(208, 34, hot), lerp(96, 24, hot), lerp(110, 20, hot)].map(Math.round);
+    ctx.save(); ctx.translate(L(x), L(y)); ctx.rotate(rot); ctx.globalAlpha = clamp(al, 0, 1);
+    ctx.beginPath();
+    for (let j = 0; j <= seg; j++) { const u = j / seg, px = L((u - 0.5) * len), py = L(wig * Math.sin(t * fq + u * 5 + i)); j ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    if (hot > 0.25) { ctx.strokeStyle = `rgba(255,${Math.round(120 + 80 * Math.sin(t * 20 + i))},40,${0.8 * hot})`; ctx.lineWidth = L(0.75); ctx.stroke(); }   // (glowing edges)
+    ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = L(0.5); ctx.stroke();
+    ctx.restore();
+  }
+  // embers: sparks thrown off the nest, rising and drifting away, cooling from white-yellow to red
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 90; i++) {
+    const b = 0.4 + (i / 90) * (LEVB_BLAST + 3) + 0.3 * H(i, 6), s = tb - b, life = 1.1 + 0.9 * H(i, 7);
+    if (s < 0 || s > life || (b > LEVB_BLAST && H(i, 13) > heat * 1.5)) continue;   // (fewer as the fire dies)
+    const u = s / life, a = Math.atan2(ay, ax) + (H(i, 14) - 0.5) * 2.6, sp = 4 + 9 * H(i, 15), d = sp * s * (1 - 0.4 * u);
+    const x = nx + (H(i, 16) - 0.5) * 4 + Math.cos(a) * d, y = ny + (H(i, 17) - 0.5) * 3 + Math.sin(a) * d - 1.8 * s * s;
+    const r = L((0.12 + 0.22 * H(i, 18)) * (1 - 0.6 * u)), fl = 0.6 + 0.4 * Math.sin(t * 31 + i * 7);
+    ctx.fillStyle = u < 0.3 ? `rgba(255,245,170,${fl * fade})` : u < 0.65 ? `rgba(255,170,60,${fl * fade * 0.9})` : `rgba(255,80,30,${fl * fade * (1 - u) * 2})`;
+    ctx.beginPath(); ctx.arc(L(x), L(y), r, 0, TAU); ctx.fill();
+  }
+  ctx.restore();
 }
 // From drawCombatBack (the 'back' layer / classic: before the hull): the body, the gas.
 function drawLevBossBack(t) {
   if (!org.boss) return;
   drawLevGas(t);
   drawLevBody(t);
-  if (!GFX.on) { drawLevMarks(t); drawLevBlast(t); }
+  if (!GFX.on) { drawLevMarks(t); drawLevBurn(t); drawLevBlast(t); }
 }
 // From drawOutsideOverlays (sprites on: on top of everything outside).
-function drawLevBossTop(t) { if (org.boss) { drawLevMarks(t); drawLevBlast(t); } }
+function drawLevBossTop(t) { if (org.boss) { drawLevMarks(t); drawLevBurn(t); drawLevBlast(t); } }
 // Inside the ship (from drawWorld in js/game.js, after the floors; the 'mid' layer): the vents, the override panel, the brood.
 function drawLevShip(t) {
   const B = org.boss, p4 = B && (B.phase === 'p4' || B.phase === 'blast'), open = p4 && B.parked && !!B.wave;
@@ -849,6 +1018,12 @@ function drawLevWarning(t) {
 function drawLevBossScreen(view, t) {
   const B = org.boss;
   if (!B) return;
+  if (levCinema() && !(mission.shipOf && me && me.id !== mission.shipOf.id)) {   // the cutscene: who can skip it is told how
+    const y = (typeof invSlots === 'function' ? invSlots()[0].y : VH) - 16;
+    ctx.font = '700 15px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.8)'; ctx.strokeText('Esc: skip', VW / 2, y);
+    ctx.fillStyle = 'rgba(232,236,244,0.8)'; ctx.fillText('Esc: skip', VW / 2, y); ctx.textAlign = 'left';
+  }
   const big = (text, col, y) => {
     ctx.font = '900 64px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(text, VW / 2, y); ctx.fillStyle = col; ctx.fillText(text, VW / 2, y);

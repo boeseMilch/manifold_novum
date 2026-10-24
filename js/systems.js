@@ -506,10 +506,10 @@ function updateInjury(c, dt) {
 function treatInfo(who) {
   if (!who || standing(who) && who.health !== 'hurt') return null;
   if (who === player) {
-    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 6 : SELF_TREAT, label: 'get up' };
+    if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 8 : SELF_TREAT, label: 'get up' };
     // out: only while nobody else is standing (someone has to treat you) — or to keep up a crawl, or join a
     // treatment, that's already going (who.heal): it adds up with a crewmate's and isn't lost when they get up
-    if (who.health === 'out' && (who.heal != null || crew.every(c => c === who || !standing(c)))) return { time: perk(who, 'stim') ? 6 : perk(who, 'firstAid') ? 12 : SOLO_TREAT, label: 'crawl back up' };   // (the gear counts out cold too: 2026-10-20, the user had a stim pack and still waited 20 s)
+    if (who.health === 'out' && (who.heal != null || crew.every(c => c === who || !standing(c)))) return { time: perk(who, 'stim') ? 6 : perk(who, 'firstAid') ? 16 : SOLO_TREAT, label: 'crawl back up' };   // (the gear counts out cold too: 2026-10-20, the user had a stim pack and still waited 20 s)
     return null;
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
@@ -689,24 +689,27 @@ function attack(a, blast = false, to = null) {
   if (to) a = aimFromMuzzle(player, a, to[0], to[1]);
   const dx = Math.cos(a), dy = Math.sin(a), { x, y, z } = M;
   const fast = perk(player, 'weapons') ? 0.65 : 1;
+  // the muzzle poking into a wall, a closed door or a crate (standing right at it): the shot stops there (js/invader.js shotBlock)
+  const k = typeof shotBlock === 'function' ? shotBlock(player.x, player.y, x, y) : -1;
+  const shoot = (b) => { if (k < 0) boarding.bolts.push(b); else shotImpact(b, player.x + (x - player.x) * k, player.y + (y - player.y) * k); };
   if (inv.weapon === 'laser') {
     inv.cd = LASER_COOLDOWN * fast;
-    boarding.bolts.push({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
+    shoot({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
     sfx.enemyShot();
   } else if (inv.weapon === 'heavy') {
     inv.cd = BLASTER_COOLDOWN * fast;
     if (blast) {
-      boarding.bolts.push({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: 3, stun: 1, heavy: true });
+      shoot({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: 3, stun: 1, heavy: true });
       if (player.mode === 'eva') combat.shells.push({ x, y, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE });   // hits like a ship cannon
       for (let i = 0; i < 10; i++) combatFxAt(z, x, y, dx * 4 + (Math.random() - 0.5) * 3, dy * 4 + (Math.random() - 0.5) * 3, 0.3, '#9cd8ff', 0.1);
       sfx.shoot();
     } else {
-      boarding.bolts.push({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: Math.random() < 0.5 ? 1 : 2 });
+      shoot({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: Math.random() < 0.5 ? 1 : 2 });
       sfx.enemyShot();
     }
   } else if (inv.weapon === 'repair') {
     inv.cd = WRENCH_COOLDOWN;
-    boarding.bolts.push({ x, y, z: z + 0.15, vx: dx * WRENCH_SPEED, vy: dy * WRENCH_SPEED, life: 0.8, owner: 'crew', wrench: true, spin: 0 });   // (out of the kit in your hand)
+    shoot({ x, y, z: z + 0.15, vx: dx * WRENCH_SPEED, vy: dy * WRENCH_SPEED, life: 0.8, owner: 'crew', wrench: true, spin: 0 });   // (out of the kit in your hand)
     sfx.clank();
   }
 }

@@ -139,6 +139,22 @@ const sfx = (() => {
     // A wet, deflating squelch (organic things dying).
     squelch() { noise(0.35, 400, 0.45, 1.5); tone('sine', 220, 60, 0.45, 0.35); tone('triangle', 140, 50, 0.3, 0.2, 0.1); },
     crack() { noise(0.25, 300, 0.6); tone('triangle', 120, 60, 0.3, 0.4); },
+    // The hull under strain (js/breakup.js; k 0..1: how near it is to falling apart): a long, low metal groan
+    // bending down, with a creak or two of plating on top.
+    creak(k = 1) {
+      const d = 1.3 + Math.random() * 0.9, f = 46 + Math.random() * 22;
+      tone('sawtooth', f, f * (0.68 + Math.random() * 0.15), d, 0.04 + 0.07 * k, 0, d * 0.45);
+      tone('triangle', f * 1.5, f * 1.15, d * 0.8, 0.05 + 0.08 * k, 0.15, d * 0.35);
+      noise(d, 120, 0.12 + 0.25 * k, 0.7);
+      for (let i = 0; i < 1 + Math.round(2 * k); i++) setTimeout(() => tone('square', 700 + Math.random() * 500, 380, 0.05, 0.03 + 0.04 * k), 250 + Math.random() * d * 700);
+    },
+    // Metal tearing open: a screech sliding down over a crunching roar.
+    tear() { tone('sawtooth', 380, 85, 1.1, 0.14, 0, 0.05); tone('sawtooth', 560, 130, 0.9, 0.08, 0.06, 0.05); noise(1.2, 650, 0.55, 0.7); noise(0.6, 2600, 0.25, 1.5); },
+    // The ship's end (the reactor going as it breaks up): a long, deep detonation rolling on, debris rattling.
+    breakup() {
+      noise(3.4, 70, 1.0, 0.5); noise(1.5, 420, 0.6, 0.6); tone('sine', 55, 18, 3.2, 1.0); tone('triangle', 110, 30, 1.8, 0.45);
+      for (let i = 0; i < 8; i++) setTimeout(() => noise(0.14, 1500 + Math.random() * 3000, 0.18, 3), 300 + i * 180 + Math.random() * 120);
+    },
     // A canopy / viewport giving way (js/dockentry.js): the crunch, then glass tinkling off
     shatter() { noise(0.35, 2600, 0.55, 0.8); noise(0.2, 5200, 0.35, 2); for (let i = 0; i < 7; i++) tone('sine', 2600 + i * 410, 2300 + i * 380, 0.09, 0.08, 0.08 + i * 0.07); },
     // A hand crank's ratchet (the base's service hatch): a run of hard clicks

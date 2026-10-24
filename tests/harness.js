@@ -2,7 +2,7 @@
 // can be driven from Node. Usage: const G = loadGame(); G.tick(1 / 60); ...
 const fs = require('fs'), path = require('path'), vm = require('vm');
 
-const SCRIPTS = ['audio', 'music', 'music/cargo', 'music/comet', 'music/signal', 'music/bloom', 'music/hull', 'music/home', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'tutorial', 'sidebar', 'lights', 'hitfx', 'sprites', 'walkfield', 'game', 'net'];
+const SCRIPTS = ['audio', 'music', 'music/cargo', 'music/comet', 'music/signal', 'music/bloom', 'music/hull', 'music/home', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'tutorial', 'sidebar', 'lights', 'hitfx', 'breakup', 'sprites', 'walkfield', 'game', 'net'];
 
 function loadGame(expose = []) {
   const noop = new Proxy(function () {}, {

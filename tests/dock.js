@@ -275,6 +275,24 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   check(!G.dk.dock && B.mode === 'eva' && G.ITEMS.some(it => it.kind === 'blackbox') && G.objectiveStatus().done,
         `the derelict drifts away: whoever stayed over there is cast adrift (B: ${B.mode}), the box stays aboard`);
 }
+// ... and by itself (2026-10-24 playtest: "detach the derelict lab sooner"): the box aboard, nobody over there for 5 s
+{
+  const { G, s, g } = s7Fresh(), me = G.me, d = G.dk.dock, B = G.makeCrew('B'); G.crew.push(B);
+  Object.assign(G.mission, { active: true, objective: { kind: 'blackbox' }, jumpAt: 1e9 }); G.mission.events.forEach(e => { e.done = true; });
+  for (const T of s.tendrils) { T.state = 'recoil'; T.t = 999; }
+  me.x = 4.5; me.y = 18.5; B.x = g.rooms[1].x + 2; B.y = g.y;     // B still over there
+  const box = G.ITEMS.find(it => it.kind === 'blackbox'); Object.assign(box, { x: 4.5, y: 17.6 });
+  tickN(G, 60 * 10);
+  check(d.detachT === null && G.dk.dock === d, 'the box aboard but a crewmate still over in the lab: the derelict stays tethered');
+  B.x = 5.5; B.y = 17.6; tickN(G, 60 * 4);
+  check(d.detachT === null, 'everyone back aboard: not at once (a few seconds\' grace)');
+  tickN(G, 60 * 2);
+  check(d.detachT > 0 && /casting off the derelict/.test(G.combat.banner?.text || ''), `then it casts off by itself ("${G.combat.banner?.text}")`);
+  B.x = g.tube.x + g.tube.w / 2; B.y = g.tube.y + g.tube.h / 2; G.simTick(DT);
+  check(d.detachT === null && /Tether held/.test(G.combat.banner?.text || ''), `someone steps back into the tube: the tether holds ("${G.combat.banner?.text}")`);
+  B.x = 5.5; B.y = 17.6; tickN(G, 60 * 15);
+  check(!G.dk.dock && B.mode === 'inside' && me.mode === 'inside' && G.objectiveStatus().done, 'back aboard: it casts off again and drifts away, nobody cast adrift, the box stays aboard');
+}
 {
   const { G, g } = s7Fresh('star', { npc: true }), me = G.me, h = G.HATCHES.find(h => h.side === 'star');   // the engineer's derelict: no box, no casting off
   G.mission.objective = { kind: 'rescue' };
@@ -302,6 +320,7 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
   for (let i = 0; i < 60; i++) { const q = tipAt(s.creep.d); G.withCrew(me, () => G.spray(q.x, q.y, DT)); G.simTick(DT); }   // (following the tip)
   check(s.creep.d < d0 - 2, `spraying the creep pushes it back a good chunk (${d0.toFixed(1)} → ${s.creep.d.toFixed(1)} units in 1 s)`);
   const d1 = s.creep.d, tip1 = tipAt(d1);
+  G.HATCHES.find(h => h.side === 'port').doors.inner = 1;   // (pushed back into the airlock's inner doorway: shots stop at a closed door, so open it)
   G.boarding.bolts.push({ x: tip1.x + 0.5, y: tip1.y - 1.5, z: 1, vx: -0.5 * 26 / 1.58, vy: 1.5 * 26 / 1.58, life: 0.5, owner: 'crew' }); tickN(G, 6);
   check(s.creep.d < d1 - 0.8 && s.creep.d > d1 - 1.3, `a shot pushes it back a bit (${d1.toFixed(1)} → ${s.creep.d.toFixed(1)})`);
   // three shots clear a wrap

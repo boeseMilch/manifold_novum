@@ -334,13 +334,88 @@ function airlockRing(h, k) {
   ctx.strokeStyle = 'rgba(20,22,27,0.6)'; ctx.lineWidth = 7; ctx.stroke();
   ctx.strokeStyle = h.target === 'outer' ? '#ff9a6a' : '#9cd8ff'; ctx.lineWidth = 3.5; ctx.stroke();
 }
+// The pump, which way the air goes (2026-10-24, the user: "airlock animations need to distinguish between air going out
+// or in, should be consistent with rooms venting"). Drawn only, from the snapshot's phase / t / target (every client
+// sees the same), in both views, over the crew like a room's vent (js/hazards.js drawVentRush, whose air sprite it uses):
+//   pumping out   streaks race across the chamber into the pump grilles beside the hatch (strong at first, thinning as
+//                 the pressure drops), mist puffs out of the exhaust on the hull outside, frost creeps over the floor
+//                 and the chamber goes the cold blue of a room in vacuum;
+//   pumping up    soft puffs billow out of the grilles in the chamber's long walls and spread, a white haze fills it
+//                 (as a repressurizing room fogs over) and clears as it's done, the frost melts away.
+// A chamber standing pumped out keeps its frost.
+const PUMP_GRILLES = (h) => { const c = h.chamber, cx = c.x + c.w / 2; return [[cx - 0.55, c.y + 0.12, 1], [cx + 0.55, c.y + 0.12, 1], [cx - 0.55, c.y + c.h - 0.12, -1], [cx + 0.55, c.y + c.h - 0.12, -1]]; };
+function airlockFrost(h) {
+  if (airlockTube(h) === 'air') return 0;
+  if (h.phase === 'cycling') { const k = clamp(h.t / LOCK_CYCLE, 0, 1); return h.target === 'outer' ? k : 1 - k; }
+  return h.air === 'outer' && h.phase !== 'vent' && h.phase !== 'shut' ? 1 : 0;
+}
+function drawAirlockPump(t) {
+  const S = GFX.on ? ventSprites() : null;
+  for (const h of HATCHES) {
+    const c = h.chamber, frost = airlockFrost(h);
+    if (frost > 0) {                                                       // frost on the chamber floor, a cold tint over it
+      if (S && GFX.ready('fx/frost')) fxDecal('fx/frost', c.x + c.w / 2, c.y + c.h / 2, 0.8, 0.85 * frost);
+      else {
+        const X = L(c.x + c.w / 2), Y = L(c.y + c.h / 2), g = ctx.createRadialGradient(X, Y, 0, X, Y, L(1.3));
+        g.addColorStop(0, `rgba(200,230,255,${0.3 * frost})`); g.addColorStop(1, 'rgba(200,230,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(L(c.x), L(c.y), L(c.w), L(c.h));
+      }
+      const up = GFX.lift(1.6);
+      ctx.fillStyle = `rgba(80,140,220,${0.13 * frost})`; ctx.fillRect(L(c.x), L(c.y - up), L(c.w), L(c.h + up));   // (drawVacuumTint's)
+    }
+    if (h.phase !== 'cycling' || airlockTube(h) === 'air') continue;
+    const k = clamp(h.t / LOCK_CYCLE, 0, 1), out = h.target === 'outer', seed = HATCHES.indexOf(h) * 977;
+    const edge = h.dir < 0 ? c.x + 0.08 : c.x + c.w - 0.08;               // the hatch's end of the chamber: its pump grilles
+    const fade = clamp(k * 8, 0, 1) * clamp((1 - k) * 10, 0, 1);
+    ctx.save(); ctx.lineCap = 'round';
+    if (out) {
+      // air out: streaks pulled across the chamber into the grilles by the hatch, thinning as the pressure drops
+      const I = fade * (0.35 + 0.65 * (1 - k) ** 1.5);
+      for (let i = 0; i < 22; i++) {
+        const sp = 1.6 + (i * 0.37 % 1) * 1.2, cc = t * sp + i * 0.618, q = cc % 1, r = rng(seed + i * 7919 + Math.floor(cc) * 104729);
+        const sx = c.x + 0.2 + r() * (c.w - 0.4), sy = c.y + 0.2 + r() * (c.h - 0.4), ty = h.y + (r() - 0.5) * 1.3;
+        const at = (u) => { u = u ** 1.6; return [sx + (edge - sx) * u, sy + (ty - sy) * u]; };
+        const [x0, y0] = at(Math.max(0, q - 0.15)), [x1, y1] = at(q), a = Math.sin(Math.PI * q) * 0.95 * I, len = Math.hypot(x1 - x0, y1 - y0);
+        if (S) GFX.sprite(S.air, 0, (x0 + x1) / 2, (y0 + y1) / 2, 0.3 + r() * 0.6, { sortY: y1 + 0.3, depthWrite: false, unlit: true, scale: 0.9, sx: Math.max(1, len / 0.09), rot: Math.atan2((y1 - y0) * GFX.SIN, x1 - x0), alpha: a });
+        else { ctx.strokeStyle = `rgba(225,238,252,${a})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(L(x0), L(y0)); ctx.lineTo(L(x1), L(y1)); ctx.stroke(); }
+      }
+      // the exhaust: mist puffing out into space beside the (shut) hatch, as from a vented room
+      for (let i = 0; i < 6; i++) {
+        const sp = 1.1 + (i * 0.29 % 1) * 0.6, cc = t * sp + i * 0.4142, q = cc % 1, r = rng(seed + i * 3571 + Math.floor(cc) * 7727 + 5);
+        const side = i % 2 ? 1 : -1, x = h.x + h.dir * (0.15 + q * (1.2 + r())), y = h.y + side * (1.05 + q * (0.3 + r() * 0.6)), R = 0.15 + q * 0.5;
+        const a = (1 - q) * Math.min(1, q * 6) * 0.5 * I;
+        if (S) { GFX.sprite(S.air, 0, x, y, 0.5, { layer: 'top', unlit: true, scale: R / 0.05, alpha: a * 0.6 }); continue; }
+        const X = L(x), Y = L(y), g = ctx.createRadialGradient(X, Y, 0, X, Y, L(R));
+        g.addColorStop(0, `rgba(228,238,250,${a})`); g.addColorStop(1, 'rgba(228,238,250,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Y, L(R), 0, TAU); ctx.fill();
+      }
+    } else {
+      // air in: puffs billow out of the grilles in the long walls and spread through the chamber; a haze fills it
+      const I = fade * (0.5 + 0.5 * (1 - k));
+      const G = PUMP_GRILLES(h);
+      for (let i = 0; i < 16; i++) {
+        const sp = 1.3 + (i * 0.53 % 1) * 0.8, cc = t * sp + i * 0.381, q = cc % 1, r = rng(seed + i * 6007 + Math.floor(cc) * 15485863 + 11);
+        const [gx, gy, dy] = G[i % G.length], spread = (r() - 0.5) * 1.1, reach = 0.5 + r() * 0.5;
+        const x = gx + spread * q, y = gy + dy * reach * Math.sqrt(q), R = 0.08 + q * 0.32;
+        const a = Math.sin(Math.PI * q) * 0.55 * I;
+        if (S) { GFX.sprite(S.air, 0, x, y, 0.3 + q * 0.6, { sortY: y + 0.3, depthWrite: false, unlit: true, scale: R / 0.05, alpha: a * 0.7 }); continue; }
+        const X = L(x), Y = L(y), g = ctx.createRadialGradient(X, Y, 0, X, Y, L(R));
+        g.addColorStop(0, `rgba(235,242,250,${a})`); g.addColorStop(1, 'rgba(235,242,250,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(X, Y, L(R), 0, TAU); ctx.fill();
+      }
+      const up = GFX.lift(1.6), haze = 0.22 * Math.sin(Math.PI * Math.min(1, k * 1.15)) * clamp((1 - k) * 6, 0, 1);   // (drawVacuumTint's repressurizing fog)
+      ctx.fillStyle = `rgba(230,236,244,${haze})`; ctx.fillRect(L(c.x), L(c.y - up), L(c.w), L(c.h + up));
+    }
+    ctx.restore();
+  }
+}
 // Classic view: the chamber (dashed hazard outline, a glow while it pumps), the two sliding doors, the lamps.
 function drawAirlock2D(h, t) {
   const c = h.chamber, x = c.x * T, y = c.y * T, w = c.w * T, hh = c.h * T, look = airlockLook(h);
   ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = 'rgba(210,166,46,0.75)'; ctx.lineWidth = 2;
   ctx.strokeRect(x + 6, y + 6, w - 12, hh - 12); ctx.restore();
   if (look === 'cycle' || look === 'vac' || look === 'vent') {
-    ctx.fillStyle = look === 'cycle' ? `rgba(150,200,255,${0.12 + 0.1 * Math.sin(t * 18)})` : 'rgba(20,30,60,0.35)'; ctx.fillRect(x, y, w, hh);
+    ctx.fillStyle = look === 'cycle' ? `rgba(150,200,255,${0.06 + 0.04 * Math.sin(t * 18)})` : 'rgba(20,30,60,0.35)'; ctx.fillRect(x, y, w, hh);   // (which way the air goes: drawAirlockPump)
   }
   const door = (r, open) => drawSealedDoor(r.x * T, r.y * T, r.w * T, r.h * T, open, { edge: look === 'locked' || look === 'broken' ? '#e2574c' : C.hazard });   // (js/art.js: sealed leaves meeting in the middle)
   door(h.inner, h.doors.inner);

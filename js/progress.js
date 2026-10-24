@@ -26,6 +26,7 @@ const SHIP_UPGRADES = [
   { id: 'caps', name: 'Bigger capacitors', rep: 5, desc: 'Capacitors hold 4 energy instead of 3.' },
   { id: 'hull', name: 'Reinforced hull', rep: 5, desc: 'The ship holds together with one more broken part (6 instead of 5).' },
   { id: 'sprinklers', name: 'Fire sprinklers', rep: 5, desc: 'Fires spread and burn parts out a third slower (22 s instead of 15 s).' },
+  { id: 'doors', name: 'Fast door actuators', rep: 3, desc: 'The inner doors unbolt and slide open 40% faster: 0.6 s instead of 1 s until you can pass.' },   // (2026-10-24)
 ];
 // A mission's prerequisites (MISSIONS[id].needs: { ship: [upgrade ids], overcharge }), as warning lines for
 // the lobby: without them the energy isn't enough (tools/balance.js --calibrate). Not a hard block.
@@ -48,7 +49,7 @@ function missionRequirements(id, ship = null) {
 const GEAR = [
   { id: 'boots', name: 'Gravity boots', cost: 150, desc: 'Walk 15% faster, and keep walking where gravity fails.' },
   { id: 'thrusters', name: 'Suit thrusters', cost: 180, desc: 'Spacewalk 30% faster.' },
-  { id: 'firstAid', name: 'First aid course', cost: 150, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down? Patch yourself up in 6 s instead of 10 s (out cold: 12 s instead of 20 s).' },
+  { id: 'firstAid', name: 'First aid course', cost: 150, desc: 'Treat crewmates in 1.2 s instead of 2 s. Down yourself? A little faster: 8 s instead of 10 s (out cold: 16 s instead of 20 s). (A stim pack beats it.)' },
   { id: 'stim', name: 'Stim pack', cost: 250, desc: 'Down? Patch yourself up in 3 s (out cold: 6 s instead of 20 s).' },
   { id: 'ownKit', prof: 'engineer', name: 'Own repair kit', cost: 100, desc: 'Start every mission with your own repair kit (on top of the ship\'s).' },
   { id: 'toolbelt', prof: 'engineer', name: 'Toolbelt', cost: 200, desc: 'Repairs go another 25% faster.' },
@@ -75,7 +76,11 @@ Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 120, perPirate: 16, rep: 1 },
     sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
-    crew: {events: [3, 6, 9, 14, 17, 21, 21, 21], cells: [3, 7, 9, 14, 10, 11, 11, 11], reactor: [0.85, 0.3, 0.4, 0.4, 1, 1, 1, 1]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 22% 42% 48% 41% 45% 43% 51% 58% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [3, 6, 9, 14, 17, 21, 21, 21], extra: {interceptor: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [4, 7, 9, 14, 10, 11, 11, 11], reactor: [0.7, 0.3, 0.4, 0.4, 1, 1, 1, 1]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 22% 42% 48% 41% 45% 43% 51% 58% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    // 2026-10-24 (solo playtest: one more encounter): solo a second pirate interceptor, crew.extra (a repeat on top of the 3 asked /
+    // 4 played; 4 asked would play the same 4: the interceptor was already added as the finale fight, 5 would have been the asteroid
+    // swarm, not the pirates' lanes): 5 played (×2 plays 6, two interceptors too). Cells / reactor refitted like --calibrate: ×0.85
+    // left the port cannon waiting 6 s, so ×0.7 (the mildest in spec) and 4 cells (was 3): ~18% idle solo (was 32%), in spec
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16: the first chapters too easy solo)
     objective: { kind: 'raiders', count: 2 }, rules: {},
@@ -105,8 +110,11 @@ Object.assign(MISSIONS, {
     // solo: the opener (an asteroid swarm; 2026-10-16: no more interceptor half the time, no pirates on this run), the two
     // aliens (the objective: they hatch from the cargo pods, inside the ship: no radar contact), the frigate (the finale); bigger crews add the mine drone, the maintenance failure, a jammed
     // cannon and the antenna (DROP_ORDER), then repeats
-    build: () => [evAt('swarm', 50, { side: 'front', opener: true }), evAt('intruder', 90, { side: randSide(), count: 2, pods: true, radar: false }),
-                  evAt('mines', 130, { side: randSide() }), evAt('debris', 160, { gun: ['port', 'front', 'star'][Math.floor(Math.random() * 3)] }),
+    // 2026-10-24 (solo playtest: "make aliens break out later"): the pods burst at ~160 s (pin: the written time, ±10 s, js/mission.js
+    // layoutMission; the shaped timeline had put them second, at ~75 s solo and 28 s with a crew), the rest shaped around them;
+    // cells / reactor refitted like --calibrate and unchanged (solo 3, ×0.3): ~16% idle solo (was 14%), ×2 56% (55%), ×3 64%, ×4 47% (50%)
+    build: () => [evAt('swarm', 50, { side: 'front', opener: true }), evAt('mines', 90, { side: randSide() }),
+                  evAt('debris', 130, { gun: ['port', 'front', 'star'][Math.floor(Math.random() * 3)] }), evAt('intruder', 160, { side: randSide(), count: 2, pods: true, radar: false, pin: true }),
                   evAt('maintenance', 190, { radar: false }), evAt('antenna', 220, { radar: false }), evAt('frigate', 250, { side: randSide() })],
   },
   c3: {
@@ -167,7 +175,11 @@ Object.assign(MISSIONS, {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 120, rep: 3 },
     balance: { soloIdle: 0.37, crewIdle: 0.65 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [4, 5, 7, 12, 16, 19, 25, 25], cells: [3, 3, 5, 14, 14, 19, 24, 24], reactor: [0.5, 0.5, 1, 0.5, 0.7, 0.7, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the leech opener + a failing part, 2026-10-16): 35% 65% 65% 65% 67% 66% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 27 s at 235 s; was 4/5/8/11/14/18/24/24
+    crew: {events: [6, 6, 7, 12, 16, 19, 25, 25], cells: [6, 3, 5, 14, 14, 19, 24, 24], reactor: [0.7, 0.5, 1, 0.5, 0.7, 0.7, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the leech opener + a failing part, 2026-10-16): 35% 65% 65% 65% 67% 66% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 27 s at 235 s; was 4/5/8/11/14/18/24/24
+    // 2026-10-24 (solo playtest: one more encounter, a spore mother): solo 6 asked, 6 played (+ the written mother; 5 asked would play the
+    // same 5: the swarm was already added as the finale fight), and ×2 to 6 as well (it played 5: a smaller crew mustn't get more
+    // than a bigger one). Cells / reactor refitted like --calibrate: solo ×0.5 / 3 cells went out of spec (the port cannon waits for
+    // the last fight), so ×0.7 (the mildest in spec) and 6 cells: ~11% idle solo (was 31%); ×2 kept (×0.5, 3 cells: in spec, ~46% idle, was 57%)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     essential: ['spores'],                    // (and the leeches: the opener, never dropped)
     always: ['maintenance'],                  // a part fails at every crew size, solo too (2026-10-16)
@@ -215,11 +227,12 @@ Object.assign(MISSIONS, {
     always: ['spores', 'mother', 'grappler', 'maintenance'],
     // the infested leviathan (js/leviathan.js) is the finale: the other events keep their spread (to 330 s, as with the old
     // leviathan's finaleLead 30); the jump is due LEVB's fight later (length − finaleLead: an estimate, ~4 min) and never comes
-    // before the fight is over (it holds the drive, then spools it LEVB_SINK s after it's freed, like the base's ESCAPE_SPOOL)
+    // before the fight is over (it holds the drive; once it's freed a short cutscene, and LEVB_OUTRO s later the ship jumps by
+    // itself: mission.autoJump, no handle despite the rule, 2026-10-24)
     length: 500, finaleLead: 230,
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 80 },
     blurb: 'Meet the spore mother, the grappler and the leviathan itself. Find out what drives the swarms mad.',
-    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing whose silent scream fills space round the hull with spores (shoot the tongue in its open mouth; don\'t open an airlock while the cloud is out there, and vent the spores out once it\'s gone). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. A tide pulls at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have.\n\nGood luck — and bring the cat.',
+    briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing whose silent scream fills space round the hull with spores (shoot the tongue in its open mouth; don\'t open an airlock while the cloud is out there, and vent the spores out once it\'s gone). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. A tide pulls at the ship and the coils like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have: its manual override is in the reactor room.\n\nGood luck — and bring the cat.',
     // 2026-10-16 (the user: "boring", never saw the spore mother): a fixed, escalating timeline instead of the shuffle,
     // no interceptors: spores, the mother, the grappler while a part breaks, then herds and tides, the leviathan last
     // (2026-10-17, one gravity tide per mission: the rule's, 80 s in, at every crew size. The two written tides at 140 / 225 s are
@@ -311,6 +324,7 @@ function applyShipUpgrades(ship = {}) {
   LOCK_CYCLE = has('airlocks') ? LOCK_CYCLES.fast : LOCK_CYCLES.base;   // (the outer airlocks' pump: js/airlock.js)
   COFFEE_REFILL = has('coffee') ? 20 : 60;
   MAX_DAMAGE = has('hull') ? 6 : 5;
+  ({ slide: DOOR_TIME, delay: DOOR_DELAY } = has('doors') ? DOOR_TIMES.fast : DOOR_TIMES.base);   // (the inner doors: js/game.js updateDoors)
 }
 // At mission start: the ship's one-off extras.
 function shipStartExtras(ship = {}) {

@@ -1,10 +1,11 @@
 // The jump animation: the drive's wind-up builds before the jump; jumping out plays JUMP_OUT s of
-// animation before the end screen shows, without changing the mission's result; no animation on a loss;
+// animation before the end screen shows, without changing the mission's result; on a loss the ship breaks up
+// (BREAKUP_T s, js/breakup.js) before the end screen;
 // without energy the wind-up loops: charges, sputters out, tries again.
 // Run: node tests/jumpfx.js
 const { loadGame } = require('./harness');
 const NAMES = ['power', 'mission', 'startMission', 'tick', 'CAPACITORS', 'combat', 'enemyFire', 'jumpCharge', 'jumpOutT', 'endScreenReady',
-  'JUMP_OUT', 'SYSTEMS', 'jumpStall', 'MAX_DAMAGE'];
+  'JUMP_OUT', 'SYSTEMS', 'jumpStall', 'MAX_DAMAGE', 'BREAKUP_T'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -59,7 +60,9 @@ const calm = (G) => { G.combat.shots.length = 0; G.SYSTEMS.forEach(s => { s.brok
   const m = G.mission;
   G.CAPACITORS[1].charge = 0; m.t = m.jumpAt + 5; G.tick(DT);
   G.SYSTEMS.slice(0, G.MAX_DAMAGE + 1).forEach(s => { s.broken = true; }); G.tick(DT);
-  check(m.over && !m.over.survived && G.endScreenReady() && G.jumpOutT() === Infinity && G.jumpCharge() === 0, 'lost: no jump animation, the end screen right away');
+  check(m.over && !m.over.survived && m.over.breakup && !G.endScreenReady() && G.jumpOutT() === Infinity && G.jumpCharge() === 0, 'lost: no jump animation; the ship breaks up first (no end screen yet)');
+  let n = 0; while (!G.endScreenReady() && n < 60 * 10) { G.tick(DT); n++; }
+  check(Math.abs(n * DT - G.BREAKUP_T) < 0.2 && !m.over.survived, `…then the end screen, after the break-up (${(n * DT).toFixed(2)} s)`);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');

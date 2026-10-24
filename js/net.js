@@ -24,7 +24,7 @@ function netSerialize() {
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
     caps: CAPACITORS.map(c => [c.charge, c.pulse || 0]),
     power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses, patch: power.patch, overcharge: power.overcharge },
-    doors: DOORS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.hold || 0, d.jammed ? 1 : 0, d.pry || 0, d.stay || 0]),   // (the doorways, then the deck doors)
+    doors: DOORS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.hold || 0, d.jammed ? 1 : 0, d.pry || 0, d.stay || 0, d.bolt ?? 1]),   // (the doorways, then the deck doors)
     hatches: HATCHES.map(h => [h.doors.inner, h.doors.outer, h.air, h.phase, h.t, h.target, h.locked, h.forced || 0]),   // (the outer airlocks: js/airlock.js)
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
@@ -83,7 +83,7 @@ function netApply(s, myId) {
   s.caps.forEach(([ch, pu], i) => { CAPACITORS[i].charge = ch; CAPACITORS[i].pulse = pu; });
   const leverAt = power.lever.angle;                 // (the handle swings in this browser, every frame: netFrame)
   Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); if (netLive && Number.isFinite(leverAt)) power.lever.angle = leverAt; power.bolts = s.power.bolts; power.pulses = s.power.pulses || []; power.patch = s.power.patch || [0, 1, 2]; power.overcharge = !!s.power.overcharge;
-  s.doors.forEach(([o, l, b, h, j, p, st], i) => { const d = DOORS[i]; if (!d) return; d.open = o; d.locked = l; d.blast = !!b; d.hold = h; d.jammed = !!j; d.pry = p; d.stay = st || 0; });
+  s.doors.forEach(([o, l, b, h, j, p, st, bo], i) => { const d = DOORS[i]; if (!d) return; d.open = o; d.locked = l; d.blast = !!b; d.hold = h; d.jammed = !!j; d.pry = p; d.stay = st || 0; d.bolt = bo ?? 1; });
   s.hatches.forEach(([di, dout, air, phase, t, target, l, f], i) => { Object.assign(HATCHES[i], { air, phase, t, target, locked: l, forced: f }); HATCHES[i].doors.inner = di; HATCHES[i].doors.outer = dout; });
   s.guns.forEach((d, i) => {
     const { aim, ...rest } = d;

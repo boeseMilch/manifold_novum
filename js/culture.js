@@ -267,8 +267,8 @@ function s7BoltHit(b, x0, y0) {
   const C = s.creep;
   if (C.dead) return false;
   if (C.wrapped) {
-    const w = G.creep[G.creep.length - 1];
-    if (segD(w) < 0.55) { C.wrapHp -= 1 / S7_WRAP_HITS + 1e-6; C.flash = 1; gore(w); sfx.alienHurt(); if (C.wrapHp <= 0) s7Unwrap(s, G); return true; }
+    const w = G.creep[G.creep.length - 1], cap = SOLIDS.find(S => inRect(w.x, w.y, S, 0.3));   // (wrapped round the capacitor: a shot stopped by the capacitor hits the wrap)
+    if (segD(w) < 0.55 || (cap && inRect(b.x, b.y, cap, 0.1))) { C.wrapHp -= 1 / S7_WRAP_HITS + 1e-6; C.flash = 1; gore(w); sfx.alienHurt(); if (C.wrapHp <= 0) s7Unwrap(s, G); return true; }
     return false;
   }
   const p = s7CreepPts(G, C.d).find(p => segD(p) < 0.3);

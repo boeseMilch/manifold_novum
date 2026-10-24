@@ -380,5 +380,5 @@ function evaPlates(add) {
   for (const id of Object.keys(evs.jams)) add('jam' + id, { icon: 'wrench', title: 'JAMMED TRACK', sub: `${GUNS.find(g => g.id === id).name} · half arc · clear it outside`, stripe: '#ffd84a', red: true });
   if (!evs.antenna) add('antenna', { icon: 'wrench', title: 'ANTENNA CROOKED', sub: 'radar garbled · straighten it outside', stripe: '#ffd84a' });
   if (evs.canister) add('canister', { icon: 'jump', title: 'FUEL CANISTER', sub: `drifting past, ${SIDE_LABEL[evs.canister.side].toLowerCase()} side · grab it outside`, stripe: '#5fd6a0' });
-  if (evs.coils.length && evs.coils.some(c => !c.ok)) add('coils', { icon: 'jump', title: 'JUMP COILS', sub: `${evs.coils.filter(c => c.ok).length}/${evs.coils.length} aligned · each one off = +${COIL_DELAY} s`, stripe: '#7af0ff' });
+  if (evs.coils.length && evs.coils.some(c => !c.ok) && !mission.autoJump) add('coils', { icon: 'jump', title: 'JUMP COILS', sub: `${evs.coils.filter(c => c.ok).length}/${evs.coils.length} aligned · each one off = +${COIL_DELAY} s`, stripe: '#7af0ff' });
 }

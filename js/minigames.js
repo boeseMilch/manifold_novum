@@ -89,6 +89,7 @@ function minigameClickTarget(mx, my) {
   if (at(JUMP_HANDLE, 0.45)) {
     const t = { x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, r: 0.45 };
     if (!mission.rules?.handle) return { ...t, text: mission.autoPull != null ? 'Jump handle — engaged by the autopilot' : 'Jump handle (the autopilot pulls it when the jump drive spools up)', ok: false };
+    if (!mission.jump && typeof levHoldsJump === 'function' && levHoldsJump()) return { ...t, text: 'Jump handle — not needed: the drive jumps by itself once the leviathan is free (the engine OVERRIDE is in the reactor room)', ok: false };
     if (!mission.jump) return { ...t, text: 'Jump handle (pull it when the jump drive spools up)', ok: false };
     if (!near(t.x, t.y)) return { ...t, text: 'Jump handle — get closer', ok: false };
     return { ...t, ok: true, text: `Hold click: pull the jump handle and keep holding (${JUMP_PULL} s; faster with two)`, hold: { id: 'jumpHandle', time: 1e9, done() {} } };
@@ -98,7 +99,7 @@ function minigameClickTarget(mx, my) {
 // The patch board only matters when a feed line arcs or a capacitor is broken (or it's already rerouted).
 const patchNeeded = () => [0, 1, 2].some(i => surging('feed' + i) || capBroken(i)) || power.patch.some((c, i) => c !== i);
 function minigameSpots() {
-  return [...(patchNeeded() ? [{ x: PATCH_BOARD.x, y: PATCH_BOARD.y, r: 0.45 }] : []), ...(mission.rules?.handle ? [{ x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, r: 0.4 }] : [])];
+  return [...(patchNeeded() ? [{ x: PATCH_BOARD.x, y: PATCH_BOARD.y, r: 0.45 }] : []), ...(mission.rules?.handle && !(typeof levHoldsJump === 'function' && levHoldsJump()) ? [{ x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, r: 0.4 }] : [])];   // (not while the leviathan holds the drive: nothing to do at the helm)
 }
 
 // ---------------------------------------------------------------------------
