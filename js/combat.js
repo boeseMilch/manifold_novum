@@ -258,7 +258,7 @@ function shieldAbsorb(s, side, x, y) {
 
 function shipHit(side, x, y, large) {
   if (mission.over?.survived) return;                // (shots still in flight as the ship jumps away)
-  if (typeof tutorialHit === 'function' && tutorialHit('ship', side)) {   // tutorial: enemy hits are for show only (js/tutorial.js)
+  if ((typeof tutorialHit === 'function' && tutorialHit('ship', side)) || (typeof trainHit === 'function' && trainHit('ship', side))) {   // tutorial / crew training: enemy hits are for show only (js/tutorial.js, js/tutorial-mp.js)
     combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/explosion_s', x, y, 0.7, hitSurface(x, y).z); return;
   }
   combat.hits[large ? 'large' : 'small']++;
@@ -271,7 +271,7 @@ function shipHit(side, x, y, large) {
   combatFlip(large ? 'fx/explosion_l' : 'fx/explosion_s', x, y, large ? 0.8 : 0.7, hitSurface(x, y).z);
 }
 function crewHit(side, c) {
-  if (typeof tutorialHit === 'function' && tutorialHit('crew', side, c)) {   // tutorial: for show only
+  if ((typeof tutorialHit === 'function' && tutorialHit('crew', side, c)) || (typeof trainHit === 'function' && trainHit('crew', side, c))) {   // tutorial / crew training: for show only
     combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/hit_spark', c.x, c.y, 1, gunnerZ(c)); return;
   }
   combat.hits.crew++; combat.flashes[side] = 1; sfx.hit(false); hurtCrew(c, 3);   // a ship's gun: one hit in the body and you're out

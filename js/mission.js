@@ -516,7 +516,7 @@ function endMission(won, reason, survived = won) {
 
 // Radar: reveals everything coming in the next RADAR_RANGE seconds, for the whole crew.
 function radarScan() {
-  mission.scanT = mission.t; mission.lastScan = mission.t;
+  mission.scanT = mission.t; mission.lastScan = mission.t; mission.lastScanBy = player?.id ?? null;   // (who: crew training credits the right player)
   if (!evs.antenna) { sfxFor(player, 'empty'); combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return; }
   if (enc.storm) { sfxFor(player, 'empty'); combatBanner('Radar: nothing but static — ion storm'); return; }
   for (const e of combat.enemies) if (e.D.stealth) e.reveal = 3;           // the ping lights up cloaked ships for a moment
@@ -653,6 +653,7 @@ function spray(mx, my, dt) {
     if (d >= SPRAY_RANGE || off >= 0.45) continue;
     if (f.plasma) { f.hp = Math.max(0.6, f.hp - SPRAY_RATE * dt); f.t = Math.max(0, f.t - dt * 2); continue; }   // only pushes it back
     f.hp -= SPRAY_RATE * dt;
+    (f.spray ||= {})[player.id] = (f.spray[player.id] || 0) + SPRAY_RATE * dt;   // who did how much (crew training: whose fire it was that went out)
   }
   if (Math.random() < dt * 6) sfx.spray();
 }

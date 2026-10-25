@@ -31,6 +31,7 @@ function netSerialize() {
     fires: fires.map(f => ({ ...f, sys: sysIdx(f.sys) })),
     luck, hz, evs, enc, org, dk,
     tasks: { claims: crewTasks.claims, custom: crewTasks.custom },   // who took on which plate, task plates (js/claims.js)
+    ...(typeof trainSnap === 'function' && train.on ? { train: trainSnap() } : {}),   // crew training: stations, everyone's lesson and card (js/tutorial-mp.js)
     mission: {
       ...mission, revealed: [...mission.revealed],
       events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined, decoy: e.decoy ? sysIdx(e.decoy) : undefined })),   // (maintenance: its pair)
@@ -94,12 +95,14 @@ function netApply(s, myId) {
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
   if (s.tasks) { crewTasks.claims = s.tasks.claims || {}; crewTasks.custom = s.tasks.custom || []; }
+  if (typeof train !== 'undefined') { if (s.train) Object.assign(train, s.train); else train.on = false; }   // (js/tutorial-mp.js)
   Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc); Object.assign(org, s.org); Object.assign(dk, s.dk);
   if (JSON.stringify(s.mission.upgrades || {}) !== JSON.stringify(mission.upgrades || {})) applyShipUpgrades(s.mission.upgrades || {});   // (HUD numbers like shots per energy)
   Object.assign(mission, s.mission, {
     revealed: new Set(s.mission.revealed),
     events: s.mission.events.map(e => ({ ...e, sys: e.sys !== undefined ? ALL_PARTS[e.sys] : undefined, decoy: e.decoy !== undefined ? ALL_PARTS[e.decoy] : undefined })),
   });
+  if (mission.jumpAt == null) mission.jumpAt = Infinity;   // (JSON turns Infinity into null: practice / training have no jump time)
   const C2 = s.combat;
   combat.enemies = C2.enemies.map(d => {
     const D = ENEMY_TYPES[d.kind];

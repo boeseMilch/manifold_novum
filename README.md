@@ -43,6 +43,8 @@ One person hosts. Everyone else only needs a browser on the same network (Wi-Fi 
    (host, mission, players n/8; "in mission" if it's already running).
 2. One of you presses **OPEN A GAME** and becomes that game's host. The others press **JOIN**
    next to it in the list. A game at 8/8 shows as full: open another one.
+   New crew? The host picks **Crew training** (top of the mission list) and starts it: everyone
+   learns every station at once, each with their own instruction card, and the game never pauses.
 3. Only the host picks the mission and presses **START MISSION**; everyone else sees the
    choice live. People who join later drop straight into the running mission. If the host
    leaves, the next player (earliest joined) takes over.

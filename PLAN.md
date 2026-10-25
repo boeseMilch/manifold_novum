@@ -4064,3 +4064,72 @@ grows CLAIM_W px to the right with a waving flag in the claimant's suit colour, 
 - tests/claims.js: claim / release / take-over by command, junk refused, auto-release (plate gone, claimant leaves),
   server → browser sync (same key, claim, wider plate), guide targets (cannon ladder, extinguisher then fire),
   custom plates (sync, done(), removal), a new mission starts clean, a solo click on a plate.
+
+### Crew training: the multiplayer tutorial (2026-10-25, js/tutorial-mp.js, js/game.js, js/net.js, js/progress.js)
+Mission `training` ("Crew training", top of the mission list in a multiplayer lobby; solo for testing:
+`?mission=training&autostart` without a server). The user: "takes players through all the same aspects but in
+parallel ... without pausing the game at any point ... if someone is ahead walk them through more things in detail
+... don't have too many encounters at the same time ... get around all the weird locks". The solo tutorial
+(js/tutorial.js) is untouched.
+- Runs in the simulation (server in multiplayer, the page solo): updateTraining(dt) at the end of simTick. Synced
+  as `train` in the snapshot ({ on, runId, grad, res: { station: [crewId] }, p: { crewId: record } }); browsers only
+  draw their own record and send ['train', 'next'] (a click on the card). Lazy init on a new runId: jumpAt
+  Infinity, `mission.lead = 0` (a join doesn't lay the mission out again), a never-failing yellow maintenance pair
+  for the helm lesson, fuel in the crate. Every tick: no jump / hot zone until graduation (press events dropped),
+  the ship never falls apart, the reactor refuelled if nobody's on the fuel lesson.
+- Lessons are data (TR_LESSONS: plan / start / tick / todo / target / marks / stop / rearm / outro). Core, for
+  everyone: helm (diagnosis), radar (a scan *by you*: radarScan records mission.lastScanBy; your lesson parks a
+  training contact on the radar), cannon (side cannon: climb in → a calmed interceptor appears → windshield, misses
+  refunded → reload → cover: a spoken countdown, then one slowed shot at you, a hit through is harmless and repeats,
+  after three it moves on → the other weak spots), fuel cell (the reactor emptied for you, load a cell), power lever
+  (wrench out → it steps three times on training energy, independent of the reactor → turn to LEFT and wedge →
+  wrench out again), fire (a tame fire on a shield button or airlock, extinguisher, spray), repair (a shield button
+  breaks, walk up and see "broken", kit, hold 5 s). Extras (what the solo tutorial only mentions): asteroids (front
+  cannon swarm), shields (press a reserved button; up time, cooldown, emitters), first aid (a knock-down drill:
+  hold E to get up) and medic (treat a crewmate in the drill), security console (lock and unlock a door), manual
+  override (force a door we locked), spacewalk (align a coil we misaligned, back in; only after the core),
+  coffee, and tour stops (laser gun, hull plates, vent panel, patch board, snack machine + DAMAGE, MID & the jump).
+- Scheduler (trSchedule, every 0.25 s): players without a lesson, fewest core done first, longest waiting next.
+  Medic first if someone's down in the drill; then the first free core lesson in the player's own rotation of
+  [helm, radar, gun, fuel, lever, fire, repair] (offset 3 per joiner, so a crew spreads over the ship and fuel →
+  lever stay neighbours); else a short extra as a filler; core done → any extra; else a waiting card saying who's
+  on the station they need. Station capacities (TR_RES_CAP): helm 2, radar 2, each cannon 1 (and nobody sitting in
+  it), reactor 1, lever 1, repair kit 1 (not needed with your own), extinguishers min(2, how many exist), each
+  shield button / coil, the security console and the override door 1. Encounter caps (TR_CAP, any crew size):
+  2 interceptors (one per side), 1 swarm, 2 fires, 2 broken parts, 4 in all, counted as the larger of what's out
+  there and what running lessons will make. A lesson that doesn't fit doesn't start. No progress for 120 s (45 s
+  on an extra) → dropped, offered again later.
+- No pausing: drawTrainingHUD draws your card at the top centre (title, lesson n/7, the page with *bold* words,
+  page dots, an orange note line, ▶ the goal). Pages turn by themselves (4 s or 0.33 s a word) or on a click; a
+  click on the last page folds it. Control words ({use}, {fire}, {cover}, ...) are filled in by each browser from
+  its own 'mn-controls'. A finished lesson's outro and the rest of the welcome are put in front of the next card,
+  so nothing waits. Over an open panel the card is drawn on top. Each lesson is also a task plate "NAME · LESSON"
+  claimed for its player (their arrows); a real encounter plate the lesson makes (your fire, your interceptor,
+  your swarm) is claimed for you too, and then your own plate has no arrows (no double arrows).
+- Lock-ups: (1) a station reserved for a lesson is closed to everyone else (trainAllows via game.js tutAllows:
+  lever, loading the reactor, a cannon ladder, a shield button, the security console, the ship's repair kit, a
+  coil), with "Reserved: Alice's power lever training" as the prompt / tooltip; it reads only train.res and the
+  crew id, so the browser's own prompt (netLocalPrompt) agrees. (2) Someone finishes your job (fires: the biggest
+  sprayer, spray() now records f.spray per crew id; repairs: who was repairing it; coils: who held the align;
+  doors: who had the override open) → if they're on the same lesson, it counts for them and their job becomes
+  yours; if they're free (or on a filler) and still need it, it counts for them too; either way you get a fresh
+  one after 3 s when the caps allow. (3) A click on someone's training plate (or their fire / interceptor) goes
+  back to its owner and the clicker is told; a free player who still needs that lesson gets it handed over. (4)
+  Leaving: the lesson cleans up (lever unjammed, reactor refuelled, enemy / fire / broken part / coil / door back),
+  stations freed, plate gone; progress kept by name for a rejoin. (5) Joining: a welcome card, then the queue; a
+  join cancels an open graduation. (6) Hits are harmless (combat.js shipHit / crewHit → trainHit); out cold 20 s →
+  down, down 60 s → on your feet (but the drill). (7) Someone sitting on the repair kit / extinguishers a learner
+  needs is asked to drop it after 20 s; after 40 s a spare one turns up (gone again with the lesson). The debug
+  menu is off.
+- Graduation: everyone aboard has the core → rule `handle` on, the jump spools, someone holds the jump handle at
+  the helm; the jump ends the mission. No pay, no profile entry (creditMission / drawRewards skip tutorial
+  missions); each browser sets 'mn-tutorial-done' once its player's core is done. The lobby brief says "Training
+  only: no pay". (net.js: a snapshot's jumpAt of null, JSON's Infinity, becomes Infinity again: the header said
+  "JUMP IN 0:00" in multiplayer practice too.)
+- tests/training.js: 1 / 4 / 8 players all busy in parallel, time running; radar / helm / fuel credited only to
+  the right player; reserved stations and the deny text, the same in a browser copy; two side gunners with an
+  interceptor each (claimed), a third on something else; the cover lesson blocked / failed three times; climbing
+  down mid-lesson; fire stolen (swap and re-arm), fire cap; extinguisher hogging → a spare; repair stolen; claim
+  take-over undone / handed over; leaving mid-lesson, joining, rejoining with progress; down / out recovery;
+  harmless heavy shots; the snapshot and each browser's card; graduation (a join cancels, the jump ends it, no
+  pay); an 8-bot soak (random reaction times, walking time) through the whole core with invariants every tick.

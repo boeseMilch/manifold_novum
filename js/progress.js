@@ -467,7 +467,7 @@ const unlockedMissions = (p = profile) => {
 let lastReward = null;
 function creditMission() {
   const o = mission.over;
-  if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice' || MISSIONS[mission.id]?.custom) return;   // (a custom skirmish: no pay)
+  if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice' || MISSIONS[mission.id]?.custom || MISSIONS[mission.id]?.tutorial) return;   // (a custom skirmish, crew training: no pay, no entry)
   const mine = o.results.crew.find(c => c.id === me.id);
   const ok = missionSuccess(mission.id, o.results), first = ok && !profile.done[mission.id];
   // In multiplayer the crew flies the host's ship (mission.shipOf, set by the server): only its upgrades count, but
@@ -483,7 +483,7 @@ function creditMission() {
 }
 // The rewards block on the end screen.
 function drawRewards(cx, y) {
-  if (!lastReward || mission.id === 'practice' || MISSIONS[mission.id]?.custom) return;
+  if (!lastReward || mission.id === 'practice' || MISSIONS[mission.id]?.custom || MISSIONS[mission.id]?.tutorial) return;
   const r = lastReward;
   ctx.textAlign = 'center'; ctx.font = '700 16px system-ui, sans-serif'; ctx.fillStyle = '#ffe08a';
   ctx.fillText(r.objFailed ? `Paid $${r.money}  ·  no reputation` : `+$${r.money}  ·  +${r.rep} reputation`, cx, y);
@@ -563,9 +563,10 @@ const lobbyUI = {
       this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         ${m.custom ? `<p class="obj">${escapeHtml(this.customSummary())}</p>` : ''}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
-        ${this.flight ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades. Everyone earns their own pay and reputation.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: only their upgrades count. You earn your own pay and reputation.`}</p>` : ''}
+        ${m.tutorial ? '<p class="obj">Training only: no pay, no reputation, nothing to lose.</p>' : ''}
+        ${this.flight && !m.tutorial ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades. Everyone earns their own pay and reputation.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: only their upgrades count. You earn your own pay and reputation.`}</p>` : ''}
         ${missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
-        ${m.practice || m.custom ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
+        ${m.practice || m.custom || m.tutorial ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
     }
   },
   pick(id) { this.chosen = id; this.onPick(id); this.render(); },
@@ -581,8 +582,9 @@ const lobbyUI = {
   renderCampaign() {
     const p = profile, avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
     list.innerHTML = '';
-    for (const [title, ids] of [['Campaign', CAMPAIGN]]) {
-      const open = ids.filter(id => MISSIONS[id] && avail.has(id));
+    // in a game (this.flight: multiplayer): crew training (js/tutorial-mp.js) first, always open
+    for (const [title, ids] of [...(this.flight && MISSIONS.training ? [['Training', ['training']]] : []), ['Campaign', CAMPAIGN]]) {
+      const open = ids.filter(id => MISSIONS[id] && (avail.has(id) || MISSIONS[id].tutorial));
       if (!open.length) continue;
       const h = document.createElement('div'); h.className = 'mission-group'; h.textContent = title; list.appendChild(h);
       for (const id of open) {
@@ -592,7 +594,7 @@ const lobbyUI = {
         b.onclick = () => this.pick(id);
         list.appendChild(b);
       }
-      if (open.length < ids.length) { const n = document.createElement('div'); n.className = 'mission-more'; n.textContent = 'More chapters unlock as you go.'; list.appendChild(n); }
+      if (open.length < ids.length && ids === CAMPAIGN) { const n = document.createElement('div'); n.className = 'mission-more'; n.textContent = 'More chapters unlock as you go.'; list.appendChild(n); }
     }
     list.scrollTop = scroll;
     list.querySelector('.mission.chosen')?.scrollIntoView?.({ block: 'nearest' });

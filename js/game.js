@@ -402,7 +402,7 @@ function promptHover(c, mx, my) {
 function act(p) {
   prompt = { ok: !!p.run || !!p.ok, ...p };
   if (!p.run) return;
-  if (!tutAllows('target', p)) { prompt.ok = false; return; }   // tutorial: not what this step asks for
+  if (!tutAllows('target', p)) { prompt.ok = false; const no = typeof trainDenyText === 'function' && trainDenyText(player, p); if (no) prompt.text = no; return; }   // tutorial: not what this step asks for (crew training: someone else's station)
   if (!p.noE) prompt.eAct = true;                    // (E does this: its spot gets the solid ring)
   if ((debugOpen && player === me) || ui.panel || mission.over) return;
   const m = mouseWorld(), onIt = p.at && Math.hypot(m[0] - p.at.x, m[1] - p.at.y) <= p.at.r && !clickTarget(m[0], m[1])?.ok;   // something more specific under the mouse wins
@@ -425,7 +425,7 @@ function updateInteraction(dt) {
   if (player.mode === 'gun') { player.repair = null; player.treat = null; player.hold = null; player.charge = null; return; }
   const [mx, my] = mouseWorld();
   hover = player === me && invSlotAt(mouse.x, mouse.y) ? null : pickHover(player, mx, my);   // (on the inventory: that's a HUD click)
-  if (hover?.ok && !tutAllows('target', hover)) hover = { text: hover.text, ok: false, x: hover.x, y: hover.y, r: hover.r };   // tutorial: only what the step asks for
+  if (hover?.ok && !tutAllows('target', hover)) hover = { text: (typeof trainDenyText === 'function' && trainDenyText(player, hover)) || hover.text, ok: false, x: hover.x, y: hover.y, r: hover.r };   // tutorial: only what the step asks for
   let target = hover, holding = mouse.down && !mouse.suppress, click = mouse.click;
   const eDown = keys.has('KeyE') && !player.eUsed, eTap = pressed.has('KeyE') && !player.eUsed;
   if (!standing(player)) {                         // down / out: holding E alone patches you up, wherever the mouse is (or hold click on yourself)
@@ -515,11 +515,13 @@ function runCommand(cmd) {
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
   else if (kind === 'drop') { if (tutAllows('drop') && (arg === 'weapon' || arg === 'item')) dropSlot(arg); }   // (a click on an inventory slot)
   else if (kind === 'claim') claimCommand(arg);       // a click on a sidebar plate: this one's mine (js/claims.js)
+  else if (kind === 'train') { if (typeof trainCommand === 'function') trainCommand(arg); }   // a click on your crew training card (js/tutorial-mp.js)
   else if (kind === 'lamp') player.lamp = !player.lamp;   // the helmet lamp (L): drawing only, see js/lights.js
 }
 // Tutorial gate (js/tutorial.js): while the tutorial runs, only what its current step asks for works
 // (interaction targets, cannon fire / reload / cover, climbing down, closing panels, hand weapons).
-const tutAllows = (what, arg) => typeof tutorialAllows !== 'function' || tutorialAllows(what, arg);
+// Crew training (js/tutorial-mp.js): a station reserved for someone else's lesson is closed to the acting crew member.
+const tutAllows = (what, arg) => (typeof tutorialAllows !== 'function' || tutorialAllows(what, arg)) && (typeof trainAllows !== 'function' || trainAllows(player, what, arg));
 let sendCommand = (cmd) => withCrew(me, () => runCommand(cmd));   // multiplayer replaces this
 
 
@@ -1072,6 +1074,7 @@ function render(t) {
   drawUseMarks(t);                                   // rings round what you can use, over everything in the world (js/systems.js)
   drawWalkFieldDebug();                              // debug: where the crew walk (js/walkfield.js; ?walkfield or the debug menu)
   if (typeof drawTutorialWorld === 'function') drawTutorialWorld(view, t);   // the tutorial's markers (js/tutorial.js)
+  if (typeof drawTrainingWorld === 'function') drawTrainingWorld(view, t);   // your crew training marks (js/tutorial-mp.js)
   drawJumpStallMark(view, t);                        // the jump stalled: NO ENERGY over the middle capacitor
 
   ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
@@ -1110,6 +1113,7 @@ function render(t) {
   drawSidebar(HUD_H);
   drawInjuryBadge(t);                                // hurt / down / out: what it means and what helps
   drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
+  if (typeof drawTrainingHUD === 'function' && !me.ui.panel) drawTrainingHUD(t);   // your crew training card, under the arrows' hints (js/tutorial-mp.js)
   drawClaimGuide(view);                              // big arrows to the jobs you claimed (js/claims.js)
   if (hover && !debugOpen && !invSlotAt(mouse.x, mouse.y)) {   // tooltip next to the mouse
     ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';
@@ -1123,6 +1127,7 @@ function render(t) {
   if (typeof drawTutorialHUD === 'function') drawTutorialHUD(t);
   drawDebugMenu();
   drawPanels(t);
+  if (typeof drawTrainingHUD === 'function' && me.ui.panel) drawTrainingHUD(t);   // (a panel open: the card stays readable on top of it)
   if (G) GFX.end();
 }
 // Progress of a hold job (repairing, welding, treating, …): a bar over the worker's head, in screen
@@ -1273,6 +1278,7 @@ function simTick(dt) {
   updateDock(dt);
   updateCrewTasks(dt);                                // claims and task plates (js/claims.js)
   if (typeof updateTutorial === 'function') updateTutorial(dt);   // js/tutorial.js (solo only)
+  if (typeof updateTraining === 'function') updateTraining(dt);   // crew training (js/tutorial-mp.js; only in mission 'training')
 }
 
 // This browser only: menus, buttons, mute, music, the mouse's world point, sidebar, camera.
@@ -1315,6 +1321,7 @@ function clientUpdate(dt) {
   miniClient(dt);
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
+  if (!me.ui.panel && m.click && typeof inTrainCard === 'function' && inTrainCard(m.x, m.y)) { sendCommand(['train', 'next']); m.click = false; m.suppress = true; }   // your crew training card: next page / fold (js/tutorial-mp.js)
   if (!me.ui.panel && m.click && mission.active && plateAt(m.x, m.y)) { sendCommand(['claim', plateAt(m.x, m.y)]); m.click = false; m.suppress = true; }   // claim a plate (js/claims.js)
   if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && standing(me) && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
