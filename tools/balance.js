@@ -134,6 +134,7 @@ const A = {
                           // larger"): the mission's own solo idle (as built and playtested) + this per extra player …
   SOLO_FLOOR: 0.10,       // … counted from at least this (c7 solo is -12%: more work than one can do, playtested as fine)
   CREW_RISE: 0.01,        // --calibrate: a crew's idle is at least this above the next smaller crew's
+                          // (and never more encounters than encounterCap: "multiply and round", below)
   TARGET_RAMP: 0,         // … minus this per step in PROGRESSION (was 0.005: a difficulty ramp; off since 2026-10-18)
                           // a mission can set its own solo target: MISSIONS[id].balance = { soloIdle } (no ramp then)
   // the expected kit (expectedKit): what a first-time campaign run can afford by each chapter
@@ -147,9 +148,10 @@ const A = {
   SPEC_IDLE_SLACK: 0.07,  // --calibrate: how far from the idle target a neighbouring event count may be to get the energy in spec
   SPEC_WAIT: 2,
   SPEC_FINALE: 5,         // s before the jump: a wait that starts this late is the finale's, it doesn't count
-  REACTOR_STEPS: [0.85, 0.7, 0.6, 0.5, 0.4],   // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites (to 0.4 since
-                          // 2026-10-25: the busier crews' energy; c8 solo already ran ×0.35) …
-  REACTOR_STEPS_EARLY: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3],   // … and for the early missions, which have to be in spec on the base ship           // s a cannon may wait for its next energy and still count as in spec
+  REACTOR_STEPS: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2],   // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites (to
+                          // 0.2 since 2026-10-25: the busier crews' energy, and crews held to few encounters by encounterCap, whose
+                          // long gaps slow the reactor (it follows the gap): Black box ×2 starved its opener down to ×0.3) …
+  REACTOR_STEPS_EARLY: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2],   // … and for the early missions, which have to be in spec on the base ship           // s a cannon may wait for its next energy and still count as in spec
   CAL_RUNS: 10,           // --calibrate: random builds per mission and crew size while searching (= RUNS: what the summary rates)
   OPTIONAL_IDLE: 0.6,     // optional jobs (fuel canister) are only done when the crew is below this load
   // verdicts and score
@@ -171,6 +173,15 @@ const PROGRESSION = { intro: 0, c1: 1, c2: 2, rush: 2, c3: 3, ore: 4, salvage: 4
 // A mission's own solo target (MISSIONS[id].balance.soloIdle) wins: chapters 6-8 solo 37% (the user: 33-40% is right solo),
 // challenge missions lower (Nightmare solo 25%). Crews (2026-10-25): what solo actually gets in that mission (soloIdle: its
 // crew.events[0] etc. as built, with the expected kit), at least SOLO_FLOOR, + CREW_STEP per extra player. (--target: flat.)
+// "Multiply and round" (the user, 2026-10-25): n + 1 players get at most (n + 1) / n times n players' encounters, rounded to
+// the next whole number below (solo 5: 9, 13, 17, 21, 25, 29, 33). An upper bound on the fit, for now. Counts the whole
+// timeline (crew.events + crew.extra: c4 solo is 4 + a second failing part); the cap returned is for crew.events.
+function encounterCap(id, n) {
+  const C = game().MISSIONS[id].crew, all = (i) => C.events[i] + Object.values(C.extra || {}).reduce((s, a) => s + (a[i] || 0), 0);
+  let cap = all(0);
+  for (let m = 1; m < n; m++) cap = Math.ceil(cap * (m + 1) / m) - 1;
+  return cap - (all(n - 1) - C.events[n - 1]);
+}
 let flatTargets = false;
 const soloMemo = new Map();
 function soloIdle(id) {
@@ -1429,10 +1440,11 @@ const evalAt = (id, n, over, ship, runs) => { const rs = []; for (let k = 0; k <
 const meanIdle = (rs) => rs.reduce((s, r) => s + r.idle, 0) / rs.length;
 // The event count for ~target idle (idle falls as events are added): binary search between the
 // essential minimum and twice the written list.
-function fitEvents(id, n, ship, oc, runs, minK = 1) {
+function fitEvents(id, n, ship, oc, runs, minK = 1, maxK = Infinity) {
   const aim = targetIdle(id, n), g = game(), M = g.MISSIONS[id], wrote = M.build(null).length, ess = new Set(['derelict', 'rock', 'brig', 'leviathan', 'leviathan_boss', ...(M.essential || []), ...(M.always || [])]);
-  const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind) || e.opener).length), max = Math.max(2 * wrote, wrote + 16);
+  const min = Math.max(minK, 1, M.build(null).filter(e => ess.has(e.kind) || e.opener).length), max = Math.max(min, Math.min(maxK, Math.max(2 * wrote, wrote + 16)));
   const at = (k) => meanIdle(evalAt(id, n, { events: k, cells: A.AMPLE_CELLS, overcharge: oc, reactor: 1 }, ship, runs));
+  if (max <= min) return { events: min, idle: at(min), capped: true };   // (encounterCap)
   let lo = min, hi = max, vLo = at(lo);
   if (vLo <= aim) return { events: lo, idle: vLo, short: true };   // even the essentials keep the crew busier than that
   let vHi = at(hi);
@@ -1452,11 +1464,13 @@ function fitCells(id, n, ship, oc, events, runs, reactor = 1) {
   }
   return A.AMPLE_CELLS;
 }
-// One crew size's event count, cells and reactor: the count nearest the aim (fitEvents), else a neighbouring count in spec
-// (within A.SPEC_IDLE_SLACK of the aim), else a faster reactor (within reason; further, and at the neighbouring counts
-// too, for the early missions), else a neighbouring count in spec however far off. Solo keeps the mission's own
-// numbers (crew.events[0] / cells / reactor: playtested) when it has them; a bigger crew never gets fewer events and
-// is always idler than the next smaller one (by A.CREW_RISE), above everything else.
+// One crew size's event count, cells and reactor. Each count tried runs at the mildest reactor that gets its energy in
+// spec (A.REACTOR_STEPS; further for the early missions), else at ×1: an out-of-spec run's waits read as work, so its idle
+// can't be compared. The counts: around fitEvents' (±2), then fewer until one is idler than the smaller crew, then the
+// smaller crew's own. The pick (a crew: of those not rated impossible): in spec near the aim (A.SPEC_IDLE_SLACK); in spec
+// within 15 points (solo: anywhere); the nearest; else (none idler than the smaller crew) the idlest. Solo keeps the
+// mission's own numbers (crew.events[0] / cells / reactor: playtested) when it has them; a bigger crew never gets fewer
+// events, never more than encounterCap, and is always idler than the next smaller one (by A.CREW_RISE).
 function fitSize(id, n, ship, oc, runs, per) {
   const C = game().MISSIONS[id].crew, aim = targetIdle(id, n);
   const tryIt = (k, reactor, cells) => {
@@ -1466,34 +1480,27 @@ function fitSize(id, n, ship, oc, runs, per) {
   };
   if (n === 1 && !flatTargets && C?.events?.[0]) return { pick: tryIt(C.events[0], C.reactor?.[0] ?? 1, C.cells?.[0]), aim };
   const minK = per[n - 1]?.events || 1, prev = per[n - 1]?.idle ?? -Infinity, rises = (p) => p.idle >= prev + A.CREW_RISE;
-  const near = (p) => Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK, ev = fitEvents(id, n, ship, oc, runs, minK), tried = [];
-  const off = (p) => Math.abs(p.idle - aim), nearest = (ps) => ps.sort((a, b) => off(a) - off(b))[0];
-  let pick = null;
-  for (const d of [0, -1, 1, -2, 2]) {
-    const k = ev.events + d;
-    if (k < minK) continue;
-    const p = tryIt(k, 1);
-    tried.push(p);
-    if (p.spec && rises(p) && near(p)) { pick = p; break; }
-  }
-  if (!tried.length) tried.push(tryIt(minK, 1));        // (all of them below the smaller crew's count)
-  for (let k = Math.min(...tried.map(p => p.events)) - 1; !tried.some(rises) && k >= minK; k--) tried.push(tryIt(k, 1));   // (fewer: idler)
-  if (!pick) {                                         // none in spec near the aim: faster reactors, then the best of everything tried
-    const p0 = nearest(tried.filter(rises)) || tried[0];
-    const ks = EARLY.includes(id) ? [0, -1, 1, -2, 2].map(d => p0.events + d).filter(k => k >= minK) : [p0.events];
-    for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {   // (the mildest step that gets near the aim)
-      for (const k of ks) tried.push(tryIt(k, r));
-      if (tried.some(p => p.spec && rises(p) && near(p))) break;
-    }
-    // of those not rated impossible (a crew): in spec near the aim; in spec within 15 points (solo: anywhere); the nearest;
-    // else the nearest of all; else (none rises) the idlest
-    const up = tried.filter(p => rises(p) && (p.doable || n === 1)), wide = (p) => n === 1 || Math.abs(p.idle - aim) <= 0.15;
-    pick = nearest(up.filter(p => p.spec && near(p))) || nearest(up.filter(p => p.spec && wide(p))) || nearest(up) || nearest(tried.filter(rises))
-      || [...tried].sort((a, b) => b.idle - a.idle)[0];
-  }
+  const maxK = flatTargets || !C?.events?.[0] ? Infinity : Math.max(minK, encounterCap(id, n)), ok = (k) => k >= minK && k <= maxK;
+  const near = (p) => Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK, off = (p) => Math.abs(p.idle - aim), nearest = (ps) => [...ps].sort((a, b) => off(a) - off(b))[0];
+  const steps = [1, ...(EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS)], tried = new Map();
+  const at = (k, r0) => {                                // (the mildest reactor in spec for k; r0 first if given)
+    if (tried.has(k)) return tried.get(k);
+    let first = null, got = null;
+    for (const r of r0 ? [r0, ...steps.filter(x => x !== r0)] : steps) { const p = tryIt(k, r); first = first || p; if (p.spec) { got = p; break; } }
+    tried.set(k, got || first);
+    return tried.get(k);
+  };
+  const ev = fitEvents(id, n, ship, oc, runs, minK, maxK);
+  for (const d of [0, -1, 1, -2, 2]) { const k = ev.events + d; if (ok(k) && at(k).spec && rises(at(k)) && near(at(k))) break; }
+  if (!tried.size) at(minK);
+  for (let k = Math.min(...tried.keys()) - 1; ![...tried.values()].some(rises) && k >= minK; k--) at(k);   // (fewer: idler)
+  const extra = ![...tried.values()].some(rises) && per[n - 1] ? [tryIt(minK, per[n - 1].reactor)] : [];
+  const all = [...tried.values(), ...extra], up = all.filter(p => rises(p) && (p.doable || n === 1)), wide = (p) => n === 1 || off(p) <= 0.15;
+  let pick = nearest(up.filter(p => p.spec && near(p))) || nearest(up.filter(p => p.spec && wide(p))) || nearest(up) || nearest(all.filter(rises))
+    || [...all].sort((a, b) => b.idle - a.idle)[0];
   // solo: out of spec and off the aim too: a neighbouring count in spec, however far off, beats it (one encounter more or
   // less is 15-40 points: c7 / Deep drift solo, 2 encounters 26 % / 18 % and out of spec, 1: 63 %)
-  if (n === 1 && !pick.spec && !near(pick)) { const ok = nearest(tried.filter(p => p.spec && rises(p))); if (ok) pick = ok; }
+  if (n === 1 && !pick.spec && !near(pick)) { const okp = nearest(all.filter(p => p.spec && rises(p))); if (okp) pick = okp; }
   return { pick, aim };
 }
 function fitMission(id, opts = {}) {
@@ -1658,4 +1665,4 @@ function printRows(rows) {
 }
 if (require.main === module) main();
 
-module.exports = { balance, spread, fireWork, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, energySimGame, energyFast, setup, layoutGame, saveRates, RATE_KINDS, game, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };
+module.exports = { encounterCap, balance, spread, fireWork, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, energySimGame, energyFast, setup, layoutGame, saveRates, RATE_KINDS, game, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };

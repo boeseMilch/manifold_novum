@@ -3997,3 +3997,18 @@ per player, but always strictly larger".
   (one more encounter is 25-40 points): their crews stay at 3 encounters, idler than the target, to keep rising.
 - Structural tests relaxed where they assumed 2 players get solo's timeline: c1 / c3 exactly one failing part solo only,
   c4 ×2 starts like solo with both raiders, c7 may give big crews a second alien.
+
+### Multiply and round: a cap on crews' encounters (2026-10-25, tools/balance.js)
+The first refit gave Red Comet Cove 5 encounters solo and 14 for two ("how is it realistic to do almost 3x as much with
+2 people?"). The model treats a second player as perfect free hands (no coordination, overlap or travel) and the extra
+encounters are the cheap kinds. The user's rule, an upper bound for now: n + 1 players get at most (n + 1) / n × n
+players' encounters, rounded to the next whole number below (`encounterCap`; solo 5: 9, 13, 17, 21, 25, 29, 33). The
+idle targets (solo + 5 points a player, strictly rising) still steer the fit underneath it.
+- `fitSize` rewritten: each count is tried at the mildest reactor that gets its energy in spec (an out-of-spec run's
+  waits read as work, so its idle can't be compared), up to ×0.2 now (few encounters mean long gaps, and the reactor
+  follows the gap: Black box ×2 starved its opener down to ×0.3).
+- Result (encounters 1-8 players): c1 4 7 10 13 16 19 22 22, c2 5 8 11 16 19 23 23 25, c3 5 9 13 17 20 23 24 24,
+  c4 5 9 13 17 21 25 27 29, c6 6 11 15 19 24 26 28 29, c7 6 7 9 17 20 24 27 28, c8 5 8 10 11 16 18 21 26.
+  Capped crews sit idler than the target (c4 ×2 38 % for an aim of 15 %). Rush hour stays at 2 for every crew (3 for
+  two players is no idler than solo); Black box / Pirate cove crews at most a few more than solo.
+- Energy shortfalls left: c2 ×2-3 (base ship), c7 ×3, rush / Nightmare as before.
