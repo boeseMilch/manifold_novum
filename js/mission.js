@@ -66,6 +66,24 @@ const EVENT_LABELS = {
   antenna: () => 'Antenna strike — top',
 };
 const EVENT_RUNNERS = {};                              // event kinds added by other files: kind → run(ev)
+// The sprite pages each event kind shows (js/gfx.js GFX.stream: 'group' or 'group/page'). A mission streams those of its
+// timeline in the background from the start, in order, so a big arrival (the pirate base: ~5 maps of 4096²) doesn't
+// load all at once when it shows up. A kind not listed loads its sprites when first drawn, as before.
+const EVENT_GFX = {
+  interceptor: ['enemy'], frigate: ['enemy'], stealth: ['enemy'], tractor: ['enemy'], swarm: ['enemy'], mines: ['enemy'], canister: ['enemy'],
+  rock: ['enemy'], debris: ['enemy'], pirates: ['enemy', 'dock', 'chars'], derelict: ['dock', 'chars'], brig: ['dock', 'base', 'chars', 'fx'],
+  intruder: ['chars'], saboteur: ['chars'], grappler: ['organic'], mother: ['organic'], leeches: ['organic'], leviathan: ['organic'],
+  leviathan_boss: ['organic'], herd: ['organic'],
+};
+const ALWAYS_GFX = ['fx/0', 'items', 'props', 'systems', 'power', 'cargo'];   // (fires, breaches, the loose kit: any mission)
+let streamedRun = null;
+function streamMission() {                            // (every browser, from render: the timeline comes with the snapshot)
+  const key = mission.runId && `${mission.runId}:${mission.events?.length}`;   // (a crew joining mid-run can add events)
+  if (!GFX.on || !mission.active || !key || streamedRun === key) return;
+  streamedRun = key;
+  const evs = [...(mission.events || [])].sort((a, b) => a.t - b.t);
+  GFX.stream([...ALWAYS_GFX, ...evs.flatMap(e => EVENT_GFX[e.kind] || [])]);
+}
 // Missions: each builds a timeline. The lobby picks one.
 const randSide = () => (Math.random() < 0.5 ? 'port' : 'star');
 const MISSIONS = {

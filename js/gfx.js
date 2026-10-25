@@ -122,7 +122,7 @@ const GFX = (() => {
   const api = {
     on: false, reason: '', SIN, COS, layer2dScale: 1, stats: {},
     begin: noop, end: noop, sprite: () => false, lighting: noop, backdrop: noop, overlay: () => false, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
-    has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop,
+    has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop, stream: noop, streaming: () => 0,
     setScale: noop, setShadows: noop, setScratches: noop, setPathScratches: noop, toScreen: () => [0, 0], onScreen: () => true, pickAt: () => null, disable: noop,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
@@ -1214,23 +1214,84 @@ void main() {
   let MAN = null, META = null, HR = 4;
   const PAGES = {};                     // 'group/i' -> { state: 'loading' | 'ready' | 'failed', w, h, maps, tex: {b, n, h, m}, img: {b, m} }
   const BASE_URL = 'assets/sprites/';
+  // Pages load without holding up a frame. (Decoded and uploaded in one go, a 4096² map stalled the game ~0.2 s, and a
+  // group's maps all arrived together: the pirate base froze it for a second or two.) They're fetched and decoded off
+  // the main thread (createImageBitmap), then uploaded a band of rows at a time within a byte budget per frame (pump).
+  // GFX.stream(names) queues pages ('group' or 'group/i') to fetch in the background, one at a time, on a smaller
+  // budget: a mission streams what its timeline will spawn (js/mission.js streamMission), so it's there in time.
   function loadImage(url) {
-    return new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('missing ' + url)); i.src = url; });
+    if (typeof createImageBitmap === 'function')
+      return fetch(url).then(r => { if (!r.ok) throw new Error('missing ' + url); return r.blob(); })
+        .then(b => createImageBitmap(b, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }));
+    return new Promise((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error('missing ' + url)); i.src = url; })
+      .then(i => (i.decode ? i.decode().then(() => i, () => i) : i));
   }
-  function page(group, i) {
+  const UPLOADS = [], STREAM = [];      // bands left to upload: { p, k, src, t, y, mips }; pages to stream: [group, i]
+  const BUDGET = { now: 24 << 20, bg: 4 << 20 };   // bytes uploaded per frame: for a page something waits for / streamed ahead
+  function page(group, i, bg = false) {
     const key = group + '/' + i;
     let p = PAGES[key];
-    if (p) return p;
+    if (p) { if (!bg) p.bg = false; return p; }      // (wanted now: a streamed page jumps the queue)
     const m = META.pages[group][i];
-    p = PAGES[key] = { state: 'loading', w: m.w, h: m.h, maps: m.maps || '', tex: {}, img: {} };
+    p = PAGES[key] = { state: 'loading', w: m.w, h: m.h, maps: m.maps || '', tex: {}, img: {}, bg, left: 0 };
     const kinds = ['b', ...p.maps.split('')];
     Promise.all(kinds.map(k => loadImage(BASE_URL + m.file + (k === 'b' ? '' : '.' + k) + '.webp').catch(() => null))).then(imgs => {
       if (!imgs[0]) { p.state = 'failed'; console.warn('[gfx] missing page', key); return; }
-      kinds.forEach((k, j) => { if (imgs[j]) { p.tex[k] = texture(imgs[j], k === 'b' || k === 'm'); if (k === 'b' || k === 'm') p.img[k] = imgs[j]; } });
-      p.state = 'ready';
+      kinds.forEach((k, j) => {
+        const src = imgs[j];
+        if (!src) return;
+        const mips = k === 'b' || k === 'm', t = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texStorage2D(gl.TEXTURE_2D, mips ? Math.floor(Math.log2(Math.max(src.width, src.height))) + 1 : 1, gl.RGBA8, src.width, src.height);
+        UPLOADS.push({ p, k, src, t, y: 0, mips }); p.left++;
+        if (mips) p.img[k] = src;
+      });
+      p.state = 'uploading';
     });
     return p;
   }
+  function uploadBand(u, budget) {
+    const w = u.src.width, h = u.src.height, rows = Math.min(h - u.y, Math.max(16, Math.floor(budget / (w * 4))));
+    gl.bindTexture(gl.TEXTURE_2D, u.t);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, u.y);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, u.y, w, rows, gl.RGBA, gl.UNSIGNED_BYTE, u.src);
+    gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+    u.y += rows;
+    if (u.y < h) return rows * w * 4;
+    if (u.mips) gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, u.mips ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    if (u.mips && aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
+    u.p.tex[u.k] = u.t;
+    if (!u.mips && u.src.close) u.src.close();       // (the colour and tint maps stay: tintRef reads them)
+    if (--u.p.left === 0) u.p.state = 'ready';
+    UPLOADS.splice(UPLOADS.indexOf(u), 1);
+    return rows * w * 4;
+  }
+  function pump() {
+    if (!api.on) return;
+    const now = UPLOADS.filter(u => !u.p.bg);         // (what's wanted now goes first, on the bigger budget)
+    let budget = now.length ? BUDGET.now : BUDGET.bg;
+    for (const u of now.length ? now : UPLOADS.slice()) { if (budget <= 0) break; budget -= uploadBand(u, budget); }
+    // the next streamed page: one at a time, and only while nothing else is loading
+    if (!STREAM.length || Object.values(PAGES).some(p => p.state === 'loading' || p.state === 'uploading')) return;
+    const [g, i] = STREAM.shift();
+    page(g, i, true);
+  }
+  let streamLater = [];                 // (asked before sprites.json is in)
+  function stream(names) {
+    if (!META) { streamLater.push(...names); return; }
+    for (const n of names) {
+      const [g, i] = n.split('/'), pages = META.pages[g] || [];
+      for (let j = 0; j < pages.length; j++) if ((i == null || +i === j) && !PAGES[g + '/' + j] && !STREAM.some(s => s[0] === g && s[1] === j)) STREAM.push([g, j]);
+    }
+  }
+  requestAnimationFrame(function loop() { pump(); requestAnimationFrame(loop); });
   function pagesOf(S) {
     if (!S._pages) S._pages = [...new Set([...(S.f || []).filter(Boolean).map(f => f[0]), ...(S.bases || []).map(b => b[0])])];
     return S._pages;
@@ -2003,6 +2064,8 @@ void main() {
     ready: (name) => !!(DYNS[name] ? spriteReady(DYNS[name]) : MAN && MAN[name] && spriteReady(MAN[name])),
     info: (name) => DYNS[name] || (MAN && MAN[name]) || null,
     preload: (groups) => { if (META) for (const g of groups) (META.pages[g] || []).forEach((_, i) => page(g, i)); },
+    stream,
+    streaming: () => STREAM.length + Object.values(PAGES).filter(p => p.state !== 'ready' && p.state !== 'failed').length,   // (pages still to come)
     setScale: (k) => { userScale = k || null; try { if (k) localStorage.setItem('mn-gfx-scale', String(k)); else localStorage.removeItem('mn-gfx-scale'); } catch (e) { /* no storage */ } },
     toScreen: (x, y, z = 0) => { const [sx, sy] = toDev(x, y, z); return [sx / K, sy / K]; },
     // whether anything within r (layout units, on screen) of (x, y, z) can show this frame (between begin and end)
@@ -2021,6 +2084,7 @@ void main() {
     MAN = d.sprites; META = d.meta; HR = META.heightRange || 4; api.heightRange = HR;
     for (const k in MAN) MAN[k].name = k;
     api.preload(['hull', 'interior', 'ship', 'crew']);
+    stream(streamLater); streamLater = [];
   }).catch(e => disable('sprites.json: ' + e.message));
 
   return api;

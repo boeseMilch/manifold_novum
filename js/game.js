@@ -943,6 +943,7 @@ function render(t) {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (G) {
     GFX.begin(view, t);
+    streamMission();
     GFX.lighting(gameLighting(t));
     updateLightLevels(1 / 60);
     parts = drawShipSprites(t);

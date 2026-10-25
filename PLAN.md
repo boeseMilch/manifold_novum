@@ -3960,3 +3960,19 @@ Playtest notes for chapter 8 ("8 · The Mother of All"):
   Esc skips the cutscene (solo, or the host: mission.shipOf; levSkip). c8 lost its `handle` and `coils` rules (they
   only served the jump; the balance model's c8 idle: solo -3% → 2%, ×2 40 → 50%, ×3 58 → 63%, ×4 61 → 65%). The
   emergency cell no longer keeps 1 energy for the jump.
+
+### No more freeze when something big shows up: sprite pages stream in (2026-10-25, js/gfx.js, js/mission.js)
+The game hung for a second or two when the pirate base docked (and, less, at other first arrivals). Cause: a group's
+atlas pages (base + dock: four 4096² pages, each a colour, normal and height map) were requested in one go, and each
+map was decoded and uploaded to the GPU synchronously as it arrived: 150-240 ms per colour map, back to back.
+- Pages are now fetched and decoded off the main thread (`createImageBitmap`), then uploaded into `texStorage2D`
+  textures a band of rows at a time (`texSubImage2D` + `UNPACK_SKIP_ROWS`), within a byte budget per frame
+  (24 MB for a page something is drawing now, 4 MB for one streamed ahead); mipmaps once the last band is in.
+  Measured headless: at most ~12-18 ms of upload work in any frame (was 1-2 s in one).
+- `GFX.stream(['group' | 'group/i', ...])` queues pages to load in the background, one page at a time, only while
+  nothing else is loading. `streamMission()` (js/mission.js, called from render in every browser) streams the
+  pages of the mission's timeline in order (`EVENT_GFX`: event kind → groups, plus `ALWAYS_GFX`), once per run
+  (and again if a joining crew adds events). Chapter 5 has the base, dock, chars and fx streamed well before
+  the base docks. Everything at once would be ~3 GB of textures, so only what the timeline can spawn; a kind
+  missing from `EVENT_GFX` still loads when first drawn, now without the stall.
+- (`GFX.manifest` is always null: `Object.assign` copied the getter's value at startup. Not relied on.)
