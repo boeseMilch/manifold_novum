@@ -339,6 +339,7 @@ function startMission(id = 'c1', opts = {}) {
   const pick = () => candidates.splice(Math.floor(Math.random() * candidates.length), 1)[0];
   const sys = pick(), decoy = pick();
   maintPrev = [{ sys, decoy }];
+  if (typeof resetCrewTasks === 'function') resetCrewTasks();   // no claims, no task plates (js/claims.js)
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.c1).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.c1).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.c1).objective || null,

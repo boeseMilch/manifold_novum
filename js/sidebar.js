@@ -6,7 +6,11 @@
 
 const PLATE_W = 268, PLATE_H = 58, PLATE_GAP = 7, SIDEBAR_X = 12, HEAD_H = 62;
 const sidePlates = new Map();                          // key → { y, x, alpha, age, leaving, data }
-const uid = (o) => o.uid || (o.uid = newUid());
+// Plate keys must be the same on the server and in every browser (claims, js/claims.js): everything keyed by uid
+// (enemies, fires, boarders) gets its uid from the simulation when it's made, and it travels in the snapshot. The
+// fallback only runs for something made without one (solo, so it's still one page's own key).
+const uid = (o) => o.uid ?? (o.uid = newUid());
+const CLAIM_W = 34;                                    // a claimed plate is this much wider: the claimant's flag
 
 // Everything that deserves a plate right now, most urgent first.
 function encounterPlates() {
@@ -14,6 +18,7 @@ function encounterPlates() {
   const add = (key, d) => out.push({ key, ...d });
   // the objective is pinned at the top
   if (mission.active && mission.objective && !mission.over) { const o = objectiveStatus(); add('objective', { icon: 'jump', title: o.done ? 'OBJECTIVE ✔' : 'OBJECTIVE', sub: o.text, stripe: o.done ? '#5fd6a0' : '#ffe08a' }); }
+  for (const t of crewTasks.custom) add(t.key, { icon: t.icon, title: t.title, sub: t.sub, stripe: t.stripe, red: t.red, wrap: true });   // task plates (js/claims.js)
   if (mission.active && mission.jump && !mission.over) {
     const handle = mission.rules?.handle && (mission.jump.pull || 0) < JUMP_PULL ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s)` : '';
     const need = broken(CAPACITORS[1]) ? 'fix the middle capacitor, then 1 energy' : CAPACITORS[1].charge > 0 ? '' : handle ? '1 energy in MID' : 'needs 1 energy in the middle capacitor';
@@ -57,6 +62,7 @@ function encounterPlates() {
     // a maintenance pair seen at the helm, not yet orange: one panel per pair (names sorted: it doesn't say which one fails)
     for (const w of maintWarnings()) if (w.ev.seen && !w.orange) add('irr' + w.ev.id, { icon: 'wrench', title: 'IRREGULAR', sub: `${[w.sys, w.decoy].filter(s => s && !s.broken).map(s => s.name).sort().join(' or ')}`, stripe: '#ffd84a' });
   }
+  for (const p of out) { const id = claimOf(p.key); if (id != null) p.claim = id; }   // who took it on (js/claims.js)
   return out;
 }
 
@@ -64,7 +70,7 @@ function encounterPlates() {
 // slot: a new panel opens its slot (the ones below glide down) while it slides in from the left, a
 // panel that's dealt with slides out and closes its slot. Positions are cumulative, so panels never
 // overlap, also while they move. What doesn't fit is summed up in a "+n more" line.
-let sideOrder = [], sideMore = 0;
+let sideOrder = [], sideMore = 0, sideHover = null;      // (sideHover: the plate under the mouse)
 function updateSidebar(top, dt) {
   const list = encounterPlates(), keys = new Set(list.map(p => p.key));
   const headH = mission.active ? HEAD_H : 0, y0 = top + 10 + (headH ? headH + PLATE_GAP : 0);
@@ -77,6 +83,7 @@ function updateSidebar(top, dt) {
     if (!p) { p = { y: null, x: -PLATE_W - 40, alpha: 1, age: 0, grow: 0 }; sidePlates.set(d.key, p); if (d.red) sfx.alarm?.(); }
     p.data = d; p.leaving = false; p.absent = 0;
   });
+  for (const p of sidePlates.values()) p.cw = lerp(p.cw || 0, p.data?.claim != null && !p.leaving ? CLAIM_W : 0, 1 - Math.exp(-14 * dt));   // (the flag slides out)
   // the column's order: this tick's list, with leaving panels kept where they were
   const order = shown.map(d => d.key);
   sideOrder.forEach((k, i) => { if (!shownKeys.has(k) && sidePlates.has(k)) order.splice(Math.min(i, order.length), 0, k); });
@@ -101,10 +108,19 @@ function updateSidebar(top, dt) {
   }
   sideOrder = sideOrder.filter(k => sidePlates.has(k));
   updateSidebar.bottom = y;
+  sideHover = sidePlates.get(plateAt(localInput.mouse.x, localInput.mouse.y)) || null;
 }
 function drawSidebar(top) {
   if (mission.active) drawSidebarHeader(top + 10);
   for (const k of sideOrder) { const p = sidePlates.get(k); if (p && p.alpha > 0.01) drawPlate(p); }
+  if (sideHover && sidePlates.has(sideHover.data?.key) && !me.ui.panel) {   // what a click does (js/claims.js)
+    const p = sideHover, who = p.data.claim != null ? crew.find(c => c.id === p.data.claim) : null;
+    const t = who === me ? 'click: let go of it' : who ? `click: take it over from ${who.name}` : "click: this one's mine";
+    ctx.font = '700 12px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const x = SIDEBAR_X + p.x + PLATE_W + (p.cw || 0) + 8, w = ctx.measureText(t).width + 16;
+    rr(x, p.y + PLATE_H / 2 - 12, w, 24, 6); ctx.fillStyle = 'rgba(12,14,20,0.92)'; ctx.fill(); stroke(1.5, me.color || '#4b5263');
+    ctx.fillStyle = '#ffffff'; ctx.fillText(t, x + 8, p.y + PLATE_H / 2 + 0.5);
+  }
   if (sideMore > 0) {
     const y = (updateSidebar.bottom || 0) + 4;
     ctx.font = '700 13px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -120,7 +136,7 @@ function drawSidebar(top) {
 function leftPanelRects(top) {
   const out = [];
   if (mission.active) out.push({ x: SIDEBAR_X, y: top + 10, w: PLATE_W, h: HEAD_H });
-  for (const k of sideOrder) { const p = sidePlates.get(k); if (p && p.alpha > 0.01 && p.y != null) out.push({ x: SIDEBAR_X + p.x, y: p.y, w: PLATE_W, h: PLATE_H }); }
+  for (const k of sideOrder) { const p = sidePlates.get(k); if (p && p.alpha > 0.01 && p.y != null) out.push({ x: SIDEBAR_X + p.x, y: p.y, w: PLATE_W + (p.cw || 0), h: PLATE_H }); }
   if (sideMore > 0) out.push({ x: SIDEBAR_X, y: (updateSidebar.bottom || 0) + 4, w: 140, h: 22 });
   if (typeof powerPanelRect === 'function') out.push(powerPanelRect());
   if (typeof invSlots === 'function' && me.mode !== 'gun') for (const b of invSlots()) out.push({ x: b.x, y: b.y, w: b.w, h: b.h });
@@ -142,6 +158,17 @@ function keepOffPanels(box, avoid, W, H, pad = 8) {
     if (!best || cost < best.cost) best = { dx, dy, cost };
   }
   return best ? { dx: best.dx, dy: best.dy } : { dx: 0, dy: 0 };
+}
+
+// The plate under a screen point (CSS px), for a click (claim it: js/claims.js): its key, or null. Not one on its way out.
+function plateAt(mx, my) {
+  for (const k of sideOrder) {
+    const p = sidePlates.get(k);
+    if (!p || p.leaving || p.alpha < 0.5 || p.y == null) continue;
+    const x = SIDEBAR_X + p.x;
+    if (mx >= x && mx <= x + PLATE_W + (p.cw || 0) && my >= p.y && my <= p.y + PLATE_H) return k;
+  }
+  return null;
 }
 
 function plateBody(x, y, w, h) {
@@ -172,9 +199,15 @@ function plateLines(text, room, wrap, measure = (s) => ctx.measureText(s).width)
 }
 
 function drawPlate(p) {
-  const d = p.data, x = SIDEBAR_X + p.x, y = p.y, w = PLATE_W, h = PLATE_H, t = time;
+  const d = p.data, x = SIDEBAR_X + p.x, y = p.y, w = PLATE_W, h = PLATE_H, t = time, cw = p.cw || 0;
   ctx.save(); ctx.globalAlpha = clamp(p.alpha, 0, 1);
-  plateBody(x, y, w, h);
+  const who = d.claim != null ? crew.find(c => c.id === d.claim) : null;
+  if (cw > 0.5) {                                    // claimed: the plate reaches a bit further right, with the claimant's flag
+    plateBody(x, y, w + cw, h);
+    drawClaimFlag(x + w + cw / 2 - 2, y, h, who, t, clamp(cw / CLAIM_W, 0, 1), clamp(p.alpha, 0, 1));
+  } else plateBody(x, y, w, h);
+  if (who) { rr(x, y, w + cw, h, 8); ctx.lineWidth = who === me ? 2.5 : 1.5; ctx.strokeStyle = who.color || '#ffe08a'; ctx.stroke(); }
+  if (sideHover === p) { rr(x, y, w + cw, h, 8); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.stroke(); }
   rr(x + 1, y + 1, 7, h - 2, 4); ctx.fillStyle = d.stripe; ctx.fill();          // coloured edge
   ctx.beginPath(); ctx.arc(x + 32, y + h / 2, 17, 0, TAU); ctx.fillStyle = '#232833'; ctx.fill();
   plateIcon(d.icon, x + 32, y + h / 2, t);
@@ -194,6 +227,24 @@ function drawPlate(p) {
     rr(x, y, w, h, 8); ctx.fillStyle = '#ffffff'; ctx.fill();
   }
   ctx.restore();
+}
+
+// The claimant's flag (in the plate's extra strip, cx: its middle): a pole with a waving flag in their suit colour and
+// their initial on it; your own says so underneath. k: 0..1 while the strip slides out; alpha: the plate's.
+function drawClaimFlag(cx, y, h, who, t, k, alpha) {
+  if (!who || k < 0.3) return;
+  const col = who.color || '#ffe08a', px = cx - 9, top = y + 9, fw = 20, fh = 15;
+  ctx.save(); ctx.globalAlpha = alpha * clamp((k - 0.3) / 0.7, 0, 1);
+  ctx.fillStyle = '#c9ced8'; ctx.fillRect(px - 1, top - 2, 2.5, h - 18);     // the pole
+  ctx.beginPath(); ctx.moveTo(px + 1, top);
+  for (let i = 0; i <= 6; i++) ctx.lineTo(px + 1 + fw * i / 6, top + Math.sin(t * 6 + i * 0.9) * 1.6 * i / 6);
+  for (let i = 6; i >= 0; i--) ctx.lineTo(px + 1 + fw * i / 6, top + fh + Math.sin(t * 6 + i * 0.9) * 1.6 * i / 6);
+  ctx.closePath(); ctx.fillStyle = col; ctx.fill(); stroke(1.2, 'rgba(10,12,18,0.9)');
+  ctx.font = '900 11px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = labelIsDark(col) ? '#ffffff' : '#10131a'; ctx.fillText((who.name || '?').charAt(0).toUpperCase(), px + 1 + fw / 2, top + fh / 2 + 0.5);
+  ctx.font = '700 9px system-ui, sans-serif'; ctx.fillStyle = who === me ? '#ffffff' : '#c9ced8';
+  ctx.fillText(who === me ? 'YOU' : (who.name || '').slice(0, 5).toUpperCase(), cx, y + h - 8);
+  ctx.textAlign = 'left'; ctx.restore();
 }
 
 function drawSidebarHeader(y) {

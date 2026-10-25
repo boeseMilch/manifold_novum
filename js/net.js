@@ -30,6 +30,7 @@ function netSerialize() {
     items: ITEMS,
     fires: fires.map(f => ({ ...f, sys: sysIdx(f.sys) })),
     luck, hz, evs, enc, org, dk,
+    tasks: { claims: crewTasks.claims, custom: crewTasks.custom },   // who took on which plate, task plates (js/claims.js)
     mission: {
       ...mission, revealed: [...mission.revealed],
       events: mission.events.map(e => ({ ...e, sys: e.sys ? sysIdx(e.sys) : undefined, decoy: e.decoy ? sysIdx(e.decoy) : undefined })),   // (maintenance: its pair)
@@ -92,6 +93,7 @@ function netApply(s, myId) {
   });
   ITEMS.length = 0; ITEMS.push(...s.items);
   fires.length = 0; fires.push(...s.fires.map(f => ({ ...f, sys: SYSTEMS[f.sys] })));
+  if (s.tasks) { crewTasks.claims = s.tasks.claims || {}; crewTasks.custom = s.tasks.custom || []; }
   Object.assign(luck, s.luck); Object.assign(hz, s.hz); Object.assign(evs, s.evs); Object.assign(enc, s.enc); Object.assign(org, s.org); Object.assign(dk, s.dk);
   if (JSON.stringify(s.mission.upgrades || {}) !== JSON.stringify(mission.upgrades || {})) applyShipUpgrades(s.mission.upgrades || {});   // (HUD numbers like shots per energy)
   Object.assign(mission, s.mission, {
@@ -151,7 +153,7 @@ const netServer = {
   },
   removeCrew(id) {
     const i = crew.findIndex(c => c.id === id);
-    if (i >= 0) { const c = crew[i]; if (c.inv.weapon) ITEMS.push({ kind: c.inv.weapon, ...dropSpot(c.x, c.y) }); if (c.inv.item) ITEMS.push({ kind: c.inv.item, ...dropSpot(c.x + 0.3, c.y) }); crew.splice(i, 1); }
+    if (i >= 0) { const c = crew[i]; if (c.inv.weapon) ITEMS.push({ kind: c.inv.weapon, ...dropSpot(c.x, c.y) }); if (c.inv.item) ITEMS.push({ kind: c.inv.item, ...dropSpot(c.x + 0.3, c.y) }); crew.splice(i, 1); releaseCrewClaims(id); }
   },
   input(id, m) {
     const c = crew.find(c => c.id === id);

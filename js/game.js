@@ -32,6 +32,7 @@ const inMuteBtn = (x, y) => x >= MUTE_BTN.x && x <= MUTE_BTN.x + MUTE_BTN.w && y
 canvas.addEventListener('mousedown', e => {
   const m = localInput.mouse;
   if (e.button === 0 && inMuteBtn(e.clientX, e.clientY)) { sfx.toggleMute(); return; }
+  if (e.button === 0 && inGuideBtn(e.clientX, e.clientY)) { setGuideArrows(!guideArrows); return; }   // guide arrows on / off (js/claims.js)
   if (e.button === 0) { m.down = true; m.click = true; } if (e.button === 2) { m.right = true; m.rightClick = true; }
 });
 window.addEventListener('mouseup', e => { if (e.button === 0) localInput.mouse.down = false; if (e.button === 2) localInput.mouse.right = false; });
@@ -513,6 +514,7 @@ function runCommand(cmd) {
   else if (kind === 'practice') runPractice(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
   else if (kind === 'drop') { if (tutAllows('drop') && (arg === 'weapon' || arg === 'item')) dropSlot(arg); }   // (a click on an inventory slot)
+  else if (kind === 'claim') claimCommand(arg);       // a click on a sidebar plate: this one's mine (js/claims.js)
   else if (kind === 'lamp') player.lamp = !player.lamp;   // the helmet lamp (L): drawing only, see js/lights.js
 }
 // Tutorial gate (js/tutorial.js): while the tutorial runs, only what its current step asks for works
@@ -1108,6 +1110,7 @@ function render(t) {
   drawSidebar(HUD_H);
   drawInjuryBadge(t);                                // hurt / down / out: what it means and what helps
   drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
+  drawClaimGuide(view);                              // big arrows to the jobs you claimed (js/claims.js)
   if (hover && !debugOpen && !invSlotAt(mouse.x, mouse.y)) {   // tooltip next to the mouse
     ctx.font = '600 13px system-ui, sans-serif'; ctx.textBaseline = 'middle';
     const measure = (s) => ctx.measureText(s).width, lines = measure(hover.text) + 16 <= VW - 12 ? [hover.text] : wrapText(hover.text, VW - 28, measure);   // (wider than the screen: wrapped)
@@ -1164,8 +1167,8 @@ function drawHUD() {
   ctx.fillStyle = 'rgba(10,12,18,0.75)'; ctx.fillRect(0, 0, VW, HUD_H);
   drawMuteButton();
   ctx.font = '700 15px system-ui, sans-serif'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 44, 18);
-  const helpX = 44 + ctx.measureText('MANIFOLD NOVUM').width + 16;
+  ctx.fillStyle = '#e8ecf4'; ctx.fillText('MANIFOLD NOVUM', 74, 18);
+  const helpX = 74 + ctx.measureText('MANIFOLD NOVUM').width + 16;
   ctx.font = '13px system-ui, sans-serif';
   const room = roomAt(player.x, player.y);
   const where = player.mode === 'gun' ? player.gun.name : player.mode === 'eva' ? 'Spacewalk'
@@ -1180,6 +1183,7 @@ function drawHUD() {
   const help = ['WASD move', 'E / click: use', 'Space / right click: weapon', 'arrows: aim', 'M: mute'], room2 = VW - 46 - ww - sw - aw - 16 - helpX;
   while (help.length && ctx.measureText(help.join(' · ')).width > room2) help.pop();
   if (help.length) ctx.fillText(help.join(' · '), helpX, 18);
+  drawGuideButton();                                 // (last: its tooltip hangs over the sidebar)
 }
 
 // Cannon ammo panel (bottom right while manning a cannon): shells, energy left, RELOAD button.
@@ -1267,6 +1271,7 @@ function simTick(dt) {
   updateMinigames(dt);
   updateOrganic(dt);
   updateDock(dt);
+  updateCrewTasks(dt);                                // claims and task plates (js/claims.js)
   if (typeof updateTutorial === 'function') updateTutorial(dt);   // js/tutorial.js (solo only)
 }
 
@@ -1310,6 +1315,7 @@ function clientUpdate(dt) {
   miniClient(dt);
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
+  if (!me.ui.panel && m.click && mission.active && plateAt(m.x, m.y)) { sendCommand(['claim', plateAt(m.x, m.y)]); m.click = false; m.suppress = true; }   // claim a plate (js/claims.js)
   if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }
   if (me.mode === 'gun' && standing(me) && m.click && inClimbBtn(m.x, m.y)) { sendCommand(['climbDown']); m.click = false; m.suppress = true; }
   if (me.mode === 'inside' && !me.ui.panel && m.click && invSlotAt(m.x, m.y)) { const b = invSlotAt(m.x, m.y); if (me.inv[b.slot]) sendCommand(['drop', b.slot]); m.click = false; m.suppress = true; }

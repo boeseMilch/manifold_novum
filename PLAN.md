@@ -4033,3 +4033,34 @@ drone (230 s), a failing part (300 s), chosen in that order (DROP_ORDER). New la
 at its written time (the even layout squeezed everything between the patrol and the docking), the jump at the length
 (420 s, as before), the reactor at its written pace (solo and two players play exactly as before). The fuel cells stay
 (the model: every crew size in spec with them).
+
+### Claims: "this one's mine" (2026-10-25, js/claims.js, js/sidebar.js, js/game.js, js/net.js)
+Click an encounter plate in the left sidebar to take that problem on; click it again to let go; click someone
+else's to take it over (the last click wins: predictable, and nobody can sit on a fire they never reach). The plate
+grows CLAIM_W px to the right with a waving flag in the claimant's suit colour, their initial on it and their name
+(or YOU) under it, and an outline in that colour; everyone sees it. Hovering a plate says what a click will do.
+- Only the claimant gets big guide arrows (drawClaimGuide): chevrons marching along the walking route (the nav graph
+  of js/invader.js, corners you can see past cut), a bouncing arrow over the target with a short "what to do" pill,
+  or a big arrow at the screen's edge when it's off-screen. The target is step by step (claimStep): no extinguisher /
+  repair kit / hull plate / gun yet → that first (or "Bob has it"); a target outside while you're inside → the
+  nearest outer airlock first (and back in from a spacewalk); enemies and the swarm → the ladder of the cannon on
+  that side, then, seated, the enemy itself; the jump → the helm handle, the middle capacitor or the power lever.
+  Anything else with a place (js/sidebar.js problemSpots) gets an arrow to it; a plate without a place just the flag.
+- The ⇢ button next to mute (top left of the HUD) switches the big arrows off / on for this browser
+  (localStorage 'mn-guide-arrows'). Claims themselves always work and show.
+- State: `crewTasks = { claims: { plateKey: crewId }, custom: [taskPlate] }`, in the simulation, sent in the
+  snapshot as `tasks` (netSerialize / netApply); browsers send `['claim', key]` (runCommand → claimCommand: only a
+  plate that's there). Not in the player profile. A claim ends when its plate has been gone CLAIM_GRACE (0.5) s
+  (checked every 0.25 s against encounterPlates()), when the claimant leaves (netServer.removeCrew, and every tick
+  for anyone no longer aboard), and with a new mission (startMission → resetCrewTasks).
+- Keys: the sidebar's plate keys. Things keyed by uid (enemies, fires, boarders) already got theirs from newUid()
+  when the simulation made them, and the uid travels in the snapshot, so 'fire12' is 'fire12' on the server and in
+  every browser; sidebar.js's uid() fallback now uses `??` (a uid of 0 would have been re-made every frame).
+- API for other code (the multiplayer tutorial next), documented at the top of js/claims.js: claimEncounter(key,
+  crewId), releaseEncounter(key), claimOf(key), claimsOf(crewId), toggleClaim(key, crewId); custom task plates:
+  addTaskPlate({ key, title, sub, icon, stripe, red, targets: [{ x, y, hint }], hint, owner, done }),
+  updateTaskPlate(key, changes), removeTaskPlate(key), taskPlate(key). Custom plates sit under the objective and are
+  claimable like any other; done() runs in the simulation only (never synced) and removes the plate when true.
+- tests/claims.js: claim / release / take-over by command, junk refused, auto-release (plate gone, claimant leaves),
+  server → browser sync (same key, claim, wider plate), guide targets (cannon ladder, extinguisher then fire),
+  custom plates (sync, done(), removal), a new mission starts clean, a solo click on a plate.
