@@ -11,7 +11,7 @@ const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
 const walk = (G, c, key, sec, until) => { c.input.keys.add(key); for (let t = 0; t < sec && !until?.(); t += DT) G.simTick(DT); c.input.keys.delete(key); };
 const pressE = (G, c) => { c.input.keys.add('KeyE'); c.input.pressed.add('KeyE'); G.simTick(DT); c.input.keys.delete('KeyE'); };
 async function bonk3(G, c) {                         // the manual override: three whacks, then it gives
@@ -50,7 +50,7 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
   // --- the lock (2026-10-24): bolted while shut; the bolts slide back while the sensor reacts, gone exactly when the
   // leaves move; they shoot home again once it's shut. And the 'doors' ship upgrade: all of it 40% quicker
   for (const fast of [false, true]) {
-    const G = loadGame(NAMES); G.startMission('intro', fast ? { ship: { doors: true } } : {}); G.mission.active = false; G.combat.enemies.length = 0;
+    const G = loadGame(NAMES); G.startMission('c1', fast ? { ship: { doors: true } } : {}); G.mission.active = false; G.combat.enemies.length = 0;
     const me = G.me, L = G.DECK_DOORS[0], cx = L.x + L.w / 2, total = G.DOOR_DELAY + G.DOOR_TIME, tag = fast ? 'fast doors' : 'plain doors';
     if (fast) check(Math.abs(total - 0.6) < 1e-9 && Math.abs(G.DOOR_TIME - 0.36) < 1e-9, `the fast door actuators: unbolt + slide in ${total.toFixed(2)} s (instead of 1 s)`);
     else check(Math.abs(total - 1) < 1e-9, `plain doors: unbolt + slide in ${total.toFixed(2)} s`);
@@ -65,7 +65,7 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
     check(L.open === 0 && L.bolt < 0.5, `${tag}: shut again, the bolts are still sliding home (${L.bolt.toFixed(2)})`);
     tickN(G, Math.round(G.DOOR_DELAY / DT) + 2);
     check(L.bolt === 1, `${tag}: …and then it's bolted`);
-    G.startMission('intro');
+    G.startMission('c1');
     if (fast) check(Math.abs(G.DOOR_DELAY + G.DOOR_TIME - 1) < 1e-9, 'the next mission without the upgrade: back to 1 s (it doesn\'t leak between missions)');
   }
   // --- never shuts on someone in the doorway
@@ -184,7 +184,7 @@ const inside = (G, a, x, y) => Object.assign(a, { state: 'wander', mode: 'inside
   }
   // --- multiplayer: the door state is in the snapshot
   {
-    const G = loadGame(NAMES); G.netServer.init('intro'); G.netServer.addCrew(11, 'A');
+    const G = loadGame(NAMES); G.netServer.init('c1'); G.netServer.addCrew(11, 'A');
     const [A] = G.crew, L = G.DECK_DOORS[1];
     A.x = L.x + L.w / 2; A.y = G.SPINE_Y1 + 0.6; G.DOORWAYS[1].locked = true; G.DOORWAYS[3].pry = 0.4;
     G.SYSTEMS.find(s => s.ref === G.DECK_DOORS[2]).broken = true; G.DECK_DOORS[2].jammed = true;

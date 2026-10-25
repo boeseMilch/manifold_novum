@@ -13,7 +13,7 @@ const plasmaFire = (G) => {
   G.igniteSystem(G.SYSTEMS.find(s => s.ref === G.CAPACITORS[0]));
   return G.fires.find(f => f.plasma);
 };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.mission.rules.plasma = true; G.combat.enemies.length = 0; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; G.mission.rules.plasma = true; G.combat.enemies.length = 0; return G; };
 const key = (G, code) => { G.listeners.keydown({ code, preventDefault() {} }); G.tick(DT); G.listeners.keyup({ code }); };
 
 // --- solo: open the pad, a wrong code, then the right one
@@ -81,7 +81,7 @@ const key = (G, code) => { G.listeners.keydown({ code, preventDefault() {} }); G
 // --- multiplayer: everything goes through the server (input + commands)
 {
   const G = loadGame(NAMES);
-  G.netServer.init('intro'); G.mission.active = false; G.mission.rules.plasma = true; G.combat.enemies.length = 0;
+  G.netServer.init('c1'); G.mission.active = false; G.mission.rules.plasma = true; G.combat.enemies.length = 0;
   G.netServer.addCrew(1, 'Alice'); G.netServer.addCrew(2, 'Bob'); G.netServer.addCrew(3, 'Carol');
   const [A, B, C] = G.crew;
   plasmaFire(G);

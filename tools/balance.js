@@ -1,16 +1,16 @@
 // Balance model: is a mission doable for n players, and how hard is it?
 //
-//   node tools/balance.js                      every skirmish + campaign mission, 1-4 and 8 players
-//   node tools/balance.js intro c3             just these missions
+//   node tools/balance.js                      every campaign mission, 1-4 and 8 players
+//   node tools/balance.js c1 c3                just these missions
 //   node tools/balance.js --hit 0.5 --runs 20  other hit rate / more random builds per mission
 //   node tools/balance.js --ship caps,cannons  with ship upgrades (ids from SHIP_UPGRADES)
 //   node tools/balance.js --kit none           without the expected kit (gear and ship upgrades a first-time campaign
 //                                              run can afford by then, see expectedKit(); the default) — the old model
-//   node tools/balance.js --detail rush 2      one build, job by job (who does what when)
+//   node tools/balance.js --detail c4 2        one build, job by job (who does what when)
 //   node tools/balance.js --rates              measure the enemies' damage rates in the game → tools/damage-rates.json
 //                                              (after changing an enemy, a hazard or the hull; tests/balancemodel.js checks)
 //   node tools/balance.js --energy game        the energy runs on the game's own code (slow; the fast model is checked against it)
-//   From code: const { balance } = require('../tools/balance'); balance({ missions: ['intro'], players: [1, 2] })
+//   From code: const { balance } = require('../tools/balance'); balance({ missions: ['c1'], players: [1, 2] })
 //
 // How it works. For each mission and crew size it builds the real timeline with the game itself
 // (startMission with n crew aboard, so the game's own crew pacing applies; one sandbox for all builds, nothing
@@ -150,7 +150,7 @@ const A = {
   SPEC_FINALE: 5,         // s before the jump: a wait that starts this late is the finale's, it doesn't count
   REACTOR_STEPS: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2],   // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites (to
                           // 0.2 since 2026-10-25: the busier crews' energy, and crews held to few encounters by encounterCap, whose
-                          // long gaps slow the reactor (it follows the gap): Black box ×2 starved its opener down to ×0.3) …
+                          // long gaps slow the reactor (it follows the gap): a crew of two with 3 encounters starved its opener down to ×0.3) …
   REACTOR_STEPS_EARLY: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2],   // … and for the early missions, which have to be in spec on the base ship           // s a cannon may wait for its next energy and still count as in spec
   CAL_RUNS: 10,           // --calibrate: random builds per mission and crew size while searching (= RUNS: what the summary rates)
   OPTIONAL_IDLE: 0.6,     // optional jobs (fuel canister) are only done when the crew is below this load
@@ -164,14 +164,10 @@ const A = {
   SEED: 12345,
 };
 const PLAYERS = [1, 2, 3, 4, 8];
-const SKIRMISH_ORDER = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep', 'nightmare'];
-// The progression for the idle targets: chapter n is step n; intro (unlocked from the start, "Start here") is
-// step 0; rush (unlocked from the start too, but "more trouble") sits with chapter 2; every other skirmish
-// sits with the chapter that comes up when it unlocks (ore / salvage after chapter 3 → step 4, pirate cove
-// after 4 → 5, rescue after 5 → 6, deep drift after 6 → 7, nightmare after 7 → 8). See unlockedMissions().
-const PROGRESSION = { intro: 0, c1: 1, c2: 2, rush: 2, c3: 3, ore: 4, salvage: 4, c4: 4, pirates: 5, c5: 5, rescue: 6, c6: 6, deep: 7, c7: 7, nightmare: 8, c8: 8 };
+// The progression for the idle targets: chapter n is step n.
+const PROGRESSION = { c1: 1, c2: 2, c3: 3, c4: 4, c5: 5, c6: 6, c7: 7, c8: 8 };
 // A mission's own solo target (MISSIONS[id].balance.soloIdle) wins: chapters 6-8 solo 37% (the user: 33-40% is right solo),
-// challenge missions lower (Nightmare solo 25%). Crews (2026-10-25): what solo actually gets in that mission (soloIdle: its
+// Crews (2026-10-25): what solo actually gets in that mission (soloIdle: its
 // crew.events[0] etc. as built, with the expected kit), at least SOLO_FLOOR, + CREW_STEP per extra player. (--target: flat.)
 // "Multiply and round" (the user, 2026-10-25): n + 1 players get at most (n + 1) / n times n players' encounters (the count
 // they actually have), rounded to the next whole number below (solo 5, two 9; two 9, three at most 13). An upper bound on
@@ -198,7 +194,7 @@ const targetIdle = (id, n) => {
 // ===========================================================================
 // The game: constants and a seeded random (so results repeat)
 // ===========================================================================
-const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
+const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
   'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
   'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
@@ -207,7 +203,7 @@ const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'SKIRMISH', 'startMission'
   'DRILL_TIME', 'NPC_SPEED', 'WALK_SPEED', 'EVA_SPEED', 'AIRLOCK_DOOR_TIME', 'LOCK_CYCLES', 'OL_W', 'HULL_SPOTS', 'JAM_SPOTS', 'ANTENNA', 'COIL_SPOTS', 'HATCHES', 'JUMP_PULL',
   'JUMP_PULL_TWO', 'VENT_TIME', 'SPLICE_TIME', 'GRAV_TIME', 'applyShipUpgrades', 'reactorSpeed', 'simTick', 'runEvent', 'makeEvent',
   'combat', 'SYSTEMS', 'me', 'boarding', 'roomAt', 'enc', 'evs', 'dk', 'hz', 'shuffledTimeline', 'evAt', 'randSide', 'paceFactor', 'RADAR_RANGE', 'PING_CD', 'SHIP_UPGRADES', 'OVERCHARGE_FIRE', 'MISSION_LENGTH', 'LEVER_E_HOLD', 'STEALTH_RADAR',
-  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SKIRMISH_TWIN', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY', 'HIT_FIRE', 'HIT_BREAK', 'PLASMA_TIME',
+  'S7_FREEZE', 'S7_DRAW', 'S7_FREEZER_HOLD', 'S7_CREEP_TIME', 'S7_WRAP_SPRAY', 'NAVCORE_LIFE', 'NAVCORE_PULL', 'ROCK_REACH', 'ROCK_SPEED', 'ROCK_FROM', 'ROCK_Y', 'ROCK_R', 'GEAR', 'SELF_TREAT', 'TREAT_TIME', 'FIRE_TIME', 'TIDE_WARN', 'TIDE_TIME', 'TIDE_EVERY', 'HIT_FIRE', 'HIT_BREAK', 'PLASMA_TIME',
   'LEVB_FIN_HP', 'LEVB_ZONE_HP', 'LEVB_GAS_WARN', 'LEVB_GAS', 'LEVB_WINDOW', 'LEVB_FLICK', 'LEVB_WAVE', 'LEVB_NEED', 'LEVB_BROOD_WAVES', 'LEVB_OVERRIDE',
   'captMaxHp', 'CAPT_TEL', 'CAPT_RECOVER', 'CAPT_PLANT', 'CAPT_SPIN_TURNS', 'CAPT_SPIN_W', 'CAPT_BREATH', 'CAPT_DASH_TEL', 'CAPT_DAZE', 'CAPT_TRANSITION', 'CAPT_WHISTLE', 'CAPT_TRICKLE', 'CAPT_RAID_DELAY', 'podHatchAt',
   'missionCrew', 'crewFuel', 'shipStartExtras', 'BOLT_TIME', 'CANNON_COOLDOWN', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME'];
@@ -263,7 +259,7 @@ const nearSide = (x) => (x < 22.2 ? 'port' : 'star');
 // the first clear), spent after each chapter: gear in A.GEAR_ORDER as soon as the money allows, ship upgrades
 // in A.SHIP_ORDER as soon as the reputation does (each in order: saving up for the next rather than skipping it). Plus the mission's prerequisites (needs: the lobby recommends them; overcharge is
 // the only profession perk counted, professions are mixed in a crew). Every player is assumed to have it.
-// Skirmish twins (SKIRMISH_TWIN) get their chapter's kit; intro / rush / practice none.
+// Practice and the skirmish builder: none.
 // Modelled: boots (walking ×1.15: trips measured in the game with them, tools/travel.js; the doors open as you
 // walk up either way), suit thrusters (spacewalks ×1.3), first aid course / stim pack (getting up 8 s / 3 s instead of 10 s,
 // treating 1.2 s instead of 2 s: CREW_HIT_COST scaled), armor vest (one crew hit fewer per player; not in the expected kit: weapons specialists only), and the ship:
@@ -278,7 +274,7 @@ const walkMul = () => (KIT?.boots ? 1.15 : 1);    // (walking inside a docked sh
 const kitCache = new Map();
 function expectedKit(id) {
   if (kitCache.has(id)) return kitCache.get(id);
-  const g = game(), ch = g.CAMPAIGN.includes(id) ? id : g.SKIRMISH_TWIN[id];
+  const g = game(), ch = g.CAMPAIGN.includes(id) ? id : null;
   let kit = null;
   if (ch) {
     let money = 0, rep = 0, earned = 0, repEarned = 0;
@@ -348,8 +344,8 @@ function calibrate(kind, W = 60, seeds = [1, 2, 3], live = false) {
   const sum = { small: 0, large: 0, crewHits: 0, broken: 0 }, first = {};
   for (const seed of seeds) seeded(seed * 7919, () => {
     const G = loadGame(NAMES);
-    const side = G.EVENT_SIDES.swarm; G.EVENT_SIDES.swarm = () => 'front';   // (intro's swarm draws no side here: the measurements stay as before sides)
-    G.startMission('intro'); G.mission.events = []; G.mission.jumpAt = 1e9; G.EVENT_SIDES.swarm = side;
+    const side = G.EVENT_SIDES.swarm; G.EVENT_SIDES.swarm = () => 'front';   // (the swarm draws no side here: the measurements stay as before sides)
+    G.startMission('c1'); G.mission.events = []; G.mission.jumpAt = 1e9; G.EVENT_SIDES.swarm = side;
     Object.assign(G.me, { x: 22.2, y: 16.6 });           // the crew member waits in the middle of the reactor room
     G.runEvent(kind === 'swarm' ? { t: 0, kind, side: 'front' } : G.makeEvent(kind, 0, G.SYSTEMS[0]));   // (the swarm: measured from ahead, as before sides; no draw)
     let last = 'ok', f = {};
@@ -1378,7 +1374,7 @@ function runOne(id, n, k, opts = {}) {
 function balance(opts = {}) {
   if (opts.hit) A.HIT_RATE = opts.hit;
   const g = game();
-  const ids = opts.missions || [...SKIRMISH_ORDER.filter(id => g.MISSIONS[id]), ...g.CAMPAIGN];
+  const ids = opts.missions || g.CAMPAIGN;
   const players = opts.players || PLAYERS, runs = opts.runs || A.RUNS;
   const out = [];
   for (const id of ids) for (const n of players) {
@@ -1424,11 +1420,10 @@ function campaignCheck(rows, n, jump = 20) {
 // rep the campaign has paid before that mission), and only then reactor overcharge.
 // ===========================================================================
 const ENERGY_UPGRADES = ['cannons', 'inserter', 'caps'];         // (the spare cell doesn't help: the fuel follows the need)
-const EARLY = ['intro', 'practice', 'c1', 'c2'];                 // must be in spec on the base ship, no gear
+const EARLY = ['practice', 'c1', 'c2'];                 // must be in spec on the base ship, no gear
 // Rep a player has when a mission unlocks: what the campaign paid before it (rewards.rep + 1 for the first clear).
 function repBy(id) {
-  const g = game(), unlockAfter = { salvage: 'c3', ore: 'c3', pirates: 'c4', rescue: 'c5', deep: 'c6', nightmare: 'c7' };
-  const upTo = g.MISSIONS[id].campaign ? g.MISSIONS[id].campaign - 1 : unlockAfter[id] ? g.CAMPAIGN.indexOf(unlockAfter[id]) + 1 : 0;
+  const g = game(), upTo = g.MISSIONS[id].campaign ? g.MISSIONS[id].campaign - 1 : 0;
   return g.CAMPAIGN.slice(0, upTo).reduce((s, c) => s + (g.MISSIONS[c].rewards?.rep || 0) + 1, 0);
 }
 function upgradeSets(id) {                                       // cheapest first, within the rep the player has by then
@@ -1500,7 +1495,7 @@ function fitSize(id, n, ship, oc, runs, per) {
   let pick = nearest(up.filter(p => p.spec && near(p))) || nearest(up.filter(p => p.spec && wide(p))) || nearest(up) || nearest(all.filter(rises))
     || [...all].sort((a, b) => b.idle - a.idle)[0];
   // solo: out of spec and off the aim too: a neighbouring count in spec, however far off, beats it (one encounter more or
-  // less is 15-40 points: c7 / Deep drift solo, 2 encounters 26 % / 18 % and out of spec, 1: 63 %)
+  // less is 15-40 points: c7 solo, 2 encounters 26 % and out of spec, 1: 63 %)
   if (n === 1 && !pick.spec && !near(pick)) { const okp = nearest(all.filter(p => p.spec && rises(p))); if (okp) pick = okp; }
   return { pick, aim };
 }
@@ -1581,7 +1576,7 @@ function fitBase(id, opts = {}) {
   return { id, per, needs, baseWhy: why ? 'base ship: ' + why : '' };
 }
 function calibrateAll(opts = {}) {
-  const g = game(), ids = opts.missions || [...SKIRMISH_ORDER.filter(id => g.MISSIONS[id]), ...g.CAMPAIGN];
+  const g = game(), ids = opts.missions || g.CAMPAIGN;
   return ids.map(id => fitMission(id, opts));
 }
 

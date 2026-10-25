@@ -26,7 +26,6 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const old = { c2: 150, c3: 200, c4: 200, c5: 300, c6: 300, c7: 350, c8: 500 };   // (the pay before 2026-10-16: ×0.4 now, so you have to choose)
   check(Object.entries(old).every(([id, m]) => G.MISSIONS[id].rewards.money === m * 0.4) && G.MISSIONS.c4.rewards.perPirate === 20 && G.MISSIONS.c2.rewards.rep === 1 && G.MISSIONS.c8.rewards.rep === 5,
     'chapters 2-8 pay 40% of the old money (bounty too), reputation unchanged');
-  check(G.computeRewards('rush', { jumped: true, objective: false, pirates: 0 }, true, false).money === 16, 'a skirmish pays $16 (was $40)');
   const clean = (damage, maxDamage = 5) => G.computeRewards('c1', { ...won, damage, maxDamage }, true, false);
   check(clean(0).money === 168 + 25 && clean(0).clean === 25 && clean(2).clean === 15 && clean(4).clean === 5 && clean(5).clean === 0 && clean(5, 6).clean === 4 && clean(0).rep === 1,
     `up to $25 for bringing the ship back in one piece: 0/5 damage $${clean(0).clean}, 2/5 $${clean(2).clean}, 4/5 $${clean(4).clean}, 5/5 $${clean(5).clean} (reinforced 5/6: $${clean(5, 6).clean})`);
@@ -226,13 +225,13 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 // --- reinforced hull: the ship survives one more broken part (6 instead of 5), and only in that mission
 {
   const G = loadGame(NAMES);
-  G.startMission('intro', { ship: { hull: true } }); G.combat.enemies.length = 0;
+  G.startMission('c1', { ship: { hull: true } }); G.combat.enemies.length = 0;
   check(G.MAX_DAMAGE === 6, 'reinforced hull: the ship takes 6 broken parts');
   G.SYSTEMS.slice(0, 6).forEach(s => { s.broken = true; }); G.simTick(DT);
   check(!G.mission.over, '…6 broken at once: still flying');
   G.SYSTEMS[6].broken = true; G.simTick(DT);
   check(G.mission.over?.won === false && /fell apart/.test(G.mission.over.reason), '…the 7th loses the ship');
-  G.startMission('intro');
+  G.startMission('c1');
   check(G.MAX_DAMAGE === 5, 'the next mission without the upgrade: back to 5 (it doesn\'t leak between missions)');
 }
 // --- campaign objectives
@@ -278,17 +277,15 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G4.withCrew(G4.me, () => G4.runCommand(['practice', 0]));
   check(G4.combat.enemies.length === before, 'practice buttons do nothing outside practice mode');
 }
-// --- skirmish twins of campaign chapters: hidden from the menu, still defined; old saves that finished them load fine
+// --- the preset skirmishes are gone (2026-10-25; the skirmish builder replaced them): old saves that finished them load
+// fine, keep those entries (unknown fields are kept), and unlock only what exists
 {
-  const G = loadGame(['SKIRMISH', 'SKIRMISH_TWIN', 'MISSIONS', 'CAMPAIGN', 'migrateProfile', 'unlockedMissions']);
-  const twins = Object.entries(G.SKIRMISH_TWIN);
-  check(twins.every(([s, c]) => G.MISSIONS[s] && G.SKIRMISH.includes(s) && G.CAMPAIGN.includes(c) && G.MISSIONS[s].objective?.kind === G.MISSIONS[c].objective?.kind),
-    'every hidden skirmish is still defined and has the same objective as its campaign twin');
-  check(G.SKIRMISH.filter(id => !G.SKIRMISH_TWIN[id]).join() === 'intro,rush', 'the menu\'s skirmishes: Intro run and Rush hour');
+  const G = loadGame(['MISSIONS', 'CAMPAIGN', 'migrateProfile', 'unlockedMissions']);
+  check(['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep', 'nightmare'].every(id => !G.MISSIONS[id]), 'no preset skirmish is defined any more');
   const old = G.migrateProfile({ v: 2, xp: 900, money: 50, rep: 3, done: { c1: 1, c2: 1, c3: 2, c4: 1, salvage: 3, pirates: 1, ore: 1 }, ship: {}, gear: {}, profession: null, paint: null });
   const u = G.unlockedMissions(old);
   check(old.done.salvage === 3 && old.done.pirates === 1 && old.done.c3 === 2, 'an old save with skirmish completions loads and keeps them');
-  check(['c1', 'c2', 'c3', 'c4', 'c5'].every(id => u.has(id)), 'finished chapters stay playable (replay from the campaign) and the next one is open');
+  check(['c1', 'c2', 'c3', 'c4', 'c5'].every(id => u.has(id)) && [...u].every(id => G.MISSIONS[id]), 'finished chapters stay playable (replay from the campaign), the next one is open, nothing unlocked that doesn\'t exist');
 }
 // --- Locker / Shipyard choices: owned, available or locked (with why) at a glance
 {

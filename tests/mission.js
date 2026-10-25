@@ -9,8 +9,15 @@ const NAMES = ['MISSIONS', 'MISSION_LENGTH', 'JUMP_DELAY', 'tick', 'player', 'co
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
-// the intro with all its written events (a small crew gets fewer: MISSIONS.intro.crew, see tests/scaling.js)
-const fresh = () => { const G = loadGame(NAMES); G.MISSIONS.intro.crew = null; G.startMission(); G.power.reactor.fuel = 0; return G; };   // no surprise energy
+// A test mission: one of each, well spaced out, all of it at every crew size (the old Intro run's timeline; the preset
+// skirmishes were deleted 2026-10-25)
+const ONE_EACH = { name: 'One of each', rules: {}, objective: null, crew: null, build(target) {
+  const s1 = Math.random() < 0.5 ? 'port' : 'star';
+  return [{ t: 40, kind: 'interceptor', side: s1 }, { t: 100, kind: 'maintenance', sys: target, radar: false }, { t: 160, kind: 'frigate', side: s1 === 'port' ? 'star' : 'port' },
+          { t: 220, kind: 'swarm' }, { t: 280, kind: 'intruder', side: Math.random() < 0.5 ? 'port' : 'star' }];
+} };
+const startOneEach = (G) => { G.MISSIONS.oneEach = ONE_EACH; G.startMission('oneEach'); };
+const fresh = () => { const G = loadGame(NAMES); startOneEach(G); G.power.reactor.fuel = 0; return G; };   // no surprise energy
 const runTo = (G, t, each) => { while (G.mission.t < t && !G.mission.over) { each?.(); G.tick(DT); } };
 // For timing checks: no stray enemy shots or fires breaking things (only scripted events count).
 const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0; G.SYSTEMS.forEach(s => { if (s !== keep) s.broken = false; }); };
@@ -41,7 +48,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
 // --- difficulty: easy / very easy take one / two optional encounters out, the rest laid out the same way (shapedTimes), the reactor's pace unchanged
 {
   const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT', 'COMBAT_KINDS']);
-  for (const [id, full] of [['intro', false], ['c3', false], ['intro', true], ['c4', true], ['pirates', true]]) {
+  for (const [id, full] of [['c1', false], ['c3', false], ['c1', true], ['c4', true], ['c6', true]]) {
     if (!G.MISSIONS[id]) continue;
     if (full) G.MISSIONS[id].crew = null;              // (all written events; solo otherwise)
     G.startMission(id); const n0 = G.mission.events.length, pace = G.paceFactor(), jump = G.mission.jumpAt;
@@ -78,7 +85,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
 // --- the stealth fighter only shows on the radar STEALTH_RADAR s before it arrives (an interceptor: RADAR_RANGE)
 {
   const G = loadGame([...NAMES, 'STEALTH_RADAR', 'RADAR_RANGE']);
-  G.MISSIONS.intro.crew = null; G.startMission(); G.power.reactor.fuel = 0;
+  startOneEach(G); G.power.reactor.fuel = 0;
   G.mission.events = [{ id: 0, t: 60, kind: 'stealth', side: 'port', radar: true, done: false }, { id: 1, t: 61, kind: 'interceptor', side: 'star', radar: true, done: false }];
   runTo(G, 60 - G.RADAR_RANGE + 5, calm(G)); G.radarScan();
   const far = G.radarList().known.map(e => e.kind);
@@ -105,7 +112,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   }
 }
 
-// --- diagnosis: a failure's pair shows yellow MAINT_YELLOW s ahead (the intro's comes before that: from the start);
+// --- diagnosis: a failure's pair shows yellow MAINT_YELLOW s ahead (an early one comes before that: from the start);
 // the failing one turns orange 20 s ahead, red when broken, and the decoy goes back to normal
 const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
 {
@@ -276,7 +283,7 @@ function fireAndJumpTests() {
   // --- the end screen: any key or click goes back to the lobby (not during the jump-out, not in its first second)
   {
     const G = loadGame([...NAMES, 'localInput', 'endScreenReady', 'location']); let back = 0; G.location.reload = () => back++;
-    G.MISSIONS.intro.crew = null; G.startMission(); G.mission.events.forEach(e => { e.done = true; }); G.CAPACITORS[1].charge = 1; G.mission.t = G.mission.jumpAt;
+    startOneEach(G); G.mission.events.forEach(e => { e.done = true; }); G.CAPACITORS[1].charge = 1; G.mission.t = G.mission.jumpAt;
     const press = (k) => { if (k) G.localInput.pressed.add(k); else G.localInput.mouse.click = true; G.tick(DT); };
     G.tick(DT); press('KeyQ');
     const early = back;
@@ -384,7 +391,7 @@ function fireAndJumpTests() {
   G = custom(['Right shield emitter']); ev = maintEv(G); runTo(G, ev.t + 1, quiet(G));
   check(ev.sys.broken, 'not serviced: the emitter breaks (fixed on a spacewalk, as before)');
   // the browsers get the seam by its index
-  G = custom(['Hull seam (bridge)']); const B = loadGame(N); B.startMission('intro'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  G = custom(['Hull seam (bridge)']); const B = loadGame(N); B.startMission('c1'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   check(B.mission.events[0].sys === B.HULL_SEAMS.find(s => s.room === 'bridge'), 'multiplayer: the browsers see which seam is failing');
   // every other mission: inside parts only, as before
   let extra = 0;

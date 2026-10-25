@@ -1,4 +1,4 @@
-// Bloom (ch. 6, ore run): something growing, alive and a little wrong. F# minor with a Phrygian G, 104 BPM.
+// Bloom (ch. 6): something growing, alive and a little wrong. F# minor with a Phrygian G, 104 BPM.
 // One piece of the soundtrack: its recipe (see the format at the top of js/music.js), its own instruments and its
 // hooks into the engine (music.define / music.kit in js/music.js). The engine owns the arc (stages, drops, the
 // breakdown), the ending, the mix and the shared instruments; everything that makes this piece itself lives here.
@@ -153,7 +153,7 @@
     }
   }
 
-  music.define({ name: 'bloom', title: 'Bloom', bpm: 104, key: 'F#', missions: ['c6', 'ore'],
+  music.define({ name: 'bloom', title: 'Bloom', bpm: 104, key: 'F#', missions: ['c6'],
     mood: 'something growing: a breathing low choir, spores, a 3-against-4 marimba, hand drums, a glassy FM lead; the climax blooms',
     lead: 'fm', ostInst: 'marimba', drums: 'hand',
     parts: { vox: 0, bubbles: [0, 3], ost: 1, poly: 2, drums: 2, ost16: 3, bass: 4, theme: 4, hats: 5, brass: 5, taiko: 5, stabs: 6, strings: 6 },

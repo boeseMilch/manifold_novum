@@ -63,8 +63,7 @@
 <script src="js/music/home.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
-  const NAMES = { intro: 'Intro run', rush: 'Rush hour', c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', salvage: 'Black box', c4: 'Ch. 4', pirates: 'Pirate cove', c5: 'Ch. 5', rescue: 'Stranded engineer',
-                  c6: 'Ch. 6', ore: 'Ore run', c7: 'Ch. 7', deep: 'Deep drift', c8: 'Ch. 8', nightmare: 'Nightmare', practice: 'Practice' };
+  const NAMES = { c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', c4: 'Ch. 4', c5: 'Ch. 5', c6: 'Ch. 6', c7: 'Ch. 7', c8: 'Ch. 8', practice: 'Practice', custom: 'Skirmish' };
   const STAGES = ['Drifting in.', 'Drifting in.', 'Building up.', 'Building up.', 'The theme.', 'The fight is on.', 'Climax.', 'The jump drive is spooling up…'];
   let chosen = music.list()[0].name, playing = false, t = 0, jumped = false, last = performance.now();
   music.setPaused(true);

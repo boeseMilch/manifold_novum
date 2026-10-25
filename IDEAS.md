@@ -4,9 +4,8 @@ Everything from the original brainstorm, ordered from easiest to hardest to buil
 it shows up. ✅ = built (details in `PLAN.md`, step 8). Harder encounters are kept for harder
 missions; every one of them can be tried in **Practice** mode.
 
-Mission tiers: ★ First Contract, Strange Cargo, Intro · ★★ Empty Lab, Red Comet Cove, Ore run,
-Rush hour · ★★★ Rescue Dr. Varga, Spore Season, The Deep, Deep drift, Black box, Stranded
-engineer · ★★★★ The Mother of All, Nightmare.
+Mission tiers: ★ First Contract, Strange Cargo · ★★ Empty Lab, Red Comet Cove · ★★★ Rescue Dr. Varga,
+Spore Season, The Deep · ★★★★ The Mother of All. (Plus the skirmish builder: any mix of encounters.)
 
 ## 1. Small things (all missions)
 - ✅ Snack machine (1 energy; being hurt ends 10 s sooner)

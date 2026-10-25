@@ -11,7 +11,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 function session(oneWay, jitter, setup) {
   const S = loadGame(['simTick', 'netServer', 'netSerialize', 'crew', 'power', 'LEVER', 'combat', 'GUNS', 'fireCannon', 'withCrew']);
   const C = loadGame(['netApply', 'netBetween', 'netRemember', 'netLocalPrompt', 'localInput', 'me', 'crew', 'power', 'leverShownPos', 'workProgress', 'combat', 'time']);
-  S.netServer.init('intro', {}, 0); S.netServer.addCrew(1, 'Host'); S.netServer.addCrew(2, 'Guest');
+  S.netServer.init('c1', {}, 0); S.netServer.addCrew(1, 'Host'); S.netServer.addCrew(2, 'Guest');
   const guest = S.crew[1];
   setup?.(S, guest);
   let now = 0, tick = 0, acc = 0, started = false, snaps = 0;

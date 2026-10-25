@@ -4013,3 +4013,23 @@ idle targets (solo + 5 points a player, strictly rising) still steer the fit und
   Capped crews sit idler than the target (c4 ×2 38 % for an aim of 15 %). Rush hour stays at 2 for every crew (3 for
   two players is no idler than solo); Black box / Pirate cove crews at most a few more than solo.
 - Energy shortfalls left: c2 ×2-4 (base ship), c7 ×3, rush / Nightmare as before.
+
+### The preset skirmishes are gone (2026-10-25)
+Intro run, Rush hour, Ore run, Pirate cove, Black box, Stranded engineer, Deep drift and Nightmare had been out of the
+menu since the skirmish builder (2026-10-19); now they're deleted, with every reference: their definitions
+(js/mission.js), `SKIRMISH` / `SKIRMISH_TWIN` and their unlocks (js/progress.js), the lobby's "Other" group, the music
+table, the balance model (`SKIRMISH_ORDER`, `PROGRESSION`, the twins' kit, `repBy`), music.html and the tests.
+- Saves: a profile's `done` may still name them; those entries are kept untouched (unknown fields stay) and nothing
+  looks them up any more (tests/progress.js loads such a save).
+- `startMission()` without an id, and every fallback, is chapter 1 now (was Intro run). The tests that used the Intro run
+  as a plain mission start chapter 1 (no objective where they test a won jump); tests/mission.js keeps the old one-of-
+  each timeline as a test-only fixture. tools/damage-rates.json re-measured (it now starts from chapter 1's settings).
+- The old 30 s leviathan pass (event kind `leviathan`) only Nightmare used; it stays an encounter (practice panel).
+
+### Chapter 5: more encounters for bigger crews (2026-10-25)
+The user: one more from 3 players, two more from 5, three more from 7 (crew.events 2 2 3 3 4 4 5 5). The written timeline
+had nothing optional to repeat, so it gets the gang outside while we're docked: the patrol coming back (150 s), a mine
+drone (230 s), a failing part (300 s), chosen in that order (DROP_ORDER). New layout `spacing: 'written'`: every event
+at its written time (the even layout squeezed everything between the patrol and the docking), the jump at the length
+(420 s, as before), the reactor at its written pace (solo and two players play exactly as before). The fuel cells stay
+(the model: every crew size in spec with them).

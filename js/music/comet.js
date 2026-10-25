@@ -1,4 +1,4 @@
-// Red Comet Gallop (ch. 4, pirate cove): a rowdy pirate jig in 6/8, A minor.
+// Red Comet Gallop (ch. 4): a rowdy pirate jig in 6/8, A minor.
 // One piece of the soundtrack: its recipe (see the format at the top of js/music.js), its own instruments and its
 // hooks into the engine (music.define / music.kit in js/music.js). The engine owns the arc (stages, drops, the
 // breakdown), the ending, the mix and the shared instruments; everything that makes this piece itself lives here.
@@ -69,7 +69,7 @@
   let cur = null;                                         // this bar (from the bar hook): the breakdown bar, the stage
   const RESP = [0, 2, 6, 8];                              // the crew's answer: STOMP stomp CLAP, STOMP stomp CLAP
 
-  music.define({ name: 'comet', title: 'Red Comet Gallop', bpm: 126, key: 'A', missions: ['c4', 'pirates'], meter: 12,
+  music.define({ name: 'comet', title: 'Red Comet Gallop', bpm: 126, key: 'A', missions: ['c4'], meter: 12,
     mood: 'a rowdy pirate jig in 6/8: stomps and claps, an accordion, a fiddle, the crew shouting',
     lead: 'reed', ostInst: 'pluck', drums: 'stomp',
     parts: { drums: 0, accordion: 0, bass: 1, ost: 2, ost16: 4, hats: 2, taiko: 3, pad: 3, theme: 4, fiddle: 4, snare: 4, brass: 5, stabs: 6, strings: 6 },

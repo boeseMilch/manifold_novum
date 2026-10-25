@@ -10,7 +10,7 @@ const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; return G; };
 const emitter = (G, side) => G.SYSTEMS.find(s => s.kind === 'emitter' && s.ref.side === side);
 const fixAll = (G) => { G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); };
 function holdOn(G, x, y, max = 20) {
@@ -92,7 +92,7 @@ function holdOn(G, x, y, max = 20) {
 // --- the maintenance failure stays inside
 {
   let outside = 0;
-  for (let i = 0; i < 60; i++) { const G = loadGame(NAMES); G.startMission('intro'); for (const e of G.mission.events) if (e.kind === 'maintenance' && (e.sys.outside || e.decoy.outside)) outside++; }
+  for (let i = 0; i < 60; i++) { const G = loadGame(NAMES); G.startMission('c1'); for (const e of G.mission.events) if (e.kind === 'maintenance' && (e.sys.outside || e.decoy.outside)) outside++; }
   check(outside === 0, 'the maintenance failure never picks an emitter (it\'s serviced inside)');
 }
 // --- multiplayer: the browsers see it break and get repaired

@@ -65,7 +65,7 @@ const climbIn = (G, c, g, viaNet) => {
 }
 // --- multiplayer: pulled out at the ladder, then treated, or the cannon taken
 for (const id of ['port', 'front', 'star']) {
-  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false;
   G.netServer.addCrew(1, 'Alice'); G.netServer.addCrew(2, 'Bob');
   const [A, B] = G.crew, g = G.GUNS.find(g => g.id === id), name = g.name.toLowerCase();
   climbIn(G, A, g, true);
@@ -102,7 +102,7 @@ for (const id of ['port', 'front', 'star']) {
 }
 // --- multiplayer: patching yourself up in the seat, out cold needs pulling out, disconnects free the cannon
 {
-  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false;
   G.netServer.addCrew(1, 'Alice'); G.netServer.addCrew(2, 'Bob');
   const [A, B] = G.crew, g = G.GUNS.find(g => g.id === 'star');
   climbIn(G, A, g, true); G.hurtCrew(A); G.hurtCrew(A);
@@ -122,9 +122,9 @@ for (const id of ['port', 'front', 'star']) {
 // --- the efficient cannons upgrade: 4 shots per energy, and every cannon starts the mission with 4 loaded
 {
   const G = loadGame(['GUNS', 'startMission', 'SHOTS_PER_ENERGY']);
-  G.startMission('intro', { ship: { cannons: true } });
+  G.startMission('c1', { ship: { cannons: true } });
   check(G.GUNS.every(g => g.shots === 4), `efficient cannons: every cannon starts with 4 shots (${G.GUNS.map(g => g.shots)})`);
-  G.GUNS[0].shots = 1; G.startMission('intro', {});
+  G.GUNS[0].shots = 1; G.startMission('c1', {});
   check(G.GUNS.every(g => g.shots === 3), `without the upgrade: 3 shots, a fresh load each mission (${G.GUNS.map(g => g.shots)})`);
 }
 
@@ -173,7 +173,7 @@ for (const id of ['port', 'front', 'star']) {
     k.add('ShiftLeft'); tickN(G, 20); check(me.cover > 0.9, 'key mode: Shift raises the cover'); k.delete('ShiftLeft'); tickN(G, 20);
   }
   // multiplayer: the server gets keys and mouse moves as inputs and runs the same rule
-  { const S = loadGame(NAMES); S.netServer.init('intro'); S.mission.active = false; S.netServer.addCrew(1, 'A');
+  { const S = loadGame(NAMES); S.netServer.init('c1'); S.mission.active = false; S.netServer.addCrew(1, 'A');
     const A = S.crew[0], g = S.GUNS.find(g => g.id === 'port'), far = [g.x - 10, g.y], send = (keys, mouse) => S.netServer.input(1, { keys, pressed: [], mouse });
     climbIn(S, A, g, true);
     send([], { wx: far[0], wy: far[1], moved: 1, look: 1 }); S.simTick(DT);

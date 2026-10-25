@@ -8,7 +8,7 @@ let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const step = (n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
 
-G.netServer.init('intro'); G.mission.active = false;
+G.netServer.init('c1'); G.mission.active = false;
 G.netServer.addCrew(1, 'Alice'); G.netServer.addCrew(2, 'Bob');
 const [A, B] = G.crew;
 check(G.crew.length === 2 && A.color !== B.color, `two crew members with their own colors (${A.color}, ${B.color})`);

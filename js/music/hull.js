@@ -1,4 +1,4 @@
-// Pressure Hull (ch. 7, deep drift): deep and sparse; a sonar ping, a heartbeat, half-time drums, a cello. B minor.
+// Pressure Hull (ch. 7): deep and sparse; a sonar ping, a heartbeat, half-time drums, a cello. B minor.
 // One piece of the soundtrack: its recipe (see the format at the top of js/music.js), its own instruments and its
 // hooks into the engine (music.define / music.kit in js/music.js). The engine owns the arc (stages, drops, the
 // breakdown), the ending, the mix and the shared instruments; everything that makes this piece itself lives here.
@@ -67,7 +67,7 @@
     env(g, t, 0.003, vel, 0.02, 0.14); route(pan(g, p), true, true);
   }
 
-  music.define({ name: 'hull', title: 'Pressure Hull', bpm: 84, key: 'B', missions: ['c7', 'deep'],
+  music.define({ name: 'hull', title: 'Pressure Hull', bpm: 84, key: 'B', missions: ['c7'],
     mood: 'deep and sparse: a sonar ping, a heartbeat, the hull groaning, half-time drums, a cello',
     lead: 'cello', ostInst: 'pipe', drums: 'half', bassStyle: 'half',
     parts: { sonar: [0, 4], heart: [0, 2], drone: [1, 4], pad: 2, ost: 2, ost16: 5, drums: 3, bass: 3, hats: 4, theme: 4, brass: 5, stabs: 6, strings: 6 },

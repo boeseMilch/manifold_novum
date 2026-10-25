@@ -9,7 +9,7 @@ const NAMES = ['simTick', 'me', 'crew', 'HATCHES', 'startMission', 'mission', 'r
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; return G; };
 let both = 0;                                       // ticks with both doors of an airlock open (outside a vent / a docked passage)
 const tick = (G, n = 1) => { for (let i = 0; i < n; i++) { G.simTick(DT); for (const h of G.HATCHES) if (h.doors.inner > 0 && h.doors.outer > 0 && h.phase !== 'vent' && h.phase !== 'shut' && !(G.dk.dock && G.dk.dock.side === h.side && G.dk.dock.kind !== 'derelict')) both++; } };
 // hold a key until done() (or max s); returns the seconds it took
@@ -151,14 +151,14 @@ check(both === 0, `only ever one door open at a time (${both} ticks with both)`)
 
 // --- multiplayer: a second crew member walks out on the server; the snapshot carries the doors, the pump and the mode
 {
-  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false;
   G.netServer.addCrew(1, 'Alice'); G.netServer.addCrew(2, 'Bob');
   const [A, B] = G.crew, h = G.HATCHES[0];
   Object.assign(B, { x: h.inside[0], y: h.inside[1], vx: 0, vy: 0, mode: 'inside' }); Object.assign(A, { x: 22, y: 4.5 });
   let cyc = null;
   for (let i = 0; i < 60 * 6 && B.mode !== 'eva'; i++) { G.netServer.input(2, { keys: ['KeyA'], pressed: [], mouse: { wx: 0, wy: 0 } }); G.simTick(DT); if (h.phase === 'cycling' && !cyc) cyc = JSON.parse(JSON.stringify(G.netSerialize())); }
   check(B.mode === 'eva', 'Bob walks out through the airlock on the server');
-  const C = loadGame(NAMES); C.startMission('intro');
+  const C = loadGame(NAMES); C.startMission('c1');
   C.netApply(cyc, 1);
   check(C.HATCHES[0].phase === 'cycling' && C.HATCHES[0].air === h.air || C.HATCHES[0].phase === 'cycling', 'a client sees the chamber pumping (phase in the snapshot)');
   C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), 1);

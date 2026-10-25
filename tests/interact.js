@@ -8,7 +8,7 @@ const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; return G; };
 const mouseAt = (G, x, y) => { const m = G.me.input.mouse; m.wx = x; m.wy = y; m.x = -999; m.y = -999; };
 const pressE = (G) => { const i = G.me.input; i.keys.add('KeyE'); i.pressed.add('KeyE'); G.simTick(DT); i.keys.delete('KeyE'); };
 const click = (G, x, y) => { mouseAt(G, x, y); const m = G.me.input.mouse; m.click = true; m.down = true; G.simTick(DT); m.down = false; };

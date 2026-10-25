@@ -159,7 +159,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
     const extra = [...withPods].filter(k => !without.has(k)).length;
     check(extra === 0, `the pods shut off no floor in the reactor room (${extra} cells more unreachable than without them)`);
   }
-  const H0 = loadGame(N3); H0.startMission('intro');
+  const H0 = loadGame(N3); H0.startMission('c1');
   check(!H0.boarding.pods.length && !H0.SOLIDS.some(S => S.pod), 'other missions have no cargo pods');
   // no spoiler: until they show up the objective is the cover story (lobby: MISSIONS.c2.objective.cover; HUD: objectiveStatus)
   const pre = G.objectiveStatus();
@@ -179,7 +179,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   check(p.hatch == null && p.mode === 'inside' && p.pod === 0 && q.pod === 1 && p.zone !== q.zone, `they come out of the pods, not through the airlocks, and keep to different decks (${p.zone} / ${q.zone})`);
   // multiplayer: the pods are in the snapshot (and their footprints solid in every browser)
   {
-    const B = loadGame(N3); B.startMission('intro'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+    const B = loadGame(N3); B.startMission('c1'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
     check(B.boarding.pods.length === 2 && B.boarding.pods.every(o => o.state === 'open') && B.SOLIDS.filter(S => S.pod).length === 2, 'the pods\' state reaches the other browsers (with their solid footprints)');
   }
   // more aliens than sealed pods (another such event with the pods already burst): the airlocks, as before
@@ -210,7 +210,7 @@ for (const [x, y, where] of [[37, 7, 'the right cannon room'], [22, 2, 'the brid
   G.hurtInvader(bot, 99); G.tick(DT);
   check(G.objectiveStatus().done, 'both down: objective done');
   // other missions' intruders stay single
-  const H = loadGame(N3); H.startMission('intro'); H.mission.active = false; H.boarding.invaders.length = 0;
+  const H = loadGame(N3); H.startMission('c1'); H.mission.active = false; H.boarding.invaders.length = 0;
   H.runEvent({ t: 0, kind: 'intruder', side: 'port' });
   check(H.boarding.invaders.length === 1 && !H.boarding.invaders[0].zone, 'an intruder event without a count is one alien that hunts anywhere');
 }

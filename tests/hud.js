@@ -8,7 +8,7 @@ const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const G = loadGame(NAMES), me = G.me;
-G.startMission('intro');
+G.startMission('c1');
 const step = (n, each) => { for (let i = 0; i < n; i++) { each?.(); G.tick(DT); G.render(i * DT); } };
 step(2);
 
@@ -54,7 +54,7 @@ check(!threw, `the markers draw without errors${threw ? ': ' + threw.message : '
 // --- E acts on what's next to you, not on what the mouse points at; that spot gets the solid ring
 {
   const H = loadGame(NAMES), me2 = H.me;
-  H.startMission('intro'); H.mission.active = false;
+  H.startMission('c1'); H.mission.active = false;
   for (let i = 0; i < 5; i++) H.simTick(DT);
   me2.mode = 'inside'; me2.inv.weapon = null; me2.inv.item = null;
   const [x0, y0] = [me2.x, me2.y];

@@ -109,7 +109,7 @@ const sysOf = (G, ref) => G.SYSTEMS.find(s => s.ref === ref);
   // 10. two players: one walks through a deck door, the other stops in its passage: it stays open on them
   {
     const G = loadGame([...NAMES, 'netServer', 'simTick', 'crew']);
-    G.netServer.init('intro');
+    G.netServer.init('c1');
     G.netServer.addCrew(11, 'A'); G.netServer.addCrew(12, 'B');
     const [A, B] = G.crew, L = G.DECK_DOORS[0], cx = L.x + L.w / 2;
     A.x = cx - 0.4; A.y = G.SPINE_Y1 + 0.6; B.x = cx + 0.4; B.y = G.SPINE_Y1 + 0.6;

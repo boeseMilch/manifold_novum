@@ -39,7 +39,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 {
   const strip = (b) => JSON.stringify({ ...b, g: undefined });
   let n = 0, bad = [];
-  for (const [id, k] of [['intro', 1], ['c2', 3], ['c5', 2], ['c8', 8], ['deep', 4]])
+  for (const [id, k] of [['c1', 1], ['c2', 3], ['c5', 2], ['c8', 8], ['c7', 4]])
     for (const ship of [{}, { caps: true, cannons: true, inserter: true, spareCell: true }])
       for (const over of [{}, { events: 6, cells: 2, overcharge: true, reactor: 0.6 }, { events: 6 }]) {
         n++;
@@ -60,7 +60,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
     n++; if (out(a) !== out(f)) bad.push(`${label} ${mode}`);
     return a;
   };
-  for (const [id, k] of [['c1', 1], ['c3', 2], ['c5', 4], ['c6', 3], ['c8', 8], ['rush', 2]]) {
+  for (const [id, k] of [['c1', 1], ['c3', 2], ['c5', 4], ['c6', 3], ['c8', 8], ['c2', 2]]) {
     const kit = B.expectedKit(id), ship = Object.fromEntries([...(kit?.ship || []), ...(B.game().MISSIONS[id].needs?.ship || [])].map(u => [u, true]));
     const b = B.setup(id, k, ship, 99 + k), s1 = B.schedule(b, {});
     const e1 = cmp(b, s1.plan, 'real', `${id} ×${k}`), s2 = B.schedule(b, e1.waitByKey);
@@ -68,7 +68,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
   }
   let seed = 7; const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647, pick = (a) => a[Math.floor(rnd() * a.length)], sides = ['port', 'front', 'star'];
   for (let i = 0; i < 40; i++) {
-    const b0 = B.setup('intro', 1 + Math.floor(rnd() * 4), { inserter: rnd() < 0.3, caps: rnd() < 0.4, cannons: rnd() < 0.4, shields: rnd() < 0.3 }, 7), jumpAt = 120 + rnd() * 150;
+    const b0 = B.setup('c1', 1 + Math.floor(rnd() * 4), { inserter: rnd() < 0.3, caps: rnd() < 0.4, cannons: rnd() < 0.4, shields: rnd() < 0.3 }, 7), jumpAt = 120 + rnd() * 150;
     const b = { ...b0, factor: 0.3 + rnd() * 1.5, overcharge: rnd() < 0.25, energy: { ...b0.energy, cells: 1 + Math.floor(rnd() * 6) } };
     const plan = { jumpAt, window: 15, end: jumpAt + 2, drains: [], bonusCells: rnd() < 0.2 ? 1 : 0,
       fights: Array.from({ length: Math.floor(rnd() * 14) }, (_, j) => ({ key: 'f' + j % 5, gun: pick(sides), t0: rnd() * jumpAt, shots: 1 + Math.floor(rnd() * 20), span: 1 + rnd() * 30 })),

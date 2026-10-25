@@ -1,4 +1,4 @@
-// Cargo Run (ch. 1-3, the black box: the first contracts of a scrappy hauler crew). A twangy baritone-guitar riff
+// Cargo Run (ch. 1-3: the first contracts of a scrappy hauler crew). A twangy baritone-guitar riff
 // with a shaker opens it alone; strummed chords join, then a swaggering rock kit, and at the first drop the
 // whistle-flute sings the theme over it. G minor, 102 bpm, a light swing.
 // One piece of the soundtrack: its recipe (see the format at the top of js/music.js), its own instruments and its
@@ -95,7 +95,7 @@
     return { notes: (Math.floor(x.b / 8) % 2 ? R.B : R.A)[x.b % 8], c: x.c };
   }
 
-  me = music.define({ name: 'cargo', title: 'Cargo Run', bpm: 102, key: 'G', missions: ['c1', 'c2', 'c3', 'salvage'],
+  me = music.define({ name: 'cargo', title: 'Cargo Run', bpm: 102, key: 'G', missions: ['c1', 'c2', 'c3'],
     mood: 'a scrappy hauler crew on its first contracts: a twangy guitar riff and a shaker, strummed chords, a swaggering rock kit, the whistle-flute theme',
     lead: 'flute', ostInst: 'twang', drums: 'kit', swing: 0.12,
     engineDrums: false,                                   // (its own kit, fills, builds, drops and spool)

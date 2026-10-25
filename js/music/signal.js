@@ -63,7 +63,7 @@
 
   let bkNow = -1;                                     // (the breakdown bar, for the step hook)
 
-  music.define({ name: 'signal', title: 'A Signal in the Dark', bpm: 92, key: 'C', missions: ['c5', 'rescue'],
+  music.define({ name: 'signal', title: 'A Signal in the Dark', bpm: 92, key: 'C', missions: ['c5'],
     mood: 'a faint crackle and the theme on a far-away radio horn; a solo voice answers; strings, spiccato and taikos storm the base; the voice and the radio talk in the breakdown; the hook lifts to Eb major',
     lead: 'voice', ostInst: 'spiccato', drums: 'taiko',
     parts: { radio: [0, 3], static: [0, 1], warm: 1, answer: [2, 3], bells: [2, 3], ost: 3, ost16: 4, drums: 3, bass: 3, hats: 3, snare: 4, theme: 4, brass: 5, stabs: 6, strings: 6, glitter: 6 },

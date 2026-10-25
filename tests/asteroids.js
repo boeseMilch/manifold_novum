@@ -90,7 +90,7 @@ for (const side of ['port', 'star']) {
 // the approved chapters keep their swarms ahead (written and repeated); the others draw
 {
   const bad = [], other = new Set();
-  for (const id of ['c1', 'c2', 'c3', 'c5', 'c4', 'c6', 'c7', 'intro']) for (let k = 0; k < 12; k++) {
+  for (const id of ['c1', 'c2', 'c3', 'c5', 'c4', 'c6', 'c7']) for (let k = 0; k < 12; k++) {
     const H = loadGame(['crew', 'makeCrew', 'startMission', 'mission']);
     while (H.crew.length < 8) H.crew.push(H.makeCrew('P' + H.crew.length));
     H.startMission(id, {});
@@ -98,12 +98,12 @@ for (const side of ['port', 'star']) {
     if (['c1', 'c2', 'c3', 'c5'].includes(id)) { if (sw.some(e => e.side !== 'front')) bad.push(id); }
     else sw.forEach(e => other.add(e.side));
   }
-  check(!bad.length && other.size === 3, `chapters 1, 2, 3, 5: every swarm (written and repeated, 8 players) from the front${bad.length ? ' (not: ' + bad.join(', ') + ')' : ''}; c4, c6, c7, intro: ${[...other].join(' / ')}`);
+  check(!bad.length && other.size === 3, `chapters 1, 2, 3, 5: every swarm (written and repeated, 8 players) from the front${bad.length ? ' (not: ' + bad.join(', ') + ')' : ''}; c4, c6, c7: ${[...other].join(' / ')}`);
 }
 // the snapshot carries the sides
 {
   fresh(); G.combatSpawn('swarm', 'star'); G.combatSpawn('swarm', 'port'); G.tick(DT);
-  const B = loadGame(NAMES); B.startMission('intro'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  const B = loadGame(NAMES); B.startMission('c1'); B.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   check(B.combat.asteroids[0]?.side === 'star' && B.combat.swarm.sides.join() === 'star,port,port' && B.swarmWhere() === 'right + left',
         `the snapshot carries the swarm's sides (in flight: ${B.combat.asteroids.map(a => a.side).join()}, to come: ${B.combat.swarm.sides.join()}; sidebar "${B.swarmWhere()}")`);
 }

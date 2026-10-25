@@ -1296,7 +1296,7 @@ function clientUpdate(dt) {
   const lobby = document.getElementById?.('lobby')?.hidden === false;   // (#lobby itself: #menu/#room keep their own flags under it during a game)
   music.setThreat(!lobby && (combat.enemies.some(e => e.phase === 'fighting') || combat.asteroids.length > 0 || !!combat.swarm || boarding.invaders.length > 0
     || (!!mission.press && !mission.over)));             // not jumping yet: the hot zone keeps the threat up
-  music.setMission(lobby ? 'menu' : mission.id || 'intro');   // each mission has its own piece, building up towards the jump
+  music.setMission(lobby ? 'menu' : mission.id || 'practice');   // each mission has its own piece, building up towards the jump
   // (the arc is laid out for a mission MUSIC_TAIL s longer than this one: the piece is still rising when the drive
   //  spools, instead of sitting on its climax, repeating it, for the last minute; 2026-10-24, the user: "the awkward loop at the end")
   music.setIntensity(lobby || !mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / (mission.jumpAt + MUSIC_TAIL), 0, 1), 1.3) : 0.3);

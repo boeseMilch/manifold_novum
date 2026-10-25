@@ -156,20 +156,23 @@ Object.assign(MISSIONS, {
                   evAt('mines', 190, { side: randSide() }), evAt('glitch', 230, { radar: false }), evAt('swarm', 270)],
   },
   c5: {
-    spacing: 'even',                          // a boss mission: its encounters evenly spaced as before (js/mission.js layoutMission; 2026-10-18)
+    spacing: 'written',                       // every encounter at its written time (js/mission.js layoutMission; 'even' until 2026-10-25)
     name: '5 · Rescue Dr. Varga', tier: 3, campaign: 5, rewards: { money: 120, rep: 3 },
     sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
     // set by hand: the whole mission is the pirate base. A patrol interceptor (the opener), then we dock (once it's
     // gone: EVENT_RUNNERS.brig); the jump is due 360 s later (finaleLead), sooner once she's aboard and we've
-    // detached (js/dock.js ESCAPE_SPOOL). A bigger crew gets more guards in the base, not more encounters
-    // (stationGuards); easy / very easy take guards out (and give luck: nothing here to drop).
-    crew: {events: [2, 2, 2, 2, 2, 2, 2, 2], cells: [3, 3, 4, 4, 5, 5, 6, 6], overcharge: [true, true, true, true, true, true, true, true]},
+    // detached (js/dock.js ESCAPE_SPOOL). A bigger crew gets more guards in the base (stationGuards) and, while we're
+    // docked (2026-10-25, the user: one more from 3 players, two from 5, three from 7), the gang outside: the patrol
+    // coming back (150 s), a mine drone (230 s), a failing part (300 s) — someone has to stay aboard. Easy / very easy
+    // take those out (and guards, as always; half a cat of luck a step where nothing is left to drop).
+    crew: {events: [2, 2, 3, 3, 4, 4, 5, 5], cells: [3, 3, 4, 4, 5, 5, 6, 6], overcharge: [true, true, true, true, true, true, true, true]},
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     length: 420, finaleLead: 360,             // 7 min (2026-10-17 playtest: "mission time is probably good at 7min"; was 300 / 240)
     objective: { kind: 'rescue', npc: 'Dr. Varga' }, rules: { breach: true, surge: true, gravity: true },
     blurb: 'Storm the Red Comet\'s base, room by room, and get Dr. Varga out.',
     briefing: 'We found the Red Comet\'s hideout: a rusty base out in the Cove. Dr. Varga is locked up somewhere inside — hurt, by the sound of her distress ping.\n\nDeal with their patrol, then we dock. Grab a weapon first: they\'ll rush out the moment the tube opens (and drop their guns when they fall). Fight through the base room by room: a busted security terminal (repair it, then hack it) and a door code somebody surely wrote down.\n\nPatch her up (hold click or E on her) and she runs for our ship on her own. Cover her: if she\'s hit, she goes down again. The engine stays off while we\'re docked or anyone is still over there: once she\'s aboard, detach at our airlock and jump.',
-    build: () => [evAt('interceptor', 25, { side: randSide(), opener: true }), evAt('brig', 60, { side: randSide() })],
+    build: () => [evAt('interceptor', 25, { side: randSide(), opener: true }), evAt('brig', 60, { side: randSide() }),
+                  evAt('interceptor', 150, { side: randSide() }), evAt('mines', 230, { side: randSide() }), evAt('maintenance', 300, { radar: false })],
   },
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 120, rep: 3 },
@@ -194,7 +197,7 @@ Object.assign(MISSIONS, {
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 140, rep: 3 },
     balance: { soloIdle: 0.37 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
-    crew: {events: [5, 7, 9, 11, 12, 14, 16, 17], extra: {mother: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [3, 9, 6, 14, 17, 16, 18, 16], reactor: [0.5, 0.4, 1, 0.4, 0.3, 0.4, 0.4, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): -11% 22% 23% 45% 52% 59% 62% 64% idle for 1-8 players
+    crew: {events: [5, 7, 9, 11, 12, 14, 16, 17], extra: {mother: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [3, 9, 6, 7, 17, 16, 18, 16], reactor: [0.5, 0.4, 1, 1, 0.3, 0.4, 0.4, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): -11% 22% 23% 35% 52% 59% 62% 64% idle for 1-8 players
     // 2026-10-20 (solo playtest: one more encounter, a spore mother): crew.extra adds a mother solo (5 + 1); the solo reactor
     // ×0.5 (was 0.7) keeps its energy in spec (the right cannon waited 21 s for the mother; an extra cell didn't help)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
@@ -252,13 +255,8 @@ Object.assign(MISSIONS, {
     build: () => [],
   },
 });
-const SKIRMISH = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 'deep', 'nightmare'];
-// Skirmishes that are the same mission as a campaign chapter (playtest: "why two buttons for one thing?"):
-// the menu hides them and offers the chapter instead (finished chapters stay replayable). The ids stay
-// defined: old saves (done.*), ?mission= links and hosts on an older page can still name them.
-const SKIRMISH_TWIN = { salvage: 'c3', pirates: 'c4', rescue: 'c5', ore: 'c6', deep: 'c7', nightmare: 'c8' };
-// The skirmish builder (2026-10-19, the user: replaces every preset skirmish in the menu, Intro run too; the presets
-// stay defined for old saves, ?mission= and the balance model): the lobby's Skirmish tab picks how many encounters (n),
+// The skirmish builder (2026-10-19, the user: replaces every preset skirmish, Intro run too; the presets were deleted
+// 2026-10-25, old saves may still list them in done.*): the lobby's Skirmish tab picks how many encounters (n),
 // which kinds may come (all listed from the start: no spoiler filtering; no boss / story kinds) and which ship parts
 // may fail. round(n/5)..round(n/3) of them are failing parts (maintenance on a ticked part), the rest drawn from
 // the ticked kinds. No pay. The config is the host's (lobby message 'skirmish'), passed to startMission as opts.custom.
@@ -460,13 +458,8 @@ function saveProfile(p) {
 let profile = typeof document !== 'undefined' && document.cookie !== undefined ? loadProfile() : defaultProfile();
 const profileKit = () => ({ gear: profile.gear, profession: profile.profession, paint: profile.paint });
 const unlockedMissions = (p = profile) => {
-  const out = new Set(['practice', 'intro', 'rush', 'c1']);
+  const out = new Set(['practice', 'c1']);
   CAMPAIGN.forEach((id, i) => { if (p.done[id]) { out.add(id); if (CAMPAIGN[i + 1]) out.add(CAMPAIGN[i + 1]); } });
-  if (p.done.c3) ['salvage', 'ore'].forEach(id => out.add(id));
-  if (p.done.c4) out.add('pirates');
-  if (p.done.c5) out.add('rescue');
-  if (p.done.c6) out.add('deep');
-  if (p.done.c7) out.add('nightmare');
   return out;
 };
 
@@ -588,8 +581,7 @@ const lobbyUI = {
   renderCampaign() {
     const p = profile, avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
     list.innerHTML = '';
-    const other = this.chosen && !CAMPAIGN.includes(this.chosen) && MISSIONS[this.chosen] ? [this.chosen] : [];   // (an older host's preset skirmish, a ?mission= link)
-    for (const [title, ids] of [['Campaign', CAMPAIGN], ['Other', other]]) {
+    for (const [title, ids] of [['Campaign', CAMPAIGN]]) {
       const open = ids.filter(id => MISSIONS[id] && avail.has(id));
       if (!open.length) continue;
       const h = document.createElement('div'); h.className = 'mission-group'; h.textContent = title; list.appendChild(h);

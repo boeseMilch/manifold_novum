@@ -27,7 +27,7 @@ const music = vm.runInContext('music', sandbox);
 const run = (sec) => { for (let i = 0; i < sec / 0.025; i++) { now += 0.025; intervals.forEach(f => f()); } };
 
 // ---- the score
-const MISSION_IDS = ['intro', 'rush', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'salvage', 'pirates', 'rescue', 'ore', 'deep', 'nightmare', 'practice'];
+const MISSION_IDS = ['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'practice', 'custom'];
 const missionSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'mission.js'), 'utf8') + fs.readFileSync(path.join(__dirname, '..', 'js', 'progress.js'), 'utf8');
 const known = [...missionSrc.matchAll(/^ {2}([a-z][a-z0-9]*): \{\s*$/gm)].map(m => m[1]).filter(id => /name: '/.test(missionSrc.split(new RegExp(`^  ${id}: \\{`, 'm'))[1]?.slice(0, 200) || ''));
 const covered = new Set(music.list().flatMap(s => s.missions));
@@ -83,7 +83,7 @@ check(music.stage === 6 && climax > calm * 4, `the climax is far busier than the
 check(climax / 20 < 400, `and still cheap: ${Math.round(climax / 20)} nodes a second at the climax`);
 
 // Stages only move on bar lines, rising after a one-bar fill.
-music.setMission('intro'); music.reset(); music.setIntensity(0); run(3);
+music.setMission('practice'); music.reset(); music.setIntensity(0); run(3);
 const bar = 60 / 100 * 4, changes = [];
 let st = music.stage; music.setIntensity(0.5);
 for (let i = 0; i < 1200; i++) { now += 0.025; intervals[0](); if (music.stage !== st) { changes.push(music.step); st = music.stage; } }
@@ -271,10 +271,10 @@ check(ends.every(e => /^[A-G][#b]?$/.test(e.cad)), `the cadence chord is a major
 }
 
 // Switching: one sequencer, the new piece starts on its first step.
-music.setMission('c1'); run(3);
+music.setMission('practice'); run(3);
 const before = music.step; music.setMission('c7');
 check(music.step === 0 && before > 0 && music.title === music.songOf('c7'), `a new piece starts from its first step (was at ${before})`);
-music.setMission('deep'); check(music.step === 0, 'missions sharing a piece keep it playing');
+music.setMission('c7'); check(music.step === 0, 'the same piece again keeps it playing');
 for (let i = 0; i < 20; i++) { music.setMission(MISSION_IDS[i % MISSION_IDS.length]); run(0.05); }
 check(intervals.length === 1, 'still exactly one sequencer after many switches');
 

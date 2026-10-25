@@ -11,7 +11,7 @@ let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const inside = (o, q) => q.x >= o.x && q.y >= o.y && q.x + q.w <= o.x + o.w && q.y + q.h <= o.y + o.h;
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
 function holdOn(G, x, y, done, max = 20, btn = 'down') { const m = G.me.input.mouse; m.wx = x; m.wy = y; m[btn] = true; let t = 0; while (!done() && t < max) { G.simTick(DT); t += DT; } m[btn] = false; return t; }
 const kitOn = (G, x, y, done, max = 20) => holdOn(G, x, y, done, max, 'right');   // the repair kit's jobs: hold right click (2026-10-20)
 const via = (G, pts, max) => pts.every(([x, y]) => walkTo(G, x, y, max));
@@ -123,7 +123,7 @@ for (const hide of [false, true]) {
   check(G.dk.npc.state === 'safe', 'the engineer made it all the way back aboard');
 }
 {
-  const G = fresh(); G.startMission('salvage'); G.mission.events.forEach(e => { e.done = true; });
+  const G = fresh(); G.startMission('c3'); G.mission.events.forEach(e => { e.done = true; });
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1; tickN(G, 60);
   check(G.mission.over && !G.mission.over.won && G.mission.over.survived, `jumping without the black box: survived, but the mission failed ("${G.mission.over?.reason}")`);
 }
@@ -343,20 +343,20 @@ const tendrilBy = (G, s, S, i, dx = 0.6) => { const h = S.tendrils[i].head; G.me
 {
   const { G, s, S } = s7Fresh(); tendrilBy(G, s, S, 0); tickN(G, 120); s.j1 = true; s.cold[1] = 0.4; s.creep.d = 3.3;
   const snap = JSON.parse(JSON.stringify(G.netSerialize()));
-  const H = loadGame(NAMES); H.startMission('intro'); H.netApply(snap, G.me.id);
+  const H = loadGame(NAMES); H.startMission('c1'); H.netApply(snap, G.me.id);
   const t = H.dk.dock?.s7;
   check(t && t.j1 && t.cold[1] === 0.4 && t.creep.d === 3.3 && t.tendrils[0].state === 'grab' && H.s7Holding(H.crew.find(c => c.id === G.me.id)), 'the snapshot (netSerialize / netApply) carries S-7: tendrils, cold, J1, the creep');
 }
 // --- mining
 {
-  const G = fresh(); G.startMission('ore'); G.mission.active = false;
+  const G = fresh(); G.startMission('c6'); G.mission.active = false;
   G.dk.rock = { x: 22.2, y: -7.6, r: 2.2, seed: 1 };
-  check(G.ITEMS.some(i => i.kind === 'drill'), 'the ore run puts a mining drill in the left airlock room');
+  check(G.ITEMS.some(i => i.kind === 'drill'), 'an ore mission (Spore Season) puts a mining drill in the left airlock room');
   const me = G.me; me.mode = 'eva'; me.x = 22.2; me.y = -4.6; me.vx = me.vy = 0; G.withCrew(me, () => { G.inv.weapon = 'drill'; });
   const t = holdOn(G, 22.2, -6.0, () => G.hz.floating.some(f => f.kind === 'ore'));
   check(G.hz.floating.some(f => f.kind === 'ore') && t < 6.5, `drilling the asteroid on a spacewalk gives an ore sample (${t.toFixed(1)} s)`);
 }
-// --- chapter 4 / Pirate cove: get a Red Comet nav core and install it in our helm (way 1: pull it from a docked raider's nav console)
+// --- chapter 4: get a Red Comet nav core and install it in our helm (way 1: pull it from a docked raider's nav console)
 // Installing: walk up to the helm with the core in hand and hold click NAVCORE_INSTALL s on it (carrying it aboard isn't enough).
 function installAtHelm(G) {
   const me = G.me; me.mode = 'inside'; me.x = G.HELM.x; me.y = G.HELM.y + 1.5; me.vx = me.vy = 0;
@@ -367,7 +367,7 @@ function installAtHelm(G) {
 const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.active = false; G.combat.enemies.length = 0; return G; };
 {
   const G = c4();
-  check(G.MISSIONS.c4.objective.kind === 'navcore' && G.MISSIONS.pirates.objective.kind === 'navcore' && G.MISSIONS.c1.objective.kind === 'raiders', 'Red Comet Cove and Pirate cove want a nav core; First Contract still two raiders');
+  check(G.MISSIONS.c4.objective.kind === 'navcore' && G.MISSIONS.c1.objective.kind === 'raiders', 'Red Comet Cove wants a nav core; First Contract still two raiders');
   check(!G.objectiveStatus().done && G.objectiveStatus().text === 'Get a Red Comet nav core and install it in our helm', `the objective: "${G.objectiveStatus().text}"`);
   G.dockShip('pirate', 'port'); G.dk.pirates.length = 0;
   const g = G.dockGeom('port'), me = G.me; me.x = 5; me.y = g.y;
@@ -414,9 +414,9 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   check(G.dk.helmCore && !me.inv.item && G.objectiveStatus().done, 'carried to the helm and installed: objective done');
 }
 {
-  const G = c4('pirates');
+  const G = c4();
   G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'star', y: 15 });
-  check(G.hz.floating.some(f => f.kind === 'navcore' && f.x > 44), 'Pirate cove too: on the right side when the raider was there');
+  check(G.hz.floating.some(f => f.kind === 'navcore' && f.x > 44), 'flung from the right side when the raider was there');
   tickN(G, 60 * 61);
   check(!G.hz.floating.some(f => f.kind === 'navcore') && !G.objectiveStatus().done, 'nobody fetched it: after 60 s the core is lost (another raider\'s will do)');
   const H = fresh(); H.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'port', y: 9 });
@@ -425,14 +425,14 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
 {
   const G = c4(); G.dockShip('pirate', 'star'); G.dk.dock.navcore = false;
   G.ENEMY_TYPES.pirate.onHit({ pois: [{ hit: true }], side: 'port', y: 9 }); G.hz.floating[0].life = 33;
-  const C = loadGame(NAMES); C.startMission('intro'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  const C = loadGame(NAMES); C.startMission('c1'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   const f = C.hz.floating.find(f => f.kind === 'navcore');
   check(C.dk.dock?.navcore === false && f && f.life === 33 && f.vx, 'the snapshot carries the nav console\'s state and the drifting core (its life and drift)');
   G.dk.helmCore = true; C.startMission('c4'); check(!C.dk.helmCore, 'a new mission starts with an empty helm');
   C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   check(C.dk.helmCore && C.objectiveStatus().done, 'the snapshot carries the installed core: done for every player');
 }
-// --- the ore asteroid drifts past (Ore run, chapter 6): in from one side, past the front within reach, out the other
+// --- the ore asteroid drifts past (chapter 6): in from one side, past the front within reach, out the other
 {
   const G = fresh(), reachable = (x) => {                  // a spot within the spacewalk's reach (e < 1) from where its near side is in REACH
     for (let a = 0; a < 6.283; a += 0.05) { const sx = x + Math.cos(a) * 2.2, sy = G.ROCK_Y + Math.sin(a) * 2.2;
@@ -451,10 +451,10 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
   }
 }
 {
-  { const S = fresh(); S.startMission('ore'); S.mission.active = false;
+  { const S = fresh(); S.startMission('c6'); S.mission.active = false;
     check(S.objectiveStatus().text === 'Drill an ore sample and bring it aboard', `solo: one sample ("${S.objectiveStatus().text}")`); }
-  const G = fresh(); G.crew.push(G.makeCrew('B')); G.startMission('ore'); G.mission.active = false;   // (two players: two samples)
-  check(G.MISSIONS.ore.objective.perPlayer && G.MISSIONS.c6.objective.perPlayer && G.objectiveStatus().text === 'Bring 2 ore samples aboard (0/2)', `Ore run and Spore Season want one sample per player: for two "${G.objectiveStatus().text}"`);
+  const G = fresh(); G.crew.push(G.makeCrew('B')); G.startMission('c6'); G.mission.active = false;   // (two players: two samples)
+  check(G.MISSIONS.c6.objective.perPlayer && G.objectiveStatus().text === 'Bring 2 ore samples aboard (0/2)', `Spore Season wants one sample per player: for two "${G.objectiveStatus().text}"`);
   G.EVENT_RUNNERS.rock({ side: 'port' }); const r = G.dk.rock; r.x = 16;
   const me = G.me, m = me.input.mouse;
   G.withCrew(me, () => { G.inv.weapon = 'drill'; });
@@ -474,7 +474,7 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
     check(G.dk.ore === before && me.inv.item === 'ore' && G.hz.floating.some(f => f.kind === 'ore') && !G.ITEMS.some(i => i.kind === 'ore'),
           'a second sample grabbed on a spacewalk: the one in hand floats away beside you, nothing is stowed');
     G.hz.floating = G.hz.floating.filter(f => f.kind !== 'ore'); me.inv.item = null; me.mode = 'inside'; me.x = 7.5; me.y = 19; }
-  const C = loadGame(NAMES); C.startMission('intro'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+  const C = loadGame(NAMES); C.startMission('c1'); C.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
   check(C.dk.ore === 2 && C.dk.rock && C.dk.rock.dir === 1 && Math.abs(C.dk.rock.x - r.x) < 1e-9, 'the snapshot carries the drifting rock and the samples aboard');
   G.mission.objective = { kind: 'ore' }; G.dk.ore = 0; G.ITEMS.push({ kind: 'ore', x: 7.5, y: 19 }); G.simTick(DT);
   check(G.objectiveStatus().done && G.objectiveStatus().text === 'Drill an ore sample and bring it aboard', 'an ore objective without a count still wants one sample');
@@ -514,7 +514,7 @@ for (const side of ['port', 'star']) {
 }
 // --- no jumping while a ship is docked; docked ships let go once the jump is due
 {
-  const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {};
+  const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {}; G.mission.objective = null;
   G.dockShip('derelict', 'port'); G.dk.dock.fires = [];
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1;
   tickN(G, 60);
@@ -523,7 +523,7 @@ for (const side of ['port', 'star']) {
   check(!G.dk.dock && G.mission.over?.survived, 'its tether is released, then the ship jumps');
 }
 {
-  const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {};
+  const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {}; G.mission.objective = null;
   G.dockShip('pirate', 'port'); for (const p of [...G.dk.pirates]) G.hurtPirate(p, 99);
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1;
   tickN(G, 60);
@@ -535,7 +535,7 @@ for (const side of ['port', 'star']) {
 // --- chapter 5: the pirate base (js/dock.js "The pirate base")
 const baseFresh = (side = 'port', n = 1, easy = 0) => {
   const G = fresh(); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
-  G.mission.easy = easy; G.dockShip('base', side); G.combat.enemies.length = 0; return G;
+  G.mission.easy = easy; G.mission.objective = null; G.dockShip('base', side); G.combat.enemies.length = 0; return G;
 };
 {
   const G = loadGame(NAMES);
@@ -778,11 +778,11 @@ for (const side of ['port', 'star']) {
 }
 // --- every mission: the ship jumping with nobody aboard is a failure
 {
-  const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {};
+  const G = fresh(); G.mission.active = true; G.mission.events.forEach(e => { e.done = true; }); G.mission.rules = {}; G.mission.objective = null;
   const me = G.me; me.mode = 'eva'; me.x = -3; me.y = 10; me.vx = me.vy = 0;
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1; tickN(G, 30);
   check(G.mission.over && !G.mission.over.won && /nobody aboard/.test(G.mission.over.reason) && !G.mission.over.results.jumped, `nobody aboard at the jump (all on a spacewalk): failed, no pay ("${G.mission.over?.reason}")`);
-  const H = fresh(); H.mission.active = true; H.mission.events.forEach(e => { e.done = true; }); H.mission.rules = {};
+  const H = fresh(); H.mission.active = true; H.mission.events.forEach(e => { e.done = true; }); H.mission.rules = {}; H.mission.objective = null;
   const gun = H.me; gun.mode = 'gun'; gun.gun = { id: 'port', name: 'Left cannon', view: [0, 0, 10], hatch: [3, 8] };
   H.CAPACITORS[1].charge = 2; H.mission.t = H.mission.jumpAt + 0.1; tickN(H, 5);
   check(H.mission.over?.won, 'sitting in a cannon counts as aboard');

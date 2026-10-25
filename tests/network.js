@@ -38,22 +38,22 @@ function client(name) {
     const a = client('Alice'), b = client('Bob');
     await Promise.all([a.open, b.open]); await sleep(200);
     check(Array.isArray(a.games) && a.games.length === 0 && !a.lobby, 'connecting lands you in the main menu with the (empty) list of games');
-    a.send({ t: 'open', mission: 'intro' }); await sleep(150);
+    a.send({ t: 'open', mission: 'c1' }); await sleep(150);
     const g1 = a.game;
     check(g1 && a.lobby?.game === g1 && a.lobby.host === a.id && a.lobby.players.length === 1, `opening a game makes you its host (game ${g1})`);
-    check(b.games?.length === 1 && b.games[0].id === g1 && b.games[0].host === 'Alice' && b.games[0].players === 1 && b.games[0].mission === 'intro' && b.games[0].phase === 'lobby',
+    check(b.games?.length === 1 && b.games[0].id === g1 && b.games[0].host === 'Alice' && b.games[0].players === 1 && b.games[0].mission === 'c1' && b.games[0].phase === 'lobby',
       `the menu list updates live: host, mission, players (${JSON.stringify(b.games?.[0])})`);
     b.send({ t: 'join', game: g1 }); await sleep(150);
     check(a.lobby?.players.length === 2 && a.lobby.players.some(p => p.name === 'Bob') && b.lobby?.host === a.id, `joining puts both in the game's lobby (${a.lobby?.players.map(p => p.name)})`);
-    b.send({ t: 'mission', id: 'deep' }); b.send({ t: 'start' }); await sleep(200);
-    check(a.lobby.mission === 'intro' && !a.started && !b.started, 'only the host can pick the mission or start');
-    a.send({ t: 'mission', id: 'rush' }); await sleep(100);
-    check(b.lobby?.mission === 'rush', "the host's pick shows up for everyone");
+    b.send({ t: 'mission', id: 'c3' }); b.send({ t: 'start' }); await sleep(200);
+    check(a.lobby.mission === 'c1' && !a.started && !b.started, 'only the host can pick the mission or start');
+    a.send({ t: 'mission', id: 'c2' }); await sleep(100);
+    check(b.lobby?.mission === 'c2', "the host's pick shows up for everyone");
     a.send({ t: 'start' }); await sleep(400);
-    check(a.started === 'rush' && b.started === 'rush', 'the host starts: both are in the game');
+    check(a.started === 'c2' && b.started === 'c2', 'the host starts: both are in the game');
     check(a.state && a.state.crew.length === 2, `snapshots arrive with both crew members (${a.state?.crew.map(c => c.name)})`);
-    const want = require('./harness').loadGame(['missionCrew']).missionCrew('rush', 2).events;   // (the number of encounters follows the crew size)
-    check(a.state.mission.id === 'rush' && a.state.mission.events.length === want, `the rush mission has ${want} incidents for 2 players (${a.state.mission.events.map(e => e.kind).join(', ')})`);
+    const want = require('./harness').loadGame(['missionCrew']).missionCrew('c2', 2).events;   // (the number of encounters follows the crew size)
+    check(a.state.mission.id === 'c2' && a.state.mission.events.length === want, `the c2 mission has ${want} incidents for 2 players (${a.state.mission.events.map(e => e.kind).join(', ')})`);
     const x0 = a.state.crew.find(c => c.id === a.id).x;
     for (let i = 0; i < 30; i++) { a.send({ t: 'input', keys: ['KeyD'], pressed: [], mouse: { wx: 0, wy: 0 } }); await sleep(16); }
     a.send({ t: 'input', keys: [], pressed: [], mouse: { wx: 0, wy: 0 } }); await sleep(150);
@@ -86,17 +86,17 @@ function client(name) {
     // a second game on the same server, played independently
     const d = client('Dana'), e = client('Eve'); await Promise.all([d.open, e.open]); await sleep(150);
     const listed = d.games?.find(g => g.id === g1);
-    check(listed && listed.phase === 'game' && listed.players === 2 && listed.mission === 'rush', `the list shows a running game as "in mission" (${JSON.stringify(listed)})`);
-    d.send({ t: 'open', mission: 'intro' }); await sleep(150);
+    check(listed && listed.phase === 'game' && listed.players === 2 && listed.mission === 'c2', `the list shows a running game as "in mission" (${JSON.stringify(listed)})`);
+    d.send({ t: 'open', mission: 'c1' }); await sleep(150);
     const g2 = d.game;
     e.send({ t: 'join', game: g2 }); await sleep(150);
     check(g2 && g2 !== g1 && e.lobby?.game === g2 && e.lobby.players.map(p => p.name).join() === 'Dana,Eve' && a.lobby.players.length === 2,
       `a second game has its own lobby (game ${g2}: ${e.lobby?.players.map(p => p.name)})`);
     check(e.lobby.phase === 'lobby' && !d.started && a.state.crew.length === 2, "the second game is still in its lobby while the first one plays");
     d.send({ t: 'start' }); await sleep(400);
-    check(d.started === 'intro' && d.state?.mission.id === 'intro' && d.state.crew.length === 2 && d.state.crew.every(c => c.name === 'Dana' || c.name === 'Eve'),
+    check(d.started === 'c1' && d.state?.mission.id === 'c1' && d.state.crew.length === 2 && d.state.crew.every(c => c.name === 'Dana' || c.name === 'Eve'),
       `the second game runs its own mission with its own crew (${d.state?.mission.id}: ${d.state?.crew.map(c => c.name)})`);
-    check(a.state.mission.id === 'rush' && a.state.crew.every(c => c.name === 'Alice' || c.name === 'Bob'), "the first game doesn't see the second game's crew");
+    check(a.state.mission.id === 'c2' && a.state.crew.every(c => c.name === 'Alice' || c.name === 'Bob'), "the first game doesn't see the second game's crew");
     const ex0 = d.state.crew.find(c => c.id === e.id).x, ax0 = a.state.crew.find(c => c.id === a.id).x;
     for (let i = 0; i < 30; i++) { e.send({ t: 'input', keys: ['KeyA'], pressed: [], mouse: { wx: 0, wy: 0 } }); await sleep(16); }
     e.send({ t: 'input', keys: [], pressed: [], mouse: { wx: 0, wy: 0 } }); await sleep(150);
@@ -118,7 +118,7 @@ function client(name) {
     check(ninth.games.find(g => g.id === g1)?.full === true && ninth.games.find(g => g.id === g1)?.players === 8, 'the list shows a game at 8/8 as full');
     ninth.send({ t: 'join', game: g1 }); await sleep(300);
     check(a.state.crew.length === 8 && ninth.full === 8 && !ninth.started && !ninth.game && !a.state.crew.some(x => x.name === 'Nine'), `8 players fit; the 9th is told the game is full (${a.state.crew.length} aboard, full=${ninth.full})`);
-    ninth.send({ t: 'open', mission: 'intro' }); await sleep(150);
+    ninth.send({ t: 'open', mission: 'c1' }); await sleep(150);
     check(ninth.game && ninth.game !== g1 && ninth.game !== g2 && ninth.lobby?.host === ninth.id, 'a player turned away can open a new game instead');
     const g3 = ninth.game; ninth.send({ t: 'leave' }); await sleep(150);
     check(!ninth.games.some(g => g.id === g3) && ninth.games.some(g => g.id === g1), 'leaving a game you are alone in closes it (back in the menu, the list no longer has it)');
@@ -146,8 +146,8 @@ function client(name) {
     check(b.lobby.players.length === 2 && b.lobby.host === a.id && b.lobby.players.find(p => p.id === a.id)?.away, 'a page reload right after a mission keeps your seat for a moment');
     const a2 = client('Alice'); await a2.open; a2.send({ t: 'join', game: g1, ticket: oldTicket }); await sleep(200);
     check(a2.game === g1 && a2.lobby?.host === a2.id && a2.lobby.players.map(p => p.name).join() === 'Alice,Bob', `coming back with the ticket takes the old seat, host included (${a2.lobby?.players.map(p => p.name + (p.host ? '*' : ''))})`);
-    a2.send({ t: 'mission', id: 'intro' }); a2.send({ t: 'start' }); await sleep(300);
-    check(a2.started === 'intro' && b.state?.mission.id === 'intro' && b.state.crew.length === 2, 'the host can start the next mission');
+    a2.send({ t: 'mission', id: 'c1' }); a2.send({ t: 'start' }); await sleep(300);
+    check(a2.started === 'c1' && b.state?.mission.id === 'c1' && b.state.crew.length === 2, 'the host can start the next mission');
     // the last players leave: the game is gone
     const watcher = client('Watcher'); await watcher.open; await sleep(100);
     check(watcher.games.some(g => g.id === g1), 'the first game is listed while people are in it');
@@ -188,7 +188,7 @@ function client(name) {
       };
       sock.write(`GET /ws HTTP/1.1\r\nHost: localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: ${crypto.randomBytes(16).toString('base64')}\r\nSec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r\n\r\n`);
       await sleep(200);
-      sendZ({ t: 'hello', name: 'Zed' }); sendZ({ t: 'open', mission: 'intro' }); await sleep(150); sendZ({ t: 'start' }); await sleep(900); await chain;
+      sendZ({ t: 'hello', name: 'Zed' }); sendZ({ t: 'open', mission: 'c1' }); await sleep(150); sendZ({ t: 'start' }); await sleep(900); await chain;
       const kinds = got.map(t => { try { return JSON.parse(t).t; } catch (e) { return 'bad'; } });
       check(/permessage-deflate/.test(shook || ''), 'the server agrees to permessage-deflate when the browser offers it');
       check(kinds.includes('joined') && kinds.includes('start') && kinds.filter(k => k === 'state').length >= 10 && !kinds.includes('bad'),
@@ -202,7 +202,7 @@ function client(name) {
     const h = client('Hana'), q = client('Quinn');
     await Promise.all([h.open, q.open]);
     h.send({ t: 'hello', name: 'Hana', ship: { cannons: true } }); q.send({ t: 'hello', name: 'Quinn', ship: { caps: true, inserter: true } });
-    h.send({ t: 'open', mission: 'rush' }); await sleep(150);
+    h.send({ t: 'open', mission: 'c2' }); await sleep(150);
     q.send({ t: 'join', game: h.game }); await sleep(150);
     check(q.lobby?.hostShip?.cannons && !q.lobby.hostShip.caps, `the lobby sends the host's ship upgrades (${JSON.stringify(q.lobby?.hostShip)})`);
     h.send({ t: 'start' }); await sleep(400);

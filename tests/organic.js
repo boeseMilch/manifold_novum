@@ -8,7 +8,7 @@ const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; G.power.reactor.fuel = 0; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; G.combat.enemies.length = 0; G.power.reactor.fuel = 0; return G; };
 const hit = (G, e, id) => { const p = e.pois.find(p => p.id === id); G.hitPoi(e, p, ...G.enemyToWorld(e, ...p.c)); };
 
 // --- grappler: tentacle (1 hit), acid, weak spots that switch its tricks off, cannon + spacewalk
@@ -57,7 +57,8 @@ const hit = (G, e, id) => { const p = e.pois.find(p => p.id === id); G.hitPoi(e,
   const latched = G.org.leeches.filter(l => l.state === 'latched').length;
   check(latched === 6, `leeches latch onto the hull (${latched})`);
   // pin the clock: a full right capacitor, no reactor, the leeches latched; measure one unit with 6, then with 1
-  G.org.suck = []; G.CAPACITORS[2].charge = 3; G.CAPACITORS[0].charge = 1; G.CAPACITORS[1].charge = 1; G.SYSTEMS.forEach(s => { s.broken = false; });
+  G.org.suck = []; G.org.leeches.forEach(l => { l.drank = 0; l.fed = 0; });   // (what they drank while latching on doesn't count)
+  G.CAPACITORS[2].charge = 3; G.CAPACITORS[0].charge = 1; G.CAPACITORS[1].charge = 1; G.SYSTEMS.forEach(s => { s.broken = false; });
   const per6 = G.leechSuckTime(6);
   check(Math.abs(G.leechSuckTime(1) - G.LEECH_SUCK_ONE * G.paceFactor()) < 1e-9 && Math.abs(per6 - G.leechSuckTime(1) / 6) < 1e-9, `one unit per LEECH_SUCK_ONE / n s (${G.leechSuckTime(1).toFixed(1)} s alone, ${per6.toFixed(1)} s with 6)`);
   G.simTick(DT);

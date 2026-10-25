@@ -8,7 +8,7 @@ const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTick(DT); } };
-const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
+const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; G.combat.enemies.length = 0; return G; };
 
 // --- solar flare
 {
@@ -72,7 +72,7 @@ const fresh = () => { const G = loadGame(NAMES); G.startMission('intro'); G.miss
   check(G.stealthAlpha(e) === 1, 'a radar ping lights it up for a moment');
 }
 {
-  const G = fresh(); G.startMission('intro'); G.combat.enemies.length = 0; G.combatSpawn('tractor', 'star'); const e = G.combat.enemies[0];
+  const G = fresh(); G.startMission('c1'); G.combat.enemies.length = 0; G.combatSpawn('tractor', 'star'); const e = G.combat.enemies[0];
   const at0 = G.mission.jumpAt; tickN(G, 60 * 5);
   check(Math.abs(G.mission.jumpAt - at0 - 5) < 0.1, 'held in the tractor beam, the jump countdown doesn\'t move');
   const p = e.pois.find(p => p.id === 'emitter'); G.hitPoi(e, p, ...G.enemyToWorld(e, ...p.c));

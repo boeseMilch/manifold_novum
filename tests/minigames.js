@@ -11,7 +11,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 
 // --- radar and helm: one click, no mini-game
 {
-  const G = loadGame(NAMES); G.startMission('intro');
+  const G = loadGame(NAMES); G.startMission('c1');
   const ev = G.mission.events.find(e => e.kind === 'interceptor');
   G.mission.t = ev.t - 20;
   const me = G.me; me.x = 22.2; me.y = 7.4; G.simTick(DT);
@@ -26,7 +26,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 }
 // --- patch board
 {
-  const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false;
   G.CAPACITORS.forEach(c => { c.charge = 0; }); G.power.lever.pos = 1; G.power.lever.jammed = true; G.power.reactor.t = 19.9;
   G.withCrew(G.me, () => { G.ui.panel = 'mini'; G.ui.mini = { kind: 'patch', pick: null }; });
   cmd(G, ['mini', 'patch', 'out', 1]); cmd(G, ['mini', 'patch', 'cap', 0]);
@@ -35,7 +35,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 }
 // --- no tape job: a quick click with the repair kit on a broken part opens nothing and doesn't fix it
 {
-  const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false;
   const s = G.SYSTEMS.find(s => s.kind === 'capacitor'); s.broken = true;
   const me = G.me; me.x = s.x; me.y = s.y - 1; G.withCrew(me, () => { G.inv.weapon = 'repair'; });
   const m = me.input.mouse; m.wx = s.x; m.wy = s.y; m.down = true; tickN(G, 6); m.down = false; tickN(G, 2);
@@ -43,7 +43,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 }
 // --- reload: R only (holding R or cranking doesn't speed it up); a weapons specialist reloads 50% faster
 {
-  const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false;
   const g = G.GUNS[0], me = G.me; me.mode = 'gun'; me.gun = g; g.shots = 0; G.CAPACITORS[1].charge = 2;
   G.reloadCannon(g);
   let t = 0; while (g.reload > 0 && t < 5) { me.input.keys.add('KeyR'); tickN(G, 6); t += 0.1; }
@@ -55,7 +55,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 }
 // --- shields: up 15 s for 1 energy (holding the button doesn't extend it), then 5 s recharge
 {
-  const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false;
   const b = G.SHIELD_BUTTONS.find(b => b.side === 'port'), me = G.me; G.CAPACITORS[0].charge = 3;
   me.x = b.x; me.y = b.y + 0.8; tickN(G, 2);
   const m = me.input.mouse; m.wx = b.x; m.wy = b.y; m.click = true; m.down = true;
@@ -65,7 +65,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 }
 // --- jump handle (harder missions)
 {
-  const G = loadGame(NAMES); G.startMission('deep'); G.evs.coils.forEach(c => { c.ok = true; });
+  const G = loadGame(NAMES); G.startMission('c7'); G.evs.coils.forEach(c => { c.ok = true; });
   G.mission.events.forEach(e => { e.done = true; });
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt + 0.1; tickN(G, 60 * 3);
   check(!G.mission.over, 'with the handle rule the drive waits for someone to pull the handle');
@@ -77,7 +77,7 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
 }
 // --- heartbeat treatment
 {
-  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false;
   G.netServer.addCrew(1, 'A'); G.netServer.addCrew(2, 'B');
   const [A, B] = G.crew; B.x = A.x + 1; B.y = A.y; G.hurtCrew(B); G.hurtCrew(B);
   let t = 0, clicked = 0;

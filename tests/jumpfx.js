@@ -13,7 +13,7 @@ const calm = (G) => { G.combat.shots.length = 0; G.SYSTEMS.forEach(s => { s.brok
 
 // --- jumping out: wind-up, then the animation, then the end screen with the same result
 {
-  const G = loadGame(NAMES); G.startMission();
+  const G = loadGame(NAMES); G.startMission(); G.mission.objective = null;   // (no objective to fail)
   const m = G.mission;
   m.t = m.jumpAt - 12; G.CAPACITORS[1].charge = 0;
   G.tick(DT);
@@ -40,7 +40,7 @@ const calm = (G) => { G.combat.shots.length = 0; G.SYSTEMS.forEach(s => { s.brok
 
 // --- stalled (no energy in MID): the wind-up loops (charge → sputter → dead → again), no jump-out animation
 {
-  const G = loadGame(NAMES); G.startMission();
+  const G = loadGame(NAMES); G.startMission(); G.mission.objective = null;   // (no objective to fail)
   const m = G.mission;
   G.power.reactor.fuel = 0; G.power.reserve = 0; G.power.bolts.length = 0;   // (no energy on its way either: a fast reactor would land one in MID)
   G.CAPACITORS[1].charge = 0; m.t = m.jumpAt - 0.5;
@@ -56,7 +56,7 @@ const calm = (G) => { G.combat.shots.length = 0; G.SYSTEMS.forEach(s => { s.brok
 }
 // --- lost (the ship falls apart): no jump animation, the end screen straight away
 {
-  const G = loadGame(NAMES); G.startMission();
+  const G = loadGame(NAMES); G.startMission(); G.mission.objective = null;   // (no objective to fail)
   const m = G.mission;
   G.CAPACITORS[1].charge = 0; m.t = m.jumpAt + 5; G.tick(DT);
   G.SYSTEMS.slice(0, G.MAX_DAMAGE + 1).forEach(s => { s.broken = true; }); G.tick(DT);

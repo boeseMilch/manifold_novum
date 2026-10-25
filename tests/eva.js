@@ -14,7 +14,7 @@ function holdOn(G, x, y, done, max = 20) {
   m.down = false; return t;
 }
 const outside = (G, x, y) => { const me = G.me; me.mode = 'eva'; me.x = x; me.y = y; me.vx = me.vy = 0; };
-const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; Object.assign(G.mission.rules, rules); return G; };
+const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; Object.assign(G.mission.rules, rules); return G; };
 
 // --- limpet mines
 {
@@ -101,16 +101,16 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('intro
 }
 // --- jump coils
 {
-  const G = fresh(); G.startMission('deep');
+  const G = fresh(); G.startMission('c7');
   check(G.evs.coils.length === 3 && G.evs.coils.every(c => !c.ok), 'harder missions start with 3 misaligned jump coils');
   const at0 = G.mission.jumpAt; G.mission.t = at0; G.mission.active = true; G.simTick(DT);
   check(Math.abs(G.mission.jumpAt - at0 - 45) < 0.1, `each misaligned coil delays the jump by 15 s (+${(G.mission.jumpAt - at0).toFixed(0)} s)`);
-  const G2 = fresh(); G2.startMission('deep'); G2.mission.active = false;
+  const G2 = fresh(); G2.startMission('c7'); G2.mission.active = false;
   const c = G2.evs.coils[0]; const me = G2.me; me.mode = 'eva'; me.x = c.x - 0.8; me.y = c.y; me.vx = me.vy = 0;
   const m = me.input.mouse; m.wx = c.x; m.wy = c.y; m.down = true; tickN(G2, 60 * 3.2); m.down = false;
   check(c.ok, 'a spacewalker aligns a coil in 3 s');
-  const G3 = fresh(); G3.startMission('intro');
-  check(G3.evs.coils.length === 3 && G3.evs.coils.every(c => c.ok), 'the intro run has the jump coils too, all aligned (no coils rule)');
+  const G3 = fresh(); G3.startMission('c1');
+  check(G3.evs.coils.length === 3 && G3.evs.coils.every(c => c.ok), 'chapter 1 has the jump coils too, all aligned (no coils rule)');
 }
 // --- how far you may float: no wall near the hull; a soft edge that keeps the ship on screen
 {

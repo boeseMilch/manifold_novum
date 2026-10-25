@@ -10,7 +10,7 @@ const near = (a, b, tol = 0.1) => Math.abs(a - b) < tol;
 
 // A (patient, down) and B next to them; kits: { A: {...}, B: {...} }
 function setup(kits = {}) {
-  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false;
   G.netServer.addCrew(1, 'A', kits.A); G.netServer.addCrew(2, 'B', kits.B);
   const [A, B] = G.crew; B.x = A.x + 1; B.y = A.y;
   G.hurtCrew(A); G.hurtCrew(A);

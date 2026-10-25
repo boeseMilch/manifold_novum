@@ -63,7 +63,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(me.health === 'out', 'hit again while down: out');
 }
 {
-  const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false;
+  const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false;
   G.netServer.addCrew(1, 'A'); G.netServer.addCrew(2, 'B');
   const [A, B] = G.crew; B.x = A.x + 1; B.y = A.y;
   G.hurtCrew(B); G.hurtCrew(B); G.hurtCrew(B);
@@ -172,7 +172,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   { const G = loadGame(NAMES); G.mission.active = false; const me = G.me;
     const send = (keys, pressed) => { const k = me.input.keys, p = me.input.pressed; k.clear(); keys.forEach(x => k.add(x)); p.clear(); pressed.forEach(x => p.add(x)); };
     send.tag = 'solo'; leverE(G, me, send); }
-  { const G = loadGame(NAMES); G.netServer.init('intro'); G.mission.active = false; G.netServer.addCrew(1, 'A');
+  { const G = loadGame(NAMES); G.netServer.init('c1'); G.mission.active = false; G.netServer.addCrew(1, 'A');
     const A = G.crew[0], send = (keys, pressed) => G.netServer.input(1, { keys, pressed, mouse: { wx: A.x - 8, wy: A.y } });
     send.tag = 'multiplayer'; leverE(G, A, send); }
   { const G = loadGame(NAMES); G.mission.active = false; const me = G.me, lv = G.power.lever; lv.pos = 1; lv.jammed = false;
@@ -246,7 +246,7 @@ process.exitCode = failed ? 1 : 0;
   check(G.boarding.bolts.some(b => b.owner === 'crew' && b.vx > 0) && near(me.face, toMouse()), 'firing at the mouse while walking away keeps you facing it, no shooting with your back');
   k.delete('KeyA');
   // multiplayer: the server turns you to your mouse from the input messages
-  const S = loadGame(NAMES); S.netServer.init('intro'); S.mission.active = false; S.netServer.addCrew(1, 'A'); const [A] = S.crew;
+  const S = loadGame(NAMES); S.netServer.init('c1'); S.mission.active = false; S.netServer.addCrew(1, 'A'); const [A] = S.crew;
   const mx = A.x - 3, my = A.y - 3;
   S.netServer.input(1, { keys: ['KeyD'], pressed: [], mouse: { wx: mx, wy: my, look: 1 } }); for (let i = 0; i < 20; i++) S.simTick(DT);
   check(A.x > mx + 3.5 && near(A.face, Math.atan2(my - A.y, mx - A.x)), 'multiplayer: the server turns you towards your mouse after it moved (walking away from it)');

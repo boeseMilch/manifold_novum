@@ -1,4 +1,4 @@
-// Last Jump Home (ch. 8, nightmare: the last jump of the campaign). A ticking clock and the theme on a music box;
+// Last Jump Home (ch. 8: the last jump of the campaign). A ticking clock and the theme on a music box;
 // then a dubstep growl creeps in under it, muffled, and the first drop opens it: half-time drums, a heavy snare on 3,
 // a talking wobble bass over a clean sine sub. The breakdown brings the music box and the clock back; the climax
 // puts the music box on top of everything. C minor.
@@ -163,7 +163,7 @@
 
   let cur = null, buildBar = -1, spoolAt = 0, dropBar = -1;   // this bar's growl, the last build bar, the spool's first bar, this bar if it drops
 
-  music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8', 'nightmare'],
+  music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8'],
     mood: 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
     lead: 'saw', ostInst: 'pluck', drums: 'dub',
     engineDrums: false,                                   // (the engine's rolls, fills, drop hits and spool percussion are off: the growl carries the rhythm, over a sparse kit of its own)

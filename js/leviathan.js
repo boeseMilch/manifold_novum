@@ -1,5 +1,5 @@
 // The infested leviathan: chapter 8's final boss (event kind `leviathan_boss`; js/organic.js keeps the old 30 s
-// leviathan pass for Nightmare). Story: it isn't evil, it's sick. Leeches burrowed into its hide ("infested
+// leviathan pass, an encounter of its own). Story: it isn't evil, it's sick. Leeches burrowed into its hide ("infested
 // zones") and the pain drove the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away.
 // ~130 units long, it swims round the ship one side at a time (front → left → right → … → behind):
 //   1 THE PASS   across the bow: its dorsal FIN (LEVB_FIN_HP front-cannon hits), then down the LEFT flank: its infested

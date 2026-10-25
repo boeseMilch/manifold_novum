@@ -15,7 +15,7 @@ const tickN = (G, n, each) => { for (let i = 0; i < n; i++) { each?.(); G.simTic
 const calm = (G) => { G.combat.shots.length = 0; G.combat.enemies.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); };
 // a mission at the end of its timeline: nothing else happens, MID has energy
 const atJump = (G, id, lead = 6) => {
-  G.startMission(id); G.mission.events.forEach(e => { e.done = true; }); calm(G);
+  G.startMission(id); G.mission.events.forEach(e => { e.done = true; }); calm(G); G.mission.objective = null;   // (no objective to fail)
   G.CAPACITORS[1].charge = 2; G.mission.t = G.mission.jumpAt - lead;
 };
 
@@ -44,7 +44,7 @@ const atJump = (G, id, lead = 6) => {
 
 // --- without the handle rule the autopilot pulls it; the jump comes on time
 {
-  const G = loadGame(NAMES); atJump(G, 'intro');
+  const G = loadGame(NAMES); atJump(G, 'c1');
   const at = G.mission.jumpAt, me = G.me;
   tickN(G, 60 * (6 - G.AUTO_LEAD - 0.5));
   check(G.mission.autoPull == null && G.handlePull() === 0, 'before the spool-up the handle rests');
@@ -61,7 +61,7 @@ const atJump = (G, id, lead = 6) => {
 }
 // --- with the handle rule (no nav fix) a person must
 {
-  const G = loadGame(NAMES); atJump(G, 'deep'); G.evs.coils.forEach(c => { c.ok = true; });
+  const G = loadGame(NAMES); atJump(G, 'c7'); G.evs.coils.forEach(c => { c.ok = true; });
   let banner = null;
   tickN(G, 60 * 9, () => { calm(G); if (/No nav fix/.test(G.combat.banner?.text || '')) banner = G.combat.banner.text; });
   check(G.mission.jump && !G.mission.over && G.mission.autoPull == null && G.handlePull() === 0, 'with the handle rule the autopilot can\'t: the drive waits');
@@ -74,7 +74,7 @@ const atJump = (G, id, lead = 6) => {
 
 // --- the coils come alive in the spool-up and flare at the jump
 {
-  const G = loadGame(NAMES); atJump(G, 'intro', 12);
+  const G = loadGame(NAMES); atJump(G, 'c1', 12);
   const c = G.evs.coils[0], f0 = G.coilFx(c);
   while (G.mission.t < G.mission.jumpAt - 0.5) { calm(G); G.tick(DT); }
   const f1 = G.coilFx(c);
@@ -93,7 +93,7 @@ const atJump = (G, id, lead = 6) => {
 
 // --- gravity tides
 {
-  const G = loadGame(NAMES); G.startMission('deep'); G.mission.active = false; calm(G);
+  const G = loadGame(NAMES); G.startMission('c7'); G.mission.active = false; calm(G);
   G.evs.coils.forEach(c => { c.ok = true; });
   const it = G.ITEMS.find(i => { const r = G.roomAt(i.x, i.y); return r && G.roomAt(i.x - 1.3, i.y) === r; }) || G.ITEMS[0];
   const x0 = it.x, room0 = G.roomAt(it.x, it.y);
@@ -116,17 +116,17 @@ const atJump = (G, id, lead = 6) => {
   G.startTide(); tickN(G, 60 * (G.TIDE_WARN + G.TIDE_TIME + 0.5));
   check(G.evs.coils.filter(c => !c.ok).length === 2, 'another tide, another coil off');
   // without the coils rule: no coil knocked; the event kind and the rule
-  const G2 = loadGame(NAMES); G2.startMission('intro'); G2.mission.active = false; calm(G2);
+  const G2 = loadGame(NAMES); G2.startMission('c1'); G2.mission.active = false; calm(G2);
   G2.runEvent({ t: 0, kind: 'tide' }); tickN(G2, 60 * (G2.TIDE_WARN + G2.TIDE_TIME + 0.5));
   check(G2.evs.coils.every(c => c.ok), 'without the coils rule the coils stay aligned');
   check(G2.eventLabel({ kind: 'tide' }) === 'Gravity tide — everywhere', 'event kind tide has a label');
-  const G3 = loadGame(NAMES); G3.startMission('intro'); G3.mission.events = []; G3.mission.jumpAt = Infinity; G3.mission.rules.tides = 20;
+  const G3 = loadGame(NAMES); G3.startMission('c1'); G3.mission.events = []; G3.mission.jumpAt = Infinity; G3.mission.rules.tides = 20;
   let first = null; tickN(G3, 60 * 45, () => { calm(G3); if (first === null && G3.enc.tide) first = G3.mission.t; });
   check(first !== null && first <= 20.1, `rule tides: 20 brings a tide ~20 s in (at ${first?.toFixed(1)} s)`);
   // and only that one (2026-10-17, the user: "just do one gravity wave per mission")
   let starts = 0, was = false; tickN(G3, 60 * 120, () => { calm(G3); if (G3.enc.tide && !was) starts++; was = !!G3.enc.tide; });
   check(starts === 0 && G3.enc.tideDone, `... and never again (${starts} more in the next 2 minutes)`);
-  const S3 = loadGame(NAMES); S3.startMission('intro'); S3.mission.rules.tides = 20; S3.netApply(JSON.parse(JSON.stringify(G3.netSerialize())));
+  const S3 = loadGame(NAMES); S3.startMission('c1'); S3.mission.rules.tides = 20; S3.netApply(JSON.parse(JSON.stringify(G3.netSerialize())));
   check(S3.enc.tideDone === true, 'the "tide done" flag survives a snapshot (JSON)');
 }
 // --- at most one gravity tide per mission: written tide events + the rule's one, every mission, crew size and difficulty
@@ -141,12 +141,12 @@ const atJump = (G, id, lead = 6) => {
   }
   G.crew.length = 1;
   check(!bad.length, `at most one gravity tide per mission, every mission, 1-8 players, every difficulty${bad.length ? ': ' + bad.slice(0, 6).join(', ') : ''}`);
-  check(['c7', 'c8', 'deep'].every(id => had.has(id) && G.MISSIONS[id].rules.tides), `the tide missions still have theirs (${[...had].join(', ')})`);
+  check(['c7', 'c8'].every(id => had.has(id) && G.MISSIONS[id].rules.tides), `the tide missions still have theirs (${[...had].join(', ')})`);
 }
 
 // --- the herd: two organic encounters at once, one side
 {
-  const G = loadGame(NAMES); G.startMission('intro'); G.mission.active = false; calm(G);
+  const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; calm(G);
   G.runEvent({ t: 0, kind: 'herd', kinds: ['grappler', 'leeches'], side: 'port' });
   check(G.combat.enemies.some(e => e.kind === 'grappler' && e.side === 'port') && G.org.leeches.length === 6 && G.org.leeches.every(l => l.side === 'port'),
         'a herd of grappler + leeches: both arrive at once, both on the left');
@@ -154,7 +154,7 @@ const atJump = (G, id, lead = 6) => {
   check(G.encounterPlates().some(p => p.key === 'herd'), 'the sidebar shows the herd');
   tickN(G, 60 * 10);
   check(!G.org.herd, 'the call fades after a few seconds (the encounters stay)');
-  const G2 = loadGame(NAMES); G2.startMission('intro'); G2.mission.active = false; calm(G2);
+  const G2 = loadGame(NAMES); G2.startMission('c1'); G2.mission.active = false; calm(G2);
   G2.runEvent({ t: 0, kind: 'herd', kinds: ['mother', 'spores'], side: 'star' });
   check(G2.combat.enemies.some(e => e.kind === 'mother' && e.side === 'star') && G2.evs.spores.length && G2.evs.spores.every(s => s.side === 'star'), 'spore mother + spore clouds: both on the right');
   let pairsOk = true;
@@ -166,12 +166,12 @@ const atJump = (G, id, lead = 6) => {
 
 // --- snapshot sync
 {
-  const S = loadGame(NAMES); S.startMission('deep'); S.mission.active = false; calm(S);
+  const S = loadGame(NAMES); S.startMission('c7'); S.mission.active = false; calm(S);
   S.evs.coils.forEach(c => { c.ok = true; });
   S.startTide(1); tickN(S, 60 * (S.TIDE_WARN + 0.3));
   S.runEvent({ t: 0, kind: 'herd', kinds: ['grappler', 'leeches'], side: 'star' });
   S.mission.autoPull = 12.5;
-  const B = loadGame(NAMES); B.startMission('intro');
+  const B = loadGame(NAMES); B.startMission('c1');
   B.netApply(JSON.parse(JSON.stringify(S.netSerialize())), S.me.id);
   check(B.enc.tide?.phase === 'lurch' && B.enc.tide.dir === 1 && B.enc.tide.coil === S.enc.tide.coil, 'a browser gets the tide (phase, side, the coil it knocked)');
   check(JSON.stringify(B.evs.coils.map(c => c.ok)) === JSON.stringify(S.evs.coils.map(c => c.ok)) && B.evs.coils.some(c => !c.ok), 'and the coils\' alignment');
