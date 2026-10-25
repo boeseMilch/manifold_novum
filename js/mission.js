@@ -90,7 +90,7 @@ const MISSIONS = {
   intro: {
     name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 5, 7, 11, 15, 20, 23, 23], cells: [5, 6, 10, 7, 17, 19, 22, 22], reactor: [0.4, 0.4, 0.3, 1, 0.3, 0.3, 0.3, 0.3]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread): 26% 44% 41% 48% 47% 45% 46% 52% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×4 star cannon waits 12 s at 220 s; base ship: ×4: star cannon waits 12 s at 220 s
+    crew: {events: [3, 5, 6, 8, 11, 13, 13, 15], cells: [5, 8, 9, 13, 14, 16, 18, 18], reactor: [0.4, 0.3, 0.3, 0.3, 0.3, 0.4, 0.3, 0.3]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 36% 45% 55% 59% 61% 62% 67% 69% idle for 1-8 players
     build(target) {
       const s1 = randSide();
       return [
@@ -104,7 +104,7 @@ const MISSIONS = {
   },
   rush: {
     name: 'Rush hour', blurb: '7 incidents in random order. More trouble.',
-    crew: {events: [2, 3, 8, 10, 14, 18, 22, 23], cells: [2, 3, 7, 8, 10, 13, 15, 15], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread): 39% 35% 43% 45% 45% 45% 45% 51% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×1 port cannon waits 32 s at 35 s; ×2 star cannon waits 27 s at 42 s; ×3 port cannon waits 16 s at 219 s; ×4 star cannon waits 26 s at 213 s; base ship: ×1: star cannon waits 40 s at 282 s; ×2: star cannon waits 27 s at 42 s; ×3: front cannon waits 18 s at 51 s; ×4: star cannon waits 23 s at 104 s
+    crew: {events: [2, 4, 8, 9, 11, 11, 11, 11], cells: [2, 4, 8, 9, 10, 9, 16, 10], reactor: [1, 1, 0.85, 0.85, 0.85, 1, 0.4, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 40% 43% 50% 55% 59% 65% 69% 74% idle for 1-8 players
     needs: {ship: [], overcharge: true},
     rules: { breach: true, surge: true },
     build(target) {
@@ -119,8 +119,8 @@ const MISSIONS = {
   },
   deep: {
     name: 'Deep drift', tier: 3, blurb: 'Hard. A gravity tide, herds of creatures, breaches, plasma fires, failing gravity, and a fussy jump drive.',
-    balance: { soloIdle: 0.37, crewIdle: 0.645 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 7's twin: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
-    crew: {events: [2, 2, 3, 4, 4, 7, 8, 12], cells: [2, 2, 2, 3, 3, 4, 4, 6], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, tides + herds, 2026-10-16): 33% 63% 70% 66% 69% 65% 63% 63% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 port shield without energy at 32 s; was 1/1/5/8/15/18/23/27
+    balance: { soloIdle: 0.37 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 7's twin: 33-40% is right solo) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
+    crew: {events: [2, 3, 3, 3, 3, 3, 3, 3], cells: [2, 3, 2, 3, 3, 2, 3, 2], reactor: [1, 0.7, 0.85, 0.7, 0.7, 0.85, 0.7, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 47% 59% 75% 81% 85% 87% 89% 90% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     always: ['maintenance'],                  // two parts fail at every crew size (like chapter 7, 2026-10-16)
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 70 },
@@ -132,7 +132,7 @@ const MISSIONS = {
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space. Then install it in our helm.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 4, 14, 19, 23, 23, 23, 23], cells: [4, 4, 10, 15, 18, 18, 18, 18], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 22% 52% 44% 45% 50% 59% 65% 69% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [3, 11, 17, 22, 23, 24, 24, 24], cells: [4, 11, 13, 16, 18, 21, 21, 21], reactor: [1, 0.85, 1, 1, 1, 0.85, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 27% 31% 36% 44% 53% 59% 65% 69% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 4, 2026-10-16)
@@ -142,7 +142,7 @@ const MISSIONS = {
   salvage: {
     name: 'Black box', tier: 3, blurb: 'Tether to a derelict, find its black box and bring it home. Something over there is still alive — its freezer log says: KEEP S-7 FROZEN.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [2, 6, 12, 16, 20, 23, 23, 23], cells: [2, 5, 9, 12, 14, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 30% 45% 40% 44% 45% 45% 50% 55% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [2, 7, 10, 14, 16, 16, 16, 16], cells: [2, 6, 11, 11, 13, 12, 12, 12], reactor: [1, 0.85, 0.7, 0.85, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 37% 47% 50% 52% 56% 63% 68% 71% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     rules: { breach: true, surge: true, plasma: true }, objective: { kind: 'blackbox' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'swarm', 'maintenance', 'flare', 'mines', 'coolant'], target, 60, 38)]; },
@@ -150,15 +150,16 @@ const MISSIONS = {
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [4, 5, 10, 13, 18, 23, 24, 24], cells: [2, 2, 7, 10, 11, 15, 16, 16], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 23% 47% 46% 46% 47% 45% 52% 59% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); kit before new prerequisites: ×3: port cannon waits 17 s at 270 s; ×4: port cannon waits 11 s at 188 s
+    crew: {events: [4, 9, 12, 17, 20, 23, 24, 24], cells: [2, 6, 8, 12, 14, 15, 16, 16], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 24% 27% 35% 39% 44% 48% 55% 61% idle for 1-8 players
+    needs: {ship: ['caps'], overcharge: true},   // (2026-10-25: busier crews; without the capacitors a cannon waits 11-25 s for 2-4 players)
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },
   },
   ore: {
     name: 'Ore run', tier: 2, blurb: 'A big asteroid drifts past in front: spacewalk out, drill a sample for each of you and haul them in while the front cannon holds off the small ones.',
-    balance: { soloIdle: 0.37, crewIdle: 0.66 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
+    balance: { soloIdle: 0.37 }, // the idle share tools/balance.js --calibrate aims for solo (chapter 6's twin: 33-40% is right solo) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [4, 4, 8, 12, 15, 18, 23, 23], cells: [2, 2, 4, 5, 7, 6, 8, 8], reactor: [1, 1, 0.85, 0.5, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, 2 samples, a failing part at every crew size, 2026-10-16): 37% 68% 67% 66% 66% 67% 69% 73% idle for 1-8 players (aim 37.0% solo, 66.0% for 2-8); was 4/4/8/12/15/18/23/23
+    crew: {events: [4, 7, 10, 13, 15, 16, 17, 17], cells: [2, 6, 6, 7, 8, 9, 7, 7], reactor: [1, 1, 1, 0.85, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 37% 48% 49% 51% 56% 62% 67% 71% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 6, 2026-10-16; the interceptor stays: a mining run in the lanes, not the Mire)
     rules: { breach: true }, objective: { kind: 'ore', perPlayer: true },   // (one sample per player: oreNeeded, js/dock.js; was 2 at every crew size until 2026-10-20)
@@ -166,8 +167,8 @@ const MISSIONS = {
   },
   nightmare: {
     name: 'Nightmare', tier: 4, blurb: 'Everything. All of it. The leviathan too. Good luck.',
-    balance: { soloIdle: 0.25, crewIdle: 0.64 }, // the idle share tools/balance.js --calibrate aims for solo (a challenge mission: busier than the chapters) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
-    crew: {events: [3, 3, 3, 4, 4, 9, 9, 11], cells: [2, 2, 2, 2, 2, 4, 4, 4], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, + herd and tide in the pool, 2026-10-16): 25% 56% 79% 52% 60% 70% 67% 65% idle for 1-8 players (aim 25.0% solo, 64.0% for 2-8); OUT OF SPEC: ×1 star cannon waits 80 s at 184 s; ×2 star cannon waits 70 s at 194 s; ×4 star cannon waits 57 s at 33 s; ×3 by hand: reactor 1 (72%, out of spec) rather than the fit's ×0.7 (79%, in spec but 15 points off)
+    balance: { soloIdle: 0.25 }, // the idle share tools/balance.js --calibrate aims for solo (a challenge mission: busier than the chapters) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
+    crew: {events: [3, 3, 3, 3, 3, 3, 3, 3], cells: [2, 2, 2, 2, 2, 2, 2, 2], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 22% 34% 61% 75% 78% 83% 84% 87% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true },
     build(target) {

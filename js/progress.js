@@ -76,7 +76,7 @@ Object.assign(MISSIONS, {
   c1: {
     name: '1 · First Contract', tier: 1, campaign: 1, rewards: { money: 120, perPirate: 16, rep: 1 },
     sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
-    crew: {events: [3, 6, 9, 14, 17, 21, 21, 21], extra: {interceptor: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [4, 7, 9, 14, 10, 11, 11, 11], reactor: [0.7, 0.3, 0.4, 0.4, 1, 1, 1, 1]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 22% 42% 48% 41% 45% 43% 51% 58% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [3, 8, 12, 14, 17, 20, 23, 25], extra: {interceptor: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [4, 9, 14, 17, 19, 19, 24, 24], reactor: [0.7, 0.5, 0.3, 0.3, 0.3, 0.4, 0.3, 0.3]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 18% 23% 35% 44% 48% 50% 53% 55% idle for 1-8 players
     // 2026-10-24 (solo playtest: one more encounter): solo a second pirate interceptor, crew.extra (a repeat on top of the 3 asked /
     // 4 played; 4 asked would play the same 4: the interceptor was already added as the finale fight, 5 would have been the asteroid
     // swarm, not the pirates' lanes): 5 played (×2 plays 6, two interceptors too). Cells / reactor refitted like --calibrate: ×0.85
@@ -95,7 +95,7 @@ Object.assign(MISSIONS, {
     // reactor fitted for them like --calibrate does (fewest cells / mildest reactor in spec): ~36% 61% 66% 74% idle for 1-4 players.
     // 2026-10-16: + a failing part solo and for 2 (always; 4 / 5 events), the reactor for 2 back in spec at ×0.4 (was 0.3):
     // ~34% 59% 67% 75% idle for 1-4 players with the expected kit (boots); solo without them 2 of 8 builds wait at the finale
-    crew: {events: [5, 5, 7, 12, 18, 25, 25, 25], cells: [3, 3, 3, 5, 13, 11, 9, 13], reactor: [0.3, 0.3, 0.4, 1, 0.3, 0.5, 1, 0.4]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, the frigate 70 s before the jump, expected kit): 20% 48% 62% 47% 44% 45% 48% 55% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8); OUT OF SPEC: ×4 front cannon waits 8 s at 44 s; solo: 3 asked, 4 played (opener, the aliens, the failing part, the frigate finale)
+    crew: {events: [5, 8, 14, 23, 24, 24, 27, 29], cells: [3, 6, 7, 11, 14, 12, 12, 14], reactor: [0.3, 0.6, 0.7, 0.6, 0.4, 0.5, 0.5, 0.5]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 16% 21% 26% 31% 37% 45% 49% 52% idle for 1-8 players
     // 2026-10-20 (solo playtest: one more encounter): solo 5 asked, 5 played (+ the mine drone; 4 asked would still play the same 4: the frigate
     // was already added as the finale fight), cells / reactor refitted like --calibrate and unchanged (3, ×0.3: the fewest in spec): ~10% idle solo (was 20%)
     essential: ['intruder'],
@@ -120,7 +120,7 @@ Object.assign(MISSIONS, {
   c3: {
     name: '3 · The Empty Lab', tier: 2, campaign: 3, rewards: { money: 80, rep: 2 },
     sides: { swarm: 'front' },               // (approved as built: its swarms, written and repeated, come from ahead)
-    crew: {events: [5, 5, 10, 14, 16, 20, 22, 22], cells: [2, 3, 7, 9, 13, 12, 12, 12], reactor: [1, 1, 1, 1, 0.7, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 15% 45% 46% 44% 46% 46% 48% 52% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [5, 10, 15, 21, 23, 24, 24, 24], cells: [2, 10, 11, 14, 15, 15, 15, 15], reactor: [1, 0.5, 1, 0.85, 0.85, 0.85, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 9% 22% 23% 25% 31% 39% 46% 50% idle for 1-8 players
     // 2026-10-20 (solo playtest: one more encounter): solo 5 asked, 5 played (+ the written second mine drone; 3 asked played 4: the swarm was
     // added as the finale fight, so 4 would change nothing), cells / reactor refitted like --calibrate and unchanged (2, ×1, overcharged): ~9% idle solo (was 15%)
     // and ×2 to 5 as well (it played 4: a smaller crew mustn't get more than a bigger one), still 3 cells, ~49% idle (model)
@@ -140,7 +140,7 @@ Object.assign(MISSIONS, {
     // (2026-10-17, 7 min instead of 6 by mistake (the 7 min were meant for chapter 5), then 5 min at the user's word: refitted with
     //  --calibrate (expected kit, 3 mines a drone) at 300 s; the same 5 encounters solo / ×2 (the least: the scout, two raiders, the
     //  failing part, the finale), ×3-6 fewer (with the counts kept they sat at 57% idle, 9 points under the aim), ×7-8 the same)
-    crew: {events: [4, 4, 14, 19, 23, 23, 23, 23], extra: {maintenance: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [5, 5, 11, 14, 17, 17, 17, 17], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (2026-10-18, shaped timeline, 5 min, fires spread, expected kit): 0% 41% 41% 46% 49% 58% 64% 68% idle for 1-8 players (aim 29.6% solo, 45.0% for 2-8)
+    crew: {events: [4, 14, 22, 25, 25, 25, 25, 25], extra: {maintenance: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [5, 11, 17, 21, 21, 21, 21, 21], reactor: [1, 1, 1, 0.85, 0.85, 0.85, 0.85, 0.85], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 5% 11% 18% 34% 48% 57% 63% 67% idle for 1-8 players
     // 2026-10-20 (solo playtest: one more encounter, an easy one): solo a second failing part, crew.extra (a repeat on top of the
     // 4 asked / 5 played; one more asked would have been the mine drone): 6 played; cells refitted like --calibrate and unchanged
     // (5, overcharged): ~-5% idle solo (was ~0%); the model rates it impossible (~6 problems open at once), the playtest says not
@@ -173,9 +173,9 @@ Object.assign(MISSIONS, {
   },
   c6: {
     name: '6 · Spore Season', tier: 3, campaign: 6, rewards: { money: 120, rep: 3 },
-    balance: { soloIdle: 0.37, crewIdle: 0.65 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
+    balance: { soloIdle: 0.37 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [6, 6, 7, 12, 16, 19, 25, 25], cells: [6, 3, 5, 14, 14, 19, 24, 24], reactor: [0.7, 0.5, 1, 0.5, 0.7, 0.7, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate (expected kit, the leech opener + a failing part, 2026-10-16): 35% 65% 65% 65% 67% 66% 66% 70% idle for 1-8 players (aim 37.0% solo, 65.0% for 2-8); OUT OF SPEC: ×3 star cannon waits 27 s at 235 s; was 4/5/8/11/14/18/24/24
+    crew: {events: [6, 11, 16, 20, 25, 26, 27, 27], cells: [6, 9, 19, 14, 19, 19, 30, 30], reactor: [0.7, 0.85, 0.6, 1, 1, 1, 0.4, 0.4], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 11% 16% 21% 27% 31% 42% 49% 55% idle for 1-8 players
     // 2026-10-24 (solo playtest: one more encounter, a spore mother): solo 6 asked, 6 played (+ the written mother; 5 asked would play the
     // same 5: the swarm was already added as the finale fight), and ×2 to 6 as well (it played 5: a smaller crew mustn't get more
     // than a bigger one). Cells / reactor refitted like --calibrate: solo ×0.5 / 3 cells went out of spec (the port cannon waits for
@@ -193,8 +193,8 @@ Object.assign(MISSIONS, {
   },
   c7: {
     name: '7 · The Deep', tier: 3, campaign: 7, rewards: { money: 140, rep: 3 },
-    balance: { soloIdle: 0.37, crewIdle: 0.645 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
-    crew: {events: [5, 5, 5, 6, 7, 8, 10, 16], extra: {mother: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [3, 3, 3, 4, 5, 5, 6, 9], reactor: [0.5, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // 2026-10-17 (the user: "too chill"): one encounter more at every crew size (was 3, 3, 4, 5, 6, 7, 9, 15: solo-3 got 4 with the finale herd), set by hand; cells fitted like --calibrate (expected kit): 41% 63% 74% 72% 65% 64% 62% 58% idle for 1-8 players (aim 37.0% solo, 64.5% for 2-8); OUT OF SPEC: ×4 star cannon waits 9 s at 193 s (as before: a herd's two fights on one side). Solo: the opener, the alien, two failing parts, the finale herd
+    balance: { soloIdle: 0.37 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
+    crew: {events: [5, 7, 9, 17, 19, 23, 25, 28], extra: {mother: [1, 0, 0, 0, 0, 0, 0, 0]}, cells: [3, 9, 6, 17, 16, 18, 18, 19], reactor: [0.5, 0.4, 1, 0.5, 0.6, 0.6, 0.7, 0.7], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): -11% 22% 23% 29% 37% 41% 45% 46% idle for 1-8 players
     // 2026-10-20 (solo playtest: one more encounter, a spore mother): crew.extra adds a mother solo (5 + 1); the solo reactor
     // ×0.5 (was 0.7) keeps its energy in spec (the right cannon waited 21 s for the mother; an extra cell didn't help)
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
@@ -214,11 +214,11 @@ Object.assign(MISSIONS, {
   c8: {
     spacing: 'even',                          // a boss mission: its encounters evenly spaced as before (js/mission.js layoutMission; 2026-10-18)
     name: '8 · The Mother of All', tier: 4, campaign: 8, rewards: { money: 200, rep: 5 },
-    balance: { soloIdle: 0.37, crewIdle: 0.64 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crewIdle: the old ramped aim, kept until more playtesting, 2026-10-18)
+    balance: { soloIdle: 0.37 }, // the idle share tools/balance.js --calibrate aims for solo (the user: 33-40% is right solo) (crews since 2026-10-25: its solo idle + 5 points a player, tools/balance.js targetIdle)
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
     // (2026-10-16, the infested leviathan's ~4 min fight: ×3 / ×4 need 7 / 9 cells (were 4 / 5) to stay in spec; counts kept.
     //  Model with the boss: 1% 35% 57% 58% idle for 1-4)
-    crew: {events: [5, 5, 5, 6, 8, 8, 10, 15], cells: [4, 4, 7, 9, 10, 10, 12, 14], reactor: [0.35, 0.35, 0.35, 0.35, 0.35, 0.35, 0.7, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // fitted by hand like --calibrate (2026-10-16; --calibrate keeps reactor 1 when nothing is in spec): 7% 44% 64% 64% 65% 71% 67%* 65%* idle for 1-8 players (aim 37.0% solo, 64.0% for 2-8); ×7 / ×8 out of spec (5-19 s waits); solo / ×2 can't get nearer: 6 encounters is the least (spores, mother, grappler, 2 failing parts, the leviathan)
+    crew: {events: [5, 6, 7, 12, 23, 26, 27, 27], cells: [4, 5, 6, 10, 28, 30, 30, 30], reactor: [0.35, 1, 1, 1, 0.6, 0.6, 0.6, 0.6], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 2% 19% 25% 27% 36% 44% 51% 57% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     // at every crew size, solo too: the spore clouds, the spore mother, the grappler, a failing part and the leviathan
     // (2026-10-20, the user: one encounter less, the fight keeps its ~4 min, the mission shorter by that: every crew size -1,

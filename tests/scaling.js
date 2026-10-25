@@ -79,16 +79,17 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   check(P.mission.jumpAt === Infinity && !P.mission.events.length && near(P.reactorSpeed(), 1), 'practice: no timeline, no jump, the reactor at ENERGY_TIME');
 }
 // --- chapters 1-3 (2026-10-16: still too easy solo): a part fails (one maintenance event) at every crew size, solo too
-// (MISSIONS[id].always), on top of what the crew size had; easy / very easy keep it too
+// (MISSIONS[id].always), on top of what the crew size had; easy / very easy keep it too (exactly one solo; crews, busier
+// since 2026-10-25, can get a repeat)
 {
   let ok = true; const msg = [];
   for (const id of ['c1', 'c2', 'c3']) for (const n of [1, 2, 3, 4, 8]) for (const easy of [0, 2]) {
     const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(11); try { G.startMission(id, { easy }); } finally { Math.random = keep; }
     const m = G.mission.events.filter(e => e.kind === 'maintenance').length;
-    if (!(m >= 1 && (n > 2 || m === 1))) { ok = false; msg.push(`${id} ×${n}${easy ? ' easy ' + easy : ''}: ${m}`); }
+    if (!(m >= 1 && (n > 1 || m === 1))) { ok = false; msg.push(`${id} ×${n}${easy ? ' easy ' + easy : ''}: ${m}`); }
   }
-  check(ok && ['c1', 'c2', 'c3'].every(id => G0.MISSIONS[id].always?.includes('maintenance')), `chapters 1-3: a part fails at every crew size, exactly one for 1-2 players, also on very easy${msg.length ? ' (' + msg.join(', ') + ')' : ''}`);
+  check(ok && ['c1', 'c2', 'c3'].every(id => G0.MISSIONS[id].always?.includes('maintenance')), `chapters 1-3: a part fails at every crew size, exactly one solo, also on very easy${msg.length ? ' (' + msg.join(', ') + ')' : ''}`);
 }
 // --- chapter 2 (the user's playtest: too easy solo): opener (the asteroid swarm; 2026-10-16 no more interceptor), the two aliens, a failing part
 // (2026-10-16), the frigate as the finale, 70 s before the jump (finaleLead) so its heavy shots matter; other missions keep
@@ -146,7 +147,7 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
 }
 // --- 2026-10-20 (solo playtest: one more encounter, an easy one): c4 solo gets a second failing part (crew.extra, a repeat on
 // top of the count; the count's next pick would have been the mine drone); easy takes it out again, very easy then half a
-// cat of luck; ×2 keeps its five
+// cat of luck; ×2 (busier since 2026-10-25) starts the same way and has both raiders
 {
   const run = (n, easy, seed) => { const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(seed); try { G.startMission('c4', { easy }); } finally { Math.random = keep; }
@@ -154,19 +155,19 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   const SOLO = 'interceptor, pirates, maintenance, pirates, maintenance, swarm', BASE = 'interceptor, pirates, maintenance, pirates, swarm', bad = [];
   for (let seed = 1; seed <= 8; seed++) { const s = run(1, 0, seed); if (s.k !== SOLO) bad.push(`seed ${seed}: ${s.k}`); }
   const e1 = run(1, 1, 5), e2 = run(1, 2, 5), two = run(2, 0, 5);
-  check(!bad.length && e1.k === BASE && e1.luck === 0 && e2.k === BASE && e2.luck === 0.5 && two.k === BASE,
+  check(!bad.length && e1.k === BASE && e1.luck === 0 && e2.k === BASE && e2.luck === 0.5 && two.k.startsWith('interceptor, pirates') && two.k.split('pirates').length >= 3,
         `c4 solo: ${SOLO}; easy: ${e1.k} (luck ${e1.luck}); very easy: ${e2.k} (luck ${e2.luck}); ×2: ${two.k}${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
 }
 // --- The Deep (c7): one gravity tide, 70 s in (it knocks a coil out), the handle by hand, herds of two organic kinds
 // from one side, no interceptors; solo gets a herd (the finale fight), both failing parts and (2026-10-17, "too chill") the
-// alien, early, at every crew size; solo a spore mother on top (2026-10-20)
+// alien, early, at every crew size (bigger crews, busier since 2026-10-25, can get a second later); solo a spore mother on top (2026-10-20)
 {
   const R = G0.MISSIONS.c7.rules; let ok = R.tides > 0 && R.coils && R.handle; const msg = [];
   for (const n of [1, 2, 4, 8]) {
     const G = withCrew(n, 'c7', 5), ev = [...G.mission.events].sort((a, b) => a.t - b.t), herds = ev.filter(e => e.kind === 'herd');
     const good = herds.length >= 1 && herds.every(h => h.kinds?.length === 2 && h.kinds[0] !== h.kinds[1] && h.kinds.every(k => ['grappler', 'leeches', 'mother', 'spores'].includes(k)) && h.side)
       && ev[ev.length - 1].kind !== 'maintenance' && ev.filter(e => e.kind === 'maintenance').length >= 2 && (n < 4 || herds.length >= 2)
-      && ev.filter(e => e.kind === 'intruder').length === 1 && ev.findIndex(e => e.kind === 'intruder') < ev.findIndex(e => e.kind === 'herd') && ev.length === G0.MISSIONS.c7.crew.events[n - 1] + (G0.MISSIONS.c7.crew.extra?.mother?.[n - 1] || 0)
+      && ev.filter(e => e.kind === 'intruder').length >= 1 && ev.findIndex(e => e.kind === 'intruder') < ev.findIndex(e => e.kind === 'herd') && ev.length === G0.MISSIONS.c7.crew.events[n - 1] + (G0.MISSIONS.c7.crew.extra?.mother?.[n - 1] || 0)
       && (n > 1 || ev.some(e => e.kind === 'mother'));   // (solo: + a spore mother, 2026-10-20 playtest)
     if (!good) ok = false;
     msg.push(`×${n}: ${ev.map(e => e.kind === 'herd' ? `herd(${e.kinds.join('+')})` : e.kind).join(', ')}`);
@@ -286,28 +287,36 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
 
 // --- the balance model: rates every mission for 1-4 players (its A.RUNS builds, as --calibrate fits them), with the
 // expected kit (tools/balance.js expectedKit: the gear and upgrades a first-time campaign run affords by then); the idle
-// targets (2026-10-18): solo 29.6% (the solo average of chapters 1-5 with fire spreading), 2-8 players 45%, no ramp; a mission's
-// own (MISSIONS[id].balance), kept until more playtesting: chapters 6-8 and their twins 37% solo, Nightmare 25%, their crews
-// the old ramped aims (64-66%); the energy in spec where it must be
+// targets: solo 29.6% (2026-10-18: the solo average of chapters 1-5 with fire spreading), no ramp, a mission's own
+// (MISSIONS[id].balance.soloIdle): chapters 6-8 and their twins 37% solo, Nightmare 25%; crews (2026-10-25, the user: "only
+// slightly higher idle, rising by ~5% per player, always strictly larger"): the mission's solo idle as built (at least 10%)
+// + 5 points per extra player; the energy in spec where it must be
 {
-  const { balance, targetIdle, PROGRESSION } = require('../tools/balance');
+  const { balance, targetIdle, PROGRESSION, A } = require('../tools/balance');
   const t0 = Date.now();
   const rows = balance({ players: [1, 2, 3, 4] });
   check(rows.length === 16 * 4 && rows.every(r => r.verdict && Number.isFinite(r.score) && r.sides.length === 3), `tools/balance.js rates ${rows.length / 4} missions × 4 crew sizes (${((Date.now() - t0) / 1000).toFixed(0)} s)`);
   const pct = (v) => Math.round(v * 100);
-  // the targets: 29.6% solo / 45% for 2+ players everywhere, except the missions with their own (not retuned yet)
-  const own = { c6: [0.37, 0.65], c7: [0.37, 0.645], c8: [0.37, 0.64], ore: [0.37, 0.66], deep: [0.37, 0.645], nightmare: [0.25, 0.64] };
-  check(ALL.every(id => near(targetIdle(id, 1), own[id]?.[0] ?? 0.296) && near(targetIdle(id, 2), own[id]?.[1] ?? 0.45) && near(targetIdle(id, 8), own[id]?.[1] ?? 0.45))
+  // the targets: 29.6% solo everywhere, except the missions with their own; crews: the solo row's idle (≥ 10%) + 5 points a player
+  const own = { c6: 0.37, c7: 0.37, c8: 0.37, ore: 0.37, deep: 0.37, nightmare: 0.25 };
+  const soloRow = (id) => rows.find(r => r.id === id && r.n === 1);
+  check(A.CREW_STEP === 0.05 && ALL.every(id => near(targetIdle(id, 1), own[id] ?? 0.296) && [2, 3, 4, 8].every(n => near(targetIdle(id, n), Math.max(soloRow(id).idle, 0.1) + 0.05 * (n - 1), 0.005)))
         && ALL.every(id => PROGRESSION[id] !== undefined),
-        `the idle targets: 29.6% solo, 45% for 2+ players, no ramp; own targets: ${Object.entries(own).map(([id, [a, b]]) => `${id} ${a * 100} / ${b * 100}%`).join(', ')}`);
+        `the idle targets: 29.6% solo, no ramp (own: ${Object.entries(own).map(([id, a]) => `${id} ${a * 100}%`).join(', ')}); crews: the solo idle (≥ 10%) + 5 points a player`);
+  // always strictly idler with one more player (the rating's own builds: at least half a point up)
+  const fall = ALL.filter(id => id !== 'c5').flatMap(id => [2, 3, 4].map(n => [rows.find(r => r.id === id && r.n === n - 1), rows.find(r => r.id === id && r.n === n)]).filter(([a, b]) => !(b.idle > a.idle + 0.005)).map(([a, b]) => `${id} ×${a.n} ${pct(a.idle)}% → ×${b.n} ${pct(b.idle)}%`));
+  check(!fall.length, `every mission (c5 set by hand) leaves each crew size idler than the one below${fall.length ? ': not ' + fall.join(', ') : ''}`);
   // Out of spec even with every prerequisite the player can have by then (see the balance section in PLAN.md).
   // (with the kit: c6 ×3 waits 27 s at 235 s (the drifting rock's two drill trips); Nightmare solo / ×2 have 3 encounters for the
   // solo targets; 2026-10-16, tides and herds: c7 / Deep drift ×4 (a herd's two fights on one side); c8 back in spec for 1-4 with a ×0.35 reactor)
   // 2026-10-18 (recalibrated: shaped timeline, 5 min): intro ×4 (12 s at 220 s) and c2 ×4 (8 s at 44 s) the nearest the fit gets
-  const OUT = { rush: [1, 2, 3, 4], deep: [4], nightmare: [1, 2, 3, 4], c6: [3], c7: [4], intro: [4], c2: [4] };
+  // 2026-10-25 (busier crews: the solo idle + 5 points a player): the base ship's energy for intro ×3 (13 s at 208 s) and c2
+  // ×2 / ×3 (the opener's front cannon, a shield at 150 s); c7 ×1 (playtested) / ×3 and c8 ×2-4: two fights on one cannon
+  // at once (all three energy upgrades and overcharge already; a faster reactor doesn't help)
+  const OUT = { rush: [1, 2, 3, 4], deep: [4], nightmare: [1, 2, 3, 4], c6: [3], c7: [1, 3], c8: [2, 3, 4], intro: [3], c2: [2, 3] };
   // FIXED: the user's fixed minimum (c8, 2026-10-16: the spore clouds, the spore mother, the grappler, two failing parts and
   // the leviathan at every crew size) is more work than the target for 1-2 players: kept out of the target checks below
-  const FIXED = { c8: [1, 2] };
+  const FIXED = { c8: [1] };   // (×2 too until 2026-10-25: the crews are fitted since, busier)
   const early = rows.filter(r => ['intro', 'c1', 'c2'].includes(r.id));
   check(early.every(r => (r.inSpec || (OUT[r.id] || []).includes(r.n)) && !G0.MISSIONS[r.id].needs), `the early missions (intro, chapters 1-2) are in spec on the base ship for 1-4 players (but OUT)${early.filter(r => !r.inSpec).map(r => `; not ${r.name} ×${r.n}: ${r.specWhy}`).join('')}`);
   const out = rows.filter(r => !r.inSpec && !(OUT[r.id] || []).includes(r.n));
@@ -345,14 +354,16 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   check(!off.length && Math.abs(bias) <= 0.04, `solo, every other mission within 8 points of its target, ${(bias * 100).toFixed(1)} points off on average: ${fit.map(r => `${r.id} ${pct(r.idle)}/${(r.aim * 100).toFixed(1)}`).join(', ')}${off.map(r => `; OFF: ${r.id}`).join('')}`);
   const short = solo.filter(r => SHORT.includes(r.id));
   check(short.every(r => r.idle < r.aim && r.events <= 6 && (r.verdict !== 'impossible' || playtested(r))), `solo, the essentials-only missions sit below their targets but stay doable: ${short.map(r => `${r.id} ${pct(r.idle)}% (${r.events} encounters, ${r.verdict})`).join(', ')}`);
-  // 2-4 players: around the 45% target (own targets: 64-66%; the event count is finer here: ~3-6 points per encounter)
+  // 2-4 players: around the target (the solo idle + 5 points a player; the event count is finer here: ~3-6 points per encounter)
   const team = [...new Set(rows.map(r => r.id))].filter(id => !PENDING.includes(id)).map(id => {
-    const rs = rows.filter(r => r.id === id && r.n > 1 && !(OUT[id] || []).includes(r.n) && !(FIXED[id] || []).includes(r.n));
+    // (Deep drift: its 4th encounter, a herd, takes 25-30 points: for 3-4 players it would be less idle than the crew
+    // below, so they stay at 3, idler than the target)
+    const rs = rows.filter(r => r.id === id && r.n > 1 && !(OUT[id] || []).includes(r.n) && !(FIXED[id] || []).includes(r.n) && !(id === 'deep' && r.n > 2));
     const dev = rs.length ? rs.reduce((s, r) => s + r.idle - r.aim, 0) / rs.length : 0;
     // (missions in spec only at ×2 — deep drift, nightmare, c7, c8 — have 1-2 heavy encounters there: one more is 10-45 points)
     return { id, ok: (rs.length < 2 || Math.abs(dev) <= 0.07) && rs.every(r => Math.abs(r.idle - r.aim) <= 0.15), per: rs.map(r => pct(r.idle)).join('/'), aim: (targetIdle(id, 2) * 100).toFixed(1) };
   });
-  check(team.every(o => o.ok), `2-4 players: every mission near its target (45%, own targets 64-66%; each within 15 points, a mission's mean within 7): ${team.map(o => `${o.id} ${o.per || '-'}/${o.aim}${o.ok ? '' : ' OFF'}`).join(', ')}`);
+  check(team.every(o => o.ok), `2-4 players: every mission near its target (the solo idle + 5 points a player; each within 15 points, a mission's mean within 7): ${team.map(o => `${o.id} ${o.per || '-'}/${o.aim}${o.ok ? '' : ' OFF'}`).join(', ')}`);
   check(rows.every(r => Math.abs(r.length - (G0.MISSIONS[r.id].length || L)) < 5), `every mission jumps at about ${L} s (or its own length: c5 ${G0.MISSIONS.c5.length} s) for every crew size`);
   const bad = rows.filter(r => r.verdict === 'impossible' && !(OUT[r.id] || []).includes(r.n) && !playtested(r));
   check(!bad.length, `no other mission is rated impossible${bad.map(r => `; ${r.name} ×${r.n} (${r.why.join('; ')})`).join('')}`);

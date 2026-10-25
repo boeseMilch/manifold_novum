@@ -129,9 +129,13 @@ const A = {
   TARGET_IDLE: 0.296,     // --calibrate: the share of crew time the event counts aim to leave free, solo …
                           // (2026-10-18, with fire spreading in the model: the solo average of chapters 1-5 as they were then;
                           // was 0.56 − 0.005 per step; 0.70 before the 2026-10-14 playtest)
-  TARGET_IDLE_CREW: 0.45, // … and for 2-8 players (2026-10-18: busier crews, between the old 0.68 and solo + 2 points; --target sets both)
+  TARGET_IDLE_CREW: 0.45, // … and for 2-8 players with --target (the old flat crew target, 2026-10-18 to 2026-10-25)
+  CREW_STEP: 0.05,        // 2-8 players (2026-10-25, the user: "only slightly higher idle, rising by ~5% per player, always strictly
+                          // larger"): the mission's own solo idle (as built and playtested) + this per extra player …
+  SOLO_FLOOR: 0.10,       // … counted from at least this (c7 solo is -12%: more work than one can do, playtested as fine)
+  CREW_RISE: 0.01,        // --calibrate: a crew's idle is at least this above the next smaller crew's
   TARGET_RAMP: 0,         // … minus this per step in PROGRESSION (was 0.005: a difficulty ramp; off since 2026-10-18)
-                          // a mission can set its own: MISSIONS[id].balance = { soloIdle, crewIdle } (no ramp then)
+                          // a mission can set its own solo target: MISSIONS[id].balance = { soloIdle } (no ramp then)
   // the expected kit (expectedKit): what a first-time campaign run can afford by each chapter
   BOUNTY_PIRATES: 2,      // pirates paid for in a mission with a bounty (rewards.perPirate): modest, the two raiders' worth
   GEAR_ORDER: ['boots', 'firstAid', 'thrusters', 'stim'],   // bought in this order, each as soon as the money allows (general
@@ -143,7 +147,8 @@ const A = {
   SPEC_IDLE_SLACK: 0.07,  // --calibrate: how far from the idle target a neighbouring event count may be to get the energy in spec
   SPEC_WAIT: 2,
   SPEC_FINALE: 5,         // s before the jump: a wait that starts this late is the finale's, it doesn't count
-  REACTOR_STEPS: [0.85, 0.7],          // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites …
+  REACTOR_STEPS: [0.85, 0.7, 0.6, 0.5, 0.4],   // --calibrate: faster reactors tried (× ENERGY_TIME) before prerequisites (to 0.4 since
+                          // 2026-10-25: the busier crews' energy; c8 solo already ran ×0.35) …
   REACTOR_STEPS_EARLY: [0.85, 0.7, 0.6, 0.5, 0.4, 0.3],   // … and for the early missions, which have to be in spec on the base ship           // s a cannon may wait for its next energy and still count as in spec
   CAL_RUNS: 10,           // --calibrate: random builds per mission and crew size while searching (= RUNS: what the summary rates)
   OPTIONAL_IDLE: 0.6,     // optional jobs (fuel canister) are only done when the crew is below this load
@@ -163,11 +168,19 @@ const SKIRMISH_ORDER = ['intro', 'rush', 'ore', 'pirates', 'salvage', 'rescue', 
 // sits with the chapter that comes up when it unlocks (ore / salvage after chapter 3 → step 4, pirate cove
 // after 4 → 5, rescue after 5 → 6, deep drift after 6 → 7, nightmare after 7 → 8). See unlockedMissions().
 const PROGRESSION = { intro: 0, c1: 1, c2: 2, rush: 2, c3: 3, ore: 4, salvage: 4, c4: 4, pirates: 5, c5: 5, rescue: 6, c6: 6, deep: 7, c7: 7, nightmare: 8, c8: 8 };
-// A mission's own target (MISSIONS[id].balance: { soloIdle, crewIdle }) wins: chapters 6-8 solo 37% (the user: 33-40% is
-// right solo), challenge missions lower (Nightmare solo 25%).
+// A mission's own solo target (MISSIONS[id].balance.soloIdle) wins: chapters 6-8 solo 37% (the user: 33-40% is right solo),
+// challenge missions lower (Nightmare solo 25%). Crews (2026-10-25): what solo actually gets in that mission (soloIdle: its
+// crew.events[0] etc. as built, with the expected kit), at least SOLO_FLOOR, + CREW_STEP per extra player. (--target: flat.)
+let flatTargets = false;
+const soloMemo = new Map();
+function soloIdle(id) {
+  if (!soloMemo.has(id)) { const rs = []; for (let k = 0; k < A.RUNS; k++) rs.push(runOne(id, 1, k)); soloMemo.set(id, rs.reduce((s, r) => s + r.idle, 0) / rs.length); }
+  return soloMemo.get(id);
+}
 const targetIdle = (id, n) => {
-  const B = game().MISSIONS[id]?.balance || {}, own = n > 1 ? B.crewIdle : B.soloIdle;
-  return own ?? (n > 1 ? A.TARGET_IDLE_CREW : A.TARGET_IDLE) - A.TARGET_RAMP * (PROGRESSION[id] ?? 0);
+  const B = game().MISSIONS[id]?.balance || {};
+  if (n <= 1 || flatTargets) return (n > 1 ? null : B.soloIdle) ?? (n > 1 ? A.TARGET_IDLE_CREW : A.TARGET_IDLE) - A.TARGET_RAMP * (PROGRESSION[id] ?? 0);
+  return Math.max(soloIdle(id), A.SOLO_FLOOR) + A.CREW_STEP * (n - 1);
 };
 
 // ===========================================================================
@@ -1439,6 +1452,50 @@ function fitCells(id, n, ship, oc, events, runs, reactor = 1) {
   }
   return A.AMPLE_CELLS;
 }
+// One crew size's event count, cells and reactor: the count nearest the aim (fitEvents), else a neighbouring count in spec
+// (within A.SPEC_IDLE_SLACK of the aim), else a faster reactor (within reason; further, and at the neighbouring counts
+// too, for the early missions), else a neighbouring count in spec however far off. Solo keeps the mission's own
+// numbers (crew.events[0] / cells / reactor: playtested) when it has them; a bigger crew never gets fewer events and
+// is always idler than the next smaller one (by A.CREW_RISE), above everything else.
+function fitSize(id, n, ship, oc, runs, per) {
+  const C = game().MISSIONS[id].crew, aim = targetIdle(id, n);
+  const tryIt = (k, reactor, cells) => {
+    cells = cells ?? fitCells(id, n, ship, oc, k, runs, reactor);
+    const rs = evalAt(id, n, { events: k, cells, overcharge: oc, reactor }, ship, runs);
+    return { events: k, cells, reactor, idle: meanIdle(rs), spec: rs.every(r => r.spec.ok), why: rs.find(r => !r.spec.ok)?.spec.why || '', doable: rs.filter(r => r.verdict === 'impossible').length * 2 < rs.length };
+  };
+  if (n === 1 && !flatTargets && C?.events?.[0]) return { pick: tryIt(C.events[0], C.reactor?.[0] ?? 1, C.cells?.[0]), aim };
+  const minK = per[n - 1]?.events || 1, prev = per[n - 1]?.idle ?? -Infinity, rises = (p) => p.idle >= prev + A.CREW_RISE;
+  const near = (p) => Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK, ev = fitEvents(id, n, ship, oc, runs, minK), tried = [];
+  const off = (p) => Math.abs(p.idle - aim), nearest = (ps) => ps.sort((a, b) => off(a) - off(b))[0];
+  let pick = null;
+  for (const d of [0, -1, 1, -2, 2]) {
+    const k = ev.events + d;
+    if (k < minK) continue;
+    const p = tryIt(k, 1);
+    tried.push(p);
+    if (p.spec && rises(p) && near(p)) { pick = p; break; }
+  }
+  if (!tried.length) tried.push(tryIt(minK, 1));        // (all of them below the smaller crew's count)
+  for (let k = Math.min(...tried.map(p => p.events)) - 1; !tried.some(rises) && k >= minK; k--) tried.push(tryIt(k, 1));   // (fewer: idler)
+  if (!pick) {                                         // none in spec near the aim: faster reactors, then the best of everything tried
+    const p0 = nearest(tried.filter(rises)) || tried[0];
+    const ks = EARLY.includes(id) ? [0, -1, 1, -2, 2].map(d => p0.events + d).filter(k => k >= minK) : [p0.events];
+    for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {   // (the mildest step that gets near the aim)
+      for (const k of ks) tried.push(tryIt(k, r));
+      if (tried.some(p => p.spec && rises(p) && near(p))) break;
+    }
+    // of those not rated impossible (a crew): in spec near the aim; in spec within 15 points (solo: anywhere); the nearest;
+    // else the nearest of all; else (none rises) the idlest
+    const up = tried.filter(p => rises(p) && (p.doable || n === 1)), wide = (p) => n === 1 || Math.abs(p.idle - aim) <= 0.15;
+    pick = nearest(up.filter(p => p.spec && near(p))) || nearest(up.filter(p => p.spec && wide(p))) || nearest(up) || nearest(tried.filter(rises))
+      || [...tried].sort((a, b) => b.idle - a.idle)[0];
+  }
+  // solo: out of spec and off the aim too: a neighbouring count in spec, however far off, beats it (one encounter more or
+  // less is 15-40 points: c7 / Deep drift solo, 2 encounters 26 % / 18 % and out of spec, 1: 63 %)
+  if (n === 1 && !pick.spec && !near(pick)) { const ok = nearest(tried.filter(p => p.spec && rises(p))); if (ok) pick = ok; }
+  return { pick, aim };
+}
 function fitMission(id, opts = {}) {
   const keep = FIT_KIT, memo = schedMemo; FIT_KIT = kitOf(id, opts); schedMemo = new WeakMap();
   try { return FIT_KIT ? fitWithKit(id, opts) : fitBase(id, opts); } finally { FIT_KIT = keep; schedMemo = memo; }
@@ -1447,34 +1504,7 @@ function fitMission(id, opts = {}) {
 function fitAllFor(id, ship, oc, runs, log) {
   const ns = [1, 2, 3, 4, 5, 6, 7, 8], per = {};
   for (const n of ns) {
-    const minK = per[n - 1]?.events || 1;                         // (a bigger crew never gets fewer events)
-    const ev = fitEvents(id, n, ship, oc, runs, minK), aim = targetIdle(id, n);
-    let pick = null;
-    const tried = [];
-    const tryIt = (k, reactor) => {
-      const cells = fitCells(id, n, ship, oc, k, runs, reactor), rs = evalAt(id, n, { events: k, cells, overcharge: oc, reactor }, ship, runs);
-      return { events: k, cells, reactor, idle: meanIdle(rs), spec: rs.every(r => r.spec.ok), why: rs.find(r => !r.spec.ok)?.spec.why || '' };
-    };
-    for (const d of [0, -1, 1, -2, 2]) {
-      const k = ev.events + d;
-      if (k < minK) continue;
-      const p = tryIt(k, 1);
-      tried.push(p);
-      if (!pick) pick = p;
-      if (p.spec && Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK) { pick = p; break; }
-    }
-    if (!pick.spec) {
-      const ks = EARLY.includes(id) ? [0, -1, 1, -2, 2].map(d => ev.events + d).filter(k => k >= minK) : [ev.events];
-      let best = null;
-      for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {
-        for (const k of ks) { const p = tryIt(k, r); if (p.spec && (!best || Math.abs(p.idle - aim) < Math.abs(best.idle - aim))) best = p; }
-        if (best && Math.abs(best.idle - aim) <= A.SPEC_IDLE_SLACK) break;
-      }
-      if (best) pick = best;
-    }
-    // out of spec and more than A.SPEC_IDLE_SLACK off the aim too: a neighbouring count in spec, however far off, beats it
-    // (solo, one encounter more or less is 15-40 points: c7 / Deep drift solo, 2 encounters 26 % / 18 % and out of spec, 1: 63 %)
-    if (!pick.spec && Math.abs(pick.idle - aim) > A.SPEC_IDLE_SLACK) { const ok = tried.filter(p => p.spec).sort((a, b) => Math.abs(a.idle - aim) - Math.abs(b.idle - aim))[0]; if (ok) pick = ok; }
+    const { pick, aim } = fitSize(id, n, ship, oc, runs, per);
     per[n] = { ...pick, aim };
     log(`  ${id} ×${n}: ${per[n].events} events, ${per[n].cells} cells,${per[n].reactor !== 1 ? ` reactor ×${per[n].reactor},` : ''} idle ${Math.round(per[n].idle * 100)}%, ${per[n].spec ? 'in spec' : 'out of spec: ' + per[n].why}${oc ? ' (overcharged)' : ''}${Object.keys(ship).length ? ' [' + Object.keys(ship).join(', ') + ']' : ''}`);
   }
@@ -1515,31 +1545,7 @@ function fitBase(id, opts = {}) {
   const fitAll = (ship, oc) => {
     const per = {};
     for (const n of ns) {
-      const minK = per[n - 1]?.events || 1;                       // (a bigger crew never gets fewer events)
-      const ev = fitEvents(id, n, ship, oc, runs, minK), aim = targetIdle(id, n);
-      // out of spec at that count: a neighbouring count that is in spec (within A.SPEC_IDLE_SLACK idle) is better
-      let pick = null;
-      const tryIt = (k, reactor) => {
-        const cells = fitCells(id, n, ship, oc, k, runs, reactor), rs = evalAt(id, n, { events: k, cells, overcharge: oc, reactor }, ship, runs);
-        return { events: k, cells, reactor, idle: meanIdle(rs), spec: rs.every(r => r.spec.ok), why: rs.find(r => !r.spec.ok)?.spec.why || '' };
-      };
-      for (const d of [0, -1, 1, -2, 2]) {
-        const k = ev.events + d;
-        if (k < minK) continue;
-        const p = tryIt(k, 1);
-        if (!pick) pick = p;
-        if (p.spec && Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK) { pick = p; break; }
-      }
-      // still short: a faster reactor (within reason; further, and at the neighbouring counts too, for the early missions)
-      if (!pick.spec) {
-        const ks = EARLY.includes(id) ? [0, -1, 1, -2, 2].map(d => ev.events + d).filter(k => k >= minK) : [ev.events];
-        let best = null;
-        for (const r of EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS) {   // (the mildest step that gets near the aim; else the nearest of all)
-          for (const k of ks) { const p = tryIt(k, r); if (p.spec && (!best || Math.abs(p.idle - aim) < Math.abs(best.idle - aim))) best = p; }
-          if (best && Math.abs(best.idle - aim) <= A.SPEC_IDLE_SLACK) break;
-        }
-        if (best) pick = best;
-      }
+      const { pick, aim } = fitSize(id, n, ship, oc, runs, per);
       per[n] = { ...pick, aim };
       log(`  ${id} ×${n}: ${per[n].events} events, ${per[n].cells} cells,${per[n].reactor !== 1 ? ` reactor ×${per[n].reactor},` : ''} idle ${Math.round(per[n].idle * 100)}%, ${per[n].spec ? 'in spec' : 'out of spec: ' + per[n].why}${oc ? ' (overcharged)' : ''}${Object.keys(ship).length ? ' [' + Object.keys(ship).join(', ') + ']' : ''}`);
     }
@@ -1583,7 +1589,7 @@ function main() {
     else if (args[i] === '--calibrate') opts.fit = true;
     else if (args[i] === '--rates') opts.rates = true;
     else if (args[i] === '--energy') ENERGY = args[++i];   // --energy game: the energy runs on the game's own code (slow; to check the fast one)
-    else if (args[i] === '--target') A.TARGET_IDLE = A.TARGET_IDLE_CREW = +args[++i];
+    else if (args[i] === '--target') { A.TARGET_IDLE = A.TARGET_IDLE_CREW = +args[++i]; flatTargets = true; }
     else if (args[i] === '--base') opts.prereq = false;          // ignore the missions' prerequisites (base ship)
     else if (args[i] === '--kit') { if (args[++i] === 'none') opts.kit = null; }   // --kit none: no gear / bought upgrades (the old model)
     else ids.push(args[i]);
@@ -1623,7 +1629,7 @@ function main() {
       if (ns.some(n => P[n].reactor !== 1)) crew.reactor = ns.map(n => P[n].reactor);
       if (f.needs.overcharge) crew.overcharge = ns.map(() => true);
       const needs = f.needs.ship.length || f.needs.overcharge ? `, needs: ${JSON.stringify(f.needs).replace(/"(\w+)":/g, '$1: ').replace(/"/g, "'")}` : '';
-      console.log(`  ${f.id}: crew: ${JSON.stringify(crew).replace(/"(\w+)":/g, '$1: ')}${needs}   // --calibrate${f.kit ? ' (expected kit)' : ''}: ${ns.map(n => `${Math.round(P[n].idle * 100)}%`).join(' ')} idle for 1-8 players (aim ${(P[1].aim * 100).toFixed(1)}% solo, ${(P[2].aim * 100).toFixed(1)}% for 2-8)${[1, 2, 3, 4].some(n => !P[n].spec) ? '; OUT OF SPEC: ' + [1, 2, 3, 4].filter(n => !P[n].spec).map(n => `×${n} ${P[n].why}`).join('; ') : ''}${f.baseWhy ? '; ' + f.baseWhy : ''}`);
+      console.log(`  ${f.id}: crew: ${JSON.stringify(crew).replace(/"(\w+)":/g, '$1: ')}${needs}   // --calibrate${f.kit ? ' (expected kit)' : ''}: ${ns.map(n => `${Math.round(P[n].idle * 100)}%`).join(' ')} idle for 1-8 players (aim ${(P[1].aim * 100).toFixed(1)}% solo, ${ns.slice(1).map(n => (P[n].aim * 100).toFixed(0)).join(' ')}% for 2-8)${[1, 2, 3, 4].some(n => !P[n].spec) ? '; OUT OF SPEC: ' + [1, 2, 3, 4].filter(n => !P[n].spec).map(n => `×${n} ${P[n].why}`).join('; ') : ''}${f.baseWhy ? '; ' + f.baseWhy : ''}`);
     }
     return;
   }

@@ -3976,3 +3976,24 @@ map was decoded and uploaded to the GPU synchronously as it arrived: 150-240 ms 
   the base docks. Everything at once would be ~3 GB of textures, so only what the timeline can spawn; a kind
   missing from `EVENT_GFX` still loads when first drawn, now without the stall.
 - (`GFX.manifest` is always null: `Object.assign` copied the getter's value at startup. Not relied on.)
+
+### Crews: only a little idler than solo, +5 points a player (2026-10-25, tools/balance.js, js/mission.js, js/progress.js)
+Solo is balanced by playtest (and the model rates it busier than its 29.6 % target: c1-c4 at 5-18 % idle), so the old flat
+45 % crew target left crews far chiller than solo. The user: "target only slightly higher idle percentages, rising by ~5%
+per player, but always strictly larger".
+- `targetIdle(id, n)` for 2-8 players: the mission's own solo idle as built (`soloIdle`: its crew.events[0] etc. with the
+  expected kit; at least `SOLO_FLOOR` 10 %, for c7's playtested −12 %) + `CREW_STEP` 5 points per extra player. The
+  per-mission `balance.crewIdle` overrides are gone (`--target x` still sets a flat target for both).
+- `--calibrate` keeps solo exactly as written (playtested) and fits 2-8 (`fitSize`, shared by both fit paths): each crew
+  size at least `CREW_RISE` (1 point) idler than the one below and never fewer events. Choice when the nearest count
+  isn't in spec: a faster reactor (for later missions now down to ×0.4, was ×0.7), then — among counts not rated
+  impossible — in spec within 15 points, else the nearest. ("In spec however far off" is solo-only now: it made c2
+  jump from 7 to 23 encounters between 6 and 7 players.)
+- Result (2 / 3 / 4 players, % idle): c1 23/35/44, c2 21/26/31, c3 22/23/25, c4 11/18/34, c6 16/21/27, c7 22/23/29,
+  c8 19/25/27; skirmishes similar. Chapter 5 is untouched (set by hand; the model doesn't see the base's guards).
+- New energy shortfalls accepted (tests/scaling.js OUT): intro ×3 and c2 ×2-3 on the base ship (no prerequisites allowed
+  that early), c7 ×3 and c8 ×2-4 (two fights on one cannon; every energy upgrade and overcharge already). Stranded
+  engineer now needs the capacitors (a cannon waited 11-25 s for 2-4 players without). Deep drift / Nightmare are coarse
+  (one more encounter is 25-40 points): their crews stay at 3 encounters, idler than the target, to keep rising.
+- Structural tests relaxed where they assumed 2 players get solo's timeline: c1 / c3 exactly one failing part solo only,
+  c4 ×2 starts like solo with both raiders, c7 may give big crews a second alien.
