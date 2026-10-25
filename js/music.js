@@ -478,6 +478,7 @@ const music = (() => {
     if (ended || ending) song = s; else begin(s);
   }
   function tick() {
+    if (rec && ac && vnow === null) { recTick(); return; }   // a recording plays instead (js/music.js "recordings")
     if (!ac || ended || silent()) return;
     const t = now();
     if (nextT < t - 0.05) shift(t + 0.03 - nextT);     // fell behind (throttled timer): pick up from now
@@ -772,6 +773,130 @@ const music = (() => {
     song.hooks.finale?.({ T, c, v, sd });                         // the piece's own last word
   }
 
+  // ---------------------------------------------------------------- recordings
+  // A recorded piece (a Suno song arranged by tools/arrange-music.py; its data in js/music/recorded-<name>.js, its
+  // files in assets/music/<name>/) plays in place of the synthesized piece for its missions (2026-10-25: Pressure
+  // Hull for c7). The synthesized piece stays the fallback (the file can't load or play) and stays in music.html.
+  //   main.mp3 is laid out on the mission clock (setClock: mission.t, which doesn't run exactly at wall-clock speed):
+  //   a small drift is caught up by playing up to 4% faster or slower (same pitch); more than REC_DRIFT s off (a
+  //   pause, joining mid-mission) it's seeked there; past its end (a late jump) its last section loops, wrapped on
+  //   its bar line. jumped(): ending.mp3 (preroll s of silence before its first downbeat) from the first bar line of
+  //   main at least REC_AHEAD s ahead (so at most a bar + 1.6 s after the jump), main fading out under it.
+  // Over http(s) both go through the music bus (mute, level, the tab-hidden pause as for the synth). Opened as a file
+  // the page can't route a local file through WebAudio (Chrome hands it over as silence: another origin), so there the
+  // audio elements play directly: their volume follows the bus level and the mute by hand (stepped per tick).
+  const REC_DRIFT = 1, REC_AHEAD = 1.6, REC_XF = 0.03;   // (REC_XF: main's fade-out at the ending)
+  const RECS = {}, REC_BY_MISSION = {};
+  let rec = null, clock = null;          // rec: the playing recording { R, ending: { at, startAt } | null, ended }; clock: mission s or null
+  // Where main.mp3 is at mission time t (the loop folds late times back into the last section).
+  function recPos(R, t) {
+    const [a, b] = R.loop;
+    return t < b ? Math.max(0, t) : a + (t - a) % (b - a);
+  }
+  // Seconds from position p of main to its first bar line at least `ahead` s on (past the loop's end: in the loop again).
+  function recNextBar(R, p, ahead = REC_AHEAD) {
+    const q = p + ahead, b = R.bars.find(x => x >= q && x <= R.loop[1]);
+    if (b !== undefined) return b - p;
+    const w = R.loop[0] + (q - R.loop[1]);
+    return R.loop[1] - p + R.bars.find(x => x >= w) - R.loop[0];
+  }
+  const direct = () => typeof location !== 'undefined' && location.protocol === 'file:';
+  const recUsable = (R) => R && !R.failed && typeof Audio !== 'undefined' && vnow === null;
+  // A voice: an audio element and its level (through the bus, or the element's own volume, stepped towards `want`).
+  function recVoice(R, src) {
+    const el = new Audio(src), v = { el, want: 0, g: null };
+    el.preload = 'auto'; el.preservesPitch = true;
+    el.addEventListener('error', () => recFail(R));
+    el.addEventListener('playing', () => {         // (it starts after loading: on the clock from there, not from where it was asked to)
+      if (rec && rec.R === R && R.main && el === R.main.el && !rec.ending && clock !== null && Math.abs(el.currentTime - recPos(R, clock)) > 0.15) el.currentTime = recPos(R, clock);
+    });
+    if (!direct() && ac) { v.g = ac.createGain(); v.g.gain.value = 0; ac.createMediaElementSource(el).connect(v.g); v.g.connect(bus); }
+    else el.volume = 0;
+    return v;
+  }
+  function recLevel(v, x, at = 0, tc = 0.04) {     // the voice's level (1: the recording's own level), from `at` s on
+    v.want = x;
+    if (v.g) { const t = ac.currentTime + at; v.g.gain.cancelScheduledValues(t); v.g.gain.setTargetAtTime(x * v.R.gain, t, tc); }
+  }
+  function recStep(v) {                           // (direct: the element's volume towards want × the bus level, unless muted)
+    if (v.g) return;
+    const goal = typeof sfx !== 'undefined' && sfx.muted ? 0 : Math.min(1, v.want * v.R.gain * VOL);
+    v.el.volume = Math.abs(goal - v.el.volume) < 0.02 ? goal : v.el.volume + (goal - v.el.volume) * 0.5;
+  }
+  function recPlay(v) { const p = v.el.play(); if (p && p.catch) p.catch(e => { if (e && (e.name === 'NotAllowedError' || e.name === 'NotSupportedError')) recFail(v.R); }); }   // (AbortError: a pause came first, fine)
+  function recStart(R) {
+    recStop();
+    if (!recUsable(R) || !ac) return false;
+    try {
+      if (!R.main || R.mainAc !== ac) { R.main = recVoice(R, R.src.main); R.end = recVoice(R, R.src.ending); R.main.R = R.end.R = R; R.mainAc = ac; }
+    } catch (e) { R.failed = true; return false; }
+    rec = { R, ending: null, ended: false };
+    R.main.el.currentTime = recPos(R, clock ?? 0); R.end.el.pause(); R.end.el.currentTime = 0;
+    recLevel(R.main, 1, 0, 0.02); recLevel(R.end, 0, 0, 0.01);
+    return true;
+  }
+  function recStop(tc = 0.15) {
+    if (!rec) return;
+    const R = rec.R; rec = null;
+    for (const v of [R.main, R.end]) { recLevel(v, 0, 0, tc); if (!v.g) v.el.volume = 0; setTimeout(() => { if (!rec || rec.R !== R) v.el.pause(); }, tc * 6000); }
+  }
+  function recFail(R) {                           // the synthesized piece takes over from here
+    R.failed = true;
+    if (rec && rec.R === R) { const was = rec; recStop(0.05); if (!was.ended && !was.ending) begin(song); else ended = true; }
+  }
+  function recTick() {
+    const R = rec.R, m = R.main, e = R.end, el = m.el;
+    if (silent()) { el.pause(); e.el.pause(); return; }
+    recStep(m); recStep(e);
+    if (rec.ended) return;
+    if (el.currentTime >= R.loop[1] - 0.012 || el.ended) el.currentTime = R.loop[0] + (el.currentTime - R.loop[1]);   // the loop, on its bar line
+    if (rec.ending) { recEnding(); return; }
+    if (clock !== null) {
+      const d = recPos(R, clock) - el.currentTime;   // (smoothed: a slow frame advances the mission clock in bursts)
+      rec.drift = Math.abs(d) > 3 * REC_DRIFT ? d : (rec.drift || 0) * 0.97 + d * 0.03;
+      if (Math.abs(rec.drift) > REC_DRIFT) { el.currentTime = recPos(R, clock); el.playbackRate = 1; rec.drift = 0; }
+      else el.playbackRate = Math.abs(rec.drift) < 0.1 ? 1 : 1 + Math.max(-0.04, Math.min(0.04, rec.drift * 0.1));   // (catch up gently, same pitch)
+    }
+    if (el.paused) recPlay(m);
+  }
+  // The ending on main's bar line. An audio element starts 0.1-0.3 s after play(), unpredictably, so the ending (its
+  // first preroll s are silence) starts muted as early as that allows (at least REC_AHEAD s ahead) and is steered
+  // onto main's own position by its playback rate (it's silent, the pitch doesn't matter), settled 0.3 s before the
+  // bar line; on the bar line it comes up and main fades out.
+  function recEnding() {
+    const R = rec.R, m = R.main, e = R.end, E = rec.ending, L = R.loop[1] - R.loop[0];
+    let rem = E.bar - m.el.currentTime;                 // s to the bar line (across the loop's wrap)
+    if (rem < -L / 2) rem += L;
+    if (!E.on) {
+      if (m.el.paused) recPlay(m);
+      if (!E.started && rem <= R.preroll) { E.started = true; e.el.currentTime = Math.max(0, R.preroll - rem); recLevel(e, 0, 0, 0.005); recPlay(e); }
+      if (E.started && rem > 0.03) {
+        const err = e.el.currentTime - (R.preroll - rem);
+        e.el.playbackRate = Math.max(0.8, Math.min(1.25, 1 - err / Math.max(0.25, rem - 0.3)));   // (never sharper: a rate change takes a moment to apply)
+        if (e.el.paused) recPlay(e);
+      } else if (E.started) {                          // the bar line (a tick early: the ending's own fade-in is in the file)
+        E.on = true; e.el.playbackRate = 1; recLevel(e, 1, 0, 0.005); recLevel(m, 0, Math.max(0, rem), REC_XF);
+        setTimeout(() => { if (rec && rec.ending === E) m.el.pause(); }, 500);
+      }
+      return;
+    }
+    if (e.el.ended || e.el.currentTime >= e.el.duration - 0.05) { rec.ended = true; ended = true; }
+    else if (e.el.paused) recPlay(e);                   // (back from a hidden tab)
+  }
+  function recJump() {                            // the ending, from main's next bar line at least REC_AHEAD s on
+    const R = rec.R, p = R.main.el.currentTime, d = recNextBar(R, p);
+    R.main.el.playbackRate = 1;                   // (no catching up on the mission clock any more)
+    rec.ending = { bar: recPos(R, p + d), jumpedAt: performance.now() / 1000 };
+  }
+  // The recording for a mission (null: the synthesized piece plays).
+  const recFor = (id) => (recUsable(REC_BY_MISSION[id]) ? REC_BY_MISSION[id] : null);
+  function useRec(R) {                            // play this recording (null: none) from here on
+    if ((rec && rec.R) === R) return;
+    if (!R) { recStop(); return; }
+    if (recStart(R)) { const s = SONGS.find(x => x.name === R.name); if (s) switchTo(s); }
+  }
+  const recOn = () => !!rec && vnow === null;
+
   // ---------------------------------------------------------------- public
   function setSilent() {
     if (!ac) return;
@@ -797,32 +922,47 @@ const music = (() => {
   const info = (s) => ({ name: s.name, title: s.title, bpm: s.bpm, key: s.key + ' minor' /* (every piece is in minor and ends in major) */,
     meter: s.meter === 12 ? '6/8' : s.swing ? '4/4 swing' : '4/4', lead: s.lead, mood: s.mood, missions: s.missions.slice() });
   return {
-    get title() { return song.title; },
+    get title() { return rec ? rec.R.title : song.title; },
     get level() { return stage / 7; },
     get stage() { return stage; },
     get section() { return bar ? (bar.spool ? 'spool' : Math.floor(bar.b / 8) % 2 ? 'B' : 'A') : 'A'; },
     get step() { return step; },
-    get ended() { return ended; },
+    get ended() { return rec ? rec.ended : ended; },
     get arc() { return arc.log.slice(); },                // drops, builds and the breakdown of this run (tests, music.html)
     get bar() { return bar && { b: bar.b, st: bar.st, bk: bar.bk, build: bar.build, drop: bar.drop, layers: Object.keys(song.parts).filter(bar.has).length }; },
     // The planned ending (after jumped()): the final downbeat T, the cadence start, its chord, and the grid.
     get ending() { return ending && { T: ending.T, from: ending.from, cadence: ending.cad.name, jumpedAt: ending.jumpedAt, barDur: ending.bd, startT, bpm: song.bpm, meter: song.meter }; },
-    songOf(id) { return songFor(id).title; },
+    songOf(id) { return (recFor(id) || songFor(id)).title; },
     list() { return SONGS.map(info); },
     pieces: SONGS,                                       // (the compiled score, for tests/music.js)
     define, kit,
     layersAt(name, st) { const s = SONGS.find(x => x.name === name); return Object.keys(s.parts).filter(p => plays(s, p, st)).sort(); },
-    setMission(id) { switchTo(songFor(id)); },
-    setSong(name) { const s = SONGS.find(x => x.name === name); if (s) switchTo(s); },
-    reset() { begin(song); },
+    setMission(id) { const R = recFor(id); if (R && ac) useRec(R); else { useRec(null); switchTo(songFor(id)); } },
+    setSong(name) { useRec(null); const s = SONGS.find(x => x.name === name); if (s) switchTo(s); },   // (a synthesized piece)
+    reset() { if (rec) recStart(rec.R); else begin(song); },
+    // Recordings (js/music/recorded-<name>.js): register one; list them; play one (music.html); the mission clock.
+    record(r) { const R = { ...r, src: { main: r.main, ending: r.ending } }; delete R.main; delete R.ending; RECS[R.name] = R; for (const id of R.missions) REC_BY_MISSION[id] = R; return R; },
+    recordings() { return Object.values(RECS).map(R => ({ name: R.name, title: R.title, missions: R.missions.slice(), length: R.length, sections: R.sections.slice() })); },
+    playRecording(name) { const R = RECS[name]; if (recUsable(R) && ac) useRec(R); return !!rec; },
+    setClock(t) { clock = t === null || t === undefined || !isFinite(t) ? null : +t; },
+    // The playing recording (null: a synthesized piece): its position in main.mp3, the section there, the ending.
+    get recording() {
+      if (!rec) return null;
+      const R = rec.R, p = R.main ? R.main.el.currentTime : 0, sec = [...R.sections].reverse().find(x => x.t <= p);
+      return { name: R.name, title: R.title, pos: p, section: sec ? sec.label : '', ending: !!rec.ending, ended: rec.ended };
+    },
+    recMath: { pos: recPos, nextBar: recNextBar },        // (pure: tests/music.js)
     // The player (music.html): the arc of a whole mission ahead, and seeking into it.
     plan(L = 300) { const P = plan(song, L); return { barDur: P.barDur, bars: P.bars.map(({ before, ...x }) => x) }; },
     seek(t, L = 300) { return seek(t, L); },
     setIntensity(k) { intensity = Math.max(0, Math.min(1, +k || 0)); },
     setThreat(v) { if (threat && !v && ac) threatT = now(); threat = !!v; },
     setJump(v) { jumpOn = !!v; },
-    jumped() { if (ended || ending) return; if (ac && bar && !silent()) planEnding(); else ended = true; },
-    rearm() { if (ended || ending) { jumpOn = false; begin(song); } },
+    jumped() {
+      if (rec) { if (!rec.ending && !rec.ended) { if (silent()) { rec.ended = ended = true; } else recJump(); } return; }
+      if (ended || ending) return; if (ac && bar && !silent()) planEnding(); else ended = true;
+    },
+    rearm() { if (rec) { if (rec.ending || rec.ended) { jumpOn = false; ended = false; recStart(rec.R); } return; } if (ended || ending) { jumpOn = false; begin(song); } },
     setPaused(v) { if (paused === !!v) return; paused = !!v; setSilent(); },
     // Offline rendering (music.html's level check): attach to an OfflineAudioContext, then pump(t) to schedule up to t.
     offline: {

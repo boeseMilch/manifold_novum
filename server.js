@@ -13,7 +13,7 @@ const PORT = +process.argv[2] || +process.env.PORT || 8080;
 const ROOT = __dirname;
 const SCRIPTS = ['audio', 'music', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'sidebar', 'claims', 'tutorial-mp', 'lights', 'sprites', 'game', 'net'];
 const TICK = 1 / 60, SEND_EVERY = 2;                // simulate at 60 Hz, send snapshots at 30 Hz
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json', '.ttf': 'font/ttf' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css', '.png': 'image/png', '.webp': 'image/webp', '.json': 'application/json', '.ttf': 'font/ttf', '.mp3': 'audio/mpeg' };
 
 // ---------------------------------------------------------------------------
 // Static files
@@ -25,7 +25,16 @@ const server = http.createServer((req, res) => {
   if (!file.startsWith(ROOT + path.sep) || p.includes('..')) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end('not found'); }
-    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    const head = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store', 'Accept-Ranges': 'bytes' };
+    // A byte range (a browser seeking in a recording, js/music.js: without range answers it can't seek an audio element)
+    const r = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+    if (r && (r[1] || r[2])) {
+      const n = data.length, a = r[1] ? +r[1] : Math.max(0, n - +r[2]), b = r[1] && r[2] ? Math.min(+r[2], n - 1) : n - 1;
+      if (a >= n || a > b) { res.writeHead(416, { 'Content-Range': `bytes */${n}` }); return res.end(); }
+      res.writeHead(206, { ...head, 'Content-Range': `bytes ${a}-${b}/${n}`, 'Content-Length': b - a + 1 });
+      return res.end(data.subarray(a, b + 1));
+    }
+    res.writeHead(200, head);
     res.end(data);
   });
 });

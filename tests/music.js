@@ -507,4 +507,74 @@ check(nodes > n0, 'and plays again when shown');
   a.music.setMission('menu'); check(a.music.title === 'Held Together' && a.music.step === 0, 'and back in the menu, Held Together starts again from the top');
 }
 
+// ---- recordings (js/music/recorded-*.js, tools/arrange-music.py): a recorded piece in place of the synthesized one
+{
+  const recs = music.recordings(), R = recs.find(r => r.name === 'hull');
+  check(!!R && R.missions.includes('c7'), 'Pressure Hull has a recording, for c7');
+  const data = fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-hull.js'), 'utf8'), D = JSON.parse(data.slice(data.indexOf('{'), data.lastIndexOf('}') + 1));
+  check(['main', 'ending'].every(k => fs.existsSync(path.join(__dirname, '..', D[k]))), `its files are there (${D.main}, ${D.ending})`);
+  check(D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.bars.includes(D.loop[1]) && D.loop[1] === D.length,
+    'its bar lines rise, the loop starts and ends on bar lines, at the end of main');
+  check(D.length >= 300 + 30 && D.sections.find(s => /Hot time 1/.test(s.label)).t > 0.7 * 300 && D.sections.find(s => /Hot time 2/.test(s.label)).t < 0.9 * 300,
+    `laid out for the mission + 30 s (${D.length} s), its climaxes after the first hot time (3:30) and before the second (4:30)`);
+  const M = music.recMath, Rd = { ...D };
+  check(M.pos(Rd, 12.5) === 12.5 && Math.abs(M.pos(Rd, D.loop[1] + 5) - (D.loop[0] + 5)) < 1e-9 && Math.abs(M.pos(Rd, D.loop[1] + 2 * (D.loop[1] - D.loop[0]) + 1) - (D.loop[0] + 1)) < 1e-6,
+    'mission time → position in main: as is, then late times loop in the last section');
+  const b = D.bars[20], nb = (p) => p + M.nextBar(Rd, p);
+  check(Math.abs(nb(b - 2) - b) < 1e-9 && Math.abs(nb(b - 1) - D.bars[21]) < 1e-9 && Math.abs(nb(D.loop[1] - 0.02) - (D.loop[1] + D.bars.find(x => x > D.loop[0]) - D.loop[0])) < 1e-9,
+    'the ending waits for the next bar line at least 1.6 s ahead (at the loop\'s end: the loop\'s second bar line)');
+  // no Audio (node, the server): the synthesized piece plays
+  music.setClock(10); music.setMission('c7');
+  check(music.title === 'Pressure Hull' && !music.recording, 'without audio elements c7 plays the synthesized Pressure Hull');
+  // with (fake) audio elements: the recording plays, follows the clock, loops, ends on a bar line; a failure falls back
+  let wall = 0; const els = [];
+  class FakeAudio {
+    constructor(src) { this.src = src; this.currentTime = 0; this.paused = true; this.ended = false; this.volume = 1; this.playbackRate = 1; this.duration = /ending/.test(src) ? D.preroll + 13 : D.length + 0.07;
+      this.lag = /ending/.test(src) ? 0.237 : 0; this.on = {}; els.push(this); }   // (lag: a real element starts 0.1-0.3 s after play())
+    addEventListener(n, f) { this.on[n] = f; }
+    play() { if (this.paused) this.from = wall + this.lag; this.paused = false; return Promise.resolve(); } pause() { this.paused = true; }
+  }
+  const tmo = []; let iv = null;
+  class RecAC extends FakeAC { createMediaElementSource() { return node(); } }
+  const sb = { window: { AudioContext: RecAC, addEventListener() {} }, document: { hidden: false, addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} },
+    navigator: { getAutoplayPolicy: () => 'allowed' }, location: { protocol: 'http:', search: '' }, Audio: FakeAudio, performance: { now: () => wall * 1000 },
+    setInterval: (f) => { iv = f; }, setTimeout: (f, ms) => tmo.push([wall + ms / 1000, f]), Math, console, clamp: (v, a, b) => Math.max(a, Math.min(b, v)), lerp: (a, b, k) => a + (b - a) * k };
+  vm.createContext(sb);
+  for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sb);
+  const m = vm.runInContext('music', sb);
+  // (the fake elements play in real time with the wall clock; clockFrom: the mission clock follows it from there)
+  const step = (sec, clockFrom) => { for (let i = 0; i < sec / 0.025; i++) { wall += 0.025; now += 0.025;
+    for (const e of els) if (!e.paused && wall > (e.from || 0)) e.currentTime += 0.025 * e.playbackRate;
+    for (const t of tmo.splice(0)) if (t[0] <= wall) t[1](); else tmo.push(t);
+    if (clockFrom !== undefined) m.setClock(clockFrom + wall); iv && iv(); } };
+  if (iv) {
+    const w0 = wall; m.setClock(0); m.setMission('c7');
+    check(m.title === 'Pressure Hull (recorded)' && !!m.recording, 'with audio elements c7 plays the recording');
+    step(2, -w0);
+    check(!els[0].paused && Math.abs(els[0].currentTime - 2) < 0.1 && m.step === 0, `it plays along the mission clock (at ${els[0].currentTime.toFixed(2)} s), the synth sequencer stays silent`);
+    m.setClock(150); step(0.05);
+    check(Math.abs(els[0].currentTime - 150) < 0.2, 'more than a second off (a pause, joining late): it seeks to the mission time');
+    els[0].currentTime = D.loop[1] - 0.01; m.setClock(null); step(0.03);
+    check(els[0].currentTime < D.loop[0] + 0.1 && els[0].currentTime > D.loop[0] - 0.05, `a late jump: at the end of main it wraps to the loop's start (${els[0].currentTime.toFixed(3)} s)`);
+    els[0].currentTime = D.bars[100] - 0.3; m.jumped(); const bar = D.bars[101];
+    step(0.2); check(els[1].paused, 'jumped: the ending waits (the bar line at least 1.6 s ahead)');
+    while (els[0].currentTime < bar + 0.1) step(0.025);
+    const off = els[1].currentTime - (D.preroll + els[0].currentTime - bar);
+    check(Math.abs(off) < 0.03 && els[1].playbackRate === 1, `started muted ahead and steered (a 0.24 s start lag), the ending's downbeat lands on main's bar line (${(off * 1000).toFixed(0)} ms)`);
+    step(16); check(m.ended && m.recording.ended, 'and the music has ended once the ending has played');
+    m.rearm(); els[0].currentTime = D.loop[1] - 2.4; m.setClock(null); m.jumped();   // a late jump: the bar line is the loop's wrap
+    let at = null;
+    for (let i = 0; i < 200 && at === null; i++) { const before = els[0].currentTime; step(0.025); if (m.recording.ending && els[0].currentTime < before) at = els[1].currentTime - D.preroll - (els[0].currentTime - D.loop[0]); }
+    check(at !== null && Math.abs(at) < 0.03, `a jump just before the loop's end: the ending lands on the wrap (${at === null ? 'never' : (at * 1000).toFixed(0) + ' ms'})`);
+    step(16); check(m.ended, 'and ends');
+    m.setMission('menu'); m.rearm(); check(m.title === 'Held Together' && !m.recording, 'the menu: back to Held Together, the recording stops');
+    m.setClock(0); m.setMission('c7'); step(0.5, 0);
+    els[0].on.error(); step(0.1);
+    check(m.title === 'Pressure Hull' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Pressure Hull takes over');
+    m.setMission('menu'); m.rearm(); m.setMission('c7');
+    check(m.title === 'Pressure Hull' && !m.recording, 'and c7 stays on the synthesized piece after that');
+    check(m.list().some(s => s.name === 'hull' && s.title === 'Pressure Hull') && m.recordings().some(r => r.name === 'hull'), 'music.html still lists the synthesized Pressure Hull, the recording next to it');
+  } else check(false, 'the engine attaches to a fake context with audio elements');
+}
+
 process.exit(failed ? 1 : 0);

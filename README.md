@@ -113,9 +113,11 @@ The prompt above you always says what a click (or E) will do.
 - **Skirmish:** the lobby's Skirmish tab builds your own run: how many encounters, which kinds may come, and which
   ship parts may fail (a third to a fifth of the encounters are failing parts). No pay. Its **Practice** tick gives the
   free-play ship below instead.
-- **Music:** every mission has its own synthesized piece that builds up to a crescendo at the jump
-  and ends on a final hit when you jump out. Listen to them on their own with the ♪ MUSIC button in
-  the lobby (or open `music.html`): it plays each piece along a simulated mission, sped up if you like.
+- **Music:** every mission has its own piece that builds up to a crescendo at the jump and ends on a final hit
+  when you jump out: synthesized, and for chapter 7 a recorded song arranged over the mission
+  (`tools/arrange-music.py`). Listen to them on their own with the ♪ MUSIC button in the lobby (or open
+  `music.html`): it plays each piece along a simulated mission, sped up if you like (the synthesized ones; they all
+  stay there, next to the recordings).
 - **Practice** (Skirmish tab): a free-play ship. The PRACTICE panel (button top right, or P) starts any encounter,
   damage type or mini-game, toggles the harder rules, fills energy, repairs, gives items and
   teleports you. The quickest way to try everything.
