@@ -306,19 +306,19 @@ for (const id of ['intro', 'rush', 'pirates', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   // always strictly idler with one more player
   const fall = ALL.filter(id => id !== 'c5').flatMap(id => [2, 3, 4].map(n => [rows.find(r => r.id === id && r.n === n - 1), rows.find(r => r.id === id && r.n === n)]).filter(([a, b]) => !(b.idle > a.idle)).map(([a, b]) => `${id} ×${a.n} ${pct(a.idle)}% → ×${b.n} ${pct(b.idle)}%`));
   check(!fall.length, `every mission (c5 set by hand) leaves each crew size idler than the one below${fall.length ? ': not ' + fall.join(', ') : ''}`);
-  // "multiply and round" (2026-10-25, an upper bound for now): n + 1 players at most (n + 1) / n × n players' encounters,
-  // rounded to the next whole number below
+  // "multiply and round" (2026-10-25, an upper bound for now): n + 1 players at most (n + 1) / n × n players' encounters
+  // (as they are), rounded to the next whole number below
   const capped = (id, n) => G0.MISSIONS[id].crew.events[n - 1] >= encounterCap(id, n);
   const over = ALL.filter(id => id !== 'c5').flatMap(id => [2, 3, 4, 5, 6, 7, 8].filter(n => G0.MISSIONS[id].crew.events[n - 1] > encounterCap(id, n)).map(n => `${id} ×${n} ${G0.MISSIONS[id].crew.events[n - 1]} > ${encounterCap(id, n)}`));
-  check(!over.length && near(encounterCap('c4', 2), 9) && near(encounterCap('c4', 3), 13), `no crew gets more encounters than multiply-and-round allows (c4: 5 → 9 → 13)${over.length ? ': ' + over.join(', ') : ''}`);
+  check(!over.length && near(encounterCap('c4', 2), 9) && near(encounterCap('c4', 3, 9), 13) && near(encounterCap('c7', 4, 9), 11), `no crew gets more encounters than multiply-and-round allows (c4: 5 → 9 → 13; c7: three 9 → four ≤ 11)${over.length ? ': ' + over.join(', ') : ''}`);
   // Out of spec even with every prerequisite the player can have by then (see the balance section in PLAN.md).
   // (with the kit: c6 ×3 waits 27 s at 235 s (the drifting rock's two drill trips); Nightmare solo / ×2 have 3 encounters for the
   // solo targets; 2026-10-16, tides and herds: c7 / Deep drift ×4 (a herd's two fights on one side); c8 back in spec for 1-4 with a ×0.35 reactor)
   // 2026-10-18 (recalibrated: shaped timeline, 5 min): intro ×4 (12 s at 220 s) and c2 ×4 (8 s at 44 s) the nearest the fit gets
-  // 2026-10-25 (busier crews: the solo idle + 5 points a player, capped by multiply-and-round): c2 ×2 / ×3 on the base
-  // ship (the opener's front cannon waits 14-18 s; no prerequisites that early, a faster reactor doesn't help); c7 ×1
+  // 2026-10-25 (busier crews: the solo idle + 5 points a player, capped by multiply-and-round): c2 ×2-4 on the base
+  // ship (the opener's front cannon waits 5-20 s; no prerequisites that early, a faster reactor doesn't help); c7 ×1
   // (playtested) and ×3: two fights on one cannon (every energy upgrade and overcharge already)
-  const OUT = { rush: [1, 2, 3, 4], deep: [4], nightmare: [1, 2, 3, 4], c6: [3], c7: [1, 3], c2: [2, 3] };
+  const OUT = { rush: [1, 2, 3, 4], deep: [4], nightmare: [1, 2, 3, 4], c6: [3], c7: [1, 3], c2: [2, 3, 4] };
   // FIXED: the user's fixed minimum (c8, 2026-10-16: the spore clouds, the spore mother, the grappler, two failing parts and
   // the leviathan at every crew size) is more work than the target for 1-2 players: kept out of the target checks below
   const FIXED = { c8: [1] };   // (×2 too until 2026-10-25: the crews are fitted since, busier)

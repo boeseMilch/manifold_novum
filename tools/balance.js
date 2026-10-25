@@ -173,14 +173,15 @@ const PROGRESSION = { intro: 0, c1: 1, c2: 2, rush: 2, c3: 3, ore: 4, salvage: 4
 // A mission's own solo target (MISSIONS[id].balance.soloIdle) wins: chapters 6-8 solo 37% (the user: 33-40% is right solo),
 // challenge missions lower (Nightmare solo 25%). Crews (2026-10-25): what solo actually gets in that mission (soloIdle: its
 // crew.events[0] etc. as built, with the expected kit), at least SOLO_FLOOR, + CREW_STEP per extra player. (--target: flat.)
-// "Multiply and round" (the user, 2026-10-25): n + 1 players get at most (n + 1) / n times n players' encounters, rounded to
-// the next whole number below (solo 5: 9, 13, 17, 21, 25, 29, 33). An upper bound on the fit, for now. Counts the whole
-// timeline (crew.events + crew.extra: c4 solo is 4 + a second failing part); the cap returned is for crew.events.
-function encounterCap(id, n) {
-  const C = game().MISSIONS[id].crew, all = (i) => C.events[i] + Object.values(C.extra || {}).reduce((s, a) => s + (a[i] || 0), 0);
-  let cap = all(0);
-  for (let m = 1; m < n; m++) cap = Math.ceil(cap * (m + 1) / m) - 1;
-  return cap - (all(n - 1) - C.events[n - 1]);
+// "Multiply and round" (the user, 2026-10-25): n + 1 players get at most (n + 1) / n times n players' encounters (the count
+// they actually have), rounded to the next whole number below (solo 5, two 9; two 9, three at most 13). An upper bound on
+// the fit, for now. Counts the whole timeline (crew.events + crew.extra: c4 solo is 4 + a second failing part); the cap
+// returned is for crew.events[n - 1]. prevEvents: n - 1 players' crew.events (default: the mission's table).
+function encounterCap(id, n, prevEvents) {
+  const C = game().MISSIONS[id].crew, extra = (i) => Object.values(C.extra || {}).reduce((s, a) => s + (a[i] || 0), 0);
+  if (n <= 1) return C.events[0];
+  const prev = (prevEvents ?? C.events[n - 2]) + extra(n - 2);
+  return Math.ceil(prev * n / (n - 1)) - 1 - extra(n - 1);
 }
 let flatTargets = false;
 const soloMemo = new Map();
@@ -1480,7 +1481,7 @@ function fitSize(id, n, ship, oc, runs, per) {
   };
   if (n === 1 && !flatTargets && C?.events?.[0]) return { pick: tryIt(C.events[0], C.reactor?.[0] ?? 1, C.cells?.[0]), aim };
   const minK = per[n - 1]?.events || 1, prev = per[n - 1]?.idle ?? -Infinity, rises = (p) => p.idle >= prev + A.CREW_RISE;
-  const maxK = flatTargets || !C?.events?.[0] ? Infinity : Math.max(minK, encounterCap(id, n)), ok = (k) => k >= minK && k <= maxK;
+  const maxK = flatTargets || !C?.events?.[0] ? Infinity : Math.max(minK, encounterCap(id, n, minK)), ok = (k) => k >= minK && k <= maxK;
   const near = (p) => Math.abs(p.idle - aim) <= A.SPEC_IDLE_SLACK, off = (p) => Math.abs(p.idle - aim), nearest = (ps) => [...ps].sort((a, b) => off(a) - off(b))[0];
   const steps = [1, ...(EARLY.includes(id) ? A.REACTOR_STEPS_EARLY : A.REACTOR_STEPS)], tried = new Map();
   const at = (k, r0) => {                                // (the mildest reactor in spec for k; r0 first if given)

@@ -90,7 +90,7 @@ const MISSIONS = {
   intro: {
     name: 'Intro run', blurb: 'One of everything, well spaced out. Start here.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×1, ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 5, 6, 8, 11, 13, 13, 13], cells: [5, 8, 11, 13, 14, 16, 18, 21], reactor: [0.4, 0.3, 0.2, 0.3, 0.3, 0.4, 0.3, 0.2]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 36% 45% 54% 59% 61% 62% 67% 70% idle for 1-8 players
+    crew: {events: [3, 5, 6, 7, 8, 9, 9, 10], cells: [5, 8, 11, 10, 16, 16, 16, 13], reactor: [0.4, 0.3, 0.2, 0.3, 0.2, 0.2, 0.2, 0.3]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 36% 45% 54% 65% 66% 70% 74% 77% idle for 1-8 players
     build(target) {
       const s1 = randSide();
       return [
@@ -132,7 +132,7 @@ const MISSIONS = {
   pirates: {
     name: 'Pirate cove', tier: 2, blurb: 'Get a Red Comet nav core: board a pirate raider and pull it from their console, or shoot one down and fish its core out of space. Then install it in our helm.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×2, ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [3, 5, 7, 9, 11, 12, 14, 15], cells: [4, 9, 7, 10, 9, 9, 11, 12], reactor: [1, 0.4, 1, 0.7, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 27% 57% 67% 71% 74% 76% 78% 79% idle for 1-8 players
+    crew: {events: [3, 5, 7, 9, 11, 12, 13, 14], cells: [4, 9, 7, 10, 9, 9, 10, 11], reactor: [1, 0.4, 1, 0.7, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 27% 57% 67% 71% 74% 76% 78% 81% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter'], overcharge: true},
     essential: ['pirates'],                   // never dropped for a small crew (objective / story)
     always: ['maintenance'],                  // a part fails at every crew size (like chapter 4, 2026-10-16)
@@ -150,7 +150,7 @@ const MISSIONS = {
   rescue: {
     name: 'Stranded engineer', tier: 3, blurb: 'An engineer is hurt aboard a derelict. Treat them and lead them back — they\'re slow.',
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×3, ×4 back in spec with cells / reactor only, the event counts kept)
-    crew: {events: [4, 7, 10, 12, 16, 18, 20, 24], cells: [2, 4, 7, 8, 10, 11, 14, 16], reactor: [1, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 24% 39% 48% 52% 55% 57% 59% 61% idle for 1-8 players
+    crew: {events: [4, 7, 10, 12, 14, 16, 18, 20], cells: [2, 4, 7, 8, 9, 11, 12, 13], reactor: [1, 1, 1, 1, 1, 1, 1, 1], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 24% 39% 48% 52% 58% 62% 64% 65% idle for 1-8 players
     needs: {ship: ['caps'], overcharge: true},   // (2026-10-25: busier crews; without the capacitors a cannon waits 11-25 s for 2-4 players)
     rules: { breach: true, surge: true, gravity: true }, objective: { kind: 'rescue' },
     build(target) { return [makeEvent('derelict', 15, target), ...shuffledTimeline(['interceptor', 'stealth', 'maintenance', 'leeches', 'storm', 'intruder', 'saboteur'], target, 60, 34)]; },

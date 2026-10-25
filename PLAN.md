@@ -4007,8 +4007,9 @@ idle targets (solo + 5 points a player, strictly rising) still steer the fit und
 - `fitSize` rewritten: each count is tried at the mildest reactor that gets its energy in spec (an out-of-spec run's
   waits read as work, so its idle can't be compared), up to ×0.2 now (few encounters mean long gaps, and the reactor
   follows the gap: Black box ×2 starved its opener down to ×0.3).
-- Result (encounters 1-8 players): c1 4 7 10 13 16 19 22 22, c2 5 8 11 16 19 23 23 25, c3 5 9 13 17 20 23 24 24,
-  c4 5 9 13 17 21 25 27 29, c6 6 11 15 19 24 26 28 29, c7 6 7 9 17 20 24 27 28, c8 5 8 10 11 16 18 21 26.
+- The cap chains from the count the smaller crew actually got (a first version chained caps: c7 went 9 → 17 for 3 → 4).
+- Result (encounters 1-8 players): c1 4 7 10 13 16 19 22 22, c2 5 8 10 13 16 19 22 25, c3 5 9 13 17 20 23 24 24,
+  c4 5 9 13 17 21 25 27 29, c6 6 11 15 19 23 26 28 29, c7 6 7 9 11 12 14 16 17, c8 5 8 10 11 13 15 17 18.
   Capped crews sit idler than the target (c4 ×2 38 % for an aim of 15 %). Rush hour stays at 2 for every crew (3 for
   two players is no idler than solo); Black box / Pirate cove crews at most a few more than solo.
-- Energy shortfalls left: c2 ×2-3 (base ship), c7 ×3, rush / Nightmare as before.
+- Energy shortfalls left: c2 ×2-4 (base ship), c7 ×3, rush / Nightmare as before.
