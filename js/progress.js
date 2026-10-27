@@ -209,8 +209,10 @@ Object.assign(MISSIONS, {
     // 2026-10-16 (the user: "far too easy", "not enough new things"): no interceptors (no pirates beyond the Mire); the tides
     // (rule) knock the coils out (since 2026-10-17 just one tide, 70 s in); the creatures come as herds; two parts fail. A spore cloud first, then the herds.
     // 2026-10-17: the alien (was at 190 s) comes second, kept at every crew size (`always`)
+    // 2026-10-26: the 130 s herd is the mother + grappler (was + spore clouds: the user, those two are no herd; herdOk, js/organic.js;
+    // the grappler keeps the balance model's crew idle shares rising, + leeches didn't)
     build: () => [evAt('spores', 30, { side: randSide(), opener: true }), evAt('intruder', 50, { side: randSide() }), evAt('herd', 70, { kinds: ['grappler', 'leeches'], side: randSide() }), evAt('maintenance', 100, { radar: false }),
-                  evAt('herd', 130, { kinds: ['mother', 'spores'], side: randSide() }), evAt('swarm', 150), evAt('maintenance', 170, { radar: false }),
+                  evAt('herd', 130, { kinds: ['mother', 'grappler'], side: randSide() }), evAt('swarm', 150), evAt('maintenance', 170, { radar: false }),
                   evAt('leeches', 210, { side: randSide() }), evAt('storm', 230), evAt('herd', 250, { kinds: herdPair(), side: randSide() }), evAt('grappler', 270, { side: randSide() }),
                   evAt('coolant', 285, { radar: false }), evAt('mother', 300, { side: randSide() }), evAt('herd', 315, { kinds: herdPair(), side: randSide() })],
   },
@@ -243,9 +245,10 @@ Object.assign(MISSIONS, {
     // (2026-10-17, one gravity tide per mission: the rule's, 80 s in, at every crew size. The two written tides at 140 / 225 s are
     //  never picked any more (selectEvents' oneTide); they stay written so the written spread, and with it the reactor's pace, is unchanged)
     // (the mother on one side, the spores and the grappler on the other: one capacitor can't feed both big fights)
+    // (2026-10-26: the 210 s herd is the mother + leeches, was + spore clouds: those two are no herd; herdOk, js/organic.js)
     build: () => { const s = randSide(), o = s === 'port' ? 'star' : 'port'; return [evAt('spores', 30, { side: o, opener: true }), evAt('mother', 60, { side: s }), 
                   evAt('grappler', 100, { side: o }), evAt('maintenance', 120, { radar: false }), evAt('herd', 130, { kinds: ['leeches', 'spores'], side: randSide() }), evAt('tide', 140), evAt('herd', 150, { kinds: ['grappler', 'leeches'], side: randSide() }),
-                  evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false, optional: true }), evAt('herd', 210, { kinds: ['mother', 'spores'], side: randSide() }),
+                  evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false, optional: true }), evAt('herd', 210, { kinds: ['mother', 'leeches'], side: randSide() }),
                   evAt('tide', 225), evAt('herd', 240, { kinds: herdPair(), side: randSide() }), evAt('leviathan_boss', 270, { finale: true })]; },
   },
   practice: {
@@ -278,6 +281,7 @@ function customConfig(c) {
 const customFailures = (n) => [Math.round(n / 5), Math.round(n / 3)];          // failing parts: from..to of the n
 MISSIONS.custom = {
   name: 'Skirmish', tier: 0, custom: true, rules: {}, objective: null,
+  spacing: 'spread',                          // its encounters evenly spread, jittered (js/mission.js shapedTimes; 2026-10-26: they bunched up)
   blurb: 'Your own mix of encounters.',
   briefing: 'No story and no pay: just the trouble you picked, spread over five minutes. Hold out until the jump.',
   build() {

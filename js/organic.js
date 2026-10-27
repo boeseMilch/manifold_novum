@@ -164,8 +164,12 @@ function startLeviathan() {
 // (HERD_CALL s: the banner, the sidebar plate, a dark teal swell at that side of the screen).
 const HERD_KINDS = ['grappler', 'leeches', 'mother', 'spores'], HERD_CALL = 8;
 const HERD_NAMES = { grappler: 'grappler', leeches: 'leech swarm', mother: 'spore mother', spores: 'spore clouds' };
+// Never the spore mother with spore clouds (2026-10-26, the user: "spore cloud and spore mother should not come as a swarm,
+// because they're not similar"): each comes on its own. herdOk says whether a pair may be a herd.
+const HERD_APART = [['mother', 'spores']];
+const herdOk = (kinds) => !HERD_APART.some(p => p.every(k => kinds.includes(k)));
 function herdPair() {
-  const a = HERD_KINDS[Math.floor(Math.random() * HERD_KINDS.length)], rest = HERD_KINDS.filter(k => k !== a);
+  const a = HERD_KINDS[Math.floor(Math.random() * HERD_KINDS.length)], rest = HERD_KINDS.filter(k => k !== a && herdOk([a, k]));
   return [a, rest[Math.floor(Math.random() * rest.length)]];
 }
 function startHerd(kinds = herdPair(), side = randSide()) {

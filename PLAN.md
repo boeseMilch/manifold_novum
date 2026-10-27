@@ -4182,3 +4182,20 @@ rearranged to c7's mission clock; on the comparison page (synth / Suno / arrange
   seeks when off, wraps the loop, the ending steered onto the next bar line despite a start lag (also across the
   loop's wrap), ends, stops in the menu, falls back to the
   synthesized piece on an error and stays there; without audio elements c7 plays the synthesized piece).
+
+## Skirmish pacing and herd pairs (2026-10-26)
+
+The user: "3 encounters in min 1, then nothing for 3 minutes" in a 5-minute skirmish. Cause: the skirmish used the
+chapters' shaped timeline (`shapedTimes`: two openers at 10 and 28 s with 2+ crew, the rest following DENSITY, which
+is low from 20% to 70% of the mission and piles up at the hot times 70% / 90%). With few encounters that meant two
+(a herd: three creatures) in the first half minute and a gap of two minutes or more (5 encounters, 2 crew: 10, 28,
+151, 210, 270 s). The skirmish now has `spacing: 'spread'`: from the same first time (10 s with 2+ crew and 3+
+encounters, else 15 s) evenly to the same finale (90%), each jittered by up to ±min(10 s, a quarter step) (5
+encounters, 2 crew: about 10, 83, 146, 211, 270 s). Same count, kinds, first / last times and so the same reactor
+pace (`paceFactor`); the chapters keep their shaped / even / written timelines.
+The user: "spore cloud and spore mother should not come as a swarm". A herd never pairs them any more (`herdOk`,
+`HERD_APART` in js/organic.js; `herdPair` draws only the other five pairs). The two written ones changed: c7's 130 s
+herd is the mother + grappler (+ leeches broke the balance model's rising crew idle), c8's 210 s herd the mother +
+leeches (c8's model numbers unchanged). `tests/schedule.js`: 600 skirmish schedules (2-30 encounters, 1-8 crew,
+seeds) never have three arrivals within one even step, no gap under half or over one and a half steps; count and
+kinds as asked; no drawn, chapter or skirmish herd of mother + spores.

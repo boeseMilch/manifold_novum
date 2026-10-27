@@ -215,10 +215,18 @@ function densityInv(u) {                             // F⁻¹ (bisection; F ris
 // the end if that's earlier (no jitter: the jump at L
 // comes while it's on), the rest evenly in F's space between, each jittered by up to ±SHAPE.jitter s of that even
 // timeline (at most 0.45 of a step, so the order stays) when `rnd` is given.
-function shapedTimes(count, n, L, rnd = null, fl = 0) {
+//   spread (spacing: 'spread', the skirmish builder; 2026-10-26, the user: "3 encounters in min 1, then nothing for 3
+// minutes"): no density shape and no second early opener: from the first time (the same first and last as shaped, so
+// the reactor's pace is unchanged) evenly to the finale, each jittered by up to ±min(SHAPE.jitter s, a quarter step):
+// any two arrivals at least half a step apart, no gap longer than one and a half.
+function shapedTimes(count, n, L, rnd = null, fl = 0, spread = false) {
   if (count <= 0) return [];
   const out = Math.min(SHAPE.out * L, L - fl);      // (a mission's own finaleLead may want the finale earlier: c2's frigate 70 s before the jump)
   if (count === 1) return [out];
+  if (spread) {
+    const first = (n > 1 && count >= 3 ? SHAPE.openCrew : SHAPE.open)[0], step = (out - first) / (count - 1), jit = rnd ? Math.min(SHAPE.jitter, step / 4) : 0;
+    return Array.from({ length: count }, (_, i) => first + i * step + (jit && i && i < count - 1 ? (rnd() * 2 - 1) * jit : 0));
+  }
   const open = (n > 1 && count >= 3 ? SHAPE.openCrew : SHAPE.open).slice(0, count - 1), t = [...open];
   const from = open[open.length - 1], m = count - open.length;    // the rest; the last of them is the finale
   const F0 = densityCdf(from / L), F1 = densityCdf(out / L), jit = rnd ? Math.min(SHAPE.jitter / (out - from), 0.45 / m) : 0;
@@ -236,7 +244,7 @@ function layoutMission(id, n) {
   // slot in the shaped timeline; the others are shaped around it (2026-10-24, c2: the aliens break out of the cargo pods late)
   const pinned = (e) => shaped && e.pin && !e.repeat, free = evs.filter(e => !pinned(e));
   const pin = free.length ? pinned : () => false, slots = free.length ? free : evs;
-  const times = shaped ? shapedTimes(slots.length, n, L, Math.random, M.finaleLead || 0) : null;
+  const times = shaped ? shapedTimes(slots.length, n, L, Math.random, M.finaleLead || 0, M.spacing === 'spread') : null;
   const lead = shaped ? times[0] : Math.min(...written.map(e => e.t)), end = shaped ? times[times.length - 1] : asWritten ? Math.max(...evs.map(e => e.t)) : L - fl;
   const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
   evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = asWritten ? e.t : pin(e) ? Math.min(end - 5, e.t * L / MISSION_LENGTH + (Math.random() * 2 - 1) * SHAPE.jitter)
@@ -252,7 +260,7 @@ function layoutMission(id, n) {
   const wLead = Math.min(...written.map(e => e.t));                     // (the written timeline's own spread)
   const wl = written.length > 1 ? (Math.max(...written.map(e => e.t)) - wLead) / (written.length - 1) : gap;
   const normal = mission.easy ? selectEvents(id, written, n, null).length : evs.length;   // the reactor's pace: normal's gap
-  const nt = shaped ? shapedTimes(normal, n, L, null, M.finaleLead || 0) : null;                  // (shaped: normal's own first and last times)
+  const nt = shaped ? shapedTimes(normal, n, L, null, M.finaleLead || 0, M.spacing === 'spread') : null;                  // (shaped: normal's own first and last times)
   const paceGap = asWritten ? (wl || gap) : shaped ? (normal > 1 ? (nt[nt.length - 1] - nt[0]) / (normal - 1) : nt[0] - SHAPE.open[0]) : normal > 1 ? (end - lead) / (normal - 1) : end - lead;
   mission.extraLuck = ((mission.easy || 0) - (normal - evs.length)) / 2;   // easier steps with nothing left to drop: half a cat each
   Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : shaped || asWritten ? L : Math.max(0, ...evs.map(e => e.t)) + fl });
