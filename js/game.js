@@ -995,7 +995,7 @@ function render(t) {
   if (typeof drawBreakupRift === 'function') glow(() => drawBreakupRift(t));   // breaking up: the fracture tearing open (js/breakup.js)
   if (!parts.locks) for (const d of DECK_DOORS) drawDeckDoor(d, t);
   if (!parts.doors) drawDoorways();
-  drawDoorLocks(t);                                  // the doors' bolts and wheels (js/art.js; over the door sprites)
+  drawDoorLocks(t);                                  // the doors' round locks (js/art.js: classic, and the sprites' fallback)
   if (!parts.hatches) for (const h of HATCHES) drawAirlock2D(h, t);   // (the outer airlocks: js/airlock.js)
   else drawAirlockRings();
   for (const g of GUNS) drawGunLadder(g);

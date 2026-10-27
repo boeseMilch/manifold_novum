@@ -2083,7 +2083,7 @@ void main() {
   fetch(BASE_URL + 'sprites.json').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(d => {
     MAN = d.sprites; META = d.meta; HR = META.heightRange || 4; api.heightRange = HR;
     for (const k in MAN) MAN[k].name = k;
-    api.preload(['hull', 'interior', 'ship', 'crew']);
+    api.preload(['hull', 'interior', 'ship', 'crew', 'doorlock']);
     stream(streamLater); streamLater = [];
   }).catch(e => disable('sprites.json: ' + e.message));
 

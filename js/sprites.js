@@ -186,7 +186,24 @@ function drawDeckDoorSprite(d, t) {
   const door = b && d.jammed && k > 0.95 ? 'interior/deckdoor_door_forced' : k < 0.05 && d.blast ? 'interior/deckdoor_door_blast'
     : k < 0.05 && d.locked ? 'interior/deckdoor_door_locked' : `interior/deckdoor_door_f${Math.round(k * 5)}`;
   GFX.sprite(door, 0, d.x, SPINE_Y1, 0, { layer: 'wall', sortY: SPINE_Y1 - 0.375, emissive: 0.4 });   // (the door fills the tall block: 12.55 .. SPINE_Y1)
+  if (!(b && d.jammed && k > 0.95)) drawDoorLockSprite('doorlock/deck', d.x, SPINE_Y1, SPINE_Y1 - 0.375 + 0.01, k, d.bolt, t, b);
   return true;
+}
+
+// The inner doors' round lock (tools/blender/models/interior/doorlock.py; 2026-10-26, replacing the 2D bolt bar):
+// on the seam a bezel (its halves fixed to the leaves) and a rotor that turns a quarter turn while the lock comes
+// undone (d.bolt 1 -> 0, js/game.js updateDoors), then splits with the leaves. Shut: the bezel + the rotor frame for
+// the bolt (f0 bolted .. f9 free; its hub lamp recoloured: red bolted, blinking amber turning, green free, dark when
+// broken); opening: the bezel and rotor halves on the leaves, in the panel sprites' 5 steps. Same canvas and origin as
+// the door sprites (kind: 'doorlock/door_v' for doorways, 'doorlock/deck' for deck doors). Drawing only.
+// (lockHub: js/art.js)
+function drawDoorLockSprite(kind, x, y, sortY, open, bolt, t, dead = false) {
+  if (!GFX.ready(`${kind}_k0`)) return;
+  const k = Math.round(clamp(open, 0, 1) * 5);
+  if (k >= 5) return;
+  const o = { layer: 'wall', sortY, emissive: 0.2, depthBias: PIECE_BIAS };
+  GFX.sprite(`${kind}_k${k}`, 0, x, y, 0, o);
+  if (k === 0) GFX.sprite(`${kind}_rotor_f${Math.round((1 - clamp(bolt ?? 1, 0, 1)) * 9)}`, 0, x, y, 0, { ...o, sortY: sortY + 0.001, recolor: lockHub(bolt, t, dead) });
 }
 
 // Doors between rooms (in up-down walls): frame (lamp by state) + the sliding panels.
@@ -198,6 +215,7 @@ function drawDoorSprites(t) {
     const panels = d.blast ? `interior/door_v_blast_f${k}` : d.locked ? `interior/door_v_locked_f${k}` : `interior/door_v_f${k}`;
     GFX.sprite(frame, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2, emissive: 0.6, depthBias: PIECE_BIAS });
     GFX.sprite(panels, 0, x, d.y, 0, { layer: 'wall', sortY: d.y + d.h / 2 + 0.01, depthBias: PIECE_BIAS });
+    drawDoorLockSprite('doorlock/door_v', x, d.y, d.y + d.h / 2 + 0.02, d.open, d.bolt, t, doorBroken(d));
   }
   return true;
 }

@@ -284,6 +284,7 @@ function drawAirlockSprites(t) {
     const panels = look === 'locked' && k === 0 ? 'interior/door_v_locked_f0' : look === 'broken' && h.doors.inner > 0.5 && GFX.has('interior/door_v_forced') ? 'interior/door_v_forced' : `interior/door_v_f${k}`;
     GFX.sprite(frame, 0, ix, h.inner.y, 0, { layer: 'wall', sortY: h.y, emissive: 0.6, depthBias: PIECE_BIAS });
     GFX.sprite(panels, 0, ix, h.inner.y, 0, { layer: 'wall', sortY: h.y + 0.01, depthBias: PIECE_BIAS });
+    if (!panels.endsWith('forced')) drawDoorLockSprite('doorlock/door_v', ix, h.inner.y, h.y + 0.02, h.doors.inner, look === 'locked' || look === 'broken' || look === 'vent' ? 1 : 0, t, look === 'broken');   // (its round lock, js/sprites.js: bolted while it holds, free otherwise)
     // the outer door: the hatch in the hull wall
     const s = `interior/hatch_${h.side}`, x = h.x - h.dir * 0.3, y = h.y - 0.9, b = look === 'broken';
     const hf = b ? `${s}_frame_broken_f${Math.floor(t * 8) % 2}` : h.locked ? `${s}_frame_locked` : `${s}_frame`;

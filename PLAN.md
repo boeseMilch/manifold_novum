@@ -4336,3 +4336,23 @@ run into a door. You should probably use the door state and wall state for simul
   (new): the link (latency, bandwidth queue, order with jitter, options), the flow rule, the simulator at 64 kbit/s with
   and without it, the rounded snapshot (crew and doors exact, the rest to the mm, smaller), server.js with `?lag=150` and
   with `--lag 120` (a real server, Node's WebSocket). tests/latency.js unchanged and passing.
+
+### Doors: a round lock that turns, modelled in Blender (2026-10-26, tools/blender/models/interior/doorlock.py, js/sprites.js, js/art.js, js/airlock.js)
+Playtest note: "Door bars look weird, that's not how 3d works. Put in some circle lock in the middle that turns (on the
+blender)". The 2D hand wheel + bolt bar overlay (2026-10-24) is gone.
+- The lock: in the middle of every inner door, on the leaves' seam, a dark bezel ring (each half fixed to its leaf, a
+  red mark on one, a green one on the other) round a rotor (light steel disc, a split groove across it, two yellow
+  grips, a white index arrow, a hub lamp). Bolted (d.bolt 1), the groove crosses the seam and holds both leaves; during
+  the unlock delay the rotor turns a quarter turn until the groove lies along the seam; then the leaves part and each
+  takes its half of the rotor (and bezel) along. Shut again, it turns back. Hub lamp: red bolted, blinking amber
+  turning, green free, dark on a broken deck door. Same d.bolt as before: timings, upgrades, snapshot unchanged.
+- Sprite view: Blender overlays in their own small group `doorlock/` (one 366x374 page, preloaded with the ship),
+  rendered in the door sprites' own canvases and origins with the jambs / spine ends as holdout, drawn over the
+  unchanged door sprites (no interior repack): `doorlock/door_v_k0..k4` and `doorlock/deck_k0..k4` (bezel, plus the
+  rotor halves for k >= 1, at the panel sprites' 5 open steps), `doorlock/door_v_rotor_f0..f9` and
+  `doorlock/deck_rotor_f0..f9` (the whole rotor turned 90 -> 0 deg, rendered per angle so it stays a proper ellipse:
+  sin 50 on a doorway's top, cos 50 on a deck door's face; the hub lamp is green and recoloured by GFX `recolor`).
+  drawDoorLockSprite (js/sprites.js) for the doorways and deck doors; the outer airlocks' inner door gets it too
+  (bolted while the airlock holds it locked / broken / venting, free otherwise). Not on forced (bent) doors.
+- Classic view (and the sprite view's fallback while the page loads): drawDoorLocks / drawLockParts (js/art.js) draw
+  the same round lock flat (bezel halves, rotor turned by d.bolt, halves riding on the leaves).

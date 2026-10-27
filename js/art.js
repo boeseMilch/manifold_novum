@@ -507,17 +507,26 @@ function drawDeckDoor(d, t) {
   if (b && Math.sin(t * 20) > 0.6) { ctx.fillStyle = '#ffd36a'; ctx.fillRect(x + w + 3, dy - 3, 4, 4); }   // sparks
 }
 
-// The inner doors' locks (2026-10-24, the user: "something that needs to turn first, some kind of lock or bar becoming
-// undone"): on the leaves' meeting seam a hand wheel on one leaf and a bolt bar across the seam into a keeper on the
-// other. d.bolt (js/game.js updateDoors) runs 1 (bolted) -> 0 while the sensor reacts: first the wheel turns, then
-// the bar slides back into its housing; only then do the leaves move (each part rides on its leaf, clipped to the
-// opening). Shut again: the bar shoots home, then the wheel turns back. Both views; in the sprite view drawn on the
-// 'mid' layer over the door sprites: the doorways' on the leaves' tops, the deck doors' on the front face.
-const DOOR_LOCK = { doorway: { half: 0.86, z: 1.6 }, deck: { half: 1.05, z: 0.5, face: 0.22 } };
+// The inner doors' locks: a round lock in the middle of the door, on the leaves' meeting seam (2026-10-26, the user:
+// "Door bars look weird ... Put in some circle lock in the middle that turns"; before: a hand wheel and a bolt bar,
+// 2026-10-24). A bezel ring (each half fixed to its leaf) round a rotor with a split groove and two yellow grips.
+// d.bolt (js/game.js updateDoors) runs 1 (bolted: the groove crosses the seam, holding both leaves) -> 0 while the
+// sensor reacts: the rotor turns a quarter turn until the groove lies along the seam; then the leaves part and each
+// takes its half. Shut again: it turns back. Hub lamp: red bolted, blinking amber turning, green free (lockHub).
+// The sprite view draws it from Blender sprites (tools/blender/models/interior/doorlock.py, drawDoorLockSprite in
+// js/sprites.js); this is the classic view's (top-down: a circle) and the sprite view's fallback while those load
+// ('mid' layer: the doorways' on the leaves' tops, the deck doors' on their front face, foreshortened).
+const DOOR_LOCK = { doorway: { R: 0.235, z: 1.6 }, deck: { R: 0.3, z: 0.9, face: 0.0 } };
+function lockHub(bolt, t, dead) {
+  const b = clamp(bolt ?? 1, 0, 1);
+  if (dead) return '#3a3f48';
+  return b >= 0.999 ? '#e2574c' : b <= 0.001 ? '#47e07a' : Math.sin(t * 30) > 0 ? '#ffb347' : '#a0782a';
+}
 function drawDoorLocks(t) {
   const sprite = GFX.on, k = GFX.COS / GFX.SIN;            // (a vertical face: its heights show foreshortened)
+  if (sprite && GFX.ready('doorlock/door_v_k0') && GFX.ready('doorlock/deck_k0')) return;   // (the sprites have it)
   for (const d of DOORS) {
-    const deck = DECK_DOORS.includes(d), S = deck ? DOOR_LOCK.deck : DOOR_LOCK.doorway, half = S.half;
+    const deck = DECK_DOORS.includes(d), S = deck ? DOOR_LOCK.deck : DOOR_LOCK.doorway, half = deck ? d.w / 2 : d.h / 2;
     const open = sprite ? Math.round(clamp(d.open, 0, 1) * 5) / 5 : clamp(d.open, 0, 1);   // (the sprites' leaves move in 5 steps)
     if (open >= 0.999) continue;
     ctx.save();
@@ -525,38 +534,46 @@ function drawDoorLocks(t) {
     if (!deck) ctx.transform(0, T, T, 0, L(d.x + d.w / 2), L(d.y + d.h / 2 - GFX.lift(S.z)));
     else if (sprite) ctx.transform(T, 0, 0, -T * k, L(d.x + d.w / 2), L(SPINE_Y1 - S.face - GFX.lift(S.z)));
     else ctx.transform(T, 0, 0, T, L(d.x + d.w / 2), L((SPINE_HI + SPINE_Y1) / 2));
-    ctx.beginPath(); ctx.rect(-half, -0.5, 2 * half, 1); ctx.clip();          // (the opening: what slides into the wall is gone)
-    drawLockParts(d, open * half, t);
+    ctx.beginPath(); ctx.rect(-half, -S.R - 0.1, 2 * half, 2 * S.R + 0.2); ctx.clip();   // (the opening: what slides into the wall is gone)
+    drawLockParts(d, open * half, t, S.R);
     ctx.restore();
   }
 }
-function drawLockParts(d, off, t) {
-  const b = clamp(d.bolt ?? 1, 0, 1), turn = clamp(b * 2 - 1, 0, 1), slide = clamp(b * 2, 0, 1);   // (opening: the wheel first, then the bar)
-  const lw = 1 / T;                                                          // one screen-ish pixel in local units
-  const box = (x, y, w, h, fill, line = 1.5) => { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); ctx.lineWidth = line * lw; ctx.strokeStyle = OUT; ctx.strokeRect(x, y, w, h); };
-  // leaf -1 (u < 0): the keeper the bar shoots into
-  ctx.save(); ctx.translate(-off, 0);
-  box(-0.34, -0.085, 0.14, 0.17, '#4c5464');
-  box(-0.32, -0.04, 0.1, 0.08, '#14161b', 1);                               // its slot
-  ctx.restore();
-  // leaf +1 (u > 0): the bar's housing, the bar, the wheel
-  ctx.save(); ctx.translate(off, 0);
-  box(0.06, -0.075, 0.5, 0.15, '#3a404c');                                   // housing
-  const bx = -0.3 + (1 - slide) * 0.34;                                     // the bar: across the seam (bolted) .. back in its housing
-  box(bx, -0.04, 0.5, 0.08, b > 0.99 ? '#c9ced8' : '#e6c55a', 1.2);
-  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(bx + 0.02, -0.035, 0.46, 0.02);   // a glint along it
-  ctx.fillStyle = C.hazard; ctx.fillRect(bx, -0.04, 0.05, 0.08);             // its yellow tip
-  // the hand wheel, turning half a turn before the bar can move
-  const wx = 0.4, a = turn * Math.PI + Math.PI / 4;
-  ctx.beginPath(); ctx.arc(wx, 0, 0.13, 0, TAU); ctx.fillStyle = '#5a6272'; ctx.fill(); ctx.lineWidth = 2 * lw; ctx.strokeStyle = OUT; ctx.stroke();
-  ctx.beginPath(); ctx.arc(wx, 0, 0.1, 0, TAU); ctx.lineWidth = 3 * lw; ctx.strokeStyle = '#9aa3b2'; ctx.stroke();   // rim
-  ctx.strokeStyle = '#9aa3b2'; ctx.lineWidth = 2.5 * lw; ctx.beginPath();
-  for (let i = 0; i < 3; i++) { const q = a + i * TAU / 3; ctx.moveTo(wx, 0); ctx.lineTo(wx + Math.cos(q) * 0.1, Math.sin(q) * 0.1); }
-  ctx.stroke();
-  const moving = b > 0.001 && b < 0.999;                                      // hub light: red bolted, amber turning, green free
-  ctx.beginPath(); ctx.arc(wx, 0, 0.035, 0, TAU); ctx.fillStyle = moving ? (Math.sin(t * 30) > 0 ? '#ffd36a' : '#a0782a') : b >= 0.999 ? '#e2574c' : '#5fd6a0'; ctx.fill();
-  ctx.lineWidth = lw; ctx.strokeStyle = OUT; ctx.stroke();
-  ctx.restore();
+function drawLockParts(d, off, t, R) {
+  const b = clamp(d.bolt ?? 1, 0, 1), r = R * 0.745, q = r / 0.175, lw = 1 / T, PI = Math.PI;
+  const hub = lockHub(b, t, d.axis === 'y' && doorBroken(d));
+  const line = (w = 1.2) => { ctx.lineWidth = w * lw; ctx.strokeStyle = OUT; ctx.stroke(); };
+  const side = (s) => s < 0 ? [PI / 2, 3 * PI / 2] : [-PI / 2, PI / 2];   // the half on leaf s (u < 0: leaf -1)
+  for (const s of [-1, 1]) {                                                 // the bezel halves, on their leaves
+    const [a0, a1] = side(s);
+    ctx.save(); ctx.translate(s * (off + 0.004), 0);
+    ctx.beginPath(); ctx.arc(0, 0, R, a0, a1); ctx.arc(0, 0, r + 0.008, a1, a0, true); ctx.closePath();
+    ctx.fillStyle = '#3a3836'; ctx.fill(); line(1.5);
+    for (const f of [0.25, 0.5, 0.75]) {                                     // bolts
+      const a = a0 + (a1 - a0) * f, rm = (R + r) / 2;
+      ctx.beginPath(); ctx.arc(Math.cos(a) * rm, Math.sin(a) * rm, 0.012 * q, 0, 2 * PI); ctx.fillStyle = '#9c978e'; ctx.fill();
+    }
+    const ma = s > 0 ? -PI / 4 : -3 * PI / 4, rm = (R + r) / 2;              // marks: green = free (leaf +1), red = bolted (leaf -1)
+    ctx.beginPath(); ctx.arc(Math.cos(ma) * rm, Math.sin(ma) * rm, 0.02 * q, 0, 2 * PI); ctx.fillStyle = s > 0 ? '#47e07a' : '#e2574c'; ctx.fill();
+    ctx.restore();
+  }
+  // the rotor: whole while shut (turned b * 90 deg from free), else one half on each leaf (free)
+  const rotor = (s, th) => {                                                  // s = 0: whole; th: the groove's turn from the seam
+    ctx.save(); ctx.rotate(th);
+    const [a0, a1] = s ? side(s) : [0, 2 * PI];
+    ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); if (s) ctx.closePath();
+    ctx.fillStyle = '#b8b4ac'; ctx.fill(); line(1.5);
+    if (!s) { ctx.fillStyle = '#100e0c'; ctx.fillRect(-0.01 * q, -r + 0.01, 0.02 * q, 2 * r - 0.02); }   // the split groove (along v when free)
+    for (const g of s ? [s] : [-1, 1]) {                                       // grips, along the groove
+      ctx.beginPath(); ctx.rect(g * 0.085 * q - 0.021 * q, -0.1 * q, 0.042 * q, 0.2 * q); ctx.fillStyle = '#e8c34f'; ctx.fill(); line(1);
+    }
+    if (s >= 0) { ctx.beginPath(); ctx.arc(0.12 * q, -0.12 * q, 0.022 * q, 0, 2 * PI); ctx.fillStyle = '#f2eee6'; ctx.fill(); }   // index dot
+    ctx.beginPath(); ctx.arc(0, 0, 0.05 * q, s ? side(s)[0] : 0, s ? side(s)[1] : 2 * PI); ctx.fillStyle = '#26231f'; ctx.fill(); line(1);
+    ctx.beginPath(); ctx.arc(0, 0, 0.03 * q, s ? side(s)[0] : 0, s ? side(s)[1] : 2 * PI); ctx.fillStyle = hub; ctx.fill();
+    ctx.restore();
+  };
+  if (off < 0.001) rotor(0, b * PI / 2);
+  else for (const s of [-1, 1]) { ctx.save(); ctx.translate(s * (off + 0.004), 0); rotor(s, 0); ctx.restore(); }
 }
 
 // Capacitor bank: a cabinet of cells, lit cells hold charge.
