@@ -14,7 +14,7 @@ function netSerialize() {
   return {
     time,
     crew: crew.map(c => ({
-      id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, seq: c.input.seq, face: c.face, walk: c.walk, mode: c.mode, lamp: !!c.lamp,
+      id: c.id, name: c.name, color: c.color, x: c.x, y: c.y, vx: c.vx, vy: c.vy, seq: c.input.seq, face: c.face, walk: c.walk, mode: c.mode, lamp: !!c.lamp,
       gun: c.gun?.id || null,
       cover: c.cover,
       repair: c.repair ? { sys: sysIdx(c.repair.sys), t: c.repair.t } : null, inv: c.inv, prompt: c.prompt && { text: c.prompt.text, ok: c.prompt.ok, at: c.prompt.at, screen: c.prompt.screen, e: c.prompt.e, eAct: c.prompt.eAct, quiet: c.prompt.quiet, rep: c.prompt.rep },
@@ -24,7 +24,7 @@ function netSerialize() {
     systems: SYSTEMS.map(s => (s.broken ? 1 : 0)),
     caps: CAPACITORS.map(c => [c.charge, c.pulse || 0]),
     power: { reactor: power.reactor, reserve: power.reserve, lever: power.lever, bolts: power.bolts, pulses: power.pulses, patch: power.patch, overcharge: power.overcharge },
-    doors: DOORS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.hold || 0, d.jammed ? 1 : 0, d.pry || 0, d.stay || 0, d.bolt ?? 1]),   // (the doorways, then the deck doors)
+    doors: DOORS.map(d => [d.open, d.locked, d.blast ? 1 : 0, d.hold || 0, d.jammed ? 1 : 0, d.pry || 0, d.stay || 0, d.bolt ?? 1, d.sense || 0]),   // (the doorways, then the deck doors; sense: browsers predict them, netDoors)
     hatches: HATCHES.map(h => [h.doors.inner, h.doors.outer, h.air, h.phase, h.t, h.target, h.locked, h.forced || 0]),   // (the outer airlocks: js/airlock.js)
     guns: GUNS.map(g => ({ aim: g.aim, flash: g.flash, shots: g.shots, reload: g.reload, cd: g.cd })),
     items: ITEMS,
@@ -51,21 +51,30 @@ function netSerialize() {
   };
 }
 
+// The snapshot as sent (server.js): numbers to the millimetre / millisecond (3 decimals: ~30 % less on the wire, deflate
+// can't squeeze 15-digit fractions), except the crew and the doors, which browsers replay their own walk with (netReconcile).
+const netRound = (k, v) => (typeof v === 'number' && !Number.isInteger(v) && Number.isFinite(v) ? (Math.round(v * 1000) / 1000 || v) : v);
+function netSnapshotText() {
+  const { time: t, crew: c, doors: d, ...rest } = netSerialize();
+  return `{"time":${JSON.stringify(t)},"crew":${JSON.stringify(c)},"doors":${JSON.stringify(d)},${JSON.stringify(rest, netRound).slice(1)}`;
+}
+
 const shapeCache = new Map();
 function netApply(s, myId) {
   netClockSync(s.time);
   // crew (keep objects so the camera and smoothing carry over)
   const byId = new Map(crew.map(c => [c.id, c]));
+  let mineAck = null;
   const next = s.crew.map(d => {
     let c = byId.get(d.id);
     const fresh = !c;
     if (fresh) { c = makeCrew(d.name); c.id = d.id; }
-    const { gun, repair, inv: dInv, ui: dUi, x, y, face, walk, seq, ...rest } = d;
+    const { gun, repair, inv: dInv, ui: dUi, x, y, vx, vy, face, walk, seq, ...rest } = d;
     const mineNow = d.id === myId, predicted = mineNow && !fresh && canPredict(c) && rest.mode === c.mode;
     Object.assign(c, rest);
-    if (!predicted) { c.face = face; c.walk = walk; } // your own facing and stride come from your own input
+    if (!predicted) { c.face = face; c.walk = walk; c.vx = vx || 0; c.vy = vy || 0; }   // your own facing, stride and speed come from your own input
     if (mineNow && !predicted) netForget();
-    if (predicted && netReconcile(x, y, seq)) { /* yours: compared with where you were when you sent that input (netPredict) */ }
+    if (predicted) mineAck = { x, y, vx: vx || 0, vy: vy || 0, seq };   // (yours: replayed from there once the doors are in, netReconcile)
     else if (fresh || Math.hypot(c.x - x, c.y - y) > 2.5) { c.x = x; c.y = y; }   // snap on big jumps
     c.nx = x; c.ny = y;                               // where the server has them (others glide there, you get corrected towards it)
     c.gun = GUNS.find(g => g.id === gun) || null;
@@ -85,7 +94,7 @@ function netApply(s, myId) {
   s.caps.forEach(([ch, pu], i) => { CAPACITORS[i].charge = ch; CAPACITORS[i].pulse = pu; });
   const leverAt = power.lever.angle;                 // (the handle swings in this browser, every frame: netFrame)
   Object.assign(power.reactor, s.power.reactor); power.reserve = s.power.reserve; Object.assign(power.lever, s.power.lever); if (netLive && Number.isFinite(leverAt)) power.lever.angle = leverAt; power.bolts = s.power.bolts; power.pulses = s.power.pulses || []; power.patch = s.power.patch || [0, 1, 2]; power.overcharge = !!s.power.overcharge;
-  s.doors.forEach(([o, l, b, h, j, p, st, bo], i) => { const d = DOORS[i]; if (!d) return; d.open = o; d.locked = l; d.blast = !!b; d.hold = h; d.jammed = !!j; d.pry = p; d.stay = st || 0; d.bolt = bo ?? 1; });
+  s.doors.forEach(([o, l, b, h, j, p, st, bo, se], i) => { const d = DOORS[i]; if (!d) return; d.open = o; d.locked = l; d.blast = !!b; d.hold = h; d.jammed = !!j; d.pry = p; d.stay = st || 0; d.bolt = bo ?? 1; d.sense = se || 0; });
   s.hatches.forEach(([di, dout, air, phase, t, target, l, f], i) => { Object.assign(HATCHES[i], { air, phase, t, target, locked: l, forced: f }); HATCHES[i].doors.inner = di; HATCHES[i].doors.outer = dout; });
   s.guns.forEach((d, i) => {
     const { aim, ...rest } = d;
@@ -117,8 +126,9 @@ function netApply(s, myId) {
                                                       task: a.task ? { ...a.task, sys: SYSTEMS[a.task.sys] } : null }));
   boarding.bolts = s.boarding.bolts;
   boarding.pods = s.boarding.pods || []; syncPodSolids();   // (their footprints are solid: your own walking is predicted here)
-  netGlideFrom(boarding.invaders); netGlideFrom(dk.pirates || []);
+  netGlideFrom(boarding.invaders, s.time); netGlideFrom(dk.pirates || [], s.time);
   netLive = true;
+  if (mineAck && !netReconcile(mineAck)) netErr = null;   // your walk: the server's word, then your inputs since, replayed (doors too)
 }
 
 // Sounds happen inside the simulation; on the server they are recorded and sent along.
@@ -299,7 +309,9 @@ function netClientMain() {
   if (ret === 'solo' && !q.has('autostart')) { solo = true; show('room'); } else show('menu');
 
   if (!location.protocol.startsWith('http')) { if (q.has('autostart')) startSolo(); return; }
-  try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`); } catch (e) { ws = null; }
+  // ?lag=100&jitter=20&bw=2000&up=500: the server delays this connection like a slow link (tools/netlink.js; testing only)
+  const linkQ = ['lag', 'jitter', 'bw', 'up'].filter(k => q.has(k)).map(k => `${k}=${encodeURIComponent(q.get(k))}`).join('&');
+  try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws${linkQ ? '?' + linkQ : ''}`); } catch (e) { ws = null; }
   if (!ws) { if (q.has('autostart')) startSolo(); return; }
   netState = 'connecting'; if (phase === 'menu') renderMenu();
   if (rejoin) { $('room-host').textContent = 'Back to the lobby…'; show('room'); }
@@ -350,6 +362,7 @@ function netClientMain() {
       sendCommand = (cmd) => ws.send(JSON.stringify({ t: 'cmd', cmd }));
       backToLobby = () => ws.send(JSON.stringify({ t: 'lobby' }));
     } else if (m.t === 'state') {
+      netSnapN = m.n ?? null;                                             // (acknowledged with the next input: the server's flow control)
       netApply(m.s, m.you);
       if (m.sfx?.length) netPlaySfx(m.sfx);
     }
@@ -362,7 +375,7 @@ function netClientMain() {
     netLocalPrompt();
     const m = localInput.mouse, seq = netRemember();
     if (ws.readyState === 1) ws.send(JSON.stringify({
-      t: 'input', seq, keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed],
+      t: 'input', seq, ack: netSnapN, keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed],
       mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: m.click, rightClick: m.rightClick, moved: m.moved, look: m.look },
     }));
     localInput.pressed.clear(); m.click = false; m.rightClick = false; m.moved = 0; m.look = 0;
@@ -370,32 +383,79 @@ function netClientMain() {
 }
 // ---------------------------------------------------------------------------
 // Latency hiding. Your own crew member moves right away on your keys, using the same movement code as
-// the server. Every input carries a number (seq) and the server sends back the last one it used, so your
-// browser compares the server's position with where it had you when it sent that input (netHist), not
-// with where you are now: a round trip of walking (half a metre and more over the internet) is no error,
-// only a real difference is (a door, a push, a teleport), and that one glides away (or snaps, if big).
+// the server. Every input carries a number (seq) and the server sends back the last one it used, with where
+// it has you then and how fast you were going. Your browser keeps the inputs it sent since (netHist: the
+// keys and the frame time) and replays them from there (netReconcile), with the doors replayed alongside:
+// the same walls and the same door states as the server, so a round trip of walking (half a metre and more
+// over the internet) is no error, only a real difference is (a push, a teleport, the server seeing it
+// otherwise), and that one glides away (or snaps, if big), never through a wall (netNudge).
+// The doors themselves are predicted too (netDoors: the server's sensor rule, js/game.js stepDoor, with you
+// where your screen has you): a door opens for you when you get there, not a round trip later, and you
+// don't walk into one the server keeps shut.
 // The cannon you're manning aims from your mouse locally, and your "E: …" prompt comes from where you
-// see yourself (netLocalPrompt). Everyone else, intruders and pirates glide towards their latest server
-// position; shells, shots, bolts, sparks and asteroids fly on between snapshots (30 a second) on their
-// own velocity, the sim clock runs on smoothly, and the power lever's handle swings here, every frame.
+// see yourself (netLocalPrompt). Everyone else, intruders and pirates are shown where they were in the latest
+// snapshot moved on by their speed for the time since (dead reckoning, at most NET_COAST), smoothly;
+// shells, shots, bolts, sparks and asteroids fly on between snapshots (30 a second) on their own velocity,
+// the sim clock runs on smoothly, and the power lever's handle swings here, every frame.
+// Measure it over a slow link: tools/netsim.js (headless), or play with ?lag=100&bw=2000 (server.js).
 // ---------------------------------------------------------------------------
 const canPredict = (c) => (c.mode === 'inside' || c.mode === 'eva') && (c.health || 'ok') !== 'down' && c.health !== 'out';
-const PREDICT_SNAP = 1.5, PREDICT_DRIFT = 0.6, NET_COAST = 0.12;   // (coast: how long things fly on without news)
-let netSeq = 0, netHist = [], netErr = null, netLive = false, netSrvTime = 0, netSince = 0;
-// your positions per input sent (the last ~4 s), and what the server still sees differently
+const PREDICT_SNAP = 1.5, NET_COAST = 0.12;           // (snap: off this far, jump; coast: how long things fly on without news)
+const NET_STUCK = 0.15;                               // s a correction may stay blocked by a wall before it jumps instead
+let netSnapN = null;                                  // the latest snapshot's number (each input acknowledges it: server.js slows down when they come back late)
+let netSeq = 0, netHist = [], netHistFrom = 1, netErr = null, netLive = false, netSrvTime = 0, netSince = 0, netStep = null, netStuck = 0;
+// what the browser did about your position (tools/netsim.js reads it): replays, glides, jumps, the biggest correction
+const netStats = { acks: 0, replays: 0, glided: 0, jumps: 0, blocked: 0, maxErr: 0 };
+// your inputs sent (the last ~4 s): the walking keys and frame time of each, to replay from the server's position
 function netRemember() {
   const seq = ++netSeq;
-  if (canPredict(me) && me.nx !== undefined) { netHist.push({ seq, x: me.x, y: me.y }); if (netHist.length > 240) netHist.shift(); }
+  if (canPredict(me) && me.nx !== undefined && netStep) { netHist.push({ seq, ...netStep }); if (netHist.length > 240) { netHist.shift(); netHistFrom = netHist[0].seq; } }
   else netForget();
+  netStep = null;
   return seq;
 }
-function netForget() { netHist.length = 0; netErr = null; }
-function netReconcile(x, y, seq) {
-  if (seq == null) return false;
-  while (netHist.length && netHist[0].seq < seq) netHist.shift();
-  const h = netHist[0];
-  if (!h || h.seq !== seq) { netErr = null; return false; }    // (no record of that input: the plain glide in netPredict)
-  netErr = [x - h.x, y - h.y];
+function netForget() { netHist.length = 0; netHistFrom = netSeq + 1; netErr = null; }
+// Where can c stand (the same test updateCrew moves by): inside on the floor (open doors included), outside within reach.
+function netStandOk(c) {
+  if (c.mode === 'eva') return (x, y) => evaOk(x, y) && !(typeof dockBlocksEva === 'function' && dockBlocksEva(x, y));
+  const rects = walkRects();
+  return (x, y) => canStand(x, y, rects);
+}
+// The server had you at (x, y) going (vx, vy) after input `seq`: replay the inputs since then, with the doors, and
+// glide from where you are shown to the result. False: no record of the inputs since (history cleared, a mode change).
+function netReconcile({ x, y, vx, vy, seq }) {
+  if (seq == null || seq < netHistFrom - 1) return false;
+  while (netHist.length && netHist[0].seq <= seq) netHist.shift();
+  netStats.acks++;
+  const keep = { x: me.x, y: me.y, face: me.face, walk: me.walk, lookT: me.lookT, mode: me.mode, aim: me.aim };
+  me.x = x; me.y = y; me.vx = vx; me.vy = vy;
+  let ok = true;
+  for (const h of netHist) {
+    me.aim = h.aim;
+    updateCrew(me, h.dt, h.ix, h.iy);
+    if (me.mode !== keep.mode) { ok = false; break; }   // (the server decides those)
+    updateDoors(h.dt, true);
+  }
+  const rx = me.x, ry = me.y;
+  Object.assign(me, keep);
+  if (!ok) return false;
+  netStats.replays++;
+  netErr = [rx - me.x, ry - me.y];
+  netStats.maxErr = Math.max(netStats.maxErr, Math.hypot(netErr[0], netErr[1]));
+  return true;
+}
+// Move c by (dx, dy) without going through walls (each axis on its own, like walking). Returns what was left over.
+function netNudge(c, dx, dy) {
+  const ok = netStandOk(c);
+  let lx = 0, ly = 0;
+  if (ok(c.x + dx, c.y)) c.x += dx; else lx = dx;
+  if (ok(c.x, c.y + dy)) c.y += dy; else ly = dy;
+  return [lx, ly];
+}
+// Put c at (x, y) at once, if it can stand there (a big correction, or one a wall keeps blocking).
+function netJump(c, x, y) {
+  if (!netStandOk(c)(x, y) && canPredict(c)) return false;
+  c.x = x; c.y = y; netStats.jumps++;
   return true;
 }
 // the sim clock: the server's time from each snapshot, running on smoothly in between
@@ -417,22 +477,33 @@ function netBetween(dt) {
   }
   animateLever(dt);
   netPredict(dt);
+  netDoors(dt);
   netGlide(dt, boarding.invaders); netGlide(dt, dk.pirates || []);
 }
-// intruders and pirates: shown where they were last frame, gliding to where the server has them
-const netGlideAt = new Map();                          // uid → [x, y] last shown
-function netGlideFrom(list) {
+// The doors, every frame, by the server's rule (sensors, lingering, sliding), with everyone where this screen has
+// them: the door in front of you starts opening when you get there, as it does on the server (which sees you
+// get there with your input). Each snapshot sets them to the server's state again (and netReconcile replays
+// your inputs since, doors included).
+function netDoors(dt) { updateDoors(dt, true); }
+// intruders and pirates: shown where they were last frame, gliding to where the server has them, moved on by their
+// speed (from the last two snapshots) for the time since the latest one
+const netGlideAt = new Map(), netSeen = new Map();     // uid → [x, y] last shown; uid → [x, y, server time] last snapshot
+function netGlideFrom(list, t) {
   for (const a of list) {
-    a.nx = a.x; a.ny = a.y;
-    const p = a.uid != null && netGlideAt.get(a.uid);
+    a.nx = a.x; a.ny = a.y; a.nvx = 0; a.nvy = 0;
+    if (a.uid == null) continue;
+    const p = netGlideAt.get(a.uid), q = netSeen.get(a.uid);
+    if (q && t > q[2] && t - q[2] < 0.25 && Math.hypot(a.x - q[0], a.y - q[1]) < 1) { a.nvx = (a.x - q[0]) / (t - q[2]); a.nvy = (a.y - q[1]) / (t - q[2]); }
+    netSeen.set(a.uid, [a.x, a.y, t]);
     if (p && Math.hypot(p[0] - a.x, p[1] - a.y) < 1.5) { a.x = p[0]; a.y = p[1]; }
   }
+  if (netSeen.size > 64) netSeen.clear();
 }
 function netGlide(dt, list) {
-  const k = 1 - Math.exp(-25 * dt);
+  const k = 1 - Math.exp(-25 * dt), lead = Math.min(netSince, NET_COAST);
   for (const a of list) {
     if (a.nx === undefined) continue;
-    a.x = lerp(a.x, a.nx, k); a.y = lerp(a.y, a.ny, k);
+    a.x = lerp(a.x, a.nx + (a.nvx || 0) * lead, k); a.y = lerp(a.y, a.ny + (a.nvy || 0) * lead, k);
     if (a.uid != null) netGlideAt.set(a.uid, [a.x, a.y]);
   }
   if (netGlideAt.size > 64) netGlideAt.clear();
@@ -448,10 +519,18 @@ function netLocalPrompt() {
   if (p?.rep) me.prompt = me.prompt ? { ...me.prompt, text: `${me.prompt.text}  ·  ${p.rep}`, rep: p.rep } : p;   // (the server's repair hint: Space / right click)
 }
 function netPredict(dt) {
-  const k = 1 - Math.exp(-25 * dt);
+  const k = 1 - Math.exp(-25 * dt), lead = Math.min(netSince, NET_COAST);
   for (const c of crew) {
     if (c.nx === undefined) continue;
-    if (c !== me || !canPredict(c)) { c.x = lerp(c.x, c.nx, k); c.y = lerp(c.y, c.ny, k); continue; }
+    if (c !== me || !canPredict(c)) {                  // everyone else: the snapshot moved on by their speed, smoothly
+      let tx = c.nx, ty = c.ny;
+      if (c !== me && (c.vx || c.vy) && canPredict(c)) {
+        const ex = c.nx + c.vx * lead, ey = c.ny + c.vy * lead;
+        if (netStandOk(c)(ex, ey)) { tx = ex; ty = ey; }
+      }
+      c.x = lerp(c.x, tx, k); c.y = lerp(c.y, ty, k);
+      continue;
+    }
     const blocked = debugOpen || !!me.ui.panel || !!mission.over;
     const ik = localInput.keys, has = (...codes) => !blocked && codes.some(x => ik.has(x));
     const ix = (has('KeyD') ? 1 : 0) - (has('KeyA') ? 1 : 0), iy = (has('KeyS') ? 1 : 0) - (has('KeyW') ? 1 : 0);
@@ -460,18 +539,24 @@ function netPredict(dt) {
     const m = localInput.mouse;                       // look at the mouse after moving it / firing with it (as updatePlayer)
     if (!blocked && (m.look || ((m.right || m.rightClick) && me.inv.weapon))) me.lookT = LOOK_TIME;
     updateCrew(me, dt, ix, iy);                        // move now, don't wait for the server
-    if (netErr) {                                      // the server's word on an input you sent: glide off the difference
-      const e = Math.hypot(netErr[0], netErr[1]), kc = e > PREDICT_SNAP ? 1 : e > 0.02 ? 1 - Math.exp(-10 * dt) : 0;
-      const sx = netErr[0] * kc, sy = netErr[1] * kc;
-      c.x += sx; c.y += sy; netErr[0] -= sx; netErr[1] -= sy;
-      for (const h of netHist) { h.x += sx; h.y += sy; }
+    netStep = { dt, ix, iy, aim: c.aim };              // (sent with this frame's input: netRemember)
+    if (netErr) {                                      // the server's word (replayed up to now): glide off the difference, round walls
+      const e = Math.hypot(netErr[0], netErr[1]);
+      if (e < 0.002) { if (e) netNudge(c, netErr[0], netErr[1]); netErr = [0, 0]; continue; }   // ([0, 0]: in step with the server)
+      if (e > PREDICT_SNAP && netJump(c, c.x + netErr[0], c.y + netErr[1])) { netErr = [0, 0]; continue; }
+      const kc = 1 - Math.exp(-12 * dt), sx = netErr[0] * kc, sy = netErr[1] * kc;
+      const [lx, ly] = netNudge(c, sx, sy);
+      netErr[0] -= sx - lx; netErr[1] -= sy - ly;
+      netStats.glided += Math.hypot(sx - lx, sy - ly);
+      if (Math.abs(lx) + Math.abs(ly) > 1e-6) {         // a wall in the way: you're on its wrong side, jump soon
+        netStuck += dt; netStats.blocked++;
+        if (netStuck > NET_STUCK) { netJump(c, c.x + netErr[0], c.y + netErr[1]); netErr = [0, 0]; netStuck = 0; }   // (where it can't stand: dropped)
+      } else netStuck = 0;
       continue;
     }
-    const err = Math.hypot(c.nx - c.x, c.ny - c.y);
-    if (err > PREDICT_SNAP) { c.x = c.nx; c.y = c.ny; }                       // way off (pushed, teleported): snap
-    else if (!(ix || iy) || err > PREDICT_DRIFT) {                            // resting or drifting: glide back
-      const kc = 1 - Math.exp(-8 * dt); c.x = lerp(c.x, c.nx, kc); c.y = lerp(c.y, c.ny, kc);
-    }
+    const err = Math.hypot(c.nx - c.x, c.ny - c.y);   // (no replay yet: glide onto the server once you stop)
+    if (err > PREDICT_SNAP) netJump(c, c.nx, c.ny);
+    else if (!(ix || iy) && err > 0.002) { const kc = 1 - Math.exp(-8 * dt); netNudge(c, (c.nx - c.x) * kc, (c.ny - c.y) * kc); }
   }
   if (me.mode === 'gun' && me.gun && standing(me) && !debugOpen && !me.ui.panel) {   // aim the cannon you're on locally, same rule as the server
     const g = me.gun, m = localInput.mouse, ik = localInput.keys, k = (...codes) => (codes.some(x => ik.has(x)) ? 1 : 0);

@@ -4251,3 +4251,88 @@ the synthesized piece stays in music.html and is the fallback when the audio fai
   players, as laid out; levReleased only from the blast, not in practice; with fake audio elements: plays on the
   clock, release() stitches the ending onto the next bar line, the jump after it changes nothing, ends; falls back to
   the synthesized Last Jump Home on an error; release() leaves a synthesized piece alone).
+
+### Multiplayer lag: a connection simulator, door prediction, input replay, smaller snapshots, flow control (2026-10-26, js/net.js, js/game.js, server.js, tools/netsim.js, tools/netlink.js)
+User: "still laggy, need to improve. You should probably have some connection simulation where you introduce 100ms lag
+and additional lag based on data transfer to assess this." And: "In multiplayer you sometimes drift into the wall when you
+run into a door. You should probably use the door state and wall state for simulation purposes to hide lag."
+- **The connection simulator.** `tools/netlink.js`: one direction of a link, `makeLink({ lag, jitter, bw })`: latency each
+  way, up to `jitter` ms more (repeatable), and a bandwidth limit: a message takes bytes / rate to go onto the wire, queued
+  behind the ones before it (a big snapshot delays the next ones); in order, like TCP. Used three ways:
+  - headless, measured, in virtual time: `node tools/netsim.js [--lag 100] [--jitter 40] [--bw 2000] [--up 500]
+    [--players 4] [--scenario walk|door|frame|lock|busy] [--seconds 20] [--json] [--no-flow]`. The server's simulation and
+    browser copies (the game scripts, like the tests) with everything server.js does per snapshot (one text, the size on
+    the wire estimated as permessage-deflate with the last 32 KB as the dictionary, skipping when behind) and a browser
+    does per frame (netBetween, netRemember, input). It reports for the guest: snapshots (JSON and wire bytes, per second,
+    kbit/s, age on arrival, skipped), the own walk (key → screen, key → the server's confirmed position, the time through
+    the doorway, how far the screen is from the same keys with no lag at all, jumps, frames shown standing inside a wall
+    or shut door, the replays / glides / largest correction), and how far the other player, the intruders and the enemies
+    are shown from where the server has them *now*. Scenarios: walk (through the left doorway and about; the host walks
+    the bridge), door (into the locked doorway, pushing, along it), frame (at an angle into a shut doorway's frame while it
+    opens: the user's "drift into the wall"), lock (the open doorway locked from the console as you reach it), busy (two
+    interceptors, two intruders: the snapshot sizes).
+  - manual play: `node server.js 8110 --lag 100 --jitter 20 --bw 2000 [--up 500]` delays every connection, or one browser
+    opens the page with `?lag=100&bw=2000` (net.js passes the flags on the WebSocket URL). server.js queues each frame on
+    the link's schedule (`delayer`, one timer) both ways; the link's queue counts as unsent bytes for "behind".
+  - tests: tests/netdoors.js and tests/netlink.js use it.
+- **Measured before** (old net.js / server.js, the same simulator, 100 ms each way unless noted):
+  - snapshots: 30/s, JSON 4.9-5 KB quiet / 7.9 KB in a fight (max 11 KB), on the wire 150-210 B quiet / 512 B in the
+    fight (p95 963, the first one 1.8 KB): 50 / 123 kbit/s; 100 ms old on arrival. Bandwidth is not the problem on any
+    normal link; it was on a slow one: at 100 kbit/s snapshots arrived **1.5 s old (p95 5 s)** (the 64 KB "behind" rule only
+    kicks in after seconds of queue), others shown up to 7 m off.
+  - own walk: key → screen 17 ms (prediction works), key → server 233 ms. **Through a doorway 100 ms later than without
+    lag** (the door opens on the server's sensor, which the browser learns of a round trip after you got there), then a
+    catch-up lurch; shown up to 0.6 m off the lag-free walk.
+  - **frame: 125 frames (2 s) shown inside the wall beside the doorway, never got through on screen, up to 2.9 m off**
+    (with 40 ms jitter: 126 frames, 3.1 m). The mechanism: sliding along the wall into a shut doorway, the server's door
+    opens (it saw you get there) a round trip before your browser's does; the server walks you through, your browser keeps
+    sliding past the doorway; the correction (the server's position minus where your browser had you then) was then
+    added to your position as it was, **without any collision**: straight into the wall beside the door, until the
+    unstick safety net or a snap pulled you out. The same raw nudge put you a hair into any wall you slid along (a frame
+    or two in a wall per walk; 13-20 frames with jitter).
+  - lock: 7 frames in the shutting door, 1 jump. Walk with 40 ms jitter: 20 frames in a wall, up to 1.15 m off.
+  - others: the other crew member shown 0.32 m off on average (p95 0.6 m) of where they are, intruders 0.28 (p95 0.33),
+    enemies 0.35: one way of latency, plus half a snapshot interval, plus the glide's 40 ms.
+- **What changed (netcode only; no gameplay number, no save change):**
+  - **Doors predicted** (net.js `netDoors`, game.js `updateDoors(dt, quiet)` → `stepDoor`, the loop body unchanged): the
+    browser runs the server's door rule every frame (sensor delay, linger, slide, locks, pressure, spores), with everyone
+    where this screen has them and without the hiss (the server sends that). The snapshot carries each door's sensor
+    (`sense`, the 9th field) so the delay continues where the server is.
+  - **Input replay** (`netReconcile`): the snapshot carries your velocity (`vx`, `vy`) too; the browser keeps the inputs it
+    sent (walking keys, frame time, ~4 s) and, once the snapshot's doors and pods are in, puts you where the server had
+    you after input `seq` and replays the inputs since, **doors stepped alongside**: the same walls and door states as the
+    server would see. The difference to where you are shown glides off (12/s) by `netNudge`, each axis only where you can
+    stand (no wall, no shut door); blocked for 0.15 s (you are on the wrong side of a wall) it jumps there, if you can stand
+    there. Over 1.5 m: a jump. Mode changes during a replay (the server decides those): no replay that time.
+    No position history to shift any more; the old "glide back when you stop" only runs before the first replay.
+  - **Others moved on** between snapshots by their speed (crew: the snapshot's vx/vy; intruders and pirates: from their
+    last two snapshots), for at most NET_COAST (0.12 s) like shells, only where they can stand, then the same glide.
+  - **Smaller snapshots** (`netSnapshotText`, server.js sends it): every number to 3 decimals (mm, ms; a non-zero that
+    would round to 0 stays) except the crew and the doors (the replay needs every digit): 15-digit fractions don't
+    compress; on the wire ~30 % less in a fight.
+  - **Flow control by acknowledgement** (tools/netlink.js `makeFlow`, server.js): each snapshot has a number `n` (per
+    connection), each input says the latest one the browser got (`ack`); a snapshot not acknowledged 150 ms after the
+    quickest round trip of the last 10-20 s means a queue somewhere the server can't see (a slow uplink, a tunnel, the
+    kernel's socket buffer): skip snapshots (their sounds wait) until it has drained. No acknowledgement yet (an older
+    page) or none for 2 s (a background tab): never behind.
+- **Measured after** (same runs):
+  - snapshots: JSON 4.8-4.9 KB quiet / 7.1 KB in the fight, on the wire 127-220 B quiet / **356 B in the fight (p95 510)**:
+    36-53 / 86 kbit/s. At 100 kbit/s: **157 ms old (p95 267)** instead of 1.5 s (p95 5 s), 29/s; at 64 kbit/s 0.3 s (p95
+    0.6) instead of 1 s (p95 3 s) with 19 a second.
+  - own walk: through the doorway **at the same frame as without lag** (walk, frame, busy); walk, door, frame, lock and
+    busy all **0 m off the lag-free walk, 0 frames in a wall, 0 jumps** (423 replays, nothing to glide). With 40 ms jitter:
+    0 frames in a wall, up to 0.2 m off (inputs bunched by the jitter: the server applies the latest keys per tick, so it
+    walks a step more or less than your screen; glided off, at most 0.13 m at a time).
+  - others: the other crew member 0.265 m off on average (p95 0.485, was 0.32 / 0.6), intruders 0.23 (p95 0.27).
+  - The lag itself stays: anything the server decides (E on a console, a pickup, a hit) still takes a round trip; doors
+    and walls no longer add to it.
+- Left: the outer airlocks' doors (js/airlock.js) aren't predicted (they cycle, with pressure); walking into one still
+  waits a round trip longer, but no longer shows you in its wall. The server applies the latest keys each tick; a queue of
+  inputs (one per tick) would remove the jitter's step-more-or-less, at the cost of a little delay. A browser below
+  20 fps (the frame time is capped at 0.05 s) walks slower than the server moves it and gets corrected (jumps).
+- Tests: tests/netdoors.js (new; fails on the old net.js: 125 frames in the wall, never through, 0.33 m / 1 jump at the
+  lock, 100 ms late through the door, 0.6 m off): at an angle into a doorway's frame (also with jitter), into a locked
+  doorway, a doorway locked as you reach it, the walk through a doorway, the other player's distance. tests/netlink.js
+  (new): the link (latency, bandwidth queue, order with jitter, options), the flow rule, the simulator at 64 kbit/s with
+  and without it, the rounded snapshot (crew and doors exact, the rest to the mm, smaller), server.js with `?lag=150` and
+  with `--lag 120` (a real server, Node's WebSocket). tests/latency.js unchanged and passing.

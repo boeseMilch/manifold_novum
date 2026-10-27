@@ -73,9 +73,20 @@ state to every browser 30 times a second. Browsers send their keys and mouse and
 they receive.
 
 To hide latency, your own crew member moves the instant you press a key (your browser runs
-the same movement code), and quietly corrects toward the server's position when you stop
-or drift off. The cannon you're manning aims straight from your mouse and keys. On a local network
+the same movement code, against the same walls and doors: it predicts the doors too), and
+quietly corrects toward the server's position (your keys since then replayed from it) when
+the server saw something differently. Everyone else is drawn moving on smoothly between updates. The cannon you're manning aims straight from your mouse and keys. On a local network
 this should feel close to playing solo.
+
+**Testing over a slow connection** (no second machine needed): the server can delay a
+connection like an internet link (latency each way in ms, jitter in ms, bandwidth in kbit/s):
+
+- one browser: open the page with `?lag=100&bw=2000` (also `&jitter=20`, `&up=500` for the
+  upload); the other browsers stay fast;
+- everyone: `node server.js 8080 --lag 100 --jitter 20 --bw 2000`;
+- headless, with numbers (snapshot sizes and age, your own walk against a lag-free one, doors,
+  how far the others are shown from where they are): `node tools/netsim.js --lag 100 --bw 2000`
+  (`--scenario walk|door|frame|lock|busy`, `--players 4`, `--json`).
 
 ## Controls
 

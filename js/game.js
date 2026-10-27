@@ -191,26 +191,28 @@ function doorPressure(d) {
 }
 // Why it won't open by itself (null: it works).
 const doorStuck = (d) => doorBroken(d) && !d.jammed ? 'broken' : d.locked ? 'locked' : d.blast ? 'blast' : d.axis === 'y' && sporeGlitching(d) ? 'spores' : null;
-function updateDoors(dt) {
+// quiet: a browser predicting the doors (js/net.js netDoors) steps them too, without the sound (the server sends that)
+function updateDoors(dt, quiet = false) {
   const friends = doorFriends(), bodies = actors();
-  for (const d of DOORS) {
-    if (!doorBroken(d)) d.jammed = false;            // (repaired: works again)
-    d.hold = Math.max(0, (d.hold || 0) - dt);
-    d.blast = doorPressure(d);
-    if (d.pry > 0 && !(d.pryAt > time - 0.25)) d.pry = Math.max(0, d.pry - dt * 0.1);   // (nobody forcing it any more: slowly back)
-    if (d.axis === 'y' && sporeGlitching(d) && !d.hold && !d.jammed) continue;   // spores in its motor (js/spores.js): it sticks where it is
-    const auto = !doorStuck(d), at = auto ? friends.find(c => nearDoor(d, c.x, c.y, DOOR_SENSE)) : null;
-    const before = d.sense || 0;
-    d.sense = at ? Math.min(DOOR_DELAY, before + dt) : d.open > 0 ? DOOR_DELAY : 0;   // (the sensor's reaction; an open door: at once)
-    if (at && before < DOOR_DELAY && d.sense >= DOOR_DELAY && d.open === 0 && crew.includes(at)) sfxFor(at, 'hatch');
-    d.stay = at && d.sense >= DOOR_DELAY ? DOOR_LINGER : Math.max(0, (d.stay || 0) - dt);
-    const inIt = d.open > 0.25 && bodies.some(c => inRect(c.x, c.y, d, CREW_R));
-    const want = d.hold > 0 || d.jammed || inIt || (auto && d.stay > 0);
-    d.open = clamp(d.open + (want ? dt : -dt) / DOOR_TIME, 0, 1);
-    // the lock (drawing only, js/art.js drawDoorLock): bolted while shut; someone at it: the bolts slide back as the
-    // sensor reacts (gone exactly when the leaves start to move); shut again: they shoot home in DOOR_DELAY s
-    d.bolt = d.open > 0 ? 0 : at ? Math.min(clamp((d.bolt ?? 1) + dt / DOOR_DELAY, 0, 1), 1 - d.sense / DOOR_DELAY) : clamp((d.bolt ?? 1) + dt / DOOR_DELAY, 0, 1);
-  }
+  for (const d of DOORS) stepDoor(d, dt, friends, bodies, quiet);
+}
+function stepDoor(d, dt, friends, bodies, quiet) {
+  if (!doorBroken(d)) d.jammed = false;            // (repaired: works again)
+  d.hold = Math.max(0, (d.hold || 0) - dt);
+  d.blast = doorPressure(d);
+  if (d.pry > 0 && !(d.pryAt > time - 0.25)) d.pry = Math.max(0, d.pry - dt * 0.1);   // (nobody forcing it any more: slowly back)
+  if (d.axis === 'y' && sporeGlitching(d) && !d.hold && !d.jammed) return;   // spores in its motor (js/spores.js): it sticks where it is
+  const auto = !doorStuck(d), at = auto ? friends.find(c => nearDoor(d, c.x, c.y, DOOR_SENSE)) : null;
+  const before = d.sense || 0;
+  d.sense = at ? Math.min(DOOR_DELAY, before + dt) : d.open > 0 ? DOOR_DELAY : 0;   // (the sensor's reaction; an open door: at once)
+  if (!quiet && at && before < DOOR_DELAY && d.sense >= DOOR_DELAY && d.open === 0 && crew.includes(at)) sfxFor(at, 'hatch');
+  d.stay = at && d.sense >= DOOR_DELAY ? DOOR_LINGER : Math.max(0, (d.stay || 0) - dt);
+  const inIt = d.open > 0.25 && bodies.some(c => inRect(c.x, c.y, d, CREW_R));
+  const want = d.hold > 0 || d.jammed || inIt || (auto && d.stay > 0);
+  d.open = clamp(d.open + (want ? dt : -dt) / DOOR_TIME, 0, 1);
+  // the lock (drawing only, js/art.js drawDoorLock): bolted while shut; someone at it: the bolts slide back as the
+  // sensor reacts (gone exactly when the leaves start to move); shut again: they shoot home in DOOR_DELAY s
+  d.bolt = d.open > 0 ? 0 : at ? Math.min(clamp((d.bolt ?? 1) + dt / DOOR_DELAY, 0, 1), 1 - d.sense / DOOR_DELAY) : clamp((d.bolt ?? 1) + dt / DOOR_DELAY, 0, 1);
 }
 // The pressurized room a forced door would vent (null: none, both sides alike).
 function doorVents(d) {

@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // Manifold Novum LAN server: serves the game over HTTP and runs the shared simulation.
 // No dependencies.  Usage:  node server.js [port]   →  open http://<this-machine>:<port>
+// Testing over a slow connection: node server.js 8110 --lag 100 --jitter 20 --bw 2000 [--up 500] delays every
+// connection like such a link (ms each way, ms of jitter, kbit/s to the browser / from it; tools/netlink.js), or a single
+// browser opens the page with ?lag=100&bw=2000. Headless measurements of the same: node tools/netsim.js.
 //
 // Everyone who opens the page lands in the main menu, which lists the open games. Anyone can
 // open a game (and is its host) or join one with room (8 players each), also mid-mission. Only
@@ -8,8 +11,10 @@
 // When the mission is over, anyone can press R to send that game back to its lobby. A game
 // closes when its last player leaves.
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto'), vm = require('vm'), os = require('os'), zlib = require('zlib');
+const { makeLink, linkOpts, makeFlow } = require('./tools/netlink');
 
 const PORT = +process.argv[2] || +process.env.PORT || 8080;
+const LINK = linkOpts((k) => { const i = process.argv.indexOf('--' + k); return i >= 0 ? process.argv[i + 1] : null; });   // (--lag … for everyone)
 const ROOT = __dirname;
 const SCRIPTS = ['audio', 'music', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'sidebar', 'claims', 'tutorial-mp', 'lights', 'sprites', 'game', 'net'];
 const TICK = 1 / 60, SEND_EVERY = 2;                // simulate at 60 Hz, send snapshots at 30 Hz
@@ -53,9 +58,15 @@ server.on('upgrade', (req, socket) => {
   socket.write(['HTTP/1.1 101 Switching Protocols', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Accept: ${accept}`,
     ...(deflate ? ['Sec-WebSocket-Extensions: permessage-deflate; client_no_context_takeover'] : []), '', ''].join('\r\n'));
   socket.setNoDelay(true);
-  const client = { socket, id: nextId++, name: 'Crew', alive: true, buf: Buffer.alloc(0), z: null, zq: [], zbuf: [] };
+  const client = { socket, id: nextId++, name: 'Crew', alive: true, buf: Buffer.alloc(0), z: null, zq: [], zbuf: [], flow: makeFlow(), link: null };
   if (deflate) { client.z = zlib.createDeflateRaw({ level: 3 }); client.z.on('data', (d) => client.zbuf.push(d)); client.z.on('error', () => drop(client)); }
-  socket.on('data', (chunk) => { client.buf = Buffer.concat([client.buf, chunk]); readFrames(client); });
+  const q = new URLSearchParams((req.url || '').split('?')[1] || ''), lo = linkOpts((k) => q.get(k)) || LINK;   // a simulated slow link (testing)
+  if (lo) {
+    client.link = { down: makeLink({ lag: lo.lag, jitter: lo.jitter, bw: lo.bw, seed: client.id }), up: makeLink({ lag: lo.lag, jitter: lo.jitter, bw: lo.up, seed: client.id + 99 }), out: delayer(), in: delayer() };
+    console.log(`[link] connection ${client.id}: ${lo.lag} ms each way${lo.jitter ? ` + up to ${lo.jitter} ms` : ''}${lo.bw ? `, ${lo.bw} kbit/s down` : ''}${lo.up ? `, ${lo.up} kbit/s up` : ''}`);
+  }
+  const take = (chunk) => { client.buf = Buffer.concat([client.buf, chunk]); readFrames(client); };
+  socket.on('data', (chunk) => { if (client.link) client.link.in(client.link.up.send(chunk.length, Date.now()), () => client.alive && take(chunk)); else take(chunk); });
   socket.on('close', () => drop(client));
   socket.on('error', () => drop(client));
   connect(client);
@@ -90,7 +101,20 @@ function sendFrame(c, payload, op = 0x1, compressed = false) {
   const head = len < 126 ? Buffer.from([b0, len]) : len < 65536 ? Buffer.alloc(4) : Buffer.alloc(10);
   if (len >= 126 && len < 65536) { head[0] = b0; head[1] = 126; head.writeUInt16BE(len, 2); }
   else if (len >= 65536) { head[0] = b0; head[1] = 127; head.writeBigUInt64BE(BigInt(len), 2); }
-  try { c.socket.write(Buffer.concat([head, data])); } catch (e) { drop(c); }
+  const frame = Buffer.concat([head, data]);
+  if (c.link) return c.link.out(c.link.down.send(frame.length, Date.now()), () => { if (c.alive) try { c.socket.write(frame); } catch (e) { drop(c); } });
+  try { c.socket.write(frame); } catch (e) { drop(c); }
+}
+// A simulated link's delivery queue: run each callback at its time (ms, Date.now()), in order, on one timer.
+function delayer() {
+  const q = []; let timer = null;
+  const pump = () => {
+    timer = null;
+    const now = Date.now();
+    while (q.length && q[0][0] <= now) q.shift()[1]();
+    if (q.length) timer = setTimeout(pump, q[0][0] - now);
+  };
+  return (at, fn) => { q.push([at, fn]); if (!timer) timer = setTimeout(pump, Math.max(0, at - Date.now())); };
 }
 // Every text message goes through here (so they stay in order): compressed one after another, or plain.
 function sendText(c, text) {
@@ -111,7 +135,9 @@ function deflateNext(c) {
 }
 // A browser that can't keep up (slow uplink, a hiccup in the tunnel) skips snapshots instead of getting
 // an ever longer queue of old ones (seconds of lag that never go away). Each snapshot is the whole state.
-const behind = (c) => c.zq.length > 1 || c.socket.writableLength > 64 * 1024;
+// Also behind: snapshots coming back acknowledged much later than the quickest round trip (a queue the server can't see:
+// a slow uplink, a tunnel, the kernel's socket buffer; tools/netlink.js makeFlow), or a simulated link's own queue.
+const behind = (c) => c.zq.length > 1 || c.socket.writableLength + (c.link ? c.link.down.backlog(Date.now()) : 0) > 64 * 1024 || c.flow.behind(Date.now());
 const send = (c, obj) => sendText(c, JSON.stringify(obj));
 
 // ---------------------------------------------------------------------------
@@ -242,7 +268,7 @@ function onMessage(c, m) {
   else if (m.t === 'difficulty' && isHost && g.phase === 'lobby') { g.easy = clampEasy(m.easy); changed(g); }
   else if (m.t === 'skirmish' && isHost && g.phase === 'lobby') { g.custom = cleanCustom(m.custom); changed(g); }
   else if (m.t === 'start' && isHost && g.phase === 'lobby') startGame(g);
-  else if (m.t === 'input' && g.run) g.run.sim.netServer.input(c.id, m);
+  else if (m.t === 'input' && g.run) { if (Number.isFinite(m.ack)) c.flow.acked(m.ack, Date.now()); g.run.sim.netServer.input(c.id, m); }
   else if (m.t === 'cmd' && g.run) g.run.sim.netServer.command(c.id, m.cmd);
   else if (m.t === 'lobby' && g.run && g.run.sim.mission.over) endGame(g);
 }
@@ -258,7 +284,7 @@ function makeSim() {
   };
   vm.createContext(sandbox);
   const code = SCRIPTS.map(f => fs.readFileSync(path.join(ROOT, 'js', f + '.js'), 'utf8')).join('\n;\n')
-    + '\n;globalThis.__sim = { netServer, netSerialize, netCaptureSfx, get mission() { return mission; }, get crew() { return crew; } };';
+    + '\n;globalThis.__sim = { netServer, netSerialize, netSnapshotText, netCaptureSfx, get mission() { return mission; }, get crew() { return crew; } };';
   vm.runInContext(code, sandbox, { filename: 'manifold-novum-sim.js' });
   return sandbox.__sim;
 }
@@ -286,11 +312,12 @@ function stepGame(g) {
     if (++run.tick % SEND_EVERY === 0) due = true;
   }
   if (!due) return;                                    // (catching up several ticks at once: one snapshot, the latest)
-  const snap = JSON.stringify(run.sim.netSerialize()), events = run.sfx.splice(0), fx = JSON.stringify(events);
+  const snap = run.sim.netSnapshotText(), events = run.sfx.splice(0), fx = JSON.stringify(events);   // (n: the browser acknowledges it)
   for (const c of live(g)) {
     if (behind(c)) { c.sfxLate = [...(c.sfxLate || []), ...events].slice(-60); continue; }   // (its sounds wait for the next one it gets)
     const late = c.sfxLate; c.sfxLate = null;
-    sendText(c, `{"t":"state","you":${c.id},"sfx":${late ? JSON.stringify([...late, ...events]) : fx},"s":${snap}}`);
+    c.snapN = (c.snapN || 0) + 1; c.flow.sent(c.snapN, now);
+    sendText(c, `{"t":"state","n":${c.snapN},"you":${c.id},"sfx":${late ? JSON.stringify([...late, ...events]) : fx},"s":${snap}}`);
   }
 }
 function endGame(g) {                                  // mission over: everyone back to this game's lobby
