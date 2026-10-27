@@ -776,12 +776,14 @@ const music = (() => {
   // ---------------------------------------------------------------- recordings
   // A recorded piece (a Suno song arranged by tools/arrange-music.py; its data in js/music/recorded-<name>.js, its
   // files in assets/music/<name>/) plays in place of the synthesized piece for its missions (2026-10-25: Pressure
-  // Hull for c7). The synthesized piece stays the fallback (the file can't load or play) and stays in music.html.
+  // Hull for c7; 2026-10-26, Last Jump Home for c8). The synthesized piece stays the fallback (the file can't load or
+  // play) and stays in music.html.
   //   main.mp3 is laid out on the mission clock (setClock: mission.t, which doesn't run exactly at wall-clock speed):
   //   a small drift is caught up by playing up to 4% faster or slower (same pitch); more than REC_DRIFT s off (a
-  //   pause, joining mid-mission) it's seeked there; past its end (a late jump) its last section loops, wrapped on
-  //   its bar line. jumped(): ending.mp3 (preroll s of silence before its first downbeat) from the first bar line of
-  //   main at least REC_AHEAD s ahead (so at most a bar + 1.6 s after the jump), main fading out under it.
+  //   pause, joining mid-mission) it's seeked there; past its end (a late jump) its loop (its last section or sections:
+  //   R.loop) repeats, wrapped on its bar line. jumped(): ending.mp3 (preroll s of silence before its first downbeat)
+  //   from the first bar line of main at least REC_AHEAD s ahead (so at most a bar + 1.6 s after the jump), main fading
+  //   out under it. release(): the same, earlier, for a recording with `release` (c8: from the engine blast on).
   // Over http(s) both go through the music bus (mute, level, the tab-hidden pause as for the synth). Opened as a file
   // the page can't route a local file through WebAudio (Chrome hands it over as silence: another origin), so there the
   // audio elements play directly: their volume follows the bus level and the mute by hand (stepped per tick).
@@ -893,7 +895,7 @@ const music = (() => {
   function useRec(R) {                            // play this recording (null: none) from here on
     if ((rec && rec.R) === R) return;
     if (!R) { recStop(); return; }
-    if (recStart(R)) { const s = SONGS.find(x => x.name === R.name); if (s) switchTo(s); }
+    if (recStart(R)) { const s = SONGS.find(x => x.name === R.name) || BY_MISSION[R.missions[0]]; if (s) switchTo(s); }   // (its synthesized piece, the fallback: same name, or its mission's)
   }
   const recOn = () => !!rec && vnow === null;
 
@@ -942,7 +944,7 @@ const music = (() => {
     reset() { if (rec) recStart(rec.R); else begin(song); },
     // Recordings (js/music/recorded-<name>.js): register one; list them; play one (music.html); the mission clock.
     record(r) { const R = { ...r, src: { main: r.main, ending: r.ending } }; delete R.main; delete R.ending; RECS[R.name] = R; for (const id of R.missions) REC_BY_MISSION[id] = R; return R; },
-    recordings() { return Object.values(RECS).map(R => ({ name: R.name, title: R.title, missions: R.missions.slice(), length: R.length, sections: R.sections.slice() })); },
+    recordings() { return Object.values(RECS).map(R => ({ name: R.name, title: R.title, missions: R.missions.slice(), length: R.length, jump: R.jump, release: R.release || null, sections: R.sections.slice() })); },
     playRecording(name) { const R = RECS[name]; if (recUsable(R) && ac) useRec(R); return !!rec; },
     setClock(t) { clock = t === null || t === undefined || !isFinite(t) ? null : +t; },
     // The playing recording (null: a synthesized piece): its position in main.mp3, the section there, the ending.
@@ -962,6 +964,10 @@ const music = (() => {
       if (rec) { if (!rec.ending && !rec.ended) { if (silent()) { rec.ended = ended = true; } else recJump(); } return; }
       if (ended || ending) return; if (ac && bar && !silent()) planEnding(); else ended = true;
     },
+    // The ending before the jump, for a recording made for it (`release`, tools/arrange-music.py; 2026-10-26, c8: the engine
+    // blast frees the leviathan and the ship jumps by itself 10 s later, so the release comes with the blast: js/game.js).
+    // As jumped(): from main's next bar line. The synthesized piece (the fallback) keeps its ending for the jump.
+    release() { if (rec && rec.R.release && !rec.ending && !rec.ended) { if (silent()) rec.ended = ended = true; else recJump(); } },
     rearm() { if (rec) { if (rec.ending || rec.ended) { jumpOn = false; ended = false; recStart(rec.R); } return; } if (ended || ending) { jumpOn = false; begin(song); } },
     setPaused(v) { if (paused === !!v) return; paused = !!v; setSilent(); },
     // Offline rendering (music.html's level check): attach to an OfflineAudioContext, then pump(t) to schedule up to t.

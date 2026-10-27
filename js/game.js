@@ -1314,6 +1314,7 @@ function clientUpdate(dt) {
   music.setIntensity(lobby || !mission.active || mission.over ? 0.15 : isFinite(mission.jumpAt) ? Math.pow(clamp(mission.t / (mission.jumpAt + MUSIC_TAIL), 0, 1), 1.3) : 0.3);
   music.setJump(!lobby && !!mission.jump && !mission.over);
   if (mission.over?.survived && !lobby) music.jumped();    // the big final hit as we jump out
+  else if (!lobby && !mission.over && typeof levReleased === 'function' && levReleased()) music.release();   // (c8's recording: its ending from the engine blast on)
   else if (!mission.over || lobby) music.rearm();          // a new mission, the menu or the lobby: the music plays again
   if (mission.over) creditMission();                 // rewards for this browser's player (once per run; early, before anything else can throw)
   jumpFxUpdate(dt);                                        // the jump's animation clock (js/mission.js)

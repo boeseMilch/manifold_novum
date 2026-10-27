@@ -574,7 +574,54 @@ check(nodes > n0, 'and plays again when shown');
     m.setMission('menu'); m.rearm(); m.setMission('c7');
     check(m.title === 'Pressure Hull' && !m.recording, 'and c7 stays on the synthesized piece after that');
     check(m.list().some(s => s.name === 'hull' && s.title === 'Pressure Hull') && m.recordings().some(r => r.name === 'hull'), 'music.html still lists the synthesized Pressure Hull, the recording next to it');
+    m.setMission('c7'); m.release(); check(!m.ending && !m.ended, 'release() leaves a synthesized piece alone (its ending stays with the jump)');
+    // c8: Last Jump Home, recorded; its ending comes with the engine blast (release), not with the jump
+    const T = JSON.parse((s => s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1))(fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-tick.js'), 'utf8')));
+    const k0 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c8'); step(1, -wall);
+    const tm = els[k0], te = els[k0 + 1];
+    check(m.title === 'Last Jump Home (recorded)' && !!m.recording && tm && /tick\/main/.test(tm.src) && !tm.paused, 'with audio elements c8 plays the recorded Last Jump Home');
+    m.setClock(T.bars[150]); step(0.05);
+    check(Math.abs(tm.currentTime - T.bars[150]) < 0.2, 'and follows the mission clock (seeked into the fight)');
+    tm.currentTime = T.bars[150] - 0.4; m.setClock(null); m.release(); const tb = T.bars[151];
+    step(0.2); check(m.recording.ending && te.paused, 'release() (the engine blast): the ending waits for the next bar line at least 1.6 s ahead');
+    m.jumped(); while (tm.currentTime < tb + 0.1) step(0.025);
+    const toff = te.currentTime - (T.preroll + tm.currentTime - tb);
+    check(Math.abs(toff) < 0.03, `the ending's downbeat lands on main's bar line (${(toff * 1000).toFixed(0)} ms), the jump during it changes nothing`);
+    step(17); check(m.ended && m.recording.ended, 'and the music has ended once the ending has played');
+    m.setMission('menu'); m.rearm(); check(m.title === 'Held Together' && !m.recording, 'the menu: the recording stops');
+    m.setClock(0); m.setMission('c8'); step(0.3, 0); te.on.error(); step(0.1);
+    check(m.title === 'Last Jump Home' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Last Jump Home takes over');
+    check(m.list().some(s => s.name === 'home' && s.title === 'Last Jump Home') && m.recordings().some(r => r.name === 'tick' && r.release === 'blast' && r.jump === 500),
+      'music.html still lists the synthesized Last Jump Home, the recording next to it');
   } else check(false, 'the engine attaches to a fake context with audio elements');
+}
+
+// ---- c8's recording (js/music/recorded-tick.js): laid out on c8's timeline, its ending from the engine blast
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-tick.js'), 'utf8'), D = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+  const R = music.recordings().find(r => r.name === 'tick');
+  check(!!R && R.missions.includes('c8') && music.songOf('c8') === 'Last Jump Home', 'Last Jump Home has a recording, for c8 (node, no audio elements: the synthesized piece)');
+  check(['main', 'ending'].every(k => fs.existsSync(path.join(__dirname, '..', D[k]))), `its files are there (${D.main}, ${D.ending})`);
+  check(D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.loop[1] === D.length && D.bars.includes(D.length),
+    'its bar lines rise, the loop starts and ends on bar lines, at the end of main');
+  const gaps = D.bars.slice(1).map((b, i) => b - D.bars[i]);
+  check(gaps.every(g => Math.abs(g - 3.44) < 0.25), `its bar lines are whole half-time bars (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s): the ending never lands mid-bar`);
+  const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
+  check(D.jump === 500 && D.length >= 500 + 30 && D.loop[1] - D.loop[0] > 30, `laid out for the nominal jump (8:20) + 30 s (${D.length} s), a long loop for a long fight (${(D.loop[1] - D.loop[0]).toFixed(0)} s)`);
+  check(at(/mother/) > 55 && at(/mother/) < 70 && at(/grappler/) > 95 && at(/grappler/) < 110, 'the spore mother\'s drop ~1:00, the grappler\'s ~1:40');
+  check(at(/LEVIATHAN/) >= 270 && at(/LEVIATHAN/) < 276, `the biggest drop as the leviathan arrives (4:30; at ${at(/LEVIATHAN/)} s)`);
+  check(at(/Held breath/) > 340 && at(/Held breath/) < 370 && at(/LAST PUSH/) > 430 && at(/LAST PUSH/) < 480, 'the held breath ~6:00 (the gas), the last push ~7:30 (the override)');
+  check(D.release === 'blast', 'its ending comes with the engine blast (release), the ship jumps by itself after it');
+  // the game: c8's timeline (the leviathan at 270 s for every crew size, the nominal jump at 500) and the release
+  const { loadGame } = require('./harness');
+  const G = loadGame(['levReleased', 'mission', 'org', 'startMission', 'crew', 'makeCrew']);
+  const lev = [];
+  for (let n = 1; n <= 4; n++) { while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length)); G.startMission('c8'); lev.push([G.mission.events.find(e => e.kind === 'leviathan_boss')?.t, G.mission.jumpAt]); }
+  check(lev.every(([t, j]) => t === 270 && j === 500), `c8's leviathan at 270 s and the jump due at 500 s for 1-4 players, as the recording is laid out (${lev.map(x => x.join('/')).join(', ')})`);
+  G.org.boss = { phase: 'p4' }; const before = G.levReleased();
+  G.org.boss = { phase: 'blast' }; const blast = G.levReleased();
+  G.startMission('practice'); G.org.boss = { phase: 'blast' };
+  check(!before && blast && !G.levReleased(), 'the release comes with the engine blast (not before; not in practice)');
 }
 
 process.exit(failed ? 1 : 0);

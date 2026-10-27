@@ -5,3 +5,4 @@ build/
 assets/sprites/sprites.json.lock
 # Suno stems and mixes (hundreds of MB): tools/arrange-music.py renders the MP3s the game plays from them
 assets/music/**/*.wav
+assets/music/*.zip

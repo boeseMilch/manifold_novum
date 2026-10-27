@@ -4199,3 +4199,55 @@ herd is the mother + grappler (+ leeches broke the balance model's rising crew i
 leeches (c8's model numbers unchanged). `tests/schedule.js`: 600 skirmish schedules (2-30 encounters, 1-8 crew,
 seeds) never have three arrivals within one even step, no gap under half or over one and a half steps; count and
 kinds as asked; no drawn, chapter or skirmish herd of mother + spores.
+
+## Last Jump Home, recorded (c8, 2026-10-26)
+
+The user put the stems of the last Suno song, *Final Tick* (9 WAVs: drums, bass, keyboard, percussion, strings,
+synth, other, brass, woodwinds), in `assets/music/Final Tick Stems.zip` (unpacked to `assets/music/Final Tick/`; the
+zip and the WAVs stay out of git). Arranged like Pressure Hull, it replaces the synthesized *Last Jump Home* in c8;
+the synthesized piece stays in music.html and is the fallback when the audio fails.
+- **The song** (`tools/arrange-music.py tick --analyze`): 2:08 (not 2:19: the file stops at 128 s, cutting into a
+  next section at 127.75 s), a steady 139.5 bpm half-time (kick on 1, snare on 3), G minor rather than the C minor
+  asked for, 74 bars of 1.72 s in 8-bar phrases from bar 0: intro (music box, synth, the tick) 0-7, verse (light drums,
+  low strings, woodwinds) 8-15, drop 1 16-23, drop 1 + strings 24-31 (Gm, D, F major; a drum gap in 31), drop 2
+  32-39, strings over drums 40-47 (bass out, a swell and a gap in 45-47), drop 3 48-55 (the fullest), the synth
+  groove 56-63 (a strings swell 62-63), breakdown (music box, no bass) 64-67, the last build 68-71, the final hit
+  72-73: an open G (no third) ringing for 4 s. No C major ending, so the release is made from the song's own major
+  chords (below).
+- **c8's real timeline** (js/progress.js, spacing 'even'): the encounters evenly from 30 s to the leviathan at 270 s
+  for every crew size (the mother and the grappler early, then herds and the one tide); the jump is due at 500 s but
+  the fight holds the drive (LEVB_HOLD_JUMP) until the engine blast frees it, and then the ship jumps by itself
+  LEVB_BLAST + LEVB_OUTRO = 10 s later (no handle, a cutscene; Esc skips to the jump). tools/balance.js models the
+  gas at ~90-100 s into the fight (~6:00, 25 s) and the override ~3:15 in (~7:30-8:00).
+- **The arrangement** (`PIECES.tick`, 38 sections, 8:52): the song is a quarter of the mission, so its phrases are
+  repeated and reordered, stems thinned and layered, and each section has a level on top (`All`, -8 dB at the start
+  up to 0 in the fight: an 11 dB arc like Pressure Hull's). 0:00 the intro, 0:14 low strings, 0:27 light drums
+  (spores 0:30), 0:41 the first impact held back, 0:55 swell and silence, 1:02 drop 3 for the spore mother, 1:15
+  groove, 1:29 the music box, 1:36 build, 1:43 drop 2 for the grappler, 2:04 a valley, then rising 2:17-3:53 (drop 1
+  + strings, drop 2, groove, drop 3, strings, each a little louder and fuller), 3:53 swell and silence ("not yet"),
+  4:07 the music box alone, 4:24 swell and silence, **4:31 the leviathan: drop 3 at full size** (brass and strings
+  up), the fight 4:45-5:54, the held breath 5:54-6:14 (music box and strings only: the gas), 6:14 build, 6:21-7:16
+  the side and behind, 7:16 swell and silence (the override), **7:30 the last push**, 8:11-8:52 the loop (drop 2 +
+  drop 3 + groove, 41 s) for a long fight.
+- **The ending comes with the engine blast**, not with the jump: the fight is won there, the jump is 10 s later
+  anyway, and the cutscene ("It's free.") should already be the release. `levReleased()` (js/leviathan.js: the blast,
+  freed or autoJump; not in practice) → `music.release()` (js/game.js), which for a recording with `release` does what
+  jumped() does: the ending from main's next bar line at least 1.6 s ahead; the jump after it changes nothing. The
+  synthesized piece ignores release() and keeps its final hit for the jump. The ending (ending.mp3, 10.9 s): bars
+  26-29 (D major → F major) on the strings without drums, then the final hit, the open G, ringing out (cut at
+  127.6 s, a 2.5 s fade): bVII → I, majestic rather than a victory stomp, and its hit lands about when the ship jumps.
+- **Bar lines for the stitching** every 2 source bars (`bar_step`: whole half-time bars, 3.44 s), so the ending never
+  starts mid-bar; every section starts on an even bar.
+- **The tool, generalised** (no copy): per-piece stem lists (`files`), `All` levels, the ending as a list of sections
+  with `ending_stop` / `ending_fade`, a loop over the last `loop` sections, `bar_step`, `jump` and `release` in the data.
+  Pressure Hull's renders are bit-identical (the --wav render and both MP3s; its data only gains `"jump":300`).
+- **js/music.js:** a recording whose name isn't its synthesized piece's ('tick' vs 'home') found its fallback by
+  name only, so a failing recording fell back to the menu piece: now by its mission too. `recordings()` lists `jump`
+  and `release`. **music.html:** an 8:20 mission length; choosing a recording sets its mission's length.
+- Files: assets/music/tick/main.mp3 (10.6 MB, 532 s at 160 kbps), ending.mp3 (0.27 MB), bars.json;
+  js/music/recorded-tick.js (generated).
+- Tests: tests/music.js (the data: rising bar lines on whole half-time bars, the loop, the mother / grappler /
+  leviathan / held breath / last push where c8 has them; c8's leviathan at 270 s and jump due at 500 s for 1-4
+  players, as laid out; levReleased only from the blast, not in practice; with fake audio elements: plays on the
+  clock, release() stitches the ending onto the next bar line, the jump after it changes nothing, ends; falls back to
+  the synthesized Last Jump Home on an error; release() leaves a synthesized piece alone).

@@ -114,8 +114,8 @@ The prompt above you always says what a click (or E) will do.
   ship parts may fail (a third to a fifth of the encounters are failing parts). No pay. Its **Practice** tick gives the
   free-play ship below instead.
 - **Music:** every mission has its own piece that builds up to a crescendo at the jump and ends on a final hit
-  when you jump out: synthesized, and for chapter 7 a recorded song arranged over the mission
-  (`tools/arrange-music.py`). Listen to them on their own with the ♪ MUSIC button in the lobby (or open
+  when you jump out: synthesized, and for chapters 7 and 8 recorded songs arranged over the mission
+  (`tools/arrange-music.py`; chapter 8's ending comes with the engine blast that frees the leviathan). Listen to them on their own with the ♪ MUSIC button in the lobby (or open
   `music.html`): it plays each piece along a simulated mission, sped up if you like (the synthesized ones; they all
   stay there, next to the recordings).
 - **Practice** (Skirmish tab): a free-play ship. The PRACTICE panel (button top right, or P) starts any encounter,

@@ -41,7 +41,7 @@
   <div class="panel">
     <div class="row"><button class="act" id="play">▶ PLAY</button><button class="act" id="restart">⟲ RESTART</button><button class="act" id="spool">SPOOL</button><button class="act" id="jump">JUMP NOW</button>
       <label><input type="checkbox" id="threat"> enemies on screen</label>
-      <label>mission length <select id="len"><option value="180">3 min</option><option value="300" selected>5 min</option><option value="420">7 min</option></select></label>
+      <label>mission length <select id="len"><option value="180">3 min</option><option value="300" selected>5 min</option><option value="420">7 min</option><option value="500">8:20 (ch. 8)</option></select></label>
       <label>speed <select id="speed"><option value="1">×1</option><option value="4">×4</option><option value="10">×10</option></select></label></div>
     <div class="row">mission <div class="bar seek" id="prog" title="Click or drag to jump to that point of the mission"><i></i><div id="marks"></div><b id="cursor" hidden></b></div><span id="clock">0:00</span></div>
     <div class="row legend"><span><i class="mk drop"></i> drop</span><span><i class="mk breakdown"></i> breakdown</span><span><i class="mk climax"></i> climax</span><span><i class="mk spoolz"></i> spool, then the jump</span><span class="hint">click the mission bar to jump there</span></div>
@@ -62,6 +62,7 @@
 <script src="js/music/hull.js"></script>
 <script src="js/music/home.js"></script>
 <script src="js/music/recorded-hull.js"></script>
+<script src="js/music/recorded-tick.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
   const NAMES = { c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', c4: 'Ch. 4', c5: 'Ch. 5', c6: 'Ch. 6', c7: 'Ch. 7', c8: 'Ch. 8', practice: 'Practice', custom: 'Skirmish' };
@@ -80,8 +81,8 @@
   const REC = 'rec:', recName = () => (chosen.startsWith(REC) ? chosen.slice(REC.length) : null);
   for (const r of music.recordings()) {
     const b = document.createElement('button'); b.className = 'song'; b.dataset.name = REC + r.name;
-    b.title = 'A recorded song, arranged over the mission'; b.innerHTML = `<b>${r.title}</b><span>recorded · ${Math.floor(r.length / 60)}:${String(Math.round(r.length % 60)).padStart(2, '0')} arranged for the mission + 30 s</span><span>${r.sections.length} sections, the ending on the next bar line after the jump</span><span>${r.missions.map(m => NAMES[m] || m).join(', ')} (in the game)</span>`;
-    b.onclick = () => { chosen = REC + r.name; music.playRecording(r.name); restart(); mark(); };
+    b.title = 'A recorded song, arranged over the mission'; b.innerHTML = `<b>${r.title}</b><span>recorded · ${Math.floor(r.length / 60)}:${String(Math.round(r.length % 60)).padStart(2, '0')} arranged for the mission + 30 s</span><span>${r.sections.length} sections, the ending on the next bar line after ${r.release ? 'the engine blast (here: the jump)' : 'the jump'}</span><span>${r.missions.map(m => NAMES[m] || m).join(', ')} (in the game)</span>`;
+    b.onclick = () => { chosen = REC + r.name; if (r.jump && [...$('len').options].some(o => +o.value === r.jump)) $('len').value = r.jump; music.playRecording(r.name); restart(); mark(); };   // (its mission's length)
     list.appendChild(b);
   }
   // The spool: SPOOL_BARS bars of the chosen piece before the jump (in the game it runs as long as the jump is delayed).
@@ -143,7 +144,7 @@
     if (playing && !jumped && spoolFrom !== null && music.bar.b >= spoolFrom + SPOOL_BARS) { jumped = true; music.jumped(); }   // jump after SPOOL_BARS full bars of it)
     $('prog').firstElementChild.style.width = `${clamp(k, 0, 1) * 100}%`;
     $('lvl').firstElementChild.style.width = `${music.level * 100}%`;
-    const s = Math.floor(Math.min(t, len)); $('clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} / ${len / 60}:00`;
+    const s = Math.floor(Math.min(t, len)); $('clock').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} / ${Math.floor(len / 60)}:${String(len % 60).padStart(2, '0')}`;
     const rec = music.recording;
     $('status').textContent = !playing ? (jumped ? 'Jumped out. Press play to start over.' : 'Paused.') : rec ? (rec.ended ? 'Jumped out (the end).' : rec.ending ? 'Jumped: the ending from the next bar line…' : `Recorded: ${rec.section} (${rec.pos.toFixed(1)} s)`) : jumped ? (music.ended ? 'JUMP! (the final hit)' : 'Jumped: the cadence, then the final hit on the next downbeat…') : `${music.bar?.build ? 'Build… (a beat of silence, then the drop)' : music.bar?.drop ? 'DROP!' : music.bar?.bk >= 0 ? 'Breakdown.' : STAGES[music.stage]} (stage ${music.stage}, section ${music.section}, bar ${music.bar ? music.bar.b + 1 : '-'})`;
     requestAnimationFrame(frame);

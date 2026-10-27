@@ -619,6 +619,9 @@ function levSkip() {
   if (mission.autoJump && !mission.jump && !mission.over) mission.jumpAt = Math.min(mission.jumpAt, mission.t);
   return true;
 }
+// The fight is won (the engine blast, then freed, until the ship jumps by itself; not in practice): c8's recorded music
+// plays its ending from here (music.release(), js/game.js), not from the jump 10 s later.
+const levReleased = () => !MISSIONS[mission.id]?.practice && (!!mission.autoJump || org.boss?.phase === 'blast' || org.boss?.phase === 'freed');
 // A mission with the leviathan as its finale: the fight holds the jump drive and it jumps by itself after it, so nobody
 // ever has to go to the jump handle at the helm (c8's handle rule): no use ring there, its prompt says so.
 const levHoldsJump = () => !!mission.autoJump || (!MISSIONS[mission.id]?.practice && (!!org.boss || mission.events?.some(e => e.kind === 'leviathan_boss')));
