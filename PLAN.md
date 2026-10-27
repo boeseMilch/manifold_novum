@@ -4356,3 +4356,48 @@ blender)". The 2D hand wheel + bolt bar overlay (2026-10-24) is gone.
   (bolted while the airlock holds it locked / broken / venting, free otherwise). Not on forced (bent) doors.
 - Classic view (and the sprite view's fallback while the page loads): drawDoorLocks / drawLockParts (js/art.js) draw
   the same round lock flat (bezel halves, rotor turned by d.bolt, halves riding on the leaves).
+
+### Performance, round 3: where the resources go (2026-10-26)
+Request: "part of the lag is also that the game still uses too much resources, please assess that." Measured in headless
+Chromium on the real GPU (CDP: per-function timers, CPU profiler, sampling heap profiler, Chrome tracing, /proc CPU and
+RSS per process) and in headless Firefox (WebDriver BiDi; 2D canvases in software, like the user's laptop) at 1920×1080
+and 3840×2160, dpr 1, in an idle scene (bridge, `#do=9&w=1`) and a busy one (`#do=m,1,4,f,j,h,i,o,k,c,z&w=6`: two
+enemies, fires, surge, breach, intruders, spacewalk jobs, organic enemies, stealth + tug); plus a Node benchmark of
+the server's simulation and snapshots.
+- Ranked (main thread ms a frame unless noted):
+  1. Firefox at 4K, the HUD canvas `c` (3840×2160, software): idle 12-15 ms render, busy 14-18 ms. Of it: the full
+     clear ~2-3 ms, the use rings round what's in reach (`drawUseMarks`: radial-gradient glows ~2 ms, dashed rings
+     ~1.5 ms), full-room fills (`drawVacuumTint` ~2 ms in a vented room, `drawSporesInside` ~2.8, the storm's darkness
+     ~4), the sidebar plates ~1.2. The GL part (`GFX.end`, incl. the 2D layers' readback + upload) ~2-2.5 ms. Firefox's
+     parent process (compositing the 4K software canvas) ~60-80 % of a core. Pixel-bound: a full-screen fill costs
+     ~3-4 ms there, a radial gradient of ~400 px ~1.5 ms, a dashed ring ~0.6 ms.
+  2. Chromium 1080p: render 2.6 (idle) / 3.9 (busy) ms, the GPU process 50-60 % of a core even idle, ~40 % of it in
+     `MakeCurrent` (switching between the WebGL context, the 2D canvases' raster context and the compositor). With
+     nothing drawn: 1 %; with the 2D canvases but no WebGL: ~33 %. ?classic costs more (render 3.6 / 5.2 ms).
+  3. Memory: sprite atlases decode to far more than their 58 MB of WebP: a busy mission had ~2 GB of textures on the
+     GPU and kept ~850 MB of decoded colour maps in the renderer (Chromium renderer RSS ~1.5 GB).
+  4. Garbage: ~70-75 MB/s allocated in a busy scene (a third of it the sprite queue: an object and a 48-number array
+     per sprite per frame).
+  5. Simulation: cheap (0.2-0.4 ms a frame). On the server, a crew of 8 (c7) costs ~0.5 ms a 60 Hz step, half of it
+     `nearbyTarget` (each crew member's E-target scan: clickTarget at ~130 points every 0.15 s, the 8 scans on the same
+     tick: a ~3.5 ms step every 9 ticks). Snapshots: netSerialize 0.02-0.03 ms + JSON.stringify 0.04-0.08 ms per
+     snapshot (7-12 KB, 3-4 KB deflated), deflate ~0.1-0.13 ms per client; the whole server ~2-3 % of a core per game.
+- Fixed (no visual change: deterministic frames, seeded `Math.random`, fake clock, rAF stepped by hand, 7 scenes in
+  Chromium + 4 in Firefox, 14 frames of walking through the busy scene in Firefox: all pixel-identical before / after;
+  the simulation: identical state hash after c1, c2, c3, c5, c7, c8 runs with a seeded random):
+  - js/gfx.js `sprite()`: the queue's entries (and a Float32Array of instance data each) are reused frame to frame.
+    Busy, Chromium: 74 → 51 MB/s allocated, render ~3.9 → ~3.7 ms.
+  - js/gfx.js `trackDirty`: the wrapped 2D calls pass their arguments on by count (no `arguments` object per call).
+  - js/gfx.js atlas pages: the height map and the tint mask are R8 textures (only `.r` is read), and the decoded colour
+    map is kept only for pages with a mask (only `tintRef` reads it, and only there). Busy, Chromium: GPU memory
+    ~1.94 → ~1.62 GB, renderer RSS ~1.47 → ~0.99 GB.
+  - js/game.js `nearbyTarget` + js/mission.js `missionClickTarget`: the failing parts and the station spots are worked
+    out once per scan (`missionScan`), not at each of its ~130 points (each filtered + sorted the whole timeline).
+    Server, c7 with 8 crew: 0.535 → 0.479 ms a step.
+- Tried and dropped: clearing only the HUD canvas's drawn tiles in Firefox (the layers' tracking) was SLOWER there (a
+  dozen partial clears cost more than one full clear); routing Chromium's layers through CPU canvases didn't reduce
+  its context switches.
+- Left (each would change the look a little, or is bigger; not done): Firefox's use glows from a cached sprite blitted
+  at a whole pixel (~2 → ~0.45 ms at 4K, but ≤4/255 different in the glow); a lower-resolution HUD canvas on 4K; moving
+  the full-room tints / spore haze / storm darkness into GL; staggering the crew's target scans on the server; in
+  Firefox about:config `gfx.canvas.accelerated.force-enabled` (headless 4K: render ~13 → ~7 ms, more parent-process CPU).

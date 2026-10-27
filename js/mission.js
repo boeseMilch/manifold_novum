@@ -710,15 +710,19 @@ function stationSpots() {
     { x: SECURITY.x, y: SECURITY.y + 0.5, r: 0.9, name: 'Security console', text: 'Click: open the security console (lock doors)', run: () => { ui.panel = 'security'; } },
   ];
 }
+// nearbyTarget (js/game.js) asks clickTarget at ~130 points round the player at once: during that scan
+// (missionScan set) the failing parts and the stations are worked out once, not at every point (it was half of the
+// simulation's time with a crew of 8: every point filtered and sorted the whole timeline).
+let missionScan = null;
 function missionClickTarget(mx, my) {
-  for (const svc of serviceTargets()) {
+  for (const svc of missionScan ? missionScan.svc : serviceTargets()) {
     if (Math.hypot(mx - svc.x, my - svc.y) > svc.r) continue;
     if (svc.outside) return { text: `${svc.name} is failing — service it on a spacewalk (repair kit)`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     if (inv.weapon !== 'repair') return { text: `${svc.name} is failing — service it with the repair kit`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     if (!near(svc.x, svc.y, REACH + svc.r * 0.6)) return { text: `${svc.name} — get closer`, ok: false, x: svc.x, y: svc.y, r: svc.r };
     return { text: `${svc.name} is failing — hold Space / right click to service it`, ok: false, x: svc.x, y: svc.y, r: svc.r };   // (repairPick, js/systems.js)
   }
-  for (const s of stationSpots()) {
+  for (const s of missionScan ? missionScan.spots : stationSpots()) {
     if (Math.hypot(mx - s.x, my - s.y) > s.r) continue;
     if (!near(s.x, s.y, REACH + 0.6)) return { text: `${s.name} — get closer`, ok: false, x: s.x, y: s.y, r: s.r };
     return { text: s.text, ok: true, x: s.x, y: s.y, r: s.r, run: s.run };

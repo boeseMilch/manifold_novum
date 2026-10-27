@@ -1240,11 +1240,13 @@ void main() {
       kinds.forEach((k, j) => {
         const src = imgs[j];
         if (!src) return;
-        const mips = k === 'b' || k === 'm', t = gl.createTexture();
+        // (the height map and the tint mask: only their red channel is read, so one byte a pixel on the GPU, not four;
+        //  the colour map and the mask stay in memory only for a page with a mask: tintRef reads both, nothing else does)
+        const mips = k === 'b' || k === 'm', red = k === 'h' || k === 'm', t = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, t);
-        gl.texStorage2D(gl.TEXTURE_2D, mips ? Math.floor(Math.log2(Math.max(src.width, src.height))) + 1 : 1, gl.RGBA8, src.width, src.height);
-        UPLOADS.push({ p, k, src, t, y: 0, mips }); p.left++;
-        if (mips) p.img[k] = src;
+        gl.texStorage2D(gl.TEXTURE_2D, mips ? Math.floor(Math.log2(Math.max(src.width, src.height))) + 1 : 1, red ? gl.R8 : gl.RGBA8, src.width, src.height);
+        UPLOADS.push({ p, k, src, t, y: 0, mips, red }); p.left++;
+        if (mips && p.maps.includes('m')) p.img[k] = src;
       });
       p.state = 'uploading';
     });
@@ -1257,7 +1259,7 @@ void main() {
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, u.y);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, u.y, w, rows, gl.RGBA, gl.UNSIGNED_BYTE, u.src);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, u.y, w, rows, u.red ? gl.RED : gl.RGBA, gl.UNSIGNED_BYTE, u.src);
     gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
     u.y += rows;
     if (u.y < h) return rows * w * 4;
@@ -1268,7 +1270,7 @@ void main() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     if (u.mips && aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
     u.p.tex[u.k] = u.t;
-    if (!u.mips && u.src.close) u.src.close();       // (the colour and tint maps stay: tintRef reads them)
+    if (u.p.img[u.k] !== u.src && u.src.close) u.src.close();   // (what tintRef reads stays: see page())
     if (--u.p.left === 0) u.p.state = 'ready';
     UPLOADS.splice(UPLOADS.indexOf(u), 1);
     return rows * w * 4;
@@ -1395,6 +1397,7 @@ void main() {
   const LAYERS = { under: -1, ground: 0, decal: 1, wall: 2, main: 3, top: 4 };
   let view = null, W = 1, H = 1, K = 1, Sdev = 1, camOX = 0, camOY = 0, frameNo = 0, active = false;
   let queue = [], seq = 0, picks = [], lastPicks = [];
+  const pool = [];                                   // (queue entries, reused: sprite())
   const domes = [];
   let back = null;                                   // this frame's GFX.backdrop()
   const ovGeo = new Float32Array(MAX_OV * 4), ovT = new Float32Array(MAX_OV * 4), ovCol = new Float32Array(MAX_OV * 12);
@@ -1530,7 +1533,18 @@ void main() {
     const wrap = (name, before) => {                                   // (before() returning false: skip the call, it draws nothing on the canvas)
       const orig = proto[name];
       if (typeof orig !== 'function') return;
-      g[name] = function (a, b, c, d, e, f, h, i, j) { if (before(a, b, c, d, e, f, h, i, j, arguments.length) === false) return; return orig.apply(g, arguments); };
+      // (called with exactly the arguments it got: overloads like drawImage go by their count; no `arguments`
+      //  object, which apply() would allocate on every drawing call)
+      g[name] = function (a, b, c, d, e, f, h, i, j) {
+        const n = arguments.length;
+        if (before(a, b, c, d, e, f, h, i, j, n) === false) return;
+        switch (n) {
+          case 0: return orig.call(g); case 1: return orig.call(g, a); case 2: return orig.call(g, a, b); case 3: return orig.call(g, a, b, c);
+          case 4: return orig.call(g, a, b, c, d); case 5: return orig.call(g, a, b, c, d, e); case 6: return orig.call(g, a, b, c, d, e, f);
+          case 7: return orig.call(g, a, b, c, d, e, f, h); case 8: return orig.call(g, a, b, c, d, e, f, h, i); case 9: return orig.call(g, a, b, c, d, e, f, h, i, j);
+          default: return orig.apply(g, arguments);
+        }
+      };
     };
     wrap('save', () => { stack.push(m.slice()); });
     wrap('restore', () => { if (stack.length) m = stack.pop(); });
@@ -1677,17 +1691,22 @@ void main() {
     if (o.pick) picks.push({ x, y, sortY: o.sortY != null ? o.sortY : y, x0: sx - o.pick[0] * Sdev, x1: sx + o.pick[0] * Sdev, y0: sy - o.pick[1] * Sdev, y1: sy + 0.15 * Sdev });
     if (!o.rot && !o.sx && (ex1 < 0 || ex0 > W || ey1 < 0 || ey0 > H)) return true;
     const t = o.tint ? rgb(o.tint) : o.recolor ? rgb(o.recolor) : null, useMask = !!o.tint && (S.maps || '').includes('m'), fl = o.floor && scratchOn ? o.floor : null, fp = fl && pathScratchOn && fl.length > 8;
-    queue.push({
-      layer: LAYERS[o.layer] ?? 3, sortY: o.sortY != null ? o.sortY : y, seq: seq++, page: S.dyn || pageOf(S, b[0]), mask: useMask,
-      d: [sx, sy, k, flip, qx0, qy0, qx1 - qx0, qy1 - qy0, bx, by, b[3], b[4], px, py, pw, ph,
-          b[1] - bx, b[2] - by, patch ? fr[1] - px : 0, patch ? fr[2] - py : 0, x, y, z, ppu, S.ox, S.oy, sc, o.depthBias || 0,
-          t ? t[0] : 0, t ? t[1] : 0, t ? t[2] : 0, useMask ? 1 : !o.tint && o.recolor ? -1 : 0, useMask ? tintRef(S) : 0.45, o.emissive || 0, o.alpha == null ? 1 : o.alpha, (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0), o.rot || 0, o.sx || 1, o.desat || 0, fl ? fl[0] : 0,
-          fl ? fl[1] : 0, fl ? fl[2] : 0, fl ? fl[3] : 0, fl ? fl[4] : 0,
-          fp ? fl[5] : 0, fp ? fl[6] : 0, fp ? fl[7] : 0, fp ? fl[8] : 0],
-      depthWrite: o.depthWrite !== false,
-      // anything for depthPass(): it writes the depth buffer, or can be a solid lit pixel
-      inDepth: ((LAYERS[o.layer] ?? 3) === 2 || (LAYERS[o.layer] ?? 3) === 3) && o.depthWrite !== false || !o.unlit && !(o.alpha <= 0.6),
-    });
+    // (the queue's entries and their instance data are reused frame to frame: ~400 sprites a frame each made an
+    //  object and a 48-number array, a few MB a second of garbage)
+    const L = LAYERS[o.layer] ?? 3, it = pool[queue.length] || (pool[queue.length] = { d: new Float32Array(INST) }), d = it.d;
+    it.layer = L; it.sortY = o.sortY != null ? o.sortY : y; it.seq = seq++; it.page = S.dyn || pageOf(S, b[0]); it.mask = useMask; it.ii = 0;
+    d[0] = sx; d[1] = sy; d[2] = k; d[3] = flip; d[4] = qx0; d[5] = qy0; d[6] = qx1 - qx0; d[7] = qy1 - qy0;
+    d[8] = bx; d[9] = by; d[10] = b[3]; d[11] = b[4]; d[12] = px; d[13] = py; d[14] = pw; d[15] = ph;
+    d[16] = b[1] - bx; d[17] = b[2] - by; d[18] = patch ? fr[1] - px : 0; d[19] = patch ? fr[2] - py : 0; d[20] = x; d[21] = y; d[22] = z; d[23] = ppu;
+    d[24] = S.ox; d[25] = S.oy; d[26] = sc; d[27] = o.depthBias || 0;
+    d[28] = t ? t[0] : 0; d[29] = t ? t[1] : 0; d[30] = t ? t[2] : 0; d[31] = useMask ? 1 : !o.tint && o.recolor ? -1 : 0; d[32] = useMask ? tintRef(S) : 0.45;
+    d[33] = o.emissive || 0; d[34] = o.alpha == null ? 1 : o.alpha; d[35] = (o.unlit ? 1 : 0) + (o.billboard ? 2 : 0); d[36] = o.rot || 0; d[37] = o.sx || 1; d[38] = o.desat || 0;
+    d[39] = fl ? fl[0] : 0; d[40] = fl ? fl[1] : 0; d[41] = fl ? fl[2] : 0; d[42] = fl ? fl[3] : 0; d[43] = fl ? fl[4] : 0;
+    d[44] = fp ? fl[5] : 0; d[45] = fp ? fl[6] : 0; d[46] = fp ? fl[7] : 0; d[47] = fp ? fl[8] : 0;
+    it.depthWrite = o.depthWrite !== false;
+    // anything for depthPass(): it writes the depth buffer, or can be a solid lit pixel
+    it.inDepth = (L === 2 || L === 3) && o.depthWrite !== false || !o.unlit && !(o.alpha <= 0.6);
+    queue.push(it);
     return true;
   }
 

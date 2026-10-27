@@ -481,15 +481,19 @@ function nearbyTarget(now) {
     return actionable(t) && tutAllows('target', t) ? t : null;
   }
   let best = null, bd = Infinity, at = null;
-  if (player.mode === 'inside' || player.mode === 'eva')
-    for (let gx = -REACH; gx <= REACH; gx += 0.3) for (let gy = -REACH; gy <= REACH; gy += 0.3) {
-      if (gx * gx + gy * gy > REACH * REACH) continue;
-      const t = clickTarget(player.x + gx, player.y + gy);
-      if (!actionable(t) || !tutAllows('target', t)) continue;
-      const d = Math.hypot(t.x - player.x, t.y - player.y), f = player.face ?? 0;   // (the way you face counts a little)
-      const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
-      if (sc < bd) { bd = sc; best = t; at = [player.x + gx, player.y + gy]; }
-    }
+  if (player.mode === 'inside' || player.mode === 'eva') {
+    missionScan = { svc: serviceTargets(), spots: stationSpots() };   // (the same at every point of the scan: js/mission.js)
+    try {
+      for (let gx = -REACH; gx <= REACH; gx += 0.3) for (let gy = -REACH; gy <= REACH; gy += 0.3) {
+        if (gx * gx + gy * gy > REACH * REACH) continue;
+        const t = clickTarget(player.x + gx, player.y + gy);
+        if (!actionable(t) || !tutAllows('target', t)) continue;
+        const d = Math.hypot(t.x - player.x, t.y - player.y), f = player.face ?? 0;   // (the way you face counts a little)
+        const sc = d * (1.2 - 0.2 * Math.cos(Math.atan2(t.y - player.y, t.x - player.x) - f));
+        if (sc < bd) { bd = sc; best = t; at = [player.x + gx, player.y + gy]; }
+      }
+    } finally { missionScan = null; }
+  }
   player.eScan = { t: time, target: best, at };
   return best;
 }
