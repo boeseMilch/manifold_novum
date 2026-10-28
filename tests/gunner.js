@@ -111,10 +111,18 @@ for (const id of ['port', 'front', 'star']) {
   check(A.health === 'hurt' && A.mode === 'gun' && A.gun === g, `multiplayer: patching yourself up puts you back in the seat (${t.toFixed(1)} s)`);
   G.netServer.input(1, { keys: [], pressed: [], mouse: {} }); G.hurtCrew(A); G.hurtCrew(A);
   check(A.health === 'out' && A.mode === 'gun', 'multiplayer: out cold in the seat');
-  t = 0; while (t < 5) { G.netServer.input(1, { keys: [], pressed: [], mouse: { wx: A.x, wy: A.y, down: true } }); G.simTick(DT); t += DT; }
-  check(A.health === 'out', 'out with a crewmate standing: you wait to be pulled out');
+  G.simTick(DT); check(/hold E \(or click\) to crawl back up/.test(A.prompt?.text || ''), `out in the seat with a crewmate standing: the prompt offers crawling back ("${A.prompt?.text}")`);
   G.netServer.command(1, ['climbDown']); G.netServer.command(1, ['reload']); G.simTick(DT);
   check(A.mode === 'gun', 'the CLIMB DOWN command does nothing while you\'re out');
+  // 2026-10-28, the user: "if you get hit by a shot in 2p while being in the turret you cannot patch yourself up".
+  // A real enemy shot (crewHit: straight out), Bob standing elsewhere: holding E crawls Alice back into the seat.
+  G.combat.shots.length = 0; G.netServer.input(1, { keys: [], pressed: [], mouse: {} }); G.simTick(DT); A.health = 'hurt'; A.hurtT = 0.01; G.simTick(DT);
+  check(A.health === 'ok' && A.mode === 'gun', 'healed up, still in the seat');
+  shootAt(G, A, g); t = 0; while (A.health !== 'out' && t < 5) { G.simTick(DT); t += DT; }
+  check(A.health === 'out' && A.mode === 'gun' && G.standing(B), `multiplayer: an enemy shot knocks the gunner out in the seat, Bob still standing`);
+  t = 0; while (A.health === 'out' && t < 30) { G.netServer.input(1, { keys: ['KeyE'], pressed: t ? [] : ['KeyE'], mouse: { wx: A.x + 3, wy: A.y + 3 } }); G.simTick(DT); t += DT; }
+  check(A.health === 'hurt' && A.mode === 'gun' && A.gun === g && Math.abs(t - 20) < 0.5, `…and holding E she crawls back up into the seat herself, no crewmate needed (${t.toFixed(1)} s, as alone)`);
+  G.netServer.input(1, { keys: [], pressed: [], mouse: {} }); G.simTick(DT); G.hurtCrew(A, 3);
   G.netServer.removeCrew(1); G.simTick(DT);
   B.x = g.hatch[0]; B.y = g.hatch[1] - 0.2; G.simTick(DT);
   check(/^Click: climb into/.test(B.prompt?.text || ''), `the downed gunner disconnects: the cannon is free ("${B.prompt?.text}")`);

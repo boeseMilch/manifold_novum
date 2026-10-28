@@ -4435,3 +4435,12 @@ the server's simulation and snapshots.
   at a whole pixel (~2 → ~0.45 ms at 4K, but ≤4/255 different in the glow); a lower-resolution HUD canvas on 4K; moving
   the full-room tints / spore haze / storm darkness into GL; staggering the crew's target scans on the server; in
   Firefox about:config `gfx.canvas.accelerated.force-enabled` (headless 4K: render ~13 → ~7 ms, more parent-process CPU).
+
+### Out cold in a cannon: crawl back up in multiplayer too (2026-10-28, js/systems.js `treatInfo`)
+The user: "if you get hit by a shot in 2p while being in the turret you cannot patch yourself up". An enemy ship's shot
+always knocks a gunner straight OUT (js/combat.js `crewHit`: `hurtCrew(c, 3)`), and out cold you could only crawl back
+while nobody else stood. Solo that crawl (20 s) was there; with a crewmate standing anywhere, the gunner sat slumped in
+the seat, helpless, until someone came to the ladder to pull them out (nobody can treat you up in the seat). Now out
+cold in a cannon's seat (`mode === 'gun'`) you may always crawl back (hold E / click, 20 s; stim pack 6 s, first aid
+16 s, as alone), and a crewmate can still pull you out at the ladder instead. Out cold anywhere else is unchanged
+(a crewmate has to treat you). tests/gunner.js (multiplayer: a real enemy shot, Bob standing, Alice holds E).

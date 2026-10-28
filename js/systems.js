@@ -508,8 +508,11 @@ function treatInfo(who) {
   if (who === player) {
     if (who.health === 'down') return { time: perk(who, 'stim') ? 3 : perk(who, 'firstAid') ? 8 : SELF_TREAT, label: 'get up' };
     // out: only while nobody else is standing (someone has to treat you) — or to keep up a crawl, or join a
-    // treatment, that's already going (who.heal): it adds up with a crewmate's and isn't lost when they get up
-    if (who.health === 'out' && (who.heal != null || crew.every(c => c === who || !standing(c)))) return { time: perk(who, 'stim') ? 6 : perk(who, 'firstAid') ? 16 : SOLO_TREAT, label: 'crawl back up' };   // (the gear counts out cold too: 2026-10-20, the user had a stim pack and still waited 20 s)
+    // treatment, that's already going (who.heal): it adds up with a crewmate's and isn't lost when they get up.
+    // Slumped in a cannon's seat (who.mode 'gun') you may always crawl back: nobody can treat you up there (only
+    // pull you out at the ladder), and a ship's shot always knocks a gunner straight out (js/combat.js crewHit),
+    // so in multiplayer you'd sit helpless until someone came (2026-10-28, the user: "can't patch yourself up in 2p")
+    if (who.health === 'out' && (who.heal != null || who.mode === 'gun' || crew.every(c => c === who || !standing(c)))) return { time: perk(who, 'stim') ? 6 : perk(who, 'firstAid') ? 16 : SOLO_TREAT, label: 'crawl back up' };   // (the gear counts out cold too: 2026-10-20, the user had a stim pack and still waited 20 s)
     return null;
   }
   return standing(player) ? { time: perk(player, 'firstAid') ? 1.2 : TREAT_TIME, label: `treat ${who.name}` } : null;
