@@ -4458,3 +4458,36 @@ fighter, tractor tug, spore clouds; 3 herd; 3.5 frigate.
   and the briefing estimates the encounter count.
 - No profile change: the settings are localStorage `mn-skirmish`. An old config with a count n reads as n × 1.8 points
   (`customConfig`); the server passes both fields on (`cleanCustom`).
+
+## Keep S-7 Frozen, recorded (c3, 2026-10-28)
+
+The user dropped the stems of *Keep S-7 Frozen* (`assets/music/C3 Stems.zip`, unpacked to `assets/music/Keep S-7
+Frozen/`; zip and WAVs git-ignored): drums, bass, guitar, keyboard (the piano), percussion, strings, synth, other,
+brass. Arranged like Final Tick, with the smooth per-stem joins and the join cost from the start; it's what c3 plays
+now (`PIECES.frozen`, js/music/recorded-frozen.js, assets/music/frozen/). The synthesized Cargo Run (c1-c3's piece)
+stays in music.html and is c3's fallback; c1 / c2 keep it.
+- **The song** (`arrange-music.py frozen --analyze`): 3:59.5, ~81 bpm (80 → 81, rubato at the end), F minor, 80 bars
+  of 2.97 s in phrases of 8, the drums often one bar on, one bar off. 0-7 intro (drums every other bar, guitar), 8-15
+  the piano motif between drum bars, 16-22 the first groove (staccato strings), 24-31 the same alternating, brass
+  rising, 32-33 the piano alone, 34-39 rebuilding (a strings swell, the metal percussion), 40-47 groove with strings
+  (brass build), 48-55 groove with guitar, 56-63 the climax, 64-67 stop-time (hit, silence, hit, silence), 68-71 the
+  last push, 72-75 the piano alone, 76-79 the hit on F (on the third beat of bar 76) ringing out. Not as asked: no
+  sparse intro (the drums start at once), so the sparseness is made by muting stems. The grooves are near copies
+  (16 ≈ 48, 20 ≈ 44 ≈ 52, 18 ≈ 42 ≈ 50, 22 ≈ 46 ≈ 54: join costs 0.5-0.9).
+- **c3's real timeline** (shaped, js/mission.js): the mine drone at 0:10 (solo 0:15), the derelict lab docks at 0:28
+  with 2+ crew (it docks when its event runs; solo ~1:45-2:00), the rest bunching at the hot times 3:30 / 4:30, the
+  jump due at 5:00 (the drive spools, needs MID energy: often later; the loop covers that). The ending comes with the
+  jump (music.jumped(), as c7).
+- **The arrangement** (15 sections, 5:57, loop 5:09-5:57): 0:00 intro (drums thinned), 0:24 the lab: the piano motif
+  (no drums), 0:48 exploring: almost nothing (piano, a breath), 1:12 scrapes, 1:35 the piano alone, a swell, 1:47 the
+  metal percussion wakes up, 1:59-3:34 climbing (groove with strings, staccato strings, the guitar), 3:34 hot time 1
+  climax, 3:58 stop-time, 4:10 the last push, 4:22 groove, 4:46 the full climax through the jump, 5:09 the loop (48-63,
+  wrapping on the 63→48 join). Six cuts, join costs 0.9-1.8; measured scores 0.5-4.8 (worst: 0:48, the motif into
+  almost nothing: a level drop, wanted). Level: -30 dB at the start, -33 to -37 while exploring, up to -20 in the climaxes.
+- **The ending:** the music stops, the piano alone for a bar (75), then the song's own F hit, ringing out (cut at
+  239.4 s, 3 s fade). Stitching on every bar line except where the harmony into bar 75 is far off (stitch cost ≤ 3.2, at
+  most 6.5 s apart: a stop is a contrast anyway); main fades from 0.1 s before the bar line (as c8).
+- Tests: tests/music.js (the data, the bar lines, sparse 0:24-1:47, the climaxes at the hot times, c3's timeline as laid
+  out; with fake audio elements: plays for c3, release() does nothing, the jump stitches the ending on the bar line, a
+  failure falls back to Cargo Run, c1 / c2 keep Cargo Run). Pressure Hull's and Final Tick's renders and files are
+  unchanged (md5).

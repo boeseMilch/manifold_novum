@@ -46,6 +46,10 @@ HULL_STEMS = {'LV': '0 Lead Vocals', 'BV': '1 Backing Vocals', 'Dr': '2 Drums', 
               'Pc': '6 Percussion', 'St': '7 Strings', 'Sy': '8 Synth', 'Ot': '9 Other', 'Br': '10 Brass', 'Ww': '11 Woodwinds'}
 TICK_STEMS = {'Dr': '0 Drums', 'Ba': '1 Bass', 'Ky': '2 Keyboard', 'Pc': '3 Percussion', 'St': '4 Strings', 'Sy': '5 Synth', 'Ot': '6 Other',
               'Br': '7 Brass', 'Ww': '8 Woodwinds'}
+FROZEN_STEMS = {'Dr': '0 Drums', 'Ba': '1 Bass', 'Gt': '2 Guitar', 'Ky': '3 Keyboard', 'Pc': '4 Percussion', 'St': '5 Strings', 'Sy': '6 Synth',
+                'Ot': '7 Other', 'Br': '8 Brass'}
+TROUBLE_STEMS = {'LV': '0 Lead Vocals', 'Dr': '1 Drums', 'Ba': '2 Bass', 'Gt': '3 Guitar', 'Ky': '4 Keyboard', 'Pc': '5 Percussion', 'Sy': '6 Synth',
+                 'Ot': '7 Other', 'Br': '8 Brass'}
 SUSTAINED = {'Ba', 'St', 'Sy', 'Ky', 'Br', 'Ww', 'LV', 'BV', 'Gt'}       # longer crossfades at cuts
 def mix(**g):                                 # dB per stem (a stem not named: 0 dB, as recorded; All: dB on top for every stem)
     return dict(g)
@@ -126,6 +130,72 @@ TICK_PLAN = [
     ('LAST PUSH (climax)', 48, 60, T_FULL),                               # 7:31
     ('Still fighting (the loop, climax)', 20, 60, T_FULL),                # 7:51: the loop (69 s), if the fight runs long
 ]
+# Keep S-7 Frozen, recorded (c3, the Empty Lab; from Suno: 9 stems, 3:59.5, ~81 bpm, F minor; 80 bars of 2.97 s,
+# phrases of 8 from bar 0, the drums often one bar on, one bar off). Its sections (tools/arrange-music.py frozen --analyze):
+#   0-7 intro (drums every other bar, guitar, synth)  8-15 verse (the piano motif in the bars between, strings 14-15)
+#   16-22 the first groove (drums, bass, staccato strings; 23 the piano alone)  24-31 the same alternating, brass rising
+#   30-31  32-33 the piano alone  34-39 rebuilding (the strings swell in 35, the metal percussion)  40-47 the groove
+#   with strings (brass build 45-47)  48-55 the groove with guitar  56-63 the climax (brass, guitar)  64-67 stop-time
+#   (a hit, silence, a hit, silence)  68-71 the last push  72-75 the piano alone  76-79 the hit on F (beat 3 of bar 76)
+#   ringing out. The grooves are near copies (16 ≈ 48, 20 ≈ 44 ≈ 52, 18 ≈ 42 ≈ 50, 22 ≈ 46 ≈ 54: joins at 0.5-0.9).
+# c3 (js/progress.js, the shaped timeline): a mine drone at 0:10-0:15, the derelict lab docks at 0:28 (2+ crew; solo
+# ~1:50) and the crew explores it, then mines, swarms, a failing part and flares bunching at the hot times 3:30 / 4:30
+# (DENSITY 70% / 90%; it gets hot a little after), the jump at 5:00 (the drive spools, then needs MID energy: often
+# later, so the last section loops). The ending comes on the jump (music.jumped()).
+F_DOCK = mix(Dr=OFF, Pc=OFF, Ba=-8, Gt=-6, Br=OFF)                       # the piano motif, the guitar far off
+F_EMPTY = mix(Dr=OFF, Pc=OFF, Ba=OFF, Gt=OFF, Br=OFF, Sy=-6, St=-6)       # the piano and a breath: almost nothing
+F_SCRAPE = mix(Dr=OFF, Pc=OFF, Ba=-12, Gt=OFF, Br=OFF, Sy=-6)            # the piano bars, the strings scraping between
+F_HOT = mix(Br=1, Gt=1)
+F_FULL = mix(Br=2, St=1, Gt=1)
+FROZEN_PLAN = [
+    ('Intro: the drone, the motif', 0, 8, lv(mix(Dr=-6, Pc=-6), -5)),     # 0:00 (the mine drone 0:10-0:15)
+    ('The lab: the piano motif', 8, 16, lv(F_DOCK, -6)),                    # 0:24 (it docks 0:28)
+    ('Exploring: almost nothing', 8, 16, lv(F_EMPTY, -8)),                  # 0:47
+    ('Exploring: scrapes', 24, 32, lv(F_SCRAPE, -7)),                       # 1:11
+    ('The piano alone, a swell', 32, 36, lv(mix(Dr=OFF, Pc=-12, Ba=-10, Gt=OFF), -6)),   # 1:35
+    ('Metal percussion wakes up', 36, 40, lv(mix(Dr=-10, Ba=-6), -5)),     # 1:47
+    ('Climbing: the groove, strings', 40, 48, lv(mix(Dr=-4, Br=-4), -4.5)), # 1:59
+    ('Climbing: staccato strings', 16, 32, lv(mix(Br=-3), -3.5)),           # 2:23
+    ('Climbing: the guitar', 48, 56, lv(mix(), -2)),                        # 3:11
+    ('Hot time 1: climax', 56, 64, lv(F_HOT, -0.5)),                        # 3:34 (hot 3:30-3:45)
+    ('Stop-time: silence, hits', 64, 68, lv(mix(), -1)),                    # 3:58
+    ('The last push', 68, 72, lv(mix(), -0.5)),                             # 4:10
+    ('Hot time 2: the groove', 48, 56, F_HOT),                              # 4:22
+    ('Hot time 2: full climax', 56, 64, F_FULL),                            # 4:46 (hot 4:30-4:45, the jump 5:00)
+    ('Still hot (the loop)', 48, 64, F_FULL),                               # 5:09: the loop (48 s), if the jump is late
+]
+# Pick Your Trouble, recorded (the custom skirmish; from Suno: 9 stems, 3:51.5, drum and bass at 174 bpm, counted here
+# in half-time bars (87 bpm, 2.76 s), G minor; 84 bars in phrases of 8). Its sections (arrange-music.py trouble --analyze):
+#   0-7 intro (filtered breaks building)  8-15 half-time verse (the drums thin in 8-11, back in 12-15)  16-22 drop 1
+#   (full-speed breaks, Reese bass; 23 a turn)  24-31 drop 1 with guitar (a build in 30-31)  32-39 drop 2 (brass stabs)
+#   40-47 the breakdown (half-time, guitar, stutters; D, the dominant, in 42-43)  48-55 the build (the Reese alone, the
+#   drums back in 52-55)  56-63 drop 3  64-69 drop 3 on  70-71 a build  72-77 the last drop (the bass loudest)  78-80
+#   the outro  81 the keyboard alone  82-83 the impact and sub boom. The drops are near copies (18 ≈ 22 ≈ 62 ≈ 66,
+#   16 ≈ 32, 34 ≈ 38: joins at 0.4-0.7). Its stems include "lead vocals" (chops, -34 to -60 dB): muted, the prompt
+#   asked for none.
+# The skirmish (js/progress.js MISSIONS.custom): always 5:00 to the jump (MISSION_LENGTH; the lobby's points only set how
+# many encounters), the encounters spread evenly from 0:10 / 0:15 to the finale at 4:30 (spacing 'spread': no story
+# beats, no density peaks), the jump due at 5:00 (often later: the drive needs MID energy; the loop covers that). The
+# arrangement follows the prompt's usual shape: arrivals from 0:10, a calm ~1:06-1:28, a climb, drop 3 at 3:41, the
+# last drop at 4:47 through the jump; the ending comes with the jump.
+def tmix(**g): return mix(LV=OFF, **g)
+TROUBLE_PLAN = [
+    ('Intro: filtered breaks', 0, 8, lv(tmix(), -6)),                       # 0:00 (the first arrivals 0:10-0:15)
+    ('Half-time verse', 8, 16, lv(tmix(), -5)),                            # 0:22
+    ('First drop, held back', 16, 20, lv(tmix(Br=-6), -4)),                # 0:44
+    ('First drop: brass stabs', 36, 40, lv(tmix(), -4)),                    # 0:55
+    ('Calm: half-time breakdown', 40, 48, lv(tmix(Pc=-4), -7)),             # 1:06 (calm ~1:00-1:20)
+    ('Build: the Reese alone', 48, 56, lv(tmix(), -4.5)),                   # 1:28
+    ('Climbing: drop 1, guitar', 16, 32, lv(tmix(), -3.5)),                 # 1:50
+    ('Climbing: drop 2', 32, 40, lv(tmix(), -2.5)),                         # 2:34
+    ('Breakdown: stutters', 40, 48, lv(tmix(), -4.5)),                      # 2:56
+    ('Build: snare roll', 48, 56, lv(tmix(), -2.5)),                        # 3:18
+    ('Hot time 1: drop 3 (climax)', 56, 64, lv(tmix(Br=1), -0.5)),         # 3:41 (hot ~3:45)
+    ('Between: drop 1 and guitar', 28, 36, lv(tmix(), -2)),                 # 4:03
+    ('Hot time 2: drop 3 on, the build', 60, 72, tmix(Br=1)),               # 4:25
+    ('Hot time 2: the last drop (climax)', 72, 76, tmix(Br=2, Ba=1)),       # 4:47 (hot ~4:45, the jump 5:00)
+    ('Still going (the loop, climax)', 20, 36, tmix(Br=1)),                 # 5:09: the loop (44 s), if the jump is late
+]
 PIECES = {
     'hull': {
         'title': 'Pressure Hull (recorded)', 'stems': 'Hull Pressure', 'files': HULL_STEMS, 'mix': 'Hull Pressure.wav', 'bpm': 87, 'missions': ['c7'], 'jump': 300,
@@ -153,6 +223,23 @@ PIECES = {
         # the game's time constant 0.15 s, from 0.1 s before the bar line; Pressure Hull keeps 0.03 s from the bar line).
         'ending': [(24, 30, T_RELEASE), (72, 74, mix(St=3))], 'ending_stop': 127.6, 'ending_fade': 2.5,
         'stitch': (1.6, 7.0), 'stitch_xf': (0.15, 0.1),
+    },
+    'trouble': {
+        'title': 'Pick Your Trouble (recorded)', 'stems': 'Pick Your Trouble', 'files': TROUBLE_STEMS, 'bpm': 87, 'missions': ['custom'], 'jump': 300,
+        'bar_step': 1, 'loop': -1, 'smooth': True, 'plan': TROUBLE_PLAN,
+        # the ending (on the jump): the keyboard alone for a bar (81), then the song's impact and sub boom (82-83, to the
+        # file's end); stitched on bar lines whose harmony into bar 81 isn't far off, main fading over the beat before
+        'ending': [(81, 84, tmix())], 'ending_stop': 231.4, 'ending_fade': 2.0,
+        'stitch': (3.2, 6.0), 'stitch_xf': (0.15, 0.1),
+    },
+    'frozen': {
+        'title': 'Keep S-7 Frozen (recorded)', 'stems': 'Keep S-7 Frozen', 'files': FROZEN_STEMS, 'bpm': 81, 'missions': ['c3'], 'jump': 300,
+        'bar_step': 1, 'loop': -1, 'smooth': True, 'plan': FROZEN_PLAN,
+        # the ending (on the jump, as in c7): the music stops, the piano alone for a bar (75), then the song's own hit on F
+        # (bar 76's third beat) ringing out cold. Every bar line may take it, unless its harmony into bar 75 is far off
+        # (stitch: cost ≤ 3.2, at most 6.5 s apart: a stop is a contrast anyway); main fades out over the beat before.
+        'ending': [(75, 80, mix())], 'ending_stop': 239.4, 'ending_fade': 3.0,
+        'stitch': (3.2, 6.5), 'stitch_xf': (0.15, 0.1),
     },
 }
 
@@ -199,7 +286,7 @@ def analyze(name):
     ib = np.diff(beats)
     print(f'{len(beats)} beats; bpm by 20 s:', ' '.join(f'{t0}:{60 / np.median(ib[(beats[:-1] >= t0) & (beats[:-1] < t0 + 20)]):.1f}'
                                                  for t0 in range(0, int(beats[-1]) - 5, 20)))
-    cb = chroma_per_beat(stems['St'] + stems['Ba'] + stems['Ky'] + stems['Sy'], beats)
+    cb = chroma_per_beat(sum(stems[k] for k in ('St', 'Ba', 'Ky', 'Sy') if k in stems), beats)   # (the tonal stems the piece has)
     chg = np.r_[0, np.linalg.norm(np.diff(cb, axis=0), axis=1)]
     ph = int(np.argmax([chg[k::4].mean() for k in range(4)]))      # the downbeat: where the chords change
     bars = beats[ph::4]

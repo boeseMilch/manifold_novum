@@ -594,7 +594,40 @@ check(nodes > n0, 'and plays again when shown');
     check(m.title === 'Last Jump Home' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Last Jump Home takes over');
     check(m.list().some(s => s.name === 'home' && s.title === 'Last Jump Home') && m.recordings().some(r => r.name === 'tick' && r.release === 'blast' && r.jump === 500),
       'music.html still lists the synthesized Last Jump Home, the recording next to it');
+    // c3: Keep S-7 Frozen, recorded; its ending on the jump
+    const F = JSON.parse((s => s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1))(fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-frozen.js'), 'utf8')));
+    const f0 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c3'); step(1, -wall);
+    const fm = els[f0], fe = els[f0 + 1];
+    check(m.title === 'Keep S-7 Frozen (recorded)' && fm && /frozen\/main/.test(fm.src) && !fm.paused, 'with audio elements c3 plays the recorded Keep S-7 Frozen');
+    m.release(); step(0.1); check(!m.recording.ending, 'release() does nothing for it (no release: its ending comes with the jump)');
+    const fj = F.bars.findIndex(b => b > 280); fm.currentTime = F.bars[fj] - 0.4; m.setClock(null); m.jumped();
+    const fb = F.bars.find(b => b >= F.bars[fj] - 0.4 + 1.6); while (fm.currentTime < fb + 0.1) step(0.025);
+    const foff = fe.currentTime - (F.preroll + fm.currentTime - fb);
+    check(Math.abs(foff) < 0.03, `the jump: the ending's first bar lands on main's next allowed bar line (${(foff * 1000).toFixed(0)} ms)`);
+    step(18); check(m.ended, 'and ends');
+    m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c3'); step(0.3, 0); fm.on.error(); step(0.1);
+    check(m.title === 'Cargo Run' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Cargo Run (c1-c3\'s piece) takes over');
+    m.setMission('menu'); m.rearm(); m.setMission('c2'); check(m.title === 'Cargo Run' && !m.recording, 'c1 / c2 keep the synthesized Cargo Run');
   } else check(false, 'the engine attaches to a fake context with audio elements');
+}
+
+// ---- c3's recording (js/music/recorded-frozen.js): laid out on c3's timeline, the ending on the jump
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-frozen.js'), 'utf8'), D = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+  const R = music.recordings().find(r => r.name === 'frozen');
+  check(!!R && R.missions.join() === 'c3' && !R.release && music.songOf('c3') === 'Cargo Run', 'Keep S-7 Frozen has a recording, for c3 only, its ending on the jump (node: the synthesized piece)');
+  check(['main', 'ending'].every(k => fs.existsSync(path.join(__dirname, '..', D[k]))), `its files are there (${D.main}, ${D.ending})`);
+  check(D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.loop[1] === D.length && D.bars.includes(D.length), 'its bar lines rise, the loop starts and ends on bar lines');
+  const gaps = D.bars.slice(1).map((b, i) => b - D.bars[i]);
+  check(gaps.every(g => Math.abs(g - 2.97 * Math.round(g / 2.97)) < 0.15 * Math.round(g / 2.97)) && Math.max(...gaps) < 6.6, `its bar lines are whole bars, at most two apart (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s)`);
+  const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN, lv = (t0, t1) => D.sections.filter(x => x.t >= t0 && x.t < t1);
+  check(D.jump === 300 && D.length >= 330 && D.loop[1] - D.loop[0] > 30, `laid out for the jump (5:00) + 30 s (${D.length} s), a loop of ${(D.loop[1] - D.loop[0]).toFixed(0)} s`);
+  check(lv(20, 105).length >= 4 && lv(20, 105).every(x => /lab|Exploring|piano/i.test(x.label)), 'sparse while the lab docks and the crew explores (0:24-1:47: the piano, scrapes, almost nothing)');
+  check(at(/Hot time 1/) > 200 && at(/Hot time 1/) < 225 && at(/full climax/) > 270 && at(/full climax/) < 290, 'its climaxes at the hot times (~3:35 and ~4:45), the full one through the jump');
+  const { loadGame } = require('./harness');
+  const G = loadGame(['mission', 'startMission', 'crew', 'makeCrew']), seen = [];
+  for (let n = 1; n <= 3; n++) { while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length)); G.startMission('c3'); seen.push([G.mission.events.find(e => e.kind === 'derelict')?.t, G.mission.jumpAt]); }
+  check(seen.every(([d, j], i) => j === 300 && (i ? d === 28 : d > 60 && d < 130)), `c3's timeline as laid out: the lab docks at 0:28 with a crew (solo ~1:50), the jump due at 5:00 (${seen.map(x => x.map(Math.round).join('/')).join(', ')})`);
 }
 
 // ---- c8's recording (js/music/recorded-tick.js): laid out on c8's timeline, its ending from the engine blast
