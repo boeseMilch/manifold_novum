@@ -872,12 +872,14 @@ const music = (() => {
     if (!E.on) {
       if (m.el.paused) recPlay(m);
       if (!E.started && rem <= R.preroll) { E.started = true; e.el.currentTime = Math.max(0, R.preroll - rem); recLevel(e, 0, 0, 0.005); recPlay(e); }
+      // (R.xfLead / R.xf: main fades out over the beat before the bar line instead of being cut on it; c8, 2026-10-27)
+      if (!E.fading && R.xfLead && rem <= R.xfLead + 0.03) { E.fading = true; recLevel(m, 0, Math.max(0, rem - R.xfLead), R.xf ?? REC_XF); }
       if (E.started && rem > 0.03) {
         const err = e.el.currentTime - (R.preroll - rem);
         e.el.playbackRate = Math.max(0.8, Math.min(1.25, 1 - err / Math.max(0.25, rem - 0.3)));   // (never sharper: a rate change takes a moment to apply)
         if (e.el.paused) recPlay(e);
       } else if (E.started) {                          // the bar line (a tick early: the ending's own fade-in is in the file)
-        E.on = true; e.el.playbackRate = 1; recLevel(e, 1, 0, 0.005); recLevel(m, 0, Math.max(0, rem), REC_XF);
+        E.on = true; e.el.playbackRate = 1; recLevel(e, 1, 0, 0.005); if (!E.fading) recLevel(m, 0, Math.max(0, rem), R.xf ?? REC_XF);
         setTimeout(() => { if (rec && rec.ending === E) m.el.pause(); }, 500);
       }
       return;

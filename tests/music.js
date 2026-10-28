@@ -580,9 +580,10 @@ check(nodes > n0, 'and plays again when shown');
     const k0 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c8'); step(1, -wall);
     const tm = els[k0], te = els[k0 + 1];
     check(m.title === 'Last Jump Home (recorded)' && !!m.recording && tm && /tick\/main/.test(tm.src) && !tm.paused, 'with audio elements c8 plays the recorded Last Jump Home');
-    m.setClock(T.bars[150]); step(0.05);
-    check(Math.abs(tm.currentTime - T.bars[150]) < 0.2, 'and follows the mission clock (seeked into the fight)');
-    tm.currentTime = T.bars[150] - 0.4; m.setClock(null); m.release(); const tb = T.bars[151];
+    const fi = T.bars.findIndex(b => b > 300);           // (a stitch point in the fight)
+    m.setClock(T.bars[fi]); step(0.05);
+    check(Math.abs(tm.currentTime - T.bars[fi]) < 0.2, 'and follows the mission clock (seeked into the fight)');
+    tm.currentTime = T.bars[fi] - 0.4; m.setClock(null); m.release(); const tb = T.bars[fi + 1];
     step(0.2); check(m.recording.ending && te.paused, 'release() (the engine blast): the ending waits for the next bar line at least 1.6 s ahead');
     m.jumped(); while (tm.currentTime < tb + 0.1) step(0.025);
     const toff = te.currentTime - (T.preroll + tm.currentTime - tb);
@@ -605,10 +606,12 @@ check(nodes > n0, 'and plays again when shown');
   check(D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.loop[1] === D.length && D.bars.includes(D.length),
     'its bar lines rise, the loop starts and ends on bar lines, at the end of main');
   const gaps = D.bars.slice(1).map((b, i) => b - D.bars[i]);
-  check(gaps.every(g => Math.abs(g - 3.44) < 0.25), `its bar lines are whole half-time bars (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s): the ending never lands mid-bar`);
+  check(gaps.every(g => Math.abs(g - 3.44 * Math.round(g / 3.44)) < 0.25 * Math.round(g / 3.44)) && Math.max(...gaps) < 7.3,
+    `its bar lines (where the ending may come in) are on whole half-time bars, at most two apart (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s): the ending never lands mid-bar, nor long after the blast`);
+  check(D.xf > 0.03 && D.xfLead > 0, `main fades out over the beat before the ending's bar line (time constant ${D.xf} s from ${D.xfLead} s before; Pressure Hull: cut on it)`);
   const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
   check(D.jump === 500 && D.length >= 500 + 30 && D.loop[1] - D.loop[0] > 30, `laid out for the nominal jump (8:20) + 30 s (${D.length} s), a long loop for a long fight (${(D.loop[1] - D.loop[0]).toFixed(0)} s)`);
-  check(at(/mother/) > 55 && at(/mother/) < 70 && at(/grappler/) > 95 && at(/grappler/) < 110, 'the spore mother\'s drop ~1:00, the grappler\'s ~1:40');
+  check(at(/mother/) > 50 && at(/mother/) < 70 && at(/grappler/) > 95 && at(/grappler/) < 110, 'the spore mother\'s drop ~1:00, the grappler\'s ~1:40');
   check(at(/LEVIATHAN/) >= 270 && at(/LEVIATHAN/) < 276, `the biggest drop as the leviathan arrives (4:30; at ${at(/LEVIATHAN/)} s)`);
   check(at(/Held breath/) > 340 && at(/Held breath/) < 370 && at(/LAST PUSH/) > 430 && at(/LAST PUSH/) < 480, 'the held breath ~6:00 (the gas), the last push ~7:30 (the override)');
   check(D.release === 'blast', 'its ending comes with the engine blast (release), the ship jumps by itself after it');

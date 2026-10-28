@@ -4251,6 +4251,32 @@ the synthesized piece stays in music.html and is the fallback when the audio fai
   players, as laid out; levReleased only from the blast, not in practice; with fake audio elements: plays on the
   clock, release() stitches the ending onto the next bar line, the jump after it changes nothing, ends; falls back to
   the synthesized Last Jump Home on an error; release() leaves a synthesized piece alone).
+- **Smoother joins (2026-10-27).** The user: "better than before but some of the transitions are rough". Every join was
+  measured (a scratch script: the level jump over 200 ms beyond the source's own jump into that bar, the spectral jump
+  beyond the source's own, stems that stop more than the source decays (chopped tails), pickups into the bar that were
+  cut off, the chord before the cut against what preceded that bar in the song, phrase lines). The worst (scores 15-22):
+  4:24 bar 71→44 (E-flat into F, a leading swell cut off), 4:07 47→62 (a drum fill into nothing), 6:00 67→8 and 2:03
+  43→8 (F♯ into E-flat), 1:43 71→32 (the grappler's drop without its own build), 5:53 47→64 (drums stopped dead
+  into the breath). Fixes:
+  - **The plan, re-cut by join cost** (`Song.cost`, jukebox-style: harmony and every stem's level in the beats before /
+    after both sides, phrase lines; `arrange-music.py tick --joins` lists them): 11 cuts instead of 20, all on costs
+    0.9-2.0 (were up to 4.5), long runs of the song as it is (2:04-3:40 is the song from bar 8 to 64), so the drops at
+    0:55 (mother), 1:36 (grappler), 4:31 (leviathan) and 7:30 (last push) come from the song's own builds and silences.
+    The breath starts with the song's own breakdown (62-63 swell, 64 music box). The loop is 20-59 (69 s), its wrap the
+    same join as the cut into it (60→20); main is 8:59.
+  - **Per-stem joins** (`'smooth': True`; Pressure Hull keeps the old path, its renders and MP3s bit-identical): the
+    incoming section's pickup (an attack in the beat before the bar, or a note held into it, swelled in) comes in ahead
+    of the bar line with that stem of the outgoing fading under it; an outgoing stem rings on to its next attack (at most a
+    beat), or where the song attacks again on the bar line, gets a short seeded reverb tail; equal-power fades for cuts;
+    a stem dropping out at a level change plays its downbeat and rings out over a beat; the loop's wrap carries the
+    loop start's pickup.
+  - **The ending** starts at bar 24 where the strings swell in (G minor → D → F major → the open G hit), comes in only on
+    main's bar lines whose join into it is cheap (cost ≤ 1.6, but at most 7 s apart: 117 of the bar lines), and main fades
+    out from 0.1 s before the bar line (time constant 0.15 s; data `xf` / `xfLead`, js/music.js; Pressure Hull keeps 0.03 s
+    on the bar line). The sharpest 20 ms step at the stitch: median 3.3 dB, max 5.4 (was 3.4 / 7.3; the song's own
+    downbeats: 3.2 / p90 5.8).
+  - Scores (worst first) before: 22.3 17.6 17.5 16.8 15.2 14.4 12.2 10.4 9.5 9.3 …; after: 5.6 4.4 3.6 3.3 3.1 3.0 2.2
+    1.5 1.3 1.3 0.9.
 
 ### Multiplayer lag: a connection simulator, door prediction, input replay, smaller snapshots, flow control (2026-10-26, js/net.js, js/game.js, server.js, tools/netsim.js, tools/netlink.js)
 User: "still laggy, need to improve. You should probably have some connection simulation where you introduce 100ms lag

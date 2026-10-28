@@ -87,45 +87,44 @@ T_HOT = mix(Br=1, St=1)
 T_FULL = mix(Br=2, St=2, Ba=1)                     # the leviathan, the last push
 T_BREATH = mix(Dr=OFF, Pc=OFF, Ba=OFF, Br=-6, Ot=-6)   # the held breath: music box and strings only
 T_RELEASE = mix(Dr=OFF, Pc=-12, Ba=-6, St=3)
+# The plan (2026-10-27, smoothed: every cut chosen from the source's own join costs, tools/arrange-music.py's sibling
+# measurements in PLAN.md: harmony and stem activity before and after the cut alike, on 4/8-bar phrase lines; long runs
+# of the song as it is, so the build comes from the song itself and the levels). Cuts: 28→44, 68→28, 44→68, 72→8,
+# 70→24, 60→20, 32→24, 54→62, 72→8, 60→20 (and the loop's wrap 60→20, the same join).
 TICK_PLAN = [
     ('Intro: the tick, the music box', 0, 8, lv(mix(), -8)),
     ('Low strings under the music box', 8, 16, lv(T_SOFT, -7)),
-    ('Spores: light drums', 8, 16, lv(T_VERSE, -6)),                              # 0:27 (spores 0:30)
-    ('First impact, held back', 16, 24, lv(T_THIN, -5)),                          # 0:41
-    ('Strings swell, silence', 44, 48, lv(mix(), -4.5)),                            # 0:55
-    ('The spore mother: drop', 48, 56, lv(T_MOTHER, -3.5)),                         # 1:02 (the mother ~1:00)
+    ('Spores: the first impact, held back', 16, 28, lv(T_THIN, -5.5)),   # 0:28 (spores 0:30)
+    ('Strings swell, silence', 44, 48, lv(mix(), -4.5)),                  # 0:48
+    ('The spore mother: drop', 48, 56, lv(T_MOTHER, -3.5)),               # 0:55 (the mother ~1:00)
     ('Synth groove', 56, 64, lv(T_GROOVE, -4.5)),
-    ('Music box, the tick', 64, 68, lv(T_BREAK, -6)),                             # 1:29
-    ('Build', 68, 72, lv(mix(), -4)),
-    ('The grappler: drop', 32, 40, lv(T_MID, -3)),                                # 1:43 (the grappler ~1:40)
+    ('Music box, the tick', 64, 68, lv(T_BREAK, -6)),                     # 1:23
+    ('Build: drums out', 28, 32, lv(mix(), -4.5)),                        # 1:30
+    ('The grappler: drop', 32, 40, lv(T_MID, -3)),                        # 1:36 (the grappler ~1:40)
     ('Strings over drums', 40, 44, lv(T_MID, -3.5)),
-    ('Herds and tides: the valley', 8, 16, lv(T_LOW, -5)),                        # 2:04
-    ('Rising 1', 16, 32, lv(T_B1, -4)),                                           # 2:17
-    ('Rising 2', 32, 40, lv(T_B2, -3.5)),                                           # 2:45
-    ('Rising 3: synth groove', 56, 64, lv(T_MID, -3)),
-    ('Rising 4: drop 3', 48, 56, lv(T_MID, -2.5)),                                  # 3:12
-    ('Rising 5: strings', 24, 32, lv(T_HOT, -2)),
-    ('Rising 6', 32, 40, lv(T_HOT, -1.5)),                                          # 3:40
-    ('Swell, silence: not yet', 40, 48, lv(T_HOT, -1.5)),                           # 3:53
-    ('Something huge: the music box alone', 62, 72, lv(T_BREAK, -4)),             # 4:07
-    ('It comes: swell, silence', 44, 48, lv(T_HOT, -1)),                          # 4:24
-    ('THE LEVIATHAN: the biggest drop (climax)', 48, 56, T_FULL),         # 4:31 (it arrives 4:30-4:35)
-    ('The fight: synth groove (climax)', 56, 64, T_FULL),
-    ('The fight: drop 1 and strings', 16, 32, lv(T_HOT, -0.5)),                     # 4:59
-    ('The fight: drop 2', 32, 40, T_FULL),                                # 5:26
-    ('The fight: strings, swell', 40, 48, lv(T_HOT, -0.5)),                         # 5:40
-    ('Held breath: the gas (music box)', 64, 68, lv(T_BREATH, -2)),               # 5:54 (the gas ~6:00-6:25)
-    ('Held breath: strings', 8, 16, lv(T_BREATH, -2)),                            # 6:00
-    ('Out again: build', 68, 72, lv(mix(), -1)),                                  # 6:14
-    ('The side: drop 3 (climax)', 48, 56, T_HOT),                         # 6:21
-    ('The side: groove', 56, 64, lv(T_HOT, -0.5)),
-    ('Behind us: drop 2', 32, 40, lv(T_HOT, -0.5)),                                 # 6:49
-    ('Behind us: strings', 24, 32, T_FULL),                               # 7:02
-    ('The override: swell, silence', 40, 48, T_FULL),                     # 7:16 (the override ~7:30)
-    ('LAST PUSH (climax)', 48, 56, T_FULL),                               # 7:30
-    ('Last push: drop 1 and strings (climax)', 16, 32, T_FULL),           # 7:43
-    ('Still fighting: drop 2 (the loop, climax)', 32, 40, T_FULL),        # 8:11: the loop (41 s), if the fight runs long
-    ('Still fighting: drop 3, groove (the loop, climax)', 48, 64, T_FULL),
+    ('The bass creeps back', 68, 72, lv(mix(Br=-6), -4.5)),               # 1:57
+    ('Herds and tides: the valley', 8, 16, lv(T_LOW, -5)),                # 2:04
+    ('Rising 1', 16, 32, lv(T_B1, -4)),                                   # 2:18
+    ('Rising 2', 32, 40, lv(T_B2, -3.5)),                                 # 2:45
+    ('Rising 3: strings, swell, silence', 40, 48, lv(T_MID, -3)),         # 2:59
+    ('Rising 4: drop 3', 48, 56, lv(T_MID, -2.5)),                        # 3:13
+    ('Rising 5: synth groove', 56, 64, lv(T_HOT, -2)),                    # 3:26
+    ('Something huge: the music box', 64, 70, lv(T_BREAK, -4)),           # 3:40
+    ('It comes: strings', 24, 32, lv(T_HOT, -1.5)),                       # 3:51
+    ('It comes: drop 2', 32, 40, lv(T_HOT, -1)),                          # 4:04
+    ('It comes: swell, silence', 40, 48, lv(T_HOT, -1)),                  # 4:18
+    ('THE LEVIATHAN: the biggest drop (climax)', 48, 60, T_FULL),         # 4:32 (it arrives 4:30-4:35)
+    ('The fight: drop 1 and strings', 20, 32, lv(T_HOT, -0.5)),           # 4:53
+    ('The fight: strings, drop 2 (climax)', 24, 40, T_FULL),              # 5:13
+    ('The fight: swell, drop 3', 40, 54, lv(T_HOT, -0.5)),                # 5:41
+    ('Held breath: the strings swell', 62, 64, lv(T_HOT, -1.5)),          # 6:05 (the gas ~6:00-6:25)
+    ('Held breath: the gas (music box)', 64, 72, lv(T_BREATH, -2)),       # 6:08: the song's own breakdown, then bass, drums out
+    ('Held breath: strings', 8, 16, lv(T_BREATH, -2)),                    # 6:22
+    ('Out again: drop 1 and strings', 16, 32, T_HOT),                     # 6:36
+    ('Behind us: drop 2', 32, 40, T_HOT),                                 # 7:03
+    ('The override: swell, silence', 40, 48, T_FULL),                     # 7:17 (the override ~7:30)
+    ('LAST PUSH (climax)', 48, 60, T_FULL),                               # 7:31
+    ('Still fighting (the loop, climax)', 20, 60, T_FULL),                # 7:51: the loop (69 s), if the fight runs long
 ]
 PIECES = {
     'hull': {
@@ -146,10 +145,14 @@ PIECES = {
     },
     'tick': {
         'title': 'Last Jump Home (recorded)', 'stems': 'Final Tick', 'files': TICK_STEMS, 'bpm': 140, 'missions': ['c8'], 'jump': 500,
-        'bar_step': 2, 'loop': -2, 'release': 'blast', 'plan': TICK_PLAN,
-        # the ending (from the engine blast on, music.release(): js/game.js): D major → F major on soaring strings, no drums,
-        # then the song's last hit, an open G (the tonic: bVII → I) ringing out (cut before the clipped next bar at 127.75 s)
-        'ending': [(26, 30, T_RELEASE), (72, 74, mix(St=3))], 'ending_stop': 127.6, 'ending_fade': 2.5,
+        'bar_step': 2, 'loop': -1, 'release': 'blast', 'smooth': True, 'plan': TICK_PLAN,
+        # the ending (from the engine blast on, music.release(): js/game.js): the strings swelling in where they enter in the
+        # song (bar 24, G minor), D major → F major, no drums, then the song's last hit, an open G (the tonic: bVII → I)
+        # ringing out (cut before the clipped next bar at 127.75 s). It comes in only on main's bar lines whose join into
+        # bar 24 is cheap (stitch: cost ≤ 1.6, but at most 7 s apart), and main fades out over the beat before (stitch_xf:
+        # the game's time constant 0.15 s, from 0.1 s before the bar line; Pressure Hull keeps 0.03 s from the bar line).
+        'ending': [(24, 30, T_RELEASE), (72, 74, mix(St=3))], 'ending_stop': 127.6, 'ending_fade': 2.5,
+        'stitch': (1.6, 7.0), 'stitch_xf': (0.15, 0.1),
     },
 }
 
@@ -239,12 +242,144 @@ class Song:
             if not next_cont: seg[-f:] *= xf(f)[::-1][:, None]
             st = p - (s0 - lo); a0 = max(0, st); e = min(N, st + len(seg))
             if e > a0: out[a0:e] += seg[a0 - st:e - st]
+    # ---- smooth joins (P['smooth']; 2026-10-27, Final Tick, the user: "some of the transitions are rough"). Per stem, at
+    # a cut from section A into B: B's pickup comes in ahead of the bar line where its source has one leading into it (a
+    # fill, a riser, a note held into the downbeat: from its attack, or swelled in over half a beat), and A's same stem
+    # fades out under it; otherwise A's stem rings on past the cut until its next attack (at most a beat) instead of being
+    # chopped. Equal-power fades for cuts (unrelated material); a level change on the same source bars keeps the old
+    # equal-gain crossfade. Pieces without 'smooth' (Pressure Hull) take the old path, bit for bit.
+    def onsets(self):                               # per stem: its attacks (s), from the onset envelope's peaks
+        if not hasattr(self, '_on'):
+            self._on = {}
+            for k, x in self.stems.items():
+                o = onset(x.mean(1)); o = o / (np.percentile(o, 99) + 1e-9)
+                self._on[k] = sig.find_peaks(o, height=0.2, distance=5)[0] / 100
+        return self._on
+    def beat(self): return float(np.median(np.diff(self.bars))) / 4
+    def lvl(self, k, t0, t1):
+        x = self.stems[k][int(max(0, t0) * SR):int(t1 * SR)]
+        return 20 * np.log10(np.sqrt((x ** 2).mean()) + 1e-9) if len(x) else -99
+    def fades(self, A, B):
+        """The fades at the join of sections A → B ((a, b, gains) each; None: the start / the end of the music):
+        ({stem: (samples before B's first bar, fade-in samples, curve)}, {stem: (fade-out samples before A's last bar line,
+        samples after it, curve)})."""
+        inn, out = {}, {}
+        for k in self.stems:
+            f = int((0.12 if k in SUSTAINED else 0.03) * SR); h = f // 2
+            if A is None or B is None or (A[1] == B[0] and A[2] == B[2]):     # the start, the end, or the source runs on
+                inn[k] = (h, f, 'sq') if A is None else (0, 0, 'sq'); out[k] = (h, h, 'sq') if B is None else (0, 0, 'sq'); continue
+            on, bt, tb, ta = self.onsets()[k], self.beat(), self.bar_t(A[1]), self.bar_t(B[0])
+            onA, onB = A[2].get(k, 0) > OFF, B[2].get(k, 0) > OFF
+            if A[1] == B[0]:                            # the same bars, other levels: a gain crossfade; a stem dropping out
+                if onA and onB or not onB:             # plays its downbeat and rings out over a beat; one coming in, its pickup
+                    inn[k], out[k] = (h, f, 'sq'), ((h, int(bt * SR), 'eq') if onA and not onB else (h, h, 'sq')); continue
+            pick = 0
+            if B[2].get(k, 0) > OFF:
+                lead, after = self.lvl(k, ta - bt, ta - 0.04), self.lvl(k, ta, ta + bt)
+                if lead > -45 and lead > after - 12:
+                    o = on[(on >= ta - bt) & (on < ta - 0.04)]
+                    if len(o): pick = int((ta - o[0] + 0.015) * SR); inn[k] = (pick, int(0.015 * SR), 'eq')   # from its attack
+                    else: pick = int(bt / 2 * SR); inn[k] = (pick, pick, 'eq')                               # held: swelled in
+            if k not in inn: inn[k] = (h, f, 'eq')
+            if pick: out[k] = (pick, h, 'eq')          # B's pickup takes this stem over: A's fades out under it
+            else:
+                o = on[on > tb - 0.04]
+                if len(o) and o[0] < tb + 0.04: out[k] = (h, h, 'verb')        # a new attack on the bar line: a reverb tail instead
+                else: out[k] = (h, max(h, int((min(o[0] if len(o) else tb + bt, tb + bt) - tb - 0.01) * SR)), 'eq')   # rings on
+        return inn, out
+    def place_smooth(self, out, t0, a, b, g, inn, outf, clip=None):
+        s0, s1 = int(self.bar_t(a) * SR), int(self.bar_t(b) * SR); p = int(t0 * SR); N = len(out)
+        for k, x in self.stems.items():
+            if g.get(k, 0) <= OFF: continue
+            pre, fin, cin = inn[k]; fo, post, cout = outf[k]
+            lo, hi = s0 - pre, s1 + post
+            if clip is not None and s0 + clip < hi:     # cut short: a short fade at the cut (clip 0: only the pickup, at full level at its end)
+                hi = s0 + clip; fo, post, cout = (min(fo, (hi - lo) // 2) if clip > 0 else 0), 0, 'sq'
+            if hi <= lo: continue
+            seg = np.zeros((hi - lo, 2), np.float32); src = x[max(0, lo):min(len(x), hi)]
+            seg[max(0, lo) - lo:max(0, lo) - lo + len(src)] = src
+            seg *= 10 ** ((g.get(k, 0) + g.get('All', 0)) / 20)
+            curve = lambda n, c: (np.sin(np.linspace(0, 1, n, dtype=np.float32) * np.pi / 2) if c == 'eq' else xf(n))
+            if fin: n = min(fin, len(seg)); seg[:n] *= curve(fin, cin)[:n, None]
+            if fo + post and hi > s1 - fo: n = min(fo + post, len(seg)); seg[-n:] *= curve(fo + post, 'sq' if cout == 'sq' else 'eq')[::-1][-n:, None]
+            st = p - (s0 - lo); a0 = max(0, st); e = min(N, st + len(seg))
+            if e > a0: out[a0:e] += seg[a0 - st:e - st]
+            if cout == 'verb':                          # the source attacks again on the bar line, so it can't ring on: a tail
+                y = self.tail(k, x, s1) * 10 ** ((g.get(k, 0) + g.get('All', 0)) / 20)   # (what was sounding, through a
+                q = p + (s1 - s0); a0, e = max(0, q), min(N, q + len(y))                  #  short reverb, from the cut on)
+                if e > a0: out[a0:e] += y[a0 - q:e - q]
+    def tail(self, k, x, s1):
+        """A reverb tail for stem k's last 150 ms before sample s1 (decaying noise, RT60 1 s, drums 0.5 s; seeded, so
+        every render is the same), starting at the cut at half the level just before it, fading in over 20 ms."""
+        w, n = int(0.15 * SR), int((1.0 if k in SUSTAINED else 0.5) * SR)
+        src = x[max(0, s1 - w):s1].astype(np.float32)
+        if len(src) < w: return np.zeros((1, 2), np.float32)
+        rng = np.random.default_rng(1 + s1 % 100003); t = np.arange(n) / SR
+        ir = rng.standard_normal((n, 2)).astype(np.float32) * np.exp(-t * 6.9 / (n / SR))[:, None]
+        y = np.stack([sig.fftconvolve(src[:, c] * np.hanning(2 * w)[:w], ir[:, c]) for c in range(2)], 1)[w:w + n]
+        ref = np.sqrt((src[-int(0.05 * SR):] ** 2).mean()); got = np.sqrt((y[:int(0.05 * SR)] ** 2).mean()) + 1e-12
+        y *= 0.5 * ref / got; m = int(0.02 * SR); y[:m] *= np.linspace(0, 1, m, dtype=np.float32)[:, None]
+        return y.astype(np.float32)
+    def run(self, out, t0, items, after=None, clip_at=None, last_clip=None):
+        """Places sections [(a, b, gains)] one after another from t0 with smooth joins; after: what follows the last
+        (the loop's start: its fades are worked out as if it came next); clip_at: s into the run where it stops."""
+        for i, (a, b, g) in enumerate(items):
+            if clip_at is not None and t0 >= clip_at: break
+            A = items[i - 1] if i else None
+            B = items[i + 1] if i + 1 < len(items) else after
+            ln = self.bar_t(b) - self.bar_t(a)
+            clip = int((clip_at - t0) * SR) if clip_at is not None and t0 + ln > clip_at else (last_clip if i == len(items) - 1 else None)
+            if clip is not None and clip_at is not None and t0 + ln > clip_at: B = None
+            self.place_smooth(out, t0, a, b, g, self.fades(A, (a, b, g))[0], self.fades((a, b, g), B)[1], clip)
+            t0 += ln
+        return t0
+    # Join costs (jukebox-style: leaving the source at bar b, going on at bar a): the harmony (chroma of the tonal stems)
+    # in the two beats before b against the two before a, and after b against after a, plus how different every stem's
+    # level is in the beat before / after; cuts off the 8-bar (or 4-bar) phrase lines cost a little more. 0: the source
+    # running on; the plans' cuts are ~0.6-2, the rough ones were 2.2-4.5.
+    TONAL = ['St', 'Br', 'Sy', 'Ky', 'Ww', 'Ba']
+    def _feat(self, i):
+        if not hasattr(self, '_feats'): self._feats = {}
+        if i not in self._feats:
+            t, bt = self.bar_t(i), self.beat()
+            def chroma(t0, t1):
+                x = sum(m.mean(1)[int(max(0, t0) * SR):int(t1 * SR)] for k, m in self.stems.items() if k in self.TONAL)
+                f, P_ = sig.welch(x, SR, nperseg=8192); ok = (f > 60) & (f < 1500); pc = np.round(12 * np.log2(f[ok] / 440)).astype(int) % 12
+                c = np.array([P_[ok][pc == k].sum() for k in range(12)]); return c / (np.linalg.norm(c) + 1e-12)
+            lv = lambda t0, t1: np.array([max(-50, self.lvl(k, t0, t1)) for k in self.stems])
+            self._feats[i] = (chroma(t - 2 * bt, t) if i > 0 else None, chroma(t, t + 2 * bt), lv(t - bt, t) if i > 0 else None, lv(t, t + bt))
+        return self._feats[i]
+    def cost(self, b, a):
+        if b == a: return 0.0
+        fb, fa = self._feat(b), self._feat(a)
+        if fb[0] is None or fa[0] is None: return 9.0
+        h = (1 - fb[0] @ fa[0]) + (1 - fb[1] @ fa[1])
+        t = (np.abs(fb[2] - fa[2]).mean() + np.abs(fb[3] - fa[3]).mean()) / 20
+        return float(2 * h + t + (0 if b % 8 == 0 and a % 8 == 0 else 0.15 if b % 4 == 0 and a % 4 == 0 else 0.3))
+    def stitches(self, lay, total):
+        """main's bar lines (every bar_step source bars) where the ending may come in; with 'stitch' (max cost, max gap
+        s): only those whose join into the ending's first bar is cheap, but never more than the gap apart."""
+        P, ea = self.P, self.ending()[0][0][0]
+        pts = sorted({(round(t0 + self.bar_t(i) - self.bar_t(a), 3), i) for t0, _, a, b, _ in lay for i in range(a, b, P.get('bar_step', 1))})
+        if not P.get('stitch'): return [t for t, _ in pts]
+        thr, gap = P['stitch']
+        c = {t: self.cost(i, ea) for t, i in pts}
+        keep = {t for t in c if c[t] <= thr} | {0.0}
+        while True:                                 # a gap too long: the cheapest bar line in it too
+            ks = sorted(keep) + [total]; bad = [(x, y) for x, y in zip(ks, ks[1:]) if y - x > gap]
+            if not bad: break
+            x, y = bad[0]; inside = [t for t in c if x < t < y]
+            if not inside: break
+            keep.add(min(inside, key=lambda t: c[t]))
+        return sorted(keep)
     def ending(self):                               # the ending's sections [(a, b, gains)] and their length (s)
         E = self.P['ending']; E = [E] if isinstance(E, tuple) else E
         stop = self.P.get('ending_stop')            # (s in the source: the last section rings out to there, not to its bar line)
         return E, sum(self.bar_t(b) - self.bar_t(a) for a, b, _ in E[:-1]) + (stop if stop else self.bar_t(E[-1][1])) - self.bar_t(E[-1][0])
     def place_ending(self, out, t0):
         E, _ = self.ending(); stop = self.P.get('ending_stop')
+        if self.P.get('smooth'):
+            self.run(out, t0, E, last_clip=int((stop - self.bar_t(E[-1][0])) * SR) if stop else None); return
         for i, (a, b, g) in enumerate(E):
             last = i == len(E) - 1
             prev_cont = i > 0 and E[i - 1][1] == a and E[i - 1][2] == g
@@ -255,12 +390,26 @@ class Song:
         """The arrangement (+ the ending from the first bar line after `jump`); lead: silence before it (s)."""
         lay, total = self.layout(plan)
         cut = total
-        if jump is not None:
+        if jump is not None and self.P.get('smooth'):
+            cut = next((t for t in self.stitches(lay, total) if t >= jump), total)
+        elif jump is not None:
             for t0, _, a, b, _ in lay:
                 hit = [t0 + self.bar_t(i) - self.bar_t(a) for i in range(a, b) if t0 + self.bar_t(i) - self.bar_t(a) >= jump]
                 if hit: cut = hit[0]; break
         elen = self.ending()[1] if ending else 0
         out = np.zeros((int((lead + cut + elen + 0.5) * SR), 2), np.float32)
+        if self.P.get('smooth'):
+            items = [(a, b, g) for _, _, a, b, g in lay]; L = lay[self.P.get('loop', -1)]
+            if cut < total and self.P.get('stitch_xf'):   # main fading out under the ending as the game does it (stitch_xf)
+                tc, xl = self.P['stitch_xf']; self.run(out, lead, items, clip_at=cut + 1.5)
+                i0 = int((lead + cut - xl) * SR); env = np.exp(-np.arange(len(out) - i0) / SR / tc).astype(np.float32)
+                out[i0:] *= env[:, None]
+            else: self.run(out, lead, items, after=None if cut < total else (L[2], L[3], L[4]), clip_at=cut if cut < total else None)
+            if cut >= total:                        # the loop's wrap: the loop start's pickup before main's end, as at its join
+                self.place_smooth(out, lead + total, L[2], L[3], L[4], self.fades(items[-1], (L[2], L[3], L[4]))[0],
+                                  {k: (0, 0, 'sq') for k in self.stems}, clip=0)
+            if ending: self.place_ending(out, lead + cut)
+            return out, lay, total, cut
         for i, (t0, lab, a, b, g) in enumerate(lay):
             if t0 >= cut: break
             prev_cont = i > 0 and lay[i - 1][3] == a and lay[i - 1][4] == g
@@ -298,11 +447,12 @@ def build(name):
     encode(main, os.path.join(D, 'main.mp3'), g); encode(end, os.path.join(D, 'ending.mp3'), g)
     # bar lines of main: every downbeat of every section, and the end (the loop's end is a bar line too)
     # (bar_step 2: every other bar line from each section's start, a half-time piece's whole bars)
-    bars = sorted({round(t0 + S.bar_t(i) - S.bar_t(a), 3) for t0, _, a, b, _ in lay for i in range(a, b, P.get('bar_step', 1))} | {round(total, 3)})
     loop = [round(lay[P.get('loop', -1)][0], 3), round(total, 3)]           # (loop: the section it starts with, the last by default)
+    bars = sorted(set(S.stitches(lay, total)) | {round(total, 3), loop[0]})
     data = {'name': name, 'title': P['title'], 'missions': P['missions'], 'main': f'assets/music/{name}/main.mp3',
             'ending': f'assets/music/{name}/ending.mp3', 'length': round(total, 3), 'loop': loop, 'preroll': PREROLL,
-            'gain': round(10 ** ((LEVEL_LUFS - ENC_LUFS) / 20) / MUSIC_VOL, 4), 'jump': P['jump'], **({'release': P['release']} if P.get('release') else {}),
+            'gain': round(10 ** ((LEVEL_LUFS - ENC_LUFS) / 20) / MUSIC_VOL, 4), 'jump': P['jump'],
+            **({'xf': P['stitch_xf'][0], 'xfLead': P['stitch_xf'][1]} if P.get('stitch_xf') else {}), **({'release': P['release']} if P.get('release') else {}),
             'sections': [{'t': round(t0, 2), 'label': lab} for t0, lab, *_ in lay], 'bars': bars}
     js = os.path.join(ROOT, 'js', 'music', f'recorded-{name}.js')
     with open(js, 'w') as f:
@@ -315,9 +465,14 @@ def build(name):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='Arrange a recorded song into a mission soundtrack (see the top of this file).')
     ap.add_argument('piece', choices=sorted(PIECES)); ap.add_argument('--analyze', action='store_true')
-    ap.add_argument('--wav'); ap.add_argument('--jump', type=float)
+    ap.add_argument('--wav'); ap.add_argument('--jump', type=float); ap.add_argument('--joins', action='store_true')
     A = ap.parse_args()
     if A.analyze: analyze(A.piece)
+    elif A.joins:                                   # every cut of the plan with its join cost (Song.cost), and the ending's stitches
+        S = Song(A.piece); lay, total = S.layout(S.P['plan'])
+        for (t0, lab, a, b, g), (t1, lab1, a1, b1, g1) in zip(lay, lay[1:] + [lay[S.P.get('loop', -1)]]):
+            if b != a1: print(f'{int(t1 // 60)}:{t1 % 60:04.1f}  {b - 1:2d}|{a1:<2d} cost {S.cost(b, a1):.2f}  {lab} → {lab1}' if t1 > t0 else f'loop wrap {b - 1}|{a1} cost {S.cost(b, a1):.2f}')
+        st = S.stitches(lay, total); print(f'the ending may come in at {len(st)} bar lines, at most {max(np.diff(st + [total])):.1f} s apart')
     elif A.wav:
         S = Song(A.piece); out, lay, total, cut = S.render(S.P['plan'], jump=A.jump)
         fade = int(1.5 * SR); out[-fade:] *= np.linspace(1, 0, fade)[:, None]
