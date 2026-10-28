@@ -9,6 +9,8 @@
 //   node tools/balance.js --detail c4 2        one build, job by job (who does what when)
 //   node tools/balance.js --rates              measure the enemies' damage rates in the game → tools/damage-rates.json
 //                                              (after changing an enemy, a hazard or the hull; tests/balancemodel.js checks)
+//   node tools/balance.js --encounters         rate every skirmish encounter kind: a skirmish of only that kind, 1-3 of
+//                                              it, no failing parts (--players, --runs as above; for calibrating skirmishes)
 //   node tools/balance.js --energy game        the energy runs on the game's own code (slow; the fast model is checked against it)
 //   From code: const { balance } = require('../tools/balance'); balance({ missions: ['c1'], players: [1, 2] })
 //
@@ -194,7 +196,7 @@ const targetIdle = (id, n) => {
 // ===========================================================================
 // The game: constants and a seeded random (so results repeat)
 // ===========================================================================
-const NAMES = ['MISSIONS', 'EVENT_SIDES', 'CAMPAIGN', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
+const NAMES = ['MISSIONS', 'CUSTOM_KINDS', 'EVENT_SIDES', 'CAMPAIGN', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
   'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
   'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
@@ -1591,6 +1593,7 @@ function main() {
     else if (args[i] === '--calibration') opts.cal = true;
     else if (args[i] === '--calibrate') opts.fit = true;
     else if (args[i] === '--rates') opts.rates = true;
+    else if (args[i] === '--encounters') opts.encounters = true;
     else if (args[i] === '--energy') ENERGY = args[++i];   // --energy game: the energy runs on the game's own code (slow; to check the fast one)
     else if (args[i] === '--target') { A.TARGET_IDLE = A.TARGET_IDLE_CREW = +args[++i]; flatTargets = true; }
     else if (args[i] === '--base') opts.prereq = false;          // ignore the missions' prerequisites (base ship)
@@ -1612,6 +1615,7 @@ function main() {
     console.log(`crew ${Math.round(r.load * 100)}% busy (radar ${Math.round(r.radarShare * 100)}%, lever ${Math.round(r.leverShare * 100)}%, fuel ${Math.round(r.fuelShare * 100)}%), peak ${r.peak.toFixed(1)} open → ${r.verdict} (${r.score}) ${r.why.join('; ')}`);
     return;
   }
+  if (opts.encounters) { printEncounters(rateEncounters(opts)); return; }
   if (opts.rates) { console.log('Measuring the damage rates in the game (60 s per kind, 3 seeds) → tools/damage-rates.json'); saveRates(); return; }
   if (opts.cal) {
     console.log('Each encounter in the game for 60 s with nobody fighting back (3 seeds; the crew member waits in the reactor room):');
@@ -1653,6 +1657,28 @@ function main() {
     if (flags.length) console.log('  campaign: ' + flags.join('; '));
   }
 }
+// --encounters: each skirmish encounter kind on its own (mission `custom` with only that kind ticked and no failing parts,
+// so the base ship and the skirmish's fuel rule), 1, 2 and 3 of it. One alone is the encounter itself; 2 and 3 show how it
+// stacks (mostly the energy at one cannon running dry). Ranked by the solo mean over the three counts.
+function rateEncounters(opts = {}) {
+  const players = opts.players || [1, 2, 4], runs = opts.runs || 20, counts = [1, 2, 3];
+  return game().CUSTOM_KINDS.map(([kind, name]) => {
+    const per = {};
+    for (const count of counts) for (const n of players) {
+      const patch = (G) => { const M = G.MISSIONS.custom, b = M.build; M.build = function (...a) { G.mission.custom = { n: count, kinds: [kind], parts: [] }; return b.apply(this, a); }; };
+      const rs = []; for (let k = 0; k < runs; k++) rs.push(runOne('custom', n, k, { ...opts, kit: null, patch }));
+      per[`${count}x${n}`] = summarize('custom', n, rs);
+    }
+    const solo = counts.map(c => per[`${c}x${players[0]}`].score);
+    return { kind, name, players, counts, per, rank: solo.reduce((a, b) => a + b, 0) / solo.length };
+  }).sort((a, b) => a.rank - b.rank);
+}
+function printEncounters(rows) {
+  const { players, counts } = rows[0];
+  console.log(`Each encounter kind alone in a skirmish (base ship, no failing parts), ${counts.join(' / ')} of it: score and verdict (d / t / i), easiest first.`);
+  console.log('kind'.padEnd(28) + players.map(n => `${n} player${n > 1 ? 's' : ''}`.padEnd(22)).join(''));
+  for (const r of rows) console.log(r.name.padEnd(28) + players.map(n => (counts.map(c => r.per[`${c}x${n}`].score).join('/') + ' ' + counts.map(c => r.per[`${c}x${n}`].verdict[0]).join('')).padEnd(22)).join(''));
+}
 function printRows(rows) {
   const pad = (s, w) => String(s).padEnd(w), num = (v, w, d = 0) => (typeof v === 'number' ? v.toFixed(d) : v).padStart(w);
   console.log(pad('mission', 22) + pad('n', 3) + num('ev', 4) + num('jump', 6) + num('e/s', 6) + num('cells', 6) + num('idle', 6) + num('aim', 6) + '  ' + pad('energy L / M / R need/have', 27) + pad('spec (real/perfect)', 21) + num('open', 5) + '  ' + pad('verdict', 11) + num('score', 6) + '  first shortfall / why');
@@ -1661,4 +1687,4 @@ function printRows(rows) {
 }
 if (require.main === module) main();
 
-module.exports = { encounterCap, balance, spread, fireWork, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, energySimGame, energyFast, setup, layoutGame, saveRates, RATE_KINDS, game, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };
+module.exports = { encounterCap, balance, rateEncounters, spread, fireWork, runOne, expectedKit, kitEffects, kitText, hitCost, summarize, printRows, calibrateAll, fitMission, fitEvents, fitCells, specOf, repBy, upgradeSets, bestOf, campaignCheck, calibrate, simulate, schedule, energySim, energySimGame, energyFast, setup, layoutGame, saveRates, RATE_KINDS, game, verdictOf, scoreOf, targetIdle, reloadTime, A, PLAYERS, PROGRESSION, H, T };

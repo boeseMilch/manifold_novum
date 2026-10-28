@@ -3261,6 +3261,14 @@ The user: one Skirmish tab with a builder instead of preset skirmishes.
   lobby state, and `netServer.init(..., custom)` → `startMission(id, { custom })`. The sim cleans any config
   (`customConfig`: n 1-30, only known kinds / parts).
 - Tests: tests/progress.js (the config, the failure count and parts, no pay, the server's init).
+- **Encounter ratings** (2026-10-28, the user: "rate all the encounters by difficulty … to calibrate skirmish"):
+  `node tools/balance.js --encounters` runs the balance model on a skirmish of only one kind (1, 2 and 3 of it, no
+  failing parts, base ship, 1 / 2 / 4 players) and ranks the kinds by the solo score. First result (solo, 1/2/3 of it):
+  chores at 9-16 (gravity tide, ion storm, coolant leak, AI glitch, solar flare); light jobs at 13-30 (debris, fuel
+  canister, antenna, mine drone, intruder, saboteur); ship fights 21-76 (spore clouds, pirate raider, interceptor,
+  grappler, stealth fighter); then the ones that stack badly, 17-98 (leech swarm, herd, spore mother), and the worst,
+  tight or impossible from two of them on solo (tractor tug, asteroid swarm, frigate 36/115/131). The jump from one to two
+  is mostly fights waiting for energy at one cannon: the skirmish's 2 + ceil(n/2) cells are thin for the energy-hungry kinds.
 
 ### Everyone earns reputation; a guest's shipyard only looks (2026-10-19, js/progress.js, js/net.js, server.js)
 The user: instead of the guests' reputation going to the host, each player gets their own; only the host's upgrades
