@@ -152,8 +152,8 @@ function oneTide(M, written) {
 const DROP_ORDER = ['canister', 'antenna', 'debris', 'glitch', 'storm', 'coolant', 'maintenance', 'flare', 'tide', 'spores', 'mines', 'leeches', 'grappler',
                     'tractor', 'stealth', 'saboteur', 'mother', 'intruder', 'swarm', 'herd', 'frigate', 'interceptor', 'pirates'];
 const crewSize = () => Math.max(1, crew.length);
-// (a custom skirmish has no calibration: 2 + n/2 fuel cells, rounded up, for any crew size)
-const customCrew = () => { const c = 2 + Math.ceil(customConfig(mission.custom).n / 2); return { cells: Array(8).fill(c) }; };
+// (a custom skirmish has no calibration: 2 + one fuel cell per 4 points, rounded up, for any crew size: customCells)
+const customCrew = () => ({ cells: Array(8).fill(customCells(customConfig(mission.custom).points)) });
 const missionCrew = (id, n) => { const C = MISSIONS[id]?.custom ? customCrew() : MISSIONS[id]?.crew, i = Math.min(8, Math.max(1, n)) - 1; return { events: C?.events?.[i], cells: C?.cells?.[i] ?? 4, reactor: C?.reactor?.[i] ?? 1, overcharge: !!C?.overcharge?.[i],
   extra: Object.entries(C?.extra || {}).flatMap(([k, ns]) => Array(ns[i] || 0).fill(k)) }; };
 // The reactor's ENERGY_TIME multiplier: the gap / the written gap, × the crew size's reactor tuning (crew.reactor,

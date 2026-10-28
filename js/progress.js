@@ -259,47 +259,57 @@ Object.assign(MISSIONS, {
   },
 });
 // The skirmish builder (2026-10-19, the user: replaces every preset skirmish, Intro run too; the presets were deleted
-// 2026-10-25, old saves may still list them in done.*): the lobby's Skirmish tab picks how many encounters (n),
+// 2026-10-25, old saves may still list them in done.*): the lobby's Skirmish tab picks how many difficulty points
+// (2026-10-28, the user: "a skirmish difficulty slider based on points instead of number of encounters"; it was a count n),
 // which kinds may come (all listed from the start: no spoiler filtering; no boss / story kinds) and which ship parts
-// may fail. round(n/5)..round(n/3) of them are failing parts (maintenance on a ticked part), the rest drawn from
-// the ticked kinds. No pay. The config is the host's (lobby message 'skirmish'), passed to startMission as opts.custom.
+// may fail. A fifth to a third of the points go to failing parts (maintenance on a ticked part), the rest to kinds drawn
+// from the ticked ones. No pay. The config is the host's (lobby message 'skirmish'), passed to startMission as opts.custom.
+// Each kind's points (1 to 3.5 in halves): the balance model's difficulty score for one of it alone, solo, / 10 (the user,
+// 2026-10-28; `node tools/balance.js --encounters`, its first column: gravity tide 10 → 1 … frigate 36 → 3.5).
 const CUSTOM_KINDS = [
-  ['interceptor', 'Interceptor'], ['frigate', 'Frigate'], ['swarm', 'Asteroid swarm'], ['stealth', 'Stealth fighter'],
-  ['tractor', 'Tractor tug'], ['pirates', 'Pirate raider'], ['intruder', 'Intruder'], ['saboteur', 'Saboteur'],
-  ['grappler', 'Grappler'], ['mother', 'Spore mother'], ['leeches', 'Leech swarm'], ['herd', 'Herd (two creatures)'],
-  ['mines', 'Mine drone'], ['spores', 'Spore clouds (get inside)'], ['debris', 'Debris in a cannon'], ['antenna', 'Antenna strike'],
-  ['canister', 'Fuel canister'], ['flare', 'Solar flare'], ['storm', 'Ion storm'], ['coolant', 'Coolant leak'],
-  ['glitch', 'AI glitch'], ['tide', 'Gravity tide'],
+  ['interceptor', 'Interceptor', 2], ['frigate', 'Frigate', 3.5], ['swarm', 'Asteroid swarm', 2], ['stealth', 'Stealth fighter', 2.5],
+  ['tractor', 'Tractor tug', 2.5], ['pirates', 'Pirate raider', 2], ['intruder', 'Intruder', 1.5], ['saboteur', 'Saboteur', 2],
+  ['grappler', 'Grappler', 1.5], ['mother', 'Spore mother', 1.5], ['leeches', 'Leech swarm', 2], ['herd', 'Herd (two creatures)', 3],
+  ['mines', 'Mine drone', 1.5], ['spores', 'Spore clouds (get inside)', 2.5], ['debris', 'Debris in a cannon', 1.5], ['antenna', 'Antenna strike', 1.5],
+  ['canister', 'Fuel canister', 1.5], ['flare', 'Solar flare', 1], ['storm', 'Ion storm', 1], ['coolant', 'Coolant leak', 1],
+  ['glitch', 'AI glitch', 1], ['tide', 'Gravity tide', 1],
 ];
+const CUSTOM_FAIL_POINTS = 1.5;                       // a failing part (maintenance: 13 alone, solo)
+const customPoints = (kind) => (kind === 'maintenance' ? CUSTOM_FAIL_POINTS : CUSTOM_KINDS.find(k => k[0] === kind)?.[2] || 1);
 const CUSTOM_PARTS = () => ALL_PARTS.map(s => s.name);   // (by name: they're unique, and readable in the lobby; the parts inside, the shield emitters outside, the hull seams)
-const CUSTOM_MAX = 30;
-// Any config (a guest's lobby state, localStorage, an old host) → a valid one; nothing given: everything ticked, 8 encounters.
+const CUSTOM_MAX = 30;                                // encounters at most, whatever the points
+const CUSTOM_POINTS = [1, 60], CUSTOM_PER_OLD = 1.8;  // the slider's range; an old config's count n → n × 1.8 points (the average kind)
+// Any config (a guest's lobby state, localStorage, an old host with a count n) → a valid one; nothing given: everything
+// ticked, 15 points (about the old default, 8 encounters).
 function customConfig(c) {
   const list = (a, ok) => (Array.isArray(a) ? [...new Set(a.filter(x => ok.includes(x)))] : ok.slice());
-  return { n: Math.min(CUSTOM_MAX, Math.max(1, Math.round(+c?.n) || 8)), kinds: list(c?.kinds, CUSTOM_KINDS.map(k => k[0])), parts: list(c?.parts, CUSTOM_PARTS()) };
+  const p = Math.round(+c?.points * 2) / 2 || Math.round(Math.round(+c?.n) * CUSTOM_PER_OLD) || 15;   // (in halves, like the kinds' points)
+  return { points: Math.min(CUSTOM_POINTS[1], Math.max(CUSTOM_POINTS[0], p)), kinds: list(c?.kinds, CUSTOM_KINDS.map(k => k[0])), parts: list(c?.parts, CUSTOM_PARTS()) };
 }
-const customFailures = (n) => [Math.round(n / 5), Math.round(n / 3)];          // failing parts: from..to of the n
+const customFailures = (points) => [Math.round(points / 5 / CUSTOM_FAIL_POINTS), Math.round(points / 3 / CUSTOM_FAIL_POINTS)];   // failing parts: from..to
+// The fuel cells: 2 + one per 4 points (it was 2 + one per 2 encounters, and an encounter is ~1.8 points)
+const customCells = (points) => 2 + Math.ceil(points / 4);
 MISSIONS.custom = {
   name: 'Skirmish', tier: 0, custom: true, rules: {}, objective: null,
   spacing: 'spread',                          // its encounters evenly spread, jittered (js/mission.js shapedTimes; 2026-10-26: they bunched up)
   blurb: 'Your own mix of encounters.',
   briefing: 'No story and no pay: just the trouble you picked, spread over five minutes. Hold out until the jump.',
   build() {
-    const C = customConfig(mission.custom), [lo, hi] = customFailures(C.n);
-    let fails = !C.parts.length ? 0 : !C.kinds.length ? C.n : Math.min(C.n, lo + Math.floor(Math.random() * (hi - lo + 1)));
+    const C = customConfig(mission.custom), [lo, hi] = customFailures(C.points);
+    const fails = !C.parts.length ? 0 : !C.kinds.length ? Math.max(1, Math.floor(C.points / CUSTOM_FAIL_POINTS)) : lo + Math.floor(Math.random() * (hi - lo + 1));
     const kinds = C.kinds.slice(), out = [];
-    for (let i = 0; i < C.n; i++) {
-      let kind = 'maintenance';
-      if (i >= fails) {
-        if (!kinds.length) break;
-        kind = kinds[Math.floor(Math.random() * kinds.length)];
-        if (kind === 'tide') kinds.splice(kinds.indexOf('tide'), 1);      // (one gravity tide per mission: oneTide)
-      }
-      out.push(makeEvent(kind, 30 + i * 30, null));
+    for (let i = 0; i < Math.min(CUSTOM_MAX, fails); i++) out.push('maintenance');
+    // the rest of the points: kinds drawn from the ticked ones that still fit (at least one encounter in all)
+    let left = C.points - out.length * CUSTOM_FAIL_POINTS;
+    while (out.length < CUSTOM_MAX && kinds.length) {
+      const fit = kinds.filter(k => customPoints(k) <= left + 1e-9);
+      if (!fit.length) { if (!out.length) out.push(kinds.sort((a, b) => customPoints(a) - customPoints(b))[0]); break; }
+      const kind = fit[Math.floor(Math.random() * fit.length)];
+      if (kind === 'tide') kinds.splice(kinds.indexOf('tide'), 1);      // (one gravity tide per mission: oneTide)
+      out.push(kind); left -= customPoints(kind);
     }
     for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
-    out.forEach((e, i) => { e.t = 30 + i * 30; });                          // (written 30 s apart: the reactor's pace, paceFactor)
-    return out;
+    return out.map((kind, i) => makeEvent(kind, 30 + i * 30, null));   // (written 30 s apart: the reactor's pace, paceFactor)
   },
 };
 EVENT_SIDES.brig = randSide;
@@ -578,10 +588,13 @@ const lobbyUI = {
   custom: null, practice: false, onCustom: null,
   ready() { if (this.chosen !== 'custom') return true; const C = customConfig(this.custom); return C.kinds.length + C.parts.length > 0; },
   customSummary() {
-    const C = customConfig(this.custom), [lo, hi] = customFailures(C.n);
+    const C = customConfig(this.custom), [lo, hi] = customFailures(C.points);
     if (!C.kinds.length && !C.parts.length) return 'Tick at least one encounter or ship part.';
-    const fails = !C.parts.length ? 'no failing parts' : !C.kinds.length ? 'all of them failing parts' : lo === hi ? `${lo} of them a failing part` : `${lo}–${hi} of them failing parts`;
-    return `${C.n} encounter${C.n > 1 ? 's' : ''}, ${fails}. ${2 + Math.ceil(C.n / 2)} fuel cells. No pay.`;
+    const fails = !C.parts.length ? 'no failing parts' : !C.kinds.length ? 'all of them failing parts' : hi === 0 ? 'no failing parts' : lo === hi ? `${lo} failing part${lo > 1 ? 's' : ''}` : `${lo}–${hi} failing parts`;
+    // about how many encounters: the points over the ticked kinds' average (failing parts at theirs)
+    const avg = C.kinds.length ? C.kinds.reduce((s, k) => s + customPoints(k), 0) / C.kinds.length : CUSTOM_FAIL_POINTS;
+    const about = Math.max(1, Math.min(CUSTOM_MAX, Math.round(C.parts.length && C.kinds.length ? (lo + hi) / 2 + (C.points - (lo + hi) / 2 * CUSTOM_FAIL_POINTS) / avg : C.points / avg)));
+    return `${C.points} points: about ${about} encounter${about > 1 ? 's' : ''}, ${fails}. ${customCells(C.points)} fuel cells. No pay.`;
   },
   renderCampaign() {
     const p = profile, avail = this.available(), list = this.el('lobby-missions'), scroll = list.scrollTop;
@@ -609,18 +622,18 @@ const lobbyUI = {
     const box = this.el('lobby-builder'), C = customConfig(this.custom), practice = this.chosen === 'practice';
     if (!box.dataset.built) {
       box.dataset.built = 1;
-      const ticks = (group, items) => `<div class="sk-grid">${items.map(([id, name]) => `<label class="sk-tick"><input type="checkbox" data-${group}="${escapeHtml(id)}"><span>${escapeHtml(name)}</span></label>`).join('')}</div>`;
+      const ticks = (group, items) => `<div class="sk-grid">${items.map(([id, name, pts]) => `<label class="sk-tick"><input type="checkbox" data-${group}="${escapeHtml(id)}"><span>${escapeHtml(name)}${pts ? ` <em class="sk-pts" title="difficulty points">${pts}</em>` : ''}</span></label>`).join('')}</div>`;
       box.innerHTML = `<label class="sk-tick sk-practice"><input type="checkbox" id="sk-practice"><span><b>Practice</b> no timer, no encounters: spawn anything from the practice panel</span></label>
         <div class="sk-body">
-          <div class="list-head"><label for="sk-n">HOW MANY ENCOUNTERS</label><span id="sk-count"></span></div>
-          <input type="range" id="sk-n" min="1" max="${CUSTOM_MAX}" step="1" aria-label="Encounters">
+          <div class="list-head"><label for="sk-n">DIFFICULTY POINTS</label><span id="sk-count"></span></div>
+          <input type="range" id="sk-n" min="${CUSTOM_POINTS[0]}" max="${CUSTOM_POINTS[1]}" step="1" aria-label="Difficulty points">
           <div class="mission-group">Encounters <span class="sk-all"><button data-all="kind">all</button><button data-none="kind">none</button></span></div>
           ${ticks('kind', CUSTOM_KINDS)}
-          <div class="mission-group">Ship parts that may fail <span class="sk-all"><button data-all="part">all</button><button data-none="part">none</button></span></div>
+          <div class="mission-group">Ship parts that may fail (${CUSTOM_FAIL_POINTS} each) <span class="sk-all"><button data-all="part">all</button><button data-none="part">none</button></span></div>
           ${ticks('part', CUSTOM_PARTS().map(n => [n, n]))}
         </div>`;
       const changed = (cfg) => { this.custom = cfg; this.onCustom?.(cfg); this.render(); };
-      const read = () => ({ n: +box.querySelector('#sk-n').value,
+      const read = () => ({ points: +box.querySelector('#sk-n').value,
         kinds: [...box.querySelectorAll('[data-kind]:checked')].map(x => x.dataset.kind), parts: [...box.querySelectorAll('[data-part]:checked')].map(x => x.dataset.part) });
       box.querySelector('#sk-n').oninput = () => changed(read());
       box.querySelectorAll('[data-kind], [data-part]').forEach(x => x.onchange = () => changed(read()));
@@ -634,8 +647,8 @@ const lobbyUI = {
     box.querySelector('#sk-practice').checked = practice;
     box.querySelector('.sk-body').classList.toggle('off', practice);
     box.querySelectorAll('.sk-body input, .sk-body button').forEach(x => { x.disabled = practice; });
-    box.querySelector('#sk-n').value = C.n;
-    box.querySelector('#sk-count').textContent = C.n;
+    box.querySelector('#sk-n').value = C.points;
+    box.querySelector('#sk-count').textContent = C.points;
     box.querySelectorAll('[data-kind]').forEach(x => { x.checked = C.kinds.includes(x.dataset.kind); });
     box.querySelectorAll('[data-part]').forEach(x => { x.checked = C.parts.includes(x.dataset.part); });
   },

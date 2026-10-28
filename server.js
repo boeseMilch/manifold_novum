@@ -158,7 +158,7 @@ const hostOf = (g) => g.members[0] || null;           // the earliest joined pla
 const clampEasy = (v) => Math.min(2, Math.max(0, Math.floor(+v) || 0));   // difficulty: 0 normal, 1 easy, 2 very easy
 // The skirmish builder's config (the host's; the sim checks it properly: customConfig in js/progress.js): just its shape here
 const strs = (a) => (Array.isArray(a) ? a.filter(x => typeof x === 'string').slice(0, 64).map(x => x.slice(0, 40)) : undefined);
-const cleanCustom = (c) => (c && typeof c === 'object' ? { n: Math.floor(+c.n) || 8, kinds: strs(c.kinds), parts: strs(c.parts) } : null);
+const cleanCustom = (c) => (c && typeof c === 'object' ? { points: +c.points || undefined, n: Math.floor(+c.n) || undefined, kinds: strs(c.kinds), parts: strs(c.parts) } : null);   // (n: an older host's count)
 function lobbyState(g) {
   const unlocked = [...new Set(g.members.flatMap(c => c.unlocked || []))];
   const host = hostOf(g);

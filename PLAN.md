@@ -4444,3 +4444,17 @@ the seat, helpless, until someone came to the ladder to pull them out (nobody ca
 cold in a cannon's seat (`mode === 'gun'`) you may always crawl back (hold E / click, 20 s; stim pack 6 s, first aid
 16 s, as alone), and a crewmate can still pull you out at the ladder instead. Out cold anywhere else is unchanged
 (a crewmate has to treat you). tests/gunner.js (multiplayer: a real enemy shot, Bob standing, Alice holds E).
+
+### Skirmish difficulty points (2026-10-28, js/progress.js, js/mission.js, server.js)
+The user: rate the encounters 1 to 3.5 points in halves, about the solo score / 10, and make the skirmish slider points
+instead of a count. Each `CUSTOM_KINDS` entry has its points (the balance model's score for one of it alone, solo, / 10:
+`node tools/balance.js --encounters`, which also flags a kind whose rating has drifted): 1 gravity tide, ion storm,
+coolant leak, AI glitch, solar flare; 1.5 intruder, grappler, spore mother, mine drone, debris, antenna, fuel canister and
+a failing part (`CUSTOM_FAIL_POINTS`); 2 interceptor, asteroid swarm, pirate raider, saboteur, leech swarm; 2.5 stealth
+fighter, tractor tug, spore clouds; 3 herd; 3.5 frigate.
+- The slider (DIFFICULTY POINTS, 1-60, default 15) sets the budget. A fifth to a third of it goes to failing parts
+  (`customFailures(points)`), the rest to kinds drawn from the ticked ones that still fit; at least one encounter, at most
+  30. Fuel cells: 2 + one per 4 points (`customCells`; was 2 + one per 2 encounters). The tick boxes show each kind's points
+  and the briefing estimates the encounter count.
+- No profile change: the settings are localStorage `mn-skirmish`. An old config with a count n reads as n × 1.8 points
+  (`customConfig`); the server passes both fields on (`cleanCustom`).

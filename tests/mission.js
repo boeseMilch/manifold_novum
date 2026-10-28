@@ -362,7 +362,7 @@ function fireAndJumpTests() {
   // --- hull seams and the shield emitters as failing parts (2026-10-20): only where a mission allows them (the skirmish builder)
 {
   const N = [...NAMES, 'hz', 'HULL_SEAMS', 'ALL_PARTS', 'serviceTargets', 'problemSpots', 'withCrew', 'tickN'];
-  const custom = (parts) => { const G = loadGame(N); G.startMission('custom', { custom: { n: 1, kinds: [], parts } }); G.mission.active = true; return G; };
+  const custom = (parts) => { const G = loadGame(N); G.startMission('custom', { custom: { points: 1, kinds: [], parts } }); G.mission.active = true; return G; };
   const quiet = (G) => () => { G.combat.shots.length = 0; G.fires.length = 0; };
   // a seam nobody services gives way: its room breaches
   let G = custom(['Hull seam (bridge)']); let ev = maintEv(G);

@@ -4,7 +4,7 @@
 // a spore mother and spore clouds never come as one herd (the user: "they're not similar"), drawn or in a chapter.
 // Run: node tests/schedule.js
 const { loadGame } = require('./harness');
-const NAMES = ['crew', 'makeCrew', 'startMission', 'mission', 'MISSIONS', 'CAMPAIGN', 'MISSION_LENGTH', 'makeEvent', 'herdPair', 'herdOk', 'customFailures'];
+const NAMES = ['crew', 'makeCrew', 'startMission', 'mission', 'MISSIONS', 'CAMPAIGN', 'MISSION_LENGTH', 'makeEvent', 'herdPair', 'herdOk', 'customFailures', 'customPoints'];
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 function mulberry(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -19,8 +19,9 @@ function run(G, id, n, seed, opts) {
 // --- skirmish schedules: spread out
 {
   let bad = [], runs = 0, example = '';
-  for (const count of [2, 3, 4, 5, 6, 8, 10, 15, 20, 30]) for (const crew of [1, 2, 3, 4, 8]) for (let seed = 1; seed <= 12; seed++) {
-    const G = loadGame(NAMES), ev = run(G, 'custom', crew, seed * 97 + count, { custom: { n: count } }), t = ev.map(e => e.t); runs++;
+  for (const pts of [5, 8, 10, 13, 15, 20, 25, 38, 50, 75]) for (const crew of [1, 2, 3, 4, 8]) for (let seed = 1; seed <= 12; seed++) {
+    const G = loadGame(NAMES), ev = run(G, 'custom', crew, seed * 97 + pts, { custom: { points: pts } }), t = ev.map(e => e.t); runs++;
+    const count = G.mission.written.length;          // (the points' encounters, as built)
     const step = (t[t.length - 1] - t[0]) / (t.length - 1), gaps = t.slice(1).map((x, i) => x - t[i]);
     const why = [];
     if (ev.length !== count) why.push(`${ev.length} events for ${count}`);
@@ -38,11 +39,11 @@ function run(G, id, n, seed, opts) {
 {
   let ok = true;
   for (let seed = 1; seed <= 30; seed++) {
-    const kinds = ['interceptor', 'mother', 'spores', 'herd'], G = loadGame(NAMES), ev = run(G, 'custom', 1 + seed % 4, seed, { custom: { n: 9, kinds } });
-    const [lo, hi] = G.customFailures(9), m = ev.filter(e => e.kind === 'maintenance').length;
-    if (ev.length !== 9 || m < lo || m > hi || ev.some(e => e.kind !== 'maintenance' && !kinds.includes(e.kind))) ok = false;
+    const kinds = ['interceptor', 'mother', 'spores', 'herd'], G = loadGame(NAMES), ev = run(G, 'custom', 1 + seed % 4, seed, { custom: { points: 25, kinds } });
+    const [lo, hi] = G.customFailures(25), m = ev.filter(e => e.kind === 'maintenance').length, pts = ev.reduce((s, e) => s + G.customPoints(e.kind), 0);
+    if (pts > 25 || pts < 22 || m < lo || m > hi || ev.some(e => e.kind !== 'maintenance' && !kinds.includes(e.kind))) ok = false;
   }
-  check(ok, 'a skirmish keeps its encounter count, failing parts and ticked kinds');
+  check(ok, 'a skirmish keeps its points, failing parts and ticked kinds');
 }
 // --- the chapters keep their shape (shaped / even / written, not the skirmish's spread)
 {

@@ -10,7 +10,8 @@
 //   node tools/balance.js --rates              measure the enemies' damage rates in the game → tools/damage-rates.json
 //                                              (after changing an enemy, a hazard or the hull; tests/balancemodel.js checks)
 //   node tools/balance.js --encounters         rate every skirmish encounter kind: a skirmish of only that kind, 1-3 of
-//                                              it, no failing parts (--players, --runs as above; for calibrating skirmishes)
+//                                              it, no failing parts (--players, --runs as above), and its skirmish points
+//                                              (one alone, solo, / 10) against CUSTOM_KINDS' (! where they differ)
 //   node tools/balance.js --energy game        the energy runs on the game's own code (slow; the fast model is checked against it)
 //   From code: const { balance } = require('../tools/balance'); balance({ missions: ['c1'], players: [1, 2] })
 //
@@ -196,7 +197,7 @@ const targetIdle = (id, n) => {
 // ===========================================================================
 // The game: constants and a seeded random (so results repeat)
 // ===========================================================================
-const NAMES = ['MISSIONS', 'CUSTOM_KINDS', 'EVENT_SIDES', 'CAMPAIGN', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
+const NAMES = ['MISSIONS', 'CUSTOM_KINDS', 'CUSTOM_PARTS', 'EVENT_SIDES', 'CAMPAIGN', 'startMission', 'crew', 'makeCrew', 'mission', 'power', 'CAPACITORS', 'CAP_MAX', 'SHOTS_PER_ENERGY',
   'ENERGY_TIME', 'CELL_ENERGY', 'RELOAD_TIME', 'REPAIR_TIME', 'MAX_DAMAGE', 'JUMP_DELAY', 'PRESS_FIRST', 'ENEMY_TYPES', 'HEAVY_PERIOD', 'HEAVY_CHARGE',
   'SHIELD_PERIOD', 'SHIELD_ON', 'SWARM_SIZE', 'SWARM_INTERVAL', 'DOCK_TIME', 'PIRATE_HP', 'ALIEN_HP', 'SAB_HP', 'SAB_SNEAK', 'SAB_FADE',
   'SAB_WORK_SOLO', 'SAB_WORK_TEAM', 'MAINT_WARNING', 'MAINT_YELLOW', 'MINE_TIME', 'PRY_TIME', 'PRY_BARE', 'CLEAR_TIME', 'ALIGN_TIME', 'COIL_DELAY',
@@ -1662,22 +1663,23 @@ function main() {
 // stacks (mostly the energy at one cannon running dry). Ranked by the solo mean over the three counts.
 function rateEncounters(opts = {}) {
   const players = opts.players || [1, 2, 4], runs = opts.runs || 20, counts = [1, 2, 3];
-  return game().CUSTOM_KINDS.map(([kind, name]) => {
+  return game().CUSTOM_KINDS.map(([kind, name, pts]) => {
     const per = {};
     for (const count of counts) for (const n of players) {
-      const patch = (G) => { const M = G.MISSIONS.custom, b = M.build; M.build = function (...a) { G.mission.custom = { n: count, kinds: [kind], parts: [] }; return b.apply(this, a); }; };
+      const patch = (G) => { const M = G.MISSIONS.custom, b = M.build; M.build = function (...a) { G.mission.custom = { points: count * pts, kinds: [kind], parts: [] }; return b.apply(this, a); }; };
       const rs = []; for (let k = 0; k < runs; k++) rs.push(runOne('custom', n, k, { ...opts, kit: null, patch }));
       per[`${count}x${n}`] = summarize('custom', n, rs);
     }
     const solo = counts.map(c => per[`${c}x${players[0]}`].score);
-    return { kind, name, players, counts, per, rank: solo.reduce((a, b) => a + b, 0) / solo.length };
+    return { kind, name, pts, players, counts, per, rank: solo.reduce((a, b) => a + b, 0) / solo.length,
+             points: Math.min(3.5, Math.max(1, Math.round(solo[0] / 10 * 2) / 2)) };   // (its skirmish points: one alone, solo, / 10; CUSTOM_KINDS)
   }).sort((a, b) => a.rank - b.rank);
 }
 function printEncounters(rows) {
   const { players, counts } = rows[0];
   console.log(`Each encounter kind alone in a skirmish (base ship, no failing parts), ${counts.join(' / ')} of it: score and verdict (d / t / i), easiest first.`);
-  console.log('kind'.padEnd(28) + players.map(n => `${n} player${n > 1 ? 's' : ''}`.padEnd(22)).join(''));
-  for (const r of rows) console.log(r.name.padEnd(28) + players.map(n => (counts.map(c => r.per[`${c}x${n}`].score).join('/') + ' ' + counts.map(c => r.per[`${c}x${n}`].verdict[0]).join('')).padEnd(22)).join(''));
+  console.log('kind'.padEnd(28) + 'points (now)  ' + players.map(n => `${n} player${n > 1 ? 's' : ''}`.padEnd(22)).join(''));
+  for (const r of rows) console.log(r.name.padEnd(28) + `${r.points} (${r.pts})${r.points !== r.pts ? ' !' : ''}`.padEnd(14) + players.map(n => (counts.map(c => r.per[`${c}x${n}`].score).join('/') + ' ' + counts.map(c => r.per[`${c}x${n}`].verdict[0]).join('')).padEnd(22)).join(''));
 }
 function printRows(rows) {
   const pad = (s, w) => String(s).padEnd(w), num = (v, w, d = 0) => (typeof v === 'number' ? v.toFixed(d) : v).padStart(w);
