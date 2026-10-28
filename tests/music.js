@@ -621,6 +621,12 @@ check(nodes > n0, 'and plays again when shown');
     m.setMission('menu'); m.rearm(); m.setMission('practice'); check(m.title === 'Held Together' && !m.recording, 'Practice keeps Held Together');
     m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('custom'); step(0.3, 0); pm.on.error(); step(0.1);
     check(m.title === 'Held Together' && !m.recording && m.step > 0, 'the recording fails to load: the skirmish falls back to Held Together, its synthesized piece');
+    // c6: Bloom, recorded (the synthesized Bloom stays c6's fallback)
+    const k6 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c6'); step(1, -wall);
+    const bm = els[k6];
+    check(m.title === 'Bloom (recorded)' && bm && /spores\/main/.test(bm.src) && !bm.paused, 'with audio elements c6 plays the recorded Bloom');
+    m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c6'); step(0.3, 0); bm.on.error(); step(0.1);
+    check(m.title === 'Bloom' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Bloom takes over');
   } else check(false, 'the engine attaches to a fake context with audio elements');
 }
 
@@ -689,6 +695,20 @@ check(nodes > n0, 'and plays again when shown');
   G.org.boss = { phase: 'blast' }; const blast = G.levReleased();
   G.startMission('practice'); G.org.boss = { phase: 'blast' };
   check(!before && blast && !G.levReleased(), 'the release comes with the engine blast (not before; not in practice)');
+}
+
+// ---- c6's recording (js/music/recorded-spores.js): the song played nearly straight, a second pass for the second hot time
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-spores.js'), 'utf8'), D = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+  const R = music.recordings().find(r => r.name === 'spores');
+  check(!!R && R.missions.join() === 'c6' && !R.release && music.songOf('c6') === 'Bloom', 'Bloom has a recording, for c6, its ending on the jump (node: the synthesized Bloom)');
+  check(['main', 'ending'].every(k => fs.existsSync(path.join(__dirname, '..', D[k]))) && D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.loop[1] === D.length,
+    'its files are there, its bar lines rise, the loop starts and ends on bar lines');
+  const gaps = D.bars.slice(1).map((b, i) => b - D.bars[i]);
+  check(gaps.every(g => Math.abs(g - 2.4 * Math.round(g / 2.4)) < 0.15 * Math.round(g / 2.4)) && Math.max(...gaps) < 6.1, `its bar lines are whole bars, at most two apart (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s)`);
+  const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
+  check(D.jump === 300 && D.length >= 330 && D.loop[0] < 300 && D.loop[1] - D.loop[0] > 60, `laid out for the jump (5:00) + 30 s (${D.length} s), a loop of ${(D.loop[1] - D.loop[0]).toFixed(0)} s`);
+  check(at(/Hot time 1/) > 190 && at(/Hot time 1/) < 215 && at(/through the jump/) > 270 && at(/through the jump/) < 300, 'its climaxes at the hot times (~3:20 and ~4:50), the second through the jump');
 }
 
 // ---- the recordings' loudness (tools/music-levels.json, written by `python3 tools/arrange-music.py all --levels`; 2026-10-28,

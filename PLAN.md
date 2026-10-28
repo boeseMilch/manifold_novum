@@ -4547,3 +4547,30 @@ synthesized piece (music.html, the fallback) and keeps the menu and Practice.
   to the jump for 1, 15 and 60 points; with fake audio elements: it plays for the skirmish, a late jump's ending lands
   on main's bar line, the fallback is Held Together, Practice keeps Held Together). Pressure Hull's, Final Tick's and
   Keep S-7 Frozen's files are unchanged (md5).
+
+## Bloom, recorded (c6, 2026-10-28)
+
+The user generated c6's song at the mission's full length (`assets/music/C6_stems.zip`, unpacked to
+`assets/music/Bloom/`; git-ignored): 12 stems, lead and backing vocals among them. What c6 plays now (`PIECES.spores`,
+js/music/recorded-spores.js, assets/music/spores/: not "bloom", so it can't clash with the stem folder `Bloom/` on a
+case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fallback.
+- **The song** (`arrange-music.py spores --analyze`): 5:29.5, a steady 100 bpm, F♯ minor, 137 bars of 2.4 s. 0-7 intro
+  (marimba, strings), 8-15 the choir comes in, 16-25 hand drums and brass, 26-33 the groove (guitar), 34-41 the first
+  drop, 42-48 a breakdown with the choir, 49-57 a build (woodwinds), 58-65 drop 2, 66-73 the choir over the drop, 74-81
+  the climax (brass, guitar), 82-95 the drop on, harder, 96-97 a breath, 98-105 the last climax, 106-129 a long outro
+  (keys, synth, strings, the choir again), 130-136 the last F♯ (a unison, no third) with a swell, ringing out. What came
+  out differs from the prompt: the ending isn't a major chord (F♯ with no third), and a "lead vocals" stem sings in
+  the breakdown and the last climax: muted (the prompt excluded lead vocals); the choir is the
+  backing vocals.
+- **c6's real timeline** (shaped): the leeches at 0:10-0:15, the rock to drill at 0:28 with a crew (solo ~1:35), the rest
+  bunching at the hot times 3:30 / 4:30, the jump due at 5:00 (often later: the loop). The ending comes on the jump.
+- **The arrangement** (18 sections, 5:41): the song straight through to bar 104 (4:10: its climaxes land at 2:58-4:10,
+  the first hot time), then one cut (bar 103 → 66, join cost 1.59: the choir over the drop) for a second pass: the
+  climax at 4:29, the drop through the jump at 4:48-5:22, a breath, the last climax again. That second pass (4:10-5:41,
+  91 s) is the loop, its wrap the same join. Measured: score 1.3 at both; the loudness check 3.1 / 2.7 / 9.1 dB, no
+  stem switched on hard (the song's own arc: no riding, no thinning).
+- **The ending:** the marimba and bass on F♯ (bar 132), then the song's last swell (133) ringing out (cut at 328.5 s, a
+  2.5 s fade); stitched on bar lines whose harmony into bar 132 isn't far off (cost ≤ 3.2, at most 4.8 s apart), main
+  fading from 0.1 s before the bar line.
+- Tests: tests/music.js (the data, the bar lines, the climaxes at the hot times, the loop; with fake audio elements: c6
+  plays it, a failure falls back to the synthesized Bloom; the loudness check). Earlier recordings unchanged (md5).
