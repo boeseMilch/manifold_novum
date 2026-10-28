@@ -9,7 +9,7 @@ Exclude Styles, the section tags for the Lyrics box) and the mission's shape the
 | tutorial | Basic Training | to generate |
 | training (crew training) | Side by Side | to generate |
 | practice | Free Play | to generate |
-| custom (skirmish) | Pick Your Trouble | generated (stems in, arranging) |
+| custom (skirmish) | Pick Your Trouble | generated, liked (stems in, arranging) |
 | c1 · First Contract | Outlaws of the Kessler Lanes | to generate |
 | c2 · Strange Cargo | Strange Cargo | to generate |
 | c3 · The Empty Lab | Keep S-7 Frozen | generated (stems in, arranging) |
@@ -35,34 +35,37 @@ Exclude Styles, the section tags for the Lyrics box) and the mission's shape the
 The first rule here was "keep them distinct": the old synthesized pieces all sounded alike. With Suno, diversity comes
 by itself, and the first takes in different genres (western, B-movie lounge, pirate folk...) didn't sound like one
 game. So every prompt now shares the **score's core**, taken from the takes the user liked (Pressure Hull, Final Tick,
-Keep S-7 Frozen), and each mission adds a **colour** on top instead of switching genre.
+Keep S-7 Frozen, Pick Your Trouble), and each mission adds a **colour** on top instead of switching genre.
 
-**The core** (in every Style of Music, in these words, so Suno hears the same palette):
-- hybrid cinematic orchestra: a **solo cello theme** and a low string ostinato,
-- a **sub pulse like the ship's heartbeat**,
-- **struck metal pipe percussion** (the hull as an instrument),
-- half-time cinematic drums, wide reverb,
-- minor key, and the mission pieces **end on one big major chord** (B major, G, F major so far); the loops end on the
-  chord they start on.
+**The core** is a style and a dynamic, not a fixed band: every song draws its instruments from the same pool, a
+little differently each time, so they sound related without sounding identical.
+- **Style:** hybrid cinematic, wide reverb; minor key; the mission pieces build from sparse to two big climaxes and
+  **end on one big major chord** (the loops end on the chord they start on).
+- **Lead (one or two):** solo cello, violin or viola; brass at the climaxes; sometimes a wordless choir.
+- **Low end (one):** a sub pulse like the ship's heartbeat, deep sub drops / 808s, growl bass, wobble bass,
+  distorted bass, or a plain electric or upright bass.
+- **Percussion:** half-time cinematic drums plus metal (struck pipes, anvil, clanks, industrial hits), taikos at climaxes.
+- **Tempo family:** 84-100 BPM, or double time felt in half time (Final Tick 139.5, Pick Your Trouble 172).
 
-Tempos stay in a family: 84-100 BPM, or double-time felt in half-time (Final Tick 139.5, the skirmish 172).
-Keep the core words when you change a prompt; change the colour.
+The four takes the user liked span that whole range, from orchestral (Pressure Hull, Final Tick, Keep S-7 Frozen) to
+drum and bass (Pick Your Trouble). When you change a prompt, keep its style and dynamic, swap within the pool, and
+don't give two neighbouring missions the same lead and bass.
 
-| song | colour on top of the core |
-|---|---|
-| Held Together (menu) | the home theme: felt piano, the cello melody, brushed drums, ship hum (loop) |
-| Basic Training | chamber and cheeky: pizzicato, clarinet, bassoon, ticking pipes (loop) |
-| Side by Side | heist-movie groove: funky drums and bass, staccato strings, brass stabs (loop) |
-| Free Play | synths up front: analog arpeggios over the strings (loop) |
-| Pick Your Trouble | drum and bass arena (generated before this rule: the outlier) |
-| Outlaws of the Kessler Lanes | Morricone: baritone twang guitar, harmonica, galloping drums, trumpet |
-| Strange Cargo | B-movie: theremin, vibraphone, walking bass, then a surf-guitar chase |
-| Keep S-7 Frozen | cold derelict: detuned piano, col legno cello, industrial groove |
-| Red Comet Gallop | swashbuckler in 6/8: fiddle, accordion, stomps, HEY shouts |
-| A Signal in the Dark | rescue: radio flugelhorn, heroic brass, spiccato strings |
-| Bloom | organic: marimba 3 against 4, breathing wordless voices, hand drums |
-| Pressure Hull | deep sea: sonar, hull groans, the cello at its darkest |
-| Last Jump Home | finale: ticking clock, music box, growl bass, full orchestra |
+| song | lead | low end | colour on top |
+|---|---|---|---|
+| Held Together (menu) | cello | heartbeat pulse | the home theme: felt piano, brushed drums, ship hum (loop) |
+| Basic Training | viola, clarinet | ticking pulse | chamber and cheeky: pizzicato, bassoon, ticking pipes (loop) |
+| Side by Side | violin | electric + wobble bass | heist-movie groove: funky drums, staccato strings, brass stabs (loop) |
+| Free Play | violin + synth lead | analog synth bass | synths up front: arpeggios over the strings (loop) |
+| Pick Your Trouble | synth stabs | Reese bass | drum and bass arena (liked) |
+| Outlaws of the Kessler Lanes | cello, trumpet, choir | sub drops | Morricone: baritone twang guitar, harmonica, galloping drums |
+| Strange Cargo | theremin, violin | upright, then distorted bass | B-movie: vibraphone, then a surf-guitar chase |
+| Keep S-7 Frozen | detuned piano, col legno cello | sub pulse, distorted bass | cold derelict into an industrial groove (liked) |
+| Red Comet Gallop | fiddle, accordion | growl bass | swashbuckler in 6/8: stomps, HEY shouts |
+| A Signal in the Dark | flugelhorn, violin, choir | sub bass, 808s | rescue: radio crackle, heroic brass, spiccato strings |
+| Bloom | wordless choir, cello | wobble bass | organic: marimba 3 against 4, hand drums |
+| Pressure Hull | cello | heartbeat sub | deep sea: sonar, hull groans (liked) |
+| Last Jump Home | music box, brass | growl bass, 808 | finale: ticking clock, full orchestra (liked) |
 
 **More coherence in Suno** (worth trying, check what your plan offers): generate with the same model version every
 time; if you can, give Suno one of the liked takes as a reference (a Persona or audio "inspiration" made from Pressure

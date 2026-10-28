@@ -6,7 +6,7 @@ at once, side by side, and nothing pauses.
 
 ## Style of Music
 ```
-upbeat cinematic heist groove instrumental, a crew getting in sync, 112 BPM, E minor, tight funky drums with ghost notes, groovy electric bass, staccato string ostinato, solo cello riff, punchy brass stabs, struck metal pipe percussion, sub pulse like the ship's heartbeat, busy but light, steady groove, no big build, loopable, ends on the same chord it starts on, no vocals
+upbeat cinematic heist groove instrumental, a crew getting in sync, 112 BPM, E minor, tight funky drums with ghost notes, groovy electric bass with a wobble bass on the breaks, staccato string ostinato, solo violin riff, punchy brass stabs, metal clank percussion, low engine pulse, busy but light, steady groove, no big build, loopable, ends on the same chord it starts on, no vocals
 ```
 
 ## Exclude Styles
@@ -18,10 +18,10 @@ vocals, choir, EDM, drops, dark, horror, ballad, bells, music box, disco
 ```
 [Intro: drums and electric bass, pipe percussion]
 [Groove: staccato strings join]
-[Theme: solo cello riff, brass stabs answer]
+[Theme: solo violin riff, brass stabs answer]
 [Verse: strings and bass trade figures]
-[Break: drums and bass only, two bars]
-[Theme: cello and brass together, everyone in]
+[Break: drums and wobble bass only, two bars]
+[Theme: violin and brass together, everyone in]
 [Outro: back to the opening groove, same chord as the start]
 ```
 
