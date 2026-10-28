@@ -184,10 +184,10 @@ TROUBLE_PLAN = [
     ('Half-time verse', 8, 16, lv(tmix(), -5)),                            # 0:22
     ('First drop, held back', 16, 20, lv(tmix(Br=-6), -4)),                # 0:44
     ('First drop: brass stabs', 36, 40, lv(tmix(), -4)),                    # 0:55
-    ('Calm: half-time breakdown', 40, 48, lv(tmix(Pc=-4), -7)),             # 1:06 (calm ~1:00-1:20)
+    ('Calm: half-time breakdown', 40, 48, lv(tmix(Pc=-4), -8.5)),             # 1:06 (calm ~1:00-1:20)
     ('Build: the Reese alone', 48, 56, lv(tmix(), -4.5)),                   # 1:28
-    ('Climbing: drop 1, guitar', 16, 32, lv(tmix(), -3.5)),                 # 1:50
-    ('Climbing: drop 2', 32, 40, lv(tmix(), -2.5)),                         # 2:34
+    ('Climbing: drop 1, guitar', 16, 32, lv(tmix(), -4.5)),                 # 1:50
+    ('Climbing: drop 2', 32, 40, lv(tmix(), -3.5)),                         # 2:34
     ('Breakdown: stutters', 40, 48, lv(tmix(), -4.5)),                      # 2:56
     ('Build: snare roll', 48, 56, lv(tmix(), -2.5)),                        # 3:18
     ('Hot time 1: drop 3 (climax)', 56, 64, lv(tmix(Br=1), -0.5)),         # 3:41 (hot ~3:45)

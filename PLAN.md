@@ -4491,3 +4491,30 @@ stays in music.html and is c3's fallback; c1 / c2 keep it.
   out; with fake audio elements: plays for c3, release() does nothing, the jump stitches the ending on the bar line, a
   failure falls back to Cargo Run, c1 / c2 keep Cargo Run). Pressure Hull's and Final Tick's renders and files are
   unchanged (md5).
+
+## Pick Your Trouble, recorded (the skirmish, 2026-10-28)
+
+The skirmish's song (`assets/music/Skirmish_Stems.zip`, unpacked to `assets/music/Pick Your Trouble/`; git-ignored):
+lead vocals, drums, bass, guitar, keyboard, percussion, synth, other, brass. Arranged like c3 and c8 (`PIECES.trouble`,
+js/music/recorded-trouble.js, assets/music/trouble/): what the custom skirmish plays now. Held Together stays its
+synthesized piece (music.html, the fallback) and keeps the menu and Practice.
+- **The song** (`arrange-music.py trouble --analyze`): 3:51.5, drum and bass at 174 bpm, counted in half-time bars
+  (87 bpm, 2.76 s; a little faster at the very end), G minor, 84 bars in phrases of 8. 0-7 intro (filtered breaks
+  building), 8-15 half-time verse, 16-22 drop 1 (Reese bass), 24-31 drop 1 with guitar, 32-39 drop 2 (brass stabs),
+  40-47 the half-time breakdown (stutters), 48-55 the build (the Reese alone, then the drums), 56-63 drop 3, 64-69 on,
+  70-71 a build, 72-77 the last drop, 78-80 outro, 81 the keyboard alone, 82-83 the impact and sub boom. The "lead
+  vocals" stem is chops at -34 to -60 dB: muted everywhere (the prompt asked for no vocals).
+- **The skirmish's timeline:** not selectable in length: it has no `length`, so always 5:00 to the jump
+  (MISSION_LENGTH); the lobby's points only set how many encounters (1 point: one, at 4:30; 60: thirty), spread evenly
+  from 0:10 / 0:15 to the finale at 4:30 (spacing 'spread'). The jump is often later (MID energy): the loop.
+- **The arrangement** (15 sections, 5:52, loop 5:08-5:52 = bars 20-35, its wrap 35→20 at cost 0.86): 0:00 intro, 0:22
+  half-time verse, 0:44 the first drop held back, 1:06 calm (the breakdown), 1:28 the build, 1:50-2:56 climbing (drop
+  1 with guitar, drop 2), 2:56 breakdown, 3:18 build, 3:41 drop 3 (hot time 1), 4:03 between, 4:25 drop 3 on and the
+  build, 4:47 the last drop through the jump, 5:08 the loop. Five cuts at join costs 0.75-1.45; measured scores 0.8-4.3
+  (worst: the loop's wrap, a brass stab cut). Level: -28 dB at the start, -27 in the calm, -18 in the last drop.
+- **The ending:** the keyboard alone for a bar, then the song's impact and sub boom (to the file's end); stitched on bar
+  lines whose harmony into bar 81 isn't far off (cost ≤ 3.2, at most 5.7 s apart), main fading from 0.1 s before.
+- Tests: tests/music.js (the data, the bar lines, the calm, drop 3 and the last drop where planned, the skirmish 5:00
+  to the jump for 1, 15 and 60 points; with fake audio elements: it plays for the skirmish, a late jump's ending lands
+  on main's bar line, the fallback is Held Together, Practice keeps Held Together). Pressure Hull's, Final Tick's and
+  Keep S-7 Frozen's files are unchanged (md5).

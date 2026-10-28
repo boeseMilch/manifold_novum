@@ -2,7 +2,7 @@
 // can be driven from Node. Usage: const G = loadGame(); G.tick(1 / 60); ...
 const fs = require('fs'), path = require('path'), vm = require('vm');
 
-const SCRIPTS = ['audio', 'music', 'music/cargo', 'music/comet', 'music/signal', 'music/bloom', 'music/hull', 'music/home', 'music/recorded-hull', 'music/recorded-tick', 'music/recorded-frozen', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'tutorial', 'sidebar', 'claims', 'tutorial-mp', 'lights', 'hitfx', 'breakup', 'sprites', 'walkfield', 'game', 'net'];
+const SCRIPTS = ['audio', 'music', 'music/cargo', 'music/comet', 'music/signal', 'music/bloom', 'music/hull', 'music/home', 'music/recorded-hull', 'music/recorded-tick', 'music/recorded-frozen', 'music/recorded-trouble', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'tutorial', 'sidebar', 'claims', 'tutorial-mp', 'lights', 'hitfx', 'breakup', 'sprites', 'walkfield', 'game', 'net'];
 
 function loadGame(expose = []) {
   const noop = new Proxy(function () {}, {

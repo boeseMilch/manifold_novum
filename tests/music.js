@@ -608,7 +608,38 @@ check(nodes > n0, 'and plays again when shown');
     m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c3'); step(0.3, 0); fm.on.error(); step(0.1);
     check(m.title === 'Cargo Run' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Cargo Run (c1-c3\'s piece) takes over');
     m.setMission('menu'); m.rearm(); m.setMission('c2'); check(m.title === 'Cargo Run' && !m.recording, 'c1 / c2 keep the synthesized Cargo Run');
+    // the skirmish: Pick Your Trouble, recorded; Practice and the menu keep Held Together
+    const P3 = JSON.parse((s => s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1))(fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-trouble.js'), 'utf8')));
+    const k3 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('custom'); step(1, -wall);
+    const pm = els[k3], pe = els[k3 + 1];
+    check(m.title === 'Pick Your Trouble (recorded)' && pm && /trouble\/main/.test(pm.src) && !pm.paused, 'with audio elements the skirmish plays the recorded Pick Your Trouble');
+    pm.currentTime = P3.loop[1] - 2.0; m.setClock(null); m.jumped();      // a late jump, near the loop's end
+    let wrapAt = null;
+    for (let i = 0; i < 400 && wrapAt === null; i++) { const before = pm.currentTime; step(0.025); if (m.recording.ending && pm.currentTime < before) wrapAt = pe.currentTime - P3.preroll - (pm.currentTime - P3.loop[0]); }
+    check(wrapAt === null ? m.recording.ending : Math.abs(wrapAt) < 0.03, `a late jump: the ending lands on main's bar line (${wrapAt === null ? 'before the wrap' : 'on the wrap, ' + (wrapAt * 1000).toFixed(0) + ' ms'})`);
+    step(14); check(m.ended, 'and ends');
+    m.setMission('menu'); m.rearm(); m.setMission('practice'); check(m.title === 'Held Together' && !m.recording, 'Practice keeps Held Together');
+    m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('custom'); step(0.3, 0); pm.on.error(); step(0.1);
+    check(m.title === 'Held Together' && !m.recording && m.step > 0, 'the recording fails to load: the skirmish falls back to Held Together, its synthesized piece');
   } else check(false, 'the engine attaches to a fake context with audio elements');
+}
+
+// ---- the skirmish's recording (js/music/recorded-trouble.js): always 5:00 to the jump, whatever the points
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-trouble.js'), 'utf8'), D = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+  const R = music.recordings().find(r => r.name === 'trouble');
+  check(!!R && R.missions.join() === 'custom' && !R.release && music.songOf('custom') === 'Held Together', 'Pick Your Trouble has a recording, for the skirmish only, its ending on the jump (node: the synthesized piece)');
+  check(['main', 'ending'].every(k => fs.existsSync(path.join(__dirname, '..', D[k]))) && D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.loop[1] === D.length,
+    'its files are there, its bar lines rise, the loop starts and ends on bar lines');
+  const gaps = D.bars.slice(1).map((b, i) => b - D.bars[i]);
+  check(gaps.every(g => Math.abs(g - 2.76 * Math.round(g / 2.76)) < 0.2 * Math.round(g / 2.76)) && Math.max(...gaps) < 6.1, `its bar lines are whole bars, at most two apart (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s)`);
+  const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
+  check(D.jump === 300 && D.length >= 330 && D.loop[0] < 320 && D.loop[1] - D.loop[0] > 30, `laid out for the jump (5:00) + 30 s (${D.length} s), a loop of ${(D.loop[1] - D.loop[0]).toFixed(0)} s`);
+  check(at(/Calm/) > 55 && at(/Calm/) < 85 && at(/Hot time 1/) > 210 && at(/Hot time 1/) < 235 && at(/last drop/) > 270 && at(/last drop/) < 300, 'a calm ~1:05, drop 3 at the first hot time (~3:40), the last drop ~4:45 through the jump');
+  const { loadGame } = require('./harness');
+  const G = loadGame(['mission', 'startMission', 'crew', 'makeCrew']), seen = [];
+  for (const points of [1, 15, 60]) { G.startMission('custom', { custom: { points } }); seen.push([points, G.mission.events.length, G.mission.jumpAt]); }
+  check(seen.every(([, n, j]) => j === 300 && n >= 1), `the skirmish is 5:00 to the jump for any points (the points only set the encounters: ${seen.map(x => `${x[0]} pts ${x[1]} enc.`).join(', ')})`);
 }
 
 // ---- c3's recording (js/music/recorded-frozen.js): laid out on c3's timeline, the ending on the jump
