@@ -691,4 +691,18 @@ check(nodes > n0, 'and plays again when shown');
   check(!before && blast && !G.levReleased(), 'the release comes with the engine blast (not before; not in practice)');
 }
 
+// ---- the recordings' loudness (tools/music-levels.json, written by `python3 tools/arrange-music.py all --levels`; 2026-10-28,
+// c3's "like a kid is playing with the volume meter"): no bar-to-bar pumping, no stem switched on harder than the song does it
+{
+  const L = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'tools', 'music-levels.json'), 'utf8'));
+  const recs = music.recordings().map(r => r.name);
+  check(recs.every(n => L[n]), `every recording has its loudness numbers (${recs.map(n => `${n}: ${L[n] ? `${L[n].dS3_p95}/${L[n].Mstd10_p95}/${L[n].range} dB, ${L[n].hard_on} hard` : 'missing'}`).join('; ')})`);
+  // (Pressure Hull and Final Tick predate the check and are kept as the user approved them; every later one must pass)
+  for (const n of recs.filter(n => !['hull', 'tick'].includes(n))) {
+    const x = L[n];
+    check(x && x.dS3_p95 <= 4.5 && x.Mstd10_p95 <= 4.5 && x.range <= 13 && x.hard_on === 0,
+      `${n}: loudness moves in slow arcs (short-term change over 3 s, 95th pct ${x?.dS3_p95} ≤ 4.5 dB; momentary spread in 10 s windows ${x?.Mstd10_p95} ≤ 4.5 dB; range ${x?.range} ≤ 13 dB; ${x?.hard_on} stems switched on hard)`);
+  }
+}
+
 process.exit(failed ? 1 : 0);

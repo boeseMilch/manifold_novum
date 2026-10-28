@@ -37,6 +37,7 @@ import argparse, json, os, subprocess, sys, tempfile, warnings
 import numpy as np, scipy.io.wavfile as wavfile, scipy.signal as sig
 
 warnings.filterwarnings('ignore')
+LEVELS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'music-levels.json')   # (--levels: the loudness check's numbers, read by tests/music.js)
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
 SR, OFF, PREROLL = 48000, -99, 2.5    # (PREROLL: silence before the ending's downbeat: the game starts it muted that early and steers it onto main's bar line)
 ENC_LUFS, LEVEL_LUFS, MUSIC_VOL = -16.0, -21.5, 0.25   # (MUSIC_VOL: js/music.js VOL, the bus the recording plays through)
@@ -50,6 +51,8 @@ FROZEN_STEMS = {'Dr': '0 Drums', 'Ba': '1 Bass', 'Gt': '2 Guitar', 'Ky': '3 Keyb
                 'Ot': '7 Other', 'Br': '8 Brass'}
 TROUBLE_STEMS = {'LV': '0 Lead Vocals', 'Dr': '1 Drums', 'Ba': '2 Bass', 'Gt': '3 Guitar', 'Ky': '4 Keyboard', 'Pc': '5 Percussion', 'Sy': '6 Synth',
                  'Ot': '7 Other', 'Br': '8 Brass'}
+SPORES_STEMS = {'LV': '0 Lead Vocals', 'BV': '1 Backing Vocals', 'Dr': '2 Drums', 'Ba': '3 Bass', 'Gt': '4 Guitar', 'Ky': '5 Keyboard',
+                'Pc': '6 Percussion', 'St': '7 Strings', 'Sy': '8 Synth', 'Ot': '9 Other', 'Br': '10 Brass', 'Ww': '11 Woodwinds'}
 SUSTAINED = {'Ba', 'St', 'Sy', 'Ky', 'Br', 'Ww', 'LV', 'BV', 'Gt'}       # longer crossfades at cuts
 def mix(**g):                                 # dB per stem (a stem not named: 0 dB, as recorded; All: dB on top for every stem)
     return dict(g)
@@ -144,7 +147,7 @@ TICK_PLAN = [
 # later, so the last section loops). The ending comes on the jump (music.jumped()).
 F_DOCK = mix(Dr=OFF, Pc=OFF, Ba=-8, Gt=-6, Br=OFF)                       # the piano motif, the guitar far off
 F_EMPTY = mix(Dr=OFF, Pc=OFF, Ba=OFF, Gt=OFF, Br=OFF, Sy=-6, St=-6)       # the piano and a breath: almost nothing
-F_SCRAPE = mix(Dr=OFF, Pc=OFF, Ba=-12, Gt=OFF, Br=OFF, Sy=-6)            # the piano bars, the strings scraping between
+F_SCRAPE = mix(Dr=OFF, Pc=OFF, Ba=OFF, Gt=OFF, Br=OFF, Sy=-6)            # the piano bars, the strings scraping between
 F_HOT = mix(Br=1, Gt=1)
 F_FULL = mix(Br=2, St=1, Gt=1)
 FROZEN_PLAN = [
@@ -157,11 +160,13 @@ FROZEN_PLAN = [
     ('Climbing: the groove, strings', 40, 48, lv(mix(Dr=-4, Br=-4), -4.5)), # 1:59
     ('Climbing: staccato strings', 16, 32, lv(mix(Br=-3), -3.5)),           # 2:23
     ('Climbing: the guitar', 48, 56, lv(mix(), -2)),                        # 3:11
-    ('Hot time 1: climax', 56, 64, lv(F_HOT, -0.5)),                        # 3:34 (hot 3:30-3:45)
+    ('Hot time 1: climax (the brass held back)', 56, 58, lv(mix(Br=-6, Gt=-3), -1.5)),   # 3:34 (hot 3:30-3:45)
+    ('Hot time 1: climax', 58, 64, lv(F_HOT, -0.5)),                        # 3:40: the brass and guitar swell up
     ('Stop-time: silence, hits', 64, 68, lv(mix(), -1)),                    # 3:58
     ('The last push', 68, 72, lv(mix(), -0.5)),                             # 4:10
     ('Hot time 2: the groove', 48, 56, F_HOT),                              # 4:22
-    ('Hot time 2: full climax', 56, 64, F_FULL),                            # 4:46 (hot 4:30-4:45, the jump 5:00)
+    ('Hot time 2: full climax (the brass held back)', 56, 58, mix(Br=-4, St=-2, Gt=-2)),   # 4:46 (hot 4:30-4:45, the jump 5:00)
+    ('Hot time 2: full climax', 58, 64, F_FULL),                            # 4:52: the orchestra swells up
     ('Still hot (the loop)', 48, 64, F_FULL),                               # 5:09: the loop (48 s), if the jump is late
 ]
 # Pick Your Trouble, recorded (the custom skirmish; from Suno: 9 stems, 3:51.5, drum and bass at 174 bpm, counted here
@@ -224,6 +229,10 @@ PIECES = {
         'ending': [(24, 30, T_RELEASE), (72, 74, mix(St=3))], 'ending_stop': 127.6, 'ending_fade': 2.5,
         'stitch': (1.6, 7.0), 'stitch_xf': (0.15, 0.1),
     },
+    'spores': {
+        'title': 'Bloom (recorded)', 'stems': 'Bloom', 'files': SPORES_STEMS, 'bpm': 100, 'missions': ['c6'], 'jump': 300,
+        'plan': [('All', 0, 8, mix())], 'ending': (0, 4, mix()),
+    },
     'trouble': {
         'title': 'Pick Your Trouble (recorded)', 'stems': 'Pick Your Trouble', 'files': TROUBLE_STEMS, 'bpm': 87, 'missions': ['custom'], 'jump': 300,
         'bar_step': 1, 'loop': -1, 'smooth': True, 'plan': TROUBLE_PLAN,
@@ -235,6 +244,11 @@ PIECES = {
     'frozen': {
         'title': 'Keep S-7 Frozen (recorded)', 'stems': 'Keep S-7 Frozen', 'files': FROZEN_STEMS, 'bpm': 81, 'missions': ['c3'], 'jump': 300,
         'bar_step': 1, 'loop': -1, 'smooth': True, 'plan': FROZEN_PLAN,
+        # (2026-10-28, the user: the volume "like a kid is playing with the volume meter" up to 1:30, "at 3:33 something
+        #  turns on that is not smoothly turned on": the calm opening ridden to a steady level within 8 dB of the loud
+        #  parts (ride: until 1:47, where the percussion wakes up), and every level change on running bars glides over
+        #  the 2 beats before the bar line (ramp) instead of switching in 0.12 s)
+        'ride': (0, 107, 11), 'ramp': 2,
         # the ending (on the jump, as in c7): the music stops, the piano alone for a bar (75), then the song's own hit on F
         # (bar 76's third beat) ringing out cold. Every bar line may take it, unless its harmony into bar 75 is far off
         # (stitch: cost ≤ 3.2, at most 6.5 s apart: a stop is a contrast anyway); main fades out over the beat before.
@@ -358,7 +372,10 @@ class Song:
             on, bt, tb, ta = self.onsets()[k], self.beat(), self.bar_t(A[1]), self.bar_t(B[0])
             onA, onB = A[2].get(k, 0) > OFF, B[2].get(k, 0) > OFF
             if A[1] == B[0]:                            # the same bars, other levels: a gain crossfade; a stem dropping out
-                if onA and onB or not onB:             # plays its downbeat and rings out over a beat; one coming in, its pickup
+                rp = int(self.P.get('ramp', 0) * bt * SR)   # plays its downbeat and rings out over a beat; one coming in, its pickup
+                if rp and (onA and onB or (onB and not onA)):   # ('ramp': n beats: the level glides over the n beats before the
+                    inn[k], out[k] = (rp, rp, 'sq'), (rp, 0, 'sq'); continue   # bar line, a stem coming in swells in; c3, 2026-10-28)
+                if onA and onB or not onB:
                     inn[k], out[k] = (h, f, 'sq'), ((h, int(bt * SR), 'eq') if onA and not onB else (h, h, 'sq')); continue
             pick = 0
             if B[2].get(k, 0) > OFF:
@@ -489,12 +506,15 @@ class Song:
             items = [(a, b, g) for _, _, a, b, g in lay]; L = lay[self.P.get('loop', -1)]
             if cut < total and self.P.get('stitch_xf'):   # main fading out under the ending as the game does it (stitch_xf)
                 tc, xl = self.P['stitch_xf']; self.run(out, lead, items, clip_at=cut + 1.5)
+                if self.P.get('ride'): ride(out, lead + self.P['ride'][0], lead + self.P['ride'][1], piece_top(out), *self.P['ride'][2:])
                 i0 = int((lead + cut - xl) * SR); env = np.exp(-np.arange(len(out) - i0) / SR / tc).astype(np.float32)
                 out[i0:] *= env[:, None]
             else: self.run(out, lead, items, after=None if cut < total else (L[2], L[3], L[4]), clip_at=cut if cut < total else None)
             if cut >= total:                        # the loop's wrap: the loop start's pickup before main's end, as at its join
                 self.place_smooth(out, lead + total, L[2], L[3], L[4], self.fades(items[-1], (L[2], L[3], L[4]))[0],
                                   {k: (0, 0, 'sq') for k in self.stems}, clip=0)
+            if self.P.get('ride') and not (cut < total and self.P.get('stitch_xf')):   # (ride: the calm opening's level, see ride())
+                n = int((lead + min(cut, self.P['ride'][1] + 30)) * SR); ride(out[:n], lead + self.P['ride'][0], lead + self.P['ride'][1], piece_top(out), *self.P['ride'][2:])
             if ending: self.place_ending(out, lead + cut)
             return out, lay, total, cut
         for i, (t0, lab, a, b, g) in enumerate(lay):
@@ -506,6 +526,68 @@ class Song:
             self.place(out, lead + t0, a, b, g, prev_cont, next_cont, clip)
         if ending: self.place_ending(out, lead + cut)
         return out, lay, total, cut
+
+# ---------------------------------------------------------------- loudness (2026-10-28, c3, the user: "something is really
+# weird and off with the volume ... like a kid is playing with the volume meter": the song's drums and piano take turns bar
+# by bar, and thinned out for the calm part that became 6-15 dB swings every few seconds, the calm part ~15 dB under the rest)
+def kweight(x):                                     # ITU-R BS.1770 K-weighting (48 kHz)
+    y = sig.lfilter([1.53512485958697, -2.69169618940638, 1.19839281085285], [1.0, -1.69065929318241, 0.73248077421585], x, axis=0)
+    return sig.lfilter([1.0, -2.0, 1.0], [1.0, -1.99004745483398, 0.99007225036621], y, axis=0)
+def lufs_curve(x, win, hop=0.01):
+    """Loudness (LUFS) in windows of `win` s centred every `hop` s (x: stereo); returns (t, L)."""
+    p = (kweight(x.astype(np.float64)) ** 2).sum(1); c = np.concatenate([[0], np.cumsum(p)]); n, h = int(win * SR), int(hop * SR)
+    mid = np.arange(0, len(p), h); a = np.clip(mid - n // 2, 0, len(p)); b = np.clip(mid + n // 2, 0, len(p))
+    return mid / SR, -0.691 + 10 * np.log10((c[b] - c[a]) / np.maximum(1, b - a) + 1e-12)
+def level_check(x, starts=(), gate=-60, skip=()):
+    """The objective check (tests/music.js reads its numbers in PLAN.md; `--levels` prints it): the short-term
+    loudness's (3 s) change over 3 s, its 95th percentile and max away from planned section starts (±3 s), and the
+    momentary loudness's (0.4 s) spread (std) in sliding 10 s windows: its 95th percentile."""
+    t, Sx = lufs_curve(x, 3.0, 0.1); _, M = lufs_curve(x, 0.4, 0.1)
+    d = np.abs(Sx[30:] - Sx[:-30]); tt = t[30:]; ok = (Sx[30:] > gate) & (Sx[:-30] > gate)
+    for b in starts: ok &= ~((tt > b - 0.5) & (tt < b + 3.5))
+    for a, b in skip: ok &= ~((tt > a - 0.5) & (tt < b + 3.5))       # (sections whose swings are the point: the song's stop-time)
+    keep = lambda i: not any(a - 10 < i / 10 < b for a, b in skip)
+    sd = np.array([M[i:i + 100][M[i:i + 100] > gate].std() for i in range(0, len(M) - 100, 10) if (M[i:i + 100] > gate).sum() > 50 and keep(i)])
+    top = np.percentile(Sx[Sx > gate], 95)
+    return {'dS3_p95': float(np.percentile(d[ok], 95)), 'dS3_max': float(d[ok].max()), 'Mstd10_p95': float(np.percentile(sd, 95)),
+            'range': float(top - np.percentile(Sx[Sx > gate], 5))}
+def ride(x, t0, t1, top, below=8.0, fast=1.5, slow=16.0, lim=(-6.0, 12.0), sigma=0.5, fade=6.0):
+    """Gentle loudness riding over [t0, t1) s of x (in place): the level follows a slow arc (the `slow` s power mean,
+    but never more than `below` dB under the piece's loud parts) instead of the bar-by-bar swings; the gain moves
+    smoothly (gaussian, `sigma` s), within `lim` dB, holds through silences, and fades out of effect over `fade` s at t1."""
+    t, F = lufs_curve(x, fast); _, Sl = lufs_curve(x, slow); T = np.maximum(Sl, top - below)   # (top: the piece's loud level, piece_top)
+    g = np.clip(T - F, *lim); quiet = F < top - 40
+    if quiet.all(): return x
+    g[quiet] = np.interp(np.flatnonzero(quiet), np.flatnonzero(~quiet), g[~quiet])
+    g = np.convolve(np.pad(g, int(3 * sigma * 100), mode='edge'), (lambda k: k / k.sum())(np.exp(-0.5 * (np.arange(-int(3 * sigma * 100), int(3 * sigma * 100) + 1) / (sigma * 100)) ** 2)), 'valid')
+    w = np.clip((t1 - t) / fade, 0, 1) * (t >= t0); g = g * w                     # (only inside the window, eased out at its end)
+    gs = np.interp(np.arange(len(x)) / SR, t, g).astype(np.float32)
+    x *= (10 ** (gs / 20))[:, None]
+    return x
+
+def stem_steps(S, plan, win=0.5, thr=6.0):
+    """Every section start where a stem comes in harder than the song itself does at that bar: per stem, its level in
+    the arrangement just after the start minus just before, against the same in the source at that bar (dB);
+    [(t, label, stem, extra dB)] for steps more than thr dB beyond the source's own."""
+    lay, total = S.layout(plan); allst = dict(S.stems); out = []
+    def db(x): return 20 * np.log10(np.sqrt((x ** 2).mean()) + 1e-9) if len(x) else -99
+    for k, x in allst.items():
+        S.stems = {k: x}
+        try: r = S.render(plan, ending=False)[0].mean(1)
+        finally: S.stems = allst
+        src = x.mean(1)
+        for i in range(1, len(lay)):
+            T, lab, a = lay[i][0], lay[i][1], lay[i][2]
+            pre, post = db(r[int((T - win) * SR):int(T * SR)]), db(r[int(T * SR):int((T + win) * SR)])
+            if post < -50: continue
+            ta = S.bar_t(a); nat = db(src[int(ta * SR):int((ta + win) * SR)]) - db(src[int((ta - win) * SR):int(ta * SR)])
+            if lay[i - 1][3] != a: nat = max(nat, 0)       # (a cut: the source's own step into the bar, if it rises)
+            extra = (post - max(pre, -60)) - max(nat, 0)
+            if extra > thr: out.append((float(T), lab, k, round(float(extra), 1)))
+    return sorted(out)
+
+def piece_top(x):                                   # the loud parts' level: the 95th percentile of the short-term loudness
+    _, S3 = lufs_curve(x, 3.0, 0.1); return float(np.percentile(S3[S3 > -60], 95))
 
 def loudness(wav):
     r = subprocess.run(['ffmpeg', '-nostats', '-i', wav, '-af', 'ebur128', '-f', 'null', '-'], capture_output=True, text=True).stderr
@@ -551,10 +633,20 @@ def build(name):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description='Arrange a recorded song into a mission soundtrack (see the top of this file).')
-    ap.add_argument('piece', choices=sorted(PIECES)); ap.add_argument('--analyze', action='store_true')
-    ap.add_argument('--wav'); ap.add_argument('--jump', type=float); ap.add_argument('--joins', action='store_true')
+    ap.add_argument('piece', choices=sorted(PIECES) + ['all']); ap.add_argument('--analyze', action='store_true')
+    ap.add_argument('--wav'); ap.add_argument('--jump', type=float); ap.add_argument('--joins', action='store_true'); ap.add_argument('--levels', action='store_true')
     A = ap.parse_args()
     if A.analyze: analyze(A.piece)
+    elif A.levels:                                  # the loudness check (level_check) and stems switched on harder than the song does
+        res = json.load(open(LEVELS)) if os.path.exists(LEVELS) else {}
+        for name in (sorted(PIECES) if A.piece == 'all' else [A.piece]):
+            S = Song(name); main, lay, total, _ = S.render(S.P['plan'], ending=False)
+            skip = [(t0, t0 + S.bar_t(b) - S.bar_t(a)) for t0, lab, a, b, _ in lay if 'stop' in lab.lower()]
+            c = level_check(main[:int(total * SR)], [t0 for t0, *_ in lay], skip=skip); st = stem_steps(S, S.P['plan'])
+            print(name, ' '.join(f'{k} {v:.1f}' for k, v in c.items()), f'stems switched on hard: {len(st)}')
+            for t, lab, k, e in st: print(f'  {int(t // 60)}:{t % 60:04.1f} {k} +{e} dB beyond the song  ({lab})')
+            res[name] = {**{k: round(v, 1) for k, v in c.items()}, 'hard_on': len(st)}
+        json.dump(res, open(LEVELS, 'w'), indent=1, sort_keys=True); print('written to', os.path.relpath(LEVELS, ROOT))
     elif A.joins:                                   # every cut of the plan with its join cost (Song.cost), and the ending's stitches
         S = Song(A.piece); lay, total = S.layout(S.P['plan'])
         for (t0, lab, a, b, g), (t1, lab1, a1, b1, g1) in zip(lay, lay[1:] + [lay[S.P.get('loop', -1)]]):

@@ -4491,6 +4491,28 @@ stays in music.html and is c3's fallback; c1 / c2 keep it.
   out; with fake audio elements: plays for c3, release() does nothing, the jump stitches the ending on the bar line, a
   failure falls back to Cargo Run, c1 / c2 keep Cargo Run). Pressure Hull's and Final Tick's renders and files are
   unchanged (md5).
+- **The volume (2026-10-28).** The user: "something is really weird and off with the volume ... like a kid is playing
+  with the volume meter", worst up to 1:30; "at 3:33 something turns on that is not smoothly turned on", the same at
+  4:45. Causes: the song's drums and piano take turns bar by bar (its own momentary loudness swings -10 / -26 every 3 s),
+  and the calm opening thinned that to the piano bars against near-silence, with its section levels 8-10 dB down
+  besides: -21 to -42 every few seconds, the first two minutes ~15 dB under the rest. At 3:34 / 4:46 the brass enters
+  in the song's bar 56 and the section's level rose (+1.5 dB, brass and guitar +1-2) in 0.12 s on the downbeat. Fixes
+  (`'ride'`, `'ramp'`, in PIECES.frozen only; Hull / Tick / Trouble untouched):
+  - **Loudness riding over the opening** (0:00-1:47, `ride()`): the level follows a slow arc (a 16 s power mean, never
+    more than 11 dB under the piece's loud parts) instead of the bar-by-bar swings; the gain is smoothed (0.5 s),
+    limited to -6 / +12 dB, held through silences and eased out at the window's end. The opening now sits at a steady
+    -20.5 LUFS short-term (momentary spread 0.9-2.2 dB per section; was -28 to -38 with spreads of 4-6), 4-5 dB under the
+    climb and ~10 under the climaxes. The bass is out of the "scrapes" (it switched on 9.5 dB harder than the song does).
+  - **Level changes on running bars glide** over the two beats before the bar line (`ramp: 2`, was a 0.12 s crossfade on
+    the downbeat), and both climaxes hold the brass back for two bars (56-57: brass -6 / -4, guitar and strings down)
+    and swell it up into bar 58.
+  - **The check** (`arrange-music.py all --levels` → tools/music-levels.json, read by tests/music.js): the short-term
+    loudness's change over 3 s (95th percentile, away from section starts and the song's own stop-time), the momentary
+    loudness's spread in sliding 10 s windows (95th percentile), the range (95th - 5th percentile), and stems switched on
+    harder than the song does at that bar (> 6 dB beyond its own step). c3 before → after: 5.9 → 3.2 dB, 5.1 → 3.1 dB,
+    19.0 → 12.4 dB, 1 → 0. For comparison: Pressure Hull 4.2 / 3.4 / 9.7 dB with 10 hard switches, Final Tick 2.2 / 4.0 /
+    11.4 with 4, Pick Your Trouble 2.5 / 2.4 / 11.0 with 0. Every recording after those two must stay under 4.5 / 4.5 /
+    13 dB with none switched on hard.
 
 ## Pick Your Trouble, recorded (the skirmish, 2026-10-28)
 

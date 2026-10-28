@@ -1,0 +1,30 @@
+{
+ "frozen": {
+  "Mstd10_p95": 3.1,
+  "dS3_max": 7.8,
+  "dS3_p95": 3.2,
+  "hard_on": 0,
+  "range": 12.4
+ },
+ "hull": {
+  "Mstd10_p95": 3.4,
+  "dS3_max": 21.0,
+  "dS3_p95": 4.2,
+  "hard_on": 10,
+  "range": 9.7
+ },
+ "tick": {
+  "Mstd10_p95": 4.0,
+  "dS3_max": 8.8,
+  "dS3_p95": 2.2,
+  "hard_on": 4,
+  "range": 11.4
+ },
+ "trouble": {
+  "Mstd10_p95": 2.4,
+  "dS3_max": 6.1,
+  "dS3_p95": 2.5,
+  "hard_on": 0,
+  "range": 11.0
+ }
+}
