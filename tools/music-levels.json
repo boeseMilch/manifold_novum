@@ -2,9 +2,9 @@
  "frozen": {
   "Mstd10_p95": 3.1,
   "dS3_max": 7.8,
-  "dS3_p95": 3.2,
+  "dS3_p95": 4.0,
   "hard_on": 0,
-  "range": 12.4
+  "range": 12.7
  },
  "hull": {
   "Mstd10_p95": 3.4,
@@ -12,6 +12,13 @@
   "dS3_p95": 4.2,
   "hard_on": 10,
   "range": 9.7
+ },
+ "spores": {
+  "Mstd10_p95": 2.7,
+  "dS3_max": 8.9,
+  "dS3_p95": 3.1,
+  "hard_on": 0,
+  "range": 9.1
  },
  "tick": {
   "Mstd10_p95": 4.0,

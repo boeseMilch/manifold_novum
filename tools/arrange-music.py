@@ -145,18 +145,20 @@ TICK_PLAN = [
 # ~1:50) and the crew explores it, then mines, swarms, a failing part and flares bunching at the hot times 3:30 / 4:30
 # (DENSITY 70% / 90%; it gets hot a little after), the jump at 5:00 (the drive spools, then needs MID energy: often
 # later, so the last section loops). The ending comes on the jump (music.jumped()).
-F_DOCK = mix(Dr=OFF, Pc=OFF, Ba=-8, Gt=-6, Br=OFF)                       # the piano motif, the guitar far off
-F_EMPTY = mix(Dr=OFF, Pc=OFF, Ba=OFF, Gt=OFF, Br=OFF, Sy=-6, St=-6)       # the piano and a breath: almost nothing
-F_SCRAPE = mix(Dr=OFF, Pc=OFF, Ba=OFF, Gt=OFF, Br=OFF, Sy=-6)            # the piano bars, the strings scraping between
+# (the calm opening: the piano plays every other bar, the drums and bass the bars between; without the drums the bass,
+#  lower, and the synth pad, up, fill the piano's gaps, so the level holds steady by itself: no riding, 2026-10-28)
+F_DOCK = mix(Dr=OFF, Pc=OFF, Ba=-3, Gt=-6, Br=OFF, Sy=3, St=-6)          # the piano motif, the bass under its gaps
+F_EMPTY = mix(Dr=OFF, Pc=OFF, Ba=-8, Gt=OFF, Br=OFF, Sy=3, St=-8)        # the piano and the pad: almost nothing
+F_SCRAPE = mix(Dr=OFF, Pc=OFF, Ba=OFF, Gt=OFF, Br=OFF, Sy=3)             # the piano bars, the strings scraping between
 F_HOT = mix(Br=1, Gt=1)
 F_FULL = mix(Br=2, St=1, Gt=1)
 FROZEN_PLAN = [
-    ('Intro: the drone, the motif', 0, 8, lv(mix(Dr=-6, Pc=-6), -5)),     # 0:00 (the mine drone 0:10-0:15)
-    ('The lab: the piano motif', 8, 16, lv(F_DOCK, -6)),                    # 0:24 (it docks 0:28)
-    ('Exploring: almost nothing', 8, 16, lv(F_EMPTY, -8)),                  # 0:47
-    ('Exploring: scrapes', 24, 32, lv(F_SCRAPE, -7)),                       # 1:11
-    ('The piano alone, a swell', 32, 36, lv(mix(Dr=OFF, Pc=-12, Ba=-10, Gt=OFF), -6)),   # 1:35
-    ('Metal percussion wakes up', 36, 40, lv(mix(Dr=-10, Ba=-6), -5)),     # 1:47
+    ('Intro: the drone, the motif', 0, 8, lv(mix(Dr=-9, Pc=-9, Sy=3), -2)),     # 0:00 (the mine drone 0:10-0:15)
+    ('The lab: the piano motif', 8, 16, lv(F_DOCK, -2)),                    # 0:24 (it docks 0:28)
+    ('Exploring: almost nothing', 8, 16, lv(F_EMPTY, -3)),                  # 0:47
+    ('Exploring: scrapes', 24, 32, lv(F_SCRAPE, -2)),                       # 1:11
+    ('The piano alone, a swell', 32, 36, lv(mix(Dr=OFF, Pc=-12, Ba=-10, Gt=OFF, St=-4), -2)),   # 1:35
+    ('Metal percussion wakes up', 36, 40, lv(mix(Dr=-10, Ba=-6), -3)),     # 1:47
     ('Climbing: the groove, strings', 40, 48, lv(mix(Dr=-4, Br=-4), -4.5)), # 1:59
     ('Climbing: staccato strings', 16, 32, lv(mix(Br=-3), -3.5)),           # 2:23
     ('Climbing: the guitar', 48, 56, lv(mix(), -2)),                        # 3:11
@@ -201,6 +203,39 @@ TROUBLE_PLAN = [
     ('Hot time 2: the last drop (climax)', 72, 76, tmix(Br=2, Ba=1)),       # 4:47 (hot ~4:45, the jump 5:00)
     ('Still going (the loop, climax)', 20, 36, tmix(Br=1)),                 # 5:09: the loop (44 s), if the jump is late
 ]
+# Bloom, recorded (c6, Spore Season; from Suno "C6": 12 stems, 5:29.5, 100 bpm, F♯ minor; 137 bars of 2.4 s; the user
+# now generates at the mission's full length, so it mostly plays straight through). Its sections (spores --analyze):
+#   0-7 intro (marimba, strings)  8-15 the choir comes in (14-15)  16-25 hand drums, brass  26-33 the groove (guitar)
+#   34-41 the first drop  42-48 breakdown (the choir: the backing vocals and the "lead vocals" stem)  49-57 build
+#   (woodwinds, strings)  58-65 drop 2  66-73 the choir over the drop  74-81 the climax (brass, guitar)  82-95 the drop
+#   on, harder  96-97 a breath  98-105 the last climax  106-123 the outro (keys, synth, strings)  124-129 the choir
+#   again  130-136 the last F♯ (a unison, no third), a swell in 133, ringing out. The "lead vocals" stem is muted (the
+#   prompt excluded lead vocals); the choir is the backing vocals.
+# c6 (shaped): the leeches at 0:10-0:15, the rock to drill at 0:28 (2+ crew; solo ~1:35), the rest bunching at the hot
+# times 3:30 / 4:30, the jump due at 5:00 (often later: the loop). The song's own climaxes come at 2:58-4:10, so it plays
+# straight to bar 104 (4:10), then goes back to the choir over the drop (bar 66, join cost 1.59) for the second hot
+# time and the jump; that second pass (66-103, 91 s) is the loop.
+B_MIX = mix(LV=OFF)
+SPORES_PLAN = [
+    ('Intro: marimba, strings', 0, 8, B_MIX),                               # 0:00 (the leeches 0:10-0:15)
+    ('The choir breathes in', 8, 16, B_MIX),                                # 0:19
+    ('Drilling: hand drums, brass', 16, 26, B_MIX),                         # 0:38 (the rock 0:28)
+    ('The groove: guitar', 26, 34, B_MIX),                                  # 1:02
+    ('The first drop', 34, 42, B_MIX),                                      # 1:22
+    ('Breakdown: the choir', 42, 49, B_MIX),                                # 1:41
+    ('Build: woodwinds, strings', 49, 58, B_MIX),                           # 1:58
+    ('Drop 2', 58, 66, B_MIX),                                              # 2:19
+    ('The choir over the drop', 66, 74, B_MIX),                             # 2:38
+    ('Climax: brass, guitar', 74, 82, B_MIX),                               # 2:58
+    ('Hot time 1: the drop (climax)', 82, 96, B_MIX),                       # 3:17 (hot 3:30-3:45)
+    ('A breath', 96, 98, B_MIX),                                            # 3:50
+    ('The last climax', 98, 104, B_MIX),                                    # 3:55
+    ('Again: the choir over the drop (the loop)', 66, 74, B_MIX),           # 4:10: the loop from here (91 s), if the jump is late
+    ('Hot time 2: brass, guitar (climax)', 74, 82, B_MIX),                  # 4:29 (hot 4:30-4:45)
+    ('Hot time 2: the drop, through the jump (climax)', 82, 96, B_MIX),     # 4:48 (the jump 5:00)
+    ('A breath', 96, 98, B_MIX),                                            # 5:22
+    ('The last climax again', 98, 104, B_MIX),                              # 5:27
+]
 PIECES = {
     'hull': {
         'title': 'Pressure Hull (recorded)', 'stems': 'Hull Pressure', 'files': HULL_STEMS, 'mix': 'Hull Pressure.wav', 'bpm': 87, 'missions': ['c7'], 'jump': 300,
@@ -231,7 +266,10 @@ PIECES = {
     },
     'spores': {
         'title': 'Bloom (recorded)', 'stems': 'Bloom', 'files': SPORES_STEMS, 'bpm': 100, 'missions': ['c6'], 'jump': 300,
-        'plan': [('All', 0, 8, mix())], 'ending': (0, 4, mix()),
+        'bar_step': 1, 'loop': -5, 'smooth': True, 'ramp': 2, 'plan': SPORES_PLAN,
+        # the ending (on the jump): the marimba and the bass on F♯ (bar 132), then the song's last swell (133) ringing out
+        'ending': [(132, 137, B_MIX)], 'ending_stop': 328.5, 'ending_fade': 2.5,
+        'stitch': (3.2, 6.0), 'stitch_xf': (0.15, 0.1),
     },
     'trouble': {
         'title': 'Pick Your Trouble (recorded)', 'stems': 'Pick Your Trouble', 'files': TROUBLE_STEMS, 'bpm': 87, 'missions': ['custom'], 'jump': 300,
@@ -245,10 +283,11 @@ PIECES = {
         'title': 'Keep S-7 Frozen (recorded)', 'stems': 'Keep S-7 Frozen', 'files': FROZEN_STEMS, 'bpm': 81, 'missions': ['c3'], 'jump': 300,
         'bar_step': 1, 'loop': -1, 'smooth': True, 'plan': FROZEN_PLAN,
         # (2026-10-28, the user: the volume "like a kid is playing with the volume meter" up to 1:30, "at 3:33 something
-        #  turns on that is not smoothly turned on": the calm opening ridden to a steady level within 8 dB of the loud
-        #  parts (ride: until 1:47, where the percussion wakes up), and every level change on running bars glides over
-        #  the 2 beats before the bar line (ramp) instead of switching in 0.12 s)
-        'ride': (0, 107, 11), 'ramp': 2,
+        #  turns on that is not smoothly turned on": the calm opening's mixes fill the piano's gaps and sit 3-5 dB under
+        #  the climb (a first fix rode its level instead; "at 0:43 and 1:06 it still sounds weird": the riding gain moved
+        #  6-11 dB in seconds, chasing the gaps and the strings' swell, so no riding), and every level change on running
+        #  bars glides over the 2 beats before the bar line (ramp) instead of switching in 0.12 s)
+        'ramp': 2,
         # the ending (on the jump, as in c7): the music stops, the piano alone for a bar (75), then the song's own hit on F
         # (bar 76's third beat) ringing out cold. Every bar line may take it, unless its harmony into bar 75 is far off
         # (stitch: cost ≤ 3.2, at most 6.5 s apart: a stop is a contrast anyway); main fades out over the beat before.

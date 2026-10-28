@@ -4513,6 +4513,13 @@ stays in music.html and is c3's fallback; c1 / c2 keep it.
     19.0 → 12.4 dB, 1 → 0. For comparison: Pressure Hull 4.2 / 3.4 / 9.7 dB with 10 hard switches, Final Tick 2.2 / 4.0 /
     11.4 with 4, Pick Your Trouble 2.5 / 2.4 / 11.0 with 0. Every recording after those two must stay under 4.5 / 4.5 /
     13 dB with none switched on hard.
+  - **No riding after all** (the same day; the user: "at 0:43 and 1:06 it still sounds weird, like the volume is doing
+    some jumping"). The riding gain moved 6-11 dB within seconds, pulling the piano's gaps up and pushing the strings'
+    own swell (0:42-0:46) down: the volume moving by itself. Now the calm mixes fill the gaps with the song's own
+    material instead, at fixed levels: the bass (-3 / -8 dB) plays the bars between the piano's, the synth pad +3 dB
+    under both, the strings -6 / -8 dB, the sections 2-3 dB down instead of 6-8. Momentary loudness 0:33-0:50 now
+    -17 to -23 (was -19 to -23 ridden, with the gain swinging 1 to 11 dB), 0:58-1:15 -17 to -26. The opening sits 3-5 dB
+    under the climb. The check: 4.0 / 3.1 / 12.7 dB, none switched on hard. (`ride()` stays in the tool, unused.)
 
 ## Pick Your Trouble, recorded (the skirmish, 2026-10-28)
 
