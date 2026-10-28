@@ -2,25 +2,25 @@
 
 **For:** Practice (`practice`): no timeline and no jump. The ship is yours, and the practice panel starts any
 encounter, damage or mini-game.
-**Mood:** a sandbox. Focused, a bit playful, steady medium energy that suits both idling and a fight you started on purpose.
+**Mood:** a sandbox. Focused, a bit playful, steady medium energy that suits both idling and a fight you started on purpose: the score with its synths up front.
 
 ## Style of Music
 ```
-retro synthwave instrumental, 96 BPM, A minor, arpeggiated analog synth bass, gated reverb drums, bright lead synth melody, warm pads, 80s arcade practice mode, focused and playful, steady medium energy, no big build, loopable, ends on the same chord it starts on, no vocals
+hybrid synth and orchestral instrumental, 96 BPM, A minor, arpeggiated analog synth over a low string ostinato, solo cello melody, half-time cinematic drums, struck metal pipe percussion, sub pulse like the ship's heartbeat, warm pads, wide reverb, focused and playful, steady medium energy, no big build, loopable, ends on the same chord it starts on, no vocals
 ```
 
 ## Exclude Styles
 ```
-vocals, choir, orchestral, dubstep, drone, bells, horror, ballad
+vocals, choir, dubstep, 80s cheese, horror, ballad, bells, music box
 ```
 
 ## Lyrics (Instrumental off, tags only)
 ```
-[Intro: synth bass arpeggio and drums]
-[Theme: lead synth melody]
-[Verse: pads and arpeggios, lead rests]
-[Theme: lead synth melody, an octave up]
-[Bridge: drums drop out, arpeggio alone]
+[Intro: synth arpeggio and heartbeat pulse]
+[Theme: solo cello melody over the arpeggio]
+[Verse: string ostinato and half-time drums, the cello rests]
+[Theme: cello melody, synth lead doubles it an octave up]
+[Bridge: drums drop out, arpeggio and pipes alone]
 [Theme: full]
 [Outro: back to the opening arpeggio, same chord as the start]
 ```
