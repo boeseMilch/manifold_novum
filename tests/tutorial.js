@@ -6,7 +6,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['tut', 'tutGo', 'tutorialNext', 'tutorialClient', 'tutorialAllows', 'startTutorial', 'me', 'GUNS', 'combat', 'CAPACITORS', 'power', 'simTick',
   'fires', 'mission', 'SYSTEMS', 'ITEMS', 'LEVER', 'REACTOR', 'FUEL_CRATE', 'hitPoi', 'enemyToWorld', 'openDiagnosis', 'radarScan', 'clickTarget', 'withCrew', 'SHOTS_PER_ENERGY',
-  'SHIELD_BUTTONS', 'roomAt', 'tutLeave', 'tutEscapeAsks'];
+  'SHIELD_BUTTONS', 'roomAt', 'tutLeave', 'tutEscapeAsks', 'padWords', 'tutC'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -247,6 +247,17 @@ function toKill(G, controls, failBlock) {
   check(/out/.test(allText(G)) && !/reactor room/.test(allText(G)), 'fire out (no second trip to the reactor)');
   one(G);
   check(G.tut.step === 'repair' && maintOf(G).target.broken, 'then the repair');
+}
+
+// --- controller: the keyboard tutorial (a pad plays as the keyboard), its texts in pad buttons
+{
+  const G = loadGame(NAMES);
+  G.startTutorial('controller');
+  check(G.tut.controls === 'controller', 'a controller tutorial can be started');
+  check(G.tutC('click it', 'press *E*') === 'press *A*' && G.tutC('left click', 'Space') === 'RT' && G.tutC('x', 'hold *Shift*') === 'hold *LT*', 'it names A (use), RT (fire), LT (cover)');
+  check(G.padWords('Aim by holding the *arrow keys* (or *W A S D*): the barrel') === 'Aim by pushing the *right stick*: the barrel', 'aiming: the right stick');
+  check(G.padWords('Walk with *W A S D*. Close it with *E* or *Esc*. Press *R*, Enter') === 'Walk with the *left stick*. Close it with *A* or *B*. Press *Y*, Start', 'walk, close, reload, go on');
+  check(G.padWords(G.padWords('hold Space (arrows)')) === G.padWords('hold Space (arrows)'), 'translating twice changes nothing');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');

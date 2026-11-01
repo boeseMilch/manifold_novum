@@ -4586,3 +4586,14 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   a pad over from another tab. Tabs share who holds what over a BroadcastChannel; the choice is in sessionStorage.
   game.js clears its keys on blur, so the pad module re-sends what's still held on the next frame.
 - Tests: tests/gamepad.js (the mapping; two fake tabs sharing two pads: claiming, no-focus play, taking a pad over).
+- Follow-ups (same day): the sticks' real directions go along as `input.stick` ({ aim: right, walk: left }, sent to the
+  server with the keys): you walk exactly where the left stick points (same speed), and a cannon's barrel turns to
+  where a stick points (gunKeyTurn with the stick's vector), not just to the keys' 8 directions, which left a side
+  cannon's narrow arc only its two edges. LB / RB drop the weapon / the item (pad-only codes PadDropWeapon /
+  PadDropItem, read in updatePlayer); cover stays on LT, fire on X / RT. Tutorial: a third choice, CONTROLLER = the
+  keyboard tutorial with its texts in pad words (js/tutorial.js padWords: E → A, Space → RT, Shift → LT, R → Y, Esc → B,
+  Enter → Start, WASD → left stick, arrows → right stick); A or Start turns its pages, and Enter / Start / A takes the
+  highlighted choice in the controls question. Crew training (js/tutorial-mp.js) uses the pad words whenever the tab
+  plays a controller (or 'controller' was picked), and Enter / Start turns your card's page when no panel is open.
+- The mute button (top left) also works in the menus: they lie over the canvas, so a window-level click on its spot
+  that doesn't hit a menu control toggles mute.

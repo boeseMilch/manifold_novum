@@ -15,8 +15,8 @@ const PAD_BUTTONS = {
   1: 'Escape',      // B: back / close the panel
   2: 'Space',       // X: weapon / fire
   3: 'KeyR',        // Y: reload the cannon
-  4: 'ShiftLeft',   // LB: cover (in a cannon)
-  5: 'Space',       // RB: weapon / fire
+  4: 'PadDropWeapon',   // LB: drop the weapon (the first inventory slot; no key of its own, js/game.js updatePlayer)
+  5: 'PadDropItem',     // RB: drop the item (the second slot)
   6: 'ShiftLeft',   // LT: cover
   7: 'Space',       // RT: weapon / fire
   8: 'KeyM',        // Back / Select: mute
@@ -38,6 +38,13 @@ function padCodes(pad) {
   stick(ax[0] || 0, ax[1] || 0, 'KeyA', 'KeyD', 'KeyW', 'KeyS');                    // left stick: walk
   stick(ax[2] || 0, ax[3] || 0, 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'); // right stick: aim
   return out;
+}
+// The sticks as they really point ({ aim: right, walk: left }, [x, y], null when inside the dead zone; null for
+// no pad): the keys only give 8 directions, which leaves a cannon's narrow arc just its two edges.
+function padSticks(pad) {
+  const ax = pad?.axes || [], v = (x, y) => (Math.hypot(x, y) > PAD_DEAD ? [x, y] : null);
+  const s = { aim: v(ax[2] || 0, ax[3] || 0), walk: v(ax[0] || 0, ax[1] || 0) };
+  return s.aim || s.walk ? s : null;
 }
 const padActive = (pad) => !!pad && ((pad.buttons || []).some(b => b.pressed) || (pad.axes || []).some(a => Math.abs(a) > PAD_DEAD));
 
@@ -70,6 +77,7 @@ function padPoll() {
   const want = gamepad.index == null ? new Set() : padCodes(pads[gamepad.index]);
   for (const c of gamepad.held) if (!want.has(c)) { gamepad.held.delete(c); padKey('keyup', c); }
   for (const c of want) if (!gamepad.held.has(c)) { gamepad.held.add(c); padKey('keydown', c); }
+  if (typeof localInput !== 'undefined') localInput.stick = gamepad.index == null ? null : padSticks(pads[gamepad.index]);   // (the cannon reads the real angle: js/game.js)
   const n = pads.filter(Boolean).length;
   if (gamepad.picker && (gamepad.picker.hidden !== !padPickerShown(n) || gamepad.picker.dataset.n !== String(n))) padPickerRender();
   requestAnimationFrame(padPoll);

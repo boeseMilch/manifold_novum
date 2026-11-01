@@ -26,7 +26,7 @@ function makeTab(bus, pads, focused) {
   };
   const tab = { keys, focused, frame() { const f = frames.splice(0); f.forEach(fn => fn()); }, G: null };
   vm.createContext(sb);
-  vm.runInContext(SRC + '\n;globalThis.__g = { gamepad, padCodes, padClaim };', sb);
+  vm.runInContext(SRC + '\n;globalThis.__g = { gamepad, padCodes, padClaim, padSticks };', sb);
   tab.G = sb.__g;
   return tab;
 }
@@ -38,11 +38,15 @@ function makeTab(bus, pads, focused) {
   check(codes(pad('x')) === '', 'a pad at rest holds no key');
   check(codes(pad('x', { buttons: [0] })) === 'KeyE', 'A → E (use)');
   check(codes(pad('x', { buttons: [7] })) === 'Space' && codes(pad('x', { buttons: [2] })) === 'Space', 'RT / X → Space (weapon, fire)');
+  check(codes(pad('x', { buttons: [4, 5] })) === 'PadDropItem PadDropWeapon', 'LB / RB → drop the weapon / the item');
   check(codes(pad('x', { buttons: [6] })) === 'ShiftLeft', 'LT → Shift (cover)');
   check(codes(pad('x', { buttons: [1, 3, 9] })) === 'Enter Escape KeyR', 'B → Escape, Y → R, Start → Enter');
   check(codes(pad('x', { axes: [-0.9, 0.2, 0, 0] })) === 'KeyA', 'left stick left → A (small deflection on the other axis ignored)');
   check(codes(pad('x', { axes: [0, 0, 0.8, -0.8] })) === 'ArrowRight ArrowUp', 'right stick → the arrow keys (aim)');
   check(codes(pad('x', { buttons: [12, 15] })) === 'KeyD KeyW', 'd-pad → WASD');
+  const st = G.padSticks(pad('x', { axes: [0.1, 0, -0.9, -0.3] }));
+  check(st && !st.walk && st.aim[0] === -0.9 && st.aim[1] === -0.3, 'the right stick also gives its real direction (the cannon aims at any angle, not 8)');
+  check(G.padSticks(pad('x', { axes: [0.2, 0.2, 0.1, -0.2] })) === null, 'sticks inside the dead zone: no direction');
 }
 
 // --- two tabs, two pads

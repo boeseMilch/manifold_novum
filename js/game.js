@@ -17,7 +17,9 @@ window.addEventListener('resize', resize); resize();
 // keyboard and mouse fill `localInput`, which belongs to the local crew member (`me`).
 // mouse.x/y are screen pixels (local only); mouse.wx/wy is the world point under it.
 // mouse.look: the mouse moved since the last tick (the crew member turns to look at it for a while).
-const makeInput = () => ({ keys: new Set(), pressed: new Set(), mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0, look: 0 } });
+// stick: a controller's sticks as they really point (js/gamepad.js; the keys alone only know 8 directions):
+// { aim: [x, y] right stick, walk: [x, y] left stick }, each null when centred; null without a controller
+const makeInput = () => ({ keys: new Set(), pressed: new Set(), stick: null, mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0, look: 0 } });
 const localInput = makeInput();
 window.addEventListener('keydown', e => {
   if (e.target?.tagName === 'INPUT') return;                 // typing in the lobby
@@ -35,6 +37,13 @@ canvas.addEventListener('mousedown', e => {
   if (e.button === 0 && inGuideBtn(e.clientX, e.clientY)) { setGuideArrows(!guideArrows); return; }   // guide arrows on / off (js/claims.js)
   if (e.button === 0) { m.down = true; m.click = true; } if (e.button === 2) { m.right = true; m.rightClick = true; }
 });
+// The menus (#lobby) lie over the canvas, its HUD showing through: a click on the mute button's spot that
+// doesn't land on a menu control mutes there too.
+window.addEventListener('mousedown', e => {
+  if (e.button !== 0 || e.target === canvas || !lobbyOpen() || !inMuteBtn(e.clientX, e.clientY)) return;
+  if (e.target.closest?.('button, input, select, textarea, a, label, .mission')) return;
+  sfx.toggleMute();
+}, true);
 window.addEventListener('mouseup', e => { if (e.button === 0) localInput.mouse.down = false; if (e.button === 2) localInput.mouse.right = false; });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -287,10 +296,16 @@ function updatePlayer(dt) {
   if (!ui.panel && pressed.has('Escape') && typeof levSkip === 'function' && levSkip()) pressed.delete('Escape');   // skips the leviathan's ending (js/leviathan.js)
   if (ui.panel && (pressed.has('KeyE') || pressed.has('Escape')) && tutAllows('closePanel')) { ui.panel = null; ui.override = null; ui.mini = null; pressed.delete('KeyE'); player.eUsed = true; }
   if (!keys.has('KeyE')) player.eUsed = false;           // (E that did something stays used until it's let go)
-  const ix = block ? 0 : (held('KeyD') ? 1 : 0) - (held('KeyA') ? 1 : 0);   // WASD walks, the arrow keys aim
-  const iy = block ? 0 : (held('KeyS') ? 1 : 0) - (held('KeyW') ? 1 : 0);
+  let ix = block ? 0 : (held('KeyD') ? 1 : 0) - (held('KeyA') ? 1 : 0);   // WASD walks, the arrow keys aim
+  let iy = block ? 0 : (held('KeyS') ? 1 : 0) - (held('KeyW') ? 1 : 0);
   const ax = block ? 0 : (held('ArrowRight') ? 1 : 0) - (held('ArrowLeft') ? 1 : 0), ay = block ? 0 : (held('ArrowDown') ? 1 : 0) - (held('ArrowUp') ? 1 : 0);
-  player.aim = ax || ay ? Math.atan2(ay, ax) : null;
+  const st = block ? null : player.input?.stick;      // a controller: its sticks' own angles, not the keys' 8 directions
+  if (st?.walk) [ix, iy] = st.walk;                   // (walk exactly where the left stick points; same speed: the length doesn't count)
+  if (!block && player.mode === 'inside' && tutAllows('drop')) {   // a controller's LB / RB: drop the weapon / the item (the inventory slots' clicks)
+    if (pressed.has('PadDropWeapon')) dropSlot('weapon');
+    if (pressed.has('PadDropItem')) dropSlot('item');
+  }
+  player.aim = st?.aim ? Math.atan2(st.aim[1], st.aim[0]) : ax || ay ? Math.atan2(ay, ax) : null;
   if (!block && (mouse.look || ((mouse.right || mouse.rightClick) && inv.weapon))) player.lookT = LOOK_TIME;   // (js/net.js netPredict: the same)
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
@@ -312,7 +327,8 @@ function updatePlayer(dt) {
     // aim: WASD / the arrows steer the barrel towards that screen direction (gunKeyTurn) and put the
     // cannon in key mode (player.gunKeys: the mouse is ignored and a laser sight shows) until the mouse
     // really moves again (mouse.look: a mousemove event, not the camera sliding the world under it)
-    const kx = clamp(ix + ax, -1, 1), ky = clamp(iy + ay, -1, 1);   // (js/net.js netPredict: the same)
+    let kx = clamp(ix + ax, -1, 1), ky = clamp(iy + ay, -1, 1);   // (js/net.js netPredict: the same)
+    const sv = st?.aim || st?.walk; if (sv) [kx, ky] = sv;       // a controller's stick: any angle inside the arc, not just 8
     if (mouse.look) player.gunKeys = false;
     if (kx || ky) player.gunKeys = true;
     if (mouse.moved && !player.gunKeys) {

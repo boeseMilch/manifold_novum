@@ -3,7 +3,7 @@
 // server's simulation sandbox.
 //
 //   snapshot = netSerialize()      (server)  →  netApply(snapshot, myId)   (browser)
-//   browser input: { keys, pressed, mouse{wx,wy,down,click,right,rightClick,moved,look} }
+//   browser input: { keys, pressed, stick{aim,walk}, mouse{wx,wy,down,click,right,rightClick,moved,look} }
 //   browser commands (panels, buttons, debug menu): ['lock', i] / ['bonk'] / ['reload'] / ['debug', key] …
 
 // ---------------------------------------------------------------------------
@@ -173,6 +173,8 @@ const netServer = {
     if (!c) return;
     const inp = c.input;
     inp.keys = new Set(m.keys || []);
+    const v2 = (a) => (Array.isArray(a) && a.length === 2 && a.every(Number.isFinite) ? [clamp(a[0], -1, 1), clamp(a[1], -1, 1)] : null);
+    inp.stick = m.stick && (v2(m.stick.aim) || v2(m.stick.walk)) ? { aim: v2(m.stick.aim), walk: v2(m.stick.walk) } : null;   // (a controller: js/gamepad.js)
     for (const k of m.pressed || []) inp.pressed.add(k);
     const mm = m.mouse || {};
     Object.assign(inp.mouse, { wx: mm.wx, wy: mm.wy, down: !!mm.down, right: !!mm.right });
@@ -375,7 +377,7 @@ function netClientMain() {
     netLocalPrompt();
     const m = localInput.mouse, seq = netRemember();
     if (ws.readyState === 1) ws.send(JSON.stringify({
-      t: 'input', seq, ack: netSnapN, keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed],
+      t: 'input', seq, ack: netSnapN, keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed], stick: debugOpen ? null : localInput.stick,
       mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: m.click, rightClick: m.rightClick, moved: m.moved, look: m.look },
     }));
     localInput.pressed.clear(); m.click = false; m.rightClick = false; m.moved = 0; m.look = 0;
@@ -533,9 +535,11 @@ function netPredict(dt) {
     }
     const blocked = debugOpen || !!me.ui.panel || !!mission.over;
     const ik = localInput.keys, has = (...codes) => !blocked && codes.some(x => ik.has(x));
-    const ix = (has('KeyD') ? 1 : 0) - (has('KeyA') ? 1 : 0), iy = (has('KeyS') ? 1 : 0) - (has('KeyW') ? 1 : 0);
+    let ix = (has('KeyD') ? 1 : 0) - (has('KeyA') ? 1 : 0), iy = (has('KeyS') ? 1 : 0) - (has('KeyW') ? 1 : 0);
     const ax = (has('ArrowRight') ? 1 : 0) - (has('ArrowLeft') ? 1 : 0), ay = (has('ArrowDown') ? 1 : 0) - (has('ArrowUp') ? 1 : 0);
-    c.aim = ax || ay ? Math.atan2(ay, ax) : null;
+    const st = blocked ? null : localInput.stick;     // (a controller's sticks: their own angles, as updatePlayer)
+    if (st?.walk) [ix, iy] = st.walk;
+    c.aim = st?.aim ? Math.atan2(st.aim[1], st.aim[0]) : ax || ay ? Math.atan2(ay, ax) : null;
     const m = localInput.mouse;                       // look at the mouse after moving it / firing with it (as updatePlayer)
     if (!blocked && (m.look || ((m.right || m.rightClick) && me.inv.weapon))) me.lookT = LOOK_TIME;
     updateCrew(me, dt, ix, iy);                        // move now, don't wait for the server
@@ -560,7 +564,8 @@ function netPredict(dt) {
   }
   if (me.mode === 'gun' && me.gun && standing(me) && !debugOpen && !me.ui.panel) {   // aim the cannon you're on locally, same rule as the server
     const g = me.gun, m = localInput.mouse, ik = localInput.keys, k = (...codes) => (codes.some(x => ik.has(x)) ? 1 : 0);
-    const kx = clamp(k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft'), -1, 1), ky = clamp(k('KeyS', 'ArrowDown') - k('KeyW', 'ArrowUp'), -1, 1);
+    let kx = clamp(k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft'), -1, 1), ky = clamp(k('KeyS', 'ArrowDown') - k('KeyW', 'ArrowUp'), -1, 1);
+    const sv = localInput.stick?.aim || localInput.stick?.walk; if (sv) [kx, ky] = sv;   // (a controller's stick: as updatePlayer)
     if (m.look) me.gunKeys = false;                  // key mode until the mouse really moves (as updatePlayer)
     if (kx || ky) me.gunKeys = true;
     if (m.moved && !me.gunKeys) g.aim = Math.atan2(m.wy - g.y, m.wx - g.x);

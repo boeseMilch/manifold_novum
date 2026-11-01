@@ -20,7 +20,18 @@ const tut = {
   ask: false,                // free roam: the "back to the menu?" confirm is open
 };
 const TUT_KEY = 'mn-controls', TUT_DONE_KEY = 'mn-tutorial-done';
-const tutC = (mouseText, keyText) => (tut.controls === 'keyboard' ? keyText : mouseText);   // the text for the chosen controls
+// A controller plays as the keyboard (js/gamepad.js), so its tutorial is the keyboard one with the pad's buttons
+// named instead of the keys (standard layout: A use, X / RT fire, LT cover, Y reload, B back, Start go on).
+const PAD_WORDS = [[/\b(hold|holding) the \*arrow keys\* \(or \*W A S D\*\)/g, (m, h) => (h === 'hold' ? 'push' : 'pushing') + ' the *right stick*'],
+  [/\barrow keys\b/g, 'right stick'], [/\(arrows\)/g, '(right stick)'], [/\barrows or WASD\b/g, 'either stick'], [/\bwith \*W A S D\*/g, 'with the *left stick*'], [/\bW A S D\b|\bWASD\b/g, 'left stick'],
+  [/\bEsc\b/g, 'B'], [/\bEnter\b/g, 'Start'], [/\bSpace\b/g, 'RT'], [/\bShift\b/g, 'LT'], [/\bE\b/g, 'A'], [/\bR\b/g, 'Y']];
+const padWords = (s) => PAD_WORDS.reduce((t, [re, w]) => t.replace(re, w), String(s));   // (twice is the same as once)
+const TUT_CONTROLS = ['mouse', 'keyboard', 'controller'];
+// The text for the chosen controls (controller: the keyboard's, in pad words)
+const tutC = (mouseText, keyText) => (tut.controls === 'mouse' ? mouseText : tut.controls === 'controller' ? padWords(keyText) : keyText);
+const tutWords = (s) => (tut.controls === 'controller' ? padWords(s) : s);   // every text shown (fixed ones name keys too)
+// This tab plays a controller right now (js/gamepad.js)
+const padPlaying = () => typeof gamepad !== 'undefined' && gamepad.index != null && !!navigator.getGamepads?.()[gamepad.index];
 const tutGun = () => GUNS.find(g => g.id === 'port');
 const tutFoe = () => combat.enemies.find(e => e.kind === 'interceptor' && e.phase === 'fighting');
 const tutPoi = (e, id) => e?.pois.find(p => p.id === id);
@@ -40,7 +51,7 @@ MISSIONS.tutorial = {
 // Start, messages, pause
 // ---------------------------------------------------------------------------
 function startTutorial(controls = 'mouse') {
-  tut.controls = controls === 'keyboard' ? 'keyboard' : 'mouse';
+  tut.controls = TUT_CONTROLS.includes(controls) ? controls : 'mouse';
   try { localStorage.setItem(TUT_KEY, tut.controls); } catch (e) { /* no storage */ }
   startMission('tutorial', { ship: {} });                    // a stock ship: the numbers in the texts hold
   combat.banner = null;
@@ -590,7 +601,7 @@ function drawTutorialWorld(view, t) {
 }
 function drawTutorialHUD() {
   if (!tut.on || tut.msg) return;
-  const text = TUT_STEPS[tut.step]?.objective?.() || '';
+  const text = tutWords(TUT_STEPS[tut.step]?.objective?.() || '');
   if (!text) return;
   ctx.font = '22px "Patrick Hand", system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   const w = ctx.measureText(text).width + 64, y = HUD_H + 58;
@@ -637,12 +648,12 @@ const tutDom = {
     if (!m) return;
     const p = m.pages[m.i];
     veil.classList.toggle('wait', !!m.waitFor);
-    veil.querySelector('#tut-text').innerHTML = escapeHtml(p.text).replace(/\*(.+?)\*/g, '<b>$1</b>');
+    veil.querySelector('#tut-text').innerHTML = escapeHtml(tutWords(p.text)).replace(/\*(.+?)\*/g, '<b>$1</b>');
     veil.querySelector('#tut-page').textContent = m.pages.length > 1 ? `⏸ paused · ${m.i + 1} / ${m.pages.length}` : '⏸ paused';
     const next = veil.querySelector('#tut-next');
     next.hidden = !!m.waitFor;
     next.textContent = m.i === m.pages.length - 1 && m.button ? m.button : 'NEXT ▸';
-    veil.querySelector('#tut-hint').textContent = m.waitFor ? m.hint || '' : tutC('click or Enter', 'Enter or Space');
+    veil.querySelector('#tut-hint').textContent = m.waitFor ? tutWords(m.hint || '') : tut.controls === 'controller' ? 'A or Start' : tutC('click or Enter', 'Enter or Space');
   },
 };
 // Keys while a message is open: Enter / Space go to the box, everything else is held back from the game
@@ -662,24 +673,32 @@ function tutKeyDown(e) {
   if (!m || e.target?.tagName === 'INPUT') return;
   if (m.pass?.includes(e.code) || e.code === 'KeyM') return;
   e.stopImmediatePropagation(); e.preventDefault();
-  if (!m.waitFor && !e.repeat && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space')) { tut.swallow.add(e.code); tutorialNext(); }
+  if (!m.waitFor && !e.repeat && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space' || (e.code === 'KeyE' && tut.controls === 'controller'))) {   // (a pad: A too)
+    tut.swallow.add(e.code); tutorialNext(); }
 }
-// Before the tutorial: mouse or keyboard?
+// Before the tutorial: mouse, keyboard or controller? (a controller in play here: that one, preselected)
 function tutAskControls() {
   let pref = 'mouse';
   try { pref = localStorage.getItem(TUT_KEY) || 'mouse'; } catch (e) { /* no storage */ }
+  if (padPlaying()) pref = 'controller';
   let d = document.getElementById('tut-choice');
   if (!d) {
     d = document.createElement('div'); d.id = 'tut-choice';
     d.innerHTML = `<div class="tut-card"><div class="tut-head"><span>RAIDER ONBOARDING</span></div>
       <p>Before we start: how do you like to play?</p>
       <div class="tut-pick"><button data-c="mouse"><b>MOUSE</b><small>aim with the mouse · click to fire · hold right-click for cover</small></button>
-      <button data-c="keyboard"><b>KEYBOARD</b><small>aim with the arrows or WASD · Space to fire · hold Shift for cover</small></button></div>
-      <p class="tut-small">Walking is W A S D and E uses things, either way. Both work all the time; this only picks what we tell you.</p>
+      <button data-c="keyboard"><b>KEYBOARD</b><small>aim with the arrows or WASD · Space to fire · hold Shift for cover</small></button>
+      <button data-c="controller"><b>CONTROLLER</b><small>left stick walks · right stick aims · A uses · RT fires · hold LT for cover</small></button></div>
+      <p class="tut-small">Walking is W A S D and E uses things on the keyboard. All of them work all the time; this only picks what we tell you. (Enter / Start: the highlighted one.)</p>
       <button class="tut-cancel">‹ back</button></div>`;
     document.body.appendChild(d);
     d.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { d.hidden = true; tutLaunch(b.dataset.c); });
     d.querySelector('.tut-cancel').onclick = () => { d.hidden = true; };
+    window.addEventListener('keydown', e => {          // (a controller can't click: Start / A takes the highlighted choice, B goes back)
+      if (d.hidden || e.repeat) return;
+      if (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'KeyE') { e.preventDefault(); d.hidden = true; tutLaunch(d.querySelector('.chosen')?.dataset.c || 'mouse'); }
+      else if (e.code === 'Escape') d.hidden = true;
+    });
   }
   d.querySelectorAll('[data-c]').forEach(b => b.classList.toggle('chosen', b.dataset.c === pref));
   d.hidden = false;

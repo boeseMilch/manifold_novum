@@ -36,7 +36,7 @@ function session(oneWay, jitter, setup) {
         const L = C.localInput, mouse = { wx: 0, wy: 0 };
         frame?.(now, L, mouse, fresh);
         C.netBetween(dt); C.netLocalPrompt();
-        const m = { seq: C.netRemember(), keys: [...L.keys], pressed: [...L.pressed], mouse: { ...mouse } };
+        const m = { seq: C.netRemember(), keys: [...L.keys], stick: L.stick, pressed: [...L.pressed], mouse: { ...mouse } };
         L.pressed.clear();
         post(toServer, () => S.netServer.input(2, m));
       }
@@ -135,6 +135,20 @@ const atLever = (S, g) => { g.x = S.LEVER.x + 0.9; g.y = S.LEVER.y - 0.3; g.mode
   check(firstTurn !== null && firstTurn < 40, `up turns your cannon on your screen right away (${firstTurn?.toFixed(0)} ms), not a round trip later`);
   check(Math.sin(c) < -0.3 && W.C.me.gunKeys, `after letting go, the resting mouse doesn't pull it back (${(c * 180 / Math.PI).toFixed(1)}°, laser sight on)`);
   check(Math.abs(c - s) < 0.03, `your browser and the server agree on the aim (${(c * 180 / Math.PI).toFixed(1)}° / ${(s * 180 / Math.PI).toFixed(1)}°)`);
+}
+
+// 7. a controller's stick aims the cannon at its own angle (not the keys' 8 directions, which leave a narrow arc
+// only its edges), in your browser and on the server alike
+{
+  const W = session(60, 30, (S, g) => { g.mode = 'gun'; g.gun = S.GUNS.find(x => x.id === 'port'); g.x = g.gun.x + 0.75; g.y = g.gun.y; });
+  const G = () => W.S.GUNS.find(x => x.id === 'port');
+  const want = Math.atan2(-0.2, -1);                       // a bit up from straight left: between two key directions
+  W.run(3000, (t, L) => {
+    L.keys.clear(); L.stick = null;
+    if (t > 500) { L.keys.add('ArrowLeft'); L.stick = { aim: [-1, -0.2], walk: null }; }
+  });
+  const c = W.C.me.gun.aim, s = G().aim, d = (a) => Math.abs(Math.atan2(Math.sin(a - want), Math.cos(a - want)));
+  check(d(c) < 0.02 && d(s) < 0.02, `the stick's angle is where it points (${(want * 180 / Math.PI).toFixed(1)}°: browser ${(c * 180 / Math.PI).toFixed(1)}°, server ${(s * 180 / Math.PI).toFixed(1)}°)`);
 }
 
 console.log(failed ? `\n${failed} failed` : '\nall latency tests passed');

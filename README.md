@@ -107,8 +107,11 @@ The prompt above you always says what a click (or E) will do.
 ### Controller
 
 Plug in a gamepad and press a button: it plays as the keyboard. Left stick / d-pad walk (WASD),
-right stick aims (arrow keys), **A** use (E), **X / RB / RT** weapon and fire (Space), **LT / LB**
-cover (Shift), **Y** reload (R), **B** back (Escape), **Start** go on (Enter), **Back** mute (M).
+right stick aims (arrow keys), **A** use (E), **X / RT** weapon and fire (Space), **LT** cover (Shift),
+**LB / RB** drop your weapon / item, **Y** reload (R), **B** back (Escape), **Start** go on (Enter),
+**Back** mute (M). The sticks are exact, not 8 directions: you walk where the left stick points, and in
+a cannon the barrel turns to where either stick points. The tutorial has a CONTROLLER choice (texts name
+the pad's buttons); crew training names them by itself when the tab plays a controller.
 Panels and mini-games that need the mouse still need the mouse.
 
 Several controllers: each browser tab plays one. A tab takes the first free controller that's

@@ -78,9 +78,13 @@ const TR_TOK = {
   getup: ['*hold E* (or click on yourself)', '*hold E*', 'hold E'],
 };
 let trControls = 'mouse';
+// (a controller: the keyboard words in pad buttons, js/tutorial.js padWords; a tab playing a pad right now
+//  always gets those, whatever was picked for the solo tutorial)
+const trCtl = () => (typeof padPlaying === 'function' && padPlaying() ? 'controller' : trControls);
 function trText(s, neutral = false) {
-  const k = neutral ? 2 : trControls === 'keyboard' ? 1 : 0;
-  return String(s || '').replace(/\{(\w+)\}/g, (m, w) => (TR_TOK[w] ? TR_TOK[w][k] : m));
+  const ctl = trCtl(), k = neutral ? 2 : ctl === 'mouse' ? 0 : 1;
+  const out = String(s || '').replace(/\{(\w+)\}/g, (m, w) => (TR_TOK[w] ? TR_TOK[w][k] : m));
+  return !neutral && ctl === 'controller' && typeof padWords === 'function' ? padWords(out) : out;
 }
 const trPlain = (s) => trText(s, true).replace(/\*/g, '');
 const trPageTime = (s) => Math.max(4, String(s).split(/\s+/).length * 0.33);
@@ -988,7 +992,7 @@ function drawTrainingHUD() {
   ctx.textBaseline = 'top'; ctx.textAlign = 'left';
   ctx.font = '800 12px system-ui, sans-serif'; ctx.fillStyle = col; ctx.fillText(`RAIDER TRAINING · ${P.title || 'WELCOME'}`, x + pad, y + 9);
   ctx.textAlign = 'right'; ctx.font = '600 12px system-ui, sans-serif'; ctx.fillStyle = '#9aa3b5';
-  ctx.fillText(`${P.n === 'extra' ? 'extra · ' : P.n ? `lesson ${P.n} · ` : ''}${P.core.length}/${TR_CORE_N} done${P.say ? (P.say.hide ? ' · click: show' : P.say.i < P.say.pages.length - 1 ? ' · click: next' : ' · click: fold') : ''}`, x + w - pad, y + 9);
+  ctx.fillText(`${P.n === 'extra' ? 'extra · ' : P.n ? `lesson ${P.n} · ` : ''}${P.core.length}/${TR_CORE_N} done${P.say ? (P.say.hide ? ` · ${trNextKey()}: show` : P.say.i < P.say.pages.length - 1 ? ` · ${trNextKey()}: next` : ` · ${trNextKey()}: fold`) : ''}`, x + w - pad, y + 9);
   ctx.textAlign = 'left';
   let yy = y + 30;
   if (body) { trDrawRich(body, x + pad, yy, 20, '#e8ecf4', '#ffffff'); yy += body.lines.length * 20 + 4; }
@@ -1001,6 +1005,13 @@ function drawTrainingHUD() {
   if (gl) trDrawRich(gl, x + pad, yy, 20, '#ffe9a0', '#ffffff');
   trCardBox = { x, y, w, h };
 }
+// Enter (a controller's Start) turns your card's page too, when no panel is open (a panel's own Enter: the PIN pad)
+const trNextKey = () => ({ mouse: 'click', keyboard: 'Enter', controller: 'Start' })[trCtl()] || 'click';
+if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('keydown', e => {
+  if (e.repeat || (e.code !== 'Enter' && e.code !== 'NumpadEnter') || !train.on || !me || me.ui?.panel || mission.over || mission.id !== 'training') return;
+  if (e.target?.tagName === 'INPUT' || !train.p[me.id]?.say || typeof sendCommand !== 'function') return;
+  sendCommand(['train', 'next']);
+});
 const inTrainCard = (mx, my) => !!trCardBox && mx >= trCardBox.x && mx <= trCardBox.x + trCardBox.w && my >= trCardBox.y && my <= trCardBox.y + trCardBox.h;
 // Your marks in the world (rings, like the solo tutorial's), world transform set.
 function drawTrainingWorld(view, t) {

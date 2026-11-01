@@ -251,4 +251,20 @@ process.exitCode = failed ? 1 : 0;
   S.netServer.input(1, { keys: ['KeyD'], pressed: [], mouse: { wx: mx, wy: my, look: 1 } }); for (let i = 0; i < 20; i++) S.simTick(DT);
   check(A.x > mx + 3.5 && near(A.face, Math.atan2(my - A.y, mx - A.x)), 'multiplayer: the server turns you towards your mouse after it moved (walking away from it)');
 }
+// --- a controller: LB / RB drop the weapon / the item; the left stick walks exactly where it points
+{
+  const G = loadGame(NAMES), me = G.me;
+  me.inv.weapon = 'extinguisher'; me.inv.item = 'fuel';
+  const n0 = G.ITEMS.length;
+  me.input.pressed.add('PadDropWeapon'); G.simTick(DT);
+  check(!me.inv.weapon && me.inv.item === 'fuel' && G.ITEMS.length === n0 + 1, 'LB drops the weapon (and only that)');
+  me.input.pressed.add('PadDropItem'); G.simTick(DT);
+  check(!me.inv.item && G.ITEMS.length === n0 + 2, 'RB drops the item');
+  const x0 = me.x, y0 = me.y;
+  me.input.stick = { aim: null, walk: [0.9, 0.3] };
+  for (let i = 0; i < 20; i++) G.simTick(DT);
+  me.input.stick = null;
+  const a = Math.atan2(me.y - y0, me.x - x0);
+  check(Math.hypot(me.x - x0, me.y - y0) > 0.5 && Math.abs(a - Math.atan2(0.3, 0.9)) < 0.05, `the left stick walks at its own angle (${(a * 180 / Math.PI).toFixed(1)}°, wanted 18.4°)`);
+}
 process.exitCode = failed ? 1 : 0;
