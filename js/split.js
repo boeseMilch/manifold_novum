@@ -3,7 +3,7 @@
 // Here, early (before the game's own key handlers): the keyboard belongs to the keyboard + mouse half, so keys typed
 // while a controller's half has the focus are passed over to it; and what the parent page may call on this half.
 (() => {
-  if (typeof window === 'undefined' || window.parent === window || !/[?&]split=[12]\b/.test(location.search)) return;
+  if (typeof window === 'undefined' || window.parent === window || !/[?&]split=[1-4]\b/.test(location.search)) return;
   if (!/[?&]input=kbm\b/.test(location.search)) for (const type of ['keydown', 'keyup']) window.addEventListener(type, (e) => {
     if (!e.isTrusted) return;                          // (this half's own controller: synthetic keys, js/gamepad.js)
     let to = null; try { to = window.parent.splitKbm?.(); } catch (err) { to = null; }

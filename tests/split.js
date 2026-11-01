@@ -1,6 +1,6 @@
-// Split screen (split.html, js/progress.js SPLIT): each half's player keeps their own progress, by name. This
+// Split screen (split.html, js/progress.js SPLIT; 2-4 views): each view's player keeps their own progress, by name. This
 // browser's own player (localStorage 'mn-name') keeps the usual save (cookie + localStorage); anyone else gets
-// 'mn-profile@<name>' in localStorage and never touches the cookie. The right half hides the shared column and banners.
+// 'mn-profile@<name>' in localStorage and never touches the cookie. Only the first view shows the shared column and banners.
 // Run: node tests/split.js
 const { loadGame } = require('./harness');
 let failed = 0;
@@ -41,6 +41,9 @@ function browser() {
 
   const zoe2 = B.load('?split=1&name=Zoe&input=kbm');
   check(zoe2.profile.money === 77 && zoe2.profile.gear.armor, 'next time, Zoe gets her progress and locker back by name (in either half)');
+  const q3 = B.load('?split=3&name=Kaylee&input=pad1'), q4 = B.load('?split=4&name=Data&input=pad2');
+  check(q3.SPLIT?.slot === 3 && q4.SPLIT?.slot === 4 && q4.SPLIT.pad === 2 && !q3.splitShared() && !q4.splitShared(), 'quadrants 3 and 4: their own slot and controller, no shared column (only the first view shows it)');
+  check(!B.load('?split=5&name=X&input=kbm').SPLIT, 'no fifth view');
   const back = B.load('');
   check(back.profile.money === 600 && !back.SPLIT && back.splitShared(), 'the usual game afterwards: the usual save, no split');
 }

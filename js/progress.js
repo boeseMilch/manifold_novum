@@ -459,7 +459,7 @@ function migrateProfile(p) {
 function readCookie(name) {
   try { const m = document.cookie.split('; ').find(s => s.startsWith(name + '=')); return m ? decodeURIComponent(m.slice(name.length + 1)) : null; } catch (e) { return null; }
 }
-// Split screen (split.html: two players in one browser, one half each; ?split=1|2&name=…&input=kbm|padN): each half's
+// Split screen (split.html: 2-4 players in one browser, a half or a quadrant each; ?split=1..4&name=…&input=kbm|padN): each view's
 // player keeps their own progress, by name. The one whose name is this browser's own player ('mn-name') plays on the
 // usual profile (cookie + localStorage, untouched otherwise); anyone else on 'mn-profile@<name>' in localStorage only
 // (no second cookie: the usual one stays as it was, and cookies go along with every request). A new name starts fresh.
@@ -467,13 +467,13 @@ const SPLIT = (() => {
   try {
     if (typeof location === 'undefined' || !location.search) return null;
     const q = new URLSearchParams(location.search), slot = +q.get('split');
-    if (slot !== 1 && slot !== 2) return null;
+    if (!(slot >= 1 && slot <= 4)) return null;   // (2 players: halves; 3-4: quadrants)
     const input = /^(kbm|pad\d)$/.test(q.get('input') || '') ? q.get('input') : 'kbm';
     return { slot, name: String(q.get('name') || `Player ${slot}`).trim().slice(0, 24) || `Player ${slot}`, input, pad: input === 'kbm' ? null : +input.slice(3) };
   } catch (e) { return null; }
 })();
-// The shared column (mission box, objective, encounter and task plates) and the banners: shown once, in the left half
-const splitShared = () => !SPLIT || SPLIT.slot !== 2;
+// The shared column (mission box, objective, encounter and task plates) and the banners: shown once, in the first view
+const splitShared = () => !SPLIT || SPLIT.slot === 1;   // (the first view, top / left: one queue for everyone)
 const splitOwnKey = () => {                          // null: the usual profile; else this player's own localStorage key
   if (!SPLIT) return null;
   let own = null; try { own = localStorage.getItem('mn-name'); } catch (e) { /* none */ }

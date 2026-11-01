@@ -125,13 +125,14 @@ is plugged in) switches by hand. So for couch co-op run `node server.js`, open t
 
 ### Split screen
 
-Two players on one screen: run `node server.js` and open `http://…/split.html`. Each player picks a name and
-what they play with (the keyboard and mouse, or a controller; not the same one), and the screen splits into a
-left and a right half, each its own player in the same game: the left half opens it and picks the mission, the
-right one joins. Progress (money, gear and locker, chapters) is kept by name: the name this browser usually
-plays as keeps its usual save, anyone else gets their own (by name, in this browser), so the next split screen
-with the same names picks up where it was. The left half plays the sound and shows the mission plates and
-messages for both; keys typed while the controller's half has the focus still go to the keyboard player.
+Up to four players on one screen: run `node server.js` and open `http://…/split.html`. Pick how many (2: left and
+right halves, 3-4: quarters); each player picks a name and what they play with (the keyboard and mouse for one of
+them, a controller each for the rest; never the same one). Each view is its own player in the same game: the first
+one opens it and picks the mission, the others join. Progress (money, gear and locker, chapters) is kept by name:
+the name this browser usually plays as keeps its usual save, anyone else gets their own (by name, in this browser),
+so the next split screen with the same names picks up where it was. The first view (top left) plays the sound and
+shows the mission plates and messages, once for everyone; keys typed while a controller's view has the focus still
+go to the keyboard player.
 
 ## Campaign, progression, practice
 

@@ -340,7 +340,7 @@ function netClientMain() {
     clearTimeout(fail); netState = 'online'; hello();
     if (rejoin) sendWs({ t: 'join', game: rejoin.game, ticket: rejoin.ticket });
     else if (split?.slot === 1) sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom });
-    else if (split?.slot === 2) splitJoin();
+    else if (split) splitJoin();                     // (halves / quadrants 2-4: join the first one's game)
     else if (autostart) sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom });           // dev: open a game and start it right away
     if (phase === 'menu') renderMenu();
   };

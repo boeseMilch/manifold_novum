@@ -4663,3 +4663,8 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
 - Tests: tests/handweapons.js (standing: the sight's origin, height and angle are the bolt's exactly; walking and turning:
   every shot within 0.002 rad of the sight at its press, off its line by no more than the tick's step),
   tests/latency.js 9 (over a 30+10 ms tunnel: every bolt the server fires is on the sight shown at the press).
+- Up to 4 players (same day, the user): split.html asks how many (2: halves, 3: three quarters and a dark one, 4:
+  quarters); views 2-4 all join the first one's game; only the first view (top left) shows the shared column and
+  banners ("one queue for everyone, on the left side") and plays sound, the others' mute mutes it. The HUD keeps its
+  fixed sizes, so in a quarter the inventory slots and the energy panel take a lot of the view.
+

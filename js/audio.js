@@ -14,7 +14,7 @@ const sfx = (() => {
   if (silent) muted = true;
   // split screen (split.html): only the left half plays sound (both halves would play every sound twice); the right
   // half's mute button / M / a controller's Back mute the left one (js/split.js splitApi)
-  const splitRight = typeof location !== 'undefined' && /[?&]split=2\b/.test(location.search || '') && typeof window !== 'undefined' && window.parent !== window;
+  const splitRight = typeof location !== 'undefined' && /[?&]split=[234]\b/.test(location.search || '') && typeof window !== 'undefined' && window.parent !== window;
   const leftHalf = () => { try { return splitRight ? window.parent.splitApi?.(1) || null : null; } catch (e) { return null; } };
   if (splitRight) muted = true;
   const ready = [];                                 // callbacks run once the context exists
