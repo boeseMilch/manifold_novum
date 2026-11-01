@@ -104,6 +104,18 @@ connection like an internet link (latency each way in ms, jitter in ms, bandwidt
 
 The prompt above you always says what a click (or E) will do.
 
+### Controller
+
+Plug in a gamepad and press a button: it plays as the keyboard. Left stick / d-pad walk (WASD),
+right stick aims (arrow keys), **A** use (E), **X / RB / RT** weapon and fire (Space), **LT / LB**
+cover (Shift), **Y** reload (R), **B** back (Escape), **Start** go on (Enter), **Back** mute (M).
+Panels and mini-games that need the mouse still need the mouse.
+
+Several controllers: each browser tab plays one. A tab takes the first free controller that's
+pressed while the tab has focus; the 🎮 picker (bottom left in the menus, shown while a controller
+is plugged in) switches by hand. So for couch co-op run `node server.js`, open the game in two windows
+(side by side or one per screen), join the same game, and give each its own controller.
+
 ## Campaign, progression, practice
 
 - **Campaign:** eight chapters with a story (pirates, a stowaway alien, a kidnapped scientist, the

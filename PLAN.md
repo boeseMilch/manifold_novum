@@ -4574,3 +4574,15 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   fading from 0.1 s before the bar line.
 - Tests: tests/music.js (the data, the bar lines, the climaxes at the hot times, the loop; with fake audio elements: c6
   plays it, a failure falls back to the synthesized Bloom; the loudness check). Earlier recordings unchanged (md5).
+
+## Controller support (2026-11-01, js/gamepad.js)
+
+- A gamepad plays as the keyboard: every frame the tab's pad is read (standard mapping) and its buttons / sticks become
+  synthetic keydown / keyup events on window, so the game, the tutorial's capture handler and the menus need no changes.
+  Left stick / d-pad → WASD, right stick → arrows, A → E, X / RB / RT → Space, LT / LB → Shift, Y → R, B → Escape,
+  Start → Enter, Back → M. Mouse-only panels stay mouse-only.
+- One pad per tab, for two windows on `node server.js` (split screen, two screens): a tab without a pad takes the first
+  free one pressed while it has focus; a 🎮 picker (bottom left, in the menus only, while a pad is connected) switches by hand and takes
+  a pad over from another tab. Tabs share who holds what over a BroadcastChannel; the choice is in sessionStorage.
+  game.js clears its keys on blur, so the pad module re-sends what's still held on the next frame.
+- Tests: tests/gamepad.js (the mapping; two fake tabs sharing two pads: claiming, no-focus play, taking a pad over).
