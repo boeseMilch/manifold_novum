@@ -588,29 +588,59 @@ function drawShields(t) {
 // line runs from the muzzle the way a shell would fly (sinking from the muzzle like shellZ), fading out.
 // Only in the gunner's own view; hidden while the cover is up.
 const LASER_LEN = 34;
-function drawLaserSight(t) {
-  const g = me.mode === 'gun' && me.gunKeys && standing(me) && !(me.cover > 0.5) ? me.gun : null;
-  if (!g) return;
-  const dx = Math.cos(g.aim), dy = Math.sin(g.aim), z0 = muzzleZ(g), N = 24;
-  const at = (d) => { const k = clamp(d / SHELL_DROP, 0, 1); return [L(g.x + dx * (1.15 + d)), L(g.y + dy * (1.15 + d) - GFX.lift(z0 * (1 - k * k * (3 - 2 * k))))]; };
-  const flick = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 7.3);
+// A sight's line: N segments from at(0) to at(len), each fainter (fade: the distance where it's gone), flickering,
+// a small red dot on the muzzle and (end) on the wall it stops at. at(d): the screen point d along it.
+function drawSightLine(at, len, t, fade = len, end = false, N = 24) {
+  const flick = 0.85 + 0.15 * Math.sin(t * 23) * Math.sin(t * 7.3), dot = ([x, y], r, a) => { ctx.fillStyle = `rgba(255,70,60,${a})`; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill(); };
   ctx.save(); ctx.lineCap = 'round';
   for (let i = 0; i < N; i++) {                       // (segments: each one fainter, so it fades into space)
-    const d0 = LASER_LEN * i / N, d1 = LASER_LEN * (i + 1) / N, a = (1 - i / N) ** 1.6 * flick;
+    const d0 = len * i / N, d1 = len * (i + 1) / N, a = (1 - d0 / fade) ** 1.6 * flick;
     const [x0, y0] = at(d0), [x1, y1] = at(d1);
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1);
     ctx.strokeStyle = `rgba(255,40,40,${0.2 * a})`; ctx.lineWidth = 5; ctx.stroke();
     ctx.strokeStyle = `rgba(255,90,80,${0.9 * a})`; ctx.lineWidth = 1.6; ctx.stroke();
   }
-  const [mx, my] = at(0);                              // a small red dot on the muzzle
-  ctx.fillStyle = `rgba(255,70,60,${0.9 * flick})`; ctx.beginPath(); ctx.arc(mx, my, 2.2, 0, TAU); ctx.fill();
+  dot(at(0), 2.2, 0.9 * flick);                        // a small red dot on the muzzle
+  if (end) dot(at(len), 2.6, (0.4 + 0.5 * (1 - len / fade)) * flick);   // and where it meets the wall
   ctx.restore();
+}
+function drawLaserSight(t) {
+  const g = me.mode === 'gun' && me.gunKeys && standing(me) && !(me.cover > 0.5) ? me.gun : null;
+  if (!g) return;
+  const dx = Math.cos(g.aim), dy = Math.sin(g.aim), z0 = muzzleZ(g);
+  drawSightLine((d) => { const k = clamp(d / SHELL_DROP, 0, 1); return [L(g.x + dx * (1.15 + d)), L(g.y + dy * (1.15 + d) - GFX.lift(z0 * (1 - k * k * (3 - 2 * k))))]; }, LASER_LEN, t);
+}
+// The hand weapon's laser sight: while a controller's right stick aims (localInput.stick.aim: js/gamepad.js), a thin
+// red line from the muzzle of the laser / heavy blaster / repair kit (its wrench) the way the shot will fly, at the
+// height it flies (b.z, drawn lifted like the bolts: js/invader.js drawBoarding), up to the first wall, closed door
+// or prop (shotBlock, as the bolts) or the end of its range. Only in your own view, only while the stick is out.
+// The angle is the stick's own: the one the next sim tick turns you to and fires along (js/game.js updatePlayer →
+// updateCrew → updateWeapon → attack(player.face); multiplayer: the same stick goes to the server with the input,
+// and the press's own stick is the one it fires along: js/net.js netServer.input pressStick).
+// Returns { x, y, z, a, len, range, wall } (muzzle, angle, how far it shows, the shot's range, stopped by a wall) or null.
+function handSight() {
+  const s = typeof localInput !== 'undefined' && localInput.stick?.aim, w = me.inv?.weapon;
+  if (!s || !w || w === 'extinguisher' || w === 'drill' || me.inv.item === 'blackbox') return null;   // (js/systems.js canShoot)
+  if (!(me.mode === 'inside' || me.mode === 'eva') || !standing(me) || me.ui?.panel || mission.over || (typeof debugOpen !== 'undefined' && debugOpen)) return null;
+  if (w === 'repair' && me.prompt?.rep) return null;   // (a part to repair in reach: Space repairs it, nothing is thrown)
+  const a = Math.atan2(s[1], s[0]), M = muzzleAt(me, a), dx = Math.cos(a), dy = Math.sin(a);
+  const range = w === 'repair' ? WRENCH_SPEED * 0.8 : BOLT_SPEED * 0.9, free = shotFree();   // (the bolts' life: js/systems.js attack)
+  if (shotBlock(me.x, me.y, M.x, M.y, free) >= 0) return null;   // (the muzzle in a wall: the shot stops right there)
+  const k = shotBlock(M.x, M.y, M.x + dx * range, M.y + dy * range, free);
+  return { x: M.x, y: M.y, z: w === 'repair' ? M.z + 0.15 : M.z, a, len: k < 0 ? range : range * k, range, wall: k >= 0 };
+}
+function drawHandSight(t) {
+  const h = handSight();
+  if (!h) return;
+  const dx = Math.cos(h.a), dy = Math.sin(h.a), lift = GFX.lift(h.z);
+  drawSightLine((d) => [L(h.x + dx * d), L(h.y + dy * d - lift)], h.len, t, h.range, h.wall, Math.max(4, Math.ceil(24 * h.len / h.range)));
 }
 
 function drawCombatFront(t) {
   if (GFX.on) { drawAsteroidOverlays(t); drawEnemyOverlays(t); drawOutsideOverlays(t); }   // over the sprite enemies (js/enemies.js, js/organic.js)
   drawShields(t);
   drawLaserSight(t);
+  drawHandSight(t);
   for (const s of combat.shells) {                 // lifted while they sink from the muzzle (shellZ; 0 in ?classic)
     const dx = s.vx / SHELL_SPEED, dy = s.vy / SHELL_SPEED;
     ctx.beginPath(); ctx.moveTo(L(s.x), L(s.y - GFX.lift(shellZ(s)))); ctx.lineTo(L(s.x - dx * 0.9), L(s.y - dy * 0.9 - GFX.lift(shellZ(s, 0.9))));

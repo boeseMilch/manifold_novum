@@ -9,8 +9,8 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 
 // one server + one guest browser; `frame(t)` runs before each browser frame (t: ms since the start)
 function session(oneWay, jitter, setup) {
-  const S = loadGame(['simTick', 'netServer', 'netSerialize', 'crew', 'power', 'LEVER', 'combat', 'GUNS', 'fireCannon', 'withCrew']);
-  const C = loadGame(['netApply', 'netBetween', 'netRemember', 'netLocalPrompt', 'localInput', 'me', 'crew', 'power', 'leverShownPos', 'workProgress', 'combat', 'time']);
+  const S = loadGame(['simTick', 'netServer', 'netSerialize', 'crew', 'power', 'LEVER', 'combat', 'GUNS', 'fireCannon', 'withCrew', 'boarding']);
+  const C = loadGame(['netApply', 'netBetween', 'netRemember', 'netLocalPrompt', 'localInput', 'me', 'crew', 'power', 'leverShownPos', 'workProgress', 'combat', 'time', 'handSight']);
   S.netServer.init('c1', {}, 0); S.netServer.addCrew(1, 'Host'); S.netServer.addCrew(2, 'Guest');
   const guest = S.crew[1];
   setup?.(S, guest);
@@ -169,6 +169,29 @@ const atLever = (S, g) => { g.x = S.LEVER.x + 0.9; g.y = S.LEVER.y - 0.3; g.mode
   const c = W.C.me.gun.aim, s = G().aim, wd = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))), off = shots.map(a => Math.min(...sights.map(b => wd(a, b))));
   check(Math.abs(c - s) < 1e-9, `after the taps your sight and the server's cannon agree (${(c * 180 / Math.PI).toFixed(2)}° / ${(s * 180 / Math.PI).toFixed(2)}°)`);
   check(shots.length >= 4 && Math.max(...off) < 0.002, `every shot fired while turning flies down the sight you saw when you pressed (${shots.length} shots, worst ${(Math.max(...off) * 180 / Math.PI).toFixed(3)}° off)`);
+}
+
+// 9. a hand weapon aimed with a controller's right stick (its laser sight: js/combat.js handSight) while walking with the
+// left one and turning the aim every frame, firing now and then: every bolt the server fires flies the way the sight
+// pointed at the press (the stick's angle goes with the input; two inputs in one server tick: the press's own stick
+// counts, js/net.js pressStick)
+{
+  const W = session(30, 10, (S, g) => { g.x = 14; g.y = 8; g.inv.weapon = 'laser'; });
+  const sights = [], shots = [];
+  let k = 0, pressed = false, hidden = 0;
+  W.run(5000, (t, L) => {
+    if (pressed) { const h = W.C.handSight(); if (h) sights.push(h.a); else hidden++; pressed = false; }   // (the press frame's sight, as drawn)
+    L.keys.clear(); L.stick = null;
+    if (t > 500 && t < 4000) {
+      const a = 0.9 * Math.sin(t / 300) + 0.3 * Math.sin(t / 47);   // (sweeping round to the right, a bit jittery)
+      L.stick = { aim: [Math.cos(a), Math.sin(a)], walk: [Math.sin(t / 700), Math.cos(t / 900) * 0.8] };
+      if (t > 600 && ++k % 20 === 0) { L.keys.add('Space'); L.pressed.add('Space'); pressed = true; }
+    }
+    W.guest.inv.cd = 0;
+    for (const b of W.S.boarding.bolts) if (b.owner === 'crew' && !b.seen) { b.seen = true; shots.push(Math.atan2(b.vy, b.vx)); }
+  });
+  const wd = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))), off = shots.map(a => Math.min(...sights.map(b => wd(a, b))));
+  check(sights.length >= 8 && !hidden && shots.length === sights.length && Math.max(...off) < 0.002, `every hand-weapon bolt flies down the stick's laser sight seen at the press (${sights.length} sights, ${shots.length} bolts, worst ${(Math.max(...off) * 180 / Math.PI).toFixed(3)}° off${hidden ? `, ${hidden} presses without a sight` : ''})`);
 }
 
 console.log(failed ? `\n${failed} failed` : '\nall latency tests passed');

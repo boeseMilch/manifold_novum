@@ -305,7 +305,8 @@ function updatePlayer(dt) {
     if (pressed.has('PadDropWeapon')) dropSlot('weapon');
     if (pressed.has('PadDropItem')) dropSlot('item');
   }
-  player.aim = st?.aim ? Math.atan2(st.aim[1], st.aim[0]) : ax || ay ? Math.atan2(ay, ax) : null;
+  const sa = st && ((pressed.has('Space') && player.input.pressStick) || st.aim);   // (the stick as it was at the fire press: js/net.js netServer.input)
+  player.aim = sa ? Math.atan2(sa[1], sa[0]) : ax || ay ? Math.atan2(ay, ax) : null;
   if (!block && (mouse.look || ((mouse.right || mouse.rightClick) && inv.weapon))) player.lookT = LOOK_TIME;   // (js/net.js netPredict: the same)
   const use = !block && pressed.has('KeyE');   // (only the cannon still reads E directly: climbing down)
   prompt = null;
@@ -1287,7 +1288,7 @@ function simTick(dt) {
     updateInjury(player, dt);
     inv.cd = Math.max(0, inv.cd - dt);
     if (typeof s7Struggle === 'function') s7Struggle(player, pressed);   // held by S-7: mashing the keys wriggles you free (js/culture.js)
-    pressed.clear(); mouse.click = false; mouse.rightClick = false; mouse.look = 0;
+    pressed.clear(); mouse.click = false; mouse.rightClick = false; mouse.look = 0; player.input.pressStick = null;
   });
   updateAirlocks(dt);                                 // (the outer airlocks: js/airlock.js)
   updateCombat(dt);

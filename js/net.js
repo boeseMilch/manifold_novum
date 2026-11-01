@@ -176,6 +176,9 @@ const netServer = {
     inp.gunAim = Number.isFinite(m.gunAim) ? m.gunAim : null;   // (the gunner's own aim: js/game.js updatePlayer)
     const v2 = (a) => (Array.isArray(a) && a.length === 2 && a.every(Number.isFinite) ? [clamp(a[0], -1, 1), clamp(a[1], -1, 1)] : null);
     inp.stick = m.stick && (v2(m.stick.aim) || v2(m.stick.walk)) ? { aim: v2(m.stick.aim), walk: v2(m.stick.walk) } : null;   // (a controller: js/gamepad.js)
+    // firing with the stick out: the aim at the press is the one its sight showed (two inputs in one tick: the later
+    // stick would otherwise win, a frame of stick motion off the sight; js/game.js updatePlayer)
+    if ((m.pressed || []).includes('Space') && !inp.pressed.has('Space')) inp.pressStick = inp.stick?.aim || null;
     for (const k of m.pressed || []) inp.pressed.add(k);
     const mm = m.mouse || {};
     Object.assign(inp.mouse, { wx: mm.wx, wy: mm.wy, down: !!mm.down, right: !!mm.right });
