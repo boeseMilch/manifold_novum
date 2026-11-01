@@ -36,7 +36,7 @@ function session(oneWay, jitter, setup) {
         const L = C.localInput, mouse = { wx: 0, wy: 0 };
         frame?.(now, L, mouse, fresh);
         C.netBetween(dt); C.netLocalPrompt();
-        const m = { seq: C.netRemember(), keys: [...L.keys], stick: L.stick, pressed: [...L.pressed], mouse: { ...mouse } };
+        const m = { seq: C.netRemember(), keys: [...L.keys], stick: L.stick, gunAim: C.me.mode === 'gun' && C.me.gun ? C.me.gun.aim : null, pressed: [...L.pressed], mouse: { ...mouse } };
         L.pressed.clear();
         post(toServer, () => S.netServer.input(2, m));
       }
@@ -149,6 +149,26 @@ const atLever = (S, g) => { g.x = S.LEVER.x + 0.9; g.y = S.LEVER.y - 0.3; g.mode
   });
   const c = W.C.me.gun.aim, s = G().aim, d = (a) => Math.abs(Math.atan2(Math.sin(a - want), Math.cos(a - want)));
   check(d(c) < 0.02 && d(s) < 0.02, `the stick's angle is where it points (${(want * 180 / Math.PI).toFixed(1)}°: browser ${(c * 180 / Math.PI).toFixed(1)}°, server ${(s * 180 / Math.PI).toFixed(1)}°)`);
+}
+
+// 8. the laser sight is where the shot goes: short taps of the aim keys over a 30 ms tunnel, firing while the barrel
+// still turns. The browser's aim (its sight) comes with the input and the server fires down it (before, both turned the
+// cannon and drifted apart by a few degrees, never corrected; 2026-11-01)
+{
+  const W = session(30, 10, (S, g) => { g.mode = 'gun'; g.gun = S.GUNS.find(x => x.id === 'port'); g.x = g.gun.x + 0.75; g.y = g.gun.y; });
+  const G = () => W.S.GUNS.find(x => x.id === 'port'), sights = [], shots = [];
+  let k = 0, pressed = false;
+  W.run(5000, (t, L) => {
+    if (pressed) { sights.push(W.C.me.gun.aim); pressed = false; }   // (the press frame's aim after its turn: as drawn and sent)
+    L.keys.clear(); L.stick = null;
+    if (t > 500 && t < 4000 && Math.floor(t / 250) % 2 === 0) L.keys.add(Math.floor(t / 1000) % 2 ? 'ArrowUp' : 'ArrowDown');
+    if (t > 600 && t < 4000 && ++k % 20 === 0) { L.keys.add('Space'); pressed = true; }
+    const g = G(); g.shots = 99; g.reload = 0;
+    for (const sh of W.S.combat.shells) if (!sh.seen) { sh.seen = true; shots.push(Math.atan2(sh.vy, sh.vx)); }
+  });
+  const c = W.C.me.gun.aim, s = G().aim, wd = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))), off = shots.map(a => Math.min(...sights.map(b => wd(a, b))));
+  check(Math.abs(c - s) < 1e-9, `after the taps your sight and the server's cannon agree (${(c * 180 / Math.PI).toFixed(2)}° / ${(s * 180 / Math.PI).toFixed(2)}°)`);
+  check(shots.length >= 4 && Math.max(...off) < 0.002, `every shot fired while turning flies down the sight you saw when you pressed (${shots.length} shots, worst ${(Math.max(...off) * 180 / Math.PI).toFixed(3)}° off)`);
 }
 
 console.log(failed ? `\n${failed} failed` : '\nall latency tests passed');

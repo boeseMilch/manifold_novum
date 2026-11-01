@@ -4618,3 +4618,11 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   repeats of the optional kinds in turn, laid out over the same mission time, the reactor at normal's pace, no luck.
   Everything else that scales with the difficulty (telegraphs, guards, the sentry, the rock, S-7, the captain) clamps
   it to 0..2, so hard plays those as normal. (js/mission.js DIFF_STEP, selectEvents; tests/mission.js.)
+
+## The cannon's laser sight is where the shot goes, in multiplayer too (2026-11-01)
+
+- The gunner's browser turns its cannon itself (netPredict) and draws the sight from that; the server turned it too, from
+  the keys, and the two drifted apart (1.5° on a LAN after a few taps, 3° and more over the internet, never corrected),
+  so shells left a few degrees off the sight. Now the browser's aim comes with every input (`gunAim`) and the server
+  uses it (inside the arc), so the fire press and the aim arrive together and the shell flies down the sight as drawn.
+  Test: tests/latency.js 8 (taps and shots while turning over a 30 ms tunnel: every shell within 0.002 rad of the sight).

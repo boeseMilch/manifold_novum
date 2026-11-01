@@ -173,6 +173,7 @@ const netServer = {
     if (!c) return;
     const inp = c.input;
     inp.keys = new Set(m.keys || []);
+    inp.gunAim = Number.isFinite(m.gunAim) ? m.gunAim : null;   // (the gunner's own aim: js/game.js updatePlayer)
     const v2 = (a) => (Array.isArray(a) && a.length === 2 && a.every(Number.isFinite) ? [clamp(a[0], -1, 1), clamp(a[1], -1, 1)] : null);
     inp.stick = m.stick && (v2(m.stick.aim) || v2(m.stick.walk)) ? { aim: v2(m.stick.aim), walk: v2(m.stick.walk) } : null;   // (a controller: js/gamepad.js)
     for (const k of m.pressed || []) inp.pressed.add(k);
@@ -378,6 +379,7 @@ function netClientMain() {
     const m = localInput.mouse, seq = netRemember();
     if (ws.readyState === 1) ws.send(JSON.stringify({
       t: 'input', seq, ack: netSnapN, keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed], stick: debugOpen ? null : localInput.stick,
+      gunAim: me.mode === 'gun' && me.gun && standing(me) && !debugOpen ? me.gun.aim : null,   // (your cannon's aim as your laser sight shows it: the server fires down it)
       mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: m.click, rightClick: m.rightClick, moved: m.moved, look: m.look },
     }));
     localInput.pressed.clear(); m.click = false; m.rightClick = false; m.moved = 0; m.look = 0;

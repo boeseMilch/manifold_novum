@@ -336,6 +336,12 @@ function updatePlayer(dt) {
       g.aim = Math.atan2(wy - g.y, wx - g.x);
     }
     g.aim = gunKeyTurn(g, kx, ky, dt);
+    // multiplayer: the gunner's browser turns this cannon itself (js/net.js netPredict) and draws the laser sight from
+    // that; its aim comes along with the input and is the one that counts (inside the arc), so the shot goes down the
+    // sight. (Turning it here as well drifted apart from the browser's: 1.5° on a LAN after a few taps, never corrected;
+    // 2026-11-01, the user: "the laser of the cannons doesn't actually point where the shot goes".)
+    const ga = !block ? player.input?.gunAim : null;
+    if (Number.isFinite(ga)) { const arc = gunArc(g); g.aim = g.a + clamp(wrapAngle(ga - g.a), -arc, arc); }
     // cover: a metal plate that rises in front of you and the cannon; no firing while it's up
     const covering = !block && tutAllows('cover') && (held('ShiftLeft', 'ShiftRight') || mouse.right);
     player.cover = clamp(player.cover + (covering ? dt : -dt) * COVER_SPEED, 0, 1);
