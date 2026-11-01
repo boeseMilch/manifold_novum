@@ -109,7 +109,8 @@ The prompt above you always says what a click (or E) will do.
 Plug in a gamepad and press a button: it plays as the keyboard. Left stick / d-pad walk (WASD),
 right stick aims (arrow keys), **A** use (E), **X / RT** weapon and fire (Space), **LT** cover (Shift),
 **LB / RB** drop your weapon / item, **Y** reload (R), **B** back (Escape), **Start** go on (Enter),
-**Back** mute (M). The sticks are exact, not 8 directions: you walk where the left stick points, and in
+**Back** mute (M). The sticks are exact, not 8 directions: you walk where the left stick points while you face and
+shoot where the right stick points (twin-stick: both at once), and in
 a cannon the barrel turns to where either stick points. The tutorial has a CONTROLLER choice (texts name
 the pad's buttons); crew training names them by itself when the tab plays a controller.
 On the security console the walk stick (or WASD) jumps from door to door, X / RT (Space) locks or unlocks.

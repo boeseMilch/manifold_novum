@@ -3,7 +3,7 @@
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'boarding', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_DOORS', 'combat', 'CAPACITORS', 'hurtCrew',
-  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects', 'lockables', 'securityKeys', 'secNext'];
+  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects', 'lockables', 'securityKeys', 'secNext', 'boarding'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -286,5 +286,17 @@ process.exitCode = failed ? 1 : 0;
   const r = sel(); press('KeyD'); check(sel() === r, 'at the last one that way it stays');
   me.ui.panel = null; G.securityKeys({ pressed: new Set() }, me);
   check(sel() == null, 'closing the panel forgets the pick');
+}
+// --- a controller: walk with the left stick and aim with the right one at the same time (twin-stick)
+{
+  const G = loadGame(NAMES), me = G.me;
+  me.inv.weapon = 'laser'; me.inv.cd = 0;
+  const x0 = me.x, aim = [-0.3, -1];                  // walking right, aiming up and a bit left
+  me.input.stick = { walk: [1, 0], aim };
+  for (let i = 0; i < 20; i++) G.simTick(DT);
+  me.input.keys.add('Space'); me.input.pressed.add('Space'); G.simTick(DT); me.input.keys.delete('Space');
+  const b = G.boarding.bolts.find(b => b.owner === 'crew'), want = Math.atan2(aim[1], aim[0]);
+  check(me.x > x0 + 0.5 && Math.abs(me.face - want) < 0.01, `walking right with the left stick, facing where the right stick points (${(me.face * 180 / Math.PI).toFixed(0)}°)`);
+  check(!!b && Math.abs(Math.atan2(b.vy, b.vx) - want) < 0.05, `…and RT / X fires that way while walking (${b ? (Math.atan2(b.vy, b.vx) * 180 / Math.PI).toFixed(0) : '-'}°)`);
 }
 process.exitCode = failed ? 1 : 0;
