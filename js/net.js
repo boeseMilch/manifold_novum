@@ -201,11 +201,13 @@ function netClientMain() {
   if (lobby.hidden) return;                          // a debug URL skipped the menu
   let ws = null, myId = null, chosen = 'c1', phase = 'menu', solo = false, myGame = null, ticket = null, isHost = false;
   let netState = 'none', games = [], lastLobby = null, maxPlayers = 8;
-  const store = (k, v) => { try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { return null; } };
+  const split = typeof SPLIT !== 'undefined' ? SPLIT : null;   // split screen: this is one half (js/progress.js; split.html)
+  const store = (k, v) => { if (split) k += '#' + split.slot; try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { return null; } };
   const nameBox = $('lobby-name');
   try { nameBox.value = localStorage.getItem('mn-name') || ''; } catch (e) { /* no storage */ }
+  if (split) { nameBox.value = split.name; nameBox.readOnly = true; nameBox.title = 'Split screen: the name was picked on the split screen page (progress is kept by name)'; }
   if (!nameBox.value) nameBox.value = ['Ripley', 'Spock', 'Zoe', 'Bender', 'Kaylee', 'Chewie', 'Marvin', 'Data'][Math.floor(Math.random() * 8)];
-  const saveName = () => { try { localStorage.setItem('mn-name', nameBox.value); } catch (e) { /* no storage */ } };
+  const saveName = () => { if (split) return; try { localStorage.setItem('mn-name', nameBox.value); } catch (e) { /* no storage */ } };   // (split: this browser's own player stays who it was)
   const online = () => ws && ws.readyState === 1;
   const sendWs = (o) => online() && ws.send(JSON.stringify(o));
   const missionName = (id) => MISSIONS[id]?.name || id;
@@ -226,7 +228,7 @@ function netClientMain() {
   // color; the old one is kept in localStorage 'mn-profile-backup' in case it was a misclick.
   $('lobby-reset').onclick = () => {
     if (!confirm('Start over?\n\nThis resets your money, reputation, gear, profession, ship upgrades and finished chapters. Your name and suit color stay.')) return;
-    try { localStorage.setItem('mn-profile-backup', JSON.stringify(profile)); } catch (e) { /* no storage */ }
+    try { localStorage.setItem('mn-profile-backup' + (split ? '@' + split.name : ''), JSON.stringify(profile)); } catch (e) { /* no storage */ }
     profile = Object.assign(defaultProfile(), { paint: profile.paint });
     saveProfile(profile);
     chosen = CAMPAIGN.find(id => unlockedMissions().has(id)) || 'c1';
@@ -301,7 +303,7 @@ function netClientMain() {
   const startSolo = () => { saveName(); me.name = nameBox.value || 'You'; lobby.hidden = true; applyKit(me, profileKit()); startMission(chosen, { ship: profile.ship, easy, custom: lobbyUI.custom }); };
   $('menu-solo').onclick = () => { saveName(); solo = true; easy = storedEasy(); showEasy(); lastLobby = null; show('room'); markChosen(); };
   $('menu-open').onclick = () => { saveName(); hello(); easy = storedEasy(); sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom }); };
-  $('room-back').onclick = () => { if (!solo) sendWs({ t: 'leave' }); lastLobby = null; show('menu'); };
+  $('room-back').onclick = () => { if (!solo) sendWs({ t: 'leave' }); lastLobby = null; if (split) { try { window.parent.splitBack?.(); } catch (e) { /* not ours */ } return; } show('menu'); };
   $('lobby-start').onclick = () => { saveName(); if (solo) startSolo(); else if (isHost) sendWs({ t: 'start' }); };
   nameBox.onchange = () => { saveName(); hello(); };
   backToLobby = () => { store('mn-return', 'solo'); location.reload(); };   // solo: after a mission, back to the solo lobby
@@ -310,6 +312,15 @@ function netClientMain() {
   let rejoin = null;
   try { rejoin = ret && ret !== 'solo' ? JSON.parse(ret) : null; } catch (e) { rejoin = null; }
   if (ret === 'solo' && !q.has('autostart')) { solo = true; show('room'); } else show('menu');
+  // Split screen: no main menu. The left half opens a game on the server, the right half joins it (the game's id
+  // goes over the parent page: splitGame); after a mission each half comes back into it like anyone else (mn-return).
+  if (split) { show('room'); $('room-host').textContent = location.protocol.startsWith('http') ? 'Split screen: connecting…' : 'Split screen needs the server: run node server.js and open its http://… address.'; }
+  const splitJoin = () => {                          // the right half: join the left half's game as soon as it's open
+    let id = null; try { id = window.parent.splitGame; } catch (e) { id = null; }
+    if (myGame != null || !online()) return;
+    if (id == null) { $('room-host').textContent = 'Split screen: waiting for the left half to open the game…'; setTimeout(splitJoin, 300); return; }
+    hello(); sendWs({ t: 'join', game: id });
+  };
 
   if (!location.protocol.startsWith('http')) { if (q.has('autostart')) startSolo(); return; }
   // ?lag=100&jitter=20&bw=2000&up=500: the server delays this connection like a slow link (tools/netlink.js; testing only)
@@ -328,20 +339,24 @@ function netClientMain() {
   ws.onopen = () => {
     clearTimeout(fail); netState = 'online'; hello();
     if (rejoin) sendWs({ t: 'join', game: rejoin.game, ticket: rejoin.ticket });
+    else if (split?.slot === 1) sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom });
+    else if (split?.slot === 2) splitJoin();
     else if (autostart) sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom });           // dev: open a game and start it right away
     if (phase === 'menu') renderMenu();
   };
   ws.onclose = () => {
     netState = netState === 'online' ? 'lost' : 'none';
     if (phase === 'game') { setTimeout(() => location.reload(), 1500); return; }
+    if (split) { lastLobby = null; show('room'); $('room-host').textContent = 'Split screen: lost the server. Is node server.js still running?'; return; }
     if (!solo) { lastLobby = null; show('menu'); }
   };
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.t === 'welcome') { myId = m.id; maxPlayers = m.max || 8; }
     else if (m.t === 'games') { games = m.games; maxPlayers = m.max || maxPlayers; if (phase === 'menu') renderMenu(); }
-    else if (m.t === 'joined') { myGame = m.game; ticket = m.ticket; solo = false; lastLobby = null; if (phase !== 'game') show('room'); }
+    else if (m.t === 'joined') { myGame = m.game; ticket = m.ticket; solo = false; lastLobby = null; if (phase !== 'game') show('room'); if (split?.slot === 1) try { window.parent.splitGame = m.game; } catch (e) { /* not ours */ } }
     else if (m.t === 'full' || m.t === 'gone') {
+      if (split) { $('room-host').textContent = m.t === 'full' ? 'Split screen: that game is full.' : 'Split screen: the game has closed. Back to the split screen page and start again.'; return; }
       if (phase === 'room' && !solo) show('menu');
       $('menu-msg').textContent = m.t === 'full' ? `That game is full (${m.max} players). Open a new one!` : 'That game has closed.';
       setTimeout(() => { $('menu-msg').textContent = ''; }, 5000);

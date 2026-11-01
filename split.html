@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manifold Novum · Split screen</title>
+<style>
+  /* Split screen: two players in one browser, one half each (two copies of the game, each its own player in the same
+     local game on node server.js). Setup first: a name and an input for each half; then the two halves. */
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; color: #e8ecf4; font-family: system-ui, sans-serif; }
+  #setup { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; overflow: auto;
+           background: radial-gradient(ellipse at 50% 40%, rgba(20,26,40,0.9), rgba(4,6,12,1) 75%); }
+  #setup[hidden], #halves[hidden] { display: none; }
+  .plate { width: min(720px, 100%); padding: 24px 26px; border-radius: 12px; box-sizing: border-box;
+           background: linear-gradient(#6b7486, #3f4757); border: 3px solid #14161b; box-shadow: 0 12px 40px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(255,255,255,0.12); }
+  h1 { margin: 0 0 4px; font-size: 26px; letter-spacing: 4px; text-shadow: 0 2px 0 #14161b; }
+  .sub { margin: 0 0 18px; color: #dfe4ec; font-size: 14px; line-height: 1.45; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 560px) { .cols { grid-template-columns: 1fr; } }
+  .side { background: #1c2028; border: 2px solid #14161b; border-radius: 8px; padding: 12px 14px; }
+  .side h2 { margin: 0 0 6px; font-size: 13px; letter-spacing: 2px; color: #ffe08a; }
+  label { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #dfe4ec; margin: 10px 0 5px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 15px; border-radius: 6px; border: 2px solid #14161b; background: #2a303b; color: #fff; }
+  .hint { font-size: 12px; color: #b8c0cf; margin-top: 6px; line-height: 1.4; }
+  #msg { min-height: 20px; margin: 12px 0 0; color: #ffb4a8; font-weight: 700; font-size: 14px; }
+  #go { margin-top: 10px; width: 100%; padding: 12px; font-size: 18px; font-weight: 800; letter-spacing: 2px; border-radius: 8px; cursor: pointer;
+        background: #a33a2a; color: #fff; border: 2px solid #14161b; }
+  #go:hover { background: #b8402e; }
+  a { color: #ffe08a; }
+  #halves { position: fixed; inset: 0; display: flex; gap: 2px; background: #000; }
+  #halves iframe { flex: 1 1 0; min-width: 0; height: 100%; border: 0; display: block; background: #07090f; }
+</style>
+</head>
+<body>
+<div id="setup">
+  <div class="plate">
+    <h1>SPLIT SCREEN</h1>
+    <p class="sub">Two players on one screen, side by side, in the same game. Each picks a name and what they play with:
+      the keyboard and mouse, or a controller, but not the same one. Progress (money, gear, locker, chapters) is kept by name;
+      the name you usually play as here keeps its usual save.</p>
+    <div class="cols">
+      <div class="side"><h2>LEFT</h2>
+        <label for="n1">NAME</label><input id="n1" maxlength="24">
+        <label for="i1">PLAYS WITH</label><select id="i1"></select></div>
+      <div class="side"><h2>RIGHT</h2>
+        <label for="n2">NAME</label><input id="n2" maxlength="24">
+        <label for="i2">PLAYS WITH</label><select id="i2"></select></div>
+    </div>
+    <p class="hint">Controllers show up once you press a button on them. The left half plays the sound and shows the mission
+      plates and messages for both of you. <a href="index.html">Back to the normal game</a></p>
+    <p id="msg"></p>
+    <button id="go">START SPLIT SCREEN</button>
+  </div>
+</div>
+<div id="halves" hidden></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const pads = () => [...(navigator.getGamepads ? navigator.getGamepads() : [])];
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('mn-split')) || {}; } catch (e) { saved = {}; }
+  let own = ''; try { own = localStorage.getItem('mn-name') || ''; } catch (e) { own = ''; }
+  $('n1').value = saved.names?.[0] || own || 'Player 1';
+  $('n2').value = saved.names?.[1] || 'Player 2';
+  const want = [saved.inputs?.[0] || 'kbm', saved.inputs?.[1] || 'pad0'];
+  // The inputs: keyboard + mouse, and every controller the browser knows (it learns of one at its first button press)
+  function fill() {
+    const opts = [['kbm', 'Keyboard + mouse']];
+    pads().forEach((p, i) => { if (p) opts.push(['pad' + i, `Controller ${i + 1}: ${p.id.replace(/\s*\(.*$/, '').slice(0, 30)}`]); });
+    [$('i1'), $('i2')].forEach((sel, k) => {
+      const cur = sel.value || want[k], list = opts.some(o => o[0] === cur) ? opts : [...opts, [cur, `Controller ${+cur.slice(3) + 1} (press a button on it)`]];
+      if (sel.dataset.sig === list.map(o => o[0]).join()) return;
+      sel.innerHTML = ''; for (const [v, l] of list) { const o = document.createElement('option'); o.value = v; o.textContent = l; sel.appendChild(o); }
+      sel.value = cur; sel.dataset.sig = list.map(o => o[0]).join();
+    });
+  }
+  fill(); setInterval(() => { if (!$('setup').hidden) fill(); }, 500);
+  window.addEventListener('gamepadconnected', fill);
+
+  // ----- what the halves call (js/gamepad.js splitPads, js/net.js splitGame / splitBack, js/split.js splitKbm, js/audio.js splitApi)
+  let frames = [], inputs = [];
+  window.splitPads = pads;                           // (this page has the focus browsers want for gamepads)
+  window.splitGame = null;                           // the game the left half opened: the right half joins it
+  window.splitKbm = () => { const i = inputs.indexOf('kbm'); return i >= 0 && frames[i] ? frames[i].contentWindow : null; };
+  window.splitApi = (slot) => { try { return frames[slot - 1]?.contentWindow?.splitApi || null; } catch (e) { return null; } };
+  window.splitBack = () => { $('halves').innerHTML = ''; frames = []; inputs = []; window.splitGame = null; $('halves').hidden = true; $('setup').hidden = false; };
+  // keys typed while this page itself has the focus (a click on the gap): the keyboard + mouse half's
+  for (const type of ['keydown', 'keyup']) window.addEventListener(type, (e) => {
+    const to = window.splitKbm(); if (!to) return;
+    e.preventDefault(); to.dispatchEvent(new to.KeyboardEvent(type, { code: e.code, key: e.key, repeat: e.repeat, bubbles: true, cancelable: true }));
+  });
+
+  $('go').onclick = () => {
+    const names = [$('n1').value.trim(), $('n2').value.trim()], ins = [$('i1').value, $('i2').value];
+    const msg = (t) => { $('msg').textContent = t; };
+    if (!location.protocol.startsWith('http')) return msg('Split screen needs the server: run node server.js and open the http://… address it prints, then /split.html.');
+    if (!names[0] || !names[1]) return msg('Both players need a name.');
+    if (names[0].toLowerCase() === names[1].toLowerCase()) return msg('Pick two different names: progress is kept by name.');
+    if (ins[0] === ins[1]) return msg(ins[0] === 'kbm' ? 'Only one of you can play with the keyboard and mouse: the other needs a controller.' : 'Pick a different controller for each of you.');
+    msg('');
+    try { localStorage.setItem('mn-split', JSON.stringify({ names, inputs: ins })); } catch (e) { /* no storage */ }
+    window.splitGame = null; inputs = ins;
+    const box = $('halves'); box.innerHTML = '';
+    frames = [1, 2].map(slot => {
+      const f = document.createElement('iframe');
+      f.title = `${names[slot - 1]}'s half`;
+      f.allow = 'gamepad; autoplay';
+      f.src = `index.html?split=${slot}&name=${encodeURIComponent(names[slot - 1])}&input=${ins[slot - 1]}`;
+      box.appendChild(f); return f;
+    });
+    $('setup').hidden = true; box.hidden = false;
+    const kb = ins.indexOf('kbm');                   // the keyboard player's half gets the focus
+    if (kb >= 0) frames[kb].addEventListener('load', () => { try { frames[kb].contentWindow.focus(); } catch (e) { /* none */ } });
+  };
+})();
+</script>
+</body>
+</html>

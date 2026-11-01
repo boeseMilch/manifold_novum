@@ -1138,7 +1138,7 @@ function render(t) {
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);
   if (me.mode === 'gun' && standing(me)) drawCannonHUD(me.gun);
-  drawSidebar(HUD_H);
+  if (splitShared()) drawSidebar(HUD_H);              // (split screen: the left half shows it for both: js/progress.js)
   drawInjuryBadge(t);                                // hurt / down / out: what it means and what helps
   drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
   if (typeof drawTrainingHUD === 'function' && !me.ui.panel) drawTrainingHUD(t);   // your crew training card, under the arrows' hints (js/tutorial-mp.js)

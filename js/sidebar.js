@@ -162,6 +162,7 @@ function keepOffPanels(box, avoid, W, H, pad = 8) {
 
 // The plate under a screen point (CSS px), for a click (claim it: js/claims.js): its key, or null. Not one on its way out.
 function plateAt(mx, my) {
+  if (typeof splitShared === 'function' && !splitShared()) return null;   // (split screen's right half: no plates drawn)
   for (const k of sideOrder) {
     const p = sidePlates.get(k);
     if (!p || p.leaving || p.alpha < 0.5 || p.y == null) continue;

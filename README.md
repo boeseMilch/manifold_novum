@@ -114,12 +114,24 @@ shoot where the right stick points (twin-stick: both at once), and in
 a cannon the barrel turns to where either stick points. The tutorial has a CONTROLLER choice (texts name
 the pad's buttons); crew training names them by itself when the tab plays a controller.
 On the security console the walk stick (or WASD) jumps from door to door, X / RT (Space) locks or unlocks.
+Aiming a hand weapon (laser, heavy blaster, the repair kit's wrench) with the right stick shows a red laser sight
+from its muzzle, up to the first wall: the shot flies right down it.
 Panels and mini-games that need the mouse still need the mouse.
 
 Several controllers: each browser tab plays one. A tab takes the first free controller that's
 pressed while the tab has focus; the 🎮 picker (bottom left in the menus, shown while a controller
 is plugged in) switches by hand. So for couch co-op run `node server.js`, open the game in two windows
 (side by side or one per screen), join the same game, and give each its own controller.
+
+### Split screen
+
+Two players on one screen: run `node server.js` and open `http://…/split.html`. Each player picks a name and
+what they play with (the keyboard and mouse, or a controller; not the same one), and the screen splits into a
+left and a right half, each its own player in the same game: the left half opens it and picks the mission, the
+right one joins. Progress (money, gear and locker, chapters) is kept by name: the name this browser usually
+plays as keeps its usual save, anyone else gets their own (by name, in this browser), so the next split screen
+with the same names picks up where it was. The left half plays the sound and shows the mission plates and
+messages for both; keys typed while the controller's half has the focus still go to the keyboard player.
 
 ## Campaign, progression, practice
 

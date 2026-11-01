@@ -4,7 +4,7 @@ const fs = require('fs'), path = require('path'), vm = require('vm');
 
 const SCRIPTS = ['audio', 'music', 'music/cargo', 'music/comet', 'music/signal', 'music/bloom', 'music/hull', 'music/home', 'music/recorded-hull', 'music/recorded-tick', 'music/recorded-frozen', 'music/recorded-trouble', 'music/recorded-spores', 'art', 'gfx', 'ship', 'decor', 'interior', 'enemies', 'combat', 'systems', 'invader', 'mission', 'hazards', 'eva', 'encounters', 'minigames', 'organic', 'dock', 'culture', 'leviathan', 'captain', 'airlock', 'dockentry', 'spores', 'progress', 'practice', 'tutorial', 'sidebar', 'claims', 'tutorial-mp', 'lights', 'hitfx', 'breakup', 'sprites', 'walkfield', 'game', 'net'];
 
-function loadGame(expose = []) {
+function loadGame(expose = [], env = {}) {   // env: sandbox globals to add / replace (e.g. location, document, localStorage)
   const noop = new Proxy(function () {}, {
     get: (t, k) => (k === 'measureText' ? () => ({ width: 10 }) : noop), apply: () => noop, set: () => true,
   });
@@ -15,6 +15,7 @@ function loadGame(expose = []) {
     performance: { now: () => 0 }, requestAnimationFrame: () => {}, location: { hash: '#test' },
     console, Math, setTimeout, setInterval,
   };
+  Object.assign(sandbox, env);
   vm.createContext(sandbox);
   const dir = path.join(__dirname, '..', 'js');
   let code = SCRIPTS.map(f => fs.readFileSync(path.join(dir, f + '.js'), 'utf8')).join('\n;\n');

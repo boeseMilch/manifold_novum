@@ -68,7 +68,7 @@ function padKey(type, code) {
 function padRelease() { for (const c of gamepad.held) padKey('keyup', c); gamepad.held.clear(); }
 
 function padPoll() {
-  const pads = [...(navigator.getGamepads?.() || [])];
+  const pads = padList();
   if (gamepad.index != null && !pads[gamepad.index]) padRelease();   // (unplugged: let go, keep the choice for when it's back)
   if (gamepad.index == null && document.hasFocus()) {
     const free = pads.findIndex((p, i) => p && !gamepad.others.has(i) && padActive(p));
@@ -87,7 +87,7 @@ function padPoll() {
 const padPickerShown = (n) => n > 0 && (typeof lobbyOpen !== 'function' || lobbyOpen());
 function padPickerRender() {
   const sel = gamepad.picker; if (!sel) return;
-  const pads = [...(navigator.getGamepads?.() || [])];
+  const pads = padList();
   sel.dataset.n = String(pads.filter(Boolean).length);
   sel.hidden = !padPickerShown(pads.filter(Boolean).length);
   const opts = [['', '🎮 no controller']];
@@ -98,7 +98,31 @@ function padPickerRender() {
   sel.value = gamepad.index == null ? '' : String(gamepad.index);
 }
 
+// The pads: the page's own, or in split screen the parent page's (it has the focus that browsers want for gamepads;
+// split.html splitPads)
+function padList() {
+  try { if (window.parent !== window && window.parent.splitPads) return [...window.parent.splitPads()]; } catch (e) { /* not ours */ }
+  return [...(navigator.getGamepads?.() || [])];
+}
+// Split screen (js/progress.js SPLIT): this half plays the one controller picked for it (or none: keyboard + mouse),
+// fixed: no claiming, no picker, nothing shared with other tabs.
+function padSplit() {
+  if (SPLIT.pad == null) return;
+  gamepad.index = SPLIT.pad;
+  window.addEventListener('blur', () => gamepad.held.clear());
+  const poll = () => {
+    const pad = padList()[gamepad.index];
+    if (!pad) padRelease();
+    const want = padCodes(pad);
+    for (const c of gamepad.held) if (!want.has(c)) { gamepad.held.delete(c); padKey('keyup', c); }
+    for (const c of want) if (!gamepad.held.has(c)) { gamepad.held.add(c); padKey('keydown', c); }
+    if (typeof localInput !== 'undefined') localInput.stick = pad ? padSticks(pad) : null;
+    requestAnimationFrame(poll);
+  };
+  requestAnimationFrame(poll);
+}
 function padInit() {
+  if (typeof SPLIT !== 'undefined' && SPLIT) return padSplit();
   if (!navigator.getGamepads) return;
   try { const s = sessionStorage.getItem('mn-pad'); if (s) gamepad.index = +s; } catch (e) {}
   if (typeof BroadcastChannel === 'function') {

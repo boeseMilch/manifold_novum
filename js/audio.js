@@ -12,6 +12,11 @@ const sfx = (() => {
   const silent = typeof navigator !== 'undefined' && (navigator.webdriver || /Headless/.test(navigator.userAgent || '')
     || (typeof location !== 'undefined' && /[?&]mute\b/.test(location.search)));
   if (silent) muted = true;
+  // split screen (split.html): only the left half plays sound (both halves would play every sound twice); the right
+  // half's mute button / M / a controller's Back mute the left one (js/split.js splitApi)
+  const splitRight = typeof location !== 'undefined' && /[?&]split=2\b/.test(location.search || '') && typeof window !== 'undefined' && window.parent !== window;
+  const leftHalf = () => { try { return splitRight ? window.parent.splitApi?.(1) || null : null; } catch (e) { return null; } };
+  if (splitRight) muted = true;
   const ready = [];                                 // callbacks run once the context exists
   function ensure() {
     if (ac) { if (ac.state !== 'running' && ac.state !== 'closed') ac.resume()?.catch?.(() => {}); return true; }
@@ -50,8 +55,9 @@ const sfx = (() => {
 
   return {
     onReady(f) { ready.push(f); if (ac) f(ac, out, noiseBuf); },
-    get muted() { return muted; },
+    get muted() { const L = leftHalf(); return L ? L.muted : muted; },
     toggleMute() {
+      const L = leftHalf(); if (splitRight) { L?.toggleMute(); return; }
       muted = !muted;
       try { localStorage.setItem('mn-muted', muted ? '1' : '0'); } catch (e) { /* storage unavailable */ }
       if (out) out.gain.setTargetAtTime(muted ? 0 : 1, ac.currentTime, 0.03);

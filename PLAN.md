@@ -4626,3 +4626,40 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   so shells left a few degrees off the sight. Now the browser's aim comes with every input (`gunAim`) and the server
   uses it (inside the arc), so the fire press and the aim arrive together and the shell flies down the sight as drawn.
   Test: tests/latency.js 8 (taps and shots while turning over a 30 ms tunnel: every shell within 0.002 rad of the sight).
+
+## Split screen (2026-11-01, split.html)
+
+- Two players on one screen: split.html asks each for a name and an input (keyboard + mouse, or controller N; never
+  the same one; remembered in localStorage 'mn-split'), then shows two copies of the game side by side in iframes
+  (`index.html?split=1|2&name=…&input=kbm|padN`). Each is its own player in the same local game on `node server.js`:
+  the left half opens a game and hosts, the right joins it (the game id goes over the parent page, `splitGame`); after
+  a mission each comes back into the game's lobby like anyone else (sessionStorage keys per half: `mn-return#1/#2`).
+- Progress by name (js/progress.js SPLIT, splitOwnKey): the half whose name is this browser's own player ('mn-name')
+  plays on the usual profile (cookie + localStorage); anyone else on 'mn-profile@<name>' in localStorage only, so the
+  usual cookie is never touched and the same names get their progress and locker back next time. The name box is
+  read-only in a half and 'mn-name' isn't overwritten. Tests: tests/split.js.
+- Inputs: the parent page reads the gamepads (it has the focus browsers want) and each controller half plays its fixed
+  pad (js/gamepad.js padSplit: no claiming, no picker); trusted keys typed while a controller's half has the focus go
+  to the keyboard half (js/split.js, loaded first), and so do keys while the parent page itself has it.
+- One shared column: the right half hides the sidebar (mission box, objective, encounter / task plates; plateAt off)
+  and the banners (js/progress.js splitShared). Only the left half plays sound (both would double every sound); the
+  right half's mute (button, M, a controller's Back) mutes the left one (js/audio.js, js/split.js splitApi).
+- Not changed: the inventory slots keep their fixed size, so they're large in a half-width view.
+
+## A laser sight for hand weapons aimed with the right stick (2026-11-01)
+- While a controller's right stick is out (localInput.stick.aim) and you hold a weapon that shoots (laser, heavy
+  blaster, the repair kit's wrench; not the extinguisher / drill, not with the black box, not while a part to repair
+  is in reach of the kit), standing, inside or on a spacewalk, no panel open: a thin red line from the muzzle the way
+  the shot will fly, like the cannon's (js/combat.js handSight / drawHandSight; the shared look: drawSightLine). It is
+  drawn at the shot's height (GFX.lift(b.z), as the bolts: the line and the bolt coincide on screen), stops at the
+  first wall, closed door or prop (shotBlock, as the bolts) with a dot there, and fades over the shot's range. Only in
+  your own view.
+- Its angle is the stick's own, the one the next tick turns you to (updatePlayer → updateCrew face = aim) and fires
+  along (updateWeapon → attack(player.face)); its origin muzzleAt(me, a), as attack's.
+- Multiplayer: the server fires along the stick that came with the input; two inputs in one server tick used to let
+  the later stick win (up to ~5° off the sight with a fast-turning stick in tests/latency.js). Now the stick of the
+  input that carried the Space press is kept (netServer.input pressStick) and used for that tick's aim (js/game.js
+  updatePlayer; cleared with `pressed` in simTick).
+- Tests: tests/handweapons.js (standing: the sight's origin, height and angle are the bolt's exactly; walking and turning:
+  every shot within 0.002 rad of the sight at its press, off its line by no more than the tick's step),
+  tests/latency.js 9 (over a 30+10 ms tunnel: every bolt the server fires is on the sight shown at the press).

@@ -678,7 +678,7 @@ function drawCombatHUD(view, top) {
   lines.forEach((l, i) => { ctx.fillStyle = l.col; ctx.fillText(l.text, VW - w - 4, top + 17 + i * 17); });
 
   let bannerBottom = 0;
-  if (combat.banner) {                               // (after the shields list: it fits between that, the PRACTICE button and the sidebar)
+  if (combat.banner && splitShared()) {              // (split screen: in the left half only) (after the shields list: it fits between that, the PRACTICE button and the sidebar)
     const text = combat.banner.text, { x0, x1, y: by } = bannerBand({ x: VW - w - 14, bottom: top + 10 + h }, top), room = x1 - x0 - 40;
     const lay = bannerLayout(text, room, (s, px) => { ctx.font = `800 ${px}px system-ui, sans-serif`; return ctx.measureText(s).width; });
     ctx.font = `800 ${lay.size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

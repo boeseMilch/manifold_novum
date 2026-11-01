@@ -459,13 +459,36 @@ function migrateProfile(p) {
 function readCookie(name) {
   try { const m = document.cookie.split('; ').find(s => s.startsWith(name + '=')); return m ? decodeURIComponent(m.slice(name.length + 1)) : null; } catch (e) { return null; }
 }
+// Split screen (split.html: two players in one browser, one half each; ?split=1|2&name=…&input=kbm|padN): each half's
+// player keeps their own progress, by name. The one whose name is this browser's own player ('mn-name') plays on the
+// usual profile (cookie + localStorage, untouched otherwise); anyone else on 'mn-profile@<name>' in localStorage only
+// (no second cookie: the usual one stays as it was, and cookies go along with every request). A new name starts fresh.
+const SPLIT = (() => {
+  try {
+    if (typeof location === 'undefined' || !location.search) return null;
+    const q = new URLSearchParams(location.search), slot = +q.get('split');
+    if (slot !== 1 && slot !== 2) return null;
+    const input = /^(kbm|pad\d)$/.test(q.get('input') || '') ? q.get('input') : 'kbm';
+    return { slot, name: String(q.get('name') || `Player ${slot}`).trim().slice(0, 24) || `Player ${slot}`, input, pad: input === 'kbm' ? null : +input.slice(3) };
+  } catch (e) { return null; }
+})();
+// The shared column (mission box, objective, encounter and task plates) and the banners: shown once, in the left half
+const splitShared = () => !SPLIT || SPLIT.slot !== 2;
+const splitOwnKey = () => {                          // null: the usual profile; else this player's own localStorage key
+  if (!SPLIT) return null;
+  let own = null; try { own = localStorage.getItem('mn-name'); } catch (e) { /* none */ }
+  return own && own.trim() === SPLIT.name ? null : 'mn-profile@' + SPLIT.name;
+};
 function loadProfile() {
+  const own = splitOwnKey();
+  if (own) { try { const raw = localStorage.getItem(own); return migrateProfile(raw ? JSON.parse(raw) : null); } catch (e) { return defaultProfile(); } }
   let raw = readCookie(PROFILE_KEY);
   if (!raw) { try { raw = localStorage.getItem(PROFILE_KEY); } catch (e) { /* none */ } }   // (file:// pages can't keep cookies)
   try { return migrateProfile(raw ? JSON.parse(raw) : null); } catch (e) { return defaultProfile(); }
 }
 function saveProfile(p) {
-  const s = JSON.stringify(p);
+  const s = JSON.stringify(p), own = splitOwnKey();
+  if (own) { try { localStorage.setItem(own, s); } catch (e) { /* none */ } return; }
   try { document.cookie = `${PROFILE_KEY}=${encodeURIComponent(s)}; max-age=${60 * 60 * 24 * 3650}; path=/; SameSite=Lax`; } catch (e) { /* none */ }
   try { localStorage.setItem(PROFILE_KEY, s); } catch (e) { /* none */ }
 }

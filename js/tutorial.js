@@ -31,7 +31,7 @@ const TUT_CONTROLS = ['mouse', 'keyboard', 'controller'];
 const tutC = (mouseText, keyText) => (tut.controls === 'mouse' ? mouseText : tut.controls === 'controller' ? padWords(keyText) : keyText);
 const tutWords = (s) => (tut.controls === 'controller' ? padWords(s) : s);   // every text shown (fixed ones name keys too)
 // This tab plays a controller right now (js/gamepad.js)
-const padPlaying = () => typeof gamepad !== 'undefined' && gamepad.index != null && !!navigator.getGamepads?.()[gamepad.index];
+const padPlaying = () => typeof gamepad !== 'undefined' && gamepad.index != null && !!(typeof padList === 'function' ? padList() : navigator.getGamepads?.() || [])[gamepad.index];
 const tutGun = () => GUNS.find(g => g.id === 'port');
 const tutFoe = () => combat.enemies.find(e => e.kind === 'interceptor' && e.phase === 'fighting');
 const tutPoi = (e, id) => e?.pois.find(p => p.id === id);
