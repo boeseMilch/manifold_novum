@@ -45,7 +45,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   check(G.combat.enemies.some(e => e.kind === 'interceptor'), 'the interceptor shows up on schedule');
 }
 
-// --- difficulty: easy / very easy take one / two optional encounters out, the rest laid out the same way (shapedTimes), the reactor's pace unchanged
+// --- difficulty: easy / very easy take two / four optional encounters out, hard adds two; the rest laid out the same way (shapedTimes), the reactor's pace unchanged
 {
   const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT', 'COMBAT_KINDS']);
   for (const [id, full] of [['c1', false], ['c3', false], ['c1', true], ['c4', true], ['c6', true]]) {
@@ -57,13 +57,19 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
     const core = G.mission.events.filter(e => ess.has(e.kind) || e.opener), obj = new Set(G.MISSIONS[id].essential || []);
     const essN = core.length + ((obj.size || core.some(e => e.opener)) && core.filter(e => G.COMBAT_KINDS.has(e.kind)).every(e => obj.has(e.kind) || e.opener) && n0 > core.length ? 1 : 0);
     for (const easy of [1, 2]) {
+      const drop = easy * 2;
       G.startMission(id, { easy }); const evs = G.mission.events, gaps = evs.slice(1).map((e, i) => e.t - evs[i].t);
       const ts = evs.map(e => e.t).sort((a, b) => a - b), shape = G.shapedTimes(ts.length, 1, G.MISSIONS[id].length || G.MISSION_LENGTH), even = ts.every((t, i) => Math.abs(t - shape[i]) <= 25);
-      check(evs.length === Math.max(essN, 1, n0 - easy) && evs.filter(e => ess.has(e.kind) || e.opener).length === core.length && (evs.length < 2 || even)
+      check(evs.length === Math.max(essN, 1, n0 - drop) && evs.filter(e => ess.has(e.kind) || e.opener).length === core.length && (evs.length < 2 || even)
             && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump
-            && G.mission.extraLuck === (easy - (n0 - evs.length)) / 2 && Math.abs(G.luckCut() - G.LUCK_CUT ** G.mission.extraLuck) < 1e-12,
-            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), laid out (times ${evs.map(e => e.t.toFixed(0)).join(', ')} s), same reactor pace and jump; ${G.mission.extraLuck * 2} step(s) with nothing to drop → ${G.mission.extraLuck} cat(s) of luck`);
+            && G.mission.extraLuck === (drop - (n0 - evs.length)) / 2 && Math.abs(G.luckCut() - G.LUCK_CUT ** G.mission.extraLuck) < 1e-12,
+            `${id}, difficulty ${easy}: ${evs.length} of ${n0} events (essentials kept), laid out (times ${evs.map(e => e.t.toFixed(0)).join(', ')} s), same reactor pace and jump; ${G.mission.extraLuck * 2} encounter(s) with nothing to drop → ${G.mission.extraLuck} cat(s) of luck`);
     }
+    G.startMission(id, { easy: -1 }); const hard = G.mission.events, hts = hard.map(e => e.t).sort((a, b) => a - b);
+    const hshape = G.shapedTimes(hts.length, 1, G.MISSIONS[id].length || G.MISSION_LENGTH);
+    check(hard.length === n0 + 2 && hard.filter(e => ess.has(e.kind) || e.opener).length === core.length && hts.every((t, i) => Math.abs(t - hshape[i]) <= 25)
+          && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump && G.mission.extraLuck === 0,
+          `${id}, hard: ${hard.length} events (normal ${n0} + 2: ${hard.slice(-2).map(e => e.kind).join(', ')}), laid out (times ${hts.map(t => t.toFixed(0)).join(', ')} s), same reactor pace and jump, no luck`);
   }
 }
 

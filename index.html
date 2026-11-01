@@ -135,6 +135,7 @@
   #lobby-diff .ticks { display: flex; justify-content: space-between; font: 700 12px system-ui, sans-serif; letter-spacing: 0.5px; color: #e8ecf4; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7); margin-top: 4px; }
   #lobby-easy-name { font: 800 12px system-ui, sans-serif; letter-spacing: 1px; color: #e8ecf4; background: #2f3542; padding: 2px 8px; border-radius: 4px; }
   #lobby-easy-name.easier { background: #2f8a5f; color: #fff; }
+  #lobby-easy-name.harder { background: #b8402e; color: #fff; }
   #room-count { font: 700 13px ui-monospace, monospace; color: #dfe4ec; }
   #lobby-players .crown { font-size: 10px; letter-spacing: 1px; padding: 1px 5px; border-radius: 4px; background: #ffd38a; color: #14161b; vertical-align: 1px; }
   #lobby-players li.away { opacity: 0.55; }
@@ -378,8 +379,8 @@
           <div class="list-head"><label>CREW</label><span id="room-count"></span></div>
           <ul id="lobby-players"><li>just you</li></ul>
           <div class="list-head"><label for="lobby-easy">DIFFICULTY</label><span id="lobby-easy-name"></span></div>
-          <div id="lobby-diff"><input type="range" id="lobby-easy" min="0" max="2" step="1" value="2" aria-label="Difficulty">
-            <div class="ticks"><span>Very easy</span><span>Easy</span><span>Normal</span></div></div>
+          <div id="lobby-diff"><input type="range" id="lobby-easy" min="0" max="3" step="1" value="2" aria-label="Difficulty">
+            <div class="ticks"><span>Very easy</span><span>Easy</span><span>Normal</span><span>Hard</span></div></div>
           <div class="row"><button id="room-locker">LOCKER <small>gear</small></button><button id="room-shipyard">SHIPYARD <small>upgrades</small></button></div>
           <button id="lobby-start">START MISSION</button>
         </div>

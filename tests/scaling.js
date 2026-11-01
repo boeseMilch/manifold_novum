@@ -94,7 +94,7 @@ for (const id of ['c1', 'c2', 'c3', 'c4', 'c7', 'c8']) {
 // --- chapter 2 (the user's playtest: too easy solo): opener (the asteroid swarm; 2026-10-16 no more interceptor), the two aliens, a failing part
 // (2026-10-16), the frigate as the finale, 70 s before the jump (finaleLead) so its heavy shots matter; other missions keep
 // the 22 s (JUMP_DELAY). 2026-10-20 (solo playtest: one more encounter): solo also gets the mine drone, between the aliens and the
-// failing part; easy drops it again, very easy also gives half a cat of luck. 2026-10-24 (solo playtest: "make aliens break out
+// failing part; easy drops it again (two a step since 2026-11-01: half a cat for the second), very easy 1.5 cats. 2026-10-24 (solo playtest: "make aliens break out
 // later"): the pods burst at 160 ± 10 s (pin), after the mine drone, at every crew size
 {
   const openers = new Set(); let ok = true, msg = '';
@@ -111,8 +111,8 @@ for (const id of ['c1', 'c2', 'c3', 'c4', 'c7', 'c8']) {
     try { G.startMission('c2', { easy }); } finally { Math.random = keep; }
     const ev = [...G.mission.events].sort((a, b) => a.t - b.t), k = ev.map(e => e.kind).join(', ');
     const pods = ev.find(e => e.kind === 'intruder');
-    check(/^swarm, (intruder, maintenance|maintenance, intruder), frigate$/.test(k) && ev[0].opener && pods.t >= 150 && pods.t <= 170 && G.mission.extraLuck === (easy - 1) / 2,
-          `c2 solo on ${easy === 1 ? 'easy' : 'very easy'}: ${k} (the mine drone dropped; the opener and the failing part are never dropped, the frigate still the finale: ${G.mission.extraLuck} cat(s) of luck for the second step)`);
+    check(/^swarm, (intruder, maintenance|maintenance, intruder), frigate$/.test(k) && ev[0].opener && pods.t >= 150 && pods.t <= 170 && G.mission.extraLuck === (2 * easy - 1) / 2,
+          `c2 solo on ${easy === 1 ? 'easy' : 'very easy'}: ${k} (the mine drone dropped; the opener and the failing part are never dropped, the frigate still the finale: ${G.mission.extraLuck} cat(s) of luck for what couldn't be dropped: two encounters a step)`);
   }
   const big = withCrew(4, 'c2', 3), last = [...big.mission.events].sort((a, b) => a.t - b.t).pop();
   check(near(last.t, L - 70) && last.kind !== 'intruder' && near(big.mission.jumpAt, L), `c2 for 4: the finale (${last.kind}) also 70 s before the jump`);
@@ -146,8 +146,8 @@ for (const id of ['c1', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   check(ok && Object.keys(want).every(id => G0.MISSIONS[id].always?.includes('maintenance')), `failing parts at every crew size: ${Object.entries(want).map(([id, m]) => `${id} ≥${m}`).join(', ')}${msg.length ? ' (' + msg.join(', ') + ')' : ''}`);
 }
 // --- 2026-10-20 (solo playtest: one more encounter, an easy one): c4 solo gets a second failing part (crew.extra, a repeat on
-// top of the count; the count's next pick would have been the mine drone); easy takes it out again, very easy then half a
-// cat of luck; ×2 (busier since 2026-10-25) starts the same way and has both raiders
+// top of the count; the count's next pick would have been the mine drone); easy takes it out again (two a step since
+// 2026-11-01: half a cat for the other), very easy 1.5 cats; ×2 (busier since 2026-10-25) starts the same way and has both raiders
 {
   const run = (n, easy, seed) => { const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(seed); try { G.startMission('c4', { easy }); } finally { Math.random = keep; }
@@ -155,7 +155,7 @@ for (const id of ['c1', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   const SOLO = 'interceptor, pirates, maintenance, pirates, maintenance, swarm', BASE = 'interceptor, pirates, maintenance, pirates, swarm', bad = [];
   for (let seed = 1; seed <= 8; seed++) { const s = run(1, 0, seed); if (s.k !== SOLO) bad.push(`seed ${seed}: ${s.k}`); }
   const e1 = run(1, 1, 5), e2 = run(1, 2, 5), two = run(2, 0, 5);
-  check(!bad.length && e1.k === BASE && e1.luck === 0 && e2.k === BASE && e2.luck === 0.5 && two.k.startsWith('interceptor, pirates') && two.k.split('pirates').length >= 3,
+  check(!bad.length && e1.k === BASE && e1.luck === 0.5 && e2.k === BASE && e2.luck === 1.5 && two.k.startsWith('interceptor, pirates') && two.k.split('pirates').length >= 3,
         `c4 solo: ${SOLO}; easy: ${e1.k} (luck ${e1.luck}); very easy: ${e2.k} (luck ${e2.luck}); ×2: ${two.k}${bad.length ? ' (' + bad.join('; ') + ')' : ''}`);
 }
 // --- The Deep (c7): one gravity tide, 70 s in (it knocks a coil out), the handle by hand, herds of two organic kinds

@@ -4609,3 +4609,12 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   offered, the airlock room keeps its air (js/airlock.js airlockTube returns 'air' then). A working airlock to an
   airless ship still cycles as before. An override finished after a ship docked just unlocks, no vent. The vent panel
   is unchanged (a deliberate vent). Tests: tests/airlock.js (derelict / pirate × broken / locked).
+
+## Difficulty: two encounters a step, and hard (2026-11-01)
+
+- The lobby's slider runs very easy → easy → normal → hard. Each easier step now takes two optional encounters out
+  (was one); essentials are never dropped and each one that can't be dropped gives half a cat of luck, as before.
+  Hard (stored as difficulty -1: `mn-difficulty`, the game's `easy`, the server's `g.easy`) is normal's list plus two
+  repeats of the optional kinds in turn, laid out over the same mission time, the reactor at normal's pace, no luck.
+  Everything else that scales with the difficulty (telegraphs, guards, the sentry, the rock, S-7, the captain) clamps
+  it to 0..2, so hard plays those as normal. (js/mission.js DIFF_STEP, selectEvents; tests/mission.js.)

@@ -233,12 +233,12 @@ function netClientMain() {
   };
   $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
   const markChosen = () => lobbyUI.render(chosen);
-  // Difficulty slider (0 normal, 1 easy, 2 very easy; the slider runs very easy → normal): the host's choice,
+  // Difficulty slider (-1 hard, 0 normal, 1 easy, 2 very easy; the slider runs very easy → hard): the host's choice,
   // remembered in this browser.
-  const storedEasy = () => { try { return Math.min(2, Math.max(0, Math.floor(+localStorage.getItem('mn-difficulty')) || 0)); } catch (e) { return 0; } };
+  const storedEasy = () => { try { return clampDifficulty(localStorage.getItem('mn-difficulty')); } catch (e) { return 0; } };
   let easy = storedEasy();
   const easyBox = $('lobby-easy'), easyName = $('lobby-easy-name');
-  const showEasy = () => { easyBox.value = 2 - easy; easyName.textContent = DIFFICULTIES[easy].toUpperCase(); easyName.classList.toggle('easier', easy > 0); };
+  const showEasy = () => { easyBox.value = 2 - easy; easyName.textContent = DIFFICULTIES[easy].toUpperCase(); easyName.classList.toggle('easier', easy > 0); easyName.classList.toggle('harder', easy < 0); };
   easyBox.oninput = () => {
     if (!solo && !isHost) return showEasy();
     easy = 2 - +easyBox.value; showEasy();

@@ -35,7 +35,7 @@ const LUCK_TIME = 60;
 const luck = { t: 0, pet: 0 };
 const lucky = () => luck.t > 0;
 // The multiplier on the bad dice (fires, broken parts): LUCK_CUT per cat, to the power of the cat's luck (1 while it
-// lasts) plus half a cat for every easier difficulty step that had no encounter left to drop (mission.extraLuck).
+// lasts) plus half a cat for every encounter an easier difficulty couldn't drop (nothing optional left; mission.extraLuck).
 const luckCut = () => LUCK_CUT ** ((lucky() ? 1 : 0) + (mission.extraLuck || 0));
 function petCat() {
   luck.t = LUCK_TIME; luck.pet = 2.5; sfx.purr();          // what this does is a secret: no hints in the UI
@@ -159,18 +159,24 @@ const missionCrew = (id, n) => { const C = MISSIONS[id]?.custom ? customCrew() :
 // The reactor's ENERGY_TIME multiplier: the gap / the written gap, × the crew size's reactor tuning (crew.reactor,
 // < 1 where the energy needs a faster reactor to be in spec).
 const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
-// Difficulty (the lobby's slider, host's choice): 0 normal, 1 easy, 2 very easy. Each step takes one optional
-// encounter out (never an essential one, and never the last one; where none is left to drop, half a cat's
-// luck instead: luckCut); the rest spread evenly over the same mission time, and the reactor
-// keeps normal's pace, so the crew has the same energy for fewer encounters.
-const DIFFICULTIES = ['Normal', 'Easy', 'Very easy'];
+// Difficulty (the lobby's slider, host's choice): -1 hard, 0 normal, 1 easy, 2 very easy. Each easier step takes
+// DIFF_STEP optional encounters out (never an essential one, and never the last one; where none is left to drop,
+// half a cat's luck per encounter instead: luckCut); hard adds DIFF_STEP more (repeats of the optional kinds). The
+// encounters spread evenly over the same mission time, and the reactor keeps normal's pace, so the crew has the same
+// energy for fewer (or more) encounters. Everything else that scales with the difficulty (telegraphs, guards, the
+// sentry, ...) clamps it to 0..2: hard plays those as normal. (2026-11-01, the user: two encounters a step, and hard;
+// it was one a step, no hard.)
+const DIFF_STEP = 2;
+const DIFFICULTIES = { '-1': 'Hard', 0: 'Normal', 1: 'Easy', 2: 'Very easy' };
+const clampDifficulty = (v) => Math.min(2, Math.max(-1, Math.floor(+v) || 0));
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
 function selectEvents(id, written, n, target, easy = 0) {
   written = oneTide(MISSIONS[id], written);
   const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]), always = new Set(M.always || []);
   // crew.extra (kind: count per crew size): repeats of that kind on top of the count (2026-10-20, c4 solo: a second failing
   // part; one more in the count would have been the mine drone); easy / very easy take these out first
-  const C = missionCrew(id, n), forced = C.extra.slice(0, Math.max(0, C.extra.length - easy)), easyLeft = easy - (C.extra.length - forced.length);
+  const drop = Math.max(0, easy) * DIFF_STEP, more = Math.max(0, -easy) * DIFF_STEP;   // encounters out; hard: normal's, and `more` on top
+  const C = missionCrew(id, n), forced = C.extra.slice(0, Math.max(0, C.extra.length - drop)), easyLeft = drop - (C.extra.length - forced.length);
   const base = C.events ?? written.length, wantW = Math.min(base, Math.max(1, base - easyLeft));   // (at least one: the finale)
   const dropRank = (e) => (DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
   const rank = (e) => (ess.has(e.kind) || e.opener || (always.has(e.kind) && !e.optional) ? Infinity : dropRank(e));   // (optional: a written one of an `always` kind that may still go)
@@ -181,7 +187,9 @@ function selectEvents(id, written, n, target, easy = 0) {
   if ((objective.size || keep.some(e => e.opener)) && optionalFight && keep.filter(e => COMBAT_KINDS.has(e.kind)).every(e => objective.has(e.kind) || e.opener)) keep.push(optionalFight.e);
   const extra = [...new Set(written.map((e, i) => ({ e, i })).filter(o => !ess.has(o.e.kind) && !o.e.opener && !ONE_OFF_KINDS.has(o.e.kind))   // repeats: most important optional kinds
     .sort((a, b) => dropRank(b.e) - dropRank(a.e) || a.i - b.i).map(o => o.e.kind))];                            // (and `always` ones), in turn
-  for (let i = 0; keep.length < wantW && extra.length; i++) keep.push({ ...makeEvent(extra[i % extra.length], Infinity, target, M.sides), repeat: true });
+  let r = 0;
+  for (; keep.length < wantW && extra.length; r++) keep.push({ ...makeEvent(extra[r % extra.length], Infinity, target, M.sides), repeat: true });
+  for (let k = 0; k < more && extra.length; k++, r++) keep.push({ ...makeEvent(extra[r % extra.length], Infinity, target, M.sides), repeat: true });   // (hard: the next ones in turn)
   for (const k of forced) keep.push({ ...makeEvent(k, Infinity, target, M.sides), repeat: true });
   const kept = written.filter(e => keep.includes(e)), reps = keep.filter(e => e.repeat);
   if (kept.length && kept[kept.length - 1].finale) return kept.slice(0, -1).concat(reps, kept.slice(-1));   // (a written finale: finale: true, stays last)
@@ -262,7 +270,7 @@ function layoutMission(id, n) {
   const normal = mission.easy ? selectEvents(id, written, n, null).length : evs.length;   // the reactor's pace: normal's gap
   const nt = shaped ? shapedTimes(normal, n, L, null, M.finaleLead || 0, M.spacing === 'spread') : null;                  // (shaped: normal's own first and last times)
   const paceGap = asWritten ? (wl || gap) : shaped ? (normal > 1 ? (nt[nt.length - 1] - nt[0]) / (normal - 1) : nt[0] - SHAPE.open[0]) : normal > 1 ? (end - lead) / (normal - 1) : end - lead;
-  mission.extraLuck = ((mission.easy || 0) - (normal - evs.length)) / 2;   // easier steps with nothing left to drop: half a cat each
+  mission.extraLuck = Math.max(0, (mission.easy || 0) * DIFF_STEP - (normal - evs.length)) / 2;   // encounters an easier difficulty couldn't drop: half a cat each (hard: none)
   Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : shaped || asWritten ? L : Math.max(0, ...evs.map(e => e.t)) + fl });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
   pickMaintPairs(evs, maintPrev);
@@ -352,7 +360,7 @@ function startMission(id = 'c1', opts = {}) {
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.c1).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.c1).objective || null,
     id, active: true, coilsChecked: false, autoPull: null, autoJump: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
-    crewCells: undefined, extraLuck: 0, easy: Math.min(2, Math.max(0, Math.floor(+opts.easy) || 0)),
+    crewCells: undefined, extraLuck: 0, easy: clampDifficulty(opts.easy),
     custom: (MISSIONS[id] || {}).custom ? customConfig(opts.custom) : null,
   });
   mission.written = fillSides((MISSIONS[id] || MISSIONS.c1).build(null).map(({ sys, ...e }) => e));   // the timeline as written (no part refs: it's sent to browsers)
