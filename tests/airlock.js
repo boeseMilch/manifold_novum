@@ -1,6 +1,6 @@
 // The outer airlocks (js/airlock.js, 2026-10-21): a chamber with an inner and an outer door, only one ever open.
 // Out and back through real inputs (WASD), the timing, docked ships (a pressurized passage; the derelict's airless
-// tube: cycled), a broken / locked airlock and its manual override (vents the room), the vent panel, intruders coming
+// tube: cycled; broken / locked with anything docked: a passage, no vent), a broken / locked airlock and its manual override (vents the room), the vent panel, intruders coming
 // in through the chamber, and the multiplayer snapshot. Run: node tests/airlock.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'HATCHES', 'startMission', 'mission', 'roomAt', 'dk', 'dockShip', 'undock', 'DG', 'boarding', 'spawnInvader',
@@ -113,6 +113,18 @@ check(both === 0, `only ever one door open at a time (${both} ticks with both)`)
   check(G.hz.vent?.room === 'portLock' && h.doors.inner === 1 && h.doors.outer === 1, 'forced: both doors open, the airlock room vents');
   tick(G, 60 * (G.VENT_TIME + 2));
   check(!G.hz.vent && h.doors.inner === 0 && h.doors.outer === 0, 'the vent over, both doors shut again (broken or not)');
+}
+
+// --- a ship docked at a broken / locked airlock: a plain passage, the room never loses air (airless derelict too)
+for (const [kind, how] of [['derelict', 'broken'], ['derelict', 'locked'], ['pirate', 'broken'], ['pirate', 'locked']]) {
+  const G = fresh(), h = G.HATCHES[0], me = G.me;
+  G.dockShip(kind, 'port');
+  if (how === 'broken') G.SYSTEMS.find(s => s.ref === h).broken = true; else h.locked = true;
+  Object.assign(me, { x: h.inside[0], y: h.inside[1], vx: 0, vy: 0, mode: 'inside' }); tick(G, 30);
+  check(!/force/.test(me.prompt?.text || ''), `${how}, ${kind} docked: no override offered`);
+  let vac = false;
+  const t = holdKey(G, 'KeyA', () => { if (G.hz.vent || G.airlockVacuum(h.inside[0], h.inside[1])) vac = true; return G.inDock(me.x, me.y) && me.x < -1.5; });
+  check(G.inDock(me.x, me.y) && !vac && !G.hz.vent, `…you walk through into their tube (${t.toFixed(2)} s), the airlock room keeps its air`);
 }
 
 // --- locked by security: nothing opens; you're never shut in a door

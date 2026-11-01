@@ -4601,3 +4601,11 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   and sends the click's ['lock', i] command, so nothing new is synced or saved.
 - The mute button (top left) also works in the menus: they lie over the canvas, so a window-level click on its spot
   that doesn't hit a menu control toggles mute.
+
+## Docked airlocks never vent (2026-11-01)
+
+- With a ship or station docked (tube not detached), a broken or locked outer airlock is a plain passage, also for
+  the airless ones (the derelict, a raider with its canopy smashed): the docking tube's seal holds, no override is
+  offered, the airlock room keeps its air (js/airlock.js airlockTube returns 'air' then). A working airlock to an
+  airless ship still cycles as before. An override finished after a ship docked just unlocks, no vent. The vent panel
+  is unchanged (a deliberate vent). Tests: tests/airlock.js (derelict / pirate × broken / locked).

@@ -33,13 +33,16 @@ const airlockPass = () => AIRLOCK_DOOR_TIME + LOCK_CYCLE + OL_W / WALK_SPEED;
 // pirates and the NPC: js/dock.js dockRoute, js/captain.js raidRoute).
 const airlockWay = (h) => [{ x: h.outer.x + h.outer.w / 2, y: h.y }, { x: h.chamber.x + h.chamber.w / 2, y: h.y }, { x: h.inner.x + h.inner.w / 2, y: h.y }];
 // What's docked at this airlock: 'air' (a pirate ship, the base, the raider: a pressurized tube), 'vacuum' (the
-// derelict's tube, airless) or null (open space).
+// derelict's tube, airless) or null (open space). A broken or locked airlock with anything docked is 'air' too:
+// the docking tube's seal holds, so it's a plain passage and never vents the room, airless ship or not
+// (2026-11-01, the user: rooms don't lose air through an airlock with a ship or station on the other side, even broken / locked).
 function airlockTube(h) {
   if (typeof dk === 'undefined') return null;
   const d = dk.dock;
-  if (d && d.side === h.side && d.tube !== 'detached') return d.kind === 'derelict' || shipBreached(d) ? 'vacuum' : 'air';   // (a raider with its canopy smashed is airless: js/dockentry.js)
-  if (dk.raid?.state === 'docked' && dk.raid.side === h.side) return shipBreached(dk.raid) ? 'vacuum' : 'air';
-  return null;
+  let t = null;
+  if (d && d.side === h.side && d.tube !== 'detached') t = d.kind === 'derelict' || shipBreached(d) ? 'vacuum' : 'air';   // (a raider with its canopy smashed is airless: js/dockentry.js)
+  else if (dk.raid?.state === 'docked' && dk.raid.side === h.side) t = shipBreached(dk.raid) ? 'vacuum' : 'air';
+  return t === 'vacuum' && (h.locked || (typeof broken === 'function' && broken(h))) ? 'air' : t;
 }
 const airlockVenting = (h) => typeof hz !== 'undefined' && hz.vent?.room === airlockRoomId(h);
 // How far (x, y) is in from the hull's outer face, along the airlock (0 at the hatch's outer face, OL_WALL at the
@@ -207,7 +210,7 @@ function airlockAct() {
       const shutNow = h.doors.inner < 0.95 || h.doors.outer < 0.95;
       if (!shutNow) { act({ text: 'Outer airlock forced open — venting', at, quiet: true }); return true; }
       act({ text: `Click: force the ${broken(h) ? 'broken' : 'locked'} outer airlock (manual override) — vents ${what}!`, at,
-            run: () => startOverride(h, broken(h) ? 'Broken outer airlock' : 'Outer airlock', () => { h.locked = false; forceHatchVent(h, player); }) });
+            run: () => startOverride(h, broken(h) ? 'Broken outer airlock' : 'Outer airlock', () => { h.locked = false; if (!airlockTube(h)) forceHatchVent(h, player); }) });
       return true;
     }
     if (h.phase === 'vent') { act({ text: 'Outer airlock open — the room is venting', at, quiet: true }); return true; }
