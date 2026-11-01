@@ -112,6 +112,7 @@ right stick aims (arrow keys), **A** use (E), **X / RT** weapon and fire (Space)
 **Back** mute (M). The sticks are exact, not 8 directions: you walk where the left stick points, and in
 a cannon the barrel turns to where either stick points. The tutorial has a CONTROLLER choice (texts name
 the pad's buttons); crew training names them by itself when the tab plays a controller.
+On the security console the walk stick (or WASD) jumps from door to door, X / RT (Space) locks or unlocks.
 Panels and mini-games that need the mouse still need the mouse.
 
 Several controllers: each browser tab plays one. A tab takes the first free controller that's

@@ -3,7 +3,7 @@
 // hurt → down → out, treating. Power lines carry pulses. Run: node tests/controls.js
 const { loadGame } = require('./harness');
 const NAMES = ['tick', 'boarding', 'me', 'crew', 'HATCHES', 'GUNS', 'SHIELD_BUTTONS', 'DECK_DOORS', 'combat', 'CAPACITORS', 'hurtCrew',
-  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects'];
+  'netServer', 'simTick', 'power', 'useEnergy', 'standing', 'SPINE_Y0', 'SPINE_Y1', 'mission', 'ITEMS', 'SYSTEMS', 'boarding', 'startMission', 'REPAIR_TIME', 'LEVER', 'canStand', 'walkRects', 'lockables', 'securityKeys', 'secNext'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -266,5 +266,25 @@ process.exitCode = failed ? 1 : 0;
   me.input.stick = null;
   const a = Math.atan2(me.y - y0, me.x - x0);
   check(Math.hypot(me.x - x0, me.y - y0) > 0.5 && Math.abs(a - Math.atan2(0.3, 0.9)) < 0.05, `the left stick walks at its own angle (${(a * 180 / Math.PI).toFixed(1)}°, wanted 18.4°)`);
+}
+// --- the security console with keys / a stick: jump to the next door in that direction, Space switches it
+{
+  const G = loadGame(NAMES), me = G.me, list = G.lockables();
+  me.ui.panel = 'security';
+  const press = (k, stick = null) => { const inp = { pressed: new Set([k]), stick }; G.securityKeys(inp, me); };
+  const sel = () => G.secNext.constructor('return secSel')();
+  press('KeyD');
+  const a = sel();
+  check(a != null && list[a].x > me.x, `the first press picks a door that way from where you stand (${a != null ? list[a].name : 'none'})`);
+  press('KeyD'); const b = sel();
+  check(b !== a && list[b].x > list[a].x, `D again: the next one to the right (${list[b].name})`);
+  press('KeyA'); check(sel() === a, 'A: back to the one before');
+  const was = list[a].ref.locked; press('Space');
+  check(list[a].ref.locked === !was, 'Space locks / unlocks the picked one');
+  press('Space'); check(list[a].ref.locked === was, '…and back');
+  for (let i = 0; i < 20; i++) press('KeyD');
+  const r = sel(); press('KeyD'); check(sel() === r, 'at the last one that way it stays');
+  me.ui.panel = null; G.securityKeys({ pressed: new Set() }, me);
+  check(sel() == null, 'closing the panel forgets the pick');
 }
 process.exitCode = failed ? 1 : 0;

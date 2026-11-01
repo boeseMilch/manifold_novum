@@ -4595,5 +4595,9 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   Enter → Start, WASD → left stick, arrows → right stick); A or Start turns its pages, and Enter / Start / A takes the
   highlighted choice in the controls question. Crew training (js/tutorial-mp.js) uses the pad words whenever the tab
   plays a controller (or 'controller' was picked), and Enter / Start turns your card's page when no panel is open.
+- Security console without the mouse: WASD / the arrows / a stick jump to the next door, deck door or airlock in that
+  direction (ahead within 60°, nearest, sideways counting double; the first press starts from where you stand), Space /
+  Enter (X / RT / Start) lock or unlock it. The pick is this browser's own (js/mission.js securityKeys, like the hover)
+  and sends the click's ['lock', i] command, so nothing new is synced or saved.
 - The mute button (top left) also works in the menus: they lie over the canvas, so a window-level click on its spot
   that doesn't hit a menu control toggles mute.

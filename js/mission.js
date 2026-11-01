@@ -976,6 +976,38 @@ function panelFrame(w, h, title, hint = 'E / Esc to close') {
   ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.fillText(hint, x + w - 18, y + 24); ctx.textAlign = 'left';
   return [x, y];
 }
+// Keys / a controller on the security map (this browser only, like the mouse's hover): WASD, the arrows or a
+// stick jump to the next door in that direction (from the one picked; the first press: from where you stand),
+// Space / Enter (a pad's X / RT / Start) lock or unlock it. Sends the same command as a click.
+let secSel = null;
+const SEC_DIRS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
+// The next lockable from (x, y) in direction (dx, dy): ahead of it, within 60° of the direction, the closest
+// (sideways distance counting double). null when there's none that way.
+function secNext(list, x, y, dx, dy, skip) {
+  const n = Math.hypot(dx, dy); if (!n) return null; dx /= n; dy /= n;
+  let best = null, bestS = Infinity;
+  list.forEach((l, i) => {
+    if (i === skip) return;
+    const vx = l.x - x, vy = l.y - y, along = vx * dx + vy * dy, side = Math.abs(vx * dy - vy * dx);
+    if (along <= 0.05 || side > along * 1.75) return;
+    const sc = along + 2 * side;
+    if (sc < bestS) { bestS = sc; best = i; }
+  });
+  return best;
+}
+function securityKeys(input, c) {
+  if (c.ui.panel !== 'security' || enc.glitch || enc.storm) { secSel = null; return; }
+  const list = lockables(), pr = input.pressed;
+  let dx = 0, dy = 0;
+  for (const [k, [x, y]] of Object.entries(SEC_DIRS)) if (pr.has(k)) { dx += x; dy += y; }
+  if (dx || dy) {
+    const st = input.stick?.walk || input.stick?.aim; if (st) [dx, dy] = st;   // (a stick: its own angle)
+    const from = list[secSel] || { x: c.x, y: c.y };
+    const nx = secNext(list, from.x, from.y, dx, dy, secSel);
+    if (nx != null) secSel = nx;
+  }
+  if (secSel != null && list[secSel] && ['Space', 'Enter', 'NumpadEnter'].some(k => pr.has(k))) sendCommand(['lock', secSel]);
+}
 function drawSecurityPanel() {
   if (enc.glitch) return drawRebootPanel();
   if (enc.storm) {                                   // ion storm: just static
@@ -983,7 +1015,7 @@ function drawSecurityPanel() {
     for (let i = 0; i < 900; i++) { ctx.fillStyle = `rgba(200,210,220,${Math.random() * 0.5})`; ctx.fillRect(x + 20 + Math.random() * (w - 40), y + 50 + Math.random() * (h - 80), 2, 2); }
     return;
   }
-  const w = Math.min(860, VW - 40), h = Math.min(560, VH - 40), [x, y] = panelFrame(w, h, 'SECURITY — click a door or airlock to lock / unlock it');
+  const w = Math.min(860, VW - 40), h = Math.min(560, VH - 40), [x, y] = panelFrame(w, h, 'SECURITY — click a door or airlock to lock / unlock it · or WASD / stick to pick, Space to switch');
   const s = Math.min((w - 60) / (SHIP_W + 4), (h - 90) / (SHIP_H + 6)), ox = x + w / 2 - (SHIP_W / 2) * s, oy = y + 60 + 3.5 * s;
   const P = (px, py) => [ox + px * s, oy + py * s];
   poly(HULL.map(([a, b]) => P(a, b))); ctx.fillStyle = '#262b35'; ctx.fill(); stroke(1.5, '#4b5263');
@@ -1008,7 +1040,8 @@ function drawSecurityPanel() {
     ctx.fillStyle = '#ffffff'; ctx.font = '11px system-ui, sans-serif';
     ctx.fillText(l.ref.locked ? '🔒' : { door: 'D', lock: '↕', hatch: 'H' }[l.kind], cx, cy + 1);
     ui.hits.push({ x: cx, y: cy, r: 15, cmd: ['lock', li] });
-    if (hover) { ctx.fillStyle = '#e8ecf4'; ctx.fillText(`${l.name}: ${l.ref.locked ? 'locked' : 'open'}`, cx, cy + 24); }
+    if (li === secSel) { ctx.beginPath(); ctx.arc(cx, cy, 19 + 2 * Math.sin(time * 6), 0, TAU); ctx.strokeStyle = '#ffe06e'; ctx.lineWidth = 3; ctx.stroke(); }   // picked with the keys / a stick
+    if (hover || li === secSel) { ctx.fillStyle = '#e8ecf4'; ctx.fillText(`${l.name}: ${l.ref.locked ? 'locked' : 'open'}`, cx, cy + 24); }
   }
   ctx.textAlign = 'left';
   ctx.fillStyle = '#9aa3b5'; ctx.font = '11px system-ui, sans-serif';
