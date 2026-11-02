@@ -2,7 +2,7 @@
 //   Limpet mines (a drone sticks them on; pry them off or they blow a hole), debris jamming a cannon's
 //   track, a crooked radar antenna, a fuel canister drifting past (optional loot), and the three
 //   jump coils: part of every ship's jump drive (they light up and spin while it spools, and flare at the
-//   jump); only missions with the `coils` rule start them misaligned (and a gravity tide can knock one off).
+//   jump); only missions with the `coils` rule start them misaligned (and a gravity tide knocks one off, in any mission).
 // Spore clouds drift in from outside too, but they're not a spacewalk job any more (2026-10-22, the user: the hull
 // barnacles are gone): they head for the outer airlock on their side and seep in (js/spores.js); shoot them on the way.
 // Everything in `evs` is plain data (sent to browsers as is).
@@ -198,7 +198,7 @@ function coilDelay() {
   const n = evs.coils.filter(c => !c.ok).length;
   return n * COIL_DELAY;
 }
-// Knock one aligned coil out of alignment (a gravity tide, missions with the `coils` rule): red light, sparks.
+// Knock one aligned coil out of alignment (a gravity tide): red light, sparks.
 function knockCoil() {
   const pool = evs.coils.filter(c => c.ok);
   const c = pool[Math.floor(Math.random() * pool.length)];

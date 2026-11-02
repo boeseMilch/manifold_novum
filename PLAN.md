@@ -2569,7 +2569,8 @@ that mission, so they're unintuitive, and they do nothing visible at the jump.
   (rumble `sfx.rumble`, a growing shake, a violet screen edge, banner "Gravity tide in 5 s", sidebar plate), then
   a 1.6 s lurch (`sfx.lurch`, full screen shake, a wave across the screen): loose items on the floor slide up to
   1.2 units towards that side (within their room, clear of furniture), spacewalkers are pushed away from the
-  hull (4.5 u/s², they can steer back), and with the `coils` rule one aligned coil is knocked off (red, sparks).
+  hull (4.5 u/s², they can steer back), and one aligned coil is knocked off (red, sparks). (Until 2026-11-01 only
+  with the `coils` rule; the user: in missions whose coils start aligned a tide otherwise did nothing.)
   Rule `tides: <s>` (true: 60): a tide every ~that many seconds (×0.8–1.2).
 - **The herd** (js/organic.js, event kind `herd`, `{ kinds: [a, b], side }`; `makeEvent('herd')` draws two
   different kinds of grappler / leeches / mother / spores): both encounters at once on one side, then a deep,

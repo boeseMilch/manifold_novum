@@ -5,7 +5,7 @@
 //   the security console is rebooted in the order the helm shows), the stealth fighter (only visible
 //   after a radar ping), the tractor tug (freezes the jump countdown until its emitter is shot) and gravity
 //   tides (a warning rumble, then the ship lurches: loose items slide, spacewalkers are pushed off the hull,
-//   and, rule `coils`, one jump coil is knocked out of alignment).
+//   and one jump coil is knocked out of alignment).
 // Everything in `enc` is plain data.
 
 const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false };
@@ -54,10 +54,8 @@ function tideHit() {
   combat.shake = 1; sfx.lurch?.();
   for (const it of ITEMS) it.slide = TIDE_SLIDE;       // (updateTide moves them)
   let text = 'Gravity tide! The ship lurches';
-  if (mission.rules?.coils) {
-    const c = knockCoil();
-    if (c) { T0.coil = c.name; text = `Gravity tide! It knocked the ${c.name} jump coil out of alignment`; }
-  }
+  const c = knockCoil();                               // (every mission, not just the coils rule: 2026-11-01, the user: otherwise a tide does nothing)
+  if (c) { T0.coil = c.name; text = `Gravity tide! It knocked the ${c.name} jump coil out of alignment`; }
   combatBanner(text);
 }
 function updateTide(dt) {

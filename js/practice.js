@@ -55,7 +55,7 @@ const PRACTICE = [
   ['Ship-wide', 'Lock every inner door (security)', () => { for (const d of DOORS) d.locked = true; }],
   ['Ship-wide', 'Lock both outer airlocks (security)', () => { for (const h of HATCHES) h.locked = true; }],
   ['Damage', 'Break the left outer airlock', () => breakSystem(SYSTEMS.find(s => s.ref === HATCHES[0]))],
-  ['Ship-wide', 'Gravity tide (knocks a jump coil with the coils rule)', () => startTide()],
+  ['Ship-wide', 'Gravity tide (knocks a jump coil off)', () => startTide()],
   // ships
   ['Other ships', 'Pirates dock (left)', () => { dk.dock = null; dockShip('pirate', 'port'); }],
   ['Other ships', 'Derelict + black box (right)', () => { dk.dock = null; dockShip('derelict', 'star', { blackbox: true }); }],
@@ -79,7 +79,7 @@ const PRACTICE = [
   ['Rules', 'Toggle power surges', () => toggleRule('surge')],
   ['Rules', 'Toggle gravity failures', () => toggleRule('gravity')],
   ['Rules', 'Toggle plasma fires', () => toggleRule('plasma')],
-  ['Rules', 'Toggle jump coils (tides knock them off)', () => toggleRule('coils')],
+  ['Rules', 'Toggle the jump coils rule (misaligned at the start)', () => toggleRule('coils')],
   // tools
   ['Tools', 'Fill all capacitors', () => CAPACITORS.forEach(c => { c.charge = CAP_MAX; })],
   ['Tools', 'Repair everything, put out fires', () => { SYSTEMS.forEach(s => { s.broken = false; }); fires.length = 0; hz.breaches = []; hz.surges = []; hz.noGrav = []; hz.hull = { port: 0, front: 0, star: 0 }; }],

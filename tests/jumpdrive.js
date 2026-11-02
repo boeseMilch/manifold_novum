@@ -1,7 +1,7 @@
 // The jump drive in every mission: three jump coils on the hull (aligned unless the `coils` rule), a jump
 // handle at the helm the autopilot pulls (with the `handle` rule a person must), the coils' spool-up and flare;
-// gravity tides (warning, lurch: items slide, spacewalkers pushed off, one coil knocked off with the `coils`
-// rule); the herd (two organic encounters at once from one side); snapshot sync of all of it.
+// gravity tides (warning, lurch: items slide, spacewalkers pushed off, one coil knocked off in any mission);
+// the herd (two organic encounters at once from one side); snapshot sync of all of it.
 // Run: node tests/jumpdrive.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'tick', 'me', 'crew', 'mission', 'startMission', 'MISSIONS', 'evs', 'enc', 'org', 'combat', 'CAPACITORS', 'SYSTEMS', 'ITEMS',
@@ -115,10 +115,10 @@ const atJump = (G, id, lead = 6) => {
   check(!G.enc.tide, 'then it is over');
   G.startTide(); tickN(G, 60 * (G.TIDE_WARN + G.TIDE_TIME + 0.5));
   check(G.evs.coils.filter(c => !c.ok).length === 2, 'another tide, another coil off');
-  // without the coils rule: no coil knocked; the event kind and the rule
+  // without the coils rule too (coils start aligned there, so the tide is what knocks one off); the event kind and the rule
   const G2 = loadGame(NAMES); G2.startMission('c1'); G2.mission.active = false; calm(G2);
   G2.runEvent({ t: 0, kind: 'tide' }); tickN(G2, 60 * (G2.TIDE_WARN + G2.TIDE_TIME + 0.5));
-  check(G2.evs.coils.every(c => c.ok), 'without the coils rule the coils stay aligned');
+  check(G2.evs.coils.filter(c => !c.ok).length === 1, 'without the coils rule the tide knocks a coil off too');
   check(G2.eventLabel({ kind: 'tide' }) === 'Gravity tide — everywhere', 'event kind tide has a label');
   const G3 = loadGame(NAMES); G3.startMission('c1'); G3.mission.events = []; G3.mission.jumpAt = Infinity; G3.mission.rules.tides = 20;
   let first = null; tickN(G3, 60 * 45, () => { calm(G3); if (first === null && G3.enc.tide) first = G3.mission.t; });
