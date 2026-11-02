@@ -114,6 +114,8 @@ shoot where the right stick points (twin-stick: both at once), and in
 a cannon the barrel turns to where either stick points. The tutorial has a CONTROLLER choice (texts name
 the pad's buttons); crew training names them by itself when the tab plays a controller.
 On the security console the walk stick (or WASD) jumps from door to door, X / RT (Space) locks or unlocks.
+On the other panels (the patch board, the derelict lab's junction, PIN pads, the reboot switches) the stick jumps
+between the spots and A presses the highlighted one; B closes the panel.
 Aiming a hand weapon (laser, heavy blaster, the repair kit's wrench) with the right stick shows a red laser sight
 from its muzzle, up to the first wall: the shot flies right down it.
 Panels and mini-games that need the mouse still need the mouse.

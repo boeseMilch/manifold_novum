@@ -1364,6 +1364,7 @@ function clientUpdate(dt) {
   practiceClient();
   if (me.ui.panel && m.click) { panelClick(m.x, m.y); m.click = false; }
   securityKeys(localInput, me);                            // keys / a stick on the security map (js/mission.js)
+  panelKeys(localInput, me);                               // … and on every other panel's clickable spots
   if (!me.ui.panel && m.click && typeof inTrainCard === 'function' && inTrainCard(m.x, m.y)) { sendCommand(['train', 'next']); m.click = false; m.suppress = true; }   // your crew training card: next page / fold (js/tutorial-mp.js)
   if (!me.ui.panel && m.click && mission.active && plateAt(m.x, m.y)) { sendCommand(['claim', plateAt(m.x, m.y)]); m.click = false; m.suppress = true; }   // claim a plate (js/claims.js)
   if (me.mode === 'gun' && standing(me) && m.click && inReloadBtn(m.x, m.y)) { sendCommand(['reload']); m.click = false; m.suppress = true; }

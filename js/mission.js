@@ -974,6 +974,7 @@ function drawPanels(t) {
   else if (ui.panel === 'diagnosis') drawDiagnosisPanel();
   else if (ui.panel === 'override') drawOverridePanel(t);
   else if (ui.panel === 'mini') drawMiniPanel(t);
+  drawPanelCursor(t);
   if (mission.over) drawEndScreen();
 }
 function panelFrame(w, h, title, hint = 'E / Esc to close') {
@@ -983,6 +984,43 @@ function panelFrame(w, h, title, hint = 'E / Esc to close') {
   ctx.fillStyle = '#e8ecf4'; ctx.font = '700 16px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText(title, x + 18, y + 24);
   ctx.fillStyle = '#9aa3b5'; ctx.font = '12px system-ui, sans-serif'; ctx.textAlign = 'right'; ctx.fillText(hint, x + w - 18, y + 24); ctx.textAlign = 'left';
   return [x, y];
+}
+// Keys / a controller on any panel's clickable spots (ui.hits: the patch board, the derelict lab's energy hookup, the
+// PIN pads, the AI-glitch reboot switches, …; the security map has its own, securityKeys below): WASD, the arrows or a
+// stick jump to the next spot in that direction (the first press: the panel's first spot), A / X / Start (E, Space, Enter)
+// press it like a click, B (Escape) closes the panel as always. E closes it too while nothing is picked, as before
+// (2026-11-01, the user: "make the other menus controller-compatible, i.e. in the derelict lab the energy hookup").
+// This browser's own pick; it sends the click's command, so nothing new is synced.
+let panelSel = null;
+const panelTag = (c) => c.ui.panel + ':' + (c.ui.mini?.kind || '');
+const hitKey = (h) => JSON.stringify(h.cmd);
+function panelKeys(input, c) {
+  const hits = c.ui.hits || [];
+  if (!c.ui.panel || c.ui.panel === 'override' || (c.ui.panel === 'security' && !enc.glitch) || !hits.length) { panelSel = null; return; }
+  if (panelSel && panelSel.tag !== panelTag(c)) panelSel = null;
+  const pr = input.pressed;
+  let dx = 0, dy = 0;
+  for (const [k, [x, y]] of Object.entries(SEC_DIRS)) if (pr.has(k)) { dx += x; dy += y; }
+  if (dx || dy) {
+    const st = input.stick?.walk || input.stick?.aim; if (st) [dx, dy] = st;
+    const cur = panelSel && hits.find(h => hitKey(h) === panelSel.key);
+    const i = cur ? secNext(hits, cur.x, cur.y, dx, dy, hits.indexOf(cur)) : 0;   // (the first press: the panel's first spot, where it starts: the source, the first output, key 1, switch A)
+    if (i != null && i >= 0) { panelSel = { tag: panelTag(c), key: hitKey(hits[i]) }; input.mouse.x = hits[i].x; input.mouse.y = hits[i].y; }   // (the pointer too: a cable being plugged follows the pick)
+  }
+  const cur = panelSel && hits.find(h => hitKey(h) === panelSel.key);
+  if (cur && ['KeyE', 'Space', 'Enter', 'NumpadEnter'].some(k => pr.has(k))) {
+    sendCommand(cur.cmd);
+    for (const k of ['KeyE', 'Space', 'Enter', 'NumpadEnter']) pr.delete(k);   // (E: a press, not "close the panel")
+  }
+}
+// The pick: a pulsing yellow outline round its spot
+function drawPanelCursor(t) {
+  const h = panelSel && panelSel.tag === panelTag({ ui }) && ui.hits.find(q => hitKey(q) === panelSel.key);
+  if (!h) return;
+  ctx.save(); ctx.strokeStyle = '#ffe06e'; ctx.lineWidth = 3; ctx.globalAlpha = 0.75 + 0.25 * Math.sin(t * 6);
+  if (h.w) { rr(h.x - h.w / 2 - 4, h.y - h.h / 2 - 4, h.w + 8, h.h + 8, 6); ctx.stroke(); }
+  else { ctx.beginPath(); ctx.arc(h.x, h.y, (h.r || 15) + 5, 0, TAU); ctx.stroke(); }
+  ctx.restore();
 }
 // Keys / a controller on the security map (this browser only, like the mouse's hover): WASD, the arrows or a
 // stick jump to the next door in that direction (from the one picked; the first press: from where you stand),

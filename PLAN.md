@@ -4694,3 +4694,13 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   into their own profile by name (js/split.js splitApi.setPaint) and to the server like any colour change; no colour
   picked yet shows the one the server gave them. The lobby's LOCKER with local players opens everyone's locker at
   once, each in their part of the screen (this page's #shop confined to its part), so everybody kits out in parallel.
+
+## Controller on the canvas panels (2026-11-01, the user: "the derelict lab's energy hookup")
+
+- js/mission.js panelKeys / drawPanelCursor: on any panel with clickable spots (ui.hits: the patch board, the derelict
+  lab's junction J1, the PIN pads, the AI-glitch reboot switches) WASD / the arrows / a stick jump between the spots
+  (the first press: the panel's first spot), A / X / Start (E, Space, Enter) press the picked one like a click (its
+  command), a pulsing yellow outline shows the pick and the pointer moves there (a cable being plugged follows it).
+  B (Esc) closes as always; E with nothing picked still closes (keyboard / mouse users see no change). The security
+  map keeps its own (securityKeys), the manual override its E. Browser-only (sends the click's command). Tests:
+  tests/panelpad.js.
