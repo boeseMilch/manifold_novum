@@ -339,8 +339,8 @@ function captainBoltTest(b, x0, y0) {
   if (!B || B.hidden || B.state === 'gone' || dk.dock?.kind !== 'base') return null;
   const G = captGen(B), lz = GFX.lift(b.z || 0), gy = G.y - GFX.lift(CAPT_GEN_Z), n = Math.max(1, Math.ceil(Math.hypot(b.x - x0, b.y - y0) / 0.03));
   let kg = -1;
-  for (let i = 0; i <= n; i++) { const k = i / n; if (Math.hypot(x0 + (b.x - x0) * k - G.x, y0 + (b.y - y0) * k - lz - gy) <= CAPT_GEN_R) { kg = k; break; } }
-  const kb = segBody(x0, y0, b.x, b.y, b.z, B.x, B.y, CAPT_BODY.r, CAPT_BODY.top);
+  for (let i = 0; i <= n; i++) { const k = i / n; if (Math.hypot(x0 + (b.x - x0) * k - G.x, y0 + (b.y - y0) * k - lz - gy) <= CAPT_GEN_R * HIT_GROW) { kg = k; break; } }
+  const kb = segBody(x0, y0, b.x, b.y, b.z, B.x, B.y, CAPT_BODY.r * HIT_GROW, CAPT_BODY.top);   // (both HIT_GROW wider, js/combat.js)
   if (kg < 0 && kb < 0) return null;
   const gen = kg >= 0 && (kb < 0 || kg <= kb), k = gen ? kg : kb;
   return { k, hit: () => captBoltHit(B, b, gen) };

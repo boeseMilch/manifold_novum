@@ -40,6 +40,12 @@ function shapeDist(s, x, y) {
   for (let i = 0, j = s.poly.length - 1; i < s.poly.length; j = i++) d = Math.min(d, segDist(x, y, ...s.poly[j], ...s.poly[i]));
   return d;
 }
+// A shell at (x, y) (enemy-local) on weak spot p (not poiHit: that one asks if it's knocked out): its shape grown HIT_GROW about its own centre (js/combat.js), plus
+// POI_TOLERANCE. (Drawn at its real size; only the hit test is more forgiving.)
+function poiTouch(p, x, y) {
+  const [cx, cy] = shapeCenter(p.shape);
+  return shapeDist(p.shape, cx + (x - cx) / HIT_GROW, cy + (y - cy) / HIT_GROW) * HIT_GROW <= POI_TOLERANCE;
+}
 function shapeCenter(s) {
   if (s.circle) return [s.circle[0], s.circle[1]];
   const pts = s.line || s.poly;
@@ -211,7 +217,7 @@ function shellTouches(e, x0, y0, x1, y1) {
   const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / SHELL_STEP));
   for (let i = 1; i <= n; i++) {
     const [lx, ly] = enemyToLocal(e, lerp(x0, x1, i / n), lerp(y0, y1, i / n));
-    if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => shapeDist(p.shape, lx, ly) <= POI_TOLERANCE)) return true;
+    if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => poiTouch(p, lx, ly))) return true;
   }
   return false;
 }
@@ -230,7 +236,7 @@ function shellHitsEnemy(e, x0, y0, x1, y1) {
       return true;
     }
     for (const p of e.pois) {
-      if (!p.hit && !e.D.closed?.(e, p) && shapeDist(p.shape, lx, ly) <= POI_TOLERANCE) { hitPoi(e, p, ...enemyToWorld(e, ...p.c)); return true; }
+      if (!p.hit && !e.D.closed?.(e, p) && poiTouch(p, lx, ly)) { hitPoi(e, p, ...enemyToWorld(e, ...p.c)); return true; }
     }
     if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => shapeDist(p.shape, lx, ly) === 0)) {
       for (let k = 0; k < 5; k++) combatFx(wx, wy, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.3, '#ffd28a', 0.08);

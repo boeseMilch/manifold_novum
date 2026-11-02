@@ -6,6 +6,11 @@ let SHIELD_UP_TIME = 15;                             // (ship upgrades: see prog
 const SHIELD_COOLDOWN = 5;                           // cooldown starts once the shield drops
 const SWARM_SIZE = 2, SWARM_INTERVAL = 6;
 const ASTEROID_WEAR = 4;                         // body hits that split a big asteroid even without hitting the crack
+// Everything the crew shoots at is this much bigger to hit than it is drawn (the user, 2026-11-01: "increase the hitboxes
+// for most stuff by like 10%"): weak spots (poiTouch, js/enemies.js), asteroids, organic creatures, spore clouds, drones,
+// mines, invaders / pirates / the brood / the captain (boltHitsBody, js/invader.js), S-7. Only what WE hit: what enemies
+// hit (our hull, the crew) and what blocks our shots (enemy hulls, shield bubbles, walls) keep their exact size.
+const HIT_GROW = 1.1;
 
 const combat = {
   enemies: [], asteroids: [], shells: [], shots: [], fx: [], decals: [],
@@ -371,8 +376,8 @@ function updateCombat(dt) {
       if (s.dead || a.dead) continue;
       if (a.big) {
         const [cx, cy] = crackPos(a);
-        if (segCircle(x0, y0, s.x, s.y, cx, cy, 0.4)) { s.dead = true; splitAsteroid(a); }
-        else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9)) {
+        if (segCircle(x0, y0, s.x, s.y, cx, cy, 0.4 * HIT_GROW)) { s.dead = true; splitAsteroid(a); }
+        else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9 * HIT_GROW)) {
           s.dead = true; a.flash = 0.7; sfx.clank();
           for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.4, i % 2 ? '#ffd28a' : '#8d8274', 0.1);
           combatFlip('fx/hit_spark', s.x, s.y);
@@ -380,7 +385,7 @@ function updateCombat(dt) {
           a.damage.push(Math.atan2(s.y - a.y, s.x - a.x) - a.rot); (a.damageRot ||= []).push(a.rot);   // (and how it was turned then: the sprite view draws the crack turning with the rock)
           if (a.damage.length >= ASTEROID_WEAR) splitAsteroid(a);
         }
-      } else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 1.05)) { s.dead = true; a.dead = true; dust(a); sfx.crack(); }
+      } else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 1.05 * HIT_GROW)) { s.dead = true; a.dead = true; dust(a); sfx.crack(); }
     }
   }
   combat.shells = combat.shells.filter(s => !s.dead && s.life > 0);
