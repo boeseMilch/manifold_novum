@@ -4779,3 +4779,8 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   Captain Red Comet's generator and body; S-7's tendrils, creep and wrap; the leviathan's weak spots (levShells).
   Nothing is drawn differently. What enemies hit (our hull, the crew) and what blocks our shots (enemy hulls, shield
   bubbles, walls, the leviathan's body) keep their exact size, so only our aim got more forgiving. tests/hitboxes.js.
+- Same day, the user: "when playing with controller you can increase hitboxes (especially of pirates) by another 5%".
+  A shot remembers whether its shooter plays with a controller (`pad` on the shell / bolt, from `input.pad`:
+  js/gamepad.js sets it on localInput while this page has a pad, the browser sends it with its input, the server keeps
+  it per crew member); hitGrow(shot) = HIT_GROW × PAD_HIT_GROW (1.05) for those, at every hit test above (pirates
+  through boltHitsBody). A keyboard + mouse player's shots: HIT_GROW as before. tests/hitboxes.js.

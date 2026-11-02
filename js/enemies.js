@@ -42,9 +42,9 @@ function shapeDist(s, x, y) {
 }
 // A shell at (x, y) (enemy-local) on weak spot p (not poiHit: that one asks if it's knocked out): its shape grown HIT_GROW about its own centre (js/combat.js), plus
 // POI_TOLERANCE. (Drawn at its real size; only the hit test is more forgiving.)
-function poiTouch(p, x, y) {
+function poiTouch(p, x, y, g = HIT_GROW) {   // (g: the shot's hitGrow, js/combat.js)
   const [cx, cy] = shapeCenter(p.shape);
-  return shapeDist(p.shape, cx + (x - cx) / HIT_GROW, cy + (y - cy) / HIT_GROW) * HIT_GROW <= POI_TOLERANCE;
+  return shapeDist(p.shape, cx + (x - cx) / g, cy + (y - cy) / g) * g <= POI_TOLERANCE;
 }
 function shapeCenter(s) {
   if (s.circle) return [s.circle[0], s.circle[1]];
@@ -212,18 +212,18 @@ function updateEnemy(e, dt) {
 
 // Would a shell on this segment touch this enemy (no side effects)? Used so ships flying in front of a
 // backdrop (the spore mother) always get hit before it.
-function shellTouches(e, x0, y0, x1, y1) {
+function shellTouches(e, x0, y0, x1, y1, g = HIT_GROW) {
   if (e.phase !== 'fighting') return false;
   const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / SHELL_STEP));
   for (let i = 1; i <= n; i++) {
     const [lx, ly] = enemyToLocal(e, lerp(x0, x1, i / n), lerp(y0, y1, i / n));
-    if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => poiTouch(p, lx, ly))) return true;
+    if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => poiTouch(p, lx, ly, g))) return true;
   }
   return false;
 }
 // A shell moved from (x0,y0) to (x1,y1). Returns true if this enemy stopped it.
 const SHELL_STEP = 0.1, POI_TOLERANCE = 0.04;
-function shellHitsEnemy(e, x0, y0, x1, y1) {
+function shellHitsEnemy(e, x0, y0, x1, y1, g = HIT_GROW) {
   if (e.phase !== 'fighting') return false;
   const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / SHELL_STEP));
   const [bx, by] = bubble(e);
@@ -236,7 +236,7 @@ function shellHitsEnemy(e, x0, y0, x1, y1) {
       return true;
     }
     for (const p of e.pois) {
-      if (!p.hit && !e.D.closed?.(e, p) && poiTouch(p, lx, ly)) { hitPoi(e, p, ...enemyToWorld(e, ...p.c)); return true; }
+      if (!p.hit && !e.D.closed?.(e, p) && poiTouch(p, lx, ly, g)) { hitPoi(e, p, ...enemyToWorld(e, ...p.c)); return true; }
     }
     if (e.D.solids.some(s => shapeDist(s, lx, ly) === 0) || e.pois.some(p => shapeDist(p.shape, lx, ly) === 0)) {
       for (let k = 0; k < 5; k++) combatFx(wx, wy, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.3, '#ffd28a', 0.08);

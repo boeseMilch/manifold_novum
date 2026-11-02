@@ -81,7 +81,7 @@ function padPoll() {
   const want = gamepad.index == null ? new Set() : padCodes(pads[gamepad.index]);
   for (const c of gamepad.held) if (!want.has(c)) { gamepad.held.delete(c); padKey('keyup', c); }
   for (const c of want) if (!gamepad.held.has(c)) { gamepad.held.add(c); padKey('keydown', c); }
-  if (typeof localInput !== 'undefined') localInput.stick = gamepad.index == null ? null : padSticks(pads[gamepad.index]);   // (the cannon reads the real angle: js/game.js)
+  if (typeof localInput !== 'undefined') { localInput.stick = gamepad.index == null ? null : padSticks(pads[gamepad.index]); localInput.pad = gamepad.index != null && !!pads[gamepad.index]; }   // (the cannon reads the real angle: js/game.js)
   const n = pads.filter(Boolean).length;
   if (gamepad.picker && (gamepad.picker.hidden !== !padPickerShown(n) || gamepad.picker.dataset.n !== String(n))) padPickerRender();
   requestAnimationFrame(padPoll);
@@ -120,7 +120,7 @@ function padSplit() {
     const want = padCodes(pad);
     for (const c of gamepad.held) if (!want.has(c)) { gamepad.held.delete(c); padKey('keyup', c); }
     for (const c of want) if (!gamepad.held.has(c)) { gamepad.held.add(c); padKey('keydown', c); }
-    if (typeof localInput !== 'undefined') localInput.stick = pad ? padSticks(pad) : null;
+    if (typeof localInput !== 'undefined') { localInput.stick = pad ? padSticks(pad) : null; localInput.pad = !!pad; }
     requestAnimationFrame(poll);
   };
   requestAnimationFrame(poll);

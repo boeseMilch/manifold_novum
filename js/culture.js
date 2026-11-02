@@ -259,7 +259,7 @@ function s7BoltHit(b, x0, y0) {
   const gore = (p) => { for (let i = 0; i < 8; i++) combatFx(p.x, p.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.45, i % 2 ? '#c46ad8' : '#9cff5a', 0.08); };
   for (const [i, T0] of s.tendrils.entries()) {
     if (!s7Alive(T0)) continue;
-    const p = s7Body(T0, i, 8).find(p => segD(p) < 0.35 * HIT_GROW);   // (HIT_GROW: js/combat.js)
+    const p = s7Body(T0, i, 8).find(p => segD(p) < 0.35 * hitGrow(b));   // (HIT_GROW: js/combat.js)
     if (!p) continue;
     s7Recoil(s, T0, S7_RECOIL_SHOT, 'shot loose'); gore(p);
     return true;
@@ -268,10 +268,10 @@ function s7BoltHit(b, x0, y0) {
   if (C.dead) return false;
   if (C.wrapped) {
     const w = G.creep[G.creep.length - 1], cap = SOLIDS.find(S => inRect(w.x, w.y, S, 0.3));   // (wrapped round the capacitor: a shot stopped by the capacitor hits the wrap)
-    if (segD(w) < 0.55 * HIT_GROW || (cap && inRect(b.x, b.y, cap, 0.1))) { C.wrapHp -= 1 / S7_WRAP_HITS + 1e-6; C.flash = 1; gore(w); sfx.alienHurt(); if (C.wrapHp <= 0) s7Unwrap(s, G); return true; }
+    if (segD(w) < 0.55 * hitGrow(b) || (cap && inRect(b.x, b.y, cap, 0.1))) { C.wrapHp -= 1 / S7_WRAP_HITS + 1e-6; C.flash = 1; gore(w); sfx.alienHurt(); if (C.wrapHp <= 0) s7Unwrap(s, G); return true; }
     return false;
   }
-  const p = s7CreepPts(G, C.d).find(p => segD(p) < 0.3 * HIT_GROW);
+  const p = s7CreepPts(G, C.d).find(p => segD(p) < 0.3 * hitGrow(b));
   if (p) { C.d = Math.max(0, C.d - S7_CREEP_SHOT); C.flash = 1; gore(p); sfx.alienHurt(); return true; }
   return false;
 }

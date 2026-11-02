@@ -439,7 +439,7 @@ function levShells(B) {
     const dt = 1 / 60, x0 = s.x - s.vx * dt, y0 = (s.y - s.vy * dt) * SIN, x1 = s.x, y1 = s.y * SIN;
     // (HIT_GROW: a bit bigger to hit than drawn; when the grown spots overlap, the one the shell passes closest to, for its size)
     const near = (p) => segDist(p.x, p.y, x0, y0, x1, y1) / p.r;
-    const hit = spots.filter(p => segCircle(x0, y0, x1, y1, p.x, p.y, p.r * HIT_GROW)).sort((a, b) => near(a) - near(b))[0];
+    const hit = spots.filter(p => segCircle(x0, y0, x1, y1, p.x, p.y, p.r * hitGrow(s))).sort((a, b) => near(a) - near(b))[0];
     if (hit) { s.dead = true; levHit(B, hit.id, hit); continue; }
     for (let i = 1; i < body.length; i++) {               // across its back: a dull splat (shells don't fly through it)
       const [ax, ay] = body[i - 1], [bx, by] = body[i], w = 0.35 * levHW(i < 2 ? LEVB_HEAD * 0.6 : LEVB_JOINTS[Math.min(i - 2, LEVB_SEGS)] ?? LEVB_BODY);

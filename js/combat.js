@@ -11,6 +11,12 @@ const ASTEROID_WEAR = 4;                         // body hits that split a big a
 // mines, invaders / pirates / the brood / the captain (boltHitsBody, js/invader.js), S-7. Only what WE hit: what enemies
 // hit (our hull, the crew) and what blocks our shots (enemy hulls, shield bubbles, walls) keep their exact size.
 const HIT_GROW = 1.1;
+// A shot from someone playing with a controller (their input's `pad`: js/gamepad.js) another PAD_HIT_GROW bigger to hit (the
+// user, 2026-11-01: "when playing with controller you can increase hitboxes (especially of pirates) by another 5%"). Shots
+// carry `pad` from the moment they're fired (fireCannon, attack in js/systems.js); hitGrow(shot) is the factor for one.
+const PAD_HIT_GROW = 1.05;
+const padShooter = () => !!(typeof player !== 'undefined' && player?.input?.pad);
+const hitGrow = (s) => HIT_GROW * (s?.pad ? PAD_HIT_GROW : 1);
 
 const combat = {
   enemies: [], asteroids: [], shells: [], shots: [], fx: [], decals: [],
@@ -184,7 +190,7 @@ function fireCannon(g) {
   g.cd = CANNON_COOLDOWN; g.flash = 1;
   const dx = Math.cos(g.aim), dy = Math.sin(g.aim);
   const x = g.x + dx * 1.15, y = g.y + dy * 1.15, z = muzzleZ(g);
-  combat.shells.push({ x, y, z, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE });
+  combat.shells.push({ x, y, z, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE, pad: padShooter() });
   for (let i = 0; i < 6; i++) combatFxAt(z, x, y, dx * 4 + (Math.random() - 0.5) * 3, dy * 4 + (Math.random() - 0.5) * 3, 0.25, '#ffd28a', 0.1);
   sfx.shoot();
 }
@@ -366,18 +372,18 @@ function updateCombat(dt) {
   for (const s of combat.shells) {
     const x0 = s.x, y0 = s.y;
     s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt;
-    for (const e of combat.enemies) if (!e.D.backdrop && !s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y)) s.dead = true;
+    for (const e of combat.enemies) if (!e.D.backdrop && !s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y, hitGrow(s))) s.dead = true;
     if (!s.dead) {                                       // a backdrop is behind everything: a ship just ahead gets the shot first
       const ax = s.x + s.vx / SHELL_SPEED * 3, ay = s.y + s.vy / SHELL_SPEED * 3;
-      const ahead = combat.enemies.some(e => !e.D.backdrop && shellTouches(e, s.x, s.y, ax, ay));
-      if (!ahead) for (const e of combat.enemies) if (e.D.backdrop && !s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y)) s.dead = true;
+      const ahead = combat.enemies.some(e => !e.D.backdrop && shellTouches(e, s.x, s.y, ax, ay, hitGrow(s)));
+      if (!ahead) for (const e of combat.enemies) if (e.D.backdrop && !s.dead && shellHitsEnemy(e, x0, y0, s.x, s.y, hitGrow(s))) s.dead = true;
     }
     for (const a of combat.asteroids) {
       if (s.dead || a.dead) continue;
       if (a.big) {
         const [cx, cy] = crackPos(a);
-        if (segCircle(x0, y0, s.x, s.y, cx, cy, 0.4 * HIT_GROW)) { s.dead = true; splitAsteroid(a); }
-        else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9 * HIT_GROW)) {
+        if (segCircle(x0, y0, s.x, s.y, cx, cy, 0.4 * hitGrow(s))) { s.dead = true; splitAsteroid(a); }
+        else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9 * hitGrow(s))) {
           s.dead = true; a.flash = 0.7; sfx.clank();
           for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.4, i % 2 ? '#ffd28a' : '#8d8274', 0.1);
           combatFlip('fx/hit_spark', s.x, s.y);
@@ -385,7 +391,7 @@ function updateCombat(dt) {
           a.damage.push(Math.atan2(s.y - a.y, s.x - a.x) - a.rot); (a.damageRot ||= []).push(a.rot);   // (and how it was turned then: the sprite view draws the crack turning with the rock)
           if (a.damage.length >= ASTEROID_WEAR) splitAsteroid(a);
         }
-      } else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 1.05 * HIT_GROW)) { s.dead = true; a.dead = true; dust(a); sfx.crack(); }
+      } else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 1.05 * hitGrow(s))) { s.dead = true; a.dead = true; dust(a); sfx.crack(); }
     }
   }
   combat.shells = combat.shells.filter(s => !s.dead && s.life > 0);

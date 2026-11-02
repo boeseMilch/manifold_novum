@@ -694,7 +694,7 @@ function attack(a, blast = false, to = null) {
   const fast = perk(player, 'weapons') ? 0.65 : 1;
   // the muzzle poking into a wall, a closed door or a crate (standing right at it): the shot stops there (js/invader.js shotBlock)
   const k = typeof shotBlock === 'function' ? shotBlock(player.x, player.y, x, y) : -1;
-  const shoot = (b) => { if (k < 0) boarding.bolts.push(b); else shotImpact(b, player.x + (x - player.x) * k, player.y + (y - player.y) * k); };
+  const shoot = (b) => { b.pad = padShooter(); if (k < 0) boarding.bolts.push(b); else shotImpact(b, player.x + (x - player.x) * k, player.y + (y - player.y) * k); };
   if (inv.weapon === 'laser') {
     inv.cd = LASER_COOLDOWN * fast;
     shoot({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew' });
@@ -703,7 +703,7 @@ function attack(a, blast = false, to = null) {
     inv.cd = BLASTER_COOLDOWN * fast;
     if (blast) {
       shoot({ x, y, z, ox: x, oy: y, vx: dx * BOLT_SPEED, vy: dy * BOLT_SPEED, life: 0.9, owner: 'crew', dmg: 3, stun: 1, heavy: true });
-      if (player.mode === 'eva') combat.shells.push({ x, y, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE });   // hits like a ship cannon
+      if (player.mode === 'eva') combat.shells.push({ x, y, vx: dx * SHELL_SPEED, vy: dy * SHELL_SPEED, life: SHELL_LIFE, pad: padShooter() });   // hits like a ship cannon
       for (let i = 0; i < 10; i++) combatFxAt(z, x, y, dx * 4 + (Math.random() - 0.5) * 3, dy * 4 + (Math.random() - 0.5) * 3, 0.3, '#9cd8ff', 0.1);
       sfx.shoot();
     } else {

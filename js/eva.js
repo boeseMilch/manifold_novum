@@ -123,11 +123,11 @@ function updateEva(dt) {
   }
   // our cannon shells pop spore clouds and drones
   for (const sh of combat.shells) {
-    for (const s of evs.spores) if (!s.dead && Math.hypot(sh.x - s.x, sh.y - s.y) < 1.5 * HIT_GROW) {
+    for (const s of evs.spores) if (!s.dead && Math.hypot(sh.x - s.x, sh.y - s.y) < 1.5 * hitGrow(sh)) {
       s.dead = true; sh.dead = true; sfx.crack();
       for (let i = 0; i < 16; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.8, i % 2 ? '#d8f0a0' : '#ffe0f0', 0.12);
     }
-    for (const d of evs.drones) if (!d.dead && Math.hypot(sh.x - d.x, sh.y - d.y) < 0.8 * HIT_GROW) {
+    for (const d of evs.drones) if (!d.dead && Math.hypot(sh.x - d.x, sh.y - d.y) < 0.8 * hitGrow(sh)) {
       d.dead = true; sh.dead = true; sfx.crack(); combatBanner('Mine drone shot down');
       for (let i = 0; i < 16; i++) combatFx(d.x, d.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.6, i % 2 ? '#ffb347' : '#6a6f7a', 0.12);
     }
@@ -138,7 +138,7 @@ function updateEva(dt) {
   // laser bolts (on a spacewalk): blow mines early
   for (const bo of boarding.bolts) {
     if (bo.owner !== 'crew' || bo.wrench) continue;
-    const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4 * HIT_GROW);
+    const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4 * hitGrow(bo));
     if (m) { bo.dead = true; explodeMine(m, 'laser'); continue; }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);

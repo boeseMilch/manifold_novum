@@ -30,7 +30,7 @@ window.addEventListener('resize', resize); resize();
 // mouse.look: the mouse moved since the last tick (the crew member turns to look at it for a while).
 // stick: a controller's sticks as they really point (js/gamepad.js; the keys alone only know 8 directions):
 // { aim: [x, y] right stick, walk: [x, y] left stick }, each null when centred; null without a controller
-const makeInput = () => ({ keys: new Set(), pressed: new Set(), stick: null, mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0, look: 0 } });
+const makeInput = () => ({ keys: new Set(), pressed: new Set(), stick: null, pad: false, mouse: { x: 0, y: 0, wx: 0, wy: 0, down: false, click: false, right: false, rightClick: false, moved: 0, look: 0 } });
 const localInput = makeInput();
 window.addEventListener('keydown', e => {
   if (e.target?.tagName === 'INPUT') return;                 // typing in the lobby

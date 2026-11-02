@@ -3,7 +3,7 @@
 // laser bolt just past an intruder's old body, now hits; a little further out still misses. What enemies shoot at
 // (the crew) keeps its exact size. Run: node tests/hitboxes.js
 const { loadGame } = require('./harness');
-const NAMES = ['HIT_GROW', 'POI_TOLERANCE', 'combat', 'boarding', 'player', 'makeEnemy', 'enemyToWorld', 'shapeDist', 'shellHitsEnemy',
+const NAMES = ['HIT_GROW', 'PAD_HIT_GROW', 'GUNS', 'fireCannon', 'netServer', 'crew', 'POI_TOLERANCE', 'combat', 'boarding', 'player', 'makeEnemy', 'enemyToWorld', 'shapeDist', 'shellHitsEnemy',
   'makeAsteroid', 'updateCombat', 'updateBoarding', 'SHELL_SPEED', 'ALIEN_HIT', 'freeAt', 'ROOM_RECTS', 'canStand', 'walkRects'];
 const DT = 1 / 60;
 let failed = 0;
@@ -54,18 +54,22 @@ function G0() { return G0.g ||= loadGame(NAMES); }
     }
     return { G, spot };
   };
-  const shoot = (d) => {
+  const shoot = (d, pad = false) => {
     const { G, spot } = setup();
     G.boarding.invaders.push({ uid: 1, kind: 'alien', x: spot.x + 3, y: spot.y, vx: 0, vy: 0, face: Math.PI, walk: 0, mode: 'inside', state: 'fight', hp: 3, path: [],
       linger: 0, stuck: 0, spitT: 99, act: null, dodgeCd: 99, strafe: 1, stun: 99, seen: 0, flash: 0, touchCd: 0 });
     const a = G.boarding.invaders[0];
-    G.boarding.bolts.push({ x: spot.x, y: spot.y + d, z: 0, ox: spot.x, oy: spot.y + d, vx: 26, vy: 0, life: 0.3, owner: 'crew' });
+    G.boarding.bolts.push({ x: spot.x, y: spot.y + d, z: 0, ox: spot.x, oy: spot.y + d, vx: 26, vy: 0, life: 0.3, owner: 'crew', pad });
     for (let i = 0; i < 30 && G.boarding.bolts.length; i++) G.updateBoarding(DT);
     return a.hp < 3;
   };
   const r = G0().ALIEN_HIT.r, g = G0().HIT_GROW;
   check(shoot(r * (1 + (g - 1) / 2)), `a bolt passing ${(r * (1 + (g - 1) / 2)).toFixed(3)} from an intruder's feet (old reach ${r}) now hits it`);
   check(!shoot(r * g + 0.03), 'a little further out it misses');
+  // a controller player's shot: another PAD_HIT_GROW (the user: "especially of pirates" — boltHitsBody covers pirates too)
+  const pg = G0().PAD_HIT_GROW, between = r * g * (1 + (pg - 1) / 2);
+  check(pg > 1.03 && pg < 1.07 && shoot(between, true) && !shoot(between, false), `a controller player's bolt ${between.toFixed(3)} from it hits, a mouse player's misses (PAD_HIT_GROW ${pg})`);
+  check(!shoot(r * g * pg + 0.03, true), 'and a little further out a controller player misses too');
 
   const spit = (d) => {
     const { G, spot } = setup(), p = G.player;
@@ -77,6 +81,21 @@ function G0() { return G0.g ||= loadGame(NAMES); }
   };
   check(spit(0.34), 'an alien\'s spit 0.34 from you still hits (crew reach 0.35)');
   check(!spit(0.36), 'and 0.36 from you it still misses: the crew didn\'t get bigger');
+}
+
+
+// the flag: a cannon shot / a bolt carries its shooter's `pad` (input.pad: js/gamepad.js locally, the input message on the server)
+{
+  const G = loadGame(NAMES), g = G.GUNS[0];
+  Object.assign(g, { shots: 3, reload: 0, cd: 0 });
+  G.player.input.pad = true; G.fireCannon(g);
+  const padShell = G.combat.shells.at(-1)?.pad;
+  Object.assign(g, { shots: 3, reload: 0, cd: 0 }); G.player.input.pad = false; G.fireCannon(g);
+  check(padShell === true && G.combat.shells.at(-1)?.pad === false, 'a cannon shell remembers whether a controller fired it');
+  G.netServer.input(G.player.id, { keys: [], pressed: [], pad: true });
+  check(G.player.input.pad === true, 'the server takes `pad` from a browser\'s input');
+  G.netServer.input(G.player.id, { keys: [], pressed: [] });
+  check(G.player.input.pad === false, '... and drops it when the browser stops sending it');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');

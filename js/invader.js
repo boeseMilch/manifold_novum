@@ -628,7 +628,7 @@ const HUMAN_HIT = { r: 0.4, top: 1.05 }, ALIEN_HIT = { r: 0.42, top: 0.45 };   /
 function boltHitsBody(b, x0, y0) {
   let best = null, bk = 2;
   const test = (o, H, hit) => {
-    const k = segBody(x0, y0, b.x, b.y, b.z, o.x, o.y, H.r * HIT_GROW, H.top);   // (HIT_GROW, js/combat.js: a bit wider than drawn)
+    const k = segBody(x0, y0, b.x, b.y, b.z, o.x, o.y, H.r * hitGrow(b), H.top);   // (HIT_GROW, js/combat.js: a bit wider than drawn)
     if (k >= 0 && k < bk && freeAt(x0 + (b.x - x0) * k, y0 + (b.y - y0) * k)) { bk = k; best = hit; }
   };
   for (const a of boarding.invaders) if (a.state !== 'entering' && a.mode === 'inside') test(a, a.kind === 'saboteur' ? HUMAN_HIT : ALIEN_HIT, () => hurtInvader(a, boltDamage(b), boltStun(b)));

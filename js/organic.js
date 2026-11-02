@@ -186,7 +186,7 @@ function updateOrganic(dt) {
     if (e.kind !== 'grappler' || e.tent?.state !== 'attached') continue;
     if (e.phase !== 'fighting') { e.tent.state = 'idle'; continue; }
     const [bx, by] = tentacleBase(e);
-    for (const s of combat.shells) if (!s.dead && segDist(s.x, s.y, bx, by, e.tent.x, e.tent.y) < 0.35 * HIT_GROW) {
+    for (const s of combat.shells) if (!s.dead && segDist(s.x, s.y, bx, by, e.tent.x, e.tent.y) < 0.35 * hitGrow(s)) {
       s.dead = true;
       for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#7a3a8a', 0.1);
       cutTentacle(e); break;
@@ -200,7 +200,7 @@ function updateOrganic(dt) {
       const dx = l.tx - l.x, dy = l.ty - l.y, d = Math.hypot(dx, dy);
       if (d < 0.15) { l.state = 'latched'; sfx.spit(); continue; }
       l.x += dx / d * Math.min(d, LEECH_SPEED * dt); l.y += dy / d * Math.min(d, LEECH_SPEED * dt) + Math.sin(l.t * 5) * dt * 0.6;
-      for (const s of combat.shells) if (!s.dead && Math.hypot(s.x - l.x, s.y - l.y) < 0.85 * HIT_GROW) { s.dead = true; l.dead = true; sfx.crack(); }
+      for (const s of combat.shells) if (!s.dead && Math.hypot(s.x - l.x, s.y - l.y) < 0.85 * hitGrow(s)) { s.dead = true; l.dead = true; sfx.crack(); }
     }
     l.fed = Math.max(0, (l.fed || 0) - dt * 1.2);
     // (shields don't stop them: like spores and mines they slip through. The user, 2026-10-16. Shoot them on the way in, or pry them off outside.)
