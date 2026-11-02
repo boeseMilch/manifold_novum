@@ -118,7 +118,10 @@ On the other panels (the patch board, the derelict lab's junction, PIN pads, the
 between the spots and A presses the highlighted one; B closes the panel.
 Aiming a hand weapon (laser, heavy blaster, the repair kit's wrench) with the right stick shows a red laser sight
 from its muzzle, up to the first wall: the shot flies right down it.
-Panels and mini-games that need the mouse still need the mouse.
+Panels and mini-games that need the mouse still need the mouse. In the menus (main menu, lobby, local players, Locker /
+Shipyard, the tutorial's question) the stick / d-pad jumps from button to button, **A** presses (on a dropdown: its
+next choice; a slider: left / right move it), **B** closes the Locker / Shipyard, **Start** goes to PLAY SOLO / START
+MISSION (a second Start presses it).
 
 Several controllers: each browser tab plays one. A tab takes the first free controller that's
 pressed while the tab has focus; the 🎮 picker (bottom left in the menus, shown while a controller

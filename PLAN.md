@@ -4704,3 +4704,25 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   B (Esc) closes as always; E with nothing picked still closes (keyboard / mouse users see no change). The security
   map keeps its own (securityKeys), the manual override its E. Browser-only (sends the click's command). Tests:
   tests/panelpad.js.
+
+## Controller in the menus (2026-11-01, the user: "jump from one button to the other, A to press a button ... also the locker")
+
+- js/menupad.js: the pad's keys (js/gamepad.js's synthetic key presses, `isTrusted` false; real keys are never touched,
+  so typing a name with W A S D stays typing, and they hide the highlight like the mouse does) move a highlight
+  (`.pad-focus`: a yellow outline over the metal, index.html) between the controls of the menu on top: the Locker /
+  Shipyard (#shop), else the tutorial's controls question (#tut-choice), else the lobby's main menu or room (with the
+  skirmish builder and the local-players panel). Only while one is open: in a mission the same keys walk.
+- Stick / d-pad (and the right stick): the nearest control that way (`menuPick`: ahead within 60°, not mostly level
+  with us; the gap ahead plus double the sideways gap; nothing that way: stay), held: repeats (350 ms, then every
+  120 ms). The first push only shows where you are: the menu's main control (TUTORIAL while it's new, else PLAY SOLO;
+  START MISSION; the Locker's first buyable item; the question's preselected answer), or where you were on that
+  screen. A re-render (bought, picked, swapped) keeps the highlight on the control nearest to where it was.
+- A presses (`click()`); a dropdown steps to its next choice (a script can't open one); a slider: left / right step
+  it; a checkbox via its label. The Locker's owned / locked items are reachable too (to scroll to and read them).
+  B closes the Locker / Shipyard (a profession question: "Not yet"); nowhere else (never leave a game by accident).
+  Start goes to PLAY SOLO / START MISSION, a second Start presses it. The tutorial question answers A / Start / B
+  itself (js/tutorial.js), the highlight moves its `.chosen`; only A on "‹ back" is ours.
+- A page without a controller of its own (gamepad.index null: e.g. the keyboard + mouse player's page, which gets keys
+  passed on from a controller player's view, js/split.js) ignores them. Each local player's view has its own copy.
+- js/menugl.js lights a keyboard-focused button only for `:focus-visible`, which a script's focus() doesn't get in
+  Chromium (focusVisible option unsupported): the outline alone shows the pick. Tests: tests/menupad.js.
