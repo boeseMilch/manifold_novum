@@ -4689,3 +4689,8 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   press, so unseen ones are there as "press a button on it"), each marked with who has it; picking someone else's
   device swaps (they get yours; a local player's view comes back with its new device). The panel no longer rebuilds
   on every lobby update or controller sighting (that closed an open dropdown); new controllers only relabel.
+- Colours and lockers (same day, the user): each player in the local-players panel has a suit-colour swatch (a click:
+  the next colour); this page's player's is the main menu's (profile.paint, changed here too), a local player's goes
+  into their own profile by name (js/split.js splitApi.setPaint) and to the server like any colour change; no colour
+  picked yet shows the one the server gave them. The lobby's LOCKER with local players opens everyone's locker at
+  once, each in their part of the screen (this page's #shop confined to its part), so everybody kits out in parallel.

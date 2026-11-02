@@ -226,7 +226,7 @@ function netClientMain() {
     if (!solo && isHost) sendWs({ t: 'skirmish', custom: cfg });
     renderRoom();
   };
-  $('room-locker').onclick = () => lobbyUI.shop('locker');
+  $('room-locker').onclick = () => { if (!localUI?.lockers()) lobbyUI.shop('locker'); };   // (local players: everyone's locker at once, js/local.js)
   // Start over (e.g. to play the progression again with friends): a fresh profile, keeping the name and suit
   // color; the old one is kept in localStorage 'mn-profile-backup' in case it was a misclick.
   $('lobby-reset').onclick = () => {
@@ -300,7 +300,7 @@ function netClientMain() {
     start.disabled = !canPick || (!solo && L?.phase === 'game') || !lobbyUI.ready();
     start.textContent = solo ? 'START MISSION' : L?.phase === 'game' ? 'MISSION RUNNING…' : isHost ? 'START MISSION' : `WAITING FOR ${host ? host.name.toUpperCase() : 'THE HOST'}…`;
     $('room-back').textContent = solo ? '‹ MENU' : '‹ LEAVE GAME';
-    if (!split) localUI?.room({ host: !solo && isHost && online() });   // (local players: the host's panel, js/local.js)
+    if (!split) localUI?.room({ host: !solo && isHost && online(), players: L?.players });   // (local players: the host's panel, js/local.js)
   }
 
   // ----- buttons

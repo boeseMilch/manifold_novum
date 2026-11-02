@@ -28,7 +28,7 @@ const localUI = (() => {
   const mem = read(localStorage, 'mn-local') || {};  // (names and devices from last time: just the defaults)
   if (mem.mine) mine = mem.mine;
   function save() {
-    const list = players.map(p => ({ slot: p.slot, name: p.name, input: p.input }));
+    const list = players.map(p => ({ slot: p.slot, name: p.name, input: p.input, paint: p.paint || null }));
     try { localStorage.setItem('mn-local', JSON.stringify({ mine, players: list })); } catch (e) { /* no storage */ }
     try { sessionStorage.setItem('mn-local-run', JSON.stringify({ game, mine, order, players: list })); } catch (e) { /* no storage */ }
   }
@@ -41,6 +41,7 @@ const localUI = (() => {
     f.className = 'local-view'; f.title = `${p.name}'s view`; f.allow = 'gamepad; autoplay';
     f.src = `index.html?split=${p.slot}&name=${encodeURIComponent(p.name)}&input=${p.input}`;
     f.hidden = true;
+    f.addEventListener('load', () => setTimeout(() => paintSync(p), 600));   // (its colour: see paintSync)
     document.body.appendChild(f);
     return f;
   }
@@ -122,7 +123,7 @@ const localUI = (() => {
     document.querySelectorAll('.local-border').forEach(b => b.remove());
     for (const slot of order) {
       const name = slot === 1 ? myName() : players.find(p => p.slot === slot)?.name || '';
-      const col = (typeof crew !== 'undefined' && crew.find(c => c.name === name)?.color) || COLORS[slot - 1];
+      const col = (typeof crew !== 'undefined' && crew.find(c => c.name === name)?.color) || colorOf(slot === 1 ? 'me' : players.find(p => p.slot === slot) || { slot });
       const r = rectOf(slot), b = document.createElement('div');
       b.className = 'local-border';
       Object.assign(b.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', borderColor: col, transitionDuration: FADE_TIME + 's' });
@@ -163,12 +164,13 @@ const localUI = (() => {
     const n = 1 + players.length;
     $('local-add').disabled = n >= MAX;
     const rows = $('local-rows');
-    rows.innerHTML = `<div class="local-row"><i style="background:${COLORS[0]}"></i><span class="local-me">${escapeHtml(myName())} <small>(you)</small></span><select data-me></select></div>`
-      + players.map(p => `<div class="local-row" data-slot="${p.slot}"><i style="background:${COLORS[p.slot - 1]}"></i><input value="${escapeHtml(p.name)}" maxlength="24" aria-label="Name">`
+    rows.innerHTML = `<div class="local-row"><button class="paint local-paint" data-paint-me data-paint="${colorOf('me')}" style="background:${colorOf('me')}" title="Suit colour (the main menu's): click for the next one"></button><span class="local-me">${escapeHtml(myName())} <small>(you)</small></span><select data-me></select></div>`
+      + players.map(p => `<div class="local-row" data-slot="${p.slot}"><button class="paint local-paint" data-paint="${colorOf(p)}" style="background:${colorOf(p)}" title="${escapeHtml(p.name)}'s suit colour: click for the next one"></button><input value="${escapeHtml(p.name)}" maxlength="24" aria-label="Name">`
       + `<select></select><button class="local-locker" title="${escapeHtml(p.name)}'s locker: opens in their part of the screen">LOCKER</button><button class="local-x" title="Remove">✕</button></div>`).join('')
       + (lastMsg ? `<p class="local-msg">${escapeHtml(lastMsg)}</p>` : '');
     devOptions(rows.querySelector('[data-me]'), mine, 'me');
     rows.querySelector('[data-me]').onchange = (e) => setMine(e.target.value);
+    rows.querySelector('[data-paint-me]').onclick = () => nextPaint('me');
     for (const p of players) {
       const row = rows.querySelector(`[data-slot="${p.slot}"]`);
       devOptions(row.querySelector('select'), p.input, p);
@@ -176,6 +178,7 @@ const localUI = (() => {
       row.querySelector('input').onchange = (e) => change(p, 'name', e.target.value);
       row.querySelector('.local-locker').onclick = () => locker(p);
       row.querySelector('.local-x').onclick = () => remove(p);
+      row.querySelector('.local-paint').onclick = () => nextPaint(p);
     }
     // the map: where everyone's view goes; drag a name onto another spot to swap (or click two in turn)
     const map = $('local-map');
@@ -184,7 +187,7 @@ const localUI = (() => {
     const cells = n > 2 ? 4 : 2;
     map.innerHTML = Array.from({ length: cells }, (_, i) => {
       const slot = order[i], name = slot === 1 ? myName() : players.find(p => p.slot === slot)?.name;
-      return `<div class="local-cell" data-i="${i}">${slot ? `<span class="local-chip${pick === slot ? ' picked' : ''}" draggable="true" data-slot="${slot}" style="background:${COLORS[slot - 1]}">${escapeHtml(name || '')}</span>` : ''}</div>`;
+      return `<div class="local-cell" data-i="${i}">${slot ? `<span class="local-chip${pick === slot ? ' picked' : ''}" draggable="true" data-slot="${slot}" style="background:${colorOf(slot === 1 ? 'me' : players.find(p => p.slot === slot) || { slot })}">${escapeHtml(name || '')}</span>` : ''}</div>`;
     }).join('');
     map.querySelectorAll('.local-chip').forEach(ch => {
       ch.ondragstart = (e) => { e.dataTransfer.setData('text/plain', ch.dataset.slot); };
@@ -206,6 +209,36 @@ const localUI = (() => {
     while (order.length && order[order.length - 1] === undefined) order.pop();
     save(); render(); place();
   }
+  // Suit colours: this page's player has the main menu's (profile.paint; changing it here changes it there), each local
+  // player their own (in their profile, by name: js/split.js splitApi.setPaint). A click: the next colour.
+  // (none picked: the colour the server gives them, from the lobby's player list)
+  let lobbyCol = {};
+  const colorOf = (who) => (who === 'me' ? (typeof profile !== 'undefined' && profile.paint) || lobbyCol[myName()] || COLORS[0]
+    : who.paint || lobbyCol[who.name] || COLORS[who.slot - 1]);
+  function nextPaint(who) {
+    const P = typeof PAINTS !== 'undefined' ? PAINTS : COLORS, next = P[(P.indexOf(colorOf(who)) + 1) % P.length];
+    if (who === 'me') { profile.paint = next; saveProfile(profile); lobbyUI.render(); lobbyUI.onProfile?.(); }
+    else { who.paint = next; try { who.frame?.contentWindow?.splitApi?.setPaint(next); } catch (e) { /* not ready: on load */ } save(); }
+    render();
+  }
+  // A view's colour once it's loaded: the one set here, or (none set yet) the one in its player's profile
+  function paintSync(p) {
+    const a = p.frame?.contentWindow?.splitApi;
+    if (!a) return;
+    if (p.paint) a.setPaint(p.paint); else if (a.paint) { p.paint = a.paint; save(); render(); }
+  }
+  // Everyone's locker at once (the lobby's LOCKER button with local players): each in their part of the screen, this
+  // page's own (#shop) in its part too, so everybody kits out in parallel, each with their own controller.
+  function lockers() {
+    if (!active()) return false;
+    for (const p of players) locker(p);
+    lobbyUI.shop('locker');
+    const r = rectOf(1), shop = $('shop');
+    Object.assign(shop.style, { inset: 'auto', left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', background: '#07090f' });   // (opaque: the lobby stays behind it)
+    return true;
+  }
+  if ($('shop')) new MutationObserver(() => { const sh = $('shop'); if (sh.hidden) ['inset', 'left', 'top', 'width', 'height', 'background'].forEach(k => { sh.style[k] = ''; }); })
+    .observe($('shop'), { attributes: true, attributeFilter: ['hidden'] });
   // a player's own locker, in their part of the screen (several at once: each kits out in parallel)
   function locker(p) {
     if (!p.frame) return;
@@ -259,7 +292,18 @@ const localUI = (() => {
 
   return {
     // js/net.js: the room (re)drawn, this page's game joined, the mission started, the game left
-    room(st) { if (!!st.host === host && render.done) return; host = !!st.host; render.done = true; render(); },   // (not on every lobby update: an open dropdown would close)
+    room(st) {
+      const col = Object.fromEntries((st.players || []).map(q => [q.name, q.color])), colChanged = JSON.stringify(col) !== JSON.stringify(lobbyCol);
+      lobbyCol = col;
+      if (!!st.host === host && render.done) {          // (not rebuilt on every lobby update: an open dropdown would close)
+        if (colChanged) document.querySelectorAll('#local-rows .local-paint, #local-map .local-chip').forEach(b => {
+          const slot = +(b.closest('.local-row')?.dataset.slot || b.dataset.slot || 1), who = slot === 1 ? 'me' : players.find(q => q.slot === slot);
+          if (who) { b.style.background = colorOf(who); if (b.dataset.paint) b.dataset.paint = colorOf(who); }
+        });
+        return;
+      }
+      host = !!st.host; render.done = true; render();
+    },
     joined(id) {
       game = id; window.splitGame = id;
       const run = read(sessionStorage, 'mn-local-run');
@@ -280,5 +324,6 @@ const localUI = (() => {
     },
     left() { players.slice().forEach(drop); players = []; order = [1]; game = null; window.splitGame = null; inGame = false; save(); render(); place(); },
     get active() { return active(); },
+    lockers,
   };
 })();
