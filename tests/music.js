@@ -592,7 +592,7 @@ check(nodes > n0, 'and plays again when shown');
     m.setMission('menu'); m.rearm(); check(m.title === 'Held Together' && !m.recording, 'the menu: the recording stops');
     m.setClock(0); m.setMission('c8'); step(0.3, 0); te.on.error(); step(0.1);
     check(m.title === 'Last Jump Home' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Last Jump Home takes over');
-    check(m.list().some(s => s.name === 'home' && s.title === 'Last Jump Home') && m.recordings().some(r => r.name === 'tick' && r.release === 'blast' && r.jump === 500),
+    check(m.list().some(s => s.name === 'home' && s.title === 'Last Jump Home') && m.recordings().some(r => r.name === 'tick' && r.release === 'blast' && r.jump === 440),
       'music.html still lists the synthesized Last Jump Home, the recording next to it');
     // c3: Keep S-7 Frozen, recorded; its ending on the jump
     const F = JSON.parse((s => s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1))(fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-frozen.js'), 'utf8')));
@@ -680,17 +680,17 @@ check(nodes > n0, 'and plays again when shown');
     `its bar lines (where the ending may come in) are on whole half-time bars, at most two apart (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s): the ending never lands mid-bar, nor long after the blast`);
   check(D.xf > 0.03 && D.xfLead > 0, `main fades out over the beat before the ending's bar line (time constant ${D.xf} s from ${D.xfLead} s before; Pressure Hull: cut on it)`);
   const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
-  check(D.jump === 500 && D.length >= 500 + 30 && D.loop[1] - D.loop[0] > 30, `laid out for the nominal jump (8:20) + 30 s (${D.length} s), a long loop for a long fight (${(D.loop[1] - D.loop[0]).toFixed(0)} s)`);
+  check(D.jump === 440 && D.length >= 440 + 30 && D.loop[1] - D.loop[0] > 30, `laid out for the nominal jump (7:20) + 30 s (${D.length} s), a long loop for a long fight (${(D.loop[1] - D.loop[0]).toFixed(0)} s)`);
   check(at(/mother/) > 50 && at(/mother/) < 70 && at(/grappler/) > 95 && at(/grappler/) < 110, 'the spore mother\'s drop ~1:00, the grappler\'s ~1:40');
-  check(at(/LEVIATHAN/) >= 270 && at(/LEVIATHAN/) < 276, `the biggest drop as the leviathan arrives (4:30; at ${at(/LEVIATHAN/)} s)`);
-  check(at(/Held breath/) > 340 && at(/Held breath/) < 370 && at(/LAST PUSH/) > 430 && at(/LAST PUSH/) < 480, 'the held breath ~6:00 (the gas), the last push ~7:30 (the override)');
+  check(at(/LEVIATHAN/) >= 207 && at(/LEVIATHAN/) < 216, `the biggest drop as the leviathan arrives (3:30; at ${at(/LEVIATHAN/)} s)`);
+  check(at(/Held breath/) > 290 && at(/Held breath/) < 315 && at(/LAST PUSH/) > 375 && at(/LAST PUSH/) < 420, `the held breath ~5:00 (the gas; at ${at(/Held breath/)} s), the last push ~6:30 (the override; at ${at(/LAST PUSH/)} s)`);
   check(D.release === 'blast', 'its ending comes with the engine blast (release), the ship jumps by itself after it');
-  // the game: c8's timeline (the leviathan at 270 s for every crew size, the nominal jump at 500) and the release
+  // the game: c8's timeline (the leviathan at 210 s for every crew size, the nominal jump at 440) and the release
   const { loadGame } = require('./harness');
   const G = loadGame(['levReleased', 'mission', 'org', 'startMission', 'crew', 'makeCrew']);
   const lev = [];
   for (let n = 1; n <= 4; n++) { while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length)); G.startMission('c8'); lev.push([G.mission.events.find(e => e.kind === 'leviathan_boss')?.t, G.mission.jumpAt]); }
-  check(lev.every(([t, j]) => t === 270 && j === 500), `c8's leviathan at 270 s and the jump due at 500 s for 1-4 players, as the recording is laid out (${lev.map(x => x.join('/')).join(', ')})`);
+  check(lev.every(([t, j]) => t === 210 && j === 440), `c8's leviathan at 210 s and the jump due at 440 s for 1-4 players, as the recording is laid out (${lev.map(x => x.join('/')).join(', ')})`);
   G.org.boss = { phase: 'p4' }; const before = G.levReleased();
   G.org.boss = { phase: 'blast' }; const blast = G.levReleased();
   G.startMission('practice'); G.org.boss = { phase: 'blast' };

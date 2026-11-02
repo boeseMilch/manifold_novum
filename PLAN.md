@@ -4741,3 +4741,41 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
 - combatBanner remembers who raised it (js/game.js `acting`, set by withCrew: the radar result, a patched junction, …;
   null for the world's own). In split screen (js/progress.js bannerHere) a banner raised by one of the players at this
   screen shows only in their view, everything else in the top-left view; not split, every banner shows as before.
+
+## Gravity tides knock a coil in every mission; the leviathan a minute earlier (2026-11-01, the user)
+
+- A gravity tide now knocks an aligned jump coil out in every mission (js/encounters.js tideHit), not only with the
+  `coils` rule: where the coils start aligned (c8 and every mission without the rule) a tide otherwise did nothing
+  ("they don't do anything"). tests/jumpdrive.js.
+- The Mother of All (c8): the leviathan a minute earlier ("a ridiculous amount of stuff happening beforehand") and a
+  minute of encounters less: length 500 → 440, the boss at 210 s (was 270), the events evenly spaced as before at the
+  same gap (so the reactor's pace is unchanged): 4 / 6 / 8 / 9 / 10 / 11 / 12 / 13 events for 1-8 players (were 5 / 8
+  / 10 / 11 / 13 / 15 / 17 / 18). Solo drops its failing part (the written one gets `optional: 1`: optional only for
+  crews up to that size, js/mission.js selectEvents; the model had 5 solo encounters in the shorter time at −3% idle)
+  and keeps the spores, the mother, the grappler and the leviathan, 60 s apart as before. (`--calibrate` would have
+  fitted more events for 4+, towards its idle targets: not used; cells unchanged.) tests/scaling.js.
+- The recording (Last Jump Home, tools/arrange-music.py TICK_PLAN) follows: 36 source bars (61.8 s) out of the build-up
+  before the leviathan (the song 8-31, then 40-47 as the "not yet", then 30-47 into the drop at 48; joins 0.79 / 1.73
+  by Song.cost; the 2-bar "It comes: strings" without bass so it returns with drop 2). THE LEVIATHAN's drop at 3:29,
+  held breath 5:02, the override 6:14, last push 6:28, loop (bars 20-59) to 7:57; jump 440, main.mp3 477 s / 9.5 MB.
+  music.html's c8 option: 7:20. tests/music.js.
+- The leviathan scales with the crew (js/leviathan.js; solo exactly as before; crew size capped at 4, LEVB_CREW_CAP):
+  - Tail flicks every 25 / 12.5 / 8.3 / 6.25 s for 1 / 2 / 3 / 4+ (levFlickGap, never under 6 s). Always dodgeable:
+    the warnings keep their length (flick 4 s, slam 3 s), only one red room at a time (a flick's warning waits during
+    a slam's; a slam during a flick's warning falls on that room), LEVB_FLICK_REST 2 s after a whack before the next
+    warning, a warned flick is called off when the gas comes instead of landing with less warning; any room that
+    isn't red is safe (the reactor room always in phases 1 and 3).
+  - Things in parallel (LEVB_EXTRAS, cued at points of the fight): 2 players: spores on the far side at the left
+    flank, 2 leeches on the far side in the first side window. 3: also a failing part at the start (levFailPart: a
+    maintenance event, yellow at once, breaks after LEVB_PART_WARN 30 s), 3 leeches, spores at an airlock once it's
+    behind. 4+: two failing parts, spores, 3 + 4 leeches, spores behind. org.boss.calm / .extras are plain data.
+  - tools/balance.js still models the fight crew-blind (tests/balancemodel.js passes). tests/leviathan.js.
+
+## Bigger hitboxes (2026-11-01, the user: "increase the hitboxes for most stuff by like 10%")
+
+- Everything the crew shoots at is HIT_GROW (1.1, js/combat.js) bigger to hit than it is drawn: enemy weak spots,
+  grown about their own centre (poiTouch, js/enemies.js); asteroids (crack, body, small rocks); grappler tentacles
+  and leeches; spore clouds, mine drones and mines; invaders, pirates and the leviathan's brood (boltHitsBody);
+  Captain Red Comet's generator and body; S-7's tendrils, creep and wrap; the leviathan's weak spots (levShells).
+  Nothing is drawn differently. What enemies hit (our hull, the crew) and what blocks our shots (enemy hulls, shield
+  bubbles, walls, the leviathan's body) keep their exact size, so only our aim got more forgiving. tests/hitboxes.js.

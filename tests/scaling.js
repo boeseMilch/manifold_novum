@@ -141,7 +141,8 @@ for (const id of ['c1', 'c2', 'c3', 'c4', 'c7', 'c8']) {
     const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(13); try { G.startMission(id, { easy }); } finally { Math.random = keep; }
     const m = G.mission.events.filter(e => e.kind === 'maintenance').length;
-    if (m < m0) { ok = false; msg.push(`${id} ×${n}${easy ? ' easy ' + easy : ''}: ${m}`); }
+    if (m < m0 && !(id === 'c8' && n === 1)) { ok = false;   // (c8 solo: none since 2026-11-01, the leviathan a minute earlier)
+      msg.push(`${id} ×${n}${easy ? ' easy ' + easy : ''}: ${m}`); }
   }
   check(ok && Object.keys(want).every(id => G0.MISSIONS[id].always?.includes('maintenance')), `failing parts at every crew size: ${Object.entries(want).map(([id, m]) => `${id} ≥${m}`).join(', ')}${msg.length ? ' (' + msg.join(', ') + ')' : ''}`);
 }
@@ -175,20 +176,21 @@ for (const id of ['c1', 'c2', 'c3', 'c4', 'c7', 'c8']) {
   check(ok, `The Deep: a tide ${R.tides} s in with the coils and handle rules, herds, two failing parts, the alien before the herds (${msg.join(' · ')})`);
 }
 // --- The Mother of All (c8): a fixed escalating timeline; at every crew size (and difficulty) the spore clouds first, the
-// spore mother, the grappler, a failing part (two until 2026-10-20) and the leviathan as the finale, at 270 s (one
-// encounter less: the mission 500 s, was 560; the fight keeps its ~4 min); more players get herds, leeches
+// spore mother, the grappler, a failing part (two until 2026-10-20; none solo since 2026-11-01) and the leviathan as the
+// finale, at 210 s (2026-11-01, a minute earlier: the mission 440 s, was 500; 560 until 2026-10-20; the fight keeps its
+// ~4 min); more players get herds, leeches
 {
   let ok = true; const msg = [];
   for (const n of [1, 2, 3, 4, 8]) for (const easy of [0, 2]) {
     const G = loadGame(NAMES); while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
     const keep = Math.random; Math.random = mulberry(17); try { G.startMission('c8', { easy }); } finally { Math.random = keep; }
     const ev = [...G.mission.events].sort((a, b) => a.t - b.t), k = ev.map(e => e.kind), has = (x) => k.includes(x);
-    const good = k[0] === 'spores' && ['mother', 'grappler', 'leviathan_boss'].every(has) && k.filter(x => x === 'maintenance').length >= 1
-      && k[k.length - 1] === 'leviathan_boss' && Math.abs(ev[ev.length - 1].t - 270) < 1e-6 && k.indexOf('mother') < k.indexOf('grappler') && !has('interceptor') && !has('frigate') && (n < 4 || easy || has('herd'));
+    const good = k[0] === 'spores' && ['mother', 'grappler', 'leviathan_boss'].every(has) && (n === 1 || k.filter(x => x === 'maintenance').length >= 1)
+      && k[k.length - 1] === 'leviathan_boss' && Math.abs(ev[ev.length - 1].t - 210) < 1e-6 && k.indexOf('mother') < k.indexOf('grappler') && !has('interceptor') && !has('frigate') && (n < 4 || easy || has('herd'));
     if (!good) ok = false;
     if (!easy && (n === 1 || n === 4)) msg.push(`×${n}: ${k.join(', ')}`);
   }
-  check(ok, `The Mother of All: spores, the mother, the grappler, a failing part and the infested leviathan (the boss) last, at 270 s, at every crew size, herds on top for 4+ (${msg.join(' · ')})`);
+  check(ok, `The Mother of All: spores, the mother, the grappler, a failing part (2+ crew) and the infested leviathan (the boss) last, at 210 s, at every crew size, herds on top for 4+ (${msg.join(' · ')})`);
 }
 // --- the model builds the same timelines as the game
 {

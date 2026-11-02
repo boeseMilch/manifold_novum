@@ -75,11 +75,13 @@ FULL = mix(Br=2, St=1)
 #   bass, brass hits)  40-47 strings over drums (45-47: bass out, a strings swell, drums out in 47)  48-55 drop 3 (the
 #   fullest)  56-63 the synth groove (keys out; a strings swell C → D in 62-63)  64-67 breakdown (music box, no bass)
 #   68-71 the last build (bass out, a gap in 71)  72-73 the final hit, an open G ringing (the file stops at 128 s).
-# c8 (js/progress.js, spacing 'even'): the encounters evenly from 0:30 (spores) to the leviathan at 4:30 (270 s, every
-# crew size; the mother and the grappler early on, then herds and the one tide); the fight (~3.5 min: the pass, the gas
-# ~6:00 for 25 s, the side, behind and the override ~7:30-8:00) holds the jump drive; the engine blast frees it, the
-# ship jumps 10 s later by itself (no handle). The nominal jump is at 500 s; main runs to ~530 s, its last 24 bars
-# loop for a long fight. The ending comes with the engine blast (release: 'blast'), not with the jump.
+# c8 (js/progress.js, spacing 'even'): the encounters evenly from 0:30 (spores) to the leviathan at 3:30 (210 s, every
+# crew size; the mother and the grappler early on (solo 1:30 / 2:30, 2 crew 1:06 / 1:42, 4 crew 0:53 / 1:15), then
+# herds and the one tide); the fight (~4 min: the pass, the gas ~5:00 for 25 s, the side, behind and the override
+# ~6:30-7:00) holds the jump drive; the engine blast frees it, the ship jumps 10 s later by itself (no handle). The
+# nominal jump is at 440 s; main runs to ~477 s, its last section (40 bars) loops for a long fight. The ending comes
+# with the engine blast (release: 'blast'), not with the jump. (2026-11-01: the leviathan a minute earlier, 270 → 210 s:
+# the build-up before it 36 bars shorter, below.)
 T_SOFT = mix(Dr=OFF, Pc=OFF)                       # music box and low strings
 T_VERSE = mix(Dr=-4, Pc=-3)
 T_THIN = mix(Dr=-6, Pc=-4, Br=-8, Ba=-3)           # the first impact, held back
@@ -97,7 +99,12 @@ T_RELEASE = mix(Dr=OFF, Pc=-12, Ba=-6, St=3)
 # The plan (2026-10-27, smoothed: every cut chosen from the source's own join costs, tools/arrange-music.py's sibling
 # measurements in PLAN.md: harmony and stem activity before and after the cut alike, on 4/8-bar phrase lines; long runs
 # of the song as it is, so the build comes from the song itself and the levels). Cuts: 28→44, 68→28, 44→68, 72→8,
-# 70→24, 60→20, 32→24, 54→62, 72→8, 60→20 (and the loop's wrap 60→20, the same join).
+# 32→40, 48→30, 60→20, 32→24, 54→62, 72→8, 60→20 (and the loop's wrap 60→20, the same join).
+# (2026-11-01, c8's leviathan at 210 s, was 270: the build-up 36 bars (61.8 s) shorter. It was the song from bar 8 to 64
+# (the valley, rising 1-5), the music box 64-69, then 24-47 into the drop; now the song from 8 to 31 (the valley, drop 1,
+# strings), its strings-over-drums swell and silence 40-47 as the "not yet" (cost 0.79, the song's own near copy), then
+# 30-47 (cost 1.73: from the silence into the drums-out bar before drop 2) into the drop. Out: bars 32-39, 48-69 of the
+# old rising run and 24-29 of "It comes". The fight and everything after it as before, 61.8 s earlier.)
 TICK_PLAN = [
     ('Intro: the tick, the music box', 0, 8, lv(mix(), -8)),
     ('Low strings under the music box', 8, 16, lv(T_SOFT, -7)),
@@ -111,27 +118,24 @@ TICK_PLAN = [
     ('Strings over drums', 40, 44, lv(T_MID, -3.5)),
     ('The bass creeps back', 68, 72, lv(mix(Br=-6), -4.5)),               # 1:57
     ('Herds and tides: the valley', 8, 16, lv(T_LOW, -5)),                # 2:04
-    ('Rising 1', 16, 32, lv(T_B1, -4)),                                   # 2:18
-    ('Rising 2', 32, 40, lv(T_B2, -3.5)),                                 # 2:45
-    ('Rising 3: strings, swell, silence', 40, 48, lv(T_MID, -3)),         # 2:59
-    ('Rising 4: drop 3', 48, 56, lv(T_MID, -2.5)),                        # 3:13
-    ('Rising 5: synth groove', 56, 64, lv(T_HOT, -2)),                    # 3:26
-    ('Something huge: the music box', 64, 70, lv(T_BREAK, -4)),           # 3:40
-    ('It comes: strings', 24, 32, lv(T_HOT, -1.5)),                       # 3:51
-    ('It comes: drop 2', 32, 40, lv(T_HOT, -1)),                          # 4:04
-    ('It comes: swell, silence', 40, 48, lv(T_HOT, -1)),                  # 4:18
-    ('THE LEVIATHAN: the biggest drop (climax)', 48, 60, T_FULL),         # 4:32 (it arrives 4:30-4:35)
-    ('The fight: drop 1 and strings', 20, 32, lv(T_HOT, -0.5)),           # 4:53
-    ('The fight: strings, drop 2 (climax)', 24, 40, T_FULL),              # 5:13
-    ('The fight: swell, drop 3', 40, 54, lv(T_HOT, -0.5)),                # 5:41
-    ('Held breath: the strings swell', 62, 64, lv(T_HOT, -1.5)),          # 6:05 (the gas ~6:00-6:25)
-    ('Held breath: the gas (music box)', 64, 72, lv(T_BREATH, -2)),       # 6:08: the song's own breakdown, then bass, drums out
-    ('Held breath: strings', 8, 16, lv(T_BREATH, -2)),                    # 6:22
-    ('Out again: drop 1 and strings', 16, 32, T_HOT),                     # 6:36
-    ('Behind us: drop 2', 32, 40, T_HOT),                                 # 7:03
-    ('The override: swell, silence', 40, 48, T_FULL),                     # 7:17 (the override ~7:30)
-    ('LAST PUSH (climax)', 48, 60, T_FULL),                               # 7:31
-    ('Still fighting (the loop, climax)', 20, 60, T_FULL),                # 7:51: the loop (69 s), if the fight runs long
+    ('Rising 1: drop 1', 16, 24, lv(T_B1, -4)),                           # 2:17 (solo: the grappler 2:30)
+    ('Rising 2: strings', 24, 32, lv(T_B2, -3.5)),                        # 2:31
+    ('Something huge: strings, swell, silence', 40, 48, lv(T_MID, -3)),   # 2:45
+    ('It comes: strings', 30, 32, lv({**T_HOT, 'Ba': OFF}, -1.5)),        # 2:58 (the bass waits for drop 2: out of the silence)
+    ('It comes: drop 2', 32, 40, lv(T_HOT, -1)),                          # 3:02
+    ('It comes: swell, silence', 40, 48, lv(T_HOT, -1)),                  # 3:16
+    ('THE LEVIATHAN: the biggest drop (climax)', 48, 60, T_FULL),         # 3:29 (it arrives 3:30-3:35)
+    ('The fight: drop 1 and strings', 20, 32, lv(T_HOT, -0.5)),           # 3:50
+    ('The fight: strings, drop 2 (climax)', 24, 40, T_FULL),              # 4:11
+    ('The fight: swell, drop 3', 40, 54, lv(T_HOT, -0.5)),                # 4:38
+    ('Held breath: the strings swell', 62, 64, lv(T_HOT, -1.5)),          # 5:02 (the gas ~5:00-5:25)
+    ('Held breath: the gas (music box)', 64, 72, lv(T_BREATH, -2)),       # 5:05: the song's own breakdown, then bass, drums out
+    ('Held breath: strings', 8, 16, lv(T_BREATH, -2)),                    # 5:19
+    ('Out again: drop 1 and strings', 16, 32, T_HOT),                     # 5:33
+    ('Behind us: drop 2', 32, 40, T_HOT),                                 # 6:00
+    ('The override: swell, silence', 40, 48, T_FULL),                     # 6:14 (the override ~6:30)
+    ('LAST PUSH (climax)', 48, 60, T_FULL),                               # 6:28
+    ('Still fighting (the loop, climax)', 20, 60, T_FULL),                # 6:48: the loop (69 s), if the fight runs long
 ]
 # Keep S-7 Frozen, recorded (c3, the Empty Lab; from Suno: 9 stems, 3:59.5, ~81 bpm, F minor; 80 bars of 2.97 s,
 # phrases of 8 from bar 0, the drums often one bar on, one bar off). Its sections (tools/arrange-music.py frozen --analyze):
@@ -254,7 +258,7 @@ PIECES = {
         'ending': (75, 79, FULL),
     },
     'tick': {
-        'title': 'Last Jump Home (recorded)', 'stems': 'Final Tick', 'files': TICK_STEMS, 'bpm': 140, 'missions': ['c8'], 'jump': 500,
+        'title': 'Last Jump Home (recorded)', 'stems': 'Final Tick', 'files': TICK_STEMS, 'bpm': 140, 'missions': ['c8'], 'jump': 440,
         'bar_step': 2, 'loop': -1, 'release': 'blast', 'smooth': True, 'plan': TICK_PLAN,
         # the ending (from the engine blast on, music.release(): js/game.js): the strings swelling in where they enter in the
         # song (bar 24, G minor), D major → F major, no drums, then the song's last hit, an open G (the tonic: bVII → I)

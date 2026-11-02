@@ -7,7 +7,8 @@ const NAMES = ['org', 'startLevBoss', 'levChain', 'levSpotAt', 'levTargets', 'le
   'MISSIONS', 'GFX', 'clickTarget', 'roomAt', 'combatClear', 'enc', 'evs', 'dk', 'fireCannon', 'gunArc', 'SHELL_SPEED', 'LEVB_LOOP', 'SHIP_W',
   'LEVER', 'REACTOR', 'FUEL_CRATE', 'JUMP_HANDLE', 'canStand', 'ROOM_RECTS', 'DOORWAYS', 'DECK_DOORS', 'FLOOR_RECTS', 'interactSpots', 'LEVB_BROOD_WAVES',
   'LEVB_BROOD_SCALE', 'LEVB_BROOD_HIT', 'LEVB_BROOD_REACH', 'LEVB_BROOD_GAP', 'applyKit', 'netServer', 'levOverrideStatus', 'withCrew', 'GEAR',
-  'LEVB_BLAST', 'LEVB_OUTRO', 'LEVB_ENGINE', 'levBlast', 'levCinema', 'levSkip', 'levHoldsJump', 'minigameSpots', 'SHIP_H', 'player', 'problemSpots', 'encounterPlates'];
+  'LEVB_BLAST', 'LEVB_OUTRO', 'LEVB_ENGINE', 'levBlast', 'levCinema', 'levSkip', 'levHoldsJump', 'minigameSpots', 'SHIP_H', 'player', 'problemSpots', 'encounterPlates',
+  'levFlickGap', 'LEVB_FLICK', 'LEVB_FLICK_WARN', 'LEVB_SLAM_WARN', 'LEVB_FLICK_REST', 'LEVB_EXTRAS', 'LEVB_PART_WARN', 'maintWarnings'];
 const { route, clearLine } = require('../tools/travel');
 const DT = 1 / 60;
 let failed = 0;
@@ -126,6 +127,92 @@ for (const n of [1, 3]) {
   let warned = 0, hits0 = G.combat.hits.small; tick(G, 26, () => { if (B(G).flick.room) warned++; });
   check(warned >= 60 * 3.5 && G.combat.shake >= 0 && G.combat.hits.small + G.combat.hits.large >= hits0, `a tail flick every ~25 s, warned ${(warned / 60).toFixed(1)} s ahead on that room's floor`);
 }
+// --- crew scaling (2026-11-01): solo as before; a crew gets whacked more often (never with less warning, one red room at a
+// time, a crew member standing away from its side never hit) and extras in parallel (a failing part, spores, leeches)
+{
+  const gaps = [1, 2, 3, 4, 5].map(n => fresh(1).levFlickGap(n));
+  check(gaps[0] === 25 && Math.abs(gaps[1] - 12.5) < 1e-9 && Math.abs(gaps[2] - 25 / 3) < 1e-9 && gaps[3] === 6.25 && gaps[4] === 6.25 && gaps.every((g, i) => !i || g < gaps[i - 1] || i >= 4),
+    `a tail flick every ${gaps.map(g => g.toFixed(1)).join(' / ')} s for 1 / 2 / 3 / 4 / 5 players`);
+  check(gaps.every(g => g >= fresh(1).LEVB_FLICK_WARN + fresh(1).LEVB_FLICK_REST), 'never sooner than the warning plus a rest after the last whack');
+  // a whole phase 1 (the fin left alone: it stays at the bow) and phase 3 (every window missed: leeches, slams) watched
+  // frame by frame: each whack, how long its room was red; how many rooms were red at once; the one in the reactor room
+  function watch(n, from, secs) {
+    const G = fresh(n); G.startLevBoss(from);
+    const stand = G.crew[n - 1]; Object.assign(stand, { x: 20, y: 20 });
+    const out = { G, lands: [], maxRed: 0, standHurt: false, standRoom: G.roomAt(stand.x, stand.y)?.id, flicks: 0, slams: 0 };
+    let fr = null, frSince = 0, sl = null, slSince = 0, t = 0;
+    for (let i = 0; i < secs * 60; i++) {
+      for (const c of G.crew) if (c !== stand && c.mode === 'inside') c.health = 'ok';
+      G.SYSTEMS.forEach(q => { q.broken = false; }); G.hz.breaches = []; G.org.leeches = [];
+      G.simTick(DT); t += DT;
+      const b = B(G), F = b.flick.room, S = b.slam;
+      if (F && !fr) frSince = t;
+      if (!F && fr && b.flick.t > 1) { out.lands.push({ kind: 'flick', red: t - frSince }); out.flicks++; }
+      if (S && !sl) slSince = Math.min(t, F === S.room ? frSince : t);
+      if (!S && sl) { out.lands.push({ kind: 'slam', red: t - slSince }); out.slams++; }
+      out.maxRed = Math.max(out.maxRed, new Set([F, S?.room].filter(Boolean)).size);
+      if (stand.health !== 'ok') out.standHurt = true;
+      fr = F; sl = S;
+    }
+    return out;
+  }
+  const s1 = watch(1, 1, 80), s3 = watch(3, 1, 80), s4 = watch(4, 1, 80);
+  check(s1.flicks === 3, `solo, 80 s at the bow: ${s1.flicks} tail flicks (every 25 s, as before)`);
+  check(s3.flicks >= 8 && s4.flicks > s3.flicks, `3 players: ${s3.flicks} flicks in the same 80 s, 4 players: ${s4.flicks} (whacks come more often)`);
+  for (const [name, w] of [['3 players, the pass', s3], ['4 players, the pass', s4]]) {
+    const minRed = Math.min(...w.lands.map(l => l.red));
+    check(minRed >= w.G.LEVB_FLICK_WARN - 0.02, `${name}: every whack's room red at least ${w.G.LEVB_FLICK_WARN} s ahead (shortest ${minRed.toFixed(2)} s, solo 4)`);
+    check(w.maxRed <= 1 && w.standRoom === 'reactor' && !w.standHurt, `${name}: never more than one red room; the one standing in the reactor room is never hit`);
+  }
+  const p3 = watch(3, 3, 120), p4 = watch(4, 3, 120);
+  for (const [name, w] of [['3 players, the sides', p3], ['4 players, the sides', p4]]) {
+    const flick = w.lands.filter(l => l.kind === 'flick'), slam = w.lands.filter(l => l.kind === 'slam');
+    check(w.slams >= 1 && flick.length >= 8, `${name}: windows missed: ${w.slams} slams, ${flick.length} flicks in 120 s`);
+    check(flick.every(l => l.red >= w.G.LEVB_FLICK_WARN - 0.02) && slam.every(l => l.red >= w.G.LEVB_SLAM_WARN - 0.02),
+      `${name}: flicks warned ≥ ${w.G.LEVB_FLICK_WARN} s, slams ≥ ${w.G.LEVB_SLAM_WARN} s (shortest ${Math.min(...flick.map(l => l.red)).toFixed(2)} / ${Math.min(...slam.map(l => l.red)).toFixed(2)})`);
+    check(w.maxRed <= 1 && !w.standHurt, `${name}: one red room at a time (a slam joins the flick's room); the reactor room stays safe`);
+  }
+  const g2 = watch(3, 2, 30);   // (a flick warned as the gas comes is called off, not landed short after it)
+  check(g2.lands.every(l => l.red >= g2.G.LEVB_FLICK_WARN - 0.02), 'the gas between: no flick lands with a cut-short warning');
+
+  // the extras: a scripted fight start to behind, all the extras' marks recorded
+  function extras(n) {
+    const G = fresh(n); G.startLevBoss(1);
+    const out = { G, spores: 0, leeches: 0, parts: 0, sides: new Set() }; let t = 0;
+    while (B(G) && t < 200) {
+      keepSafe(G);
+      out.spores = Math.max(out.spores, G.evs.spores.length); out.leeches = Math.max(out.leeches, G.org.leeches.length);
+      for (const l of G.org.leeches) out.sides.add('leech ' + l.side);
+      out.parts = G.mission.events.filter(e => e.kind === 'maintenance' && e.lev).length;
+      const b = B(G);
+      if (b.parked && b.phase !== 'p4') for (const id of G.levTargets(b)) shoot(G, id);
+      G.simTick(DT); t += DT;
+      if (b.phase === 'p4' && b.wave?.n >= 1 && t > 30) break;
+    }
+    return out;
+  }
+  const e1 = extras(1), e2 = extras(2), e3 = extras(3), e4 = extras(4);
+  check(B(e1.G).extras.length === 0 && !e1.spores && !e1.leeches && !e1.parts, 'solo: no extras (no spores, leeches or failing part beside the boss)');
+  check(e2.spores > 0 && e2.leeches === 2 && !e2.parts, `2 players: a spore cloud in the pass, a swarm of ${e2.leeches} in the side phase`);
+  check(e3.spores > 0 && e3.leeches >= 3 && e3.parts === 1, `3 players: + a failing part (${e3.parts}), a swarm of ${e3.leeches}, spores behind too`);
+  check(e4.spores > 0 && e4.leeches >= 4 && e4.parts === 2, `4 players: two failing parts, swarms up to ${e4.leeches}`);
+  check(e3.G.LEVB_EXTRAS.every(list => list.every(e => ['fight', 'left', 'right', 'side', 'side2', 'behind'].includes(e.on))), 'every extra is cued at a point of the fight');
+  // a failing part from the boss is the usual maintenance pair: yellow at the helm now, it breaks if nobody services it
+  {
+    const G = fresh(3); G.startLevBoss(1); tick(G, 0.05);
+    const w = G.maintWarnings();
+    check(w.length === 1 && w[0].sys && w[0].decoy && !w[0].orange, 'the boss\'s failing part shows at the helm as a pair (yellow) right away');
+    const sys = w[0].sys; tick(G, G.LEVB_PART_WARN + 0.2, () => { for (const c of G.crew) c.health = 'ok'; G.hz.breaches = []; });
+    check(sys.broken, `not serviced: it breaks ${G.LEVB_PART_WARN} s later`);
+    // snapshot sync: the extras' state and the part's pair reach the browsers
+    const H = fresh(3); H.netApply(JSON.parse(JSON.stringify(G.netSerialize())), G.me.id);
+    check(JSON.stringify(H.org.boss) === JSON.stringify(G.org.boss) && H.org.boss.extras.length === G.LEVB_EXTRAS[2].length,
+      'the crew-scaling state (extras, the calm after a whack) reaches every browser in the snapshot');
+    check(!/Infinity|NaN|function/.test(JSON.stringify(G.org.boss.extras)) && typeof G.org.boss.calm === 'number', 'plain data: no Infinity or functions in it');
+    const he = H.mission.events.find(e => e.lev), ge = G.mission.events.find(e => e.lev);
+    check(he && he.sys?.name === ge.sys.name && he.decoy?.name === ge.decoy.name, 'the failing part\'s pair is synced too (mission.events)');
+  }
+}
 // --- phase 2: the gas downs whoever is outside (spacewalk, cannon seat), not inside; downed crew are treated as usual after
 {
   const G = fresh(3); G.startLevBoss(3); B(G).phase = 'gas'; B(G).gas = { warn: 10, t: 15 }; B(G).p3 = null;
@@ -162,7 +249,7 @@ for (const n of [1, 3]) {
   for (const id of G.levTargets(B(G))) shoot(G, id);
   check(B(G).phase === 'p4', 'both sides done: it heads behind us');
   // the swarm grows with the crew; a swarm still on the hull: the next miss is a slam, never a second swarm
-  const F = fresh(4); F.startLevBoss(3); parked(F);
+  const F = fresh(4); F.startLevBoss(3); B(F).extras = []; parked(F);   // (without the crew's extra swarm: js/leviathan.js LEVB_EXTRAS)
   tick(F, F.LEVB_WINDOW[0] + 0.1, () => keepSafe(F));
   check(F.org.leeches.length === F.LEVB_LEECHES[3], `4 players: ${F.LEVB_LEECHES[3]} leeches`);
   B(F).p3.fails = 2; const n0 = F.org.leeches.length, l0 = F.combat.hits.large;
@@ -316,6 +403,9 @@ function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   Object.assign(me, { mode: 'gun', gun: g, x: g.x, y: g.y, health: 'ok' });
   G.power.reactor.fuel = fuel; G.power.reserve = reserve; G.CAPACITORS[1].charge = mid; G.power.lever.pos = 0; G.power.lever.jammed = false;
   G.startLevBoss(4);
+  // (the pressure after the nominal jump (mission.jumpAt) stays out of this test: in a real run the boss arrives with
+  // length − finaleLead to go; the bot here takes longer than a player, and press encounters would only add noise)
+  G.mission.jumpAt = G.mission.t + 1000;
   const keys = new Set(), down = (k) => { if (!keys.has(k)) { G.listeners.keydown({ code: k, preventDefault() {} }); keys.add(k); } };
   const up = (k) => { if (keys.has(k)) { G.listeners.keyup({ code: k }); keys.delete(k); } };
   const out = { G, seen: new Set(), drained: 0, cells: 0, waves: 0, won: false, t: 0 };
@@ -362,7 +452,20 @@ function playPhase4({ n = 1, fuel = 2, reserve = 1, mid = 1 } = {}) {
   while (G.CAPACITORS[1].charge < G.LEVB_NEED && out.t < 600) { loadFuel(); selfTreat(); tick(); }
   walkTo(G.LEVB_PANEL.x, G.LEVB_PANEL.y - 0.6, 0.3);
   out.panelPrompt = me.prompt?.text;
-  while (b()?.phase === 'p4' && out.t < 700) { if (!selfTreat()) holdE(5, () => b()?.phase !== 'p4' || me.health === 'down'); loadFuel(); }
+  // hold the override; when the brood drained MID mid-hold (or refuelling took the bot away): back to the lever (MID,
+  // wedged), charge, back to the panel (2026-11-01: it used to hold E wherever loadFuel had left it, at the lever: that
+  // un-wedged and turned the lever, a softlock of the bot, not of the game)
+  while (b()?.phase === 'p4' && out.t < 700) {
+    if (selfTreat()) continue;
+    if (!b().charged && (G.power.lever.pos !== 1 || !G.power.lever.jammed)) {
+      walkTo(G.LEVER.x, G.LEVER.y - 0.9);
+      for (let i = 0; i < 4 && G.power.lever.pos !== 1; i++) tapE();
+      if (!G.power.lever.jammed) holdE(0.7, () => false);
+    }
+    while (!b().charged && G.CAPACITORS[1].charge < G.LEVB_NEED && b()?.phase === 'p4' && out.t < 700) { loadFuel(); selfTreat(); tick(); }
+    if (Math.hypot(G.LEVB_PANEL.x - me.x, G.LEVB_PANEL.y - 0.6 - me.y) > 0.4) walkTo(G.LEVB_PANEL.x, G.LEVB_PANEL.y - 0.6, 0.3);
+    holdE(5, () => b()?.phase !== 'p4' || me.health === 'down' || (!b().charged && G.CAPACITORS[1].charge < G.LEVB_NEED));
+  }
   out.blast = b()?.phase === 'blast';
   while (!G.mission.over && out.t < 750) tick();                  // (the cutscene, then the jump: nobody goes anywhere)
   out.won = !!G.mission.over?.won && !G.mission.jump;

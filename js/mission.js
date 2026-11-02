@@ -181,7 +181,8 @@ function selectEvents(id, written, n, target, easy = 0) {
   const C = missionCrew(id, n), forced = C.extra.slice(0, Math.max(0, C.extra.length - drop)), easyLeft = drop - (C.extra.length - forced.length);
   const base = C.events ?? written.length, wantW = Math.min(base, Math.max(1, base - easyLeft));   // (at least one: the finale)
   const dropRank = (e) => (DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
-  const rank = (e) => (ess.has(e.kind) || e.opener || (always.has(e.kind) && !e.optional) ? Infinity : dropRank(e));   // (optional: a written one of an `always` kind that may still go)
+  const optional = (e) => e.optional === true || (typeof e.optional === 'number' && n <= e.optional);   // (a number: optional only for crews up to that size; c8's first failing part solo, 2026-11-01)
+  const rank = (e) => (ess.has(e.kind) || e.opener || (always.has(e.kind) && !optional(e)) ? Infinity : dropRank(e));   // (optional: a written one of an `always` kind that may still go)
   const order = written.map((e, i) => ({ e, i })).sort((a, b) => rank(b.e) - rank(a.e) || a.i - b.i);   // most important first; ties: the earlier one
   const keep = order.slice(0, Math.max(order.filter(o => rank(o.e) === Infinity).length, Math.min(wantW, written.length))).map(o => o.e);
   // the finale (the last fight) shouldn't be an objective's event (it needs more than the 22 s before the jump), nor the opener

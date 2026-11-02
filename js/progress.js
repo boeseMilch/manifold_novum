@@ -223,7 +223,7 @@ Object.assign(MISSIONS, {
     // (2026-10-16, asteroid swarms from the side + leeches past the shields: ×4 back in spec with cells / reactor only, the event counts kept)
     // (2026-10-16, the infested leviathan's ~4 min fight: ×3 / ×4 need 7 / 9 cells (were 4 / 5) to stay in spec; counts kept.
     //  Model with the boss: 1% 35% 57% 58% idle for 1-4)
-    crew: {events: [5, 8, 10, 11, 13, 15, 17, 18], cells: [4, 18, 25, 19, 25, 22, 27, 24], reactor: [0.35, 0.2, 0.2, 0.3, 0.3, 0.4, 0.4, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 2% 22% 34% 49% 55% 60% 63% 67% idle for 1-8 players
+    crew: {events: [4, 6, 8, 9, 10, 11, 12, 13], cells: [4, 18, 25, 19, 25, 22, 27, 24], reactor: [0.35, 0.2, 0.2, 0.3, 0.3, 0.4, 0.4, 0.5], overcharge: [true, true, true, true, true, true, true, true]},   // --calibrate 2026-10-25 (crews: the solo idle + 5 points a player, each size idler than the one below): 2% 22% 34% 49% 55% 60% 63% 67% idle for 1-8 players
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     // at every crew size, solo too: the spore clouds, the spore mother, the grappler, a failing part and the leviathan
     // (2026-10-20, the user: one encounter less, the fight keeps its ~4 min, the mission shorter by that: every crew size -1,
@@ -234,7 +234,12 @@ Object.assign(MISSIONS, {
     // leviathan's finaleLead 30); the jump is due LEVB's fight later (length − finaleLead: an estimate, ~4 min) and never comes
     // before the fight is over (it holds the drive; once it's freed a short cutscene, and LEVB_OUTRO s later the ship jumps by
     // itself: mission.autoJump, 2026-10-24)
-    length: 500, finaleLead: 230,
+    // (2026-11-01, the user: the leviathan a minute earlier, "a ridiculous amount of stuff happening beforehand", and a minute's
+    //  encounters less: length 500 → 440, so it comes at 210 s (length − finaleLead) instead of 270; the events keep their
+    //  spacing (the gap, and with it the reactor's pace, as before): ¾ of the gaps, events were [5, 8, 10, 11, 13, 15, 17, 18]
+    //  for 1-8 players, now [4, 6, 8, 9, 10, 11, 12, 13]; solo drops its failing part (optional: 1, the model had 5 in the
+    //  shorter time at −3% idle: impossible) and keeps the spores, the mother, the grappler and the leviathan, 60 s apart as before)
+    length: 440, finaleLead: 230,
     // (2026-10-24: no `coils` / `handle` rules any more: the ship jumps by itself once the leviathan is free, so neither the
     //  jump handle at the helm nor the jump coils' alignment would do anything)
     objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, tides: 80 },
@@ -247,7 +252,7 @@ Object.assign(MISSIONS, {
     // (the mother on one side, the spores and the grappler on the other: one capacitor can't feed both big fights)
     // (2026-10-26: the 210 s herd is the mother + leeches, was + spore clouds: those two are no herd; herdOk, js/organic.js)
     build: () => { const s = randSide(), o = s === 'port' ? 'star' : 'port'; return [evAt('spores', 30, { side: o, opener: true }), evAt('mother', 60, { side: s }), 
-                  evAt('grappler', 100, { side: o }), evAt('maintenance', 120, { radar: false }), evAt('herd', 130, { kinds: ['leeches', 'spores'], side: randSide() }), evAt('tide', 140), evAt('herd', 150, { kinds: ['grappler', 'leeches'], side: randSide() }),
+                  evAt('grappler', 100, { side: o }), evAt('maintenance', 120, { radar: false, optional: 1 }), evAt('herd', 130, { kinds: ['leeches', 'spores'], side: randSide() }), evAt('tide', 140), evAt('herd', 150, { kinds: ['grappler', 'leeches'], side: randSide() }),
                   evAt('leeches', 170, { side: randSide() }), evAt('maintenance', 190, { radar: false, optional: true }), evAt('herd', 210, { kinds: ['mother', 'leeches'], side: randSide() }),
                   evAt('tide', 225), evAt('herd', 240, { kinds: herdPair(), side: randSide() }), evAt('leviathan_boss', 270, { finale: true })]; },
   },

@@ -24,6 +24,11 @@
 //                jump never comes before that; after it, it needs nobody: a short cutscene (the camera on the blast, then
 //                on the ship and the creature: levCinema; Esc skips: levSkip) and LEVB_OUTRO s later the ship jumps by
 //                itself (mission.autoJump: no handle, no nav fix, no MID energy).
+// CREW SCALING (2026-11-01): solo is as described above. With 2+ players (up to LEVB_CREW_CAP) the tail whacks come about
+// n times as often (levFlickGap: every 12.5 / 8.3 / 6.25 s for 2 / 3 / 4+) with the same warnings, one red room at a time
+// and a rest after each whack, so whoever stands where it isn't red is never hit; and things the crew has to split up for
+// come in parallel (LEVB_EXTRAS: a spore cloud or leech swarm on the far side, failing parts, spores behind; more and sooner
+// with more players). The details by the constants.
 // State: org.boss (plain data, synced with org). Geometry: a closed swim loop round the ship (levLoop); the body is a
 // chain of pieces hung back from the nose along it in SCREEN space (x, y·sin50), as the sprites are modelled
 // (levChain: head, 6 segments, tail stock, fluke; ~140 units nose to fluke tips, joints bent at most LEVB_BEND). Targets and the shell tests use the same chain, in screen space. Drawing (tunable in one place):
@@ -34,6 +39,31 @@ const LEVB_FIN_HP = 2, LEVB_ZONE_HP = 2, LEVB_FLICK = 25, LEVB_FLICK_WARN = 4, L
 const LEVB_WINDOW = [12, 16, 20], LEVB_PUNISH = 6, LEVB_SLAM_WARN = 3, LEVB_WAVE = 20, LEVB_WAVE_FIRST = 5, LEVB_SPAWN_GAP = 0.9;
 // Phase 3's leech swarm: how many, by crew size (solo, 2, 3, 4+); the regular swarm event is 6.
 const LEVB_LEECHES = [2, 3, 4, 6];
+// Crew scaling (2026-11-01, the user: with 3 players it was trivial; "have some failures and leeches and spores come at the
+// same time, and just whack faster, proportional to the player but such that if you position yourself already you can
+// always make sure you don't get hit"). Solo is exactly as before. With n players (counted up to LEVB_CREW_CAP):
+// - a tail flick every LEVB_FLICK / n s (2: 12.5, 3: 8.3, 4+: 6.25). The warning stays LEVB_FLICK_WARN s (the slam's
+//   LEVB_SLAM_WARN), a new warning starts at least LEVB_FLICK_REST s after the last whack landed, only one room is ever
+//   red (a flick waits while a slam is warned; a slam during a flick's warning falls on that same room), and a flick
+//   never lands with less warning (one warned when the gas comes is called off). Every room that isn't red is safe; the
+//   rooms away from the side it's on (corridor, mid, the far flank, ...) always are.
+// - LEVB_EXTRAS: things the crew has to split up for, cued at points in the fight (on: 'fight' its start, 'left' / 'right'
+//   parked at that flank in the pass, 'side' / 'side2' parked for phase 3's first / second window, 'behind' parked behind)
+//   plus `after` s: a failing part ('part': the helm's yellow/orange pair, LEVB_PART_WARN s to service it with the kit, as
+//   any maintenance failure), a spore cloud or a leech swarm (n leeches) on the FAR side (away from the creature: the
+//   other cannon) or either side ('any'). Index: crew size - 1.
+const LEVB_CREW_CAP = 4, LEVB_FLICK_REST = 2, LEVB_PART_WARN = 30;
+const LEVB_EXTRAS = [
+  [],
+  [{ on: 'left', after: 4, kind: 'spores', side: 'far' }, { on: 'side', after: 6, kind: 'leeches', side: 'far', n: 2 }],
+  [{ on: 'fight', after: 0, kind: 'part' }, { on: 'left', after: 2, kind: 'spores', side: 'far' }, { on: 'side', after: 4, kind: 'leeches', side: 'far', n: 3 },
+   { on: 'behind', after: 10, kind: 'spores', side: 'any' }],
+  [{ on: 'fight', after: 0, kind: 'part' }, { on: 'left', after: 0, kind: 'spores', side: 'far' }, { on: 'right', after: 3, kind: 'leeches', side: 'far', n: 3 },
+   { on: 'side', after: 2, kind: 'leeches', side: 'far', n: 4 }, { on: 'side2', after: 0, kind: 'part' }, { on: 'behind', after: 6, kind: 'spores', side: 'any' }],
+];
+const levCrew = () => Math.min(LEVB_CREW_CAP, crewSize());
+// Seconds between tail flicks for this crew (solo: LEVB_FLICK).
+const levFlickGap = (n = levCrew()) => (n <= 1 ? LEVB_FLICK : Math.max(LEVB_FLICK_WARN + LEVB_FLICK_REST, LEVB_FLICK / Math.min(n, LEVB_CREW_CAP)));
 // The nest holds LEVB_BROOD_WAVES waves of brood, then the vents go quiet (so MID always fills in the end, even solo without a laser).
 const LEVB_BROOD_WAVES = 3;
 const LEVB_BROOD_SPEED = 0.9, LEVB_BITE_CD = 2, LEVB_NEED = 3, LEVB_OVERRIDE = 4, LEVB_BLAST = 4, LEVB_SINK = 8, LEVB_SWIM = 10, LEVB_HOLD_JUMP = 30;
@@ -242,7 +272,9 @@ function startLevBoss(from = 1) {
     zones: [...levZoneIds('port', nz), ...levZoneIds('star', nz)].map(id => ({ id, side: id[0] === 'L' ? 'port' : 'star', hp: LEVB_ZONE_HP })),
     where: 'front', flick: { t: LEVB_FLICK, room: null }, slam: null, gas: null, p3: null,
     brood: [], dead: [], wave: null, blast: 0, freed: 0, splat: 0,
+    calm: 0, extras: LEVB_EXTRAS[n > 1 ? Math.min(n, LEVB_CREW_CAP) - 1 : 0].map(e => ({ ...e, at: null, done: false })),   // (crew scaling: LEVB_EXTRAS)
   };
+  if (n > 1) B.flick.t = levFlickGap(n);
   if (from >= 2) { B.fin = 0; for (const z of B.zones) z.hp = 0; }
   if (from === 2) { B.step = 'right'; B.where = 'star'; }
   if (from === 4) { B.phase = 'p4'; B.p3 = { side: 'star', done: ['port', 'star'] }; B.step = 'behind'; }
@@ -255,6 +287,7 @@ function startLevBoss(from = 1) {
     sfx.say?.('Leviathan. Very large. It appears to be. Injured.');
   } else combatBanner(`Leviathan (practice: from phase ${from})`);
   sfx.whale?.(); combat.shake = Math.max(combat.shake, 0.6);
+  levCue(B, 'fight');
 }
 function levStartSide(B, side, first = false) {
   B.p3 = { ...(B.p3 || { done: [] }), side, state: 'swim', win: 0, eye: false, glow: [], fails: B.p3?.fails || 0, t: 0 };
@@ -291,13 +324,20 @@ function updateLevBoss(dt) {
   }
   levShells(B);
   // tail flicks (phases 1 and 3, not in the gas or behind)
+  const n = levCrew();
   if (B.phase === 'p1' || B.phase === 'p3') {
     const F = B.flick;
     F.t -= dt;
+    // (a crew: one red room at a time, a rest after each whack: the flick's warning waits)
+    if (n > 1 && F.t <= LEVB_FLICK_WARN && !F.room && (B.slam || B.t < (B.calm || 0))) F.t = LEVB_FLICK_WARN + 1e-3;
     if (F.t <= LEVB_FLICK_WARN && !F.room) F.room = levRoomOn(B.where);
-    if (F.t <= 0) { levBump(F.room || levRoomOn(B.where), false); F.t = LEVB_FLICK; F.room = null; }
-  }
-  if (B.slam && (B.slam.t -= dt) <= 0) { levBump(B.slam.room, true, B.slam.side); B.slam = null; }
+    if (F.t <= 0) {
+      levBump(F.room || levRoomOn(B.where), false); F.t = n > 1 ? levFlickGap(n) : LEVB_FLICK; F.room = null;
+      if (n > 1) B.calm = B.t + LEVB_FLICK_REST;
+    }
+  } else if (n > 1 && B.flick.room) { B.flick.room = null; B.flick.t = levFlickGap(n); }   // (a crew: a flick warned as the gas came is off)
+  if (B.slam && (B.slam.t -= dt) <= 0) { levBump(B.slam.room, true, B.slam.side); B.slam = null; if (n > 1) B.calm = B.t + LEVB_FLICK_REST; }
+  levExtras(B);
   if (B.phase === 'gas') levUpdateGas(B, dt);
   else if (B.phase === 'p3') levUpdateSide(B, dt);
   else if (B.phase === 'p4') levUpdateBehind(B, dt);
@@ -324,16 +364,43 @@ function levBump(id, large, side) {
     shipHit(side, x, y, true); combatBanner(`TAIL SLAM on the ${room.name.toLowerCase()}!`);
   } else { smallHit(side, cx, cy); combatBanner(`Its tail flicked the ${room.name.toLowerCase()}!`); }
 }
+// Crew scaling: the extras (LEVB_EXTRAS) cued at this point of the fight start their clock (each once).
+function levCue(B, on) { for (const e of B.extras || []) if (e.on === on && e.at === null) e.at = B.t + (e.after || 0); }
+function levExtras(B) {
+  if (B.phase === 'blast' || B.phase === 'freed') return;
+  for (const e of B.extras || []) {
+    if (e.done || e.at === null || B.t < e.at) continue;
+    e.done = true;
+    const far = B.where === 'port' ? 'star' : B.where === 'star' ? 'port' : randSide();
+    const side = e.side === 'far' ? far : e.side === 'port' || e.side === 'star' ? e.side : randSide();
+    if (e.kind === 'spores') spawnSpores(side);
+    else if (e.kind === 'leeches') spawnLeeches(side, e.n || 3);
+    else if (e.kind === 'part') levFailPart();
+  }
+}
+// A failing part, the usual way (js/mission.js: a maintenance event, its pair yellow at the helm now, orange the last
+// MAINT_WARNING s, serviced with the repair kit, else it breaks LEVB_PART_WARN s from now).
+function levFailPart() {
+  if (!mission.active) return;
+  const busy = new Set(maintWarnings().flatMap(w => [w.sys, w.decoy]));
+  const pool = SYSTEMS.filter(s => !s.broken && !s.outside && !busy.has(s));
+  if (pool.length < 2) return;
+  const take = () => pool.splice(Math.floor(Math.random() * pool.length), 1)[0], sys = take(), decoy = take();
+  mission.events.push({ id: Math.max(-1, ...mission.events.map(e => e.id)) + 1, kind: 'maintenance', t: mission.t + LEVB_PART_WARN, sys, decoy,
+    warnFrom: mission.t, serviced: false, radar: false, done: false, lev: true });
+  combatBanner('Its thrashing shakes the ship — a part is failing! The helm shows which: service it with the repair kit'); sfx.alarm?.();
+}
 // Arrived where the step wants it: phase 3 opens its eye, phase 4 opens the vents.
 function levParked(B) {
   if (B.phase === 'p1') {
     const where = { fin: 'front', left: 'port', right: 'star' }[B.step];
     B.where = where;
+    if (B.step === 'left' || B.step === 'right') levCue(B, B.step);
     if (B.step === 'left') combatBanner(`LEFT flank: ${B.zones.filter(z => z.side === 'port').length} infested zones — left cannon, 2 hits each!`);
     if (B.step === 'right') combatBanner(`RIGHT flank: ${B.zones.filter(z => z.side === 'star').length} infested zones — right cannon, 2 hits each!`);
-  } else if (B.phase === 'p3') levOpenEye(B);
+  } else if (B.phase === 'p3') { levCue(B, B.p3.done.length ? 'side2' : 'side'); levOpenEye(B); }
   else if (B.phase === 'p4' && !B.wave) {
-    B.where = 'behind'; B.wave = { next: LEVB_WAVE_FIRST, queue: 0, spawn: 0, vent: 0, n: 0 };
+    B.where = 'behind'; B.wave = { next: LEVB_WAVE_FIRST, queue: 0, spawn: 0, vent: 0, n: 0 }; levCue(B, 'behind');
     combatBanner('It\'s BEHIND us, out of reach — charge MID to 3, then hold the engine OVERRIDE in the REACTOR ROOM!');
     sfx.say?.('Manual engine override available. In the reactor room. Charge the middle capacitor.'); sfx.whale?.();
   }
@@ -370,7 +437,9 @@ function levShells(B) {
   for (const s of combat.shells) {
     if (s.dead) continue;
     const dt = 1 / 60, x0 = s.x - s.vx * dt, y0 = (s.y - s.vy * dt) * SIN, x1 = s.x, y1 = s.y * SIN;
-    const hit = spots.find(p => segCircle(x0, y0, x1, y1, p.x, p.y, p.r));
+    // (HIT_GROW: a bit bigger to hit than drawn; when the grown spots overlap, the one the shell passes closest to, for its size)
+    const near = (p) => segDist(p.x, p.y, x0, y0, x1, y1) / p.r;
+    const hit = spots.filter(p => segCircle(x0, y0, x1, y1, p.x, p.y, p.r * HIT_GROW)).sort((a, b) => near(a) - near(b))[0];
     if (hit) { s.dead = true; levHit(B, hit.id, hit); continue; }
     for (let i = 1; i < body.length; i++) {               // across its back: a dull splat (shells don't fly through it)
       const [ax, ay] = body[i - 1], [bx, by] = body[i], w = 0.35 * levHW(i < 2 ? LEVB_HEAD * 0.6 : LEVB_JOINTS[Math.min(i - 2, LEVB_SEGS)] ?? LEVB_BODY);
@@ -445,7 +514,7 @@ function levUpdateSide(B, dt) {
     if (P.win <= 0) {                                    // too slow: a leech swarm / a tail slam, alternating
       const leeches = (P.fails++ % 2) === 0 && !org.leeches.length;   // (no second swarm on top of the first)
       if (leeches) { spawnLeeches(P.side, LEVB_LEECHES[Math.min(crewSize(), LEVB_LEECHES.length) - 1]); combatBanner(`Too slow! It spits a LEECH SWARM at the ${levSideName(P.side)} side — they'll drink that cannon's capacitor dry!`); }
-      else { B.slam = { t: LEVB_SLAM_WARN, room: levRoomOn(P.side), side: P.side }; combatBanner(`Too slow! Its tail rises — get out of the ${roomById(B.slam.room).name.toLowerCase()}!`); }
+      else { B.slam = { t: LEVB_SLAM_WARN, room: (levCrew() > 1 && B.flick.room) || levRoomOn(P.side), side: P.side }; combatBanner(`Too slow! Its tail rises — get out of the ${roomById(B.slam.room).name.toLowerCase()}!`); }   // (a crew: on the room a flick has red already)
       P.state = 'punish'; P.t = LEVB_PUNISH; P.glow = [];
     }
   } else if (P.state === 'punish' && (P.t -= dt) <= 0) levOpenEye(B);
