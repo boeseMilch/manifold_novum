@@ -174,7 +174,26 @@ function menuKeyDown(e) {
 }
 function menuKeyUp(e) { if (menuPad.rep && menuPad.rep.code === e.code) menuRepeatStop(); }
 
+// Tab in the menus: the next text field (the name in the main menu, the local players' names; Shift+Tab: the one
+// before), skipping the buttons in between (2026-11-01, the user). Not during a mission (Tab isn't the menus' then).
+const menuTextFields = () => [...document.querySelectorAll('input[type=text], input:not([type])')]
+  .filter(el => !el.disabled && !el.readOnly && el.getClientRects().length && (el.closest('#lobby, #shop') && !el.closest('[hidden]')));
+function menuTab(e) {
+  if (e.code !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+  const lobby = document.getElementById('lobby');
+  if (!lobby || lobby.hidden) return;
+  const list = menuTextFields();
+  if (!list.length) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  const i = list.indexOf(document.activeElement), n = list.length;
+  const next = list[i < 0 ? (e.shiftKey ? n - 1 : 0) : (i + (e.shiftKey ? -1 : 1) + n) % n];
+  const k = list.indexOf(next);
+  next.focus(); next.select?.();
+  // (leaving a local player's name saves it, which rebuilds the panel: then the field at the same place again)
+  setTimeout(() => { if (!document.contains(next)) { const again = menuTextFields()[k]; again?.focus(); again?.select?.(); } }, 0);
+}
 if (typeof window !== 'undefined' && typeof document !== 'undefined' && window.addEventListener) {
+  window.addEventListener('keydown', menuTab, true);
   window.addEventListener('keydown', menuKeyDown, true);   // (capture: before the game's own key handlers)
   window.addEventListener('keyup', menuKeyUp, true);
   window.addEventListener('blur', menuRepeatStop);

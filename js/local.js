@@ -27,9 +27,16 @@ const localUI = (() => {
   const read = (st, k) => { try { return JSON.parse(st.getItem(k)); } catch (e) { return null; } };
   const mem = read(localStorage, 'mn-local') || {};  // (names and devices from last time: just the defaults)
   if (mem.mine) mine = mem.mine;
+  let roster = read(localStorage, 'mn-local-roster') || (mem.players || []).map(({ name, input, paint }) => ({ name, input, paint }));
+  if (!Array.isArray(roster)) roster = [];
   function save() {
     const list = players.map(p => ({ slot: p.slot, name: p.name, input: p.input, paint: p.paint || null }));
     try { localStorage.setItem('mn-local', JSON.stringify({ mine, players: list })); } catch (e) { /* no storage */ }
+    // the roster: everyone who played here as a local player, most recent first (name, device, colour; their locker
+    // and progress are in their own profile by name), so "+ LOCAL PLAYER" brings them back next time
+    const known = new Set(list.map(q => q.name.toLowerCase()));
+    roster = [...list.map(({ name, input, paint }) => ({ name, input, paint })), ...roster.filter(q => !known.has(q.name.toLowerCase()))].slice(0, 12);
+    try { localStorage.setItem('mn-local-roster', JSON.stringify(roster)); } catch (e) { /* no storage */ }
     try { sessionStorage.setItem('mn-local-run', JSON.stringify({ game, mine, order, players: list })); } catch (e) { /* no storage */ }
   }
   const active = () => players.length > 0;
@@ -55,11 +62,11 @@ const localUI = (() => {
     if (players.length >= MAX - 1) return;
     const slot = [2, 3, 4].find(s => !players.some(p => p.slot === s));
     const used = inputs(), names = [myName(), ...players.map(p => p.name)].map(n => n.toLowerCase());
-    const old = (mem.players || []).find(q => q.slot === slot);
-    let name = old?.name && !names.includes(old.name.toLowerCase()) ? old.name : `Player ${slot}`;
+    const old = roster.find(q => q && q.name && !names.includes(q.name.toLowerCase()));   // (the most recent one not here yet)
+    let name = old ? old.name : `Player ${slot}`;
     for (let k = slot; names.includes(name.toLowerCase()); k++) name = `Player ${k + 1}`;
     const input = old?.input && !used.includes(old.input) ? old.input : ['pad0', 'pad1', 'pad2', 'pad3', 'kbm'].find(i => !used.includes(i));
-    const p = { slot, name, input };
+    const p = { slot, name, input, paint: old?.paint || null };
     p.frame = frameFor(p);
     players.push(p); order.push(slot);
     save(); render();
@@ -97,7 +104,12 @@ const localUI = (() => {
   // outside everyone's view (localStrip); the views share the rest
   const STRIP_W = 296;
   const stripS = () => Math.max(0.5, Math.min(0.85, window.innerHeight / 1270));
-  const stripW = () => (inGame && active() ? Math.round(STRIP_W * stripS()) : 0);
+  const views = () => order.filter(s => s !== undefined).length;
+  // three players: the quarters fill the whole width and the column goes into the empty quarter (the user)
+  const emptyQuarter = () => [0, 1, 2, 3].find(i => order[i] === undefined);
+  const stripW = () => (inGame && active() && views() !== 3 ? Math.round(STRIP_W * stripS()) : 0);
+  // where the shared column is drawn: the strip on the far left, or the empty quarter
+  const stripRect = () => (views() === 3 ? rectAt(emptyQuarter(), 4) : { x: 0, y: 0, w: stripW(), h: window.innerHeight });
   function rectAt(i, n) {
     const x0 = stripW(), W = window.innerWidth - x0, H = window.innerHeight, g = 2;
     if (n === 2) return { x: x0 + (i ? Math.ceil(W / 2) + g / 2 : 0), y: 0, w: Math.floor(W / 2) - g / 2, h: H };
@@ -261,19 +273,19 @@ const localUI = (() => {
   // The strip: the shared column drawn here, every frame (js/game.js render), on a canvas of its own; a click on a
   // plate claims it as in a view (js/claims.js)
   let sc = null;
-  window.localStripH = () => (inGame && active() ? Math.round(window.innerHeight / stripS()) : 0);   // (js/sidebar.js: how many plates fit)
+  window.localStripH = () => (inGame && active() ? Math.round(stripRect().h / stripS()) : 0);   // (js/sidebar.js: how many plates fit)
   window.localStrip = () => {
     if (!(inGame && active())) { if (sc) sc.hidden = true; return; }
-    const s = stripS(), w = stripW(), h = window.innerHeight, dpr = window.devicePixelRatio || 1;
+    const s = stripS(), R = stripRect(), w = R.w, h = R.h, dpr = window.devicePixelRatio || 1;
     if (!sc) {
       sc = document.createElement('canvas'); sc.id = 'local-strip'; document.body.appendChild(sc);
       sc.addEventListener('mousedown', (e) => {
-        const x = e.clientX / stripS(), y = e.clientY / stripS(), k = typeof plateAt === 'function' && plateAt(x, y, true);
+        const R = stripRect(), x = (e.clientX - R.x) / stripS(), y = (e.clientY - R.y) / stripS(), k = typeof plateAt === 'function' && plateAt(x, y, true);
         if (e.button === 0 && k && mission.active) sendCommand(['claim', k]);
       });
     }
     if (sc.width !== Math.round(w * dpr) || sc.height !== Math.round(h * dpr)) { sc.width = Math.round(w * dpr); sc.height = Math.round(h * dpr); sc.style.width = w + 'px'; sc.style.height = h + 'px'; }
-    sc.hidden = false;
+    sc.hidden = false; sc.style.left = R.x + 'px'; sc.style.top = R.y + 'px';
     const g = sc.getContext('2d'), keep = ctx;
     g.setTransform(dpr * s, 0, 0, dpr * s, 0, 0); g.fillStyle = '#07090f'; g.fillRect(0, 0, w / s, h / s);
     ctx = g;

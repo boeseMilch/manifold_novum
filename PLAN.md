@@ -4726,3 +4726,8 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   passed on from a controller player's view, js/split.js) ignores them. Each local player's view has its own copy.
 - js/menugl.js lights a keyboard-focused button only for `:focus-visible`, which a script's focus() doesn't get in
   Chromium (focusVisible option unsupported): the outline alone shows the pick. Tests: tests/menupad.js.
+- Same day, the user: the panel remembers a roster of local players (localStorage 'mn-local-roster': name, device,
+  colour, most recent first); "+ LOCAL PLAYER" brings back the most recent one not here yet, and their locker and
+  progress come with their name. With three players the quarters fill the whole width and the shared column is drawn
+  into the empty quarter instead of a strip. Tab in the menus jumps to the next text field (Shift+Tab: back;
+  js/menupad.js menuTab).
