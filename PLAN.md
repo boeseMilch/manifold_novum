@@ -4684,3 +4684,8 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
 - Not tested end to end: the reload back into the lobby after a mission with local players (the pieces are: the
   host's mn-return, the views' mn-seat tickets, mn-local-run).
 
+- Devices (same day, the user: "player 1 only has keyboard / mouse at first", "weird to select", "swap"): every
+  player's list always has the keyboard + mouse and controllers 1-4 (a browser lists a controller only after a button
+  press, so unseen ones are there as "press a button on it"), each marked with who has it; picking someone else's
+  device swaps (they get yours; a local player's view comes back with its new device). The panel no longer rebuilds
+  on every lobby update or controller sighting (that closed an open dropdown); new controllers only relabel.

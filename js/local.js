@@ -74,17 +74,22 @@ const localUI = (() => {
       if (!v || [myName(), ...players.filter(q => q !== p).map(q => q.name)].some(n => n.toLowerCase() === v.toLowerCase())) return render(`Pick another name for ${p.name}: everyone needs their own (progress is kept by name).`);
       if (v === p.name) return;
       p.name = v.slice(0, 24);
-    } else {
-      if (inputs().some((i, k) => i === v && (k === 0 || players[k - 1] !== p))) return render('That device is someone else\'s already: everyone needs their own.');
-      p.input = v;
-    }
+    } else return setDevice(p, v);
     drop(p); p.frame = frameFor(p); p.locker = false;
-    save(); render();
+    save(); render('');
   }
-  function setMine(v) {
-    if (players.some(p => p.input === v)) return render('That device is someone else\'s already: everyone needs their own.');
-    mine = v; save(); render();
+  // A device for `who` (this page's player: 'me', or a local player). Someone else has it: they get who's old one
+  // (a swap; the user, 2026-11-01). A local player's view comes back with its new device (a new seat).
+  function setDevice(who, v) {
+    const old = who === 'me' ? mine : who.input;
+    if (v === old) return;
+    const other = mine === v && who !== 'me' ? 'me' : players.find(q => q !== who && q.input === v);
+    const give = (w, d) => { if (w === 'me') mine = d; else { w.input = d; drop(w); w.frame = frameFor(w); w.locker = false; } };
+    give(who, v);
+    if (other) give(other, old);
+    save(); render('');
   }
+  const setMine = (v) => setDevice('me', v);
 
   // ----- the screen: halves for two, quarters for three or four (by `order`)
   // the shared column (mission box, objective, encounter and task plates) gets a strip of its own on the far left,
@@ -129,12 +134,24 @@ const localUI = (() => {
   }
 
   // ----- the lobby panel (host only)
-  function devOptions(sel, cur) {
-    const opts = [['kbm', 'Keyboard + mouse']];
-    pads().forEach((p, i) => { if (p) opts.push(['pad' + i, `Controller ${i + 1}: ${p.id.replace(/\s*\(.*$/, '').slice(0, 26)}`]); });
-    if (!opts.some(o => o[0] === cur)) opts.push([cur, `Controller ${+cur.slice(3) + 1} (press a button on it)`]);
-    sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${escapeHtml(l)}</option>`).join('');
+  // Every device, always: the keyboard + mouse and controllers 1-4 (a browser only lists a controller after a button
+  // press on it, so the ones it hasn't seen yet are there too, named so), and who has it now (picking it swaps)
+  const DEVICES = ['kbm', 'pad0', 'pad1', 'pad2', 'pad3'];
+  function devLabel(v, who) {
+    const P = pads(), i = v === 'kbm' ? -1 : +v.slice(3);
+    const base = v === 'kbm' ? 'Keyboard + mouse' : P[i] ? `Controller ${i + 1}: ${P[i].id.replace(/\s*\(.*$/, '').slice(0, 22)}` : `Controller ${i + 1} (press a button on it)`;
+    const holder = mine === v ? 'me' : players.find(q => q.input === v);
+    return holder && holder !== who ? `${base} · ${holder === 'me' ? myName() : holder.name}'s: swap` : base;
+  }
+  function devOptions(sel, cur, who) {
+    sel.innerHTML = DEVICES.map(v => `<option value="${v}">${escapeHtml(devLabel(v, who))}</option>`).join('');
     sel.value = cur;
+  }
+  function relabel() {                                // (a controller seen for the first time: just the names, no rebuild)
+    document.querySelectorAll('#local-rows select').forEach(sel => {
+      const slot = +sel.closest('.local-row')?.dataset.slot || 0, who = slot ? players.find(q => q.slot === slot) : 'me';
+      [...sel.options].forEach(o => { const t = devLabel(o.value, who); if (o.textContent !== t) o.textContent = t; });
+    });
   }
   let lastMsg = '';
   function render(msg) {
@@ -150,11 +167,11 @@ const localUI = (() => {
       + players.map(p => `<div class="local-row" data-slot="${p.slot}"><i style="background:${COLORS[p.slot - 1]}"></i><input value="${escapeHtml(p.name)}" maxlength="24" aria-label="Name">`
       + `<select></select><button class="local-locker" title="${escapeHtml(p.name)}'s locker: opens in their part of the screen">LOCKER</button><button class="local-x" title="Remove">✕</button></div>`).join('')
       + (lastMsg ? `<p class="local-msg">${escapeHtml(lastMsg)}</p>` : '');
-    devOptions(rows.querySelector('[data-me]'), mine);
+    devOptions(rows.querySelector('[data-me]'), mine, 'me');
     rows.querySelector('[data-me]').onchange = (e) => setMine(e.target.value);
     for (const p of players) {
       const row = rows.querySelector(`[data-slot="${p.slot}"]`);
-      devOptions(row.querySelector('select'), p.input);
+      devOptions(row.querySelector('select'), p.input, p);
       row.querySelector('select').onchange = (e) => change(p, 'input', e.target.value);
       row.querySelector('input').onchange = (e) => change(p, 'name', e.target.value);
       row.querySelector('.local-locker').onclick = () => locker(p);
@@ -238,11 +255,11 @@ const localUI = (() => {
     e.stopImmediatePropagation(); e.preventDefault();
     to.dispatchEvent(new to.KeyboardEvent(type, { code: e.code, key: e.key, repeat: e.repeat, bubbles: true, cancelable: true }));
   }, true);
-  setInterval(() => { if (host && game != null && !inGame && !document.querySelector('#local-rows select:focus')) { const sig = pads().map(p => p && p.id).join(); if (sig !== render.sig) { render.sig = sig; render(); } } }, 700);
+  setInterval(() => { if (host && game != null && !inGame) { const sig = pads().map(p => p && p.id).join(); if (sig !== relabel.sig) { relabel.sig = sig; relabel(); } } }, 700);
 
   return {
     // js/net.js: the room (re)drawn, this page's game joined, the mission started, the game left
-    room(st) { host = !!st.host; render(); },
+    room(st) { if (!!st.host === host && render.done) return; host = !!st.host; render.done = true; render(); },   // (not on every lobby update: an open dropdown would close)
     joined(id) {
       game = id; window.splitGame = id;
       const run = read(sessionStorage, 'mn-local-run');
