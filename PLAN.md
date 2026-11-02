@@ -4777,7 +4777,7 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   grown about their own centre (poiTouch, js/enemies.js); asteroids (a big one's crack, small rocks whole; a big
   one's body, which only wears, keeps its size like an enemy hull, so it can't catch a shell before the crack); grappler tentacles
   and leeches; spore clouds, mine drones and mines; invaders, pirates and the leviathan's brood (boltHitsBody);
-  Captain Red Comet's generator and body; S-7's tendrils, creep and wrap; the leviathan's weak spots (levShells).
+  Captain Red Comet's generator (his body only while dazed: otherwise it only blocks); S-7's tendrils, creep and wrap; the leviathan's weak spots (levShells).
   Nothing is drawn differently. What enemies hit (our hull, the crew) and what blocks our shots (enemy hulls, shield
   bubbles, walls, the leviathan's body) keep their exact size, so only our aim got more forgiving. tests/hitboxes.js.
 - Same day, the user: "when playing with controller you can increase hitboxes (especially of pirates) by another 5%".

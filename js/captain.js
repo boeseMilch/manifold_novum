@@ -340,7 +340,9 @@ function captainBoltTest(b, x0, y0) {
   const G = captGen(B), lz = GFX.lift(b.z || 0), gy = G.y - GFX.lift(CAPT_GEN_Z), n = Math.max(1, Math.ceil(Math.hypot(b.x - x0, b.y - y0) / 0.03));
   let kg = -1;
   for (let i = 0; i <= n; i++) { const k = i / n; if (Math.hypot(x0 + (b.x - x0) * k - G.x, y0 + (b.y - y0) * k - lz - gy) <= CAPT_GEN_R * hitGrow(b)) { kg = k; break; } }
-  const kb = segBody(x0, y0, b.x, b.y, b.z, B.x, B.y, CAPT_BODY.r * hitGrow(b), CAPT_BODY.top);   // (both HIT_GROW wider, js/combat.js)
+  // (the generator, his weak spot, hitGrow wider (js/combat.js); his body only while dazed, when it's a target: otherwise it
+  // just blocks (shield, armour) and keeps its size, so it can't catch a bolt meant for the generator)
+  const kb = segBody(x0, y0, b.x, b.y, b.z, B.x, B.y, CAPT_BODY.r * (B.state === 'dazed' ? hitGrow(b) : 1), CAPT_BODY.top);
   if (kg < 0 && kb < 0) return null;
   const gen = kg >= 0 && (kb < 0 || kg <= kb), k = gen ? kg : kb;
   return { k, hit: () => captBoltHit(B, b, gen) };
