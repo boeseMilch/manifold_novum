@@ -7,7 +7,7 @@ const SHIELD_COOLDOWN = 5;                           // cooldown starts once the
 const SWARM_SIZE = 2, SWARM_INTERVAL = 6;
 const ASTEROID_WEAR = 4;                         // body hits that split a big asteroid even without hitting the crack
 // Everything the crew shoots at is this much bigger to hit than it is drawn (the user, 2026-11-01: "increase the hitboxes
-// for most stuff by like 10%"): weak spots (poiTouch, js/enemies.js), asteroids, organic creatures, spore clouds, drones,
+// for most stuff by like 10%"): weak spots (poiTouch, js/enemies.js), asteroids (a big one's crack, small ones whole), organic creatures, spore clouds, drones,
 // mines, invaders / pirates / the brood / the captain (boltHitsBody, js/invader.js), S-7. Only what WE hit: what enemies
 // hit (our hull, the crew) and what blocks our shots (enemy hulls, shield bubbles, walls) keep their exact size.
 const HIT_GROW = 1.1;
@@ -383,7 +383,7 @@ function updateCombat(dt) {
       if (a.big) {
         const [cx, cy] = crackPos(a);
         if (segCircle(x0, y0, s.x, s.y, cx, cy, 0.4 * hitGrow(s))) { s.dead = true; splitAsteroid(a); }
-        else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9 * hitGrow(s))) {
+        else if (segCircle(x0, y0, s.x, s.y, a.x, a.y, a.r * 0.9)) {   // (the body: its own size, like an enemy hull: only the crack, the weak spot, is grown)
           s.dead = true; a.flash = 0.7; sfx.clank();
           for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.4, i % 2 ? '#ffd28a' : '#8d8274', 0.1);
           combatFlip('fx/hit_spark', s.x, s.y);

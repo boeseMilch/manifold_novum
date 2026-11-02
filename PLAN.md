@@ -4774,7 +4774,8 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
 ## Bigger hitboxes (2026-11-01, the user: "increase the hitboxes for most stuff by like 10%")
 
 - Everything the crew shoots at is HIT_GROW (1.1, js/combat.js) bigger to hit than it is drawn: enemy weak spots,
-  grown about their own centre (poiTouch, js/enemies.js); asteroids (crack, body, small rocks); grappler tentacles
+  grown about their own centre (poiTouch, js/enemies.js); asteroids (a big one's crack, small rocks whole; a big
+  one's body, which only wears, keeps its size like an enemy hull, so it can't catch a shell before the crack); grappler tentacles
   and leeches; spore clouds, mine drones and mines; invaders, pirates and the leviathan's brood (boltHitsBody);
   Captain Red Comet's generator and body; S-7's tendrils, creep and wrap; the leviathan's weak spots (levShells).
   Nothing is drawn differently. What enemies hit (our hull, the crew) and what blocks our shots (enemy hulls, shield
