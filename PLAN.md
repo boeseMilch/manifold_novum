@@ -4668,3 +4668,19 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   banners ("one queue for everyone, on the left side") and plays sound, the others' mute mutes it. The HUD keeps its
   fixed sizes, so in a quarter the inventory slots and the energy panel take a lot of the view.
 
+## Local players instead of split.html (2026-11-01, the user)
+
+- No separate page any more (split.html is gone): the host adds up to three local players in the lobby (js/local.js,
+  `localUI`): a name, a device each (keyboard + mouse or any controller, any mix, never twice; the host's own too:
+  js/gamepad.js `localPad` fixes this page's pad), a LOCKER per player (their view, an iframe, shown in their part of
+  the screen with the locker open: several at once) and a spot (the map: drag and drop, or click two to swap). Each
+  local player is a hidden view (`index.html?split=2..4`) that joins the game with its own seat (sessionStorage
+  'mn-seat#N'), so after a mission the host's page reloads and brings them back ('mn-local-run').
+- In a mission: halves for two, quarters for three or four (`order`); each view is laid out at least 1280×760 and
+  drawn scaled down (js/game.js VIEW / resize, js/gfx.js begin), so the world, the HUD and its panels all fit; a
+  coloured border with the name per view fades after 4 s. The shared column (mission box, plates) is drawn by the
+  host's page into a strip of its own on the far left (localStrip; js/sidebar.js sizes it), outside every view; the
+  banners stay in the top-left view (splitShared); only the host's page plays sound.
+- Not tested end to end: the reload back into the lobby after a mission with local players (the pieces are: the
+  host's mn-return, the views' mn-seat tickets, mn-local-run).
+

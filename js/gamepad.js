@@ -70,7 +70,11 @@ function padRelease() { for (const c of gamepad.held) padKey('keyup', c); gamepa
 function padPoll() {
   const pads = padList();
   if (gamepad.index != null && !pads[gamepad.index]) padRelease();   // (unplugged: let go, keep the choice for when it's back)
-  if (gamepad.index == null && document.hasFocus()) {
+  // local players on this page (js/local.js): this page's player has the device picked in the lobby (a pad, or none
+  // for the keyboard + mouse), the other pads are theirs; no claiming by a button press
+  const fixed = typeof localPad === 'function' ? localPad() : undefined;
+  if (fixed !== undefined) { if (gamepad.index !== fixed) { padRelease(); gamepad.index = fixed; } }
+  else if (gamepad.index == null && document.hasFocus()) {
     const free = pads.findIndex((p, i) => p && !gamepad.others.has(i) && padActive(p));
     if (free >= 0) padClaim(free);
   }
@@ -84,7 +88,7 @@ function padPoll() {
 }
 
 // The picker: which pad this tab plays. Only in the menus (in a mission it would cover the HUD).
-const padPickerShown = (n) => n > 0 && (typeof lobbyOpen !== 'function' || lobbyOpen());
+const padPickerShown = (n) => n > 0 && (typeof lobbyOpen !== 'function' || lobbyOpen()) && !(typeof localPad === 'function' && localPad() !== undefined);   // (local players: the lobby's panel picks)
 function padPickerRender() {
   const sel = gamepad.picker; if (!sel) return;
   const pads = padList();

@@ -1,6 +1,6 @@
-// Split screen (split.html, js/progress.js SPLIT; 2-4 views): each view's player keeps their own progress, by name. This
+// Split screen (local players: js/local.js on the host's page, views ?split=2..4; js/progress.js SPLIT): each player keeps their own progress, by name. This
 // browser's own player (localStorage 'mn-name') keeps the usual save (cookie + localStorage); anyone else gets
-// 'mn-profile@<name>' in localStorage and never touches the cookie. Only the first view shows the shared column and banners.
+// 'mn-profile@<name>' in localStorage and never touches the cookie. No view draws the shared column (the host's page has a strip for it).
 // Run: node tests/split.js
 const { loadGame } = require('./harness');
 let failed = 0;
@@ -15,7 +15,7 @@ function browser() {
     get cookie() { return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; '); },
     set cookie(s) { const [kv] = s.split(';'); const i = kv.indexOf('='); jar[kv.slice(0, i)] = kv.slice(i + 1); },
   };
-  return { ls, jar, load: (search) => loadGame(['profile', 'saveProfile', 'SPLIT', 'splitShared', 'defaultProfile'], { localStorage, document, URLSearchParams, location: { hash: '', search } }) };
+  return { ls, jar, load: (search) => loadGame(['profile', 'saveProfile', 'SPLIT', 'splitShared', 'splitSidebar', 'defaultProfile'], { localStorage, document, URLSearchParams, location: { hash: '', search } }) };
 }
 
 {
@@ -32,7 +32,7 @@ function browser() {
   zoe.profile.money = 77; zoe.profile.gear.armor = true; zoe.saveProfile(zoe.profile);
   check(JSON.parse(B.ls['mn-profile@Zoe']).money === 77 && B.jar['mn-profile'] === cookie0 && JSON.parse(B.ls['mn-profile']).money === 500,
         'Zoe\'s progress goes to mn-profile@Zoe; the usual cookie and save stay exactly as they were');
-  check(!zoe.splitShared(), 'the right half doesn\'t show the shared column / banners');
+  check(!zoe.splitShared() && !zoe.splitSidebar(), 'a local player\'s view shows neither the shared column nor the banners (the host page\'s strip / top-left view does)');
 
   const rip = B.load('?split=1&name=Ripley&input=kbm');
   check(rip.profile.money === 500 && rip.profile.gear.boots && rip.splitShared(), 'the left half as this browser\'s own player (Ripley) plays on the usual save, shows the shared column');
@@ -45,7 +45,7 @@ function browser() {
   check(q3.SPLIT?.slot === 3 && q4.SPLIT?.slot === 4 && q4.SPLIT.pad === 2 && !q3.splitShared() && !q4.splitShared(), 'quadrants 3 and 4: their own slot and controller, no shared column (only the first view shows it)');
   check(!B.load('?split=5&name=X&input=kbm').SPLIT, 'no fifth view');
   const back = B.load('');
-  check(back.profile.money === 600 && !back.SPLIT && back.splitShared(), 'the usual game afterwards: the usual save, no split');
+  check(back.profile.money === 600 && !back.SPLIT && back.splitShared() && back.splitSidebar(), 'the usual game afterwards: the usual save, no split, the column in the view');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

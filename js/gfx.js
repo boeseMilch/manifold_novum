@@ -1636,11 +1636,14 @@ void main() {
   function begin(v, t) {
     if (!api.on) return;
     view = v; frameNo++; active = true;
-    const vw = Math.max(1, window.innerWidth), vh = Math.max(1, window.innerHeight), dpr = window.devicePixelRatio || 1;
+    // the view's layout size and scale (js/game.js VIEW: a split screen's part of the page, zoomed out to fit)
+    const Vs = typeof VIEW !== 'undefined' ? VIEW : { x: 0, y: 0, s: 1 };
+    const vw = Math.max(1, typeof VW !== 'undefined' && VW ? VW : window.innerWidth), vh = Math.max(1, typeof VH !== 'undefined' && VH ? VH : window.innerHeight);
+    const dpr = (window.devicePixelRatio || 1) * Vs.s;
     const scale = userScale || Math.min(1, 2048 / (vw * dpr));
     W = Math.max(1, Math.round(vw * dpr * scale)); H = Math.max(1, Math.round(vh * dpr * scale));
     if (glc.width !== W || glc.height !== H) { glc.width = W; glc.height = H; }
-    glc.style.width = vw + 'px'; glc.style.height = vh + 'px';
+    glc.style.width = vw * Vs.s + 'px'; glc.style.height = vh * Vs.s + 'px'; glc.style.left = Vs.x + 'px'; glc.style.top = Vs.y + 'px';
     K = W / vw; api.layer2dScale = K;
     Sdev = 48 * v.zoom * K;                               // device px per layout unit (T = 48)
     camOX = v.ox * K; camOY = v.oy * K;

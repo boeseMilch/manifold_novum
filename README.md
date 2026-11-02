@@ -123,16 +123,17 @@ pressed while the tab has focus; the 🎮 picker (bottom left in the menus, show
 is plugged in) switches by hand. So for couch co-op run `node server.js`, open the game in two windows
 (side by side or one per screen), join the same game, and give each its own controller.
 
-### Split screen
+### Split screen (local players)
 
-Up to four players on one screen: run `node server.js` and open `http://…/split.html`. Pick how many (2: left and
-right halves, 3-4: quarters); each player picks a name and what they play with (the keyboard and mouse for one of
-them, a controller each for the rest; never the same one). Each view is its own player in the same game: the first
-one opens it and picks the mission, the others join. Progress (money, gear and locker, chapters) is kept by name:
-the name this browser usually plays as keeps its usual save, anyone else gets their own (by name, in this browser),
-so the next split screen with the same names picks up where it was. The first view (top left) plays the sound and
-shows the mission plates and messages, once for everyone; keys typed while a controller's view has the focus still
-go to the keyboard player.
+Up to four players at one screen, in a game on `node server.js`: open a game (you're the host) and press
+**＋ LOCAL PLAYER** in its lobby, up to three times. Each local player gets a name and a device (the keyboard and
+mouse, or a controller: any mix, also all controllers, never one device twice; you pick yours there too), their own
+**LOCKER** (it opens in their part of the screen, so everyone can kit out at once) and a spot on the screen: drag the
+names on the little map (or click two to swap them). When the mission starts the screen splits (two: halves, three or
+four: quarters), each view zoomed out to fit, with a coloured border and name that fade after a few seconds. The
+mission plates and the jump timer are in one strip on the far left, outside everyone's view; the banners show in the
+top-left view; the host's page plays the sound. Progress (money, gear, chapters) is kept by name: your own name keeps
+its usual save, the others get their own (by name, in this browser), so the same names pick up where they were.
 
 ## Campaign, progression, practice
 

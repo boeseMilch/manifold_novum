@@ -473,7 +473,13 @@ const SPLIT = (() => {
   } catch (e) { return null; }
 })();
 // The shared column (mission box, objective, encounter and task plates) and the banners: shown once, in the first view
-const splitShared = () => !SPLIT || SPLIT.slot === 1;   // (the first view, top / left: one queue for everyone)
+const splitShared = () => {                          // the banners: in the top-left view only (js/local.js)
+  if (typeof window === 'undefined') return true;
+  if (SPLIT) { try { const f = window.parent.localSharedSlot; return f ? f() === SPLIT.slot : SPLIT.slot === 1; } catch (e) { return SPLIT.slot === 1; } }
+  return typeof localSharedSlot !== 'function' || localSharedSlot() === 1;
+};
+// the shared column in this view: not in a split mission (the host's page draws it in a strip of its own, js/local.js)
+const splitSidebar = () => !SPLIT && !(typeof localSplit === 'function' && localSplit());
 const splitOwnKey = () => {                          // null: the usual profile; else this player's own localStorage key
   if (!SPLIT) return null;
   let own = null; try { own = localStorage.getItem('mn-name'); } catch (e) { /* none */ }

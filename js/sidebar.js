@@ -74,7 +74,8 @@ let sideOrder = [], sideMore = 0, sideHover = null;      // (sideHover: the plat
 function updateSidebar(top, dt) {
   const list = encounterPlates(), keys = new Set(list.map(p => p.key));
   const headH = mission.active ? HEAD_H : 0, y0 = top + 10 + (headH ? headH + PLATE_GAP : 0);
-  const fit = Math.max(1, Math.floor((VH - 140 - y0 - 22) / (PLATE_H + PLATE_GAP)));   // (above the energy panel, room for "+n more")
+  const vh = (typeof localStripH === 'function' && localStripH()) || VH;   // (split screen: the strip of its own, js/local.js)
+  const fit = Math.max(1, Math.floor((vh - 140 - y0 - 22) / (PLATE_H + PLATE_GAP)));   // (above the energy panel, room for "+n more")
   const shown = list.length > fit + 1 ? list.slice(0, fit) : list;
   sideMore = list.length - shown.length;
   const shownKeys = new Set(shown.map(d => d.key));
@@ -161,8 +162,8 @@ function keepOffPanels(box, avoid, W, H, pad = 8) {
 }
 
 // The plate under a screen point (CSS px), for a click (claim it: js/claims.js): its key, or null. Not one on its way out.
-function plateAt(mx, my) {
-  if (typeof splitShared === 'function' && !splitShared()) return null;   // (split screen's right half: no plates drawn)
+function plateAt(mx, my, strip = false) {
+  if (!strip && typeof splitSidebar === 'function' && !splitSidebar()) return null;   // (split screen: the plates are in the strip, js/local.js)
   for (const k of sideOrder) {
     const p = sidePlates.get(k);
     if (!p || p.leaving || p.alpha < 0.5 || p.y == null) continue;

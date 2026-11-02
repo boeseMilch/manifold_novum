@@ -5,12 +5,23 @@
 const canvas = document.getElementById('c');
 ctx = canvas.getContext('2d');
 let VW = 0, VH = 0, DPR = 1;
+// This view on the page: { x, y, s } (s: its scale). Normally the whole window at 1. Split screen (js/local.js: the
+// host's own view is one part of the page; js/progress.js SPLIT: a local player's view, an iframe of its own): the
+// view is laid out as if it were at least SPLIT_MIN large and drawn scaled down to its part, so the world, the HUD and
+// its panels zoom out together and still fit (VW / VH: the layout size; DPR includes the scale).
+const VIEW = { x: 0, y: 0, s: 1 }, SPLIT_MIN = [1280, 760];
 function resize() {
-  DPR = window.devicePixelRatio || 1;
-  VW = window.innerWidth; VH = window.innerHeight;
-  canvas.width = VW * DPR; canvas.height = VH * DPR;
-  canvas.style.width = VW + 'px'; canvas.style.height = VH + 'px';
+  const R = (typeof localViewRect === 'function' && localViewRect()) || (typeof SPLIT !== 'undefined' && SPLIT ? { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight } : null);
+  const w = R ? R.w : window.innerWidth, h = R ? R.h : window.innerHeight;
+  VIEW.x = R ? R.x : 0; VIEW.y = R ? R.y : 0; VIEW.s = R ? Math.min(1, w / SPLIT_MIN[0], h / SPLIT_MIN[1]) : 1;
+  DPR = (window.devicePixelRatio || 1) * VIEW.s;
+  VW = Math.round(w / VIEW.s); VH = Math.round(h / VIEW.s);
+  canvas.width = Math.round(w * (window.devicePixelRatio || 1)); canvas.height = Math.round(h * (window.devicePixelRatio || 1));
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  canvas.style.left = VIEW.x + 'px'; canvas.style.top = VIEW.y + 'px';
 }
+// a mouse event's point in the view's layout pixels
+const viewX = (e) => (e.clientX - VIEW.x) / VIEW.s, viewY = (e) => (e.clientY - VIEW.y) / VIEW.s;
 window.addEventListener('resize', resize); resize();
 
 // Input. Every crew member has an input object { keys, pressed, mouse }; this browser's
@@ -28,19 +39,19 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => localInput.keys.delete(e.code));
 window.addEventListener('blur', () => { localInput.keys.clear(); localInput.mouse.down = false; });
-canvas.addEventListener('mousemove', e => { localInput.mouse.x = e.clientX; localInput.mouse.y = e.clientY; localInput.mouse.moved = 1; localInput.mouse.look = 1; });
+canvas.addEventListener('mousemove', e => { localInput.mouse.x = viewX(e); localInput.mouse.y = viewY(e); localInput.mouse.moved = 1; localInput.mouse.look = 1; });
 const MUTE_BTN = { x: 8, y: 6, w: 26, h: 24 };
 const inMuteBtn = (x, y) => x >= MUTE_BTN.x && x <= MUTE_BTN.x + MUTE_BTN.w && y >= MUTE_BTN.y && y <= MUTE_BTN.y + MUTE_BTN.h;
 canvas.addEventListener('mousedown', e => {
   const m = localInput.mouse;
-  if (e.button === 0 && inMuteBtn(e.clientX, e.clientY)) { sfx.toggleMute(); return; }
-  if (e.button === 0 && inGuideBtn(e.clientX, e.clientY)) { setGuideArrows(!guideArrows); return; }   // guide arrows on / off (js/claims.js)
+  if (e.button === 0 && inMuteBtn(viewX(e), viewY(e))) { sfx.toggleMute(); return; }
+  if (e.button === 0 && inGuideBtn(viewX(e), viewY(e))) { setGuideArrows(!guideArrows); return; }   // guide arrows on / off (js/claims.js)
   if (e.button === 0) { m.down = true; m.click = true; } if (e.button === 2) { m.right = true; m.rightClick = true; }
 });
 // The menus (#lobby) lie over the canvas, its HUD showing through: a click on the mute button's spot that
 // doesn't land on a menu control mutes there too.
 window.addEventListener('mousedown', e => {
-  if (e.button !== 0 || e.target === canvas || !lobbyOpen() || !inMuteBtn(e.clientX, e.clientY)) return;
+  if (e.button !== 0 || e.target === canvas || !lobbyOpen() || !inMuteBtn(viewX(e), viewY(e))) return;
   if (e.target.closest?.('button, input, select, textarea, a, label, .mission')) return;
   sfx.toggleMute();
 }, true);
@@ -1139,7 +1150,7 @@ function render(t) {
   drawCombatHUD(view, HUD_H);
   drawSystemsHUD(HUD_H);
   if (me.mode === 'gun' && standing(me)) drawCannonHUD(me.gun);
-  if (splitShared()) drawSidebar(HUD_H);              // (split screen: the left half shows it for both: js/progress.js)
+  if (splitSidebar()) drawSidebar(HUD_H);             // (split screen: in a strip of its own instead, js/local.js localStrip)
   drawInjuryBadge(t);                                // hurt / down / out: what it means and what helps
   drawProblemMarkers(view);                          // where in the ship things happen (js/sidebar.js)
   if (typeof drawTrainingHUD === 'function' && !me.ui.panel) drawTrainingHUD(t);   // your crew training card, under the arrows' hints (js/tutorial-mp.js)
@@ -1383,6 +1394,7 @@ function frame(now) {
   else if (!lobbyOpen()) tick(dt); else { clientUpdate(dt); localInput.pressed.clear(); }   // (menus: a key counts once, so M mutes once, not every frame)
   // a drawing error must never stop the game loop (the end of a mission, its rewards: clientUpdate above)
   try { render(now / 1000); } catch (e) { if (!frame.err) { frame.err = true; console.error('render error', e); } }
+  if (typeof localStrip === 'function') localStrip();   // (split screen: the shared column's strip, js/local.js)
   requestAnimationFrame(frame);
 }
 mission.active = false;                              // the lobby starts a mission
