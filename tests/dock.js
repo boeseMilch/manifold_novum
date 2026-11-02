@@ -543,7 +543,7 @@ const baseFresh = (side = 'port', n = 1, easy = 0) => {
   check(ev.map(e => e.kind).join() === 'interceptor,brig' && ev[0].opener && Math.abs(ev[0].t - 25) < 1e-6 && Math.abs(ev[1].t - 60) < 1e-6 && G.mission.jumpAt === 420,
         `c5: a patrol interceptor (the opener) at 25 s, the pirate base at 60 s, the jump due at 420 s (7 min) (${ev.map(e => `${e.kind}@${e.t.toFixed(0)}`).join(', ')}, jump ${G.mission.jumpAt})`);
   let ok = true;
-  for (const easy of [1, 2]) { G.startMission('c5', { easy }); ok = ok && G.mission.events.length === 2 && G.mission.extraLuck === easy; }   // (two encounters a step: half a cat each)
+  for (const easy of [1, 2]) { G.startMission('c5', { easy }); ok = ok && G.mission.events.length === 2 && G.mission.extraLuck === easy / 2; }   // (solo: one encounter a step, half a cat each)
   check(ok, 'c5 on easy / very easy: both events stay (nothing optional to drop) → luck instead, and fewer guards (below)');
   const g = G.baseGuards;
   check(g(1).join() === '0,2,2,1' && g(1, 1).join() === '0,2,1,1' && g(1, 2).join() === '0,1,1,1' && g(3).join() === '0,3,3,1' && g(8).join() === '0,3,4,2',

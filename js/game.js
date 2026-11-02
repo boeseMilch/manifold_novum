@@ -94,10 +94,12 @@ me.input = localInput; me.inv = inv; me.ui = ui;
 let player = me, keys = me.input.keys, pressed = me.input.pressed, mouse = me.input.mouse;
 const held = (...codes) => codes.some(c => keys.has(c));
 // Run fn with crew member c as the acting crew (restores the previous one afterwards).
+// (acting: the crew member whose action this is, while it runs: a banner it raises is theirs, js/combat.js combatBanner)
+var acting = null;
 function withCrew(c, fn) {
-  const saved = [player, keys, pressed, mouse, inv, ui, prompt, hover];
-  player = c; keys = c.input.keys; pressed = c.input.pressed; mouse = c.input.mouse; inv = c.inv; ui = c.ui; prompt = c.prompt; hover = c.hover;
-  try { return fn(); } finally { c.prompt = prompt; c.hover = hover; [player, keys, pressed, mouse, inv, ui, prompt, hover] = saved; }
+  const saved = [player, keys, pressed, mouse, inv, ui, prompt, hover], was = acting;
+  player = c; keys = c.input.keys; pressed = c.input.pressed; mouse = c.input.mouse; inv = c.inv; ui = c.ui; prompt = c.prompt; hover = c.hover; acting = c;
+  try { return fn(); } finally { c.prompt = prompt; c.hover = hover; [player, keys, pressed, mouse, inv, ui, prompt, hover] = saved; acting = was; }
 }
 const isOutside = (c) => c.mode === 'eva' || c.mode === 'gun';
 // Debug: index.html#overview shows the whole ship, index.html#x,y starts the player there.

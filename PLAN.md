@@ -4731,3 +4731,12 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   progress come with their name. With three players the quarters fill the whole width and the shared column is drawn
   into the empty quarter instead of a strip. Tab in the menus jumps to the next text field (Shift+Tab: back;
   js/menupad.js menuTab).
+
+## Difficulty per player; banners in the view of whoever caused them (2026-11-01, the user)
+
+- A difficulty step is now one encounter per player (js/mission.js diffStep(n): solo 1, two players 2, …; was 2 for
+  any crew), easier and hard alike, so the slider means as much for a crew; the luck for what can't be dropped stays
+  half a cat per encounter. tests/mission.js (three players: easy 12, normal 15, hard 18 on c6), scaling, dock.
+- combatBanner remembers who raised it (js/game.js `acting`, set by withCrew: the radar result, a patched junction, …;
+  null for the world's own). In split screen (js/progress.js bannerHere) a banner raised by one of the players at this
+  screen shows only in their view, everything else in the top-left view; not split, every banner shows as before.

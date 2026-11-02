@@ -268,6 +268,7 @@ const localUI = (() => {
   window.splitGame = null;
   window.splitKbm = () => (!active() ? null : mine === 'kbm' ? window : players.find(p => p.input === 'kbm')?.frame?.contentWindow || null);
   window.splitApi = (slot) => (slot === 1 ? { toggleMute: () => sfx.toggleMute(), get muted() { return sfx.muted; } } : null);
+  window.localIds = () => [typeof me !== 'undefined' ? me.id : null, ...players.map(p => { try { return p.frame?.contentWindow?.splitApi?.id; } catch (e) { return null; } })].filter(x => x != null);   // (who plays at this screen: js/progress.js bannerHere)
   window.localSharedSlot = () => (inGame && active() ? order.find(s => s !== undefined) : 1);   // (the banners: the top-left view)
   window.localSplit = () => inGame && active();      // (in a split mission no view draws the shared column: the strip does)
   // The strip: the shared column drawn here, every frame (js/game.js render), on a canvas of its own; a click on a

@@ -45,7 +45,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   check(G.combat.enemies.some(e => e.kind === 'interceptor'), 'the interceptor shows up on schedule');
 }
 
-// --- difficulty: easy / very easy take two / four optional encounters out, hard adds two; the rest laid out the same way (shapedTimes), the reactor's pace unchanged
+// --- difficulty: a step is one encounter per player (solo here: easy / very easy take one / two out, hard adds one); the rest laid out the same way (shapedTimes), the reactor's pace unchanged
 {
   const G = loadGame([...NAMES, 'paceFactor', 'luckCut', 'LUCK_CUT', 'COMBAT_KINDS']);
   for (const [id, full] of [['c1', false], ['c3', false], ['c1', true], ['c4', true], ['c6', true]]) {
@@ -57,7 +57,7 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
     const core = G.mission.events.filter(e => ess.has(e.kind) || e.opener), obj = new Set(G.MISSIONS[id].essential || []);
     const essN = core.length + ((obj.size || core.some(e => e.opener)) && core.filter(e => G.COMBAT_KINDS.has(e.kind)).every(e => obj.has(e.kind) || e.opener) && n0 > core.length ? 1 : 0);
     for (const easy of [1, 2]) {
-      const drop = easy * 2;
+      const drop = easy * 1;                       // (solo: one a step)
       G.startMission(id, { easy }); const evs = G.mission.events, gaps = evs.slice(1).map((e, i) => e.t - evs[i].t);
       const ts = evs.map(e => e.t).sort((a, b) => a - b), shape = G.shapedTimes(ts.length, 1, G.MISSIONS[id].length || G.MISSION_LENGTH), even = ts.every((t, i) => Math.abs(t - shape[i]) <= 25);
       check(evs.length === Math.max(essN, 1, n0 - drop) && evs.filter(e => ess.has(e.kind) || e.opener).length === core.length && (evs.length < 2 || even)
@@ -67,10 +67,20 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
     }
     G.startMission(id, { easy: -1 }); const hard = G.mission.events, hts = hard.map(e => e.t).sort((a, b) => a - b);
     const hshape = G.shapedTimes(hts.length, 1, G.MISSIONS[id].length || G.MISSION_LENGTH);
-    check(hard.length === n0 + 2 && hard.filter(e => ess.has(e.kind) || e.opener).length === core.length && hts.every((t, i) => Math.abs(t - hshape[i]) <= 25)
+    check(hard.length === n0 + 1 && hard.filter(e => ess.has(e.kind) || e.opener).length === core.length && hts.every((t, i) => Math.abs(t - hshape[i]) <= 25)
           && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.jumpAt === jump && G.mission.extraLuck === 0,
-          `${id}, hard: ${hard.length} events (normal ${n0} + 2: ${hard.slice(-2).map(e => e.kind).join(', ')}), laid out (times ${hts.map(t => t.toFixed(0)).join(', ')} s), same reactor pace and jump, no luck`);
+          `${id}, hard: ${hard.length} events (normal ${n0} + 1: ${hard.slice(-1).map(e => e.kind).join(', ')}), laid out (times ${hts.map(t => t.toFixed(0)).join(', ')} s), same reactor pace and jump, no luck`);
   }
+}
+
+// --- difficulty with a crew: a step is one encounter per player (three players: easy takes three out, hard adds three)
+{
+  const { loadGame: L } = require('./harness');
+  const G = L(['crew', 'makeCrew', 'startMission', 'mission']);
+  while (G.crew.length < 3) G.crew.push(G.makeCrew('P' + G.crew.length));
+  const count = (easy) => { G.startMission('c6', { easy }); return G.mission.events.length; };
+  const n0 = count(0), e1 = count(1), h = count(-1);
+  check(n0 - e1 === 3 && h - n0 === 3, `three players: easy ${e1}, normal ${n0}, hard ${h} encounters (three a step)`);
 }
 
 // --- radar: reveals the next 45 s only; unscanned imminent threats show "????"

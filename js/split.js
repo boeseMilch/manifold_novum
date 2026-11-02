@@ -14,6 +14,7 @@
   }, true);
   window.splitApi = {
     toggleMute: () => sfx.toggleMute(), get muted() { return sfx.muted; },
+    get id() { return typeof me !== 'undefined' && me ? me.id : null; },   // (this view's crew member: js/progress.js bannerHere)
     locker: () => lobbyUI.shop('locker'),            // (the host's lobby: this player's own locker, in their part of the screen)
     // this player's suit colour (their profile, by name; the host's lobby picks it): saved, and told to the server
     setPaint(c) { if (typeof PAINTS !== 'undefined' && !PAINTS.includes(c)) return; profile.paint = c; saveProfile(profile); lobbyUI.render(); lobbyUI.onProfile?.(); },

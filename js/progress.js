@@ -478,6 +478,17 @@ const splitShared = () => {                          // the banners: in the top-
   if (SPLIT) { try { const f = window.parent.localSharedSlot; return f ? f() === SPLIT.slot : SPLIT.slot === 1; } catch (e) { return SPLIT.slot === 1; } }
   return typeof localSharedSlot !== 'function' || localSharedSlot() === 1;
 };
+// Split screen: a banner raised by one of the players at this screen shows in their view only (the radar result
+// in the view of whoever scanned, 2026-11-01, the user); the world's own (and a remote player's) in the top-left view.
+// Not split: everywhere, as always.
+const splitLocalIds = () => {
+  try { const f = SPLIT ? window.parent.localIds : (typeof localIds === 'function' ? localIds : null); return f ? f() : []; } catch (e) { return []; }
+};
+const bannerHere = (b) => {
+  if (!SPLIT && !(typeof localSplit === 'function' && localSplit())) return true;
+  if (b && b.who != null && splitLocalIds().includes(b.who)) return typeof me !== 'undefined' && !!me && me.id === b.who;
+  return splitShared();
+};
 // the shared column in this view: not in a split mission (the host's page draws it in a strip of its own, js/local.js)
 const splitSidebar = () => !SPLIT && !(typeof localSplit === 'function' && localSplit());
 const splitOwnKey = () => {                          // null: the usual profile; else this player's own localStorage key

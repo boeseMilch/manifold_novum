@@ -15,7 +15,7 @@ function browser() {
     get cookie() { return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; '); },
     set cookie(s) { const [kv] = s.split(';'); const i = kv.indexOf('='); jar[kv.slice(0, i)] = kv.slice(i + 1); },
   };
-  return { ls, jar, load: (search) => loadGame(['profile', 'saveProfile', 'SPLIT', 'splitShared', 'splitSidebar', 'defaultProfile'], { localStorage, document, URLSearchParams, location: { hash: '', search } }) };
+  return { ls, jar, load: (search) => loadGame(['profile', 'saveProfile', 'SPLIT', 'splitShared', 'splitSidebar', 'bannerHere', 'defaultProfile', 'netServer', 'crew', 'withCrew', 'radarScan', 'combat'], { localStorage, document, URLSearchParams, location: { hash: '', search } }) };
 }
 
 {
@@ -45,6 +45,10 @@ function browser() {
   check(q3.SPLIT?.slot === 3 && q4.SPLIT?.slot === 4 && q4.SPLIT.pad === 2 && !q3.splitShared() && !q4.splitShared(), 'quadrants 3 and 4: their own slot and controller, no shared column (only the first view shows it)');
   check(!B.load('?split=5&name=X&input=kbm').SPLIT, 'no fifth view');
   const back = B.load('');
+  check(back.bannerHere({ text: 'x', who: 2 }) && back.bannerHere({ text: 'x', who: null }), 'not split: every banner shows (as always)');
+  back.netServer.init('c1', {}, 0); back.netServer.addCrew(1, 'A'); back.netServer.addCrew(2, 'B');
+  back.withCrew(back.crew[1], () => back.radarScan());
+  check(back.combat.banner?.who === 2, `a banner raised by a player's action is theirs (the radar: "${back.combat.banner?.text}" by crew 2)`);
   check(back.profile.money === 600 && !back.SPLIT && back.splitShared() && back.splitSidebar(), 'the usual game afterwards: the usual save, no split, the column in the view');
 }
 

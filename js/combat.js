@@ -55,7 +55,8 @@ function drawFlip(p) {
   const S = GFX.info(p.flip), n = (S && S.frames) || 1;
   GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, p.z || 0, { layer: 'top', unlit: true, scale: p.size || 1 });
 }
-function combatBanner(text) { combat.banner = { text, t: 3 }; }
+// who: the crew member whose action raised it (null: the world's own; split screen shows it in their view: bannerHere)
+function combatBanner(text) { combat.banner = { text, t: 3, who: typeof acting !== 'undefined' && acting ? acting.id ?? null : null }; }
 // Greedy word wrap: the lines of `text` no wider than maxW (measure: the width of a string; a single word wider than
 // maxW gets a line of its own).
 function wrapText(text, maxW, measure) {
@@ -708,7 +709,7 @@ function drawCombatHUD(view, top) {
   lines.forEach((l, i) => { ctx.fillStyle = l.col; ctx.fillText(l.text, VW - w - 4, top + 17 + i * 17); });
 
   let bannerBottom = 0;
-  if (combat.banner && splitShared()) {              // (split screen: in the left half only) (after the shields list: it fits between that, the PRACTICE button and the sidebar)
+  if (combat.banner && bannerHere(combat.banner)) {   // (split screen: in the view of whoever raised it, else the top-left one) (after the shields list: it fits between that, the PRACTICE button and the sidebar)
     const text = combat.banner.text, { x0, x1, y: by } = bannerBand({ x: VW - w - 14, bottom: top + 10 + h }, top), room = x1 - x0 - 40;
     const lay = bannerLayout(text, room, (s, px) => { ctx.font = `800 ${px}px system-ui, sans-serif`; return ctx.measureText(s).width; });
     ctx.font = `800 ${lay.size}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';

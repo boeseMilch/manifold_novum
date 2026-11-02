@@ -160,13 +160,15 @@ const missionCrew = (id, n) => { const C = MISSIONS[id]?.custom ? customCrew() :
 // < 1 where the energy needs a faster reactor to be in spec).
 const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / mission.writtenGap * (mission.reactor || 1) : 1);
 // Difficulty (the lobby's slider, host's choice): -1 hard, 0 normal, 1 easy, 2 very easy. Each easier step takes
-// DIFF_STEP optional encounters out (never an essential one, and never the last one; where none is left to drop,
-// half a cat's luck per encounter instead: luckCut); hard adds DIFF_STEP more (repeats of the optional kinds). The
+// diffStep(n) optional encounters out (never an essential one, and never the last one; where none is left to drop,
+// half a cat's luck per encounter instead: luckCut); hard adds diffStep(n) more (repeats of the optional kinds). The
 // encounters spread evenly over the same mission time, and the reactor keeps normal's pace, so the crew has the same
 // energy for fewer (or more) encounters. Everything else that scales with the difficulty (telegraphs, guards, the
 // sentry, ...) clamps it to 0..2: hard plays those as normal. (2026-11-01, the user: two encounters a step, and hard;
 // it was one a step, no hard.)
-const DIFF_STEP = 2;
+// A step is one encounter per player (solo 1, two players 2, …), so the slider means as much for a crew as for one
+// player (2026-11-01, the user; it was 2 for any crew size, and 1 before that).
+const diffStep = (n) => Math.max(1, Math.min(8, n | 0));
 const DIFFICULTIES = { '-1': 'Hard', 0: 'Normal', 1: 'Easy', 2: 'Very easy' };
 const clampDifficulty = (v) => Math.min(2, Math.max(-1, Math.floor(+v) || 0));
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
@@ -175,7 +177,7 @@ function selectEvents(id, written, n, target, easy = 0) {
   const M = MISSIONS[id] || {}, ess = new Set([...ESSENTIAL_KINDS, ...(M.essential || [])]), always = new Set(M.always || []);
   // crew.extra (kind: count per crew size): repeats of that kind on top of the count (2026-10-20, c4 solo: a second failing
   // part; one more in the count would have been the mine drone); easy / very easy take these out first
-  const drop = Math.max(0, easy) * DIFF_STEP, more = Math.max(0, -easy) * DIFF_STEP;   // encounters out; hard: normal's, and `more` on top
+  const drop = Math.max(0, easy) * diffStep(n), more = Math.max(0, -easy) * diffStep(n);   // encounters out; hard: normal's, and `more` on top
   const C = missionCrew(id, n), forced = C.extra.slice(0, Math.max(0, C.extra.length - drop)), easyLeft = drop - (C.extra.length - forced.length);
   const base = C.events ?? written.length, wantW = Math.min(base, Math.max(1, base - easyLeft));   // (at least one: the finale)
   const dropRank = (e) => (DROP_ORDER.indexOf(e.kind) < 0 ? 999 : DROP_ORDER.indexOf(e.kind));
@@ -270,7 +272,7 @@ function layoutMission(id, n) {
   const normal = mission.easy ? selectEvents(id, written, n, null).length : evs.length;   // the reactor's pace: normal's gap
   const nt = shaped ? shapedTimes(normal, n, L, null, M.finaleLead || 0, M.spacing === 'spread') : null;                  // (shaped: normal's own first and last times)
   const paceGap = asWritten ? (wl || gap) : shaped ? (normal > 1 ? (nt[nt.length - 1] - nt[0]) / (normal - 1) : nt[0] - SHAPE.open[0]) : normal > 1 ? (end - lead) / (normal - 1) : end - lead;
-  mission.extraLuck = Math.max(0, (mission.easy || 0) * DIFF_STEP - (normal - evs.length)) / 2;   // encounters an easier difficulty couldn't drop: half a cat each (hard: none)
+  mission.extraLuck = Math.max(0, (mission.easy || 0) * diffStep(n) - (normal - evs.length)) / 2;   // encounters an easier difficulty couldn't drop: half a cat each (hard: none)
   Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : shaped || asWritten ? L : Math.max(0, ...evs.map(e => e.t)) + fl });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
   pickMaintPairs(evs, maintPrev);
