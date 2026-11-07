@@ -4802,3 +4802,27 @@ mission's shape. README.md there notes the lesson: the colour is a hint, never a
   choir), c4 (6/8 swashbuckler on piano ostinato, low male choir, growl synth bass, a far-away fiddle; no accordion or
   shouts any more) and c5 (a piano motif as the distress signal, flugelhorn far away, choir, sub synth bass and 808s).
   The loops still don't build and end on their opening chord. The prompts README's table now marks c6 (Bloom) done.
+
+## Prototype 3: the big ship (2026-11-07, `prototype3/`, waiting for feedback)
+The user: "a prototype for a larger ship, with interactables that you can and must play with multiple people". A
+standalone prototype (the main game's six-room ship is hard-wired through `js/`), on the same server:
+`node server.js`, open `/prototype3/`; alone: `/prototype3/?solo` (3 bodies, Tab switches). Minimum crew 3. Full
+design, controls, constants and the code's extension points: `prototype3/DESIGN.md`. Built by three sub-agents (core,
+artillery, helm).
+- **Ship:** about twice as long, a spine corridor with rooms on both sides: bridge, quarters, galley, fire control,
+  gun room, energy bank, locker, bunks, and the magazine at the stern (about 9 s from the gun with a shell in hand).
+- **Artillery, split three ways:** the cupola seat (fire control) is the only one that sees outside: a periscope scope;
+  it traverses (20°/s) and fires (1 energy). The range wheel (gun room, a wall away, no view of the targets) sets how
+  far the shell flies (10–60); the spotter has to call it. The breech is opened, a shell rammed in (hold E), and after
+  the shot it's empty again. Shells come from the magazine (10 for the run), a 2-slot ready rack by the gun lets a
+  hauler work ahead. Shells fly for a while and land where the gun pointed: moving gunships need a lead.
+- **Chart table (helm):** a route map of 4 lanes × 7 steps (40 s each, 25 s to chart at the start). Every node has one
+  encounter, so every path meets 7: a gunship marker *between* two lanes attacks the left lane from its right and the
+  right lane from its left; edge markers from that side; asteroid fields from ahead. Charting is shared; without a
+  course the ship drifts along a random connection. A HUD line tells everyone where the next jump goes and from which
+  side the trouble comes.
+- **Encounters:** gunships (2 hits, −6 hull a shot every 5–7 s), asteroid fields (4–6 rocks, −8 each). 12 energy and 10
+  shells aren't enough for everything: the course choice matters. Win at the jump point, lose at hull 0.
+- More ideas for interactions that need several people: `IDEAS.md`, "Big ship".
+- Known rough edges: the helm's step banners briefly cover the chart's JUMP POINT label; the breech is small at normal
+  zoom; in solo nobody mans the gun, so the hull drops fast (balance not looked at yet).

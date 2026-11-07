@@ -26,6 +26,7 @@ const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; cha
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent((req.url || '/').split('?')[0]);
   if (p === '/') p = '/index.html';
+  else if (p.endsWith('/')) p += 'index.html';      // (a folder: its index.html, e.g. /prototype3/)
   const file = path.normalize(path.join(ROOT, p));
   if (!file.startsWith(ROOT + path.sep) || p.includes('..')) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
@@ -51,6 +52,7 @@ const server = http.createServer((req, res) => {
 // under 1 KB. Browsers compress their own (small) messages one by one (client_no_context_takeover).
 // ---------------------------------------------------------------------------
 server.on('upgrade', (req, socket) => {
+  if ((req.url || '').split('?')[0] === '/ws-big') return require('./prototype3/netserver').upgrade(req, socket);   // prototype 3, the big ship
   if ((req.url || '').split('?')[0] !== '/ws' || !req.headers['sec-websocket-key']) return socket.destroy();
   const accept = crypto.createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
   const offer = String(req.headers['sec-websocket-extensions'] || '').split(',').map(o => o.trim()).find(o => /^permessage-deflate\b/i.test(o));

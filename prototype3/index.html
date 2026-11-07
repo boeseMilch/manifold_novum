@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manifold Novum: the big ship (prototype 3)</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; font-family: system-ui, sans-serif; color: #e8ecf4; }
+  canvas { display: block; }
+  #lobby { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,5,9,0.72); }
+  #lobby[hidden] { display: none; }
+  .card { width: min(420px, 92vw); background: #141820; border: 3px solid #14161b; outline: 2px solid #3a414f; border-radius: 12px; padding: 22px 24px; box-shadow: 0 10px 40px #000; }
+  h1 { margin: 0 0 4px; font-size: 24px; letter-spacing: 0.04em; }
+  .sub { margin: 0 0 18px; color: #aab2c0; font-size: 13px; }
+  .row { display: flex; gap: 8px; }
+  input { flex: 1; font: inherit; font-size: 15px; padding: 8px 10px; background: #0b0d12; color: #e8ecf4; border: 2px solid #3a414f; border-radius: 6px; }
+  button { font: inherit; font-weight: 700; font-size: 15px; padding: 8px 14px; border-radius: 6px; border: 2px solid #14161b; background: #c4683a; color: #fff; cursor: pointer; }
+  button:disabled { background: #3a3f4a; color: #8a8f9a; cursor: default; }
+  button.alt { background: #3a5f80; }
+  ul { list-style: none; padding: 0; margin: 14px 0 6px; min-height: 26px; }
+  li { padding: 4px 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #14161b; display: inline-block; }
+  #count { color: #aab2c0; font-size: 13px; margin-bottom: 14px; }
+  #status { color: #ffb347; font-size: 13px; min-height: 16px; margin-top: 12px; }
+  .wide { width: 100%; margin-top: 8px; }
+  .keys { color: #8a92a0; font-size: 12px; margin-top: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="lobby">
+  <div class="card">
+    <h1>THE BIG SHIP</h1>
+    <p class="sub">Prototype 3 · a bigger ship that needs its whole crew</p>
+    <div class="row"><input id="name" maxlength="16" placeholder="Your name"><button id="join">Join the crew</button></div>
+    <ul id="crew"></ul>
+    <div id="count"></div>
+    <button id="start" class="wide" disabled>START</button>
+    <button id="solo" class="wide alt">Test alone (3 bodies, Tab switches)</button>
+    <div id="status"></div>
+    <div class="keys">WASD / arrows: move · E / Space: use a station, leave it · R after the end: back here</div>
+  </div>
+</div>
+<script src="sim.js"></script>
+<script>
+  // The same load order as Node (sim.js top): the sim modules, then the browser files, in order.
+  for (const f of [...BIG.SIM_MODULES, ...BIG.CLIENT_MODULES]) {
+    const s = document.createElement('script'); s.src = f; s.async = false; document.body.appendChild(s);
+  }
+</script>
+</body>
+</html>

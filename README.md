@@ -11,6 +11,12 @@ with no build step.
 Open `index.html` in a browser (double-clicking it works). New? Press **TUTORIAL**. Otherwise
 press **PLAY SOLO**, pick a mission and press **START MISSION**.
 
+## Prototype: the big ship
+
+A separate prototype of a larger ship for at least 3 players: run `node server.js` and open
+`http://<host>:8080/prototype3/` (alone, to look around: `/prototype3/?solo`, Tab switches bodies).
+See `prototype3/DESIGN.md`.
+
 ## Play together on a local network
 
 One person hosts. Everyone else only needs a browser on the same network (Wi-Fi or cable).

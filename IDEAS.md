@@ -78,3 +78,39 @@ mock-up rendered by `tools/blender/models/concepts/*.py`; images not in git):
 - Derelict lab: **Lights Out** (Specimen 7 only moves in the dark; the lights run on our reactor) · alts: Hush, Tumble
 - Pirate base: **The Security Desk** (node tug-of-war with Captain Red Comet) · alts: Shift Change, Scuttle Protocol
 - Tractor tug (doesn't dock yet): **Final Notice** (repo tug: jam the winch, pay, dispute or overload) · alts: Jump Start, Grab the Wheel
+
+## Big ship: interactables that need more than one person (2026-11-07, ideas; the prototype in `prototype3/` builds the artillery and the chart table)
+The rule for all of them: the person who *sees* isn't the person who *acts*, or the two halves are too far
+apart for one person. Each one has an in-world reason for being split up.
+- **Engine telegraph.** The bridge sets the order on a brass telegraph (full ahead / slow / stop / astern). The engine
+  room can't see out, and they have to match the order by balancing a fuel lever against a coolant valve (too much
+  fuel without coolant overheats it). Speed decides how fast a step passes, and whether a rock field is dodged or
+  rammed. Why split: a ship this size is run from the bridge, and the engine is at the far end.
+- **Triangulation.** Two radar dishes, one at the bow and one at the stern. Each operator only gets a bearing line to a
+  stealthy contact. The chart table draws both lines, and where they cross is where it is, for the gunner. Why split:
+  you need two places far apart to fix a position.
+- **Wire-guided torpedo.** The torpedo officer flies it through a narrow nose camera (sees only a small cone ahead).
+  The radar operator sees the whole picture and calls "left… left… now down". The tube is loaded from the torpedo room
+  at the magazine (heavy: two people carry one torpedo, one at each end, walking in step).
+- **Shield frequency.** An enemy's weapon frequency shows only on the sensor desk. The shield's tuning dial is in the
+  emitter room, with no readout of the enemy. The two read numbers to each other, and the enemy keeps re-tuning.
+  (The open "shield frequency tuning" item above.)
+- **Fire hose.** One person holds the nozzle at the fire. Another opens the pump valve in the pump room and watches the
+  pressure gauge. Too little pressure doesn't reach, too much knocks the holder over. Water is limited and refilled
+  from the reclaimer.
+- **Harpoon and winch.** Catch drifting salvage or a boarding pod: one aims and fires the harpoon from the cupola. The
+  winch operator reels it in by feel on a tension gauge, because the cable snaps if it's pulled too fast while the
+  target swings.
+- **Two-key reactor scram.** Dumping an overloading reactor needs two keys turned within one second. The keyholes are
+  in two different rooms on purpose (so nobody vents the core on a whim). The countdown is short, so someone has to be
+  near each one in time.
+- **Pneumatic tubes.** Shells and parts go between decks by tube: one person loads and sends, the other has to be at
+  the receiving end to catch the capsule before it drops back. It's the fast alternative to hauling through the
+  spine.
+- **Damage-control board.** One person at the board sees which bulkheads hold pressure and where the fires are, and
+  cannot leave it. The others run to the valves and hatches the board calls. A breach is sealed only when the right
+  hatches close in the right order, and the runners can't see the whole picture.
+- **Searchlight and point defence.** In an ion storm or a nebula the gunner is blind. One crew member sweeps the
+  searchlight from its own mount, and the point-defence gunner can only hit what the beam lights.
+- **Belt-fed point defence.** A rapid-fire gun that eats an ammo belt. A second person has to crank the next belt
+  into the feed while it fires (fumble it and it jams, and the gunner has to clear it).
