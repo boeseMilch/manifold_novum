@@ -2,26 +2,26 @@
 
 **For:** Practice (`practice`): no timeline and no jump. The ship is yours, and the practice panel starts any
 encounter, damage or mini-game.
-**Mood:** a sandbox. Focused, a bit playful, steady medium energy that suits both idling and a fight you started on purpose: the score with its synths up front.
+**Mood:** a sandbox. Focused, a bit playful, steady medium energy that suits both idling and a fight you started on purpose: the score with its synths up front. (Rewritten 2026-11-07, like c1 and c2: the core of the liked songs, piano, orchestra, a wordless choir, good drums and a synth bass, with the old colour kept only as a hint.)
 
 ## Style of Music
 ```
-hybrid synth and orchestral instrumental, 96 BPM, A minor, arpeggiated analog synth over a low string ostinato, solo violin melody, half-time cinematic drums, struck metal pipe percussion, analog synth bass pulse, warm pads, wide reverb, focused and playful, steady medium energy, no big build, loopable, ends on the same chord it starts on, no vocals
+mysterious hybrid synth and orchestral instrumental, 96 BPM, A minor, arpeggiated analog synth over a low string ostinato, a felt piano motif, solo violin melody, a distant wordless choir on aah, punchy half-time cinematic drums, struck metal pipe percussion, deep pulsing synth bass, warm pads, wide reverb, focused and a little playful, steady medium energy, no big build, loopable, ends on the same chord it starts on, no lyrics
 ```
 
 ## Exclude Styles
 ```
-vocals, choir, dubstep, 80s cheese, horror, ballad, bells, music box
+lyrics, sung words, lead vocals, rap, spoken word, EDM drops, dubstep, epic trailer, horror, bells, music box, lo-fi hip hop, 80s cheese, ballad
 ```
 
 ## Lyrics (Instrumental off, tags only)
 ```
-[Intro: synth arpeggio and bass pulse]
+[Intro: synth arpeggio, piano motif, bass pulse]
 [Theme: solo violin melody over the arpeggio]
 [Verse: string ostinato and half-time drums, the violin rests]
-[Theme: violin melody, synth lead doubles it an octave down]
-[Bridge: drums drop out, arpeggio and pipes alone]
-[Theme: full]
+[Theme: violin melody, the choir under it]
+[Bridge: drums drop out, arpeggio, piano and pipes alone]
+[Theme: full, still steady]
 [Outro: back to the opening arpeggio, same chord as the start]
 ```
 

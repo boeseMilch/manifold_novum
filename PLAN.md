@@ -4796,3 +4796,9 @@ drops, punchy half-time drums, a trumpet call at the showdown, a far-away tremol
 c2 felt piano with celesta, violin, a wordless choir that turns eerie when the pods wake, a heartbeat sub, then a chase
 on a saw synth bass and staccato strings. The old genre words are in Exclude Styles. The section tags keep each
 mission's shape. README.md there notes the lesson: the colour is a hint, never a genre.
+- 2026-11-07, the user: "can you change the other songs that are not done yet too?" The same rewrite for every prompt
+  still to generate: menu (felt piano + cello, soft choir, synth heartbeat), tutorial (bright piano, pizzicato, viola,
+  light), training (piano ostinato, rolling synth bass, choir stabs), practice (synth arpeggio, felt piano, violin,
+  choir), c4 (6/8 swashbuckler on piano ostinato, low male choir, growl synth bass, a far-away fiddle; no accordion or
+  shouts any more) and c5 (a piano motif as the distress signal, flugelhorn far away, choir, sub synth bass and 808s).
+  The loops still don't build and end on their opening chord. The prompts README's table now marks c6 (Bloom) done.
