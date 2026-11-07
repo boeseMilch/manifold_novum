@@ -10,8 +10,8 @@ Exclude Styles, the section tags for the Lyrics box) and the mission's shape the
 | training (crew training) | Side by Side | to generate |
 | practice | Free Play | to generate |
 | custom (skirmish) | Pick Your Trouble | generated, liked (stems in, arranging) |
-| c1 · First Contract | Outlaws of the Kessler Lanes | to generate |
-| c2 · Strange Cargo | Strange Cargo | to generate |
+| c1 · First Contract | Outlaws of the Kessler Lanes | first take not liked; new prompt 2026-11-06, to generate |
+| c2 · Strange Cargo | Strange Cargo | first take not liked; new prompt 2026-11-06, to generate |
 | c3 · The Empty Lab | Keep S-7 Frozen | generated (stems in, arranging) |
 | c4 · Red Comet Cove | Red Comet Gallop | to generate |
 | c5 · Rescue Dr. Varga | A Signal in the Dark | to generate |
@@ -58,14 +58,20 @@ don't give two neighbouring missions the same lead and bass.
 | Side by Side | violin | electric + wobble bass | heist-movie groove: funky drums, staccato strings, brass stabs (loop) |
 | Free Play | violin + synth lead | analog synth bass | synths up front: arpeggios over the strings (loop) |
 | Pick Your Trouble | synth stabs | Reese bass | drum and bass arena (liked) |
-| Outlaws of the Kessler Lanes | cello, trumpet, choir | sub drops | Morricone: baritone twang guitar, harmonica, galloping drums |
-| Strange Cargo | theremin, violin | upright, then distorted bass | B-movie: vibraphone, then a surf-guitar chase |
+| Outlaws of the Kessler Lanes | grand piano, cello, wordless choir, trumpet | analog synth bass, sub drops | mysterious and epic; a far-away tremolo guitar is all that's left of the western |
+| Strange Cargo | felt piano + celesta, violin, wordless choir | heartbeat sub, then saw synth bass | calm and curious, eerie when the pods wake, then a chase |
 | Keep S-7 Frozen | detuned piano, col legno cello | sub pulse, distorted bass | cold derelict into an industrial groove (liked) |
 | Red Comet Gallop | fiddle, accordion | growl bass | swashbuckler in 6/8: stomps, HEY shouts |
 | A Signal in the Dark | flugelhorn, violin, choir | sub bass, 808s | rescue: radio crackle, heroic brass, spiccato strings |
 | Bloom | wordless choir, cello | wobble bass | organic: marimba 3 against 4, hand drums |
 | Pressure Hull | cello | heartbeat sub | deep sea: sonar, hull groans (liked) |
 | Last Jump Home | music box, brass | growl bass, 808 | finale: ticking clock, full orchestra (liked) |
+
+**Genre colours went too far (2026-11-06).** The first takes of c1 (Morricone western) and c2 (1950s B-movie with
+theremin and surf guitar) still didn't sound like the score. What the user wants from every song: mysterious, piano
+and orchestra, a wordless choir, epic, with punchy drums and a synth bass. So the colour is now a hint (one far-away
+instrument, a mood turn), never a genre: rewritten c1 and c2 put the piano, the choir, the punchy half-time drums and a
+synth bass at the centre, and exclude the old genre words so Suno doesn't drift back.
 
 **More coherence in Suno** (worth trying, check what your plan offers): generate with the same model version every
 time; if you can, give Suno one of the liked takes as a reference (a Persona or audio "inspiration" made from Pressure

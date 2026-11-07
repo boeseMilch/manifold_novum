@@ -4785,3 +4785,14 @@ case-insensitive disk). The synthesized Bloom stays in music.html and is c6's fa
   js/gamepad.js sets it on localInput while this page has a pad, the browser sends it with its input, the server keeps
   it per crew member); hitGrow(shot) = HIT_GROW × PAD_HIT_GROW (1.05) for those, at every hit test above (pirates
   through boltHitsBody). A keyboard + mouse player's shots: HIT_GROW as before. tests/hitboxes.js.
+
+## Suno prompts for c1 and c2 rewritten (2026-11-06)
+
+The user didn't like how c1 (*Outlaws of the Kessler Lanes*, a Morricone space western) and c2 (*Strange Cargo*, a
+1950s B-movie with theremin and surf guitar) came out, and asked for them to be more like the liked songs:
+mysterious, piano and orchestra, a non-verbal choir, epic, nice drums and synth bass. New prompts in
+assets/music/prompts/c1.md and c2.md: c1 a grand piano motif, cello theme, wordless choir, analog synth bass and sub
+drops, punchy half-time drums, a trumpet call at the showdown, a far-away tremolo guitar the only trace of the western;
+c2 felt piano with celesta, violin, a wordless choir that turns eerie when the pods wake, a heartbeat sub, then a chase
+on a saw synth bass and staccato strings. The old genre words are in Exclude Styles. The section tags keep each
+mission's shape. README.md there notes the lesson: the colour is a hint, never a genre.
