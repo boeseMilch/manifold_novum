@@ -10,7 +10,7 @@ Exclude Styles, the section tags for the Lyrics box) and the mission's shape the
 | training (crew training) | Side by Side | new prompt 2026-11-07, to generate |
 | practice | Free Play | new prompt 2026-11-07, to generate |
 | custom (skirmish) | Pick Your Trouble | generated, liked (stems in, arranging) |
-| c1 · First Contract | Outlaws of the Kessler Lanes | first take not liked; new prompt 2026-11-06, to generate |
+| c1 · First Contract | Outlaws of the Kessler Lanes | **done** (the 2026-11-06 prompt; arranged from stems, in the game) |
 | c2 · Strange Cargo | Strange Cargo | first take not liked; new prompt 2026-11-06, to generate |
 | c3 · The Empty Lab | Keep S-7 Frozen | generated (stems in, arranging) |
 | c4 · Red Comet Cove | Red Comet Gallop | new prompt 2026-11-07, to generate |

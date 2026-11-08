@@ -13,6 +13,13 @@
   "hard_on": 10,
   "range": 9.7
  },
+ "outlaws": {
+  "Mstd10_p95": 3.0,
+  "dS3_max": 10.4,
+  "dS3_p95": 3.1,
+  "hard_on": 0,
+  "range": 9.0
+ },
  "spores": {
   "Mstd10_p95": 2.7,
   "dS3_max": 8.9,

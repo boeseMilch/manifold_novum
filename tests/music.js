@@ -607,7 +607,7 @@ check(nodes > n0, 'and plays again when shown');
     step(18); check(m.ended, 'and ends');
     m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c3'); step(0.3, 0); fm.on.error(); step(0.1);
     check(m.title === 'Cargo Run' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Cargo Run (c1-c3\'s piece) takes over');
-    m.setMission('menu'); m.rearm(); m.setMission('c2'); check(m.title === 'Cargo Run' && !m.recording, 'c1 / c2 keep the synthesized Cargo Run');
+    m.setMission('menu'); m.rearm(); m.setMission('c2'); check(m.title === 'Cargo Run' && !m.recording, 'c2 keeps the synthesized Cargo Run');
     // the skirmish: Pick Your Trouble, recorded; Practice and the menu keep Held Together
     const P3 = JSON.parse((s => s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1))(fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-trouble.js'), 'utf8')));
     const k3 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('custom'); step(1, -wall);
@@ -627,6 +627,12 @@ check(nodes > n0, 'and plays again when shown');
     check(m.title === 'Bloom (recorded)' && bm && /spores\/main/.test(bm.src) && !bm.paused, 'with audio elements c6 plays the recorded Bloom');
     m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c6'); step(0.3, 0); bm.on.error(); step(0.1);
     check(m.title === 'Bloom' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Bloom takes over');
+    // c1: Outlaws of the Kessler Lanes, recorded (the synthesized Cargo Run stays c1's fallback)
+    const k1 = els.length; m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c1'); step(1, -wall);
+    const om = els[k1];
+    check(m.title === 'Outlaws of the Kessler Lanes (recorded)' && om && /outlaws\/main/.test(om.src) && !om.paused, 'with audio elements c1 plays the recorded Outlaws of the Kessler Lanes');
+    m.setMission('menu'); m.rearm(); m.setClock(0); m.setMission('c1'); step(0.3, 0); om.on.error(); step(0.1);
+    check(m.title === 'Cargo Run' && !m.recording && m.step > 0, 'the recording fails to load: the synthesized Cargo Run takes over');
   } else check(false, 'the engine attaches to a fake context with audio elements');
 }
 
@@ -709,6 +715,20 @@ check(nodes > n0, 'and plays again when shown');
   const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
   check(D.jump === 300 && D.length >= 330 && D.loop[0] < 300 && D.loop[1] - D.loop[0] > 60, `laid out for the jump (5:00) + 30 s (${D.length} s), a loop of ${(D.loop[1] - D.loop[0]).toFixed(0)} s`);
   check(at(/Hot time 1/) > 190 && at(/Hot time 1/) < 215 && at(/through the jump/) > 270 && at(/through the jump/) < 300, 'its climaxes at the hot times (~3:20 and ~4:50), the second through the jump');
+}
+
+// ---- c1's recording (js/music/recorded-outlaws.js): the song played straight, a second pass for the second hot time
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-outlaws.js'), 'utf8'), D = JSON.parse(src.slice(src.indexOf('{'), src.lastIndexOf('}') + 1));
+  const R = music.recordings().find(r => r.name === 'outlaws');
+  check(!!R && R.missions.join() === 'c1' && !R.release && music.songOf('c1') === 'Cargo Run', 'Outlaws of the Kessler Lanes has a recording, for c1, its ending on the jump (node: the synthesized Cargo Run)');
+  check(['main', 'ending'].every(k => fs.existsSync(path.join(__dirname, '..', D[k]))) && D.bars.every((b, i) => !i || b > D.bars[i - 1]) && D.bars.includes(D.loop[0]) && D.loop[1] === D.length,
+    'its files are there, its bar lines rise, the loop starts and ends on bar lines');
+  const gaps = D.bars.slice(1).map((b, i) => b - D.bars[i]);   // (the song drifts 92 → 98 bpm: bars of 2.4-2.6 s)
+  check(gaps.every(g => g > 2.3 && g < 5.4), `its bar lines are whole bars, at most two apart (${Math.min(...gaps).toFixed(2)}-${Math.max(...gaps).toFixed(2)} s)`);
+  const at = (re) => D.sections.find(x => re.test(x.label))?.t ?? NaN;
+  check(D.jump === 300 && D.length >= 330 && D.loop[0] < 305 && D.loop[1] - D.loop[0] > 40, `laid out for the jump (5:00) + 30 s (${D.length} s), a loop of ${(D.loop[1] - D.loop[0]).toFixed(0)} s`);
+  check(at(/Hot time 1/) > 200 && at(/Hot time 1/) < 220 && at(/Hot time 2/) > 260 && at(/Hot time 2/) < 285 && at(/through the jump/) < 300, 'its climaxes at the hot times (~3:30 and ~4:30), the voices through the jump');
 }
 
 // ---- the recordings' loudness (tools/music-levels.json, written by `python3 tools/arrange-music.py all --levels`; 2026-10-28,

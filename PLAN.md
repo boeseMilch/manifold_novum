@@ -4826,3 +4826,25 @@ artillery, helm).
 - More ideas for interactions that need several people: `IDEAS.md`, "Big ship".
 - Known rough edges: the helm's step banners briefly cover the chart's JUMP POINT label; the breech is small at normal
   zoom; in solo nobody mans the gun, so the hull drops fast (balance not looked at yet).
+
+## Outlaws of the Kessler Lanes, recorded (c1, 2026-11-07)
+
+The user generated c1's song from the new prompt (`assets/music/C1.zip`, unpacked to
+`assets/music/Outlaws of the Kessler Lanes/`; git-ignored): 11 stems, 5:29.8. What c1 plays now (`PIECES.outlaws`,
+js/music/recorded-outlaws.js, assets/music/outlaws/). The synthesized Cargo Run stays c1's fallback (and c2's piece).
+- **The song** (`arrange-music.py outlaws --analyze`): E minor, 92 bpm drifting to 98 and back (bars 2.4-2.6 s), 130
+  bars. 0-11 the piano motif, 12-16 the choir, 17-33 the groove, 34-41 brass, 42-49 voices over the groove, 50-55 a
+  breakdown (strings), 56-61 rebuilding, 62-73 the voices again, 74-82 brass and drums, 83-90 the voices' climax, 91-99
+  the instrumental climax, 100-108 the voices' last climax (a near copy of 83-91), 109 a stop, 110-125 the piano alone,
+  126-129 the last E chord. The "lead vocals" stem stays in: a wordless solo voice over the choir (hardly any
+  consonant hiss, 0.7% of its energy at 4-10 kHz); mute it with `LV=OFF` in O_MIX if it turns out to sing words.
+- **The arrangement** (16 sections, 5:45): the song straight to bar 104 (4:22; it lines up with c1 by itself: the
+  choir at 0:31, brass at 1:28 for the interceptor, the breakdown at 2:08, the voices' climax at 3:30 for hot time 1),
+  then one cut back to bar 87 (join cost 0.85) for a second pass: the instrumental climax at 4:32 (hot time 2), the
+  voices from 4:54 through the jump; that pass again is the loop (5:04-5:45, 41.7 s, the same join). Every stem as
+  recorded (no riding, no thinning). Loudness check 3.1 / 3.0 / 9.0 dB, no stem switched on hard.
+- **The ending** (on the jump): the song's pickup bar (125: the piano, a swell of drums), then the last E chord ringing
+  out (cut at 329.5 s, a 2.5 s fade); stitched on bar lines whose harmony into bar 125 isn't far off (cost ≤ 3.2, at
+  most 5.3 s apart), main fading from 0.1 s before the bar line.
+- Tests: tests/music.js (the data, the bar lines, the climaxes at the hot times, the loop; with fake audio elements: c1
+  plays it, a failure falls back to Cargo Run; the loudness check). Earlier recordings unchanged.

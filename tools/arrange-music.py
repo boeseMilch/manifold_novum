@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Arranges a recorded song (Suno stems) into a mission's soundtrack: whole bars of the stems, cut on downbeats,
 # laid out over the mission's clock with per-section stem levels, plus a separate ending for the jump.
-# Pieces: hull (Pressure Hull, c7), tick (Last Jump Home from "Final Tick", c8).
+# Pieces: hull (Pressure Hull, c7), tick (Last Jump Home from "Final Tick", c8), frozen (c3), trouble (the skirmish),
+# spores (Bloom, c6), outlaws (Outlaws of the Kessler Lanes, c1).
 #
 #   python3 tools/arrange-music.py hull --analyze   beat-track the stems, find the downbeats, print a bar table
 #                                                   (which stems play in which bar, its chord) and cache the
@@ -53,6 +54,8 @@ TROUBLE_STEMS = {'LV': '0 Lead Vocals', 'Dr': '1 Drums', 'Ba': '2 Bass', 'Gt': '
                  'Ot': '7 Other', 'Br': '8 Brass'}
 SPORES_STEMS = {'LV': '0 Lead Vocals', 'BV': '1 Backing Vocals', 'Dr': '2 Drums', 'Ba': '3 Bass', 'Gt': '4 Guitar', 'Ky': '5 Keyboard',
                 'Pc': '6 Percussion', 'St': '7 Strings', 'Sy': '8 Synth', 'Ot': '9 Other', 'Br': '10 Brass', 'Ww': '11 Woodwinds'}
+OUTLAWS_STEMS = {'LV': '0 Lead Vocals', 'BV': '1 Backing Vocals', 'Dr': '2 Drums', 'Ba': '3 Bass', 'Gt': '4 Guitar', 'Ky': '5 Keyboard',
+                 'Pc': '6 Percussion', 'St': '7 Strings', 'Sy': '8 Synth', 'Ot': '9 Other', 'Br': '10 Brass'}
 SUSTAINED = {'Ba', 'St', 'Sy', 'Ky', 'Br', 'Ww', 'LV', 'BV', 'Gt'}       # longer crossfades at cuts
 def mix(**g):                                 # dB per stem (a stem not named: 0 dB, as recorded; All: dB on top for every stem)
     return dict(g)
@@ -240,7 +243,47 @@ SPORES_PLAN = [
     ('A breath', 96, 98, B_MIX),                                            # 5:22
     ('The last climax again', 98, 104, B_MIX),                              # 5:27
 ]
+# Outlaws of the Kessler Lanes, recorded (c1, First Contract; from Suno "C1": 11 stems, 5:29.8, E minor, 92 bpm drifting
+# to 98 and back (bars of 2.4-2.6 s); 130 bars, generated at the mission's full length, so it mostly plays straight
+# through). Its sections (tools/arrange-music.py outlaws --analyze):
+#   0-11 intro (the piano motif, light drums and bass in bars 2, 6, 8-10, brass from 6)  12-16 the choir comes in
+#   17-33 the groove (drums, bass, guitar, strings)  34-41 brass up  42-49 voices over the groove (the "lead vocals" stem:
+#   a wordless solo voice, no consonants to speak of, so it stays in; the backing vocals: the choir)  50-55 the breakdown
+#   (strings, sparse percussion)  56-61 rebuilding  62-73 the voices again  74-82 brass and drums  83-90 the voices'
+#   climax  91-99 the instrumental climax (the drums loudest)  100-108 the voices' last climax (a near copy of 83-91:
+#   joins at 0.85-1.1)  109 the stop  110-125 the piano alone (an outro of 40 s)  126-129 the last E chord, ringing out.
+# c1 (js/progress.js; solo: pirates 0:30, the interceptor 1:25, pirates 2:25, a swarm 3:25, a failing part 4:15; a crew
+# gets more, bunching at the hot times 3:30 / 4:30), the jump due at 5:00 (often later: the loop). The song lines up by
+# itself: the choir at 0:31, the groove at 0:44, the brass at 1:28, the breakdown at 2:08, the voices' climax at 3:30.
+# So it plays straight to bar 104 (4:22), then goes back to bar 87 (join cost 0.85) for a second pass: the instrumental
+# climax at 4:32 (hot time 2), the voices from 4:52 through the jump; that pass again is the loop (41.7 s, the same join).
+O_MIX = mix()
+OUTLAWS_PLAN = [
+    ('Intro: the piano motif', 0, 12, O_MIX),                               # 0:00 (pirates 0:30)
+    ('The choir comes in', 12, 17, O_MIX),                                  # 0:31
+    ('The groove', 17, 34, O_MIX),                                          # 0:44
+    ('Brass up', 34, 42, O_MIX),                                            # 1:28 (the interceptor 1:25)
+    ('Voices over the groove', 42, 50, O_MIX),                              # 1:48
+    ('Breakdown: strings', 50, 56, O_MIX),                                  # 2:08
+    ('Rebuilding', 56, 62, O_MIX),                                          # 2:23 (pirates 2:25)
+    ('The voices again', 62, 74, O_MIX),                                    # 2:38
+    ('Brass and drums', 74, 83, O_MIX),                                     # 3:08
+    ('Hot time 1: the voices (climax)', 83, 91, O_MIX),                     # 3:30 (hot 3:30-3:45)
+    ('The instrumental climax', 91, 100, O_MIX),                            # 3:50
+    ('The voices\' last climax', 100, 104, O_MIX),                         # 4:12
+    ('Again: the voices', 87, 91, O_MIX),                                   # 4:22
+    ('Hot time 2: the instrumental climax', 91, 100, O_MIX),                # 4:32 (hot 4:30-4:45)
+    ('The voices, through the jump (climax)', 100, 104, O_MIX),             # 4:52 (the jump 5:00)
+    ('Still going (the loop, climax)', 87, 104, O_MIX),                     # 5:04: the loop (41.7 s), if the jump is late
+]
 PIECES = {
+    'outlaws': {
+        'title': 'Outlaws of the Kessler Lanes (recorded)', 'stems': 'Outlaws of the Kessler Lanes', 'files': OUTLAWS_STEMS, 'bpm': 92, 'missions': ['c1'], 'jump': 300,
+        'bar_step': 1, 'loop': -1, 'smooth': True, 'ramp': 2, 'plan': OUTLAWS_PLAN,
+        # the ending (on the jump): the song's pickup bar (125: the piano, a swell of drums), then its last E chord ringing out
+        'ending': [(125, 130, O_MIX)], 'ending_stop': 329.5, 'ending_fade': 2.5,
+        'stitch': (3.2, 6.0), 'stitch_xf': (0.15, 0.1),
+    },
     'hull': {
         'title': 'Pressure Hull (recorded)', 'stems': 'Hull Pressure', 'files': HULL_STEMS, 'mix': 'Hull Pressure.wav', 'bpm': 87, 'missions': ['c7'], 'jump': 300,
         'plan': [('Drifting in (sonar, synth, strings)', 0, 8, CALM),     # (covers the first encounter at 0:10)
