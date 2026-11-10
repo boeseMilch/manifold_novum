@@ -36,7 +36,7 @@
 <body>
 <main>
   <h1>MANIFOLD NOVUM — MUSIC</h1>
-  <p class="sub">Seven pieces, shared by the missions, each with its own opening, lead and feel. Each one plays along with a simulated mission: drifting in, building up layer by layer, the climax towards the jump, the spool while the drive charges, and the final hit when the ship jumps out.</p>
+  <p class="sub"><span id="intro">The game's music: synthesized pieces and recorded songs.</span> Every synthesized piece has its own opening, lead and feel. Each one plays along with a simulated mission: drifting in, building up layer by layer, the climax towards the jump, the spool while the drive charges, and the final hit when the ship jumps out.</p>
   <div id="songs"></div>
   <div class="panel">
     <div class="row"><button class="act" id="play">▶ PLAY</button><button class="act" id="restart">⟲ RESTART</button><button class="act" id="spool">SPOOL</button><button class="act" id="jump">JUMP NOW</button>
@@ -69,14 +69,22 @@
 <script src="js/music/recorded-outlaws.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
-  const NAMES = { c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', c4: 'Ch. 4', c5: 'Ch. 5', c6: 'Ch. 6', c7: 'Ch. 7', c8: 'Ch. 8', practice: 'Practice', custom: 'Skirmish' };
+  const NAMES = { menu: 'Menu', c1: 'Ch. 1', c2: 'Ch. 2', c3: 'Ch. 3', c4: 'Ch. 4', c5: 'Ch. 5', c6: 'Ch. 6', c7: 'Ch. 7', c8: 'Ch. 8', practice: 'Practice', custom: 'Skirmish' };
   const STAGES = ['Drifting in.', 'Drifting in.', 'Building up.', 'Building up.', 'The theme.', 'The fight is on.', 'Climax.', 'The jump drive is spooling up…'];
   let chosen = music.list()[0].name, playing = false, t = 0, jumped = false, last = performance.now();
   music.setPaused(true);
   const list = $('songs');
+  // What the game plays today: a mission with a recording plays that, and its synthesized piece only stands in when
+  // the recording can't load or play; every other mission (and the menu) plays its synthesized piece.
+  const RECORDED = new Set(music.recordings().flatMap(r => r.missions)), names = (ms) => [...ms].sort((a, b) => Object.keys(NAMES).indexOf(a) - Object.keys(NAMES).indexOf(b)).map(m => NAMES[m] || m).join(', ');
+  const usedBy = (s) => { const own = s.missions.filter(m => !RECORDED.has(m)), back = s.missions.filter(m => RECORDED.has(m));
+    return [own.length ? `${names(own)} (in the game)` : '', back.length ? `stands in for the recording: ${names(back)}` : ''].filter(Boolean).join(' · '); };
+  { const all = music.list(), inGame = all.filter(s => s.missions.some(m => !RECORDED.has(m))), recs = music.recordings();
+    $('intro').textContent = `${all.length} synthesized pieces and ${recs.length} recorded songs. In the game ${names([...RECORDED])} play a recording; ${names(inGame.flatMap(s => s.missions.filter(m => !RECORDED.has(m))))} play a synthesized piece`
+      + (all.length > inGame.length ? `, and ${all.filter(s => !inGame.includes(s)).map(s => s.title).join(', ')} only stand${all.length - inGame.length === 1 ? 's' : ''} in when a recording can't load.` : '.'); }
   for (const s of music.list()) {
     const b = document.createElement('button'); b.className = 'song'; b.dataset.name = s.name;
-    b.title = s.mood; b.innerHTML = `<b>${s.title}</b><span>${s.bpm} bpm · ${s.key} · ${s.meter} · ${s.lead} lead</span><span>${s.mood}</span><span>${s.missions.map(m => NAMES[m] || m).join(', ')}</span>`;
+    b.title = s.mood; b.innerHTML = `<b>${s.title}</b><span>${s.bpm} bpm · ${s.key} · ${s.meter} · ${s.lead} lead</span><span>${s.mood}</span><span>${usedBy(s)}</span>`;
     b.onclick = () => { chosen = s.name; music.setSong(s.name); restart(); mark(); };
     list.appendChild(b);
   }

@@ -165,7 +165,7 @@
 
   music.define({ name: 'home', title: 'Last Jump Home', bpm: 112, key: 'C', missions: ['c8'],
     mood: 'a ticking clock and the theme on a music box; then a muffled growl creeps in, a build, a beat of silence, and the drop: a talking wobble bass, half-time drums, a heavy snare on 3',
-    lead: 'saw', ostInst: 'pluck', drums: 'dub',
+    lead: 'saw', drums: 'dub',
     engineDrums: false,                                   // (the engine's rolls, fills, drop hits and spool percussion are off: the growl carries the rhythm, over a sparse kit of its own)
     parts: { tick: [0, 3], tines: [0, 3], pad: 1, wobble: 2, drums: 3, hats: 3, snare: 4, theme: 4, choir: 5, brass: 5, stabs: 6, strings: 6 },
     A: { chords: 'Cm Cm Ab Ab Fm Fm G G', theme: [

@@ -56,7 +56,7 @@ const MenuGL = (() => {
     ['#lobby input:not([type=checkbox])', { kind: 'inset', scale: 0.55 }],
     ['#lobby-profile .bar', { kind: 'inset', scale: 0.3, flat: true }],
     ['.paint', { kind: 'swatch' }],
-    ['#room-back, .game button.join', { kind: 'btns' }],
+    ['#room-back, .game button.join, .sk-all button', { kind: 'btns' }],   // (.sk-all: the builder's all / none, 28 px high: the big button's rim swallowed them)
     ['button', { kind: 'btn' }],
   ];
   const SEL = RULES.map(r => r[0]).join(', ');
@@ -501,7 +501,10 @@ void main() {
   document.addEventListener('focusout', () => { keyFocus = null; kick(); });
   addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && keyFocus && document.activeElement === keyFocus) { pressEl = keyFocus; kick(); } });
   addEventListener('keyup', () => { if (pressEl && pressEl === keyFocus) { pressEl = null; kick(); } });
-  for (const L of layers) L.c.addEventListener('webglcontextlost', (e) => {   // (back to the CSS look; no restore)
+  // A lost context: back to the CSS look for good (html.metal-css: the same textures as border-images, so the menus
+  // look and work as they do without WebGL; nothing to tell the player, a line in the console for us).
+  for (const L of layers) L.c.addEventListener('webglcontextlost', (e) => {
+    if (ready) console.warn('menu metal: WebGL context lost, CSS look');
     e.preventDefault(); ready = false; html.classList.remove('metal-gl'); html.classList.add('metal-css');
     for (const M of layers) M.c.style.display = 'none';
   });

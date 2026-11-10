@@ -126,6 +126,25 @@ const GFX = (() => {
     setScale: noop, setShadows: noop, setScratches: noop, setPathScratches: noop, toScreen: () => [0, 0], onScreen: () => true, pickAt: () => null, disable: noop,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
+  // The lighting's ambient areas: the shader takes MAX_AREAS of them. Our ship has 18, with the pirate base docked
+  // it is 30 (2026-11-10: the limit was 24 and the rest was dropped without a word, so our outer airlocks and two
+  // base doorways were lit like open space; tests/lightareas.js counts every docked layout against the limit).
+  // 48 areas are 96 of the 224 uniform vectors every WebGL2 fragment shader may use (16 more for the walls, about
+  // 30 for the rest). Should a frame ever have more, fitAreas() first leaves out the ones that can't touch the
+  // screen (view: the world rect the screen shows, { x0, y0, x1, y1 }), and only then cuts the list, with one
+  // console warning. Order is kept: later areas paint over earlier ones.
+  const MAX_AREAS = 48;
+  let areasWarned = false;
+  function fitAreas(areas, view, max = MAX_AREAS) {
+    if (areas.length <= max) return areas;
+    let out = view ? areas.filter(a => a.x + a.w > view.x0 && a.x < view.x1 && a.y + a.h > view.y0 && a.y < view.y1) : areas;
+    if (out.length > max) {
+      if (!areasWarned) { areasWarned = true; console.warn(`[gfx] ${out.length} light areas on screen, the shader takes ${max}: the last ${out.length - max} are lit as open space (raise MAX_AREAS in js/gfx.js)`); }
+      out = out.slice(0, max);
+    }
+    return out;
+  }
+  api.MAX_AREAS = MAX_AREAS; api.fitAreas = fitAreas;
   const off = (why) => { api.reason = why; return api; };
   if (typeof window === 'undefined' || typeof document === 'undefined' || typeof document.createElement !== 'function') return off('no DOM');
   const search = (typeof location !== 'undefined' && location.search) || '';
@@ -143,7 +162,7 @@ const GFX = (() => {
   // Lights are binned per screen tile (tiled forward shading): MAX_LIGHTS on screen in all, up to
   // TILE_SLOTS - 1 per tile (the strongest win). Light data lives in a float texture (4 texels per
   // light), the per-tile index lists in an R8UI texture (slot 0 = count).
-  const MAX_LIGHTS = 255, TILE_SLOTS = 32, MAX_AREAS = 24, MAX_WALLS = 16, DEPTH_SCALE = 1 / 200;
+  const MAX_LIGHTS = 255, TILE_SLOTS = 32, MAX_WALLS = 16, DEPTH_SCALE = 1 / 200;   // (MAX_AREAS: at the top)
   // Shadows: one ray per pixel per light, SHADOW_STEPS samples, aimed at a random point of the light's
   // disc (size): computed at 1/SH_DIV resolution into SH_CH visibility channels (the RGBA of SH_LAYERS layers of an array texture),
   // blurred depth-aware, then read back depth-aware by the lighting (see shadowPass()).
@@ -310,8 +329,8 @@ vec3 lighting(vec3 P, vec3 N, out vec3 spec) {
   return acc;
 }`;
 
-  // Procedural floor wear for the floor tiles (GFX.sprite(..., { floor: [layout, wear x4] }); from
-  // tools/sprites/scratch_proto.html). Per pixel, from the world position, so every 1 x 1 plate cell
+  // Procedural floor wear for the floor tiles (GFX.sprite(..., { floor: [layout, wear x4] })).
+  // Per pixel, from the world position, so every 1 x 1 plate cell
   // and every 2 x 2 tile gets its own marks (nothing repeats with the baked tile variants):
   //   fine hairlines  normal only: a V-groove box-filtered over the pixel's footprint (a scratch thinner
   //                   than a pixel is a faint light/dark dipole, not aliasing), plus the glint (lighting())
@@ -1233,7 +1252,7 @@ void main() {
     let p = PAGES[key];
     if (p) { if (!bg) p.bg = false; return p; }      // (wanted now: a streamed page jumps the queue)
     const m = META.pages[group][i];
-    p = PAGES[key] = { state: 'loading', w: m.w, h: m.h, maps: m.maps || '', tex: {}, img: {}, bg, left: 0 };
+    p = PAGES[key] = { state: 'loading', group, i, w: m.w, h: m.h, maps: m.maps || '', tex: {}, img: {}, bg, left: 0 };
     const kinds = ['b', ...p.maps.split('')];
     Promise.all(kinds.map(k => loadImage(BASE_URL + m.file + (k === 'b' ? '' : '.' + k) + '.webp').catch(() => null))).then(imgs => {
       if (!imgs[0]) { p.state = 'failed'; console.warn('[gfx] missing page', key); return; }
@@ -1241,7 +1260,8 @@ void main() {
         const src = imgs[j];
         if (!src) return;
         // (the height map and the tint mask: only their red channel is read, so one byte a pixel on the GPU, not four;
-        //  the colour map and the mask stay in memory only for a page with a mask: tintRef reads both, nothing else does)
+        //  the colour map and the mask of a page with a mask stay in memory until tintRef has read both for the page's
+        //  sprites: measureTints)
         const mips = k === 'b' || k === 'm', red = k === 'h' || k === 'm', t = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, t);
         gl.texStorage2D(gl.TEXTURE_2D, mips ? Math.floor(Math.log2(Math.max(src.width, src.height))) + 1 : 1, red ? gl.R8 : gl.RGBA8, src.width, src.height);
@@ -1271,7 +1291,7 @@ void main() {
     if (u.mips && aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
     u.p.tex[u.k] = u.t;
     if (u.p.img[u.k] !== u.src && u.src.close) u.src.close();   // (what tintRef reads stays: see page())
-    if (--u.p.left === 0) u.p.state = 'ready';
+    if (--u.p.left === 0) { u.p.state = 'ready'; if (u.p.img.b && u.p.img.m) MEASURE.push(u.p); }
     UPLOADS.splice(UPLOADS.indexOf(u), 1);
     return rows * w * 4;
   }
@@ -1280,6 +1300,7 @@ void main() {
     const now = UPLOADS.filter(u => !u.p.bg);         // (what's wanted now goes first, on the bigger budget)
     let budget = now.length ? BUDGET.now : BUDGET.bg;
     for (const u of now.length ? now : UPLOADS.slice()) { if (budget <= 0) break; budget -= uploadBand(u, budget); }
+    measureTints();
     // the next streamed page: one at a time, and only while nothing else is loading
     if (!STREAM.length || Object.values(PAGES).some(p => p.state === 'loading' || p.state === 'uploading')) return;
     const [g, i] = STREAM.shift();
@@ -1306,6 +1327,23 @@ void main() {
     return (S._ready = ok);
   }
   const pageOf = (S, i) => (S._pg || (S._pg = []))[i] || (S._pg[i] = page(S.group, i));   // (page() memoized on the sprite: no key string per call)
+  // The decoded colour map and mask of a page with a mask are only needed for tintRef's one measurement per sprite
+  // (2026-11-10: they were kept for good, about 208 MB of bitmaps with every such page loaded). Once the page is
+  // on the GPU, its sprites are measured here, a few a frame (2 ms), and then the two bitmaps are closed.
+  const MEASURE = [];
+  function measureTints() {
+    if (!MEASURE.length) return;
+    const p = MEASURE[0], t0 = performance.now();
+    if (!p.todo) p.todo = Object.values(MAN).filter(S => {
+      if (S.group !== p.group || !(S.maps || '').includes('m') || !S.f) return false;
+      const fr = S.f.find(Boolean);
+      return !!fr && (fr.length > 7 ? S.bases[fr[7]] : fr)[0] === p.i;      // (the frame tintRef reads is on this page)
+    });
+    while (p.todo.length && performance.now() - t0 < 2) tintRef(p.todo.pop());
+    if (p.todo.length) return;
+    for (const k of ['b', 'm']) if (p.img[k] && p.img[k].close) p.img[k].close();
+    p.img = {}; p.todo = null; MEASURE.shift();
+  }
   // The tint mask recolours by luminance relative to the untinted mask area's mean (measured once).
   function tintRef(S) {
     if (S._tintRef != null) return S._tintRef;
@@ -1650,7 +1688,14 @@ void main() {
     queue.length = 0; seq = 0; picks = []; domes.length = 0; back = null; numOv = 0;
     light ={ ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
   }
-  function lighting(L) { if (api.on) light = Object.assign({ ambient: [1, 1, 1], sun: null, areas: [], lights: [] }, L); }
+  function lighting(L) {
+    if (!api.on) return;
+    light = Object.assign({ ambient: [1, 1, 1], sun: null, areas: [], lights: [] }, L);
+    if (light.areas.length > MAX_AREAS) {              // (never today; the world rect the screen can show, for anything from 4 below the floor to 8 above it, and the areas' soft edge)
+      const m = 0.2;
+      light.areas = fitAreas(light.areas, { x0: -camOX / Sdev - m, x1: (W - camOX) / Sdev + m, y0: (-camOY / Sdev - 4 * COS) / SIN - m, y1: ((H - camOY) / Sdev + 8 * COS) / SIN + m });
+    }
+  }
   function setShadows(on) {                          // screen-space shadows (default on; ?noshadows or GFX.setShadows(false) turns them off)
     shadowsWanted = !!on; RT && (RT.w = -1);         // rebuild the targets on the next frame
     try { localStorage.setItem('mn-gfx-shadows', on ? '1' : '0'); } catch (e) { /* no storage */ }
@@ -2078,9 +2123,7 @@ void main() {
 
   Object.assign(api, {
     on: true, gl, begin, end, sprite, lighting, backdrop, overlay, layer2d, frameIndex, pickAt, disable, setShadows, canvasSprite, text, dome, wear: WEAR,
-    get scratches() { return scratchOn; },
     setScratches: (on) => { scratchOn = !!on; try { localStorage.setItem('mn-gfx-scratch', on ? '1' : '0'); } catch (e) { /* no storage */ } },
-    get pathScratches() { return pathScratchOn; },
     setPathScratches: (on) => { pathScratchOn = !!on; try { localStorage.setItem('mn-gfx-pathscratch', on ? '1' : '0'); } catch (e) { /* no storage */ } },
     has: (name) => !!(DYNS[name] || (MAN && MAN[name] && MAN[name].f && MAN[name].f.length)),
     ready: (name) => !!(DYNS[name] ? spriteReady(DYNS[name]) : MAN && MAN[name] && spriteReady(MAN[name])),
@@ -2092,7 +2135,14 @@ void main() {
     toScreen: (x, y, z = 0) => { const [sx, sy] = toDev(x, y, z); return [sx / K, sy / K]; },
     // whether anything within r (layout units, on screen) of (x, y, z) can show this frame (between begin and end)
     onScreen: (x, y, z = 0, r = 1) => { const [sx, sy] = toDev(x, y, z), R = r * Sdev; return sx + R >= 0 && sx - R <= W && sy + R >= 0 && sy - R <= H; },
-    get manifest() { return MAN; },
+  });
+  // (defined, not assigned: Object.assign would read each getter once and store that value, so GFX.pathScratches
+  // stayed what it was at load, js/sprites.js kept reading it, and GFX.setPathScratches(true) did nothing until a
+  // reload; GFX.manifest was null for good)
+  Object.defineProperties(api, {
+    scratches: { get: () => scratchOn, enumerable: true },
+    pathScratches: { get: () => pathScratchOn, enumerable: true },
+    manifest: { get: () => MAN, enumerable: true },
   });
 
   // put the GL canvas under the 2D canvas
@@ -2100,7 +2150,20 @@ void main() {
   const c2d = document.getElementById('c');
   if (c2d) { c2d.style.position = 'fixed'; c2d.style.left = '0'; c2d.style.top = '0'; c2d.style.zIndex = '1'; c2d.parentNode.insertBefore(glc, c2d); }
   else document.body.appendChild(glc);
-  glc.addEventListener('webglcontextlost', (e) => { e.preventDefault(); disable('WebGL context lost'); });
+  // The browser took the context away (a GPU reset, memory pressure, too many contexts). Everything on the GPU is
+  // gone and this renderer can't be set up a second time, so the game carries on in the classic 2D view (every
+  // drawing call falls back to it) and says so: only a reload brings the sprites back.
+  glc.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    if (!api.on) return;
+    disable('WebGL context lost');
+    const n = document.createElement('div');
+    n.id = 'gfx-lost'; n.setAttribute('role', 'alert');
+    n.textContent = 'Graphics lost: the browser took the game\'s graphics away. The game runs on in the simple 2D view. Reload the page to get the full graphics back (a running mission would be lost). Click to hide this.';
+    n.style.cssText = 'position:fixed;left:50%;top:12px;transform:translateX(-50%);max-width:min(640px,90vw);z-index:1000;padding:10px 16px;background:#2a1414;color:#ffd9c8;border:2px solid #d0543a;border-radius:6px;font:14px/1.4 sans-serif;text-align:center;cursor:pointer';
+    n.addEventListener('click', () => n.remove());
+    document.body.appendChild(n);
+  });
 
   fetch(BASE_URL + 'sprites.json').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(d => {
     MAN = d.sprites; META = d.meta; HR = META.heightRange || 4; api.heightRange = HR;

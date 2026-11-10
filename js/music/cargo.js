@@ -97,7 +97,7 @@
 
   me = music.define({ name: 'cargo', title: 'Cargo Run', bpm: 102, key: 'G', missions: ['c1', 'c2', 'c3'],
     mood: 'a scrappy hauler crew on its first contracts: a twangy guitar riff and a shaker, strummed chords, a swaggering rock kit, the whistle-flute theme',
-    lead: 'flute', ostInst: 'twang', drums: 'kit', swing: 0.12,
+    lead: 'flute', drums: 'kit', swing: 0.12,
     engineDrums: false,                                   // (its own kit, fills, builds, drops and spool)
     parts: { riff: 0, shaker: 0, strum: 1, drums: 2, hats: 3, pad: 3, theme: 4, brass: 5, taiko: 5, stabs: 6, strings: 6 },
     groove: ['strum'],

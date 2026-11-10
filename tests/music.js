@@ -307,9 +307,9 @@ check(nodes > n0, 'and plays again when shown');
   const count = (n) => (x) => { (seen[n] ||= []).push(x); };
   music.define(recipe('hooktest', { hooks: { build: count('build'), buildSweep: count('buildSweep'), dropHit: count('dropHit'), accent: count('accent'),
     spoolWave: count('spoolWave'), spoolPerc: count('spoolPerc'), endFill: count('endFill'), finalHit: count('finalHit'), cadence: count('cadence'),
-    pad: count('pad'), endingPlanned: count('endingPlanned'), fill: (x) => { fills.push([x.r, x.from, x.to]); } } }));
+    pad: count('pad'), fill: (x) => { fills.push([x.r, x.from, x.to]); } } }));
   const loud = mission('hooktest');
-  const names = ['fill', 'build', 'buildSweep', 'dropHit', 'accent', 'spoolWave', 'spoolPerc', 'endFill', 'finalHit', 'cadence', 'pad', 'endingPlanned'];
+  const names = ['fill', 'build', 'buildSweep', 'dropHit', 'accent', 'spoolWave', 'spoolPerc', 'endFill', 'finalHit', 'cadence', 'pad'];
   seen.fill = fills;
   check(names.every(n => (seen[n] || []).length), `every gesture hook is called (${names.map(n => n + ' ' + (seen[n] || []).length).join(', ')})`);
   check(fills.some(f => f[0] === -1) && fills.every(f => f[2] > f[1]) && fills.some(f => f[0] >= 0),
@@ -547,6 +547,7 @@ check(nodes > n0, 'and plays again when shown');
     for (const e of els) if (!e.paused && wall > (e.from || 0)) e.currentTime += 0.025 * e.playbackRate;
     for (const t of tmo.splice(0)) if (t[0] <= wall) t[1](); else tmo.push(t);
     if (clockFrom !== undefined) m.setClock(clockFrom + wall); iv && iv(); } };
+  check(!!iv, 'the engine started its timer (every recording check below runs on it)');
   if (iv) {
     const w0 = wall; m.setClock(0); m.setMission('c7');
     check(m.title === 'Pressure Hull (recorded)' && !!m.recording, 'with audio elements c7 plays the recording');
@@ -731,6 +732,75 @@ check(nodes > n0, 'and plays again when shown');
   check(at(/Hot time 1/) > 200 && at(/Hot time 1/) < 220 && at(/Hot time 2/) > 260 && at(/Hot time 2/) < 285 && at(/through the jump/) < 300, 'its climaxes at the hot times (~3:30 and ~4:30), the voices through the jump');
 }
 
+// ---- a recording taking over, the loop past the arrangement's end, a refused play() (2026-11-10)
+// (its own fake WebAudio: this one notes when every oscillator is told to stop, and every seek of an audio element)
+{
+  const world = (opts = {}) => {
+    let wall = 0, t = 0, iv = null; const oscs = [], els = [], tmo = [], win = {};
+    const tnode = (src) => { const o = { stopped: null }; if (src) oscs.push(o);
+      return new Proxy(o, { get: (o, k) => (k in o ? o[k] : k === 'stop' ? (x) => { o.stopped = x ?? t; } : ['connect', 'start', 'disconnect'].includes(k) ? () => {} : (o[k] = param())), set: (o, k, v) => ((o[k] = v), true) }); };
+    class AC { constructor() { this.sampleRate = 8000; this.destination = tnode(); this.state = 'running'; }
+      get currentTime() { return t; } resume() {} createGain() { return tnode(); } createOscillator() { return tnode(true); } createBiquadFilter() { return tnode(); }
+      createBufferSource() { return tnode(true); } createConvolver() { return tnode(); } createDelay() { return tnode(); } createDynamicsCompressor() { return tnode(); } createStereoPanner() { return tnode(); }
+      createBuffer(ch, len) { return { getChannelData: () => new Float32Array(len) }; } createMediaElementSource() { return tnode(); } }
+    class El { constructor(src) { this.src = src; this.ct = 0; this.seeks = []; this.plays = 0; this.paused = true; this.ended = false; this.volume = 1; this.playbackRate = 1; this.duration = /ending/.test(src) ? 15 : 1000; this.on = {}; els.push(this); }
+      get currentTime() { return this.ct; } set currentTime(v) { this.seeks.push([this.ct, v]); this.ct = v; }
+      addEventListener(n, f) { this.on[n] = f; } pause() { this.paused = true; }
+      play() { this.plays++; if (opts.refuse?.()) return Promise.reject(Object.assign(new Error('no user input yet'), { name: 'NotAllowedError' })); this.paused = false; return Promise.resolve(); } }
+    const sb = { window: { AudioContext: AC, addEventListener: (n, f) => { (win[n] ||= []).push(f); } }, document: { hidden: false, addEventListener() {} }, localStorage: { getItem: () => null, setItem() {} },
+      navigator: { getAutoplayPolicy: () => 'allowed' }, location: { protocol: 'http:', search: '' }, Audio: El, performance: { now: () => wall * 1000 },
+      setInterval: (f) => { iv = f; }, setTimeout: (f, ms) => tmo.push([wall + ms / 1000, f]), Math, console, clamp: (v, a, b) => Math.max(a, Math.min(b, v)), lerp: (a, b, k) => a + (b - a) * k };
+    vm.createContext(sb);
+    for (const f of SCRIPTS) vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f + '.js'), 'utf8'), sb);
+    const m = vm.runInContext('music', sb);
+    const step = (sec, clockOf) => { for (let i = 0; i < Math.round(sec / 0.025); i++) { wall += 0.025; t += 0.025;
+      for (const e of els) if (!e.paused) e.ct += 0.025 * e.playbackRate;
+      for (const x of tmo.splice(0)) if (x[0] <= wall) x[1](); else tmo.push(x);
+      if (clockOf) m.setClock(clockOf(wall)); iv && iv(); } };
+    const sounding = () => oscs.filter(o => o.stopped === null || o.stopped > t).length;
+    return { m, step, els, sounding, input: () => (win.keydown || []).forEach(f => f()), get wall() { return wall; }, ok: !!iv };
+  };
+  const settle = () => new Promise(r => setImmediate(r));      // (let a rejected play() reach its handler)
+  (async () => {
+    // the menu's pad and drone are let go when a recording takes over, whatever its fallback piece is
+    for (const id of ['custom', 'c1', 'c7']) {
+      const w = world(); w.m.setMission('menu'); w.step(20);
+      const before = w.sounding();
+      w.m.setClock(0); w.m.setMission(id); w.step(30, (x) => x - 20);
+      check(w.ok && before > 0 && !!w.m.recording && w.sounding() === 0 && w.m.step === 0,
+        `menu → ${id}: nothing of the menu piece sounds under the recording (${before} held oscillators before, ${w.sounding()} 30 s in)`);
+    }
+    // a mission that outruns the arrangement: one seek at each loop wrap, whichever of clock and file wraps first
+    const D = JSON.parse((s => s.slice(s.indexOf('{'), s.lastIndexOf('}') + 1))(fs.readFileSync(path.join(__dirname, '..', 'js', 'music', 'recorded-outlaws.js'), 'utf8')));
+    for (const off of [0.08, 0, -0.08]) {
+      const w = world(), t0 = D.loop[1] - 20; w.m.setClock(t0); w.m.setMission('c1'); w.step(1, (x) => t0 + x);
+      const el = w.els[0]; el.ct = t0 + w.wall + off; el.seeks.length = 0;
+      w.step(110, (x) => t0 + x);                               // 20 s to the loop's end, then two more rounds of it
+      const L = D.loop[1] - D.loop[0], wraps = el.seeks.filter(([a, b]) => a > D.loop[1] - 0.1 && b < D.loop[0] + 0.1).length;
+      check(wraps === 3 && el.seeks.length === 3 && el.playbackRate === 1 && Math.abs(el.ct - (D.loop[0] + (t0 + w.wall + off - D.loop[0]) % L)) < 0.05,
+        `the loop past the arrangement's end, the file ${off > 0 ? '80 ms ahead of' : off < 0 ? '80 ms behind' : 'in step with'} the clock: one seek a wrap (${el.seeks.length} seeks in 3 wraps)`);
+    }
+    {                                                           // (a real desync inside the loop is still corrected)
+      const w = world(), t0 = D.loop[1] + 10; w.m.setClock(t0); w.m.setMission('c1'); w.step(1, (x) => t0 + x);
+      const el = w.els[0]; el.ct = D.loop[0] + 30; w.step(0.1, (x) => t0 + x);
+      check(Math.abs(el.ct - w.m.recMath.pos(D, t0 + w.wall)) < 0.1, 'and the file somewhere else in the loop is still seeked to the clock');
+    }
+    // the browser refuses play() until the first input: the recording waits for it instead of giving up
+    {
+      let allowed = false;
+      const w = world({ refuse: () => !allowed }); w.m.setClock(0); w.m.setMission('c1'); w.step(0.05, (x) => x); await settle();
+      const tries = w.els[0].plays; w.step(2, (x) => x); await settle();
+      check(w.els[0].paused && !!w.m.recording && w.m.title === 'Outlaws of the Kessler Lanes (recorded)' && w.els[0].plays === tries,
+        `play() refused (no input yet): the recording is kept, and not asked again every tick (${w.els[0].plays} tries in 2 s)`);
+      allowed = true; w.input(); w.step(1, (x) => x); await settle();
+      check(!w.els[0].paused && !!w.m.recording && Math.abs(w.els[0].ct - w.wall) < 1.1, 'the first key press: it plays, on the mission clock');
+      w.m.setMission('menu'); w.m.setMission('c1');
+      check(!!w.m.recording, 'and the recording is still there for the next mission');
+    }
+    process.exit(failed ? 1 : 0);
+  })();
+}
+
 // ---- the recordings' loudness (tools/music-levels.json, written by `python3 tools/arrange-music.py all --levels`; 2026-10-28,
 // c3's "like a kid is playing with the volume meter"): no bar-to-bar pumping, no stem switched on harder than the song does it
 {
@@ -745,4 +815,5 @@ check(nodes > n0, 'and plays again when shown');
   }
 }
 
-process.exit(failed ? 1 : 0);
+// (the async block above exits once its checks are through)
+process.exitCode = failed ? 1 : 0;

@@ -219,26 +219,38 @@ function drawHitFx() {
   hitFxUpdate();
   if (GFX.on && hitFxSprites()) drawHitFxGL(); else drawHitFx2D();
 }
+// One options object for every particle (GFX.sprite copies what it needs before it returns): up to 1400 particles a
+// frame each made two objects here, which undid the pooling in js/gfx.js sprite(). hfOpt(p, ...) fills it for a
+// particle: inside the ship it sorts with the things around it and writes no depth, outside it is on top; p null:
+// on top.
+const HF_O = { layer: undefined, sortY: undefined, depthWrite: undefined, unlit: false, scale: 1, sx: 0, rot: 0, alpha: 1 };
+const HF_SMOKE = ['fx/smoke_0', 'fx/smoke_1', 'fx/smoke_2', 'fx/smoke_3'];
+function hfOpt(p, scale, alpha, unlit = false, rot = 0, sx = 0) {
+  const o = HF_O;
+  if (p && p.inside) { o.layer = undefined; o.sortY = p.y + 0.3; o.depthWrite = false; }
+  else { o.layer = 'top'; o.sortY = undefined; o.depthWrite = undefined; }
+  o.scale = scale; o.alpha = alpha; o.unlit = unlit; o.rot = rot; o.sx = sx;
+  return o;
+}
 function drawHitFxGL() {
   const S = HITFX.spr, SIN = GFX.SIN, COS = GFX.COS;
   for (const p of HITFX.parts) {
-    const o = p.inside ? { sortY: p.y + 0.3, depthWrite: false } : { layer: 'top' };
     if (p.k === 2) {                                 // smoke
       const q = 1 - p.life / p.max, a = 0.55 * Math.min(1, q * 8) * (1 - q);
-      GFX.sprite(`fx/smoke_${p.seed}`, 0, p.x, p.y, p.z, { ...o, scale: p.r / 0.25, alpha: a });
+      GFX.sprite(HF_SMOKE[p.seed], 0, p.x, p.y, p.z, hfOpt(p, p.r / 0.25, a));
       continue;
     }
     if (p.k === 3) {                                 // a bit of plating, glowing at first
       const hot = clamp(p.life / p.max * 1.4 - 0.4, 0, 1);
-      GFX.sprite('fx/junk_shard', 0, p.x, p.y, p.z, { ...o, scale: 0.35 * p.size, rot: p.rot, alpha: clamp(p.life * 2, 0, 1) });
-      if (hot > 0.05) GFX.sprite(S.spark[2], 0, p.x, p.y, p.z, { ...o, unlit: true, scale: 1.4 * p.size, alpha: hot * 0.8 });
+      GFX.sprite('fx/junk_shard', 0, p.x, p.y, p.z, hfOpt(p, 0.35 * p.size, clamp(p.life * 2, 0, 1), false, p.rot));
+      if (hot > 0.05) GFX.sprite(S.spark[2], 0, p.x, p.y, p.z, hfOpt(p, 1.4 * p.size, hot * 0.8, true));
       continue;
     }
     if (p.k === 4) {                                 // shock ring: a flat bright ring growing fast
       const q = 1 - p.life / p.max, n = 18, R = p.r * (0.25 + 0.75 * Math.sqrt(q));
       for (let i = 0; i < n; i++) {
         const a = i / n * TAU;
-        GFX.sprite(S.spark[q < 0.4 ? 0 : 1], 0, p.x + Math.cos(a) * R, p.y + Math.sin(a) * R, 0.2, { layer: 'top', unlit: true, scale: 1.6, sx: 3, rot: Math.atan2(Math.cos(a) * SIN, -Math.sin(a)), alpha: (1 - q) * 0.8 });
+        GFX.sprite(S.spark[q < 0.4 ? 0 : 1], 0, p.x + Math.cos(a) * R, p.y + Math.sin(a) * R, 0.2, hfOpt(null, 1.6, (1 - q) * 0.8, true, Math.atan2(Math.cos(a) * SIN, -Math.sin(a)), 3));
       }
       continue;
     }
@@ -247,7 +259,7 @@ function drawHitFxGL() {
     const trail = p.k === 0 ? 0.05 : 0.025, len = sl * trail;
     const alpha = clamp(p.life / p.max * 3, 0, 1) * (p.k === 1 ? 0.6 + 0.4 * Math.sin(p.life * 23 + p.x) : 1);
     GFX.sprite(S.spark[hfCol(h)], 0, p.x - p.vx * trail * 0.5, p.y - p.vy * trail * 0.5, p.z - p.vz * trail * 0.5,
-      { ...o, unlit: true, scale: p.size * (p.k === 1 ? 1.1 : 0.95), sx: Math.max(1, len / (0.095 * p.size) + 1), rot: Math.atan2(sy, sx), alpha });
+      hfOpt(p, p.size * (p.k === 1 ? 1.1 : 0.95), alpha, true, Math.atan2(sy, sx), Math.max(1, len / (0.095 * p.size) + 1)));
   }
 }
 function drawHitFx2D() {

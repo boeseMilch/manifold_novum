@@ -155,7 +155,7 @@
 
   music.define({ name: 'bloom', title: 'Bloom', bpm: 104, key: 'F#', missions: ['c6'],
     mood: 'something growing: a breathing low choir, spores, a 3-against-4 marimba, hand drums, a glassy FM lead; the climax blooms',
-    lead: 'fm', ostInst: 'marimba', drums: 'hand',
+    lead: 'fm', drums: 'hand',
     parts: { vox: 0, bubbles: [0, 3], ost: 1, poly: 2, drums: 2, ost16: 3, bass: 4, theme: 4, hats: 5, brass: 5, taiko: 5, stabs: 6, strings: 6 },
     groove: ['poly'],                                     // (back in the breakdown's second half with the ostinato)
     A: { chords: 'F#m F#m G G F#m F#m E E', theme: [

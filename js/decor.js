@@ -168,23 +168,6 @@ function stain(x, y, rad, col, seed) {
   }
 }
 
-// Cable along a polyline (pixel points), sagging slightly, taped down at every other joint.
-function cable(pts, col, width, seed) {
-  ctx.beginPath(); ctx.moveTo(...pts[0]);
-  for (let i = 1; i < pts.length; i++) {
-    const [ax, ay] = pts[i - 1], [bx, by] = pts[i];
-    ctx.quadraticCurveTo((ax + bx) / 2 + (by - ay) * 0.12, (ay + by) / 2 - (bx - ax) * 0.12, bx, by);
-  }
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = width + 5; ctx.save(); ctx.translate(2, 3); ctx.stroke(); ctx.restore();
-  ctx.strokeStyle = OUT; ctx.lineWidth = width + 3; ctx.stroke();
-  ctx.strokeStyle = col; ctx.lineWidth = width; ctx.stroke();
-  for (let i = 1; i < pts.length - 1; i += 2) {
-    const [ax, ay] = pts[i - 1], [bx, by] = pts[i + 1];
-    tapeStrip(pts[i][0], pts[i][1], T * 0.5, Math.atan2(by - ay, bx - ax) + Math.PI / 2, seed + i);
-  }
-}
-
 function crate(x, y, w, h, a, col, label) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
   shadowEllipse(4, 6, w * 0.55, h * 0.55, 0.3);
@@ -456,23 +439,6 @@ function socks(x0, x1, y, t) {
   }
 }
 
-// Wall panel hanging open with sparking wires.
-function sparks(x, y, t, seed) {
-  rr(x - 10, y - 8, 20, 16, 2); ctx.fillStyle = '#1b1e24'; ctx.fill(); stroke(1.5);
-  for (const [c, o] of [['#e2574c', -4], ['#e8c34f', 0], ['#5f9ad6', 4]]) {
-    ctx.beginPath(); ctx.moveTo(x + o, y); ctx.quadraticCurveTo(x + o * 3, y + 14, x + o * 2 + 4, y + 18);
-    ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke();
-  }
-  const r = rng(seed + Math.floor(t * 6));
-  if (r() < 0.06) {                                   // the odd small spark, no flashing
-    for (let i = 0; i < 3; i++) {
-      const a = r() * TAU, l = 4 + r() * 7;
-      ctx.beginPath(); ctx.moveTo(x + 8, y + 18); ctx.lineTo(x + 8 + Math.cos(a) * l, y + 18 + Math.sin(a) * l);
-      ctx.strokeStyle = 'rgba(255,220,120,0.8)'; ctx.lineWidth = 1.5; ctx.stroke();
-    }
-  }
-}
-
 // A hiss of steam out of a leaky pipe (x, y in world px): a jet to the right, slowing and drifting up.
 function steamPuff(x, y, t) { steamPlume(ctx, x, y, 1, t, STEAM_KINDS.leak); }
 
@@ -489,18 +455,6 @@ function tapeRoll(x, y) {
   ctx.beginPath(); ctx.arc(x, y, 5, 0, TAU); ctx.fillStyle = '#c9a46a'; ctx.fill(); stroke(1.5);
   ctx.beginPath(); ctx.moveTo(x + 9, y + 3); ctx.lineTo(x + 20, y + 9); ctx.lineTo(x + 16, y + 13); ctx.lineTo(x + 7, y + 6);
   ctx.fillStyle = '#b2b8c0'; ctx.fill(); stroke(1.2);
-}
-
-function hullPatch(x, y, w, h, a, seed) {
-  ctx.save(); ctx.translate(x, y); ctx.rotate(a);
-  rr(-w / 2, -h / 2, w, h, 3); ctx.fillStyle = shade('#5d636e', -0.1); ctx.fill(); stroke(2);
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  for (let i = 0; i < 6; i++) {
-    const k = i / 5;
-    ctx.fillRect(-w / 2 + 3 + k * (w - 8), -h / 2 + 3, 2.5, 2.5); ctx.fillRect(-w / 2 + 3 + k * (w - 8), h / 2 - 5, 2.5, 2.5);
-  }
-  ctx.restore();
-  tapeStrip(x + w * 0.3, y, h * 1.3, a + Math.PI / 2 + 0.2, seed);
 }
 
 // ---------------------------------------------------------------------------
@@ -598,7 +552,8 @@ function drawPropDecor(t) {
   S('props/weight_rack', K.weightRack.x, K.weightRack.y);
 }
 
-// Small junk scattered on every floor: nuts, soda cans, wrappers, tape scraps.
+// Small junk scattered on every floor: nuts (the soda cans, wrappers and tape scraps among them only looked like
+// blobs; sodaCan and wrapper still lie about in the docked ships, js/dock.js).
 function nut(x, y, a) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(a);
   poly(Array.from({ length: 6 }, (_, i) => [Math.cos(i / 6 * TAU) * 4.5, Math.sin(i / 6 * TAU) * 4.5]));
@@ -625,16 +580,14 @@ function wrapper(x, y, a, col, seed) {
 }
 const JUNK = (() => {
   const r = rng(4242), out = [];
-  const cans = ['#c0392b', '#2e7dc9', '#3a9a5a', '#e8c34f'], wraps = ['#e2574c', '#9b59b6', '#e8c34f', '#5fd6a0'];
   for (const room of ROOMS) {
     const q = room.rects[0];
     for (let i = 0; i < 14; i++) {
       const x = q.x + 0.4 + r() * (q.w - 0.8), y = q.y + 0.4 + r() * (q.h - 0.8), k = r();
       if (Math.hypot(x - 22.8, y - 22.75) < 1.6) continue;          // keep the power lever clear
       if (SOLIDS.some(S => inRect(x, y, S, 0.25))) continue;          // nothing under the furniture
-      if (k > 0.45) continue;                                         // just nuts and bolts (the rest only looked like blobs)
-      out.push({ kind: 'nut', x, y, a: r() * TAU,
-                 col: k < 0.6 ? cans[i % 4] : wraps[i % 4], seed: 7000 + out.length });
+      if (k > 0.45) continue;                                         // (the share that used to be cans and wrappers: left out)
+      out.push({ x, y, a: r() * TAU });
     }
   }
   return out;
@@ -642,10 +595,7 @@ const JUNK = (() => {
 function drawJunk() {
   for (const j of JUNK) {
     const x = j.x * T, y = j.y * T;
-    if (j.kind === 'nut') { if (!spr(`props/nut_r${Math.round((((j.a % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3)) / (Math.PI / 12)) % 4}`, 0, j.x, j.y, 0, { layer: 'decal' })) nut(x, y, j.a); }
-    else if (j.kind === 'can') sodaCan(x, y, j.a, j.col);
-    else if (j.kind === 'wrapper') wrapper(x, y, j.a, j.col, j.seed);
-    else tapeStrip(x, y, T * 0.35, j.a, j.seed);
+    if (!spr(`props/nut_r${Math.round((((j.a % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3)) / (Math.PI / 12)) % 4}`, 0, j.x, j.y, 0, { layer: 'decal' })) nut(x, y, j.a);
   }
 }
 

@@ -71,7 +71,7 @@
 
   music.define({ name: 'comet', title: 'Red Comet Gallop', bpm: 126, key: 'A', missions: ['c4'], meter: 12,
     mood: 'a rowdy pirate jig in 6/8: stomps and claps, an accordion, a fiddle, the crew shouting',
-    lead: 'reed', ostInst: 'pluck', drums: 'stomp',
+    lead: 'reed', drums: 'stomp',
     parts: { drums: 0, accordion: 0, bass: 1, ost: 2, ost16: 4, hats: 2, taiko: 3, pad: 3, theme: 4, fiddle: 4, snare: 4, brass: 5, stabs: 6, strings: 6 },
     A: { chords: 'Am Am G G F F E E', theme: [
       'A4 _ C5 E5 _ C5', 'A5 _ G5 E5 _ C5', 'D5 _ B4 G4 _ B4', 'D5 _ _ _ _ .',

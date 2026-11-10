@@ -1,6 +1,8 @@
-// The soundtrack: an original, fully synthesized cinematic score (WebAudio, no files, no dependencies).
+// The soundtrack: an original synthesized cinematic score (WebAudio, no dependencies), and the recorded songs that
+// play in its place for the missions that have one (see "recordings" below; the synthesized piece is their fallback).
 //
-// Seven hand-written pieces, shared by the missions (PIECES below). Each one is ONE piece of music: one
+// Seven hand-written pieces, shared by the missions (Held Together in PIECES below, the others in js/music/<name>.js).
+// Each one is ONE piece of music: one
 // tempo, one key, one grid (4/4 in 16ths, or 6/8 in 12 steps), two 8-bar sections (A: the verse, B: the
 // hook) with their chord progressions and a composed theme, a spool progression for the jump and the
 // chord it lands on. Every part takes its notes from the same bar's chord, so nothing plays against
@@ -37,7 +39,6 @@
 //                                   voice, t, bar b, ..., build, bk (breakdown bar or -1), drop, ending)
 //   hooks.theme(x, note, at, len)   its own voices for the theme;  hooks.ost(m, t, a, st)  its ostinato instrument
 //   hooks.drums(x)                  its kit (replaces the engine's taiko kit);  hooks.finale(x)  its last word
-//   hooks.endingPlanned(x)          called when jumped() plans the ending (x.T, x.from, x.cad, x.notes, x.hush)
 // The engine's percussion and transition gestures: hooks.<name>(x) runs first; returning true / 'handled'
 // replaces the engine's version, noEngine: ['<name>'] switches it off:
 //   fill        the one-bar fill before a stage change: called once at the bar start with x.r === -1, x.from,
@@ -51,9 +52,9 @@
 //   cadence     the cadence voices into the final hit;   pad: the pad / choir renewal (hold your own with
 //               K.hold('pad', release) and the engine renews it)
 // Recipe switches: noEngine: [...] also takes 'shepard' (no Shepard line or glissando: the noise riser instead),
-// shepRate: steps per Shepard note (default 4 in 4/4, 2 in 6/8), 'drums' (the engine kit), 'stabs', and single engine instruments
+// 'drums' (the engine kit), 'stabs', and single engine instruments
 // inside the gestures ('taiko', 'kick', 'snare', 'clap', 'hat', 'crash', 'tom', 'boom', 'riser');
-// engineDrums: false = all engine drums off (risers stay); breakdownSkip: [...] keeps layers out of breakdowns;
+// engineDrums: false = all engine drums off (risers stay);
 // groove: [...] comes back first in a breakdown's rebuild. The arc (beat of silence, drops, breakdowns) stays here.
 // music.kit: the engine's clock, buses and shared instruments for piece files (K.hold, K.releaseHeld, K.hush, K.ending).
 
@@ -66,7 +67,7 @@ const music = (() => {
   const PIECES = [
     { name: 'held', title: 'Held Together', bpm: 100, key: 'D', missions: ['menu', 'practice', 'custom'],
       mood: 'the crew\'s theme (kept from the first score): a drone, a dark pad and bells, then taikos and the horn',
-      lead: 'horn', ostInst: 'pluck', drums: 'taiko', classic: true,       // classic: plays exactly as in the first score
+      lead: 'horn', drums: 'taiko', classic: true,       // classic: plays exactly as in the first score
       parts: { drone: [0, 4], pad: 0, bells: [0, 4], ost: 2, ost16: 3, drums: 2, bass: 3, hats: 3, snare: 4, theme: 4, brass: 5, stabs: 6, strings: 6 },
       A: { chords: 'Dm Dm Bb Bb F F C C', theme: [
         'D4 _ _ A4 _ _ D5 _', 'F5 _ _ _ D5 _ E5 _', 'D5 _ _ _ _ _ C5 _', 'Bb4 _ _ _ F4 _ _ _',
@@ -110,7 +111,7 @@ const music = (() => {
     for (const [k, v] of Object.entries(p.parts)) parts[k] = Array.isArray(v) ? v : [v, 6];
     return { ...p, meter, swing: p.swing || 0, parts, A: sec(p.A), B: sec(p.B), spool: p.spool.split(/\s+/).map(chordOf), end: chordOf(p.end),
       ost, tonic: chordOf(p.key).root, hooks: p.hooks || {}, groove: p.groove || [],
-      noEngine: new Set(p.noEngine || []), engineDrums: p.engineDrums !== false, breakdownSkip: p.breakdownSkip || [] };
+      noEngine: new Set(p.noEngine || []), engineDrums: p.engineDrums !== false };
   };
   const SONGS = PIECES.map(compile), BY_MISSION = {};
   for (const s of SONGS) for (const id of s.missions) BY_MISSION[id] = s;
@@ -146,8 +147,8 @@ const music = (() => {
   let ac = null, out = null, noiseBuf = null, bus = null, irBuf = null, timer = null;
   let song = SONGS[0], pb = null;          // pb: this piece's own buses {dry, wet, echo}, faded out on a switch
   let step = 0, nextT = 0, startT = 0, stage = 0, pending = null, spoolBar = 0, bar = null, repad = false;
-  let ending = null, shepDeg = -1, gliss = null;   // the Shepard line's scale degree (it never resets in a spool), the glissando
-  let arc = { dropped: 0, broke: false, mode: null, next: null, log: [] };   // the dynamic arc (drops, breakdown) of this run                       // the planned ending after jumped(): { T (the final downbeat), from (the cadence starts), cad }
+  let ending = null, shepDeg = -1, gliss = null;   // the planned ending after jumped(): { T (the final downbeat), from (the cadence starts), cad }; the Shepard line's scale degree (it never resets in a spool), the glissando
+  let arc = { dropped: 0, broke: false, mode: null, next: null, log: [] };   // the dynamic arc (drops, breakdown) of this run
   let intensity = 0, threat = false, threatT = null, jumpOn = false, ended = false, paused = false, hidden = false;
   let held = [];                           // sustained voices (pads, drone, choir, static): released on changes and switches
   let vnow = null;                         // offline rendering: the virtual clock
@@ -329,7 +330,7 @@ const music = (() => {
   const LEAD_VEL = { horn: 0.085, saw: 0.06, flute: 0.11, reed: 0.06, fm: 0.09, cello: 0.09, radio: 0.3, voice: 0.3 };
   // Brass: root, fifth, octave and tenth swelling open ("bwaaam"), or a short stab.
   function brass(c, t, len, vel, stab) {
-    const r = bassRoot(c) + (song.classic || song.keepRegister ? 12 : 24), end = t + len + 0.6, lp = filt('lowpass', 0, 1.2), g = vca();   // (the new pieces: horns an octave up, brighter)
+    const r = bassRoot(c) + (song.classic ? 12 : 24), end = t + len + 0.6, lp = filt('lowpass', 0, 1.2), g = vca();   // (the new pieces: horns an octave up, brighter)
     for (const m of [r, r + 7, r + 12, r + 12 + c.third]) osc('sawtooth', hz(m), t, end, (m % 3 - 1) * 6).connect(lp);
     lp.frequency.setValueAtTime(220, t);
     if (stab) { lp.frequency.linearRampToValueAtTime(2400, t + 0.03); lp.frequency.setTargetAtTime(500, t + 0.05, 0.08); }
@@ -505,7 +506,6 @@ const music = (() => {
     else if (j <= N - 2) ending = { T: T1, from: bar.t + j * sd, cad };
     else ending = { T: T1 + bd / 2, from: T1, cad };
     ending.jumpedAt = now(); ending.bd = bd;
-    song.hooks.endingPlanned?.({ T: ending.T, from: ending.from, cad: ending.cad, bd, notes: bar.notes, hush: (tm) => hush(tm) });   // (e.g. cut the piece's own queued notes)
   }
   // The cadence chord from the half bar: everything held (and melody notes still to come) gives way to it.
   function cadenceAt(tm) {
@@ -601,12 +601,12 @@ const music = (() => {
     const sig = (p) => !!song.parts[p] && song.parts[p][0] === 0;
     const has = bk < 0 ? (p) => plays(song, p, st)                 // in the breakdown: the signature, pad and theme; then layers return
       : (p) => (['pad', 'choir'].includes(p) || (p === 'theme' && !sig('tines') && !sig('radio')) || sig(p) || (bk >= 4 && ['ost', 'ost16', 'bass', ...song.groove].includes(p)) || (bk >= 6 && ['drums', 'hats'].includes(p)))
-        && (plays(song, p, st) || sig(p)) && !song.breakdownSkip.includes(p);
+        && (plays(song, p, st) || sig(p));
     const sec = B ? song.B : song.A;
     const cadBar = !!ending && t >= ending.from - 1e-6;           // a full cadence bar before the final hit
     const c = cadBar ? ending.cad : spool ? song.spool[(b - spoolBar) % song.spool.length] : sec.chords[bi];
     const N = song.meter, bd = stepDur() * N, e8 = stepDur() * 2, prev = bar;
-    bar = { b, t, c, st, fill: cadBar || build ? null : pending, voice: padVoicing(c, song.classic || song.keepRegister ? 62 : 66), spool, sec, notes: [], has, bk, build, drop };
+    bar = { b, t, c, st, fill: cadBar || build ? null : pending, voice: padVoicing(c, song.classic ? 62 : 66), spool, sec, notes: [], has, bk, build, drop };
     if (bar.fill !== null && song.hooks.fill?.({ t, b, bi, c, st, has, r: -1, from: st, to: bar.fill }) === 'skip') bar.fill = null;   // (no fill into this stage: a normal bar)
     if (cadBar) {
       if (prev && prev.c.name === c.name && ending.from < t - 1e-6) return;   // (already swelling on it)
@@ -660,7 +660,7 @@ const music = (() => {
       } else if (gliss) glissKeep(t, t + bd, P, 0.12);
       // The Shepard line: up the natural minor one note a beat (an 8th in 6/8), never resetting; on 1 and 3 (1 and 4 in
       // 6/8) a chord tone when the next step or the one after is one (else the consonant 6th), passing tones between.
-      const r = song.shepRate || (N === 12 ? 2 : 4), line = [];
+      const r = N === 12 ? 2 : 4, line = [];
       for (let s = 0; s < N; s += r) {
         const strong = s % (N / 2) === 0;
         shepDeg++;
@@ -686,7 +686,7 @@ const music = (() => {
     // ostinato (pluck or marimba), 8ths at first, 16ths later
     const k = song.ost[s];
     if (has('ost') && k >= 0 && (has('ost16') || s % 2 === 0) && !(late && big)) {
-      const r = bassRoot(c) + (song.classic || song.keepRegister ? 12 : 24), tones = [r, r + 7, r + 12, r + 12 + c.third, r + 19], a = s % 4 === 0 ? 1 : 0.72;
+      const r = bassRoot(c) + (song.classic ? 12 : 24), tones = [r, r + 7, r + 12, r + 12 + c.third, r + 19], a = s % 4 === 0 ? 1 : 0.72;
       if (song.hooks.ost) song.hooks.ost(tones[k], t, a, st);     // the piece's own ostinato instrument
       else pluck(tones[k], t, (st >= 3 ? 0.085 : song.classic ? 0.06 : 0.1) * a, BRIGHT[st], song.classic ? 0 : s % 4 < 2 ? -0.5 : 0.5);
       if (st >= 6) pluck(tones[k] + 12, t, 0.04 * a, 0.9);
@@ -745,11 +745,9 @@ const music = (() => {
 
   function drums(s, st, t, has, lv) {
     const style = song.drums, d = has('drums') ? lv('drums') : -1;   // (the engine's own kit: taikos; other pieces bring theirs as hooks.drums)
-    if (style === 'taiko' || style === 'drive') {
+    if (style === 'taiko') {
       if (d >= 0 && TAIKO[Math.min(d, 4)].includes(s)) E.taiko(t, s === 0 ? 0.6 : 0.42, s === 0 ? 1 : 1.15);
       if (has('snare') && (s === 4 || s === 12)) E.snare(t, 0.25);
-      if (style === 'drive' && has('snare') && st >= 5 && s % 2 === 1) E.snare(t, 0.035);   // driving ghost notes
-      if (style === 'drive' && d >= 0 && (s === 14 || s === 15)) E.tom(t, 0.25, s === 14 ? 180 : 140);
       if (st >= 6 && s === 15) E.snare(t, 0.08);
       if (has('hats')) { const lh = lv('hats'); if (lh >= 2) E.hat(t, s % 4 === 2 ? 0.08 : s % 2 ? 0.03 : 0.045, s === 14); else if (s % 2 === 0) E.hat(t, s % 4 === 2 ? 0.07 : 0.035); }
     }
@@ -790,6 +788,7 @@ const music = (() => {
   const REC_DRIFT = 1, REC_AHEAD = 1.6, REC_XF = 0.03;   // (REC_XF: main's fade-out at the ending)
   const RECS = {}, REC_BY_MISSION = {};
   let rec = null, clock = null;          // rec: the playing recording { R, ending: { at, startAt } | null, ended }; clock: mission s or null
+  let recBlocked = false;                // the browser refused play() (no user input on this page yet): tried again on the next input
   // Where main.mp3 is at mission time t (the loop folds late times back into the last section).
   function recPos(R, t) {
     const [a, b] = R.loop;
@@ -802,6 +801,16 @@ const music = (() => {
     const w = R.loop[0] + (q - R.loop[1]);
     return R.loop[1] - p + R.bars.find(x => x >= w) - R.loop[0];
   }
+  // How far main (at position p) is behind the mission clock t, in s (negative: ahead). Once the mission has outrun the
+  // arrangement both go round the loop, and around its wrap one of them has wrapped while the other hasn't yet: then
+  // they are a few hundredths apart, not a whole loop (2026-11-10: read as a whole loop, every wrap was "corrected"
+  // by seeking back to the loop's end, and the tail played twice).
+  function recBehind(R, t, p) {                  // (p > a - 0.1: the wrap comes 12 ms early, so it lands a hair before the loop's start)
+    const [a, b] = R.loop, L = b - a;
+    let d = recPos(R, t) - p;
+    if (t > b - 3 * REC_DRIFT && p > a - 0.1) { if (d > L / 2) d -= L; else if (d < -L / 2) d += L; }
+    return d;
+  }
   const direct = () => typeof location !== 'undefined' && location.protocol === 'file:';
   const recUsable = (R) => R && !R.failed && typeof Audio !== 'undefined' && vnow === null;
   // A voice: an audio element and its level (through the bus, or the element's own volume, stepped towards `want`).
@@ -810,7 +819,7 @@ const music = (() => {
     el.preload = 'auto'; el.preservesPitch = true;
     el.addEventListener('error', () => recFail(R));
     el.addEventListener('playing', () => {         // (it starts after loading: on the clock from there, not from where it was asked to)
-      if (rec && rec.R === R && R.main && el === R.main.el && !rec.ending && clock !== null && Math.abs(el.currentTime - recPos(R, clock)) > 0.15) el.currentTime = recPos(R, clock);
+      if (rec && rec.R === R && R.main && el === R.main.el && !rec.ending && clock !== null && Math.abs(recBehind(R, clock, el.currentTime)) > 0.15) el.currentTime = recPos(R, clock);
     });
     if (!direct() && ac) { v.g = ac.createGain(); v.g.gain.value = 0; ac.createMediaElementSource(el).connect(v.g); v.g.connect(bus); }
     else el.volume = 0;
@@ -825,7 +834,16 @@ const music = (() => {
     const goal = typeof sfx !== 'undefined' && sfx.muted ? 0 : Math.min(1, v.want * v.R.gain * VOL);
     v.el.volume = Math.abs(goal - v.el.volume) < 0.02 ? goal : v.el.volume + (goal - v.el.volume) * 0.5;
   }
-  function recPlay(v) { const p = v.el.play(); if (p && p.catch) p.catch(e => { if (e && (e.name === 'NotAllowedError' || e.name === 'NotSupportedError')) recFail(v.R); }); }   // (AbortError: a pause came first, fine)
+  // (AbortError: a pause came first, fine. NotAllowedError: the browser wants a key press or click on this page first
+  // (the page reloads after every mission): the recording stays and starts on the next input, as the audio context does.)
+  function recPlay(v) {
+    if (recBlocked) return;
+    const p = v.el.play();
+    if (p && p.catch) p.catch(e => { if (e && e.name === 'NotAllowedError') recBlocked = true; else if (e && e.name === 'NotSupportedError') recFail(v.R); });
+  }
+  if (typeof window !== 'undefined' && window.addEventListener) {
+    for (const ev of ['keydown', 'pointerdown', 'touchend', 'click']) window.addEventListener(ev, () => { recBlocked = false; });
+  }
   function recStart(R) {
     recStop();
     if (!recUsable(R) || !ac) return false;
@@ -854,7 +872,7 @@ const music = (() => {
     if (el.currentTime >= R.loop[1] - 0.012 || el.ended) el.currentTime = R.loop[0] + (el.currentTime - R.loop[1]);   // the loop, on its bar line
     if (rec.ending) { recEnding(); return; }
     if (clock !== null) {
-      const d = recPos(R, clock) - el.currentTime;   // (smoothed: a slow frame advances the mission clock in bursts)
+      const d = recBehind(R, clock, el.currentTime);   // (smoothed: a slow frame advances the mission clock in bursts)
       rec.drift = Math.abs(d) > 3 * REC_DRIFT ? d : (rec.drift || 0) * 0.97 + d * 0.03;
       if (Math.abs(rec.drift) > REC_DRIFT) { el.currentTime = recPos(R, clock); el.playbackRate = 1; rec.drift = 0; }
       else el.playbackRate = Math.abs(rec.drift) < 0.1 ? 1 : 1 + Math.max(-0.04, Math.min(0.04, rec.drift * 0.1));   // (catch up gently, same pitch)
@@ -897,9 +915,13 @@ const music = (() => {
   function useRec(R) {                            // play this recording (null: none) from here on
     if ((rec && rec.R) === R) return;
     if (!R) { recStop(); return; }
-    if (recStart(R)) { const s = SONGS.find(x => x.name === R.name) || BY_MISSION[R.missions[0]]; if (s) switchTo(s); }   // (its synthesized piece, the fallback: same name, or its mission's)
+    if (!recStart(R)) return;
+    // Its synthesized piece (the fallback: same name, or its mission's) is set up from its first step and stays silent:
+    // tick() runs only the recording from here, so whatever the synthesizer still holds (pad, drone) has to be let go
+    // now, also when the fallback is the piece that was playing (the menu's Held Together under the skirmish).
+    const s = SONGS.find(x => x.name === R.name) || BY_MISSION[R.missions[0]] || song;
+    if (ended || ending) { song = s; releaseHeld(now()); } else begin(s);
   }
-  const recOn = () => !!rec && vnow === null;
 
   // ---------------------------------------------------------------- public
   function setSilent() {

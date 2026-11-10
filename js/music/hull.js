@@ -69,7 +69,7 @@
 
   music.define({ name: 'hull', title: 'Pressure Hull', bpm: 84, key: 'B', missions: ['c7'],
     mood: 'deep and sparse: a sonar ping, a heartbeat, the hull groaning, half-time drums, a cello',
-    lead: 'cello', ostInst: 'pipe', drums: 'half', bassStyle: 'half',
+    lead: 'cello', drums: 'half', bassStyle: 'half',
     parts: { sonar: [0, 4], heart: [0, 2], drone: [1, 4], pad: 2, ost: 2, ost16: 5, drums: 3, bass: 3, hats: 4, theme: 4, brass: 5, stabs: 6, strings: 6 },
     A: { chords: 'Bm Bm G G Em Em F# F#', theme: [
       'B3 _ _ _ _ _ F#4 _', 'D4 _ _ _ _ _ C#4 _', 'B3 _ _ _ D4 _ G4 _', 'G4 _ _ _ D4 _ _ _',

@@ -1,21 +1,12 @@
-// Shared helpers and all procedural art. Everything is drawn with canvas paths;
-// there are no image assets. Ship parts are drawn in ship-local pixels
+// Shared helpers and the procedural art: the classic 2D view (?classic, or no WebGL) and what the sprite view
+// (js/gfx.js, js/sprites.js) still draws on its 2D layers, with canvas paths. Ship parts are drawn in ship-local pixels
 // (origin = top-left corner of the ship interior, nose points to -y).
 // T is only a length unit for art and layout; there is no gameplay grid.
 
 const T = 48;                                 // layout unit in ship-local pixels
 const TAU = Math.PI * 2;
 const OUT = '#14161b';                        // universal outline color
-const C = {
-  hull: '#4a5263', hullDark: '#3a414f', hullLight: '#5f6879',
-  floorA: '#6c7282', floorB: '#686e7d', grout: '#555b69',
-  beltBase: '#30343c', beltFrame: '#1c1f25',
-  rock: '#9a8a76', rockLight: '#b8a891', rockDark: '#6f6253',
-  aster: '#6e6359', asterLight: '#8d8274', asterDark: '#4c433c',
-  crate: '#a48c5c', crateDark: '#6e5a37', crateLight: '#c2aa76',
-  suit: '#c4683a', suitDark: '#8e4724', skin: '#e6c19b', hair: '#3a2a21',
-  glow: '#5fd6e4', window: '#5fa8c9', hazard: '#d2a62e', collect: '#ffe08a',
-};
+const C = { hull: '#4a5263', grout: '#555b69', suit: '#c4683a', skin: '#e6c19b', hair: '#3a2a21', hazard: '#d2a62e' };
 let ctx;                                      // set by game.js
 
 // ---------------------------------------------------------------------------
@@ -60,12 +51,6 @@ function screenTint(c, a) { screenGradient(0, 0, 0, 1, [[0, c, a]]); }
 function shadowEllipse(x, y, rx, ry, a = 0.35) {
   ctx.fillStyle = `rgba(0,0,0,${a})`;
   ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, TAU); ctx.fill();
-}
-function octagon(x, y, r) {
-  poly(Array.from({ length: 8 }, (_, i) => {
-    const a = i / 8 * TAU + Math.PI / 8;
-    return [x + Math.cos(a) * r, y + Math.sin(a) * r];
-  }));
 }
 
 
@@ -448,19 +433,6 @@ function hazardStripe(x, y, w, h) {
   for (let i = -h; i < w + h; i += 14) poly([[x + i, y + h], [x + i + 7, y + h], [x + i + 7 + h, y], [x + i + h, y]]), ctx.fill();
   ctx.restore();
   ctx.strokeStyle = OUT; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, w, h);
-}
-
-// Sliding double door filling rect r (layout units); open in 0..1.
-function drawSlideDoor(r, open) {
-  const x = r.x * T, y = r.y * T, w = r.w * T, h = r.h * T;
-  const pw = (w / 2) * (1 - open);
-  if (pw < 0.5) return;
-  for (const side of [0, 1]) {
-    const dx = side ? x + w - pw : x;
-    ctx.fillStyle = '#7a8396'; ctx.fillRect(dx, y + 2, pw, h - 4);
-    ctx.fillStyle = C.hazard; ctx.fillRect(side ? dx : dx + pw - 5, y + 2, 5, h - 4);
-    ctx.strokeStyle = OUT; ctx.lineWidth = 2; ctx.strokeRect(dx, y + 2, pw, h - 4);
-  }
 }
 
 // A sealed (airtight) sliding door in a wall gap, classic view: leaves as wide as the wall (no gap beside them), rubber

@@ -12,7 +12,7 @@ const sfx = (() => {
   const silent = typeof navigator !== 'undefined' && (navigator.webdriver || /Headless/.test(navigator.userAgent || '')
     || (typeof location !== 'undefined' && /[?&]mute\b/.test(location.search)));
   if (silent) muted = true;
-  // split screen (split.html): only the left half plays sound (both halves would play every sound twice); the right
+  // split screen (js/local.js, one iframe per view): only the left half plays sound (both halves would play every sound twice); the right
   // half's mute button / M / a controller's Back mute the left one (js/split.js splitApi)
   const splitRight = typeof location !== 'undefined' && /[?&]split=[234]\b/.test(location.search || '') && typeof window !== 'undefined' && window.parent !== window;
   const leftHalf = () => { try { return splitRight ? window.parent.splitApi?.(1) || null : null; } catch (e) { return null; } };
@@ -46,10 +46,12 @@ const sfx = (() => {
     o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
     env(g, t0, attack, peak, dur); o.connect(g); g.connect(master); o.start(t0); o.stop(t0 + dur + 0.05);
   }
+  // (the noise buffer is 1 s long: it loops, or every longer sound would end at 1 s; the envelope ends the sound and
+  // the source is stopped right after it)
   function noise(dur, freq, peak = 0.5, q = 1) {
     if (!ac) return;
     const t0 = ac.currentTime, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
-    s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+    s.buffer = noiseBuf; s.loop = true; f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
     env(g, t0, 0.005, peak, dur); s.connect(f); f.connect(g); g.connect(master); s.start(t0); s.stop(t0 + dur + 0.05);
   }
 
@@ -172,7 +174,10 @@ const sfx = (() => {
       noise(0.25, 260, 0.8, 0.8); tone('sine', 140, 45, 0.35, 0.8);
       if (down) { tone('sine', 2600, 2550, 1.6, 0.05, 0.05, 0.05); tone('sine', 70, 30, 0.9, 0.6, 0.05); }
     },
-    // Heavy shot charging: a rising whine everyone on board can hear. Returns a stop function.
+    // Heavy shot charging: a rising whine everyone on board can hear. Returns a stop function. Every caller stops it
+    // when the charge is through (after dur s of game time, which runs behind the clock at a low frame rate); should
+    // that never come (a client that missed the stop event), it fades out by itself 3 s later instead of whining
+    // until the page reloads.
     charge(dur) {
       if (!ac) return () => {};
       const t0 = ac.currentTime, o = ac.createOscillator(), lfo = ac.createOscillator(), lg = ac.createGain(), g = ac.createGain();
@@ -180,13 +185,18 @@ const sfx = (() => {
       lfo.frequency.setValueAtTime(4, t0); lfo.frequency.linearRampToValueAtTime(16, t0 + dur);
       lg.gain.value = 0.06; lfo.connect(lg); lg.connect(g.gain);
       g.gain.setValueAtTime(0.02, t0); g.gain.linearRampToValueAtTime(0.14, t0 + dur);
+      g.gain.setValueAtTime(0.14, t0 + dur + 3); g.gain.linearRampToValueAtTime(0, t0 + dur + 3.5);
+      lg.gain.setValueAtTime(0.06, t0 + dur + 3); lg.gain.linearRampToValueAtTime(0, t0 + dur + 3.5);   // (the tremolo is added to the gain: it goes too)
       const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800;
       o.connect(f); f.connect(g); g.connect(master); o.start(t0); lfo.start(t0);
+      o.stop(t0 + dur + 3.55); lfo.stop(t0 + dur + 3.55);
       let stopped = false;
       return () => {
         if (stopped) return; stopped = true;
         const t = ac.currentTime; g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t);
-        g.gain.linearRampToValueAtTime(0, t + 0.05); o.stop(t + 0.1); lfo.stop(t + 0.1);
+        g.gain.linearRampToValueAtTime(0, t + 0.05);
+        lg.gain.cancelScheduledValues(t);
+        try { o.stop(t + 0.1); lfo.stop(t + 0.1); } catch (e) { /* already stopped by itself */ }
       };
     },
   };
