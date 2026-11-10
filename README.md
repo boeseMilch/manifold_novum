@@ -54,7 +54,7 @@ One person hosts. Everyone else only needs a browser on the same network (Wi-Fi 
 3. Only the host picks the mission and presses **START MISSION**; everyone else sees the
    choice live. People who join later drop straight into the running mission. If the host
    leaves, the next player (earliest joined) takes over.
-4. When the mission ends, anyone presses **R** to send everybody back to that game's lobby.
+4. When the mission ends, any key or a click (by anyone) sends everybody back to that game's lobby.
    **‹ LEAVE GAME** goes back to the main menu. A game closes when its last player leaves.
 
 Stop the server with `Ctrl+C`.
@@ -69,7 +69,7 @@ Stop the server with `Ctrl+C`.
   - Linux with ufw: `sudo ufw allow 8080/tcp`
   - Linux with firewalld: `sudo firewall-cmd --add-port=8080/tcp`
 - **"Port in use":** another program has 8080. Pick another port: `node server.js 9000`.
-- **The menu says "offline" next to OPEN GAMES:** the page was opened as a file or
+- **The menu says "offline" next to GAMES ON THIS SERVER:** the page was opened as a file or
   the server isn't reachable. Use the `http://…` address from the server instead.
 
 ### How the networking works
@@ -142,8 +142,8 @@ mouse, or a controller: any mix, also all controllers, never one device twice; y
 **LOCKER** (it opens in their part of the screen, so everyone can kit out at once) and a spot on the screen: drag the
 names on the little map (or click two to swap them). When the mission starts the screen splits (two: halves, three or
 four: quarters), each view zoomed out to fit, with a coloured border and name that fade after a few seconds. The
-mission plates and the jump timer are in one strip on the far left, outside everyone's view; the banners show in the
-top-left view; the host's page plays the sound. Progress (money, gear, chapters) is kept by name: your own name keeps
+mission plates and the jump timer are in one strip on the far left, outside everyone's view; a banner shows in the
+view of the player who caused it (the others in the top-left view); the host's page plays the sound. Progress (money, gear, chapters) is kept by name: your own name keeps
 its usual save, the others get their own (by name, in this browser), so the same names pick up where they were.
 
 ## Campaign, progression, practice
@@ -154,17 +154,18 @@ its usual save, the others get their own (by name, in this browser), so the same
   mission only counts as completed (reputation, next chapter unlocked) if the objective is done too.
 - **Suit color:** pick it in the lobby (free).
 - **Locker** (money): general gear for anyone (gravity boots, suit thrusters, first aid course,
-  armor vest, stim pack); once chapter 1 is finished, a profession (engineer or weapons
-  specialist) and its track: engineer (own repair kit, toolbelt, reactor overcharge), weapons
-  specialist (own laser gun, heavy blaster).
+  stim pack); once chapter 1 is finished, a profession (engineer or weapons specialist, chosen
+  for good) and its track: engineer (own repair kit, toolbelt, reactor overcharge), weapons
+  specialist (own laser gun, armor vest, heavy blaster).
 - **Shipyard** (reputation): an upgrade for nearly every system — fuel inserter, efficient cannons,
   bigger capacitors, longer shields, reinforced hull, sprinklers, … In multiplayer the
   crew flies the host's ship: only the host's upgrades count, but everyone earns their own pay and
   reputation. A guest's shipyard just shows the host's loadout and unspent reputation (nothing to buy);
   your own ship waits for when you play solo or host.
 - Progress is saved in your browser (a cookie), separately for each player.
-- **Skirmish:** the lobby's Skirmish tab builds your own run: how many encounters, which kinds may come, and which
-  ship parts may fail (a third to a fifth of the encounters are failing parts). No pay. Its **Practice** tick gives the
+- **Skirmish:** the lobby's Skirmish tab builds your own run: how many difficulty points (each kind of encounter
+  costs 1 to 3.5), which kinds may come, and which ship parts may fail (1.5 points each; a fifth to a third of the
+  points go to failing parts). No pay. Its **Practice** tick gives the
   free-play ship below instead.
 - **Music:** every mission has its own piece that builds up to a crescendo at the jump and ends on a final hit
   when you jump out: synthesized, and for chapters 1, 3, 6, 7 and 8 and the skirmish recorded songs arranged over the mission
@@ -187,22 +188,43 @@ its usual save, the others get their own (by name, in this browser), so the same
 
 - The code lives in `js/` (plain browser scripts, loaded by `index.html`), plus
   `server.js`. `PLAN.md` describes everything that's been built and why.
-- Tests: headless Node, no browser needed. Run all of them with:
+- Tests: headless Node, no browser needed (Node 22 or newer: the network tests use its built-in
+  WebSocket client). Run all of them with:
 
   ```sh
-  for t in tests/*.js; do [ "$t" = tests/harness.js ] || node "$t"; done
+  node tests/run.js
   ```
 
-  `tests/network.js` starts a real server on a random port and connects WebSocket clients.
+  It runs every file in `tests/` in its own process, a few at a time, prints one line per file
+  (ok / FAIL, seconds, number of checks), then the failed checks of the files that failed, and exits
+  non-zero when any failed. `node tests/run.js dock net` runs only the files with "dock" or "net" in
+  their name; `-j 1` one at a time; `-v` shows every file's whole output. One file alone:
+  `node tests/dock.js`.
+
+  `tests/harness.js` loads the game's scripts into a sandbox (`loadGame`): the ones `index.html`
+  loads, in its order, minus the browser's own shell (listed there with the reasons), so a script
+  added to the page is in the tests too. `tests/scripts.js` holds `server.js`'s own script list
+  against the page's. A new test takes its `check` from the harness instead of writing its own:
+
+  ```js
+  const { loadGame, checks } = require('./harness');
+  const { check, done } = checks('airlock');
+  check(1 + 1 === 2, 'what is checked');
+  done();                                    // prints the last line, exits 1 if a check failed
+  ```
+
+  `tests/network.js`, `tests/netlink.js` and `tests/server.js` start a real server on a free port
+  (`tools/testserver.js`) and connect to it.
 - Balance model (idle time, energy and difficulty per mission and crew size): `node tools/balance.js`
-  (~1 s; `--detail c1 1` for one run job by job, `--calibrate c1` to fit a mission's encounter counts).
+  (~2 s; `--detail c1 1` for one run job by job, `--calibrate c1` to fit a mission's encounter counts).
   It reads two saved tables; rebuild them when what they measure changes:
   - `node tools/balance.js --rates` (`tools/damage-rates.json`) after changing an enemy, a hazard or the hull;
   - `node tools/travel.js --table` (`tools/travel-table.json`) after moving rooms, doors or stations.
   `tests/balancemodel.js` notices when either is out of date.
 - Dev URLs:
-  - `index.html?mission=rush&autostart` skips the menu: solo it starts the mission, over the
-    server it opens a game with that mission and starts it.
+  - `index.html?mission=c3&autostart` skips the menu: solo it starts the mission, over the
+    server it opens a game with that mission and starts it (`c1` to `c8`, `training`, `practice`,
+    `custom`; without `mission=`, the next unfinished chapter).
   - `index.html#do=4,8&w=5` runs debug-menu entries 4 and 8 and fast-forwards 5 seconds
     (solo, no lobby).
   - `index.html?classic` draws the old top-down 2D look instead of the sprites (also the automatic

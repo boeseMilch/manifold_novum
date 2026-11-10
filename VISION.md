@@ -36,8 +36,9 @@ Six rooms in two decks of three zones (red / white / blue):
 
 ## Presentation
 
-- Top-down view.
-- Graphics in the style of RimWorld, drawn procedurally in code.
+- A top-down view, tilted: the camera looks down at 50° above the horizon, so walls and machines show their fronts.
+- Pre-rendered 3D sprites (modelled in Blender), lit at runtime. The first look, flat top-down and drawn in code in
+  the style of RimWorld, stays as the fallback (`?classic`, or a browser without WebGL2).
 
 ## Open questions
 

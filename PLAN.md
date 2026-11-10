@@ -4,8 +4,13 @@ See `VISION.md` for the direction: a live-action Space Alert. The previous proto
 (asteroid mining, belts, building grid) is archived in `prototype1/` with its own
 `PLAN.md`, and it still runs from `prototype1/index.html`.
 
-Tech: unchanged. One HTML page, a canvas, and plain JavaScript with no dependencies. All
-art is procedural.
+Tech: one HTML page and plain JavaScript, no dependencies, no build step. The game draws pre-rendered
+Blender sprites (`assets/sprites/`: modelled by the scripts in `tools/blender/`, packed by
+`tools/sprites/pack.py`) with a WebGL2 renderer (`js/gfx.js`: a view tilted 50° above the horizon, lit at
+runtime by `js/lights.js`), under a 2D canvas for the HUD, panels and prompts. The first look, top-down and
+drawn in code (`js/art.js`), is the fallback: with `?classic`, without WebGL2, or when `index.html` is
+opened as a file. Sound effects are synthesized (`js/audio.js`); the music is synthesized or recorded (see
+"Sound").
 
 ## How to play
 
@@ -2011,25 +2016,29 @@ my laptop". The laptop: RTX 3070 Ti, X11, Firefox at devicePixelRatio 1, a 3840�
 
 ## Balance
 
-`node tools/balance.js` (~1 min) rates every mission for 1-4 and 8 players: it builds each timeline through the
-game, turns every encounter into crew jobs (walks measured by tools/travel.js, work from the game's constants),
-schedules them, and runs the energy (reactor, lever, capacitors, reloads, shields, the jump) on the game's own
-code. `--calibrate` (~25 min, or one process per mission: `node tools/balance.js --calibrate c3`) fits each
-mission's `crew` table (encounters, fuel cells, reactor speed, overcharge per crew size) and its prerequisites.
+`node tools/balance.js` (~2 s) rates every campaign mission for 1-4 and 8 players: it builds each timeline through
+the game, turns every encounter into crew jobs (walks from tools/travel.js's saved table, enemy damage from the saved
+rates, work from the game's constants), schedules them, and runs the energy (reactor, lever, capacitors, reloads,
+shields, the jump) as plain numbers, tick for tick (`--energy game` runs it on the game's own code instead: slow, the
+check on the fast one). `--calibrate` (one mission: `node tools/balance.js --calibrate c3`) fits a mission's `crew`
+table (encounters, fuel cells, reactor speed, overcharge per crew size) and its prerequisites. `--detail c4 2` shows
+one build job by job, `--encounters` rates every skirmish kind and its points. The two saved tables
+(tools/travel-table.json, tools/damage-rates.json) are rebuilt with `node tools/travel.js --table` and
+`node tools/balance.js --rates`; tests/balancemodel.js fails when either is stale.
 History and the scheduler's details: 8z3.
 
-- **Targets (2026-10-13; solo lowered 2026-10-14, see "Openers, a calm start, busier solo missions" below):** solo
-  play leaves the crew **56 % idle on the first mission** (was 70 %), and every later step of the progression
-  **0.5 points less** (a difficulty ramp, c8 solo: 52 %); 2-8 players 68 % minus the same ramp. (The table below is
-  the 2026-10-13 state.)
-  `A.TARGET_IDLE` / `TARGET_IDLE_CREW` / `TARGET_RAMP`, `--target` sets both bases.
-- **The progression** (`PROGRESSION` in tools/balance.js): chapter n is step n; intro (open from the start, "Start
-  here") step 0; Rush hour (open from the start, "more trouble") with chapter 2; every other skirmish with the chapter
-  that comes up when it unlocks (`unlockedMissions()`): Ore run / Black box after c3 → 4, Pirate cove → 5,
-  Stranded engineer → 6, Deep drift → 7, Nightmare → 8.
+- **Targets (since 2026-10-25):** solo, a mission aims at **29.6 % idle** crew time (`A.TARGET_IDLE`), chapters 6-8
+  at 37 % (`MISSIONS[id].balance.soloIdle`). A crew of 2-8 aims at what that mission really leaves a solo player
+  (counted from at least 10 %, `A.SOLO_FLOOR`) **plus 5 points per extra player** (`A.CREW_STEP`); each crew size is
+  at least a point idler than the one below (`A.CREW_RISE`) and gets at most n / (n − 1) times the smaller crew's
+  encounters (`encounterCap`). `--target` sets one flat target for every size instead.
+- **The progression** (`PROGRESSION` in tools/balance.js): chapter n is step n, c1 to c8. The ramp per step is off
+  (`A.TARGET_RAMP` 0). The preset skirmishes that used to have a step are deleted (2026-10-25).
 - **Accuracy:** 50 % (`A.HIT_RATE` 0.5, was 0.6): half the cannon shots hit the weak spot aimed at, so 2 shots per
   weak spot, a little less where misses on the hull wear a weak spot out (`HULL_SHARE`).
-- **Current rules in the model:** reload 3 s by R only (`RELOAD_TIME`, read from the game; `A.RELOAD_SPEED` 1.5 would
+- What follows, down to the next dated entry, is the calibration of 2026-10-13 (its targets, its preset skirmishes,
+  its table), kept as history. Today's numbers: run the model.
+- **Rules in the model then:** reload 3 s by R only (`RELOAD_TIME`, read from the game; `A.RELOAD_SPEED` 1.5 would
   model a weapons specialist on every cannon, the calibration assumes none); MAX_DAMAGE 5 (+1 reinforced hull) from the
   game; shields 15 s up / 5 s cooldown through `pressShield`; no tape job (repairs are REPAIR_TIME); the jump is in
   spec when MID has its energy within PRESS_FIRST (30 s, before the hot zone's first encounter); a mission only counts
@@ -2688,78 +2697,49 @@ the Mire's swarms mad. The crew blasts the infestation off; freed, it sinks away
 
 ## Sound
 
-- **Soundtrack:** original and fully synthesized (`js/music.js`), seven cinematic pieces shared by the
-  missions, each with its own opening, lead, drums and feel: *Held Together* (intro, rush hour, practice; the
-  first score's piece, unchanged), *Cargo Run* (ch. 1-3, black box; swing), *Red Comet Gallop* (ch. 4, pirate cove;
-  6/8), *A Signal in the Dark* (ch. 5, stranded engineer), *Bloom* (ch. 6, ore run), *Pressure Hull* (ch. 7, deep
-  drift), *Last Jump Home* (ch. 8, nightmare). Each builds in stages with the time towards the jump (threats push
-  it up one stage), spools while the drive charges and ends on a big major-chord hit with the jump's boom. Pauses
-  while the tab is hidden. Details: "New soundtrack".
-- **Recorded pieces** (2026-10-25): chapter 7 plays *Pressure Hull (recorded)*, a Suno song whose stems were
-  rearranged over the mission by `tools/arrange-music.py` (assets/music/hull/: main.mp3 + ending.mp3). The synthesized
-  pieces stay: as the fallback, and in music.html for good, next to their recordings. Details: "Pressure Hull, recorded".
+- **Soundtrack:** every mission has its own piece, building up to the jump and ending on a final hit when the ship
+  jumps out. Six are recorded: Suno songs whose stems `tools/arrange-music.py` arranged over the mission clock (the
+  timeline in `js/music/recorded-<name>.js`, main.mp3 + ending.mp3 in `assets/music/<name>/`): *Outlaws of the Kessler
+  Lanes* (ch. 1), *Keep S-7 Frozen* (ch. 3), *Bloom* (ch. 6), *Pressure Hull* (ch. 7), *Last Jump Home* (ch. 8) and
+  *Pick Your Trouble* (the skirmish). Each has its own dated entry further down.
+- **Synthesized pieces** (`js/music.js`, the engine, and one file per piece in `js/music/`): seven, each with its own
+  opening, lead, drums and feel: *Held Together* (the menu, practice, the tutorial, crew training), *Cargo Run* (ch. 2; swing),
+  *Red Comet Gallop* (ch. 4; 6/8), *A Signal in the Dark* (ch. 5), and behind the recordings *Cargo Run* (ch. 1, 3),
+  *Bloom* (ch. 6), *Pressure Hull* (ch. 7), *Last Jump Home* (ch. 8) and *Held Together* (the skirmish): those play
+  when a recording can't (no audio element, a load that failed). Each builds in stages with the time towards the
+  jump (threats push it up one stage), spools while the drive charges and ends on a big major-chord hit with the
+  jump's boom. Pauses while the tab is hidden. All of them stay in music.html (the ♪ MUSIC button), next to the
+  recordings. Details: "New soundtrack".
 - **Mute:** the speaker button at the top left, or M. It mutes music and effects, and is
   remembered in the browser.
 
 ## Tests
 
-Headless Node tests (no browser needed; `tests/harness.js` loads the game scripts with a
-dummy canvas):
+Headless Node tests, no browser needed (Node 22 or newer). `node tests/run.js` runs every file in `tests/`, each in
+its own process and a few at a time, prints one line per file (ok / FAIL, seconds, checks) and the failed checks of
+the files that failed, and exits non-zero when any failed; `node tests/run.js dock net` runs the files with those
+words in their name. One file alone: `node tests/dock.js`. Each file's first lines say what it covers.
 
-- `node tests/balancemodel.js`: the balance model's travel table covers every pair of its spots in every variant and
-  still matches a fresh walk; fire spreading (tools/balance.js `spread()`) grows with the wait and stays within reach.
-- `node tests/reachability.js`: every weak spot of every enemy, on both sides, plus the
-  asteroid crack, can be hit from its cannon within 10 s with good aim (with lead, within
-  the cannon's arc). Each case runs 6 random sway patterns. Hull wear is off, so only
-  direct hits count.
-- `node tests/tutorial.js`: the tutorial's step machine, both branches (mouse with a failed block and the
-  lock-LEFT detour; keyboard with the interceptor dead in the first fight): gates, the shot back on a miss, the
-  block loop doing no damage, out of energy → reactor, the lever demo, the fire on climbing out (never spreads),
-  the repair and the overview; then the free roam (saved at the end, every gate open, 10 minutes of walking
-  about end nothing, Esc asks, BACK TO MENU leaves).
-- `node tests/sway.js`: hitting an engine causes no position jump and no velocity kink.
-- `node tests/cables.js`: the power lines' topology (reactor → trunk → lever → branches → capacitors), the energy
-  bolts' way and timing, see 9r.
-- `node tests/systems.js`: 25 checks covering the cannon and shield energy, the reactor
-  timing and lever order, wasted energy, the wrench override, fuel crate → reactor,
-  dropping items, the 5 s repair, broken capacitors, dimming lights, hull hits breaking
-  parts in the right column, turret shots leaving along the barrel, the cable fizzle,
-  and the invader (gets in, roams both decks, fights back, dodges, dies after 4 hits).
-- `node tests/mission.js`: 23 checks.
-  - The timeline: one of each encounter, about a minute apart, on schedule.
-  - The radar: 45 s range, the "????" for unscanned imminent threats, scanning replaces it.
-  - Diagnosis: two yellow, orange countdown, red when broken; servicing prevents the
-    breakdown.
-  - Locks: door closing, never on someone, 3 bonks to force; locked airlock; the
-    intruder bashing a locked outer airlock for 8 s.
-  - Fires: start rate, spreading or breaking, the extinguisher.
-  - Win / lose: jump with energy; without, the stall loops and the hot zone escalates until the ship
-    falls apart; lose with more than MAX_DAMAGE (5) broken.
-- `node tests/softlock.js`: you can always get out. Covers being trapped in a broken
-  airlock, stranded outside by a broken outer airlock, security locking the door you
-  stand in, and multiplayer airlock doors.
-- `node tests/sidebar.js`: plates for radar contacts (countdown, no red light) and for
-  active problems (red light, listed first). New plates slide up from the bottom, and
-  dealt-with ones leave. Fires and broken parts get plates.
-- `node tests/clutter.js`: floor clutter is solid (or listed as walk-through), leaves no closed-off
-  pockets, keeps click targets in reach and the intruder's routes free; dropped items land on free floor.
-- `node tests/emitter.js`: shield emitters break on hits on their side (never by fire), block / drop their
-  shield, can't be fixed from inside, are repaired on a spacewalk (all three reachable), and sync to browsers.
-- `node tests/intruder.js`: 14 checks.
-  - The routine: adjacent rooms only, sabotage after 10 s.
-  - Engaging and strafing, the spit windup (0.7 s), pounce damage, the opening after a
-    lunge.
-  - Luck from the cat, and the front shield absorbing asteroids.
-- `node tests/multiplayer.js`: several crew in one simulation, each with separate
-  movement, inventory, panels and commands. Enemy fire aims at whoever is outside, the
-  intruder picks the nearest crew member, and leaving drops your gear.
-- `node tests/network.js`: the real server with WebSocket clients. Covers the lobby,
-  mission choice, start, snapshots with both crew, input moving you, commands, sounds, a
-  browser applying and rendering a snapshot, late join and leave, and prediction (your
-  movement shows before the server answers, and you settle onto the server's position
-  once you stop).
-- `node tests/asteroids.js`: the front cannon swings exactly ±95°, and 4 body hits split a
-  big asteroid.
+`tests/harness.js` (`loadGame`) loads the game's scripts into a sandbox with a dummy canvas and no audio: the scripts
+`index.html` loads, in its order, minus the browser's own shell (`BROWSER_ONLY` there, with the reasons). Its
+`checks(name)` gives a test its `check` and `done`. `tests/scripts.js` holds `server.js`'s and `music.html`'s own
+script lists against the page's.
+
+What there is, by area:
+
+- **The ship and getting around:** airlock, doors, clutter, controls, interact, softlock, dockentry, shotcollision,
+  walkfield, cables, scripts.
+- **Energy, systems, damage:** systems, hazards, emitter, minigames, pinpad, panelpad, jumpdrive, jumpfx.
+- **Enemies and encounters:** reachability, sway, queue, asteroids, hitboxes, threats, encounters, eva, organic,
+  spores, intruder, saboteur, dock, captain, leviathan, lowfps.
+- **The crew:** treat, gunner, handweapons, injuryfx, claims.
+- **Missions and progress:** mission, scaling, schedule, progress (every old save format still loads), tutorial,
+  training, balancemodel (the model's two saved tables are up to date).
+- **HUD, sound, drawing:** hud, sidebar, banners, sfxfor, audio, music, gfx, hitfx, lightareas, lightfade.
+- **Multiplayer:** multiplayer (several crew in one simulation), network and server (the real server with WebSocket
+  clients, on a free port: `tools/testserver.js`), netclient (the browser's side of a connection), netlink, netdoors and latency (a simulated slow link), split and
+  local (split screen), gamepad, menupad.
+- **Prototype 3:** bigship, bigship-artillery, bigship-helm.
 
 ## Third-party assets
 
@@ -2767,23 +2747,15 @@ dummy canvas):
   SIL Open Font License 1.1, unmodified, license text next to it, see `assets/fonts/README.md`).
   Declared as `'Patrick Hand'` in `index.html` for handwritten notes (e.g. the PIN pad's sticky note).
 
-## Next (after feedback)
+## Next
 
-- Mission frame: jump in, a mission timer (about 5 min, maybe tied to the length of a
-  music track), jump out. There are placeholder tracks in
-  `~/Documents/deprecated_playground/godot/assets/open_game_music/` (not very space-themed).
-- Consequences for hits (things break), shields costing energy, feeding fuel cells to
-  the reactor.
-- The first station mini-game (for example a cannon or power transfer).
-- Capacitors and reactor: moving charge around, maybe through circuit-network-style wiring.
-- Threats that arrive per zone.
+- Waiting for feedback: prototype 3, the big ship (its entry near the end of this file; `prototype3/DESIGN.md`).
+- Recorded songs still to come: chapters 2, 4 and 5, the menu, the tutorial, crew training and practice play
+  synthesized pieces until then (the Suno prompts and their status: `assets/music/prompts/`).
+- Ideas not built yet: the "Still open" and "Big ship" lists in `IDEAS.md`. What to look at in a playtest:
+  `TO-TEST.md`.
 
-## Open questions
-
-- Capacitor capacity: 3 for now everywhere. Should the reactor's be bigger?
-- Should the airlock open automatically as now, or only on E?
-
-### No more XP: the locker asks for money only (2026-10-17)
+## No more XP: the locker asks for money only (2026-10-17)
 
 The user: "missions still give XP, but I don't think there is anything that you can do with it?" XP only
 gated gear (levels 1-4) and the profession (level 2), and money already limited every purchase (the balance
@@ -2799,7 +2771,7 @@ model's expected kit is the same with and without the levels). So XP is gone:
   longer says "level 1".
 - Saves: `xp` stays in the profile (kept and number-fixed as before, never increased), so no version bump.
 
-### Last Jump Home (deep): a variant to compare, music.html only (2026-10-17)
+## Last Jump Home (deep): a variant to compare, music.html only (2026-10-17)
 
 The user: "the wobble bass could have way more in terms of really deep notes … add the new one as another song in
 music.html without actually putting it in". js/music/home.js is now `music.homePiece(V)` (called once with no
@@ -4848,3 +4820,59 @@ js/music/recorded-outlaws.js, assets/music/outlaws/). The synthesized Cargo Run 
   most 5.3 s apart), main fading from 0.1 s before the bar line.
 - Tests: tests/music.js (the data, the bar lines, the climaxes at the hot times, the loop; with fake audio elements: c1
   plays it, a failure falls back to Cargo Run; the loudness check). Earlier recordings unchanged.
+
+## Review of the whole history, and its fixes (2026-11-10, the user: "hold it to a very high standard")
+Five reviewers went through every commit (code, the assets themselves, the game in the headless browser); the list is
+`REVIEW.md`, with what was fixed and what is left to decide. What changed in the game:
+- **Server**: a broken URL (`/%`) ended the process; now 400. Only the game's files go out (pages, js/, assets/, the
+  prototypes, the sprite gallery): no .git, notes or tools. `no-cache` + ETag (304s) and gzip instead of `no-store`.
+  A protocol ping every 5 s drops dead connections (a sleeping host hands over). Port 0 works (the tests use it,
+  tools/testserver.js). Prototype 3's entry points are guarded; both WebSocket readers cap frames at 1 MiB.
+  Debug commands only from the host; a debug restart of a finished mission pays nothing (mission.rerun).
+- **Connection lost mid-mission**: the seat and crew member are kept 15 s (RETURN_GRACE), the page waits for the
+  server and comes back into the same game with the same crew id.
+- **Input** is sent at 60 Hz at most and not into a backed-up socket; presses and clicks always go, once. Flow control
+  probes once a second while stalled instead of flooding again. tools/netsim.js runs on seeded dice and a still clock.
+- **Saves**: a split-screen view's save key is settled once at load (it could overwrite the host's profile); names
+  compare without case and are 20 characters everywhere; who joins at the end screen isn't paid. No format change.
+- **Lobby**: fits the window height: START MISSION and LOCKER / SHIPYARD pinned, the briefing's story scrolls over a
+  fixed Objective / Pay block (which shows the first-clear star). Skirmish: ENCOUNTER POINTS. Shops open at their top.
+- **Split screen**: the 2D canvas is positioned in ?classic too (no black band); a view is laid out 760 wide, not 1280
+  (readable HUD); banners start at the view's left edge.
+- **Simulation**: a raid pirate left aboard at the jump becomes a hunter (it crashed the tick); undocking pulls whoever
+  is in the tube inside; chapter 5 on Hard gets its extra encounters (placeRepeats: free written times, then the
+  longest quiet stretch); two tractor tugs hold the clock once; one rule for the room behind a hull spot
+  (roomNearHull: one mine, one breach; a big hit on a damaged side near the airlock deck holes the airlock room);
+  shots sweep their step against tentacles, leeches, spore clumps, drones and mines (same hits at 60 / 30 / 20 fps);
+  crew move in sub-steps of 0.1 (thin walls hold at 20 fps); a second AI glitch keeps the first one's doors; mine
+  drones share out the hull spots; the solo leviathan's tail flick is warned afresh after the gas.
+- **Chapters 7 and 8 have objectives** (`handjump`: jump out by hand; `leviathan`: free it), tracking what the
+  missions already asked: no new win condition, eight different goals.
+- **Clicks**: a station under a hazard's click disc wins when it's the one you can use (the jump handle next to a
+  bridge breach was unreachable). Down or out: your panel falls shut and its commands do nothing (a base door code
+  already accepted still opens the door).
+- **Banners** raised in the same tick queue up (3 s each) instead of overwriting each other.
+- **Claim arrows** take their spots from the click targets (breach: plates, airlock on the hole's side, the hole;
+  jump handle; gravity breaker; vent panel) and pick the airlock by the whole trip.
+- **HUD**: plates wrap (2 lines, 3 small ones if needed); the HURT badge has its own space; pointer pills don't
+  overlap; the damage warning shortens instead of running into the timer; the camera keeps the player and prompt
+  below the top bar (TOP_SAFE); "capacitor BROKEN" instead of "empty"; the end screen counts self patch-ups and hides
+  the WEAPON / ITEM boxes.
+- **Tutorial**: the windshield marker is clear of the cable and the interceptor sways 0.2 until the first hit
+  (TUT_SWAY_FIRST; 0.7 after); the reactor is held while the wrench is out in the lever step (it stepped the lever);
+  in mouse mode the marker rings the spot to click.
+- **Rendering**: 48 light areas (the base needed 30 of 24), off-screen ones dropped first, a warning if it ever
+  overflows; the power-out fade uses the frame time; a lost WebGL context says so; the tint bitmaps are closed;
+  hit particles reuse their option object.
+- **Sound**: a recording releases the piece it replaces (the menu's pad sounded under the skirmish); its loop wrap no
+  longer stutters; a refused play() is retried on the next input; noises longer than 1 s ring out; the charge whine
+  stops itself.
+- **Art**: chapter 4's nav console (`dock/raider_navconsole`, with / without its core) and nav core (`items/navcore`,
+  `icon_navcore`, `navcore_up` in our helm); `crew/gear_armor_down`; the leviathan's sores, scars and nest modelled
+  into its hide; 73 base / dock props without the baked ground shadow that was cut at the sprite's edge (the runtime
+  shadows them); the `test` group is gone.
+- **Removed**: the prison barge and the dormant alien (unreachable), unused drawing helpers and music options.
+- **Tests**: `node tests/run.js` (exits non-zero on any failure; a file without checks fails); the harness takes its
+  script list from index.html (js/cables.js was never loaded); seeded dice where tests flaked.
+Left to the owner (REVIEW.md): solo balance of chapter 1 in the playtest, the model's 1.3 parts per big hit, one-shot
+knock-outs in a cannon, pirates taking the last repair kit, pay by difficulty, the cel-shaded explosions.

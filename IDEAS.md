@@ -8,8 +8,8 @@ Mission tiers: ★ First Contract, Strange Cargo · ★★ Empty Lab, Red Comet 
 Spore Season, The Deep · ★★★★ The Mother of All. (Plus the skirmish builder: any mix of encounters.)
 
 ## 1. Small things (all missions)
-- ✅ Snack machine (1 energy; being hurt ends 10 s sooner)
-- ✅ Coffee at the helm (15 s faster; big hits tip it over)
+- ✅ Snack machine (free, one a minute; being hurt ends 10 s sooner)
+- ✅ Coffee in the kitchen (15 s of walking faster; a big hit can tip the mug over)
 - ✅ Ship voice for the big moments
 - ✅ Rattling panels on a damaged side (the warning before a breach)
 - ✅ Duct tape and hull plates are counted
@@ -30,7 +30,7 @@ Spore Season, The Deep · ★★★★ The Mother of All. (Plus the skirmish bui
 - ✅ Debris in a cannon track (★★★)
 - ✅ Limpet mines (★★ and up)
 - ✅ Spore clouds: drift to an airlock and seep in (since 2026-10-22: spores inside the ship, see 6.; the hull barnacles are gone)
-- ✅ Jump coils to align before the jump (The Deep and up)
+- ✅ Jump coils to align before the jump (The Deep; a gravity tide knocks one out of line in any mission)
 
 ## 4. Ship-wide encounters
 - ✅ Solar flare (★★ and up): shelter on the lower deck
@@ -41,11 +41,12 @@ Spore Season, The Deep · ★★★★ The Mother of All. (Plus the skirmish bui
 - ✅ Tractor tug (★★★): freezes the jump countdown until its emitter is shot
 
 ## 5. Station mini-games (all missions)
-- ✅ Crank the cannon reload · held shields · heartbeat treatment
+- ✅ Crank the cannon reload · heartbeat treatment
+- ✖ Held shields: removed (a shield is up 15 s for 1 energy, holding the button adds nothing)
 - ✅ Seat the fuel cell · oscilloscope at the helm · tape job for quick repairs
 - ✅ Patch board (only when a feed line arcs or a capacitor is broken)
 - ✅ Radar dish: point it, ping, echoes from that direction only
-- ✅ Jump handle (The Deep and up): hold it while the drive spools
+- ✅ Jump handle (The Deep): hold it while the drive spools
 
 ## 6. Organic ships (★★★ and up)
 - ✅ Leech swarm: latch on and drink a capacitor dry, one energy ball at a time (2026-10-22; they used to chew parts); shields don't stop them, shoot them on the way in or pry them off outside
@@ -56,28 +57,34 @@ Spore Season, The Deep · ★★★★ The Mother of All. (Plus the skirmish bui
 
 ## 7. Other ships
 - ✅ Pirates: they dock, steal and get boarded back (jam their reactor and they cast off)
-- ✅ Derelict with the black box (heavy) and a sleeping intruder
-- ✅ Rescue: treat the stranded person, lead them home (Dr. Varga on the pirate barge)
+- ✅ Derelict lab with the black box (heavy) and S-7, a growth that has taken over the lab: its tendrils grab whoever comes close (chapter 3)
+- ✅ Rescue: treat the stranded person, lead them home (Dr. Varga, in the brig of the pirate base; chapter 5)
+- ✅ The pirate base and its boss, Captain Red Comet, in the room before the brig (chapter 5)
 - ✅ Mining: drill an ore sample on a spacewalk
 
 ## 8. Progression, music
-- ✅ Campaign with a story and briefings, objectives, pay, XP, reputation (saved per player)
-- ✅ Ship upgrades (reputation), gear and professions (money / level)
-- ✅ A music piece per mission that builds to a crescendo; the jump lands mid-battle
+- ✅ Campaign with a story and briefings, objectives, pay and reputation (saved per player)
+- ✅ Ship upgrades (reputation), gear (money) and a profession (open once chapter 1 is finished)
+- ✅ A music piece per mission that builds to a crescendo; the jump lands mid-battle (six of them recorded songs)
 
 ## Still open
 - Shield frequency tuning (the "or" half of the shield idea)
 - Taped parts falling off on their own (only the next big hit breaks them now)
 - A second ship layout for the derelict / pirate interiors (they share one three-room template)
 
-## Docking encounters (concept pitches, 2026-10-16, awaiting the user's feedback)
+## Docking encounters (concept pitches, 2026-10-16)
 One lead concept and two alternatives per dockable ship, in `concepts/docking/` (the concept art is a
-mock-up rendered by `tools/blender/models/concepts/*.py`; images not in git):
-- Raider: **The Quota** (con their loot scale with ballast) · alts: hijack the raider, catnapping
-- Prison barge (unused today): **The Cell-O-Matic** (revolving cell drum, don't free the goat) · alts: searchlight stealth, cat swap
-- Derelict lab: **Lights Out** (Specimen 7 only moves in the dark; the lights run on our reactor) · alts: Hush, Tumble
-- Pirate base: **The Security Desk** (node tug-of-war with Captain Red Comet) · alts: Shift Change, Scuttle Protocol
-- Tractor tug (doesn't dock yet): **Final Notice** (repo tug: jam the winch, pay, dispute or overload) · alts: Jump Start, Grab the Wheel
+mock-up rendered by `tools/blender/models/concepts/*.py`; images not in git). What became of them:
+- Derelict lab: ✅ built as **The Culture** (S-7, the thawed growth; chapter 3). The pitches (**Lights Out**:
+  Specimen 7 only moves in the dark; alts: Hush, Tumble) were not taken.
+- Pirate base: ✅ built with a boss, **Captain Red Comet**, in the room before Varga's brig (chapter 5). The pitches
+  (**The Security Desk**: node tug-of-war with the captain; alts: Shift Change, Scuttle Protocol) were not taken.
+- Raider: not built. **The Quota** (con their loot scale with ballast) · alts: hijack the raider, catnapping.
+  (Chapter 4's raiders carry a nav core to steal instead.)
+- Tractor tug (doesn't dock): not built. **Final Notice** (repo tug: jam the winch, pay, dispute or overload) ·
+  alts: Jump Start, Grab the Wheel
+- Prison barge: there is no barge in the game any more (Dr. Varga is held in the pirate base). **The Cell-O-Matic**
+  (revolving cell drum, don't free the goat) · alts: searchlight stealth, cat swap
 
 ## Big ship: interactables that need more than one person (2026-11-07, ideas; the prototype in `prototype3/` builds the artillery and the chart table)
 The rule for all of them: the person who *sees* isn't the person who *acts*, or the two halves are too far
