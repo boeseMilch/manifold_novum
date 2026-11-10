@@ -2,7 +2,8 @@ __pycache__/
 *.pyc
 # raw Blender renders (tools/blender/mn.py); packed into assets/sprites/ by tools/sprites/pack.py
 build/
-assets/sprites/sprites.json.lock
+# lock files next to the sprite manifest
+assets/sprites/*.lock
 # Suno stems and mixes (hundreds of MB): tools/arrange-music.py renders the MP3s the game plays from them
 assets/music/**/*.wav
 assets/music/*.zip
