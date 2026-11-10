@@ -26,7 +26,8 @@ with the same canvas, origin, direction and frame (rendered with the body as a h
 parts the body hides are already cut away; no tint mask):
   crew/gear_<id>_<set>   set = idle | run | back | strafe | settle | down
   id = boots | thrusters | armor | toolbelt | firstAid | stim
-  (armor: only while c.armor > 0, and no _down: the vest is always used up before its wearer goes down)
+  (armor: only while c.armor > 0. It has a _down too: gas goes past the vest, so its wearer can go down
+  with it still on, js/leviathan.js)
 Several pieces at once: each gear entry has `depth` (one number per frame, k = dir * frames + frame:
 the piece's mean distance from the camera); draw the worn pieces of a frame sorted far to near.
 
@@ -625,7 +626,6 @@ if want('visor') and True in VISORS:
 
 # Gear overlays: one gear piece visible, the body a holdout (it cuts away what it hides), the same
 # canvas as the body's sprites. Not tinted (no mask). The visor doesn't matter (the face is inside).
-# The armor vest has no 'down' overlay: it is always used up (c.armor) before its wearer goes down.
 def gear_depth(objs, frames, dirs):
     """Per sprite frame (k = dir * frames + frame, like the files): the gear's mean distance from the
     camera in units (bigger = further back). Worn gear overlaps (vest and belt, thrusters and boots):
@@ -654,7 +654,7 @@ for kind, objs in gear.items():
     for o in all_gear: o.hide_render = o not in objs
     for nm, frames in SETS:
         name = f'gear_{kind}_{nm}'
-        if (kind == 'armor' and nm == 'down') or not want(name) and not want('gear') and not want('gear_' + kind): continue
+        if not want(name) and not want('gear') and not want('gear_' + kind): continue
         t0 = time.time(); fobjs = down_objs if nm == 'down' else frame_objs
         if not DEPTH_ONLY:
             got = mn.render('crew/' + name, objs=fobjs + objs, root=root, dirs=dirs_of(nm), frames=frames, passes=gpasses)

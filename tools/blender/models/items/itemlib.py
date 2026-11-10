@@ -360,6 +360,53 @@ def B_blackbox():
     P.append(box('refl', (0.1, 0.006, 0.04), loc=(0, -D / 2 - 0.003, 0.215), m=M.white, bevel=0))
     return P
 
+def B_navcore(lit=True):
+    """Nav core (js/dock.js, chapter 4): the data core out of a Red Comet raider's nav console. Stands on its
+    plug (z = 0), pull handle on top: a glowing cyan stack of chart wafers in a hex cage, the gang's emblem
+    (black disc, cream ring, orange comet with a yellow head: models/base/doors.py) on the red top cap. The
+    emblem and the scrawled label face -Y. lit=False: the stack dark (not used by the game yet)."""
+    red = worn('nc_red', '#a8322a', 0.45, 0.15, scale=5)
+    gun = worn('nc_gun', '#4a505c', 0.4, 0.6, scale=5)
+    R, Z0, Z1, Z2, Z3 = 0.13, 0.05, 0.15, 0.36, 0.5        # hex corner radius; plug top, lower cap top, stack top, upper cap top
+    stack = emitm('nc_stack', '#0e6f96', '#6ee1ff', 1.1, rough=0.15, coat=1.0) if lit else pmat('nc_stack_off', '#16303c', 0.2)
+    P = [cyl('plug', 0.078, Z0 + 0.01, m=M.dark, bevel=0.012, verts=24),
+         ring('contact', 0.086, 0.02, 0.018, loc=(0, 0, 0.022), m=M.brass, verts=24),
+         flat(cyl('cap_lo', R, Z1 - Z0, loc=(0, 0, Z0), m=gun, verts=6, bevel=0.014)),
+         cyl('stack', 0.09, Z2 - Z1 + 0.02, loc=(0, 0, Z1 - 0.01), m=stack, bevel=0, verts=32),
+         flat(cyl('cap_hi', R, Z3 - Z2, loc=(0, 0, Z2), m=red, verts=6, bevel=0.014)),
+         cyl('cap_top', 0.085, 0.02, loc=(0, 0, Z3 - 0.004), m=M.dark, bevel=0.008, verts=24)]
+    for i in range(4):                                                  # the wafers' dark separators
+        P.append(ring('sep', 0.095, 0.022, 0.011, loc=(0, 0, Z1 + 0.028 + i * 0.049), m=M.steel_dark, verts=32))
+    for i in range(6):                                                  # the cage: a rail at every corner of the hex
+        a = i * math.tau / 6
+        P.append(cyl('rail', 0.013, Z2 - Z1 + 0.02, loc=(math.cos(a) * (R - 0.018), math.sin(a) * (R - 0.018), Z1 - 0.01),
+                     m=M.brass if i % 2 else M.steel, verts=8, bevel=0.003))
+    for i in range(6):                                                  # contact pins round the plug
+        a = (i + 0.5) * math.tau / 6
+        P.append(box('pin', (0.014, 0.014, 0.03), loc=(math.cos(a) * 0.058, math.sin(a) * 0.058, -0.012), m=M.brass, bevel=0.003))
+    P.append(pipe('handle', [(-0.06, 0, Z3), (-0.06, 0, Z3 + 0.075), (0.06, 0, Z3 + 0.075), (0.06, 0, Z3)], 0.017, M.rubber, corner=0.035))
+    for sx in (-1, 1): P.append(cyl('handle_foot', 0.026, 0.014, loc=(sx * 0.06, 0, Z3 + 0.012), m=M.steel, verts=12, bevel=0.004))
+    # the Red Comet's emblem on the top cap's front face (the -Y flat of the hex, at y = -R cos 30)
+    yf = -R * math.cos(math.radians(30)); ez = (Z2 + Z3) / 2; er = 0.056
+    def face_disc(name, r, x, z, m, out):
+        return cyl(name, r, 0.004, loc=(x, yf - out, z), m=m, verts=24, bevel=0, rot=(R90, 0, 0))
+    P.append(face_disc('em_ring', er, 0, ez, pmat('nc_cream', '#e8dcb8', 0.6), 0.001))
+    P.append(face_disc('em_disc', er * 0.8, 0, ez, M.ink, 0.004))
+    hx, hz = er * 0.22, ez + er * 0.2
+    tail = slab('em_tail', [(hx + er * 0.2, hz + er * 0.14 - ez), (-er * 0.62, -er * 0.5), (hx - er * 0.1, hz - er * 0.24 - ez)], 0, 0.004,
+                m=pmat('nc_comet', '#ff7a2a', 0.45), bevel=0, loc=(0, yf - 0.007, ez), rot=(R90, 0, 0))
+    P.append(tail)
+    P.append(face_disc('em_head', er * 0.24, hx, hz, pmat('nc_cometh', '#ffd84a', 0.4), 0.010))
+    # a scrawled label on the lower cap, a strip of tape holding a cracked rail, the serial plate
+    P.append(text('lbl', 'NAV', 0.05, (0, yf - 0.003, (Z0 + Z1) / 2 + 0.004), rot=(R90, 0, 0), m=M.white, depth=0.002))
+    a = math.radians(30)
+    P.append(box('tape', (0.012, 0.075, 0.05), loc=(math.cos(a) * (R * math.cos(a) + 0.002), math.sin(a) * (R * math.cos(a) + 0.002), Z1 - 0.012),
+                 m=M.tape, bevel=0.003, rot=(0, 0, a)))
+    P.append(box('plate', (0.07, 0.006, 0.035), loc=(math.cos(a + math.pi / 2 + a) * 0, 0, 0), m=M.brass, bevel=0.002))
+    P[-1].location = (math.cos(math.radians(330)) * (R * math.cos(a) + 0.002), math.sin(math.radians(330)) * (R * math.cos(a) + 0.002), Z2 + 0.05)
+    P[-1].rotation_euler = (0, 0, math.radians(330 - 90) + math.pi)
+    return P
+
 def B_ore(seed=3):
     """Ore sample: a rough chunk of rock with glowing cyan crystals growing out of it."""
     import random

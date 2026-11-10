@@ -122,7 +122,9 @@ def wall_group(children, z, y=-0.02):
     return e
 
 def floor_catcher(k, sx, sy, cx=0.0, cy=0.0):
-    o = shiplib.shadow_catcher((sx, sy), loc=(cx, cy, 0)); k(o, outline=False); return o
+    # a holdout now, not a shadow catcher: no baked ground shadow (the runtime's screen-space shadows draw it, like for
+    # props/*; the baked one was cut off at the canvas edge and doubled the runtime's). It still hides what is below the floor.
+    o = shiplib.shadow_catcher((sx, sy), loc=(cx, cy, 0)); o.is_shadow_catcher = False; o.is_holdout = True; k(o, outline=False); return o
 
 def wall_catcher(k, w, z0, z1):
     o = mn.box('shadow_catcher', (w, 0.001, z1 - z0), loc=(0, 0.0005, z0), bevel=0)

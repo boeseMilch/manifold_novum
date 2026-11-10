@@ -33,11 +33,14 @@ and each piece is a window of it, so hide, lumps, spots and barnacles carry on a
   organic/levb_fin_dorsal_ok|hit1|hit2   the tall dorsal sail (d 29..44), flopped over to the creature's LEFT, origin = the
                                front end of its base on the spine = segment 0's local (-3, 0); it runs back to x = -15. To flop
                                it to the right: flip: true and rot + PI. hit1/hit2: one / two scorched holes.
-  organic/levb_zone            f0..f3 squirm loop: an infested zone (a glowing boil, leeches latched on, glowing
-  organic/levb_zone_glow       f0..f3 the same, glowing hot (targeted, phase 3)     veins). Origin = its centre,
-  organic/levb_zone_hit1       half blasted (2 leeches left, charred half, embers)  ~3 across (+ veins to ~7).
-  organic/levb_scar            blasted clean: charred crater, raw pink rim, dead veins.  All 4 share one canvas.
-  organic/levb_nest, levb_nest_burnt  the big nest on its back (~8 across), and burnt off. Same canvas.
+  organic/levb_zone            f0..f3 squirm loop: an infested zone (the hide swollen into a boil and torn open, pus
+  organic/levb_zone_glow       f0..f3 the same, glowing hot (targeted, phase 3)     in the sore, blisters, leeches latched
+  organic/levb_zone_hit1       half blasted (the leeches of one half left, the      round its lip, glowing veins under the
+                               other half a cracked, ember-veined crust)            skin). Origin = its centre, ~4.5 across
+  organic/levb_scar            blasted clean: a crater with a puckered pale rim,    (+ veins to ~7).
+                               raw flesh, char in the pit, collapsed veins.         All 4 share one canvas.
+  organic/levb_nest, levb_nest_burnt  the big nest on its back (~9 across: the same sore grown huge, barnacle-crusted,
+                               eggs and big leeches in it), and charred to a crust (no skirt: it peels off whole). Same canvas.
        (zones, scar, nest: overlays on the back; draw after the body pieces, turned with the piece they sit on,
         at its scale, within |y| < 0.6 x the local half-width; they're nearly round, so any rot works.)
   organic/levb_brood           a leech larva crawler (~0.55 long), 8 directions x 4-frame crawl; normal light rig
@@ -78,7 +81,7 @@ mn.SAMPLES = 16 if QUICK else 40
 if PREVIEW:
     mn.PPU = int(next((a.split('=')[1] for a in ARGS if a.startswith('ppu=')), 24))
     mn.OUT_DIR = os.environ.get('MN_PREVIEW', '/tmp/mn_levb_preview'); mn.MANIFEST = os.path.join(mn.OUT_DIR, 'manifest.json')
-SEL = [a for a in ARGS if a not in ('quick', 'preview', 'cpu') and '=' not in a]
+SEL = [a for a in ARGS if a not in ('quick', 'preview', 'cpu', 'one') and '=' not in a]
 
 Z = Vector((0, 0, 1))
 E = math.radians(mn.ELEVATION)
@@ -781,6 +784,12 @@ BND = [None]
 # ---------------------------------------------------------------------------------------------------
 # infested zones and the nest (overlays on the back; the body below is a holdout)
 # ---------------------------------------------------------------------------------------------------
+# What they are: leeches have burrowed into the hide. The hide swells into a boil round them (its own skin, bruised and
+# stretched, torn open at the top), pus wells up in the open sore, blisters sit on the lip, the infection runs out under
+# the skin as glowing veins. Shot: the boil is burnt out to a crater with a puckered rim. The nest is the same sore, grown
+# huge and crusted over, with the brood's eggs in it; the engine chars it to a crust that peels off.
+# Everything is geometry seated in the hide (dome: a relief mesh laid on the back, its skirt fading into the skin), lit by
+# the body's own rig, so the normal / height pages carry the same relief the picture shows.
 def place_leech(objs, loc, n, ang, lift=0.05, k=1.0):
     R3 = frame_at(n) @ Matrix.Rotation(ang, 3, 'Z')
     mw = Matrix.Translation(loc + n * lift) @ R3.to_4x4() @ Matrix.Scale(k, 4)
@@ -788,99 +797,359 @@ def place_leech(objs, loc, n, ang, lift=0.05, k=1.0):
     for o in objs: o.matrix_world = mw @ o.matrix_world; O.apply_tf(o)
     return objs
 
+def _an(a, f, seed=0.0):
+    """Smooth noise round a circle (continuous in the angle a), about -0.7..0.7."""
+    from mathutils import noise
+    return noise.noise(Vector((math.cos(a) * f + seed * 3.7, math.sin(a) * f - seed * 1.9, seed * 7.3)))
+
+def _n2(x, y, f, seed=0.0):
+    from mathutils import noise
+    return noise.noise(Vector((x * f + seed * 3.7, y * f - seed * 1.9, seed * 7.3)))
+
+def _c(h, gain=1.0): return (*[min(1.0, v * gain) for v in mn.hex_rgb(h)], 1)
+
+def _nt(m):
+    """Node-building helpers on a material: math, colour mix, a clamped ramp lo..hi -> 0..to, noise."""
+    N = m.node_tree.nodes; Lk = m.node_tree.links.new
+    def put(sock, v):
+        if isinstance(v, (int, float, tuple)): sock.default_value = v
+        else: Lk(v, sock)
+    def mth(op, a, b=None, clamp=False):
+        n = N.new('ShaderNodeMath'); n.operation = op; n.use_clamp = clamp
+        put(n.inputs[0], a)
+        if b is not None: put(n.inputs[1], b)
+        return n.outputs[0]
+    def mix(fac, a, b):
+        n = N.new('ShaderNodeMix'); n.data_type = 'RGBA'; put(n.inputs[0], fac); put(n.inputs[6], a); put(n.inputs[7], b)
+        return n.outputs[2]
+    def ramp(v, lo, hi, to=1.0):
+        n = N.new('ShaderNodeMapRange'); n.inputs['From Min'].default_value = lo; n.inputs['From Max'].default_value = hi
+        n.inputs['To Max'].default_value = to; Lk(v, n.inputs['Value']); return n.outputs[0]
+    def noise(vec, scale, detail=3.0, rough=0.55):
+        n = N.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = scale; n.inputs['Detail'].default_value = detail
+        n.inputs['Roughness'].default_value = rough; Lk(vec, n.inputs['Vector']); return n
+    return N, Lk, mth, mix, ramp, noise
+
+def _char_nodes(m, scale):
+    """Charred flesh: black plates with ash on them, split by wandering cracks, some of them still glowing.
+    Returns (colour, ember colour, ember strength 0..1, bump height) sockets."""
+    N, Lk, mth, mix, ramp, noise = _nt(m)
+    tc = N.new('ShaderNodeTexCoord')
+    mp = N.new('ShaderNodeMapping'); mp.inputs['Scale'].default_value = (scale, scale, scale); Lk(tc.outputs['Object'], mp.inputs['Vector'])
+    wob = noise(mp.outputs[0], 1.4, 3.0)
+    off = N.new('ShaderNodeVectorMath'); off.operation = 'MULTIPLY_ADD'; Lk(wob.outputs['Color'], off.inputs[0])
+    off.inputs[1].default_value = (0.5, 0.5, 0.5); Lk(mp.outputs[0], off.inputs[2])
+    vo = N.new('ShaderNodeTexVoronoi'); vo.feature = 'DISTANCE_TO_EDGE'; vo.inputs['Scale'].default_value = 1.0; Lk(off.outputs[0], vo.inputs['Vector'])
+    crack = ramp(vo.outputs['Distance'], 0.075, 0.0)
+    ash = ramp(noise(mp.outputs[0], 2.6, 5.0, 0.65).outputs['Fac'], 0.4, 0.7)
+    col = mix(crack, mix(ash, _c('#090706'), _c('#4a433c')), _c('#020101'))
+    hot = ramp(noise(mp.outputs[0], 0.55, 2.0).outputs['Fac'], 0.42, 0.6)
+    es = mth('MULTIPLY', mth('POWER', crack, 1.3), hot)
+    ecol = mix(mth('POWER', crack, 3.0), _c('#ff3406'), _c('#ffb23a'))
+    return col, ecol, es, ramp(vo.outputs['Distance'], 0.0, 0.16)
+
+def char_mat(name, ember=1.0, scale=2.2):
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    N, Lk, mth, mix, ramp, noise = _nt(m)
+    b = N['Principled BSDF']; b.inputs['Roughness'].default_value = 0.85
+    col, ecol, es, hgt = _char_nodes(m, scale)
+    Lk(col, b.inputs['Base Color']); Lk(ecol, b.inputs['Emission Color']); Lk(mth('MULTIPLY', es, ember), b.inputs['Emission Strength'])
+    bu = N.new('ShaderNodeBump'); bu.inputs['Strength'].default_value = 1.0; bu.inputs['Distance'].default_value = 0.06
+    Lk(hgt, bu.inputs['Height']); Lk(bu.outputs['Normal'], b.inputs['Normal'])
+    return shade(m, facing=0.5)
+
+def sac_mat(name, base, rim, glow, strength, power=1.6, noise_scale=6.0, noise_k=0.5, cells=None, rough=0.12, sss=0.4):
+    """A wet translucent sac lit from inside: bright where it faces the eye, darker and more saturated towards its edge
+    (a ball of it reads as a ball, not as a disc), broken up by noise. cells = (scale, depth): a froth of darker cell
+    walls (pus, roe)."""
+    m = bpy.data.materials.new(name); m.use_nodes = True
+    N, Lk, mth, mix, ramp, noise = _nt(m)
+    b = N['Principled BSDF']; b.inputs['Roughness'].default_value = rough
+    b.inputs['Coat Weight'].default_value = 1.0; b.inputs['Coat Roughness'].default_value = 0.08
+    b.inputs['Subsurface Weight'].default_value = sss; b.inputs['Subsurface Scale'].default_value = 0.05
+    lw = N.new('ShaderNodeLayerWeight'); lw.inputs['Blend'].default_value = 0.5
+    f = mth('POWER', mth('SUBTRACT', 1.0, lw.outputs['Facing'], clamp=True), power)
+    tc = N.new('ShaderNodeTexCoord')
+    nz = N.new('ShaderNodeMapRange'); nz.inputs['To Min'].default_value = 1 - noise_k
+    Lk(noise(tc.outputs['Object'], noise_scale).outputs['Fac'], nz.inputs['Value'])
+    k = mth('MULTIPLY', f, nz.outputs[0]); col = mix(f, _c(rim), _c(base))
+    if cells:
+        vo = N.new('ShaderNodeTexVoronoi'); vo.feature = 'DISTANCE_TO_EDGE'; vo.inputs['Scale'].default_value = cells[0]
+        Lk(tc.outputs['Object'], vo.inputs['Vector'])
+        wall = ramp(vo.outputs['Distance'], 0.07, 0.0, cells[1])
+        k = mth('MULTIPLY', k, mth('SUBTRACT', 1.0, wall)); col = mix(wall, col, _c(rim))
+        bu = N.new('ShaderNodeBump'); bu.inputs['Strength'].default_value = 0.6; bu.inputs['Distance'].default_value = 0.04
+        Lk(ramp(vo.outputs['Distance'], 0.0, 0.2), bu.inputs['Height']); Lk(bu.outputs['Normal'], b.inputs['Normal'])
+    Lk(col, b.inputs['Base Color']); b.inputs['Emission Color'].default_value = _c(glow)
+    Lk(mth('MULTIPLY', k, strength), b.inputs['Emission Strength'])
+    return m
+
+def boil_mat(name, glow='#c8ff3a', glow_k=0.9, ember=1.0, char_scale=2.4, raw=('#701422', '#f07880')):
+    """The creature's own hide where the infestation sits, driven by two point attributes of the mesh (see dome):
+    zk = (inflamed, raw, charred), za = (alpha, glow, healed). The hide (the body's skin recipe) -> bruised, swollen purple
+    -> raw wet flesh at a torn lip; healed = the pale tissue of its old scars; charred = _char_nodes. alpha fades the
+    skirt into the hide below; glow = the pus shining through stretched skin (where charred: hotter embers)."""
+    m = O.flesh(name, SKIN[0], SKIN[1], c2='#030807', veins=SKIN[2], vein_k=0.35, scale=0.16, rough=0.48, coat=0.25, sss=0.05, bump=0.8, mottle=2.2)
+    N, Lk, mth, mix, ramp, noise = _nt(m)
+    b = N['Principled BSDF']; skin = b.inputs['Base Color'].links[0].from_socket
+    def attr(nm):
+        a = N.new('ShaderNodeAttribute'); a.attribute_name = nm; s = N.new('ShaderNodeSeparateColor'); Lk(a.outputs['Color'], s.inputs[0]); return s.outputs
+    zk, za = attr('zk'), attr('za')
+    tc = N.new('ShaderNodeTexCoord')
+    blot = ramp(noise(tc.outputs['Object'], 3.0, 5.0, 0.6).outputs['Fac'], 0.3, 0.7)
+    fine = ramp(noise(tc.outputs['Object'], 14.0, 3.0).outputs['Fac'], 0.3, 0.7)
+    col = mix(zk[0], skin, mix(blot, _c('#2c0f30'), _c('#a03a64')))
+    col = mix(za[2], col, mix(fine, _c('#35565c'), _c('#6c8c92')))
+    col = mix(zk[1], col, mix(fine, _c(raw[0]), _c(raw[1])))
+    ccol, ecol, es, hgt = _char_nodes(m, char_scale)
+    col = mix(zk[2], col, ccol)
+    Lk(col, b.inputs['Base Color']); Lk(za[0], b.inputs['Alpha'])
+    Lk(mix(zk[2], _c(glow), ecol), b.inputs['Emission Color'])
+    live = mth('MULTIPLY', mth('MULTIPLY', za[1], mth('SUBTRACT', 1.0, zk[2], clamp=True)), glow_k)
+    emb = mth('MULTIPLY', mth('MULTIPLY', zk[2], es), mth('ADD', mth('MULTIPLY', za[1], 2.5 * ember), ember))
+    Lk(mth('ADD', live, emb), b.inputs['Emission Strength'])
+    rg = N.new('ShaderNodeMapRange'); rg.inputs['To Min'].default_value = 0.48; rg.inputs['To Max'].default_value = 0.3; Lk(zk[1], rg.inputs['Value'])
+    Lk(mth('ADD', rg.outputs[0], mth('MULTIPLY', zk[2], 0.5)), b.inputs['Roughness'])
+    Lk(mth('MULTIPLY', mth('SUBTRACT', 1.0, zk[2], clamp=True), 0.25), b.inputs['Coat Weight'])           # (no wet sheen on char)
+    old = b.inputs['Normal'].links[0].from_socket                         # the hide's fine bump, then the char's plates
+    bu = N.new('ShaderNodeBump'); bu.inputs['Distance'].default_value = 0.06; Lk(zk[2], bu.inputs['Strength'])
+    Lk(hgt, bu.inputs['Height']); Lk(old, bu.inputs['Normal']); Lk(bu.outputs['Normal'], b.inputs['Normal'])
+    return shade(m, facing=0.6)
+
+def zone_mats(M, state):
+    """The infestation's own materials (added to M once per scene)."""
+    if 'z_boil' in M: return M
+    hot = state == 'glow'
+    M.update(
+        z_boil=boil_mat('lb_boil', glow='#e8ff70' if hot else '#c8ff3a', glow_k=1.5 if hot else 0.9,
+                        ember={'hit1': 1.2, 'after': 0.14}.get(state, 0.45),
+                        raw=('#3a1216', '#8a4448') if state == 'after' else ('#701422', '#f07880')),
+        z_pus=sac_mat('lb_zpus', '#b4dc20' if hot else '#96c018', '#33500a', '#e8ff60' if hot else '#c8ff3a', 1.5 if hot else 0.95,
+                      power=0.8, noise_scale=3.0, cells=(4.5, 0.6)),
+        z_sac=sac_mat('lb_zsac', '#f0a418', '#6a2606', '#fff080' if hot else '#ffc030', 1.7 if hot else 1.1, power=1.5, noise_scale=9.0, noise_k=0.35),
+        z_vein=sac_mat('lb_zvein', '#8a9a30', '#34122e', '#e8ff70' if hot else '#c8f03a', 1.9 if hot else 1.2, power=2.2, noise_scale=2.0,
+                       noise_k=0.4, rough=0.3, sss=0.2),
+        z_vein_dead=shade(O.flesh('lb_zvein_dead', '#0a1012', '#26343a', scale=3.0, rough=0.8, coat=0.0, sss=0.0, bump=0.6), facing=0.5),
+        z_char=char_mat('lb_zchar', ember={'hit1': 1.3, 'after': 0.5}.get(state, 0.6), scale=2.6),
+        z_char_dead=char_mat('lb_zchar_dead', ember=0.25, scale=5.0),
+        z_husk=shade(O.flesh('lb_zhusk', '#14100c', '#5a5046', c2='#000000', scale=4.0, rough=0.9, coat=0.0, sss=0.0, bump=1.0, mottle=1.6), facing=0.5),
+    )
+    return M
+
+def dome(name, on, up, R, S, prof, m, na=160, nr=64):
+    """A relief laid on the hide: a polar grid out to S(a) * R, every point on the hide (on) and raised along the
+    hide's normal by prof(rho, a, x, y) -> (height / R, zk, za) (the two colour attributes of boil_mat)."""
+    verts, zk, za, faces = [], [], [], []
+    base = [[on((), j / na * math.tau, (S(j / na * math.tau) if callable(S) else S) * i / nr * R)[0] for j in range(na)] for i in range(nr + 1)]
+    for _ in range(3):                                      # the hide's mesh is faceted: lay the relief on a smoothed copy
+        nb = [row[:] for row in base]
+        for i in range(1, nr):                              # (not the outermost ring: the skirt's edge stays on the hide)
+            for j in range(na):
+                q = [base[i + di][(j + dj) % na] for di in (-1, 0, 1) for dj in (-2, -1, 0, 1, 2)]
+                nb[i][j] = base[i][j] + up * (sum(v.dot(up) for v in q) / len(q) - base[i][j].dot(up))
+        base = nb
+    for i in range(nr + 1):
+        for j in range(na if i else 1):
+            a = j / na * math.tau; rho = (S(a) if callable(S) else S) * i / nr
+            h, k1, k2 = prof(rho, a, rho * R * math.cos(a), rho * R * math.sin(a))
+            verts.append(base[i][j] + up * h * R); zk.append((*k1, 1.0)); za.append((*k2, 1.0))
+    for j in range(na): faces.append((0, 1 + j, 1 + (j + 1) % na))
+    for i in range(1, nr):
+        r0, r1 = 1 + (i - 1) * na, 1 + i * na
+        for j in range(na): faces.append((r0 + j, r1 + j, r1 + (j + 1) % na, r0 + (j + 1) % na))
+    me = bpy.data.meshes.new(name); me.from_pydata(verts, [], faces); me.update()
+    for nm, vals in (('zk', zk), ('za', za)):
+        ca = me.color_attributes.new(nm, 'FLOAT_COLOR', 'POINT')
+        for d, v in zip(ca.data, vals): d.color = v
+    o = mn.link(bpy.data.objects.new(name, me)); mn.smooth(o); mn.assign(o, m)
+    bpy.context.view_layer.update()
+    return o
+
 def zone_build(M, body, R, state, seed, phase=0.0, frame=0, nest=False):
     """One infested zone at the origin of the flat frame (on the back of `body`).
-    state: infested | glow | hit1 | after. Static parts depend only on seed; phase/frame move the leeches and pustules."""
+    state: infested | glow | hit1 (half of it blasted) | after (zone: the burnt-out crater; nest: the charred crust).
+    Static parts depend only on seed; phase/frame move the leeches and the blisters."""
+    zone_mats(M, state)
     rnd = random.Random(seed)
     loc, n = surf(body, 0.0, 0.0); F_ = frame_at(n); t1, t2 = F_.col[0], F_.col[1]
     objs, hal = [], []
-    def on(obj, a, r, lift=0.0):
-        p = loc + (t1 * math.cos(a) + t2 * math.sin(a)) * r
-        hit, l2, n2, _ = obj.ray_cast(p + n * 6, -n)
-        if obj is not body:
-            h2, l3, n3, _ = body.ray_cast(p + n * 6, -n)
-            if h2 and (not hit or (l3 - l2).dot(n) > 0): hit, l2, n2 = h2, l3, n3
-        if hit and n2.dot(n) < 0: n2 = -n2
-        return (l2 + n2 * lift, n2, True) if hit else (p + n * lift, n, False)
+    def on(over, a, r, lift=0.0):
+        """The highest of the hide and the objects `over`, under the point (a, r) of the zone's own frame."""
+        p = loc + (t1 * math.cos(a) + t2 * math.sin(a)) * r; best = None
+        for ob in (*over, body):
+            hit, l2, n2, _ = ob.ray_cast(p + n * 8, -n)
+            if hit and (best is None or (l2 - best[0]).dot(n) > 0): best = (l2, n2)
+        if best is None: return p + n * lift, n, False
+        l2, n2 = best
+        if n2.dot(n) < 0: n2 = -n2
+        return l2 + n2 * lift, n2, True
     sick = state in ('infested', 'glow', 'hit1')
     hot = state == 'glow'
-    def half_burnt(a): return state == 'hit1' and math.cos(a - 0.6) > -0.1     # the blasted half (towards +x/+y)
-    parts = []
-    for k in range(7 if sick else 1):                      # the swollen boil (or the flattened wound)
-        a = rnd.uniform(0, math.tau); r = R * (0.15 + 0.5 * rnd.random()) if k else 0.0
-        p, nn, _ = on(body, a, r, 0.1 if sick else 0.15)
-        parts.append((p, R * rnd.uniform(0.6, 0.75) * (1 if sick else 2.1), (1, 1, 0.45 if sick else 0.18)))
-    for k in range(12 if sick else 0):
-        a = k / 12 * math.tau; p, nn, _ = on(body, a, R * (0.95 + 0.1 * math.sin(a * 3 + seed)), -0.25)
-        parts.append((p, R * 0.32 * (1 + 0.25 * rnd.random()), (1, 1, 0.5)))
-    mound = O.blob('lb_zone_rim', parts, m=M['rim'] if sick else M['raw'], res=0.06 * R / 1.6)
-    objs.append(mound); bpy.context.view_layer.update()
-    pool = []
-    for k in range(9):
-        a = rnd.uniform(0, math.tau); r = rnd.uniform(0, R * 0.45)
-        p, nn, _ = on(mound, a, r, 0.15)
-        pool.append((p, R * rnd.uniform(0.3, 0.42), (1, 1, 0.4)))
-    if sick:
-        objs.append(O.blob('lb_zone_pool', pool, m=M['pus_hot' if hot else 'pus'], res=0.05 * R / 1.6))
-    else:                                                  # a flat charred crater
-        p, nn, _ = on(mound, 0, 0, -0.02)
-        c_ = mn.sphere('lb_zone_pool', R * 0.45, loc=p, m=M['char'], scale=(1, 1, 0.12), segs=32)
-        c_.rotation_mode = 'QUATERNION'; c_.rotation_quaternion = nn.to_track_quat('Z', 'Y'); objs.append(c_)
-    if state in ('after', 'hit1'):
-        for k in range(22 if nest else 12):
-            a = rnd.uniform(0, math.tau); r = rnd.uniform(0, R * 0.85)
-            if state == 'hit1' and not half_burnt(a): continue
-            p, nn, _ = on(mound, a, r, 0.02)
-            objs.append(mn.sphere('lb_ember', rnd.uniform(0.07, 0.17) * R / 1.6, loc=p, m=M['ember'], scale=(1, 1, 0.4), segs=10))
-    if state == 'hit1':                                    # the charred half: soot over boil and pus
-        for k in range(10):
-            a = 0.6 + rnd.uniform(-1.3, 1.3); r = rnd.uniform(0.1, 1.0) * R
-            p, nn, _ = on(mound, a, r, 0.05)
-            objs.append(mn.sphere('lb_char', R * rnd.uniform(0.22, 0.36), loc=p, m=M['char'], scale=(1, 1, 0.3), segs=16))
+    k_ = R / 1.6
+    def burn(a): return smooth((math.cos(a - 0.6) + 0.28) / 0.36) if state == 'hit1' else 0.0   # the blasted half (towards +x/+y)
+    def half_burnt(a): return state == 'hit1' and math.cos(a - 0.6) > -0.1
+    def wrap(a): return (a + math.pi) % math.tau - math.pi
+    nrnd = random.Random(seed + 21)
+    notches = [(nrnd.uniform(0, math.tau), nrnd.uniform(0.1, 0.2)) for _ in range(9 if nest else 5)]   # tears through the lip
+    def notch(a): return max(math.exp(-(wrap(a - na_) / w) ** 2) for na_, w in notches)
+
+    # --- the hide's own relief -------------------------------------------------------------------
+    if sick:        # a swollen boil, torn open at the top: skirt (S) -> bruised slope -> raw lip (L) -> the sore's floor
+        S, L0, HL0, HF, WALL, LIPN = (1.22, 0.86, 0.19, 0.05, 0.09, 0.04) if nest else (1.5, 0.7, 0.4, 0.15, 0.14, 0.06)
+        def prof(rho, a, x, y):
+            L = L0 + LIPN * 1.6 * _an(a, 1.3, seed); nt_ = notch(a)
+            HL = HL0 * (1 + 0.3 * _an(a, 2.1, seed + 5)) * (1 - 0.5 * nt_)
+            if rho >= L:
+                t = max(0.0, 1 - (rho - L) / (S - L)); st = smooth(t) ** 0.75
+                h = HL * st + 0.06 * _n2(x, y, 1.5 / k_ ** 0.5, seed) * 4 * t * (1 - t) - 0.03 * (1 - t)
+                infl = smooth((t - 0.1) / 0.45) * (0.8 + 0.2 * st); raw = smooth((t - 0.9) / 0.1) * 0.9
+                raw = max(raw, nt_ * smooth((t - 0.45) / 0.4))
+            else:
+                w = min(1.0, (L - rho) / WALL)
+                h = HL + (HF * (1 + 0.5 * _n2(x, y, 2.0 / k_ ** 0.5, seed + 3)) - HL) * smooth(w)
+                infl, raw = 1.0, 0.9 + 0.1 * w
+            ch = burn(a) * smooth((1.28 - rho) / 0.3)
+            glow = (0.22 if nest else 0.45) * math.exp(-((rho - L - 0.06) / (0.05 if nest else 0.09)) ** 2) + ((0.12 if nest else 0.5) * nt_ * smooth((L + 0.35 - rho) / 0.3) if rho >= L else 0.0)
+            return h, (infl, raw, ch), (smooth((S - rho) / (0.2 if nest else 0.32)), glow * (1 - ch), 0.0)
+        dm = dome('lb_boil', on, n, R, S, prof, M['z_boil'], na=224 if nest else 160, nr=96 if nest else 64)
+    elif not nest:  # burnt out: a crater with a puckered rim of pale new tissue, raw flesh inside, char in the pit
+        S, L0, HL0, HF = 1.45, 0.86, 0.15, 0.02
+        def prof(rho, a, x, y):
+            L = L0 + 0.1 * _an(a, 1.6, seed); HL = HL0 * (1 + 0.45 * _an(a, 2.6, seed + 5))
+            pit = 0.6 + 0.16 * _an(a, 2.2, seed + 9)
+            if rho >= L:
+                t = max(0.0, 1 - (rho - L) / (S - L)); st = smooth(t) ** 0.85
+                h = HL * st - 0.03 * (1 - t) + 0.02 * math.cos(13 * a + 3 * _an(a, 1.5, seed)) * st
+                pale = smooth((t - 0.6) / 0.4); infl = 0.75 * smooth((t - 0.05) / 0.35) * (1 - 0.6 * pale); raw = 0.0
+            else:
+                w = min(1.0, (L - rho) / 0.4)
+                h = HL + (HF - HL) * smooth(w) + 0.035 * math.cos(13 * a + 3 * _an(a, 1.5, seed)) * math.sin(math.pi * min(1.0, rho / L)) ** 0.7
+                h = max(0.012, h + 0.03 * _n2(x, y, 2.6, seed) * smooth(w))
+                pale = 1 - smooth(w / 0.22); raw = smooth(w / 0.22); infl = 0.0
+            ch = smooth((pit - rho) / 0.16)
+            return h, (infl, raw * (1 - ch), ch), (smooth((S - rho) / 0.3), 0.35 * smooth((pit - 0.2 - rho) / 0.2), pale * (1 - ch))
+        dm = dome('lb_boil', on, n, R, S, prof, M['z_boil'])
+    else:           # the nest burnt: the same sore, charred to a crust (it peels off whole: no skirt), its pit still glowing
+        L0, HL0, HF = 0.86, 0.19, 0.05
+        def S(a): return 1.1 + 0.08 * _an(a, 3.0, seed + 2)
+        def prof(rho, a, x, y):
+            L = L0 + 0.064 * _an(a, 1.3, seed); HL = HL0 * (1 + 0.3 * _an(a, 2.1, seed + 5)) * (1 - 0.5 * notch(a)); s_ = S(a)
+            if rho >= L:
+                t = max(0.0, 1 - (rho - L) / (s_ - L)); h = HL * smooth(t) ** 0.6 - 0.04 * (1 - t)
+            else:
+                w = min(1.0, (L - rho) / 0.09); h = HL + (HF * (1 + 0.5 * _n2(x, y, 1.3, seed + 3)) - HL) * smooth(w)
+            h += 0.025 * _n2(x, y, 1.8, seed + 8) * min(1.0, (s_ - rho) * 6)
+            return h, (0.0, 0.0, 1.0), (1.0, smooth((0.6 - rho) / 0.45), 0.0)
+        dm = dome('lb_boil', on, n, R, S, prof, M['z_boil'], na=224, nr=96)
+    objs.append(dm)
+    top = [dm]
+
+    # --- what fills the sore ---------------------------------------------------------------------
+    burnt_nest = nest and not sick
+    if nest:        # lumps of proud flesh standing in it (live: red and veined; burnt: charred)
+        parts = []
+        for k in range(8):
+            a = rnd.uniform(0, math.tau); r = R * rnd.uniform(0.12, 0.62)
+            p, nn, _ = on(top, a, r, 0.05)
+            parts.append((p, R * rnd.uniform(0.15, 0.24) * (0.85 if burnt_nest else 1.0), (1, 1, 0.5 if sick else 0.36)))
+        mound = O.blob('lb_zone_rim', parts, m=M['rim'] if sick else M['z_char'], res=0.06 * k_)
+        if burnt_nest: O.noise_displace(mound, [(0.12, 1.6, seed)])
+        objs.append(mound); bpy.context.view_layer.update(); top.append(mound)
+    if sick:        # pus welling up to just under the lip
+        pool = []
+        for k in range(18 if nest else 9):
+            a = rnd.uniform(0, math.tau); r = rnd.uniform(0, R * (0.66 if nest else 0.4))
+            p, nn, _ = on([dm], a, r, 0.02)
+            pool.append((p, R * (rnd.uniform(0.15, 0.2) if nest else rnd.uniform(0.24, 0.32)), (1, 1, 0.42)))
+        pl = O.blob('lb_zone_pool', pool, m=M['z_pus'], res=0.05 * k_)
+        objs.append(pl); bpy.context.view_layer.update(); top.append(pl)
+    if state == 'hit1':                                    # the blasted half: a cracked crust of soot over lip and pus
+        for k in range(9):
+            a = 0.6 + rnd.uniform(-1.1, 1.1); r = rnd.uniform(0.0, 0.7) * R
+            p, nn, _ = on(top, a, r, 0.0)
+            s = mn.sphere('lb_char', R * rnd.uniform(0.2, 0.3), loc=p, m=M['z_char'], scale=(1, 1, 0.32), segs=24)
+            s.rotation_mode = 'QUATERNION'; s.rotation_quaternion = nn.to_track_quat('Z', 'Y'); O.apply_tf(s)
+            O.noise_displace(s, [(0.05, 3.0, seed + k)]); objs.append(s)
     prnd = random.Random(seed + 99)
-    if sick:                                               # pustules, pulsing with the squirm
-        for k in range(prnd.randint(12, 16)):
-            a = prnd.uniform(0, math.tau); r = prnd.uniform(0.35, 1.0) * R; p, nn, _ = on(mound, a, r, -0.05)
-            rr = prnd.uniform(0.22, 0.5) * R / 1.6 * (1 + 0.12 * math.sin(phase + k * 1.7))
-            if half_burnt(a): continue
-            s = mn.sphere('lb_pustule', rr, loc=p, m=M['pustule_hot' if hot else 'pustule'], scale=(1, 1, 0.8), segs=18)
-            s.rotation_mode = 'QUATERNION'; s.rotation_quaternion = nn.to_track_quat('Z', 'Y'); objs.append(s)
-    vrnd = random.Random(seed + 7)
-    for k in range(9):                                     # veins crawling out over the hide
-        a = k / 9 * math.tau + vrnd.uniform(-0.2, 0.2); pts = []; r = R * 0.95; aa = a
-        for j in range(vrnd.randint(5, 8)):
-            p, nn, ok = on(body, aa, r, 0.02)
-            if not ok: break
-            pts.append(p); r += R * vrnd.uniform(0.14, 0.24); aa += vrnd.uniform(-0.2, 0.2)
-        if len(pts) < 4: continue
-        rad = [(0.12 if sick else 0.09) * (R / 1.6) ** 0.5 * (1 - 0.7 * j / (len(pts) - 1)) for j in range(len(pts))]
+    if sick:        # blisters seated in the lip and the slope, in clutches; they swell and sink with the squirm
+        for c in range(9 if nest else 6):
+            ca = prnd.uniform(0, math.tau); cr = prnd.uniform(0.3, 1.02) if nest else prnd.uniform(0.6, 1.05)
+            for e in range(prnd.randint(2, 5) if nest else prnd.randint(2, 4)):
+                a = ca + prnd.uniform(-0.3, 0.3) / max(cr, 0.4); r = (cr + prnd.uniform(-0.14, 0.14)) * R
+                rr = (prnd.uniform(0.17, 0.36) if nest else prnd.uniform(0.11, 0.25)) * (1 + 0.12 * math.sin(phase + c * 1.7 + e))
+                if half_burnt(a): continue
+                p, nn, _ = on([dm], a, r, 0.0)
+                s = mn.sphere('lb_pustule', rr, loc=p + nn * rr * 0.3, m=M['z_sac'], scale=(1, 1, 0.85), segs=24)
+                s.rotation_mode = 'QUATERNION'; s.rotation_quaternion = nn.to_track_quat('Z', 'Y'); objs.append(s)
+    if nest:        # the nest's crust: barnacle shells grown round its rim (as on the rest of the hide); burnt: blackened
+        brnd = random.Random(seed + 31)
+        for c in range(11):
+            ca = brnd.uniform(0, math.tau); cr = brnd.uniform(0.88, 1.1)
+            for e in range(brnd.randint(6, 12)):
+                p, nn, ok = on([dm], ca + brnd.gauss(0, 0.14), (cr + brnd.gauss(0, 0.07)) * R, 0.0)
+                r = brnd.uniform(0.1, 0.24)
+                cone = mn.cyl('lb_barn', r, r * 0.9, loc=(0, 0, 0), m=M['barn'] if sick else M['z_husk'], verts=8, bevel=0.0)
+                for v in cone.data.vertices:
+                    if v.co.z > 0.01: v.co.x *= 0.45; v.co.y *= 0.45
+                cone.matrix_world = Matrix.Translation(p - nn * 0.05) @ nn.to_track_quat('Z', 'Y').to_matrix().to_4x4(); O.apply_tf(cone)
+                objs.append(cone)
+                objs.append(mn.sphere('lb_barnin', r * 0.4, loc=p + nn * r * 0.82, m=M['barn_in'], scale=(1, 1, 0.3), segs=6))
+
+    # --- veins: the infection running out under the skin (dead: collapsed, dark, thin) --------------------
+    vrnd = random.Random(seed + 7); nv = 11 if nest else 9
+    for k in range(0 if burnt_nest else nv):
+        a = k / nv * math.tau + vrnd.uniform(-0.2, 0.2)
         dead = not sick or half_burnt(a)
-        objs.append(O.tube('lb_vein', pts, rad, m=M['dead_vein'] if dead else M['vein_hot' if hot else 'vein'], res=2, segs=6))
+        r0 = R * (0.92 if nest else 0.8 if sick else 0.95); r1 = R * (vrnd.uniform(1.3, 1.5) if nest else vrnd.uniform(1.7, 2.25))
+        rad0 = (0.075 if not dead else 0.05) * k_ ** 0.5
+        def run(a0, ra, rb, rad_, npts):
+            pts, rads, aa, da = [], [], a0, vrnd.uniform(-0.05, 0.05)
+            for j in range(npts):
+                u = j / (npts - 1); rr = ra + (rb - ra) * u
+                da += vrnd.uniform(-0.07, 0.07); aa += da * R / max(rr, 0.5) * 0.6
+                rd = rad_ * (0.12 + 0.88 * (1 - u) ** 0.8)
+                p, nn, ok = on([dm], aa, rr, 0.0)
+                if not ok: break
+                pts.append(p - nn * rd * 0.45); rads.append(rd)
+            if len(pts) >= 4: objs.append(O.tube('lb_vein', pts, rads, m=M['z_vein_dead'] if dead else M['z_vein'], res=6, segs=8))
+            return aa
+        run(a, r0, r1, rad0, 10)
+        if vrnd.random() < 0.6:                            # a side branch
+            rm = r0 + (r1 - r0) * vrnd.uniform(0.3, 0.5)
+            run(a + vrnd.choice((-1, 1)) * 0.12 * R / rm, rm, rm + (r1 - rm) * vrnd.uniform(0.6, 0.9), rad0 * 0.6, 6)
     if hot:                                                # the glow halo (beauty only)
         h = O.disc('lb_halo', loc + n * 0.6, R * 2.6, O.halo_mat('lb_halo', '#d8ff40', 1.4, k=0.6))
         h.rotation_mode = 'QUATERNION'; h.rotation_quaternion = n.to_track_quat('Z', 'Y'); hal.append(h)
+
+    # --- the leeches (burnt nest: their charred husks, shrunk, where they died) -------------------------
     lee = []
     lm = LM(M); lrnd = random.Random(seed + 3)
-    nl = {'infested': lrnd.randint(6, 8), 'glow': 7, 'hit1': 7, 'after': 0}[state] if not nest else (13 if sick else 0)
-    lk = 1.0 if not nest else 1.4
+    if burnt_nest: lm = {k: M['z_char_dead'] for k in lm}
+    nl = {'infested': lrnd.randint(6, 8), 'glow': 7, 'hit1': 7, 'after': 0}[state] if not nest else 13
+    lk = 1.0 if not nest else 1.4 if sick else 1.15
     for k in range(nl):
-        a = k / max(nl, 1) * math.tau + lrnd.uniform(-0.3, 0.3); r = lrnd.uniform(0.45, 0.95) * R
-        ang = a + math.pi + lrnd.uniform(-1.3, 1.3); ph = lrnd.uniform(0, math.tau)
+        a = k / max(nl, 1) * math.tau + lrnd.uniform(-0.3, 0.3); r = (lrnd.uniform(0.45, 0.95) if nest else lrnd.uniform(0.72, 1.05)) * R
+        ang = a + math.pi + (lrnd.uniform(-1.3, 1.3) if nest else lrnd.uniform(-0.75, 0.75)); ph = lrnd.uniform(0, math.tau)
         if half_burnt(a): continue
-        p, nn, _ = on(mound, a, r, 0.0)
+        if burnt_nest and k % 3 == 2: continue
+        p, nn, _ = on(top, a, r, 0.0)
         ob = LE.leech(f'lb_lch{seed}_{k}', ph + phase, True, lm)
-        place_leech(ob, p, nn, ang + 0.22 * math.sin(phase + ph), k=lk); lee += ob     # (the squirm: each sways its own way)
-    if nest and sick:                                      # the brood: clutches of glowing egg sacs, a web of threads
+        if burnt_nest: ob = [o for o in ob if '_spot' not in o.name and '_tooth' not in o.name]
+        place_leech(ob, p, nn, ang + 0.22 * math.sin(phase + ph), k=lk, lift=0.05 if sick else -0.05); lee += ob     # (the squirm: each sways its own way)
+    if nest:        # the brood: clutches of glowing egg sacs under a web of threads (burnt: split, sooty husks)
         ernd = random.Random(seed + 11)
         for c in range(7):
             a = ernd.uniform(0, math.tau); r = ernd.uniform(0.2, 0.9) * R
             for e in range(ernd.randint(4, 7)):
-                p, nn, _ = on(mound, a + ernd.uniform(-0.25, 0.25), r + ernd.uniform(-0.5, 0.5), 0.1)
-                rr = ernd.uniform(0.28, 0.5) * (1 + 0.08 * math.sin(phase + c + e))
-                s = mn.sphere('lb_egg', rr, loc=p, m=M['egg'], scale=(1, 0.85, 0.75), segs=16); s.rotation_euler = (0, 0, ernd.uniform(0, 3)); objs.append(s)
-        for k in range(14):
+                p, nn, _ = on(top, a + ernd.uniform(-0.25, 0.25), r + ernd.uniform(-0.5, 0.5), 0.1 if sick else -0.08)
+                rr = ernd.uniform(0.28, 0.5) * (1 + 0.08 * math.sin(phase + c + e)) * (1.0 if sick else 0.8)
+                s = mn.sphere('lb_egg', rr, loc=p, m=M['egg'] if sick else M['z_husk'], scale=(1, 0.85, 0.75 if sick else 0.5), segs=16)
+                s.rotation_euler = (0, 0, ernd.uniform(0, 3))
+                if not sick: O.apply_tf(s); O.noise_displace(s, [(0.07, 4.0, seed + c * 7 + e)])
+                objs.append(s)
+        for k in range(14 if sick else 0):
             a = ernd.uniform(0, math.tau); a2 = a + ernd.uniform(0.6, 1.6)
-            p1, _, _ = on(mound, a, R * ernd.uniform(0.3, 1.0), 0.3); p2, _, _ = on(mound, a2, R * ernd.uniform(0.3, 1.0), 0.3)
+            p1, _, _ = on(top, a, R * ernd.uniform(0.3, 1.0), 0.3); p2, _, _ = on(top, a2, R * ernd.uniform(0.3, 1.0), 0.3)
             mid = (p1 + p2) / 2 + n * 0.5
             objs.append(O.tube('lb_web', [p1, mid, p2], [0.04, 0.03, 0.04], m=M['web'], res=4, segs=5))
     return objs, lee, hal
@@ -891,10 +1160,11 @@ NW = 9.0        # nest canvas
 def zone_piece(name, R, state, seed, frames, nest=False, win=ZW):
     setup(); M = mats()
     b = loft_d('lb_body', 50.0 - 14, 50.0 + 14, m=M['skin'], shift=50.0)    # a patch of back (d ~50) under the zone
+    if 'one' in ARGS: frames = 1                           # (while working on the look: only the first frame)
     sets, hals = [], []
     for i in range(frames):
         o, l, h = zone_build(M, b, R, state, seed, phase=i / frames * math.tau, frame=i, nest=nest)
-        mn.outline([x for x in o if x.name.startswith('lb_zone_rim')], 0.025)
+        mn.outline([x for x in o if x.name.startswith('lb_zone_rim')], 0.025); barn_outline(o)
         mn.outline([x for x in l if '_spot' not in x.name and '_throat' not in x.name and '_tooth' not in x.name], 0.015)
         sets.append(o + l); hals.append(h)
     F = list(range(1, frames + 1))
@@ -911,14 +1181,14 @@ def zone_piece(name, R, state, seed, frames, nest=False, win=ZW):
         window(name, -win, win, -win, win, frames=F if frames > 1 else None, extra=extra)
 
 def piece_zone():
-    zone_piece('organic/levb_zone', 1.6, 'infested', 5, 4)
-    zone_piece('organic/levb_zone_glow', 1.6, 'glow', 5, 4)
-    zone_piece('organic/levb_zone_hit1', 1.6, 'hit1', 5, 1)
-    zone_piece('organic/levb_scar', 1.6, 'after', 5, 1)
+    only = [a[5:] for a in ARGS if a.startswith('only=')]
+    for nm, st, fr in (('zone', 'infested', 4), ('zone_glow', 'glow', 4), ('zone_hit1', 'hit1', 1), ('scar', 'after', 1)):
+        if not only or nm in only: zone_piece('organic/levb_' + nm, 1.6, st, 5, fr)
 
 def piece_nest():
-    zone_piece('organic/levb_nest', 3.6, 'infested', 9, 1, nest=True, win=NW)
-    zone_piece('organic/levb_nest_burnt', 3.6, 'after', 9, 1, nest=True, win=NW)
+    only = [a[5:] for a in ARGS if a.startswith('only=')]
+    if not only or 'nest' in only: zone_piece('organic/levb_nest', 3.6, 'infested', 9, 1, nest=True, win=NW)
+    if not only or 'nest_burnt' in only: zone_piece('organic/levb_nest_burnt', 3.6, 'after', 9, 1, nest=True, win=NW)
 
 # ---------------------------------------------------------------------------------------------------
 # the brood: a leech larva that squeezes in through the engine vents (~0.55 long; crew ~0.6 wide). Head = +x.

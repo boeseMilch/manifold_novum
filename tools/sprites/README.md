@@ -1,7 +1,7 @@
 # Sprite packing (raw renders → game atlases)
 
-The Blender scripts (`tools/blender/`) write raw renders to `build/renders/` (not in git, ~480 MB of
-PNG). `pack.py` turns them into what the game loads, in `assets/sprites/` (~25 MB):
+The Blender scripts (`tools/blender/`) write raw renders to `build/renders/` (not in git, ~900 MB of
+PNG). `pack.py` turns them into what the game loads, in `assets/sprites/` (~60 MB):
 
     python3 tools/sprites/pack.py                  # every group
     python3 tools/sprites/pack.py organic          # one group; the other groups' pages and entries stay as they are
@@ -13,16 +13,17 @@ Needs python3 with Pillow (WebP), numpy and scipy. A full run takes ~2.5 min on 
 
 ## What it does, per sprite set
 
-1. **Scale** to the group's pixels per unit (`PPU_RULES` at the top of `pack.py`): 96 for the
-   interior, ship, systems, props, crew, chars, fx, dock, items and the hull body tiles; 72 for the hull
-   exterior parts, enemies and organic; item icons (`icon: true`) keep their 128×128 canvas. Lanczos on
+1. **Scale** to the group's pixels per unit (`PPU_RULES` at the top of `pack.py`): 72 for the hull
+   exterior parts, enemies and organic; 96 for everything else (the hull body tiles and every other group:
+   interior, ship, systems, props, crew, chars, fx, dock, base, cargo, power, doorlock, items); item icons
+   (`icon: true`) keep their 128×128 canvas. Lanczos on
    premultiplied alpha. Normal and height maps are stored at half that resolution (full for the groups in
    `MAP_SCALE_GROUPS`: `props`, whose floor clutter is too small for half-size maps), masks at full.
 2. **Trim** every image to its alpha bounding box; the origin moves with it.
 3. **Delta crop**: frames of one entry, and entries that share a canvas, origin and name stem (the name
    without its last `_token`, e.g. `interior/door_v_frame_blast_f0..f3`), are compared with the last 24
    frames stored whole before them, and with the same frame of earlier variants that have as many frames
-   (`crew/run_visor` frame k with `crew/run` frame k). When the pixels that differ (beyond the tolerances in `pack.py`) fit in a box
+   (a variant's frame k with the first one's frame k). When the pixels that differ (beyond the tolerances in `pack.py`) fit in a box
    at most 60% of the frame's own area, the frame is stored as that box only: a *patch* on a *base*.
    Exact duplicates are stored once. Rotating things differ everywhere and stay whole.
 4. **Pack** each group into its own pages (MaxRects, ≤ 4096²; one roughly square page when it fits), with
@@ -49,13 +50,13 @@ The `.n` / `.h` pages have exactly half the beauty page's size and the same layo
     {
       "meta": {
         "version": 1, "elevation": 50, "heightRange": 4, "rawPpu": 96, "mapScale": 0.5, "pad": 4,
-        "pages": { "crew": [ { "file": "crew/page0", "w": 1036, "h": 1036, "maps": "nhm" } ], ... }
+        "pages": { "crew": [ { "file": "crew/page0", "w": 3340, "h": 3340, "maps": "nhm" } ], ... }
       },
       "sprites": {
-        "crew/idle_visor": {
+        "crew/idle": {
           "group": "crew", "ppu": 96,
-          "w": 102, "h": 160, "ox": 51.0, "oy": 119.18,     // canvas size and ground origin at `ppu`
-          "dirs": 8, "frames": 1, "maps": "nhm",
+          "w": 106, "h": 162, "ox": 53.0, "oy": 120.18,     // canvas size and ground origin at `ppu`
+          "dirs": 16, "frames": 1, "maps": "nhm",
           "f": [ [page, x, y, w, h, ox, oy],                 // a frame stored whole
                  [page, x, y, w, h, ox, oy, base, over],     // a patch on bases[base]
                  null, ... ],                                // empty image (nothing to draw)
@@ -95,14 +96,15 @@ The patch *replaces* the base inside its rect (doors that open remove pixels). W
 simply drawing the patch on top of the full base gives the same picture, so the cut-out can be skipped.
 Canvas 2D: clip with an even-odd path (base rect + patch rect), draw the base, restore, draw the patch.
 WebGL: one quad over the base rect; the shader samples the patch where the pixel is inside the patch
-rect, the base elsewhere (see `prototype2/gl.js`).
+rect, the base elsewhere (`js/gfx.js`: `iPatch` in its sprite shader).
 The rebuilt frame matches the render within the tolerances (max 6/255 per channel before WebP).
 
 ## Changing things
 
 Settings are the table at the top of `pack.py` (pixels per unit, padding, tolerances, WebP settings).
-The format is read by `prototype2/` (and later the game): change both together and bump
-`meta.version` if a field changes meaning.
+The format is read by the game (`js/gfx.js`), by `gallery.html` and `verify.py` here, and by the old
+`prototype2/` (the renderer's first version): change the readers together and bump `meta.version` if a
+field changes meaning. Groups in `SKIP_GROUPS` (`test`) are never packed.
 
 ## In the game (`js/gfx.js`, `js/sprites.js`, `js/lights.js`)
 
@@ -120,7 +122,7 @@ and the game draws its old top-down look.
     GFX.layer2d('back' | 'mid' | 'glow')   // 2D canvases composited into the GL picture (old drawings; glow: unlit markers)
     GFX.has(name), GFX.ready(name), GFX.info(name), GFX.toScreen(x, y, z), GFX.lift(z), GFX.pickAt(x, y)
 
-- Pages load lazily per group (hull, interior, ship and crew are preloaded); `GFX.sprite` returns false
+- Pages load lazily per group (hull, interior, ship, crew and doorlock are preloaded); `GFX.sprite` returns false
   until a sprite's pages are there, so callers draw their old 2D version meanwhile.
 - Layers, in drawing order: 2D `back` (space, things behind the ship, unlit) → `under` (lit, no depth: enemies,
   asteroids, the leviathan — below the hull) → `ground` / `decal`

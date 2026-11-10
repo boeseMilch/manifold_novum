@@ -11,11 +11,11 @@
 //   mask:   use the tint mask.    anchor: find the glowing part (light position) in the sprite.
 // ===================================================================================================
 const ASSETS = {
-  crewIdle:      { names: ['crew/idle', 'crew/crew_idle', 'crew/crew', /^crew\/.*idle(?!.*visor)/], mask: true, standIn: 'test/crate', standInScale: 0.55 },
+  crewIdle:      { names: ['crew/idle', 'crew/crew_idle', 'crew/crew', /^crew\/.*idle(?!.*visor)/], mask: true, standIn: 'props/crate_misc', standInScale: 0.55 },
   crewWalk:      { names: ['crew/walk', 'crew/crew_walk', /^crew\/.*walk(?!.*visor)/], mask: true },           // missing: idle is used
   crewIdleVisor: { names: ['crew/idle_visor', 'crew/crew_idle_visor', /^crew\/.*idle.*visor/], mask: true },  // missing: no visor variant
   crewWalkVisor: { names: ['crew/walk_visor', 'crew/crew_walk_visor', /^crew\/.*walk.*visor/], mask: true },
-  reactor:       { names: ['ship/reactor', /^ship\/reactor(?!_off)/], anchor: true, standIn: 'test/crate' },
+  reactor:       { names: ['ship/reactor', /^ship\/reactor(?!_off)/], anchor: true, standIn: 'props/crate_misc' },
   reactorOff:    { names: ['ship/reactor_off'] },                                                   // missing: reactor frame 0, dimmed
   floor:         { names: ['ship/floor', /^ship\/floor/], tile: 'auto' },              // missing: procedural plate
   // Walls (see tools/blender/models/ship/walls.py): full-height back wall along the room's north edge,
@@ -29,13 +29,13 @@ const ASSETS = {
   wallVLowEnd:   { names: ['ship/wall_v_low_end'] },
   // Interceptor (tools/blender/models/enemy/interceptor.py): '_port' = the enemy flies on our left and
   // faces right, '_star' = on our right. The scene puts it on whichever side the found hull is for.
-  hull:          { names: ['enemy/interceptor_port', 'enemy/interceptor_star', 'enemy/interceptor', /^enemy\/interceptor(_[a-z]+)?$/], anchor: true, standIn: 'test/crate', standInScale: 1.3 },
+  hull:          { names: ['enemy/interceptor_port', 'enemy/interceptor_star', 'enemy/interceptor', /^enemy\/interceptor(_[a-z]+)?$/], anchor: true, standIn: 'props/crate_misc', standInScale: 1.3 },
   turret:        { names: ['enemy/interceptor_turret', /^enemy\/interceptor.*turret/], offset: [1.0, -0.45] },   // pivot, port side (x mirrored on star)
   // Weak spots: every match is one, drawn at the hull's origin (their own ox/oy place them). A laser hit
   // swaps one for its damaged twin: the same name with `hit[0]` replaced by `hit[1]`.
   weakSpots:     { all: /^enemy\/interceptor.*(_ok|weak(?!.*_hit).*)$/, anchor: true, hit: ['_ok', '_hit'] },   // only those named <hull>_... are used
   weakSpotsHit:  { all: /^enemy\/interceptor.*_hit$/ },
-  crate:         { names: ['test/crate'] },
+  crate:         { names: ['props/crate_misc'] },
 };
 // Scene layout (layout units; game y grows downwards).
 const ROOM = { x0: 0, y0: 0, x1: 10, y1: 8 };

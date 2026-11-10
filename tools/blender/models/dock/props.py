@@ -43,7 +43,7 @@ def base_mats(der=False):
 
 def finish(objs, catcher=(3.0, 3.2)):
     import shiplib; shiplib._hidden_in_data.clear()               # (stale after mn.reset)
-    shadow_catcher(catcher)
+    ground_holdout(catcher)                                       # (no baked ground shadow: see docklib)
     mn.outline([o for o in objs if not o.name.startswith(('rivet', 'txt', 'tick', 'slot', 'stencil'))], thickness=0.013)
 
 # ---------------------------------------------------------------------------------------------------

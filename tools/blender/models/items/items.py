@@ -4,6 +4,11 @@ items in js/dock.js, js/eva.js, js/hazards.js, js/mission.js), and the thrown wr
 Sprites (build/renders/items/), ground origin = the item's (x, y) in the game:
   items/<kind>          kind = repair | laser | heavy | extinguisher | drill | fuel | plate | coolant |
                         blackbox | ore  (the ITEM_NAMES keys)
+  items/navcore_d<i>    the Red Comet nav core (chapter 4, js/dock.js): lying on its side, 16 angles (dir i = turned
+                        to game angle i * 22.5 deg). Frame 0 is the core lying on a floor (drawItems); adrift in
+                        space drawNavcoreFloating cycles all 16 (a slow tumble).
+  items/navcore_up      the same core standing on its plug (as it sits in a nav console / our helm's slot);
+                        ground origin = the centre of its plug
   items/wrench_d<i>     the thrown wrench (boarding.bolts with b.wrench), 16 spin angles: dir i is the
                         wrench turned to game angle i * 22.5 deg (use round(b.spin / (2pi/16)) mod 16).
                         Also fits the wrench wedged into the power lever (decor.js wrench(x, y, a)).
@@ -14,7 +19,7 @@ Sprites (build/renders/items/), ground origin = the item's (x, y) in the game:
                         `muzzle` [x fwd, y left, z] from that point: where shots / the spray come out.
 
     blender -b --factory-startup --python tools/blender/models/items/items.py [-- quick] [-- name ...]
-    (name: a kind, wrench, held (all held_*) or held_<kind>)
+    (name: a kind, wrench, navcore, held (all held_*) or held_<kind>)
 """
 import sys, os, math, time, json
 sys.path.insert(0, os.path.dirname(__file__))
@@ -55,6 +60,18 @@ if not ONLY or 'wrench' in ONLY:
     root = IL.root_all()
     mn.outline(parts, thickness=0.012)
     mn.render('items/wrench', objs=parts, root=root, dirs=16)
+if not ONLY or 'navcore' in ONLY:
+    mn.reset(); IL.make_mats()                           # lying on a flat of its hex, emblem up-front, a little askew
+    parts = IL.B_navcore()
+    inner = IL.root_all('inner')
+    IL.lay(inner, parts, [('Y', 90), ('X', -30), ('Z', 14)], 1.0)
+    pivot = mn.link(bpy.data.objects.new('pivot', None)); inner.parent = pivot
+    mn.outline(parts, thickness=0.012)
+    mn.render('items/navcore', objs=parts, root=pivot, dirs=16)
+    mn.reset(); IL.make_mats()
+    parts = IL.B_navcore()
+    mn.outline(parts, thickness=0.012)
+    mn.render('items/navcore_up', objs=parts)
 # Held in the right hand: upright (guns level, barrel forward = +x), turned with the facing. hold = the
 # point in the glove (model units, before scale); muzzle = where the shot / spray leaves (model units).
 HELD = {   # kind -> (builder, rotations, scale, hold, muzzle)

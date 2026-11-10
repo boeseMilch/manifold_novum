@@ -656,7 +656,7 @@ def build_heart(state):
                     sp.default_value = (0.7 if state == 'open' else 1.0) + 0.5 * p; sp.keyframe_insert('default_value', frame=f)
     allo = static + [o for s in sets for o in s]
     mn.outline([o for o in allo if o.name.split('.')[0] in ('heart', 'heart_art', 'grip', 'bb', 'bb_rib', 'bb_corner')], thickness=0.014)
-    shadow_catcher((4.0, 4.0), loc=(0, 0.6, 0))
+    ground_holdout((4.0, 4.0), loc=(0, 0.6, 0))      # (no baked ground shadow: see docklib)
     render('s7_heart' + {'live': '', 'open': '_open', 'husk': '_husk'}[state], allo, frames=frames if n > 1 else None)
     print(f'[s7] heart {state} in {time.time() - t0:.0f} s')
 
@@ -843,7 +843,7 @@ def build_freezer(running):
         for k in range(6):
             out.append(cbox('shard', rng.uniform(-0.8, 0.4), rng.uniform(vf + 0.15, vf + 0.9), rng.uniform(0.05, 0.12), 0.04, 0.0, 0.01, M['glass'], bevel=0.003, rotz=rng.uniform(0, 3)))
     mn.outline([o for o in out if o.name.split('.')[0] in ('frz', 'frz_top', 'frz_door', 'mug')], thickness=0.013)
-    shadow_catcher((3.0, 3.0))
+    ground_holdout((3.0, 3.0))      # (no baked ground shadow: see docklib)
     if running:                                     # the vapour isn't geometry: hide it in the data passes
         shiplib._hidden_in_data.append(mist)
     render('s7_freezer_' + ('on' if running else 'off'), out)
@@ -875,7 +875,7 @@ def build_junction(patched):
     else:                                                    # a cut feed hanging out, frost
         out.append(pipe_uv('j1_cut', [(-0.17, 0.2, 0.58), (-0.2, 0.3, 0.45), (-0.15, 0.34, 0.3)], 0.02, M['cables'][0]))
     mn.outline([o for o in out if o.name.split('.')[0] in ('j1', 'j1_door', 'tplug', 'tether', 'j1_conduit')], thickness=0.012)
-    shadow_catcher((2.0, 2.0))
+    ground_holdout((2.0, 2.0))      # (no baked ground shadow: see docklib)
     hb = ubox('frame', -1.0, 0.0, 0.4, 0.85, 0.0, 1.6, bevel=0); hb.hide_render = True    # dead/patched share a canvas
     render('s7_junction_' + ('patched' if patched else 'dead'), [hb] + out)
     print(f'[s7] junction in {time.time() - t0:.0f} s')
@@ -946,7 +946,7 @@ def build_cocoon():
         out.append(mn.sphere('nod', 0.04, loc=P(rng.uniform(-0.35, 0.35), 0.06, rng.uniform(0.3, 1.5)), m=M['nod'], segs=10))
     stain(0.0, 0.35, 0.45, M['ooze'], out, sv=0.6)
     mn.outline([o for o in out if o.name.split('.')[0] in ('coc_body', 'coc_helm', 'coc_wrap', 'coc_arm', 'coc_sac', 'coc_pauldron', 'web')], thickness=0.013)
-    shadow_catcher((2.4, 2.0), loc=(0, -0.6, 0))
+    ground_holdout((2.4, 2.0), loc=(0, -0.6, 0))      # (no baked ground shadow: see docklib)
     render('s7_cocoon_pirate', out)
     print(f'[s7] cocoon in {time.time() - t0:.0f} s')
 

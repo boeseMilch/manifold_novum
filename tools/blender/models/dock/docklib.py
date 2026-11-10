@@ -426,6 +426,12 @@ def tape(u, v, z, l, m, out, rotz=0.0):
 # ---------------------------------------------------------------------------------------------------
 # Rendering
 # ---------------------------------------------------------------------------------------------------
+def ground_holdout(size, loc=(0, 0, 0)):
+    """The ground plane under a prop as a holdout: it hides whatever reaches below the floor, and takes no shadow.
+    (It used to be a shadow catcher: the baked ground shadow was cut off at the canvas edge and doubled the
+    runtime's screen-space shadow. props/* never had one.)"""
+    o = shadow_catcher(size, loc); o.is_shadow_catcher = False; o.is_holdout = True; return o
+
 def args():
     a = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
     return a

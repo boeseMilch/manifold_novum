@@ -37,6 +37,7 @@ ICONS = {   # name -> (builder, rotations about world axes in order)
     'icon_coolant':      (IL.B_coolant, [('Z', -20), ('X', -8)]),
     'icon_blackbox':     (IL.B_blackbox, [('Z', -25)]),
     'icon_ore':          (IL.B_ore, [('Z', 20), ('X', 10)]),
+    'icon_navcore':      (IL.B_navcore, [('Z', -18), ('Y', 28), ('X', -10)]),
     'icon_gear_boots':      (IL.B_boots, [('Z', -12), ('X', -8)]),
     'icon_gear_thrusters':  (IL.B_thrusters, [('Z', -30), ('X', -8)]),
     'icon_gear_firstAid':   (IL.B_firstaid, [('Z', -10), ('X', 25)]),

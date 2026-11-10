@@ -35,7 +35,7 @@ PPU_RULES = [
     (r'^hull/body', 96),               # hull body tiles
     (r'^hull/', 72),                   # hull exterior parts: guns, cover, hatches, antenna, coils, engine bell, breaches, patches, decals
     (r'^(enemy|organic)/', 72),
-    (r'', 96),                         # interior, ship, systems, props, crew, chars, fx, dock, items (world), test
+    (r'', 96),                         # interior, ship, systems, props, crew, chars, fx, dock, items (world)
 ]
 MAP_SCALE = 0.5            # normal and height maps: this fraction of the beauty resolution (mask: same as beauty)
 # Groups whose normal/height maps are stored at full resolution instead (written per page as
@@ -44,6 +44,7 @@ MAP_SCALE = 0.5            # normal and height maps: this fraction of the beauty
 # were 1-2 map px, i.e. no readable shading at all.
 MAP_SCALE_GROUPS = {'props': 1.0}
 def map_scale(group): return MAP_SCALE_GROUPS.get(group, MAP_SCALE)
+SKIP_GROUPS = {'test'}     # render groups that are never packed (pipeline test renders left in build/renders/)
 PAGE_MAX = 4096            # atlas page size limit
 PAD = 4                    # beauty px of edge extrusion around every rect (PAD/2 in the half-size maps)
 ALPHA_MIN = 2              # trimming: pixels with alpha below this (0..255) count as empty
@@ -388,7 +389,7 @@ def main():
     args = ap.parse_args()
     manifest = json.load(open(os.path.join(RAW, 'manifest.json')))
     meta = manifest.get('_meta', {})
-    all_groups = sorted({group_of(k) for k in manifest if k != '_meta'})
+    all_groups = sorted({group_of(k) for k in manifest if k != '_meta'} - SKIP_GROUPS)
     groups = args.groups or all_groups
     for g in groups:
         if g not in all_groups: raise SystemExit(f'unknown group {g!r} (have: {", ".join(all_groups)})')

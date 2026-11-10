@@ -176,7 +176,8 @@ def render(name, frames=None, catcher=None, ol=0.013, passes=('beauty', 'normal'
         for i, m in enumerate(o.data.materials):
             if m is None and ms: o.data.materials[i] = ms[0]
     mn.outline([o for o in meshes if not o.get('nool')], thickness=ol)
-    if catcher: shiplib.shadow_catcher(catcher)
+    if catcher:      # the ground plane as a holdout, not a shadow catcher: no baked ground shadow (the runtime's screen-space
+        o = shiplib.shadow_catcher(catcher); o.is_shadow_catcher = False; o.is_holdout = True   # shadows draw it, like for props/*; the baked one was cut off at the canvas edge)
     r = mn.render('base/' + name, objs=meshes, frames=frames, passes=passes)
     return r
 

@@ -61,7 +61,7 @@ def build(side):
     for sv in (-1, 1):                                              # clamp bolts on our side
         out.append(ucyl('clamp_bolt', 0.05, 0.1, -0.13, sv * (W + 0.11), 0.3 if sv > 0 else 1.05, M['dark'], verts=8, bevel=0.01))
     import shiplib; shiplib._hidden_in_data.clear()
-    shadow_catcher((8.0, 3.0), loc=P(-2.8, 0, 0))
+    ground_holdout((8.0, 3.0), loc=P(-2.8, 0, 0))                 # (no baked ground shadow: see docklib)
     mn.outline([o for o in out if not o.name.startswith(('grate_slat', 'rlamp', 'tape'))], thickness=0.012)
     mn.render(f'dock/tube_{side}', objs=out)
 

@@ -358,10 +358,10 @@ def sticky(out, M, u, v, z, s, col, lines, rotz=0.0, face=False, txt=0.035):
 def finish(out, name, catcher=None, outline=0.012, dirs=1, root=None):
     shiplib._hidden_in_data.clear()
     objs = [o for o in out if o is not None]
-    if catcher:
+    if catcher:                                                   # (a holdout: no baked ground shadow, see docklib)
         cu, cv, cw, cd = catcher
-        o = shadow_catcher((cw, cd), loc=tuple(P(cu, cv, 0))[:2]); objs.append(o)
-    mn.outline([o for o in objs if o.type == 'MESH' and not o.get('nool') and not o.is_shadow_catcher], thickness=outline)
+        o = ground_holdout((cw, cd), loc=tuple(P(cu, cv, 0))[:2]); objs.append(o)
+    mn.outline([o for o in objs if o.type == 'MESH' and not o.get('nool') and not o.is_shadow_catcher and not o.is_holdout], thickness=outline)
     return mn.render('dock/lab_' + name, objs=[o for o in objs if o.type == 'MESH'], root=root, dirs=dirs)
 
 JOBS = []
