@@ -8,7 +8,7 @@
 //   and one jump coil is knocked out of alignment).
 // Everything in `enc` is plain data.
 
-const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false };
+const enc = { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false, tugT: null };
 const FLARE_WARN = 10, FLARE_TIME = 8, STORM_TIME = 30, STORM_ARC = 10, COOLANT_RISE = 50, SCRAM_TIME = 30, COOLANT_FIX = 3, GLITCH_STEP = 3;
 const COOLANT_CRATE = { x: 11.4, y: 22.6 };
 const UPPER = new Set(['portGun', 'bridge', 'starGun']);
@@ -19,7 +19,7 @@ const UPPER = new Set(['portGun', 'bridge', 'starGun']);
 // mission"; it used to come back every ~that many s). A mission has at most one tide: the rule's or a written event.
 const TIDE_WARN = 5, TIDE_TIME = 1.6, TIDE_SLIDE = 1.2, TIDE_SLIDE_SPEED = 1.5, TIDE_PUSH = 4.5, TIDE_EVERY = 60;
 
-function resetEncounters() { Object.assign(enc, { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false }); }
+function resetEncounters() { Object.assign(enc, { flare: null, storm: null, coolant: null, scram: 0, glitch: null, tide: null, tideNext: null, tideDone: false, tugT: null }); }
 
 // ---------------------------------------------------------------------------
 // Starting them
@@ -40,7 +40,7 @@ function startCoolantLeak() {
 }
 function startGlitch() {
   const order = [0, 1, 2].sort(() => Math.random() - 0.5);
-  enc.glitch = { t: 0, order, step: 0, locked: [] };
+  enc.glitch = { t: 0, order, step: 0, locked: enc.glitch?.locked || [] };   // (a second glitch before the reboot: that reboot still frees the first one's doors)
   combatBanner('Ship AI glitch — doors are locking on their own! Reboot it at the security console.'); sfx.say?.('I am. Fine. Everything. Is fine.');
 }
 // dir: -1 the tide pulls to the left (port), +1 to the right.
@@ -200,6 +200,8 @@ ENEMY_TYPES.tractor = {
   pois: [...ENEMY_TYPES.interceptor.pois, { id: 'emitter', name: 'Tractor emitter', effect: 'beam off, jump clock runs again', shape: { circle: TRACTOR_EMITTER } }],
   update(e, dt) {
     if (poiHit(e, 'emitter') || !mission.active || mission.jump || mission.over) return;
+    if (enc.tugT === mission.t) return;                // (a second tug in the same tick: the clock is held already, it mustn't run backwards)
+    enc.tugT = mission.t;
     mission.jumpAt += dt;                              // held in the beam: the jump countdown doesn't move
   },
   draw(e, t) {

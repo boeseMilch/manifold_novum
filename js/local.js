@@ -23,12 +23,19 @@ const localUI = (() => {
   let order = [1];                                   // slots by screen position (top left, top right, bottom left, bottom right)
   let game = null, host = false, inGame = false, rect = null;
   const pads = () => [...(navigator.getGamepads ? navigator.getGamepads() : [])];
+  const NAME_LEN = 20;                               // a name's length: the server's limit (js/progress.js NAME_MAX; it was 24 here)
   const myName = () => ($('lobby-name')?.value || 'You').trim();
+  const same = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();   // (names: whatever their case)
+  const isDevice = (v) => /^(kbm|pad[0-3])$/.test(v);
   const read = (st, k) => { try { return JSON.parse(st.getItem(k)); } catch (e) { return null; } };
+  // What was stored is only ever the defaults, so whatever in it isn't what save() writes is dropped: an entry
+  // broken by hand or by an older version must not stop this script (the lobby needs localUI)
+  const entries = (a) => (Array.isArray(a) ? a : []).filter(q => q && typeof q.name === 'string' && q.name.trim())
+    .map(q => ({ ...q, name: q.name.trim().slice(0, NAME_LEN), input: isDevice(q.input) ? q.input : null, paint: typeof q.paint === 'string' ? q.paint : null }));
   const mem = read(localStorage, 'mn-local') || {};  // (names and devices from last time: just the defaults)
-  if (mem.mine) mine = mem.mine;
-  let roster = read(localStorage, 'mn-local-roster') || (mem.players || []).map(({ name, input, paint }) => ({ name, input, paint }));
-  if (!Array.isArray(roster)) roster = [];
+  if (isDevice(mem.mine)) mine = mem.mine;
+  const kept = read(localStorage, 'mn-local-roster');
+  let roster = entries(Array.isArray(kept) ? kept : mem.players).map(({ name, input, paint }) => ({ name, input, paint }));
   function save() {
     const list = players.map(p => ({ slot: p.slot, name: p.name, input: p.input, paint: p.paint || null }));
     try { localStorage.setItem('mn-local', JSON.stringify({ mine, players: list })); } catch (e) { /* no storage */ }
@@ -79,9 +86,10 @@ const localUI = (() => {
   function change(p, what, v) {                      // a new name or device: the view comes back with it (a new seat)
     v = String(v).trim();
     if (what === 'name') {
-      if (!v || [myName(), ...players.filter(q => q !== p).map(q => q.name)].some(n => n.toLowerCase() === v.toLowerCase())) return render(`Pick another name for ${p.name}: everyone needs their own (progress is kept by name).`);
+      v = v.slice(0, NAME_LEN).trim();
+      if (!v || [myName(), ...players.filter(q => q !== p).map(q => q.name)].some(n => same(n, v))) return render(`Pick another name for ${p.name}: everyone needs their own (progress is kept by name).`);
       if (v === p.name) return;
-      p.name = v.slice(0, 24);
+      p.name = v;
     } else return setDevice(p, v);
     drop(p); p.frame = frameFor(p); p.locker = false;
     save(); render('');
@@ -98,6 +106,22 @@ const localUI = (() => {
     save(); render('');
   }
   const setMine = (v) => setDevice('me', v);
+  // The other way round: this page's own name (the main menu's box) can't become a local player's either. Their
+  // views keep their progress by name, and the one with this browser's own name plays on the usual save
+  // (js/progress.js SPLIT_KEY). Refused here, before js/net.js's own handler saves the name and tells the server.
+  const nameBox = $('lobby-name');
+  let nameWas = null;
+  nameBox?.addEventListener('focus', () => { nameWas = nameBox.value; });
+  nameBox?.addEventListener('change', (e) => {
+    const taken = players.find(p => same(p.name, nameBox.value));
+    if (!taken) return;
+    e.stopImmediatePropagation();
+    let back = nameWas; if (back == null) { try { back = localStorage.getItem('mn-name'); } catch (err) { /* no storage */ } }
+    nameBox.value = back && !same(back, taken.name) ? back : 'Player 1';
+    const msg = `${taken.name} is a local player here: everyone needs their own name (progress is kept by name).`;
+    if ($('menu-msg')) $('menu-msg').textContent = msg;
+    render(msg);
+  });
 
   // ----- the screen: halves for two, quarters for three or four (by `order`)
   // the shared column (mission box, objective, encounter and task plates) gets a strip of its own on the far left,
@@ -134,8 +158,9 @@ const localUI = (() => {
   function borders() {
     document.querySelectorAll('.local-border').forEach(b => b.remove());
     for (const slot of order) {
-      const name = slot === 1 ? myName() : players.find(p => p.slot === slot)?.name || '';
-      const col = (typeof crew !== 'undefined' && crew.find(c => c.name === name)?.color) || colorOf(slot === 1 ? 'me' : players.find(p => p.slot === slot) || { slot });
+      const who = slot === 1 ? 'me' : players.find(p => p.slot === slot) || { slot }, name = slot === 1 ? myName() : who.name || '';
+      // (their crew member by id: two players may have the same name, a guest named like a local player)
+      const id = idOf(who), col = (id != null && typeof crew !== 'undefined' && crew.find(c => c.id === id)?.color) || colorOf(who);
       const r = rectOf(slot), b = document.createElement('div');
       b.className = 'local-border';
       Object.assign(b.style, { left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px', borderColor: col, transitionDuration: FADE_TIME + 's' });
@@ -177,7 +202,7 @@ const localUI = (() => {
     $('local-add').disabled = n >= MAX;
     const rows = $('local-rows');
     rows.innerHTML = `<div class="local-row"><button class="paint local-paint" data-paint-me data-paint="${colorOf('me')}" style="background:${colorOf('me')}" title="Suit colour (the main menu's): click for the next one"></button><span class="local-me">${escapeHtml(myName())} <small>(you)</small></span><select data-me></select></div>`
-      + players.map(p => `<div class="local-row" data-slot="${p.slot}"><button class="paint local-paint" data-paint="${colorOf(p)}" style="background:${colorOf(p)}" title="${escapeHtml(p.name)}'s suit colour: click for the next one"></button><input value="${escapeHtml(p.name)}" maxlength="24" aria-label="Name">`
+      + players.map(p => `<div class="local-row" data-slot="${p.slot}"><button class="paint local-paint" data-paint="${colorOf(p)}" style="background:${colorOf(p)}" title="${escapeHtml(p.name)}'s suit colour: click for the next one"></button><input value="${escapeHtml(p.name)}" maxlength="${NAME_LEN}" aria-label="Name">`
       + `<select></select><button class="local-locker" title="${escapeHtml(p.name)}'s locker: opens in their part of the screen">LOCKER</button><button class="local-x" title="Remove">✕</button></div>`).join('')
       + (lastMsg ? `<p class="local-msg">${escapeHtml(lastMsg)}</p>` : '');
     devOptions(rows.querySelector('[data-me]'), mine, 'me');
@@ -224,9 +249,11 @@ const localUI = (() => {
   // Suit colours: this page's player has the main menu's (profile.paint; changing it here changes it there), each local
   // player their own (in their profile, by name: js/split.js splitApi.setPaint). A click: the next colour.
   // (none picked: the colour the server gives them, from the lobby's player list)
+  // (looked up by the player's id in the game, js/net.js netId: by name, two players with one name got one colour)
   let lobbyCol = {};
-  const colorOf = (who) => (who === 'me' ? (typeof profile !== 'undefined' && profile.paint) || lobbyCol[myName()] || COLORS[0]
-    : who.paint || lobbyCol[who.name] || COLORS[who.slot - 1]);
+  const idOf = (who) => { try { return (who === 'me' ? window.netId : who.frame?.contentWindow?.netId) ?? null; } catch (e) { return null; } };
+  const colorOf = (who) => (who === 'me' ? (typeof profile !== 'undefined' && profile.paint) || lobbyCol[idOf('me')] || COLORS[0]
+    : who.paint || lobbyCol[idOf(who)] || COLORS[who.slot - 1]);
   function nextPaint(who) {
     const P = typeof PAINTS !== 'undefined' ? PAINTS : COLORS, next = P[(P.indexOf(colorOf(who)) + 1) % P.length];
     if (who === 'me') { profile.paint = next; saveProfile(profile); lobbyUI.render(); lobbyUI.onProfile?.(); }
@@ -306,7 +333,7 @@ const localUI = (() => {
   return {
     // js/net.js: the room (re)drawn, this page's game joined, the mission started, the game left
     room(st) {
-      const col = Object.fromEntries((st.players || []).map(q => [q.name, q.color])), colChanged = JSON.stringify(col) !== JSON.stringify(lobbyCol);
+      const col = Object.fromEntries((st.players || []).map(q => [q.id, q.color])), colChanged = JSON.stringify(col) !== JSON.stringify(lobbyCol);
       lobbyCol = col;
       if (!!st.host === host && render.done) {          // (not rebuilt on every lobby update: an open dropdown would close)
         if (colChanged) document.querySelectorAll('#local-rows .local-paint, #local-map .local-chip').forEach(b => {
@@ -321,8 +348,9 @@ const localUI = (() => {
       game = id; window.splitGame = id;
       const run = read(sessionStorage, 'mn-local-run');
       if (run && run.game === id && !players.length) {   // back from a mission: the same local players again
-        mine = run.mine || mine; order = (run.order || [1]).slice();
-        players = (run.players || []).map(q => ({ ...q })); players.forEach(p => { p.frame = frameFor(p); });
+        mine = isDevice(run.mine) ? run.mine : mine; order = (Array.isArray(run.order) ? run.order : [1]).slice();
+        players = entries(run.players).filter((q, i, a) => [2, 3, 4].includes(q.slot) && q.input && a.findIndex(o => o.slot === q.slot) === i);
+        players.forEach(p => { p.frame = frameFor(p); });
         order = order.filter(s => s === 1 || s === undefined || players.some(p => p.slot === s));
         if (!order.includes(1)) order.unshift(1);
         players.forEach(p => { if (!order.includes(p.slot)) order.push(p.slot); });

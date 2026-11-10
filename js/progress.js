@@ -203,7 +203,7 @@ Object.assign(MISSIONS, {
     needs: {ship: ['cannons', 'inserter', 'caps'], overcharge: true},
     always: ['maintenance', 'intruder'],      // two parts fail at every crew size, solo too (2026-10-16: more self-breaking parts from chapter 4 on); the alien
                                               // boards at every crew size (2026-10-17, "too chill"; written before the first herd, so a small crew's herd stays the finale)
-    objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 70 },
+    objective: { kind: 'handjump' }, rules: { breach: true, surge: true, gravity: true, plasma: true, coils: true, handle: true, tides: 70 },   // (the jump by hand: what the mission asked for anyway, js/mission.js objectiveStatus)
     blurb: 'Fly into the deep beyond the Mire, where the tides pull and the creatures hunt together. Get out alive.',
     briefing: 'The sample proves it: the spores are being herded. Something big lives in the deep beyond the Mire.\n\nFly in and survive. No pirates out there, nobody at all — only what lives there. On the way a gravity tide rolls through: the ship lurches, loose things slide, anyone outside gets thrown off the hull, and it knocks a jump coil out of line. Spacewalk out to turn the coils back (green), or the jump takes longer. There is no nav fix out there either: when the drive spools up, someone holds the jump handle at the helm.\n\nAnd the creatures don\'t come one by one any more. They come in pairs, from one side, as if something were steering them. Listen for the call.',
     // 2026-10-16 (the user: "far too easy", "not enough new things"): no interceptors (no pirates beyond the Mire); the tides
@@ -242,7 +242,7 @@ Object.assign(MISSIONS, {
     length: 440, finaleLead: 230,
     // (2026-10-24: no `coils` / `handle` rules any more: the ship jumps by itself once the leviathan is free, so neither the
     //  jump handle at the helm nor the jump coils' alignment would do anything)
-    objective: null, rules: { breach: true, surge: true, gravity: true, plasma: true, tides: 80 },
+    objective: { kind: 'leviathan' }, rules: { breach: true, surge: true, gravity: true, plasma: true, tides: 80 },   // (freeing it is how the mission ends anyway: js/mission.js objectiveStatus)
     blurb: 'Meet the spore mother, the grappler and the leviathan itself. Find out what drives the swarms mad.',
     briefing: 'Varga\'s theory: the swarms answer to one creature, out in the deepest dark. To prove it, someone has to fly to it, sit right next to it, and survive.\n\nThat someone is you. First the spores, then their mother: a huge thing whose silent scream fills space round the hull with spores (shoot the tongue in its open mouth; don\'t open an airlock while the cloud is out there, and vent the spores out once it\'s gone). Then the grappler, a squid that grabs the hull and rips plates off, while the ship itself starts to give way. A tide pulls at the ship like in the deep, and the creatures hunt in herds. At the end the great creature itself comes: the leviathan, bigger than the ship. If Varga is right, it\'s not hunting us: it\'s sick. Blast what\'s eating it off its hide, cannon by cannon, keep inside when it breathes out, and when it\'s out of the cannons\' reach, the engine is the biggest gun we have: its manual override is in the reactor room.\n\nGood luck — and bring the cat.',
     // 2026-10-16 (the user: "boring", never saw the spore mother): a fixed, escalating timeline instead of the shuffle,
@@ -264,7 +264,7 @@ Object.assign(MISSIONS, {
   },
 });
 // The skirmish builder (2026-10-19, the user: replaces every preset skirmish, Intro run too; the presets were deleted
-// 2026-10-25, old saves may still list them in done.*): the lobby's Skirmish tab picks how many difficulty points
+// 2026-10-25, old saves may still list them in done.*): the lobby's Skirmish tab picks how many encounter points
 // (2026-10-28, the user: "a skirmish difficulty slider based on points instead of number of encounters"; it was a count n),
 // which kinds may come (all listed from the start: no spoiler filtering; no boss / story kinds) and which ship parts
 // may fail. A fifth to a third of the points go to failing parts (maintenance on a ticked part), the rest to kinds drawn
@@ -390,25 +390,31 @@ function missionResults(jumped) {
   return {
     jumped, objective: !!obj.done && !!mission.objective, pirates: dk.defeated, kills: mission.kills || 0,
     damage: SYSTEMS.filter(s => s.broken).length, maxDamage: MAX_DAMAGE,   // (the ship's state at the jump: the clean-ship bonus)
-    crew: crew.map(c => ({ id: c.id, survived: jumped && (c.mode === 'gun' || c.mode === 'inside' && !inDock(c.x, c.y)) && standing(c) })),
+    crew: crew.map(c => ({ id: c.id })),                                   // who flew it: only they are paid (creditMission)
   };
 }
 // A mission counts as a success (finished, unlocks the next chapter, earns reputation) only if the ship
 // jumped out with the objective done; missions without an objective just need the jump.
 const missionSuccess = (id, results) => !!results?.jumped && (!!results.objective || !MISSIONS[id]?.objective);
 // Rewards for one player from a mission's results. Jumped out = the crew gets paid (base + per pirate),
-// objective or not; reputation only for a success. (No XP since 2026-10-17: `survived` is unused.)
+// objective or not; reputation only for a success (one more the first time: firstClear).
 // Plus up to CLEAN_BONUS for bringing the ship back in one piece: all of it with nothing broken at the jump,
 // nothing at MAX_DAMAGE broken parts (5/5), in between in proportion (2026-10-17 playtest).
 const CLEAN_BONUS = 25;
 const cleanBonus = (results) => (results.maxDamage ? Math.max(0, Math.round(CLEAN_BONUS * (1 - (results.damage || 0) / results.maxDamage))) : 0);
-function computeRewards(id, results, survived, firstClear) {
+function computeRewards(id, results, firstClear) {
   const M = MISSIONS[id] || {}, R = M.rewards || { money: 16, rep: 0 };   // (money: 2026-10-16 ×0.4 everywhere but chapter 1, so you have to choose)
   if (!results.jumped) return { money: 0, rep: 0, clean: 0 };
   const clean = cleanBonus(results), money = (R.money || 0) + (R.perPirate || 0) * (results.pirates || 0) + clean;
   const rep = missionSuccess(id, results) ? (R.rep || 0) + (firstClear ? 1 : 0) : 0;
   return { money, rep, clean };
 }
+// The lobby's pay line for player p: what computeRewards will pay, the first-clear star included while it's still to earn
+const payText = (id, p) => {
+  const M = MISSIONS[id] || {}, R = M.rewards;
+  if (!R) return '';
+  return `$${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${p?.done?.[id] ? '' : ' + ★1 the first time'}${M.objective ? ' (only with the objective)' : ''}`;
+};
 
 // The inserter: an arm from the fuel crate to the reactor's slot (and a handle to scooch the cells).
 function drawInserter(t) {
@@ -464,17 +470,20 @@ function migrateProfile(p) {
 function readCookie(name) {
   try { const m = document.cookie.split('; ').find(s => s.startsWith(name + '=')); return m ? decodeURIComponent(m.slice(name.length + 1)) : null; } catch (e) { return null; }
 }
-// Split screen (split.html: 2-4 players in one browser, a half or a quadrant each; ?split=1..4&name=…&input=kbm|padN): each view's
+// Split screen (js/local.js: 2-4 players in one browser, a half or a quadrant each; ?split=1..4&name=…&input=kbm|padN): each view's
 // player keeps their own progress, by name. The one whose name is this browser's own player ('mn-name') plays on the
 // usual profile (cookie + localStorage, untouched otherwise); anyone else on 'mn-profile@<name>' in localStorage only
 // (no second cookie: the usual one stays as it was, and cookies go along with every request). A new name starts fresh.
+// Names count as the same whatever their case (sameName; js/local.js refuses a second "zoe" next to "Zoe" too).
+const NAME_MAX = 20;                                 // a player's name: the server's limit (server.js) and the name box's (index.html)
+const sameName = (a, b) => String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
 const SPLIT = (() => {
   try {
     if (typeof location === 'undefined' || !location.search) return null;
     const q = new URLSearchParams(location.search), slot = +q.get('split');
     if (!(slot >= 1 && slot <= 4)) return null;   // (2 players: halves; 3-4: quadrants)
     const input = /^(kbm|pad\d)$/.test(q.get('input') || '') ? q.get('input') : 'kbm';
-    return { slot, name: String(q.get('name') || `Player ${slot}`).trim().slice(0, 24) || `Player ${slot}`, input, pad: input === 'kbm' ? null : +input.slice(3) };
+    return { slot, name: String(q.get('name') || `Player ${slot}`).trim().slice(0, NAME_MAX) || `Player ${slot}`, input, pad: input === 'kbm' ? null : +input.slice(3) };
   } catch (e) { return null; }
 })();
 // The shared column (mission box, objective, encounter and task plates) and the banners: shown once, in the first view
@@ -499,17 +508,31 @@ const splitSidebar = () => !SPLIT && !(typeof localSplit === 'function' && local
 const splitOwnKey = () => {                          // null: the usual profile; else this player's own localStorage key
   if (!SPLIT) return null;
   let own = null; try { own = localStorage.getItem('mn-name'); } catch (e) { /* none */ }
-  return own && own.trim() === SPLIT.name ? null : 'mn-profile@' + SPLIT.name;
+  if (own && sameName(own, SPLIT.name)) return null;
+  const key = 'mn-profile@' + SPLIT.name, want = SPLIT.name.toLowerCase();
+  // a save under the same name in another case ("zoe" for Zoe), or from when local names had 24 characters (its
+  // first NAME_MAX are this name): that one, so nobody's progress is left behind
+  try {
+    if (localStorage.getItem(key) != null) return key;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i), n = k && k.startsWith('mn-profile@') ? k.slice(11).toLowerCase() : null;
+      if (n != null && (n === want || (want.length === NAME_MAX && n.slice(0, NAME_MAX) === want))) return k;
+    }
+  } catch (e) { /* none */ }
+  return key;
 };
+// Whose save this page plays on: settled once, as the page loads. (Looked up again at every save, a view's save went
+// to the usual profile, over the host's own, once 'mn-name' had become that view's name: another tab, a renamed host.)
+const SPLIT_KEY = splitOwnKey();
 function loadProfile() {
-  const own = splitOwnKey();
+  const own = SPLIT_KEY;
   if (own) { try { const raw = localStorage.getItem(own); return migrateProfile(raw ? JSON.parse(raw) : null); } catch (e) { return defaultProfile(); } }
   let raw = readCookie(PROFILE_KEY);
   if (!raw) { try { raw = localStorage.getItem(PROFILE_KEY); } catch (e) { /* none */ } }   // (file:// pages can't keep cookies)
   try { return migrateProfile(raw ? JSON.parse(raw) : null); } catch (e) { return defaultProfile(); }
 }
 function saveProfile(p) {
-  const s = JSON.stringify(p), own = splitOwnKey();
+  const s = JSON.stringify(p), own = SPLIT_KEY;
   if (own) { try { localStorage.setItem(own, s); } catch (e) { /* none */ } return; }
   try { document.cookie = `${PROFILE_KEY}=${encodeURIComponent(s)}; max-age=${60 * 60 * 24 * 3650}; path=/; SameSite=Lax`; } catch (e) { /* none */ }
   try { localStorage.setItem(PROFILE_KEY, s); } catch (e) { /* none */ }
@@ -526,12 +549,14 @@ const unlockedMissions = (p = profile) => {
 let lastReward = null;
 function creditMission() {
   const o = mission.over;
-  if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.id === 'practice' || MISSIONS[mission.id]?.custom || MISSIONS[mission.id]?.tutorial) return;   // (a custom skirmish, crew training: no pay, no entry)
-  const mine = o.results.crew.find(c => c.id === me.id);
+  if (!o || !o.results || !mission.runId || profile.lastRun === mission.runId || mission.rerun || mission.id === 'practice' || MISSIONS[mission.id]?.custom || MISSIONS[mission.id]?.tutorial) return;   // (a custom skirmish, crew training: no pay, no entry)
+  // only who flew it: someone who joins a game at its end screen is no part of the results (server.js enter), and
+  // gets no pay, no reputation and no chapter for it
+  if (!(o.results.crew || []).some(c => c.id === me.id)) return;
   const ok = missionSuccess(mission.id, o.results), first = ok && !profile.done[mission.id];
   // In multiplayer the crew flies the host's ship (mission.shipOf, set by the server): only its upgrades count, but
   // every player earns their own pay and reputation (2026-10-19, the user; before, the reputation went to the host).
-  const r = computeRewards(mission.id, o.results, !!mine?.survived, first);
+  const r = computeRewards(mission.id, o.results, first);
   profile.money += r.money; profile.rep += r.rep;
   if (ok) profile.done[mission.id] = (profile.done[mission.id] || 0) + 1;     // done = completed (objective included)
   profile.lastRun = mission.runId;
@@ -618,14 +643,20 @@ const lobbyUI = {
     const m = MISSIONS[this.chosen];
     if (m) {
       const R = m.rewards, obj = m.objective;
-      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? (obj.perPlayer ? 'Drill an ore sample for each crew member and bring them all aboard.' : (obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : '';
-      this.el('lobby-brief').innerHTML = `<h3>${m.name}</h3>${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
-        ${m.custom ? `<p class="obj">${escapeHtml(this.customSummary())}</p>` : ''}
+      const objText = !obj ? 'Survive until the jump.' : obj.kind === 'pirates' ? `Defeat ${obj.count} pirates.` : obj.kind === 'raiders' ? `Destroy ${obj.count} pirate ships.` : obj.kind === 'intruder' ? (obj.cover ? `${obj.cover}.` : obj.count === 2 ? 'Kill both intruders.' : obj.count > 1 ? `Kill all ${obj.count} intruders.` : 'Kill the intruder.') : obj.kind === 'blackbox' ? 'Bring the black box aboard.' : obj.kind === 'rescue' ? `Rescue ${obj.npc || 'the engineer'}.` : obj.kind === 'ore' ? (obj.perPlayer ? 'Drill an ore sample for each crew member and bring them all aboard.' : (obj.count || 1) > 1 ? `Drill ${obj.count} ore samples and bring them aboard.` : 'Drill an ore sample and bring it aboard.') : obj.kind === 'navcore' ? 'Get a Red Comet nav core and install it in our helm.' : obj.kind === 'handjump' ? 'Cross the deep and jump out by hand: pull the jump handle at the helm.' : obj.kind === 'leviathan' ? 'Free the leviathan of what is eating it.' : '';
+      // the story scrolls (.brief-text); what you need to know before the start stays in view under it (.brief-key):
+      // the objective and the pay first, then what the mission asks of the ship
+      const key = (m.practice || m.custom || m.tutorial ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> ${payText(this.chosen, p)}` : ''}</p>`)
+        + (m.custom ? `<p class="obj">${escapeHtml(this.customSummary())}</p>` : '')
+        + (m.tutorial ? '<p class="obj">Training only: no pay, no reputation, nothing to lose.</p>' : '')
+        + missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('');
+      const brief = this.el('lobby-brief'), was = brief.dataset.shown === this.chosen ? brief.querySelector('.brief-text')?.scrollTop || 0 : 0;
+      brief.innerHTML = `<h3>${m.name}</h3><div class="brief-text">${(m.briefing || m.blurb).split('\n\n').map(s => `<p>${escapeHtml(s)}</p>`).join('')}
         <p class="note">♪ ${music.songOf(this.chosen)}</p>
-        ${m.tutorial ? '<p class="obj">Training only: no pay, no reputation, nothing to lose.</p>' : ''}
-        ${this.flight && !m.tutorial ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades. Everyone earns their own pay and reputation.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: only their upgrades count. You earn your own pay and reputation.`}</p>` : ''}
-        ${missionRequirements(this.chosen, this.flownShip()).map(t => `<p class="obj">⚠ ${escapeHtml(t)}</p>`).join('')}
-        ${m.practice || m.custom || m.tutorial ? '' : `<p class="obj"><b>Objective:</b> ${objText}${R ? ` <b>Pay:</b> $${R.money}${R.perPirate ? ` + $${R.perPirate} per pirate` : ''} · ★${R.rep}${obj ? ' (only with the objective)' : ''}` : ''}</p>`}`;
+        ${this.flight && !m.tutorial ? `<p class="obj">${this.flight.host ? 'Flying your ship: the crew gets your upgrades. Everyone earns their own pay and reputation.' : `Flying ${escapeHtml(this.flight.name || 'the host')}'s ship: only their upgrades count. You earn your own pay and reputation.`}</p>` : ''}</div>
+        ${key ? `<div class="brief-key">${key}</div>` : ''}`;
+      brief.dataset.shown = this.chosen;                     // (redrawn on every lobby update: the story stays where it was scrolled to)
+      const text = brief.querySelector('.brief-text'); if (text && was) text.scrollTop = was;
     }
   },
   pick(id) { this.chosen = id; this.onPick(id); this.render(); },
@@ -667,11 +698,11 @@ const lobbyUI = {
     const box = this.el('lobby-builder'), C = customConfig(this.custom), practice = this.chosen === 'practice';
     if (!box.dataset.built) {
       box.dataset.built = 1;
-      const ticks = (group, items) => `<div class="sk-grid">${items.map(([id, name, pts]) => `<label class="sk-tick"><input type="checkbox" data-${group}="${escapeHtml(id)}"><span>${escapeHtml(name)}${pts ? ` <em class="sk-pts" title="difficulty points">${pts}</em>` : ''}</span></label>`).join('')}</div>`;
+      const ticks = (group, items) => `<div class="sk-grid">${items.map(([id, name, pts]) => `<label class="sk-tick"><input type="checkbox" data-${group}="${escapeHtml(id)}"><span>${escapeHtml(name)}${pts ? ` <em class="sk-pts" title="encounter points: what one of these costs">${pts}</em>` : ''}</span></label>`).join('')}</div>`;
       box.innerHTML = `<label class="sk-tick sk-practice"><input type="checkbox" id="sk-practice"><span><b>Practice</b> no timer, no encounters: spawn anything from the practice panel</span></label>
         <div class="sk-body">
-          <div class="list-head"><label for="sk-n">DIFFICULTY POINTS</label><span id="sk-count"></span></div>
-          <input type="range" id="sk-n" min="${CUSTOM_POINTS[0]}" max="${CUSTOM_POINTS[1]}" step="1" aria-label="Difficulty points">
+          <div class="list-head"><label for="sk-n" title="How much trouble comes: each encounter costs the points beside its name, a failing part ${CUSTOM_FAIL_POINTS}">ENCOUNTER POINTS</label><span id="sk-count"></span></div>
+          <input type="range" id="sk-n" min="${CUSTOM_POINTS[0]}" max="${CUSTOM_POINTS[1]}" step="1" aria-label="Encounter points">
           <div class="mission-group">Encounters <span class="sk-all"><button data-all="kind">all</button><button data-none="kind">none</button></span></div>
           ${ticks('kind', CUSTOM_KINDS)}
           <div class="mission-group">Ship parts that may fail (${CUSTOM_FAIL_POINTS} each) <span class="sk-all"><button data-all="part">all</button><button data-none="part">none</button></span></div>
@@ -735,7 +766,11 @@ const lobbyUI = {
     box.querySelectorAll('[data-prof-no]').forEach(b => b.onclick = () => { this.askProf = null; this.shop(kind); });
     box.querySelectorAll('[data-gear]').forEach(b => b.onclick = () => { const g = GEAR.find(x => x.id === b.dataset.gear); if (p.money >= g.cost) { p.money -= g.cost; p.gear[g.id] = true; this.saved(kind); } });
     box.querySelectorAll('[data-ship]').forEach(b => b.onclick = () => { const u = SHIP_UPGRADES.find(x => x.id === b.dataset.ship); if (p.rep >= u.rep) { p.rep -= u.rep; p.ship[u.id] = true; this.saved(kind); } });
-    this.el('shop').hidden = false;
+    // opened, or the other one of the two: from its top (they share the scrolling plate, so the shipyard opened where
+    // the locker was left); redrawn after a purchase: stays where it is
+    const shop = this.el('shop'), fresh = shop.hidden || this.shopKind !== kind;
+    shop.hidden = false; this.shopKind = kind;
+    if (fresh) { const plate = shop.querySelector('.plate'); if (plate) plate.scrollTop = 0; }
   },
   saved(kind) { saveProfile(profile); this.shop(kind); this.render(); this.onProfile?.(); },
 };

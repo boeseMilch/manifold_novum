@@ -3,8 +3,6 @@
 //   patch board     next to the power lever: reroute which capacitor each lever output feeds
 //   jump handle     at the helm in every mission: the autopilot pulls it before the jump (handlePull, js/mission.js);
 //                   with the `handle` rule it can't, and someone pulls and holds it while the drive spools
-//   treat pulse     treating someone: clicking on the heartbeat speeds it up
-//   held shields    keep holding the button for +2 s of shield (1 more energy)
 //   PIN pad         the airlock vent panel: type the admin password (it's on a sticky note right next to it)
 //   junction J1     the derelict lab's dead power junction: patch our tether line into its freezer circuit (js/culture.js)
 
@@ -31,6 +29,7 @@ function openPinPad(roomId) {
 // ---------------------------------------------------------------------------
 function miniCommand(action, a, b) {
   const m = ui.mini;
+  if (!standing(player) || ui.panel !== 'mini') return;   // (down or out, or the panel shut: its keys do nothing)
   if (action === 'patch' && m?.kind === 'patch') {
     if (a === 'out') m.pick = clamp(b | 0, 0, 2);
     else if (a === 'cap' && m.pick !== null) { power.patch[m.pick] = clamp(b | 0, 0, 2); m.pick = null; sfx.clank(); }
@@ -105,10 +104,8 @@ function minigameSpots() {
 // ---------------------------------------------------------------------------
 // Browser side: key input for the open mini-game
 // ---------------------------------------------------------------------------
-const miniDrag = { last: 0 };
 function miniClient(dt) {
-  const m = me.ui.mini, mo = localInput.mouse;
-  miniDrag.last += dt;
+  const m = me.ui.mini;
   // the PIN pad: number keys (top row and numpad) type; they don't reach the rest of the game meanwhile
   if (m?.kind === 'pin' && me.ui.panel === 'mini') {
     for (const code of [...localInput.pressed]) {

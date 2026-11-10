@@ -15,31 +15,31 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
 {
   const G = loadGame(NAMES);
   const won = { jumped: true, objective: true, pirates: 3 };
-  const r = G.computeRewards('c1', won, true, true);
+  const r = G.computeRewards('c1', won, true);
   check(r.money === 120 + 3 * 16 && r.rep === 2 && !('xp' in r), `First Contract: $120 + $16 per pirate, reputation (+1 first clear), no XP → $${r.money}, ★${r.rep}`);
-  const two = G.computeRewards('c1', { jumped: true, objective: true, pirates: 2 }, true, true).money;
+  const two = G.computeRewards('c1', { jumped: true, objective: true, pirates: 2 }, true).money;
   const cheap = G.GEAR.filter(g => !g.prof && g.cost <= two);
   check(two >= 150 && two < 300 && cheap.length >= 2, `a first chapter 1 run ($${two}) buys one $150 item, with a choice (${cheap.map(g => g.id).join(', ')})`);
-  const down = G.computeRewards('c1', won, false, false);
-  check(down.money === 168, 'not back aboard on your feet: the crew still gets paid');
+  const again = G.computeRewards('c1', won, false);
+  check(again.money === 168 && again.rep === 1, 'a second run pays the same money, and the reputation without the first-clear star');
   check(G.GEAR.every(g => !('level' in g)) && Object.values(G.MISSIONS).every(m => !('xp' in (m.rewards || {}))), 'no levels on gear, no XP in the rewards: money is all the locker asks for');
   const old = { c2: 150, c3: 200, c4: 200, c5: 300, c6: 300, c7: 350, c8: 500 };   // (the pay before 2026-10-16: ×0.4 now, so you have to choose)
   check(Object.entries(old).every(([id, m]) => G.MISSIONS[id].rewards.money === m * 0.4) && G.MISSIONS.c4.rewards.perPirate === 20 && G.MISSIONS.c2.rewards.rep === 1 && G.MISSIONS.c8.rewards.rep === 5,
     'chapters 2-8 pay 40% of the old money (bounty too), reputation unchanged');
-  const clean = (damage, maxDamage = 5) => G.computeRewards('c1', { ...won, damage, maxDamage }, true, false);
+  const clean = (damage, maxDamage = 5) => G.computeRewards('c1', { ...won, damage, maxDamage }, false);
   check(clean(0).money === 168 + 25 && clean(0).clean === 25 && clean(2).clean === 15 && clean(4).clean === 5 && clean(5).clean === 0 && clean(5, 6).clean === 4 && clean(0).rep === 1,
     `up to $25 for bringing the ship back in one piece: 0/5 damage $${clean(0).clean}, 2/5 $${clean(2).clean}, 4/5 $${clean(4).clean}, 5/5 $${clean(5).clean} (reinforced 5/6: $${clean(5, 6).clean})`);
-  check(G.computeRewards('c1', { jumped: false, objective: false, pirates: 0, damage: 0, maxDamage: 5 }, false, false).money === 0, '…and nothing if the ship didn\'t jump');
-  const lost = G.computeRewards('c1', { jumped: false, objective: false, pirates: 1 }, false, false);
+  check(G.computeRewards('c1', { jumped: false, objective: false, pirates: 0, damage: 0, maxDamage: 5 }, false).money === 0, '…and nothing if the ship didn\'t jump');
+  const lost = G.computeRewards('c1', { jumped: false, objective: false, pirates: 1 }, false);
   check(lost.money === 0 && lost.rep === 0, 'the ship didn\'t make it: nothing');
-  const half = G.computeRewards('c3', { jumped: true, objective: false, pirates: 0 }, true, false);
+  const half = G.computeRewards('c3', { jumped: true, objective: false, pirates: 0 }, false);
   check(half.money === G.MISSIONS.c3.rewards.money && half.rep === 0, 'jumped without the objective: paid, but no reputation');
 }
 // --- success needs the objective: pay either way, reputation / finished / unlock only with it
 {
   const credit = (id, results) => {           // one run of mission `id`, credited to this browser's profile
     const G = loadGame(NAMES); G.startMission(id);
-    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id, survived: true }], ...results } };
+    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id }], ...results } };
     G.creditMission();
     return G;
   };
@@ -50,16 +50,19 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   check(R2.profile.money === 120 + 16 && R2.profile.rep === 0 && !R2.profile.done.c1 && !R2.unlockedMissions(R2.profile).has('c2') && !R2.lastReward.profession,
     'jumped without the objective: base pay + per pirate, but no reputation, not finished, next chapter stays locked');
   check(R2.lastReward.objFailed && R2.lastReward.locked === R2.MISSIONS.c2.name && !R2.lastReward.unlocked, '…and the end screen says so (objective failed, next chapter locked)');
-  const R3 = credit('c7', { jumped: true, objective: false, pirates: 0 });
-  check(R3.missionSuccess('c7', { jumped: true, objective: false }) && R3.profile.done.c7 === 1 && R3.profile.rep === R3.MISSIONS.c7.rewards.rep + 1 && R3.unlockedMissions(R3.profile).has('c8') && !R3.lastReward.objFailed,
-    'a mission without an objective: surviving the jump is a success (finished, reputation, next chapter)');
+  // (every chapter has an objective since 2026-11-10, c7 and c8 too; the rule for a mission without one still holds)
+  const R3 = credit('c7', { jumped: true, objective: true, pirates: 0 });
+  check(R3.profile.done.c7 === 1 && R3.profile.rep === R3.MISSIONS.c7.rewards.rep + 1 && R3.unlockedMissions(R3.profile).has('c8') && !R3.lastReward.objFailed,
+    'chapter 7, jumped with its objective done: finished, reputation (+1 first clear), chapter 8 unlocked');
+  check(R3.missionSuccess('custom', { jumped: true, objective: false }) && !R3.missionSuccess('custom', { jumped: false, objective: false }) && !R3.MISSIONS.custom.objective,
+    'a mission without an objective: surviving the jump is a success');
   const R4 = credit('c1', { jumped: false, objective: true, pirates: 2 });
   check(R4.profile.money === 0 && R4.profile.rep === 0 && !R4.profile.done.c1, 'the ship didn\'t jump out: nothing, even with the objective');
   // multiplayer: the crew flies the host's ship (mission.shipOf from the server); only the host gets reputation
   const mp = (hostIsMe) => {
     const G = loadGame(NAMES); G.startMission('c1');
     G.mission.shipOf = { id: hostIsMe ? G.me.id : G.me.id + 100, name: 'Hosty' };
-    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id, survived: true }], jumped: true, objective: true, pirates: 2 } };
+    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id }], jumped: true, objective: true, pirates: 2 } };
     G.creditMission();
     return G;
   };
@@ -258,8 +261,7 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   const [A, B, C] = G.crew; B.mode = 'eva'; C.mode = 'gun'; C.gun = G.GUNS[0];
   G.endMission(true, 'test');
   const r = G.mission.over.results;
-  check(r.crew.find(c => c.id === 1).survived && !r.crew.find(c => c.id === 2).survived, 'at the end, only crew inside the ship and on their feet count as survived');
-  check(r.crew.find(c => c.id === 3).survived, 'a gunner in a cannon counts as aboard (gets the XP)');
+  check(r.crew.map(c => c.id).join() === '1,2,3' && r.crew.every(c => Object.keys(c).join() === 'id'), 'the results list who flew the mission, by id: inside, outside or in a cannon (nothing else: pay doesn\'t depend on where you ended up)');
 }
 // --- practice: every button works
 {
@@ -328,12 +330,53 @@ const tickN = (G, n) => { for (let i = 0; i < n; i++) G.simTick(DT); };
   G.startMission('custom', { custom: { points: 60, kinds: ['flare'], parts: [] } });
   check(G.mission.events.length === 30, 'never more than 30 encounters');
   G.startMission('custom', { custom: { points: 8, kinds: ['interceptor'], parts: ['Reactor'] } });
-  G.mission.over = { results: { jumped: true, crew: [{ id: G.me.id, survived: true }] } };
+  G.mission.over = { results: { jumped: true, crew: [{ id: G.me.id }] } };
   const money = G.profile.money; G.creditMission();
   check(G.profile.money === money && !G.profile.done.custom, 'a custom skirmish pays nothing and counts as no completion');
   G.netServer.init('custom', {}, 0, null, { points: 10.5, kinds: ['frigate'], parts: [] });
   check(G.mission.events.length === 3 && G.mission.events.every(e => e.kind === 'frigate'), 'multiplayer: the host\'s config reaches the server\'s mission (netServer.init)');
   G.startMission('c1');
   check(!G.mission.custom, 'other missions carry no custom config');
+}
+// --- only who flew the mission is paid: joining a game at its end screen credits nothing
+{
+  const late = (inCrew) => {
+    const G = loadGame(NAMES); G.startMission('c1');
+    G.mission.over = { won: true, reason: 'test', t: 0, survived: true, results: { kills: 0, crew: [{ id: G.me.id + (inCrew ? 0 : 7) }], jumped: true, objective: true, pirates: 2 } };
+    G.creditMission();
+    return G;
+  };
+  const In = late(true), Out = late(false);
+  check(In.profile.money === 152 && In.profile.done.c1 === 1, 'in the results\' crew: paid as always');
+  check(Out.profile.money === 0 && Out.profile.rep === 0 && !Out.profile.done.c1 && !Out.unlockedMissions(Out.profile).has('c2') && !Out.lastReward && !Out.profile.lastRun,
+    'not in the results\' crew (joined at the end screen): no pay, no reputation, no finished chapter, nothing unlocked, no rewards block');
+}
+// --- the lobby's pay line says what the reward screen will pay: the first-clear star too
+{
+  const G = loadGame([...NAMES, 'payText']);
+  const won = { jumped: true, objective: true, pirates: 0 };
+  const stars = (t) => (t.match(/★(\d+)/g) || []).reduce((n, x) => n + +x.slice(1), 0);
+  const fresh = G.payText('c1', G.defaultProfile()), done = G.payText('c1', { ...G.defaultProfile(), done: { c1: 1 } });
+  check(/★1 \+ ★1 the first time/.test(fresh) && stars(fresh) === G.computeRewards('c1', won, true).rep, `a chapter not finished yet: "${fresh}" (the stars add up to what is paid: ${G.computeRewards('c1', won, true).rep})`);
+  check(!/first time/.test(done) && stars(done) === G.computeRewards('c1', won, false).rep, `once it's finished: "${done}"`);
+  check(/\$120 \+ \$16 per pirate/.test(fresh) && /only with the objective/.test(fresh) && !/only with the objective/.test(G.payText('custom', G.defaultProfile())) && G.payText('custom', G.defaultProfile()) === '',
+    'the money and the bounty as before; a mission without pay has no pay line');
+  check(G.CAMPAIGN.every(id => stars(G.payText(id, G.defaultProfile())) === G.computeRewards(id, won, true).rep), 'every chapter: the lobby\'s stars are the reward screen\'s on a first clear');
+}
+// --- the locker and the shipyard share one scrolling plate: each opens at its top, a purchase leaves it where it is
+{
+  const plate = { scrollTop: 0 }, els = {};
+  const el = (id) => (els[id] = els[id] || { id, hidden: id === 'shop', innerHTML: '', textContent: '', style: {}, dataset: {}, addEventListener() {}, getContext: () => new Proxy(function () {}, { get: () => () => ({ width: 10 }) }),
+    querySelectorAll: () => [], querySelector: (sel) => (id === 'shop' && sel === '.plate' ? plate : null) });
+  const G = loadGame([...NAMES, 'lobbyUI'], { document: { getElementById: el } });
+  G.lobbyUI.shop('locker'); plate.scrollTop = 640;                       // the locker, scrolled to its bottom
+  G.lobbyUI.shop('locker');
+  check(plate.scrollTop === 640, 'the locker redrawn while it is open (a purchase): it stays where it was scrolled to');
+  els.shop.hidden = true; G.lobbyUI.shop('shipyard');
+  check(plate.scrollTop === 0 && !els.shop.hidden, 'the shipyard opened after it: from its top (it opened at the locker\'s scroll position)');
+  plate.scrollTop = 300; G.lobbyUI.shop('locker');
+  check(plate.scrollTop === 0, 'switching straight from one to the other: from the top too');
+  plate.scrollTop = 200; els.shop.hidden = true; G.lobbyUI.shop('locker');
+  check(plate.scrollTop === 0, 'closed and opened again: from the top');
 }
 process.exitCode = failed ? 1 : 0;

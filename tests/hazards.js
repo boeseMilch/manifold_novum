@@ -1,5 +1,5 @@
 // Damage types and small things: hull breaches (blast doors, vacuum, items sucked out, tarp, plate + nails),
-// plasma fire and venting, power surges, failed gravity, snack machine, coffee, intercom, scorch marks.
+// plasma fire and venting, power surges, failed gravity, snack machine, coffee, scorch marks.
 // Run: node tests/hazards.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'boarding', 'me', 'crew', 'hz', 'mission', 'startMission', 'shipHit', 'DOORWAYS', 'ITEMS', 'CAPACITORS', 'BREACH_SPOTS',
@@ -19,6 +19,19 @@ function holdOn(G, x, y, done, max = 30, btn = 'down') {
 const kitOn = (G, x, y, done, max = 30) => holdOn(G, x, y, done, max, 'right');   // the repair kit's jobs: hold right click (2026-10-20)
 const fresh = (rules) => { const G = loadGame(NAMES); G.startMission('c1'); G.mission.active = false; Object.assign(G.mission.rules, rules); G.combat.enemies.length = 0; return G; };
 
+// --- which room a big hit holes: the one behind where it hit (the deck it's on; the same rule as a limpet mine's and the
+// grappler's: it used to be the nearer hole spot, the cannon room for a hit on the upper half of the airlock room's wall),
+// the side's other room when that one is open already; one room a hit
+{
+  const got = [];
+  for (const [y, want] of [[8, 'portGun'], [12.6, 'portLock'], [14.6, 'portLock'], [20, 'portLock']]) {
+    const G = fresh({ breach: true }); G.hz.hull.port = 1; G.shipHit('port', 0, y, true);
+    got.push(`y ${y}: ${G.hz.breaches.map(b => b.room).join('+')}${G.hz.breaches.map(b => b.room).join('+') === want ? '' : ' (WRONG)'}`);
+    G.shipHit('port', 0, y, true);
+    if (G.hz.breaches.length !== 2) got.push(`a second hit at y ${y}: ${G.hz.breaches.length} rooms (WRONG)`);
+  }
+  check(!got.some(t => /WRONG/.test(t)), `a big hit on a damaged side holes the room behind it, a second one there the other room: ${got.join(', ')}`);
+}
 // --- hull breach
 {
   const G = fresh({ breach: true });

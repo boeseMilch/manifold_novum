@@ -37,7 +37,7 @@ const CAPT_TRICKLE = 30, CAPT_DOOR_MAX = 3, CAPT_AWAY = 3;
 const CAPT_RAID_DELAY = 15;   // (was 6, with a CAPT_RAID_LATE 150 s fallback)
 const CAPT_MUZZLE = { fwd: 0.95, right: 0.42, z: 1.05 };
 
-const captEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
+const captEasy = () => easyLevel();                  // (0 normal and hard, 1 easy, 2 very easy: js/mission.js)
 // HP by crew size (the user, 2026-10-17): 18 solo, 24 with two (70 % of the old 36), then +12 a player (near linear), up to 8
 const captMaxHp = (n) => (n <= 1 ? CAPT_HP[0] : CAPT_HP[1] + CAPT_HP_PER * (Math.min(8, n) - 2));
 const captWave = (n) => Math.min(captDoorMax(), Math.max(1, n - captEasy()));
@@ -161,7 +161,7 @@ function captDoorUpdate(B, dt) {
       D.next = 0.8;
       if (alive < captDoorMax()) {
         const S = captSpots(DG()), post = S.posts[dk.pirates.filter(p => p.door).length % S.posts.length];
-        dk.pirates.push({ uid: newUid(), x: S.door.x, y: S.door.y, face: d.side === 'port' ? Math.PI : 0, walk: 0, hp: PIRATE_HP, carry: null, state: 'guard', cd: 1.2, aim: 0, route: [], stuck: 0, stun: 0, flash: 0,
+        dk.pirates.push({ uid: newUid(), x: S.door.x, y: S.door.y, face: d.side === 'port' ? Math.PI : 0, walk: 0, hp: PIRATE_HP, carry: null, cd: 1.2, aim: 0, route: [], stuck: 0, stun: 0, flash: 0,
                           post: { x: post.x, y: post.y }, mode: 'guard', room: 5, door: true });
       }
       D.queue--;
@@ -373,7 +373,7 @@ const raidHome = (R) => { const tq = raidGeom(R).tube; return { x: R.side === 'p
 const inRaidTube = (x, y) => !!dk.raid && dk.raid.state === 'docked' && inRect(x, y, raidGeom(dk.raid).tube) && !roomAt(x, y);
 function startRaid(side) {
   const R = dk.raid = { side, state: 'docked', stolen: [], leaveT: null }, H = raidHome(R);
-  for (let i = 0; i < 2; i++) dk.pirates.push({ uid: newUid(), x: H.x + (side === 'port' ? 0.5 : -0.5) * i, y: H.y + (i ? 0.25 : -0.25), face: side === 'port' ? 0 : Math.PI, walk: 0, hp: PIRATE_HP, carry: null, state: 'steal',
+  for (let i = 0; i < 2; i++) dk.pirates.push({ uid: newUid(), x: H.x + (side === 'port' ? 0.5 : -0.5) * i, y: H.y + (i ? 0.25 : -0.25), face: side === 'port' ? 0 : Math.PI, walk: 0, hp: PIRATE_HP, carry: null,
                                                 cd: 1.5 + i, aim: 0, route: [], stuck: 0, stun: 0, flash: 0, raid: true, loots: 0 });
   combatBanner(`A Red Comet raider docked at our ${side === 'port' ? 'left' : 'right'} airlock while we're busy — two pirates are after our fuel cells!`); sfx.explosion();
 }
@@ -428,7 +428,9 @@ function updateRaid(dt) {
     }
     for (const it of ITEMS) if (inRect(it.x, it.y, tube) && !roomAt(it.x, it.y)) [it.x, it.y] = H.inside;
     dk.pirates = dk.pirates.filter(p => !p.raid || roomAt(p.x, p.y) && !inRect(p.x, p.y, tube));
-    for (const p of dk.pirates) if (p.raid) { delete p.raid; p.done = true; }   // (one left on our ship: stays and fights)
+    // One left on our ship: their ride is gone, so they stay and fight. From here they're a hunter like the two who rush out
+    // of the base (basePirateMove, js/dock.js): after the nearest of us, wherever we are; what they carry drops when they fall.
+    for (const p of dk.pirates) if (p.raid) { delete p.raid; Object.assign(p, { mode: 'hunt', stranded: true, post: { x: p.x, y: p.y }, route: [], goalKey: null, stuck: 0 }); }   // (stranded: the sidebar says where they're from, js/dock.js basePlates)
     R.state = 'gone'; sfx.hatch();
     const n = R.stolen.length;
     combatBanner(n ? `The raider cast off with ${n === 1 ? 'a' : n} ${n === 1 ? 'fuel cell' : 'stolen things'}.` : 'The raider cast off empty-handed!');

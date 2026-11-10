@@ -3,7 +3,7 @@
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'evs', 'hz', 'mission', 'startMission', 'spawnMineDrone', 'spawnSpores', 'jamCannon', 'knockAntenna',
   'spawnCanister', 'withCrew', 'inv', 'combat', 'CAPACITORS', 'GUNS', 'gunArc', 'radarScan', 'ANTENNA', 'power', 'boarding', 'MISSIONS', 'JAM_SPOTS', 'pointInPoly', 'distToPoly',
-  'evaOk', 'evaReach', 'EVA_REACH', 'HATCHES', 'HULL', 'dk', 'dockGeom', 'SHIP_W'];
+  'evaOk', 'evaReach', 'EVA_REACH', 'HATCHES', 'HULL', 'dk', 'dockGeom', 'SHIP_W', 'explodeMine', 'HULL_SPOTS', 'SPINE_Y0'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -146,5 +146,39 @@ const fresh = (rules = {}) => { const G = loadGame(NAMES); G.startMission('c1');
   check(G.me.x > room.x + room.w + 0.15, `floating at a docked ship you can't drift into its rooms (stopped at x ${G.me.x.toFixed(2)}, its wall at ${(room.x + room.w).toFixed(1)})`);
   G.me.input.keys.clear(); outside(G, -7, g.y + 1.5); G.me.input.keys.add('KeyD'); tickN(G, 60 * 3);
   check(G.me.x > -5.2, 'caught in its way when it docks: you can float out');
+}
+// --- one mine, one room: the room behind it (the deck it sits on), whatever state that side's hull is in. (On a side
+// that had taken a big hit, a mine between the decks used to hole both rooms: the hit's rule and the mine's disagreed.)
+{
+  const bad = [];
+  for (const side of ['port', 'star']) for (const hull of [0, 1, 2]) for (const [x, y] of fresh().HULL_SPOTS[side]) {
+    const G = fresh({ breach: true }); G.hz.hull[side] = hull;
+    const m = { uid: 1, side, x, y, t: 1 }; G.evs.mines.push(m); G.explodeMine(m);
+    const want = (side === 'port' ? 'port' : 'star') + (y < G.SPINE_Y0 ? 'Gun' : 'Lock'), got = G.hz.breaches.map(b => b.room).join('+');
+    if (got !== want) bad.push(`${side} y ${y}, hull ${hull}: ${got || 'none'} (not ${want})`);
+  }
+  check(!bad.length, `a limpet mine holes exactly the room behind it, on a whole hull or a damaged one${bad.length ? ': ' + bad.join('; ') : ''}`);
+  // the second mine on the same room finds it open already: the side's other room goes (one room a mine, as a big hit there does)
+  const G = fresh({ breach: true });
+  for (const y of [21.6, 22.4]) { const m = { uid: y, side: 'port', x: -0.55, y, t: 1 }; G.evs.mines.push(m); G.explodeMine(m); }
+  check(G.hz.breaches.map(b => b.room).join('+') === 'portLock+portGun', `two mines on one room: one room each (${G.hz.breaches.map(b => b.room).join(', ')})`);
+  const H = fresh(); const m = { uid: 1, side: 'port', x: -0.55, y: 12.6, t: 1 }; H.evs.mines.push(m); H.explodeMine(m);
+  check(!H.hz.breaches.length && H.hz.hull.port === 1, 'a mission without hull breaches: a mine only dents the hull');
+}
+// --- two mine drones on one side: every mine on a spot of its own (they picked their spots without looking at each
+// other's, and with all taken fell back to the first: two mines on one spot, one of them invisible)
+{
+  const stacked = [];
+  for (const side of ['port', 'star']) for (let run = 0; run < 8; run++) {
+    const G = fresh(); G.spawnMineDrone(side); tickN(G, 60); G.spawnMineDrone(side);
+    let most = 0;
+    tickN(G, 60 * 14, () => { const ms = G.evs.mines; most = Math.max(most, ms.length); if (ms.some((a, i) => ms.some((b, j) => j > i && Math.hypot(a.x - b.x, a.y - b.y) < 0.4))) stacked.push(side); });
+    if (most !== 6) stacked.push(`${side}: ${most} mines`);
+  }
+  check(!stacked.length, `two drones a second apart, 16 runs: six mines on six different spots${stacked.length ? ` (${[...new Set(stacked)].join(', ')})` : ''}`);
+  // more mines than spots: the third drone waits for a free spot
+  const G = fresh(); for (let i = 0; i < 3; i++) G.spawnMineDrone('star');
+  let twice = false; tickN(G, 60 * 20, () => { const ms = G.evs.mines; if (ms.some((a, i) => ms.some((b, j) => j > i && a.x === b.x && a.y === b.y))) twice = true; });
+  check(!twice && G.evs.mines.length === 6 && G.evs.drones.some(d => !d.leaving && d.left > 0), `three drones, six spots: six mines, the rest wait (${G.evs.mines.length} mines, ${G.evs.drones.reduce((n, d) => n + d.left, 0)} still to stick)`);
 }
 process.exitCode = failed ? 1 : 0;

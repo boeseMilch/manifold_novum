@@ -15,11 +15,11 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 
 // --- the docking situations
 const CASES = [{ name: 'nothing docked' }];
-for (const side of ['port', 'star']) for (const kind of ['pirate', 'brig', 'derelict', 'base']) CASES.push({ name: `${kind} at the ${side} airlock`, dock: [kind, side] });
+for (const side of ['port', 'star']) for (const kind of ['pirate', 'derelict', 'base']) CASES.push({ name: `${kind} at the ${side} airlock`, dock: [kind, side] });
 for (const side of ['port', 'star']) CASES.push({ name: `chapter 5: the base at the ${side} airlock + the raider at the other`, dock: ['base', side], raid: side === 'port' ? 'star' : 'port' });
 function setup(c) {
   const G = loadGame(NAMES); G.startMission('practice'); G.mission.active = false;
-  if (c.dock) G.dockShip(c.dock[0] === 'brig' ? 'pirate' : c.dock[0], c.dock[1], c.dock[0] === 'brig' ? { npc: true } : {});
+  if (c.dock) G.dockShip(c.dock[0], c.dock[1]);
   if (c.raid) G.startRaid(c.raid);
   G.dk.pirates.length = 0; G.dk.boss = null; G.boarding.invaders.length = 0;   // (nobody shooting: this is about the way in)
   G.combat.enemies.length = 0;
@@ -182,7 +182,7 @@ for (const c of CASES) {
   check(H.dk.dock.entry === 'open' && H.walkRects().some(q => q === H.dockEntries()[0].slot || (Math.abs(q.x - H.dockEntries()[0].slot.x) < 1e-6 && Math.abs(q.y - H.dockEntries()[0].slot.y) < 1e-6)), 'a client sees the derelict\'s viewport open (and can walk through it)');
 }
 
-// --- polish (2026-10-23): prompts, feedback, the crank turning, the brig cell, never hidden
+// --- polish (2026-10-23): prompts, feedback, the crank turning, never hidden
 {
   const G = setup(CASES.find(c => c.dock?.[0] === 'pirate' && c.dock[1] === 'port')), e = G.dockEntries()[0], me = G.me;
   Object.assign(me, { mode: 'eva', x: e.outside[0], y: e.outside[1], vx: 0, vy: 0 }); G.simTick(DT);
@@ -194,14 +194,6 @@ for (const c of CASES) {
   check(e.ref.entry === 'open' && G.combat.shake > 0 && e.ref.ventT > 0, 'the smash: the screen shakes and the raider\'s air puffs out for a few seconds');
   Object.assign(me, { mode: 'inside', x: e.cx, y: e.slot.y + e.slot.h / 2, vx: 0, vy: 0 });
   check(G.dockEntryReveal(me), 'climbing through the cockpit: drawn in front of the beak\'s roof');
-}
-{
-  const G = setup(CASES.find(c => c.dock?.[0] === 'brig' && c.dock[1] === 'star')), e = G.dockEntries()[0], me = G.me;
-  Object.assign(me, { mode: 'eva', x: e.outside[0], y: e.outside[1], vx: 0, vy: 0 }); G.simTick(DT);
-  me.input.pressed.add('KeyE'); G.simTick(DT);
-  for (let i = 0; i < 3; i++) { G.withCrew(me, () => G.overrideHit()); for (let k = 0; k < 40; k++) G.simTick(DT); }
-  for (let k = 0; k < 40; k++) G.simTick(DT);
-  check(e.ref.entry === 'open' && /Varga's cell is sealed/.test(G.combat.banner?.text || '') && G.dk.npc && G.dk.npc.state !== 'dead', `the brig barge vents, but Dr. Varga's cell is sealed ("${G.combat.banner?.text}")`);
 }
 {
   const G = setup(CASES.find(c => c.dock?.[0] === 'base' && c.dock[1] === 'star')), e = G.dockEntries()[0], me = G.me;

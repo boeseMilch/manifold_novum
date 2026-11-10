@@ -9,7 +9,10 @@ let VW = 0, VH = 0, DPR = 1;
 // host's own view is one part of the page; js/progress.js SPLIT: a local player's view, an iframe of its own): the
 // view is laid out as if it were at least SPLIT_MIN large and drawn scaled down to its part, so the world, the HUD and
 // its panels zoom out together and still fit (VW / VH: the layout size; DPR includes the scale).
-const VIEW = { x: 0, y: 0, s: 1 }, SPLIT_MIN = [1280, 760];
+// (760 wide, not a whole window's 1280: a split view has no plates column, that's in the strip (js/local.js), and what
+//  is left needs 688: the energy panel, 14 + 262, and the two inventory slots, 16 + 382 + 14 (js/systems.js invSlots).
+//  At 1280 a half of a 1280 × 720 screen, 555 px, was drawn at 0.43: the HUD's 12 px text came out at 5 px; now 0.73, 9 px.)
+const VIEW = { x: 0, y: 0, s: 1 }, SPLIT_MIN = [760, 760];
 function resize() {
   const R = (typeof localViewRect === 'function' && localViewRect()) || (typeof SPLIT !== 'undefined' && SPLIT ? { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight } : null);
   const w = R ? R.w : window.innerWidth, h = R ? R.h : window.innerHeight;
@@ -64,6 +67,7 @@ canvas.addEventListener('contextmenu', e => e.preventDefault());
 const WALK_SPEED = 4.2, WALK_ACCEL = 30;     // units/s, units/s²
 const EVA_SPEED = 3.4, EVA_ACCEL = 7;        // floaty on the outside
 const CREW_R = 0.2;                          // half-size of the crew collision box
+const MOVE_STEP = 0.1;                       // the longest step a crew member takes at once (thinner than any wall: updateCrew)
 let LOCK_CYCLE = 1.3;                        // airlock pump time, set by the 'airlocks' ship upgrade (js/progress.js; the deck airlocks are gone: inner doors are single doors since 2026-10-21)
 const HURT_SPEED = 0.6;                       // walking speed while hurt
 const LOOK_TIME = 1.75;                      // s a crew member keeps looking at the mouse after it moved or they fired with it
@@ -122,7 +126,7 @@ function canStand(x, y, rects) {
     && !SOLIDS.some(S => inRect(x, y, S, 0));                        // (the middle too, so thin things like the treadmill rails block)
 }
 
-// Safety net: if someone ends up where they can't stand (a door or car moved out from under
+// Safety net: if someone ends up where they can't stand (a door shut, a docked ship left from under
 // them), move them to the nearest spot where they can, instead of freezing them in place.
 function nearestFree(x, y, ok) {
   if (ok(x, y)) return null;
@@ -160,10 +164,15 @@ function updateCrew(c, dt, ix, iy) {
   unstick(c, ok);
   // (a docked ship's rooms: no floating in; anyone the ship docked onto may float out)
   const go = eva && typeof dockBlocksEva === 'function' && !dockBlocksEva(c.x, c.y) ? (x, y) => ok(x, y) && !dockBlocksEva(x, y) : ok;
-  const nx = c.x + c.vx * dt;
-  if (go(nx, c.y)) c.x = nx; else c.vx = 0;
-  const ny = c.y + c.vy * dt;
-  if (go(c.x, ny)) c.y = ny; else c.vy = 0;
+  // in steps of at most MOVE_STEP: canStand looks at the body's corners and middle, so one long step at a low frame
+  // rate (0.21 at 20 fps) could carry someone over a wall thinner than that (the toilet stall's, 0.15). 60 fps: one step.
+  const steps = Math.max(1, Math.ceil(Math.max(Math.abs(c.vx), Math.abs(c.vy)) * dt / MOVE_STEP));
+  for (let i = 0; i < steps; i++) {
+    const nx = c.x + c.vx * dt / steps;
+    if (go(nx, c.y)) c.x = nx; else c.vx = 0;
+    const ny = c.y + c.vy * dt / steps;
+    if (go(c.x, ny)) c.y = ny; else c.vy = 0;
+  }
   airlockThreshold(c, tx, ty);                        // stepping out of / floating into an open outer airlock (js/airlock.js)
   if (c.mode === 'inside' && inRect(c.x, c.y, TREADMILL)) {          // on the treadmill: the belt carries you back
     const belt = speed * BELT_K, by = c.y + belt * dt;                // (half of this crew member's own walking speed)
@@ -546,13 +555,15 @@ function climbDown() {
 // raw input. Run in the acting crew member's context: directly when solo, on the server in multiplayer.
 function runCommand(cmd) {
   const [kind, arg] = cmd;
-  if (kind === 'lock') { const l = lockables()[arg]; if (l) { l.ref.locked = !l.ref.locked; sfx.clank(); } }
-  else if (kind === 'bonk') { if (ui.override) overrideHit(); }
+  // (a panel's buttons only work for someone on their feet, and 'lock' / 'mini' only with that panel open: a browser
+  //  can send any command, and a panel left open used to keep working for someone lying out cold; 2026-11-10)
+  if (kind === 'lock') { const l = standing(player) && ui.panel === 'security' && lockables()[arg]; if (l) { l.ref.locked = !l.ref.locked; sfx.clank(); } }
+  else if (kind === 'bonk') { if (ui.override && standing(player)) overrideHit(); }
   else if (kind === 'closePanel') { ui.panel = null; ui.override = null; ui.mini = null; }
-  else if (kind === 'mini') miniCommand(arg, cmd[2], cmd[3]);
+  else if (kind === 'mini') miniCommand(arg, cmd[2], cmd[3]);   // (checks the same itself)
   else if (kind === 'reload') { if (player.mode === 'gun' && standing(player) && tutAllows('reload')) reloadCannon(player.gun); }
   else if (kind === 'climbDown') { if (tutAllows('climbDown')) climbDown(); }
-  else if (kind === 'reboot') rebootSwitch(arg);
+  else if (kind === 'reboot') { if (standing(player)) rebootSwitch(arg); }
   else if (kind === 'practice') runPractice(arg);
   else if (kind === 'debug') DEBUG_ITEMS.find(it => it.key === arg)?.run();
   else if (kind === 'drop') { if (tutAllows('drop') && (arg === 'weapon' || arg === 'item')) dropSlot(arg); }   // (a click on an inventory slot)
@@ -574,6 +585,12 @@ function teleportToGun(id) {
   const g = GUNS.find(g => g.id === id);
   player.mode = 'gun'; player.gun = g; mouse.moved = 0; player.gunReady = false; player.gunKeys = false;
 }
+// Debug: the mission you're in, from the start, on the same ship (it used to start chapter 1 on a stock ship, whatever ran).
+function restartMission() {
+  const paid = !!mission.over || !!mission.rerun;      // (already over, so already paid: the second run pays nothing, js/progress.js creditMission; solo too)
+  startMission(mission.id || 'c1', { ship: { ...(mission.upgrades || {}) }, easy: mission.easy, custom: mission.custom || undefined });
+  if (paid) mission.rerun = true;
+}
 const DEBUG_ITEMS = [
   { key: '1', label: 'Enemy left: Interceptor', run: () => combatSpawn('interceptor', 'port', true) },
   { key: '2', label: 'Enemy right: Interceptor', run: () => combatSpawn('interceptor', 'star', true) },
@@ -589,7 +606,7 @@ const DEBUG_ITEMS = [
   { key: 'I', label: 'Saboteur through the left airlock', run: () => spawnSaboteur('port') },
   { key: 'P', label: 'Saboteur through the right airlock', run: () => spawnSaboteur('star') },
   { key: '0', label: 'Clear threats and reset hit counts', run: () => { combatClear(); boarding.invaders = []; boarding.bolts = []; } },
-  { key: 'm', label: 'Restart the mission', run: () => { combatClear(); boarding.invaders = []; fires.length = 0; startMission(); } },
+  { key: 'm', label: 'Restart the mission', run: () => { combatClear(); boarding.invaders = []; fires.length = 0; restartMission(); } },
   { key: 'n', label: 'Stop the mission (free play)', run: () => { mission.active = false; } },
   { key: 'f', label: 'Start a fire next to you', run: () => spawnFire(player.x + 1, player.y) },
   { key: 'b', label: 'Break a random system', run: () => { const s = SYSTEMS.filter(s => !s.broken); if (s.length) breakSystem(s[Math.floor(Math.random() * s.length)]); } },
@@ -672,6 +689,12 @@ const VIEW_ROOM = { w: 19, h: 13 };                 // layout units visible when
 const VIEW_SHIP = { x0: -3, y0: -5, x1: SHIP_W + 3, y1: SHIP_H + 6 };
 const viewSy = () => (GFX.on ? GFX.SIN : 1);
 const cam = { x: player.x, y: player.y, zoom: 0, overview: DEBUG_OVERVIEW ? 1 : 0, sx: 0, sy: 0 };
+// The top of the view belongs to the HUD: under the top bar come the banners, the heavy-shot warning and the tutorial's
+// objective strip (TOP_SAFE px). The camera never lets you, or the prompt over your head, slide under them: at the
+// bridge's nose (the helm, the tutorial's first stop) you stood behind the objective strip, prompt and all (2026-11-10).
+// PROMPT_LIFT: how far over your feet the prompt is drawn (classic / sprites, render()), PROMPT_BOX: its height; in tiles.
+const TOP_SAFE = 100, PROMPT_LIFT = [0.55, 1.45], PROMPT_BOX = 0.46;
+const promptLift = (sprited = GFX.on) => PROMPT_LIFT[sprited ? 1 : 0];
 function roomDist(room, x, y) {
   return Math.min(...room.rects.map(q => Math.hypot(Math.max(q.x - x, 0, x - q.x - q.w), Math.max(q.y - y, 0, y - q.y - q.h))));
 }
@@ -691,7 +714,9 @@ function cameraTarget() {
     sw += w; sx += w * cx; sy += w * cy;
   }
   if (sw < 0.05) return [player.x, player.y, zRoom];
-  return [lerp(sx / sw, player.x, 0.3), lerp(sy / sw, player.y, 0.3), zRoom];
+  // the top safe margin: the view's middle is never further south of you than leaves your prompt clear of TOP_SAFE
+  const south = Math.max(0, vh / 2 - TOP_SAFE - (promptLift() + PROMPT_BOX) * T * zRoom) / (T * zRoom * vsy);
+  return [lerp(sx / sw, player.x, 0.3), Math.min(lerp(sy / sw, player.y, 0.3), player.y + south), zRoom];
 }
 function updateCamera(dt) {
   const [tx, ty, tz] = cameraTarget();
@@ -912,11 +937,17 @@ function injuryStatus(c = me) {
     self ? `Hold E: ${self.label} (${self.time} s)${heal}` : `A crewmate has to treat you${heal}`] };
 }
 // The badge: above the energy panel (bottom left), clear of the inventory and the screen prompt.
+// Its place on screen (null: not hurt); the sidebar's plates end above it (js/sidebar.js updateSidebar).
+const INJURY_LINE_H = 17;
+function injuryBadgeRect(st = injuryStatus(me)) {
+  if (!st) return null;
+  const h = 34 + st.lines.length * INJURY_LINE_H + 6;
+  return { x: 14, y: VH - 104 - 14 - 10 - h, w: 262, h };       // (drawPowerPanel: h 104 at the bottom)
+}
 function drawInjuryBadge(t) {
   const st = injuryStatus(me);
   if (!st) return;
-  const p = me.health === 'out' ? 0 : heartPulse(t, heartPeriod(me.health)), w = 262, lh = 17, h = 34 + st.lines.length * lh + 6;
-  const x = 14, y = VH - 104 - 14 - 10 - h;                    // (drawPowerPanel: h 104 at the bottom)
+  const p = me.health === 'out' ? 0 : heartPulse(t, heartPeriod(me.health)), lh = INJURY_LINE_H, { x, y, w, h } = injuryBadgeRect(st);
   ctx.save();
   rr(x, y, w, h, 10); ctx.fillStyle = 'rgba(28,6,8,0.9)'; ctx.fill(); stroke(2 + 1.5 * p, st.col);
   const hx = x + 22, hy = y + 18, hs = 7 * (1 + 0.25 * p);     // a beating heart
@@ -979,6 +1010,7 @@ let glowLayer = (fn) => fn();                      // (set by render(): draw fn 
 function render(t) {
   updateInjuryFx(clamp(t - (INJ.t ?? t), 0, 0.1), t); INJ.t = t;   // (hit flash, heartbeat, blood: from the synced crew state)
   const view = camera(), G = GFX.on;
+  const lightDt = clamp(t - (render.lightT ?? t), 0, 0.1); render.lightT = t;   // (the lights fade in real time, not per drawn frame: 1 / 60 a frame made the power-out fade 2.4 times faster at 144 Hz)
   const js = jumpSpace();                            // (the jump: stars streak; js/mission.js)
   const space = { x: (cam.x + cam.ox) * T * 4, y: (cam.y + cam.oy) * T * 4 * view.sy - t * CRUISE_SPEED - js.drift, rot: 0, streak: js.streak };
   const world = (k) => ctx.setTransform(k * view.zoom, 0, 0, k * view.zoom * view.sy, k * view.ox, k * view.oy);
@@ -991,7 +1023,7 @@ function render(t) {
     GFX.begin(view, t);
     streamMission();
     GFX.lighting(gameLighting(t));
-    updateLightLevels(1 / 60);
+    updateLightLevels(lightDt);
     parts = drawShipSprites(t);
     const k = GFX.layer2dScale;
     ctx = GFX.layer2d('back'); ctx.setTransform(k, 0, 0, k, 0, 0);
@@ -1104,7 +1136,7 @@ function render(t) {
   }
   drawBoarding(t);
   drawDockActors(t);
-  if (!G) drawLights(1 / 60);
+  if (!G) drawLights(lightDt);
   drawVacuumTint();
   drawSporesInside(t);                               // spore haze, puffs through doors, fuzz on glitching parts (js/spores.js)
   drawSporeCloud(t);                                 // the spore mother's cloud round the hull (js/spores.js)
@@ -1122,7 +1154,7 @@ function render(t) {
   ctx.save(); ctx.setTransform(DPR, 0, 0, DPR, 0, 0); drawEncounterOverlay(view, t); ctx.restore();   // (storm darkness, flare glare: under the prompts)
   const prompt = me.prompt, hover = me.hover;
   const working = workProgress(me);
-  const promptAbove = G && sprited.has(me) ? 1.45 : 0.55;
+  const promptAbove = promptLift(G && sprited.has(me));
   if (prompt && !prompt.screen && !prompt.quiet && !working) upright(view, me.x, me.y, promptAbove, () => {
     ctx.font = `600 ${T * 0.3}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     // on screen whatever the width: wrapped onto more lines when it's wider than the screen, and kept off its edges
@@ -1131,7 +1163,7 @@ function render(t) {
     const w = Math.max(...lines.map(measure)) + 18, lh = T * 0.34, sx = view.ox + me.x * T * z;
     let dx = clamp(0, (12 - sx) / z + w / 2, Math.max((12 - sx) / z + w / 2, (VW - 12 - sx) / z - w / 2));
     // never under the left-hand panels (drawn on top of it): moved right of / below / above them (js/sidebar.js)
-    const by = -T * 0.42 - (lines.length - 1) * lh, bh = T * 0.46 + (lines.length - 1) * lh, sy = view.oy + me.y * T * z * view.sy - promptAbove * T * z;
+    const by = -T * 0.42 - (lines.length - 1) * lh, bh = T * PROMPT_BOX + (lines.length - 1) * lh, sy = view.oy + me.y * T * z * view.sy - promptAbove * T * z;
     const off = keepOffPanels({ x: sx + (dx - w / 2) * z, y: sy + by * z, w: w * z, h: bh * z }, leftPanelRects(HUD_H), VW, VH);
     dx += off.dx / z; const dy = off.dy / z;
     rr(dx - w / 2, by + dy, w, bh, 6); ctx.fillStyle = 'rgba(12,14,20,0.82)'; ctx.fill(); stroke(1.5, prompt.ok ? USE_COL : '#6b7486');
@@ -1295,6 +1327,11 @@ function simTick(dt) {
     return;
   }
   for (const c of crew) withCrew(c, () => {
+    if (!standing(player) && (ui.panel || ui.override)) {
+      // (a base door's code already accepted, shot down while the pad still says ACCESS GRANTED: the door opens all the same)
+      if (ui.mini?.kind === 'pin' && ui.mini.flash === 'granted' && ui.mini.door) baseCodeOk(ui.mini.door);
+      ui.panel = null; ui.override = null; ui.mini = null;
+    }   // down or out: whatever panel you had open falls shut (and E is free to patch yourself up)
     updatePlayer(dt);
     updateInteraction(dt);
     updateOverride(dt);
@@ -1339,7 +1376,7 @@ function clientUpdate(dt) {
   [m.wx, m.wy] = screenToWorld(m.x, m.y);
   if (GFX.on) {                                        // pointing at a raised sprite (crew): its ground point,
     const p = GFX.pickAt(m.x, m.y);                    // unless it only hides something you can use on the ground behind it
-    const acts = (x, y) => withCrew(me, () => actionable(pickHover(me, x, y)));   // (e.g. your own back in front of a barnacle)
+    const acts = (x, y) => withCrew(me, () => actionable(pickHover(me, x, y)));   // (e.g. your own back in front of the lever)
     if (p && !(acts(m.wx, m.wy) && !acts(p[0], p[1]))) [m.wx, m.wy] = p;
   }
   if (tutAllows('debug')) updateDebug();

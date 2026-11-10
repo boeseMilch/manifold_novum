@@ -8,7 +8,7 @@
 // Also holds the indoor projectiles (laser bolts, thrown wrenches, acid spit, the saboteur's shots).
 
 const ALIEN_HP = 4, ALIEN_SPEED = 2.6;              // footprint is the crew's (CREW_R), so it fits doors and airlocks
-const ENGAGE_RANGE = 4.5, HUNT_SIGHT = 8, HUNT_REPLAN = 2.5;
+const HUNT_SIGHT = 8, HUNT_REPLAN = 2.5;
 const SPIT_SPEED = 11.5, SPIT_RANGE = 14.4, SPIT_COOLDOWN = [1.6, 2.6], SPIT_WINDUP = 0.7, DODGE_SPEED = 9, DODGE_TIME = 0.25, DODGE_COOLDOWN = 2.2;
 const POUNCE_RANGE = 3.4, POUNCE_WINDUP = 0.65, POUNCE_TIME = 0.32, POUNCE_SPEED = 12;
 // Contact hurts: a pounce that connects, or just bumping into it, costs one hit; then nothing more from that
@@ -202,7 +202,7 @@ function podBurst(p) {
 }
 const deckOf = (y) => (y < (SPINE_Y0 + SPINE_Y1) / 2 ? 'top' : 'bottom');
 // Does it keep to its zone (its own deck) right now? Only while another alien is still about.
-const zoned = (a) => !!a.zone && boarding.invaders.some(b => b !== a && b.kind !== 'saboteur' && !b.dead && b.state !== 'dormant');
+const zoned = (a) => !!a.zone && boarding.invaders.some(b => b !== a && b.kind !== 'saboteur' && !b.dead);
 // Who it hunts: the nearest crew member aboard (in its zone, while it keeps to one).
 function alienPrey(a) {
   const z = zoned(a) ? a.zone : null;
@@ -296,12 +296,7 @@ function updateInvader(a, dt) {
   a.touchCd = Math.max(0, (a.touchCd || 0) - dt);
   if (enterHatch(a, dt)) return;
   if (a.stun > 0) { a.stun -= dt; return; }
-  if (a.state !== 'dormant') alienTouch(a);        // bumping into it hurts (asleep or stunned it does nothing)
-  if (a.state === 'dormant') {                     // asleep (on a derelict) until someone comes close
-    const c = crew.find(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < ENGAGE_RANGE && lineOfSight(a.x, a.y, c.x, c.y));
-    if (c) { a.state = 'fight'; a.target = c; a.seen = 0; sfx.alienHurt(); }
-    return;
-  }
+  alienTouch(a);                                   // bumping into it hurts (stunned it does nothing)
   // the nearest crew member inside that it can see
   const visible = crew.filter(c => c.mode === 'inside' && standing(c) && Math.hypot(c.x - a.x, c.y - a.y) < 14 && lineOfSight(a.x, a.y, c.x, c.y))
                       .sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
@@ -311,7 +306,6 @@ function updateInvader(a, dt) {
 
   if (a.state === 'fight') {
     a.seen = seesPlayer ? 0 : a.seen + dt;
-    if ((a.seen > 6 || player.mode !== 'inside') && a.dormantHome) { a.state = 'dormant'; a.act = null; return; }
     if (a.seen > 3 || player.mode !== 'inside') { a.state = 'wander'; a.path = []; a.replanT = 0; a.act = null; return; }   // lost them: hunt
     const dx = player.x - a.x, dy = player.y - a.y, d = Math.hypot(dx, dy) || 1, ux = dx / d, uy = dy / d;
     a.dodgeCd -= dt; a.spitT -= dt;
@@ -417,7 +411,6 @@ function updateInvader(a, dt) {
     const zone = zoned(a) ? a.zone : null, adj = adjacentRooms(room).filter(r => !zone || room.deck !== zone || r.deck === zone);
     const home = zone && room.deck !== zone ? ROOMS.filter(r => r.deck === zone) : null, start = nearestNavSeen(a.x, a.y);
     const open = (home || adj).map(r => navPath(start, NAV.roomNode[r.id], alienDoorOk)).filter(p => p.length > 1);
-    a.prevRoom = room.id;
     if (open.length) a.path = open[Math.floor(Math.random() * open.length)];
     else if (home) {                                 // off its deck, every way back shut: it waits by the nearest door that way
       const full = home.map(r => navPath(start, NAV.roomNode[r.id])).filter(p => p.length > 1).sort((p, q) => p.length - q.length)[0] || [];
@@ -795,7 +788,6 @@ function alienSprite(a, t, P) {
   const act = a.act;
   if (a.state === 'entering') return a.hatch.locked ? ['chars/alien/sabotage', Math.floor(t * 6), eyes] : ['chars/alien/walk', Math.floor(t * 12), eyes];
   if (a.stun > 0) return ['chars/alien/stunned', Math.floor(t * 6), eyes];
-  if (a.state === 'dormant') return ['chars/alien/dormant', 0, eyes];
   if (fight && act) {
     if (act.kind === 'spit') return ['chars/alien/spit', act.fired ? 4 : Math.min(3, Math.floor(act.t / SPIT_WINDUP * 4)), eyes];
     if (act.kind === 'pounce') return act.t < POUNCE_WINDUP ? ['chars/alien/coil', Math.floor(t * 14), eyes] : ['chars/alien/leap', 0, eyes];

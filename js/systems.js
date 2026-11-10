@@ -78,12 +78,10 @@ function breakSystem(s) {
   for (let i = 0; i < 14; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.7, i % 2 ? '#ffb347' : '#6a6f7a', 0.12);
   combatFlip('fx/hit_spark', s.x, s.y, 1.4);
 }
-// Hits on the hull damage systems in the zone column that was hit.
-function damageColumn(side, large) {
-  const col = side === 'port' ? 0 : side === 'star' ? 2 : 1;
-  const intact = SYSTEMS.filter(s => s.col === col && !s.broken);
-  const n = large ? 1 : 0;                       // big hits: exactly one part (plus a fire: mission.js bigHitFire)
-  for (let i = 0; i < n && intact.length; i++) breakSystem(intact.splice(Math.floor(Math.random() * intact.length), 1)[0]);
+// A big hit on the hull breaks a part in the zone column that was hit: exactly one (plus a fire: mission.js bigHitFire).
+function damageColumn(side) {
+  const intact = SYSTEMS.filter(s => s.col === colOfSide(side) && !s.broken);   // (colOfSide: js/mission.js)
+  if (intact.length) breakSystem(intact[Math.floor(Math.random() * intact.length)]);
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +379,14 @@ function dropSpot(x, y) {
 }
 const near = (x, y, r = REACH) => Math.hypot(player.x - x, player.y - y) <= r;
 
+// A hazard spot h and a station under the same click: the station, where it wins (else null). A hull breach's 0.8 disc
+// reaches over the jump handle 0.4 away: in c7, with no duct tape left, the breach's "out of tape" took every click on
+// the handle and the jump could not be pulled (2026-11-10). So: of the two, the one you can use right now wins; both
+// usable, or neither: the smaller, more exact disc. (The hazard keeps the rest of its disc.)
+function stationOver(h, mx, my) {
+  const s = minigameClickTarget(mx, my) || missionClickTarget(mx, my);
+  return s && (s.ok !== h.ok ? s.ok : s.r < h.r) ? s : null;
+}
 // What a left click on (mx, my) would do. Returns { text, ok, run?, repair?, x, y, r }.
 function clickTarget(mx, my) {
   // crew members you can treat (or yourself, when you're down)
@@ -394,8 +400,9 @@ function clickTarget(mx, my) {
   if (!standing(player)) return null;                                      // down: you can only patch yourself up
   if (player.mode === 'eva') return evaClickTarget(mx, my);
   if (player.mode !== 'inside') return null;
-  // broken systems first
-  const m = hazardClickTarget(mx, my) || dockClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my)
+  // hazards first; but a hazard's wide disc must never bury a station next to it (stationOver)
+  const hzT = hazardClickTarget(mx, my);
+  const m = (hzT && stationOver(hzT, mx, my)) || hzT || dockClickTarget(mx, my) || encounterClickTarget(mx, my) || minigameClickTarget(mx, my) || missionClickTarget(mx, my)
     || (typeof levClickTarget === 'function' && levClickTarget(mx, my));   // the boss fight's engine override (js/leviathan.js)
   if (m) return m;
   for (const s of SYSTEMS) {
@@ -542,11 +549,23 @@ function updateTreat(dt, target, holding, click = mouse.click) {   // (click: a 
     sfx.poi(); combatBanner(who === player ? 'Patched up — still hurt for a while' : `${who.name} is back on their feet`);
     for (const o of crew) if (o.treat?.id === who.id) {   // done for everyone on it; every crewmate who helped counts as a medic
       if (o !== who) hz.stats.treated[o.name] = (hz.stats.treated[o.name] || 0) + 1;
+      else hz.stats.selfTreated = (hz.stats.selfTreated || 0) + 1;   // (patched themselves up: the report mustn't say nobody needed treating)
       o.treat = null;
     }
   }
 }
 
+// Where a click turns the lever (markers and guide arrows point here: js/tutorial.js, js/claims.js): at the end of
+// its handle, on the ring round the hub (clickTarget: LEVER_HUB … 0.6). Not the lever's middle: that's the hub, and a
+// click there wedges the wrench in on whatever it shows. With the handle straight up (MID) the spot sits a little
+// further round the ring, towards RIGHT: in the tilted view the hub's own pick box (drawLeverSprite) covers the ring
+// right above it.
+const LEVER_KNOB = 0.42;
+function leverTurnSpot() {
+  let a = leverAngle(leverShownPos());
+  if (Math.abs(Math.cos(a)) < 0.5) a += 0.8 * LEVER_HANDLE_DIR;
+  return { x: LEVER.x + Math.cos(a) * LEVER_KNOB, y: LEVER.y + Math.sin(a) * LEVER_KNOB, r: 0.22 };
+}
 // E on the power lever (hub or handle): a tap (let go before LEVER_E_HOLD s) steps the lever like a
 // click on the handle; holding E that long wedges the wrench in (or pulls it out) instead.
 // target.eHold = { time, tap, hold, text }: game.js updateInteraction runs it (only for E; clicks stay as they are).
@@ -1100,7 +1119,9 @@ function boltGlyph(x, y, s, col) {
 // Screen space: the inventory (bottom centre) and the power panel (bottom left).
 function drawSystemsHUD(top) {
   const hoverSlot = me.mode === 'inside' && standing(me) && !me.ui.panel ? invSlotAt(mouse.x, mouse.y) : null;
-  for (const b of me.mode === 'gun' ? [] : invSlots()) {   // (in a cannon the hands are busy: no slots over the cannon's prompt and reload panel)
+  // (in a cannon the hands are busy: no slots over the cannon's prompt and reload panel; on the end screen: the report and
+  //  the rewards are printed where the slots are)
+  for (const b of me.mode === 'gun' || endScreenReady() ? [] : invSlots()) {
     const { slot, x, y, w, h } = b, kind = inv[slot], hov = hoverSlot === b && kind;
     rr(x, y, w, h, 10); ctx.fillStyle = hov ? 'rgba(40,44,54,0.92)' : 'rgba(10,12,18,0.85)'; ctx.fill(); stroke(hov ? 2.5 : 1.5, hov ? USE_COL : '#5a6272');
     ctx.fillStyle = '#9aa3b5'; ctx.font = '700 14px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';

@@ -26,8 +26,8 @@ let FIRE_TIME = 15;
 const SPRAY_RANGE = 2.8, SPRAY_RATE = 0.8;
 
 const mission = {
-  active: true, t: 0, events: [], revealed: new Set(), scanT: -10, lastScan: null,
-  diagRun: false, jump: null, over: null, banner: 0,
+  active: true, t: 0, events: [], revealed: new Set(), lastScan: null,
+  diagRun: false, jump: null, over: null,
 };
 const fires = [];
 // Luck: petting the cat makes the dice friendlier for LUCK_TIME seconds.
@@ -171,6 +171,8 @@ const paceFactor = () => (mission.gap && mission.writtenGap ? mission.gap / miss
 const diffStep = (n) => Math.max(1, Math.min(8, n | 0));
 const DIFFICULTIES = { '-1': 'Hard', 0: 'Normal', 1: 'Easy', 2: 'Very easy' };
 const clampDifficulty = (v) => Math.min(2, Math.max(-1, Math.floor(+v) || 0));
+// The difficulty as those read it: 0 normal (hard too), 1 easy, 2 very easy.
+const easyLevel = () => clamp(mission.easy || 0, 0, 2);
 // The events for a crew of n, from the written list (times as written): essential first, then by DROP_ORDER.
 function selectEvents(id, written, n, target, easy = 0) {
   written = oneTide(MISSIONS[id], written);
@@ -245,6 +247,27 @@ function shapedTimes(count, n, L, rnd = null, fl = 0, spread = false) {
   t.push(out);
   return t;
 }
+// spacing: 'written': the repeats (hard's extra encounters, crew.extra) have no written time of their own. Each takes,
+// in turn, a written time this crew doesn't use (an encounter only a bigger crew gets: hard solo in c5 plays the patrol
+// coming back at its 150 s), and once those are gone the middle of the longest quiet stretch between the first
+// encounter after the opener (c5: docking) and JUMP_DELAY s before the jump. No random draws.
+function placeRepeats(evs, written, L) {
+  const reps = evs.filter(e => !Number.isFinite(e.t));
+  if (!reps.length) return;
+  const used = evs.filter(e => Number.isFinite(e.t)).map(e => e.t).sort((a, b) => a - b);
+  const from = (evs.some(e => e.opener) ? used[1] : used[0]) ?? used[0] ?? SHAPE.open[0], to = Math.max(from, L - JUMP_DELAY);
+  const free = [...new Set(written.map(e => e.t))].filter(t => t > from && t <= to && !used.includes(t)).sort((a, b) => a - b);
+  const taken = [from, ...used.filter(t => t > from && t < to), to];   // (in time order: the stretches between them)
+  for (const e of reps) {
+    let t = free.shift();
+    if (t === undefined) {
+      let k = 1;
+      for (let i = 2; i < taken.length; i++) if (taken[i] - taken[i - 1] > taken[k] - taken[k - 1]) k = i;
+      t = (taken[k - 1] + taken[k]) / 2;
+    }
+    e.t = t; taken.push(t); taken.sort((a, b) => a - b);
+  }
+}
 function layoutMission(id, n) {
   const M = MISSIONS[id] || MISSIONS.c1, written = mission.written;
   const evs = selectEvents(id, written, n, null, mission.easy || 0).map((e, i) => ({ ...e, id: i, done: false, radar: e.radar !== false,
@@ -256,6 +279,7 @@ function layoutMission(id, n) {
   const pinned = (e) => shaped && e.pin && !e.repeat, free = evs.filter(e => !pinned(e));
   const pin = free.length ? pinned : () => false, slots = free.length ? free : evs;
   const times = shaped ? shapedTimes(slots.length, n, L, Math.random, M.finaleLead || 0, M.spacing === 'spread') : null;
+  if (asWritten) placeRepeats(evs, written, L);
   const lead = shaped ? times[0] : Math.min(...written.map(e => e.t)), end = shaped ? times[times.length - 1] : asWritten ? Math.max(...evs.map(e => e.t)) : L - fl;
   const gap = evs.length > 1 ? (end - lead) / (evs.length - 1) : end - lead;
   evs.forEach((e, i) => { e.t1 = e.repeat ? null : e.t; e.t = asWritten ? e.t : pin(e) ? Math.min(end - 5, e.t * L / MISSION_LENGTH + (Math.random() * 2 - 1) * SHAPE.jitter)
@@ -274,7 +298,7 @@ function layoutMission(id, n) {
   const nt = shaped ? shapedTimes(normal, n, L, null, M.finaleLead || 0, M.spacing === 'spread') : null;                  // (shaped: normal's own first and last times)
   const paceGap = asWritten ? (wl || gap) : shaped ? (normal > 1 ? (nt[nt.length - 1] - nt[0]) / (normal - 1) : nt[0] - SHAPE.open[0]) : normal > 1 ? (end - lead) / (normal - 1) : end - lead;
   mission.extraLuck = Math.max(0, (mission.easy || 0) * diffStep(n) - (normal - evs.length)) / 2;   // encounters an easier difficulty couldn't drop: half a cat each (hard: none)
-  Object.assign(mission, { events: evs, lead, gap: paceGap, eventGap: gap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : shaped || asWritten ? L : Math.max(0, ...evs.map(e => e.t)) + fl });
+  Object.assign(mission, { events: evs, lead, gap: paceGap, writtenGap: wl || paceGap, paceN: n, jumpAt: M.practice ? Infinity : shaped || asWritten ? L : Math.max(0, ...evs.map(e => e.t)) + fl });
   mission.overcharge = missionCrew(id, n).overcharge; mission.reactor = missionCrew(id, n).reactor;
   pickMaintPairs(evs, maintPrev);
 }
@@ -362,7 +386,7 @@ function startMission(id = 'c1', opts = {}) {
   resetHazards(); resetEncounters(); resetOrganic(); resetDock(); resetEva((MISSIONS[id] || MISSIONS.c1).rules || {});
   Object.assign(mission, {
     rules: { ...((MISSIONS[id] || MISSIONS.c1).rules || {}) }, objective: (MISSIONS[id] || MISSIONS.c1).objective || null,
-    id, active: true, coilsChecked: false, autoPull: null, autoJump: false, t: 0, revealed: new Set(), scanT: -10, lastScan: null, diagRun: false, jump: null, over: null, press: null,
+    id, active: true, coilsChecked: false, autoPull: null, autoJump: false, t: 0, revealed: new Set(), lastScan: null, diagRun: false, jump: null, over: null, press: null,
     crewCells: undefined, extraLuck: 0, easy: clampDifficulty(opts.easy),
     custom: (MISSIONS[id] || {}).custom ? customConfig(opts.custom) : null,
   });
@@ -517,12 +541,22 @@ function objectiveStatus() {
   if (o.kind === 'intruder') {
     const k = Math.min(o.count, mission.kills || 0), left = o.count - k;
     // until they show up (the event ran, the radar saw it, or one's aboard / dead) a cover objective: no spoiler (chapter 2)
-    const seen = k > 0 || mission.events.some(e => e.kind === 'intruder' && (e.done || mission.revealed?.has(e.id))) || boarding.invaders.some(a => a.kind !== 'saboteur' && a.state !== 'dormant');
+    const seen = k > 0 || mission.events.some(e => e.kind === 'intruder' && (e.done || mission.revealed?.has(e.id))) || boarding.invaders.some(a => a.kind !== 'saboteur');
     if (o.cover && !seen) return { done: false, fail: `with ${left === 1 ? 'an intruder' : `${left} intruders`} still alive`, text: o.cover };
     if (!(o.count > 1)) return { done: k >= 1, fail: 'with the intruder still alive', text: 'Kill the intruder' };
     return { done: left <= 0, fail: `with ${left === 1 ? 'an intruder' : `${left} intruders`} still alive`, text: `Kill ${o.count === 2 ? 'both' : `all ${o.count}`} intruders (${k}/${o.count} dead)` };
   }
   if (o.kind === 'raiders') { const n = dk.ships || 0; return { done: n >= o.count, fail: `with only ${n}/${o.count} pirate ships destroyed`, text: `Destroy ${o.count} pirate ships (${n} so far)` }; }
+  // Chapters 7 and 8: what the mission asks for anyway, named (no rule of its own: by the time the ship jumps it's done).
+  if (o.kind === 'handjump') {                           // c7: no nav fix in the deep, somebody pulls the jump handle (rule `handle`)
+    const pulled = !!mission.jump && (!mission.rules?.handle || (mission.jump.pull || 0) >= JUMP_PULL), ok = evs.coils.filter(c => c.ok).length;
+    return { done: pulled, fail: 'without the jump handle pulled',
+             text: pulled ? 'Jump handle pulled' : mission.jump ? 'Pull the jump handle at the helm (bridge)' : `Cross the deep, then jump out by hand: the handle at the helm (jump coils ${ok}/${evs.coils.length} in line)` };
+  }
+  if (o.kind === 'leviathan') {                          // c8: the ship only jumps once it's free (mission.autoJump, js/leviathan.js levFree)
+    const here = !!org.boss || mission.events.some(e => e.kind === 'leviathan_boss'), free = !!mission.autoJump || !here;
+    return { done: free, fail: 'with the leviathan still infested', text: free ? 'The leviathan is free' : 'Free the leviathan of what\'s eating it' };
+  }
   if (o.kind === 'pirates') return { done: dk.defeated >= o.count, fail: `with only ${dk.defeated}/${o.count} pirates defeated`, text: `Defeat ${o.count} pirates (${dk.defeated} so far)` };
   return { done: true };
 }
@@ -535,7 +569,7 @@ function endMission(won, reason, survived = won) {
 
 // Radar: reveals everything coming in the next RADAR_RANGE seconds, for the whole crew.
 function radarScan() {
-  mission.scanT = mission.t; mission.lastScan = mission.t; mission.lastScanBy = player?.id ?? null;   // (who: crew training credits the right player)
+  mission.lastScan = mission.t; mission.lastScanBy = player?.id ?? null;   // (who: crew training credits the right player)
   if (!evs.antenna) { sfxFor(player, 'empty'); combatBanner('Radar: garbled echoes — the antenna outside is knocked crooked'); return; }
   if (enc.storm) { sfxFor(player, 'empty'); combatBanner('Radar: nothing but static — ion storm'); return; }
   for (const e of combat.enemies) if (e.D.stealth) e.reveal = 3;           // the ping lights up cloaked ships for a moment
@@ -1081,7 +1115,7 @@ function drawSecurityPanel() {
   };
   for (const c of crew) if (c.mode === 'inside') blip(c.x, c.y, 'rgba(90,170,255,1)', c === player);
   if (dk.npc) blip(dk.npc.x, dk.npc.y, 'rgba(90,170,255,1)', false);
-  for (const a of boarding.invaders) if (a.state !== 'dormant' && a.mode !== 'cloaked') blip(a.x, a.y, 'rgba(255,70,60,1)', true);
+  for (const a of boarding.invaders) if (a.mode !== 'cloaked') blip(a.x, a.y, 'rgba(255,70,60,1)', true);
   for (const p of dk.pirates) blip(p.x, p.y, 'rgba(255,70,60,1)', true);
   for (const [li, l] of lockables().entries()) {
     const [cx, cy] = P(l.x, l.y), hover = Math.hypot(mouse.x - cx, mouse.y - cy) < 15;
@@ -1222,7 +1256,7 @@ function drawOverridePanel(t) {
 //   screen: the ship pulls back, then lurches forward and away (the camera pulls out to the whole ship),
 //   the stars stretch into lines, a tunnel of light, a white flash (JUMP_FLASH), then the end screen
 //   fades in from white. Its clock starts at mission.over.at (synced sim time), so every client plays it
-//   at the same moment; R (back to the lobby) only works once it's done. Not on a loss.
+//   at the same moment; any key or click (back to the lobby) only works once it's done. Not on a loss.
 // ---------------------------------------------------------------------------
 const JUMP_PRESPOOL = 8, JUMP_FLASH = 1.6, JUMP_OUT = 2.3;
 let jumpClock = null;                                // this browser's smooth clock for the jump-out (time is 30 Hz in multiplayer)
@@ -1433,7 +1467,7 @@ function drawEndScreen() {
   const S = hz.stats, medics = Object.entries(S.treated).sort((a, b) => b[1] - a[1]);
   const lines = [
     `Fires: ${S.fires} started, ${S.firesOut} put out · hull breaches: ${S.breaches} · repairs: ${S.repairs}`,
-    medics.length ? `Medic of the day: ${medics[0][0]} (treated ${medics[0][1]}×)` : 'Nobody had to be treated. Suspicious.',
+    medics.length ? `Medic of the day: ${medics[0][0]} (treated ${medics[0][1]}×)` : S.selfTreated ? `Nobody treated anyone else; patched up on their own: ${S.selfTreated}×` : combat.hits.crew ? 'Nobody was treated: they walked it off.' : 'Nobody had to be treated. Suspicious.',
     `The cat was petted ${S.pets} time${S.pets === 1 ? '' : 's'}.`,
   ];
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';

@@ -3,7 +3,8 @@
 // with. Run: node tests/sidebar.js
 const { loadGame } = require('./harness');
 const G = loadGame(['tick', 'render', 'mission', 'startMission', 'radarScan', 'encounterPlates', 'sidePlates', 'combat', 'combatSpawn',
-  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines', 'bannerLayout', 'wrapText', 'keepOffPanels', 'leftPanelRects']);
+  'combatClear', 'SYSTEMS', 'fires', 'spawnFire', 'VH', 'VW', 'power', 'window', 'HUD_H', 'plateLines', 'bannerLayout', 'wrapText', 'keepOffPanels', 'leftPanelRects',
+  'pillSpot', 'problemPills', 'damageLabel', 'MAX_DAMAGE', 'injuryBadgeRect', 'me', 'sideMore', 'igniteSystem', 'MISSIONS', 'objectiveStatus', 'PLATE_W']);
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -106,5 +107,86 @@ for (const W of [760, 1024, 1400, 1920]) {
     if (rects.some(r => over(m, r)) || m.x + m.w > W) bad++;
   }
   check(G.VW === W && rects.length >= 2 && !bad, `${W} px wide: a prompt anywhere ends up under none of the ${rects.length} panels (${bad} bad)`);
+}
+
+// --- 2026-11-10: the plates say all of it (two lines), the injury badge covers no plate, the edge pills don't stack,
+// the header's last warning stays off the jump clock
+{
+  const w7b = (s) => s.length * 7;                          // (13 px text: about 7 px a character)
+  const room = G.PLATE_W - 66 - 14;                         // (a plate with a red light: drawPlate)
+  for (const text of ['Destroy 2 pirate ships (0 so far)', 'left airlock · loot crate · jam their reactor', 'Left shield button · flares up in 12 s', 'Left shield button or Right capacitor', '0/3 aligned · each one off = 1 more failed jump']) {
+    const l = G.plateLines(text, room, true, w7b);
+    check(l.length <= 2 && l.join(' ') === text && l.every(q => w7b(q) <= room), `"${text}": all of it on the plate (${l.join(' / ')})`);
+  }
+  const long = G.plateLines('one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen', room, true, w7b);
+  check(long.length === 2 && long[1].endsWith('…') && long.every(q => w7b(q) <= room + 7) && !long[0].endsWith('…'), `more than two lines' worth: cut at the end of the second line ("${long.join(' / ')}")`);
+  // every chapter's objective at the start: nothing cut
+  const cut = [];
+  for (const id of Object.keys(G.MISSIONS)) {
+    if (G.MISSIONS[id].tutorial || !G.MISSIONS[id].objective) continue;
+    G.startMission(id);
+    const text = G.objectiveStatus().text, two = G.plateLines(text, G.PLATE_W - 66, true, w7b);
+    const l = two.join(' ') === text ? two : G.plateLines(text, G.PLATE_W - 66, true, (q) => q.length * 6, 3);   // (else three lines at 11 px: about 6 px a character)
+    if (l.join(' ') !== text) cut.push(`${id}: ${l.join(' / ')}`);
+  }
+  check(!cut.length, `every mission's objective fits its plate uncut (two lines, or three small ones)${cut.length ? ' — cut: ' + cut.join('; ') : ''}`);
+  const three = G.plateLines('Cross the deep, then jump out by hand: the handle at the helm (jump coils 0/3 in line)', 202, true, (q) => q.length * 6, 3);
+  check(three.length === 3 && three.every(q => q.length * 6 <= 202) && !three[2].endsWith('…'), `a long one on three lines ("${three.join(' / ')}")`);
+
+  // the injury badge: the plates (and "+ n more") end above it
+  G.window.innerWidth = 1280; G.window.innerHeight = 720; G.listeners.resize?.();
+  G.startMission('c1'); G.mission.events.forEach(e => { e.done = true; });
+  for (const q of G.SYSTEMS.filter(q => !q.outside).slice(0, 9)) G.igniteSystem(q);
+  const overR = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const column = () => G.leftPanelRects(G.HUD_H).filter(r => r.x <= 12 && r.w >= 100 && r.h <= 62 && r.y < G.VH - 140);   // header, plates, "+ n more"
+  const keepFires = () => { for (const f of G.fires) { f.t = 0; f.hp = 1; } G.SYSTEMS.forEach(q => { q.broken = false; }); G.me.health = G.me.health; };
+  for (let i = 0; i < 200; i++) { keepFires(); step(1); }
+  const before = G.sidePlates.size;
+  check(!G.injuryBadgeRect() && before >= 6, `fine: no badge, ${before} plates shown`);
+  for (const h of ['hurt', 'down', 'out']) {
+    G.me.health = h; G.me.hurtT = 30;
+    for (let i = 0; i < 200; i++) { keepFires(); G.me.health = h; G.me.hurtT = 30; step(1); }
+    const b = G.injuryBadgeRect(), hit = column().filter(r => overR(r, b));
+    check(!!b && !hit.length && (h !== 'hurt' || G.sidePlates.size < before) && G.sideMore > 0, `${h}: the badge (y ${b && Math.round(b.y)}) covers none of the ${G.sidePlates.size} plates nor the "+ ${G.sideMore} more" line${hit.length ? ' — covered: ' + hit.map(r => Math.round(r.y)).join(', ') : ''}`);
+  }
+  G.me.health = 'ok';
+  for (let i = 0; i < 200; i++) { keepFires(); step(1); }
+  check(G.sidePlates.size === before, 'on your feet again: the plates take the room back');
+
+  // pills at the screen's edge: wherever they want to be, none ends up on another
+  const pills = [];
+  for (const [x, y, w] of [[900, 300, 180], [900, 300, 220], [905, 310, 160], [900, 290, 200], [880, 300, 180], [900, 330, 240], [900, 300, 180], [900, 120, 180]]) {
+    const py = G.pillSpot(pills, x, y, w, 30, 107, 493); pills.push({ x, y: py, w, h: 30 });
+  }
+  const clash = pills.filter((a, i) => pills.some((b, j) => j > i && Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.y - b.y) < 30));
+  check(!clash.length && pills.every(q => q.y >= 107 && q.y <= 493), `eight pills wanting the same spot: none overlaps another, all inside (${pills.map(q => Math.round(q.y)).join(', ')})`);
+  check(G.pillSpot([], 500, 200, 100, 30, 107, 493) === 200, 'a pill alone stays where it points');
+  // the real thing: fires all over the ship, the player far off in a corner
+  G.me.x = 41; G.me.y = 21; for (let i = 0; i < 120; i++) { keepFires(); step(1); }
+  const P = G.problemPills, clash2 = P.filter((a, i) => P.some((b, j) => j > i && Math.abs(a.x - b.x) < (a.w + b.w) / 2 && Math.abs(a.y - b.y) < 30));
+  check(P.length >= 3 && !clash2.length, `${P.length} off-screen problem pills drawn: none on top of another`);
+
+  // the header's damage label: never over the big line (x0: where it ends), never past the plate's edge (x1)
+  const m11 = (s) => s.length * 7.2, x1 = 12 + 268 - 8, cx = 12 + 268 - 49;
+  for (const [big, bigW] of [['JUMP IN 3:01', 152], ['JUMP STALLED', 176], ['PRACTICE', 118]]) {
+    const x0 = 12 + 14 + bigW + 8, l = G.damageLabel(G.MAX_DAMAGE, x0, x1, cx, m11);
+    check(/LOST|LAST/.test(l.text) && l.cx - l.w / 2 >= x0 - 0.01 && l.cx + l.w / 2 <= x1 + 0.01, `at ${G.MAX_DAMAGE}/${G.MAX_DAMAGE} next to "${big}": "${l.text}" from x ${Math.round(l.cx - l.w / 2)} to ${Math.round(l.cx + l.w / 2)} (free: ${x0} to ${x1})`);
+  }
+  const n = G.damageLabel(2, 12 + 14 + 152 + 8, x1, cx, m11);
+  check(n.text === `DAMAGE 2/${G.MAX_DAMAGE}` && n.cx === cx, 'below that: "DAMAGE 2/5", centred over the lights as before');
+}
+
+// --- chapter 5's PIRATES ABOARD plate says where they came from: out of the base, or left behind when their raider cast off
+{
+  const B = loadGame(['startMission', 'mission', 'dockShip', 'dk', 'encounterPlates', 'FUEL_CRATE']);
+  B.startMission('c5'); for (const e of B.mission.events) e.done = true;
+  B.dockShip('base', 'port');
+  const at = { x: B.FUEL_CRATE.x + 1, y: B.FUEL_CRATE.y }, sub = () => B.encounterPlates().find(p => p.key === 'pirates')?.sub;
+  B.dk.pirates = [{ ...at, mode: 'hunt' }];
+  check(/^1 · rushed out of the base/.test(sub() || ''), `a pirate from the base on our ship: "${sub()}"`);
+  B.dk.pirates = [{ ...at, mode: 'hunt', stranded: true }];
+  check(/^1 · left behind by their raider/.test(sub() || '') && !/base/.test(sub()), `one the raider left behind: "${sub()}"`);
+  B.dk.pirates = [{ ...at, mode: 'hunt', stranded: true }, { ...at, mode: 'hunt' }];
+  check(/^2 · out of the base and off the raider/.test(sub() || ''), `one of each: "${sub()}"`);
 }
 process.exitCode = failed ? 1 : 0;

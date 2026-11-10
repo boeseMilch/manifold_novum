@@ -103,7 +103,7 @@ function padPickerRender() {
 }
 
 // The pads: the page's own, or in split screen the parent page's (it has the focus that browsers want for gamepads;
-// split.html splitPads)
+// js/local.js splitPads)
 function padList() {
   try { if (window.parent !== window && window.parent.splitPads) return [...window.parent.splitPads()]; } catch (e) { /* not ours */ }
   return [...(navigator.getGamepads?.() || [])];

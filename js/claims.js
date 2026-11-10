@@ -147,6 +147,11 @@ function gunStep(c, side, aim, hint) {               // man the cannon on that s
   if (c.mode === 'gun' && c.gun === g) return aim ? { x: aim.x, y: aim.y, hint } : null;
   return { x: g.hatch[0], y: g.hatch[1], hint: `Man the ${g.name.toLowerCase()} (click the ladder)` };
 }
+// The spots are the click targets' own (the same constants their code reads: BREACH_SPOTS[room].out in hazardEvaTarget,
+// GRAV_PANELS and VENT_PANELS in hazardClickTarget, JUMP_HANDLE in minigameClickTarget, a part's own x / y), never a
+// spot "near enough": an arrow that points next to the thing sends a click to whatever else lies there (the breach's
+// arrow started a tarp and spent tape, the jump's opened the helm diagnosis; 2026-11-10). tests/claims.js clicks at
+// every kind's arrow and checks that it starts that job.
 function claimStep(key, c) {
   const n = (p) => key.startsWith(p) ? key.slice(p.length) : null;
   const custom = taskPlate(key);
@@ -155,7 +160,11 @@ function claimStep(key, c) {
   if ((id = n('fire')) !== null) {
     const f = fires.find(f => String(f.uid) === id);
     if (!f) return null;
-    if (f.plasma) return { x: f.x, y: f.y, hint: 'Plasma fire: vent the room at the airlock panel' };
+    if (f.plasma) {                                    // foam only pushes it back: the room's vent panel puts it out
+      const room = sysRooms(f.sys).find(r => VENT_PANELS[r.id]), v = room && VENT_PANELS[room.id];
+      if (!v || hz.vent?.room === room.id) return { x: f.x, y: f.y, hint: v ? 'The room is venting: stay clear' : 'Plasma fire: vent the room at the airlock panel' };
+      return { x: v[0], y: v[1], hint: 'Plasma fire: vent the room at this panel (click; code on the sticky note)' };
+    }
     return c.inv.weapon === 'extinguisher' ? { x: f.x, y: f.y, hint: 'Spray it: hold right click / Space towards it' } : fetchStep(c, 'extinguisher', 'fire extinguisher') || { x: f.x, y: f.y, hint: 'Put it out' };
   }
   if (key === 'broken') {
@@ -168,14 +177,20 @@ function claimStep(key, c) {
   if ((id = n('breach')) !== null) {
     const b = hz.breaches.find(b => b.room === id), p = BREACH_SPOTS[id];
     if (!b || !p) return null;
-    if (!b.plated && !b.tarp && c.inv.item !== 'plate') { const cr = nearestTo(c, PLATE_CRATES); return { x: cr.x, y: cr.y, hint: 'Take a hull plate from the crate' }; }
-    return kitFirst(c, { x: p.x, y: p.y, hint: b.plated ? 'Nail the plate down (repair kit)' : 'Hold the plate over the hole (click)' });
+    // the lasting fix is from outside (a tarp only holds until the next hit): a plate over the hole, then the kit
+    if (!b.plated && c.inv.item !== 'plate') {
+      if (hz.plates > 0) { const cr = nearestTo(c, PLATE_CRATES); return { x: cr.x, y: cr.y, hint: 'Take a hull plate from the crate (click)' }; }
+      const got = fetchStep(c, 'plate', 'hull plate');         // (the crates are empty: one lying about, or in someone's hands)
+      if (got) return got;
+      return !b.tarp && hz.tape > 0 ? { x: p.x, y: p.y, hint: 'No hull plates left: tape a tarp over the hole (hold click)' } : null;
+    }
+    return kitFirst(c, { x: p.out[0], y: p.out[1], hint: b.plated ? 'Nail the plate down: hold right click / Space' : 'Hold the plate over the hole (click)' });
   }
   if ((id = n('surge')) !== null) { const l = LINE[id]; if (!l) return null; const [x, y] = linePoint(l, 0.5); return kitFirst(c, { x, y, hint: 'Splice the arcing line (repair kit)' }); }
-  if ((id = n('grav')) !== null) { const r = roomById(id); if (!r) return null; const [x, y] = roomCenter(r); return kitFirst(c, { x, y, hint: 'Reset the floor breaker (repair kit)' }); }
+  if ((id = n('grav')) !== null) { const g = hz.noGrav.includes(id) && GRAV_PANELS[id]; return g ? kitFirst(c, { x: g[0], y: g[1], hint: 'Reset the floor breaker here: hold right click / Space' }) : null; }
   if ((id = n('inv')) !== null) {
     const a = boarding.invaders.find(a => String(a.uid) === id);
-    if (!a) return null;
+    if (!a || a.state === 'sneak' || a.state === 'cloak') return null;   // (cloaked: nobody knows where it is, the arrow mustn't either)
     if (!['laser', 'heavy'].includes(c.inv.weapon)) { const g = fetchStep(c, 'laser', 'laser gun'); if (g) return g; }
     return { x: a.x, y: a.y, hint: a.kind === 'saboteur' ? 'Shoot the saboteur before it wrecks something' : 'Shoot it: hold right click / Space' };
   }
@@ -185,10 +200,15 @@ function claimStep(key, c) {
   }
   if (key === 'swarm') { const a = nearestTo(c, combat.asteroids); return gunStep(c, a?.side || 'front', a, 'Shoot the rocks before they hit'); }
   if (key === 'jump' && mission.jump) {
-    if (mission.rules?.handle && (mission.jump.pull || 0) < JUMP_PULL) { const h = STATIONS.find(s => s.name === 'Helm'); return { x: h.x, y: h.y + 0.6, hint: 'Pull the jump handle at the helm (hold)' }; }
+    if (mission.rules?.handle && (mission.jump.pull || 0) < JUMP_PULL) return { x: JUMP_HANDLE.x, y: JUMP_HANDLE.y, hint: 'Pull the jump handle and keep holding (hold click / E)' };
     const cap = CAPACITORS[1];
     if (broken(cap)) return kitFirst(c, { x: cap.x, y: cap.y, hint: 'Repair the middle capacitor' });
-    if (cap.charge <= 0) return { x: LEVER.x, y: LEVER.y, hint: power.lever.pos === 1 ? 'Lever on MID: wait for 1 energy' : 'Turn the power lever to MID' };
+    if (cap.charge <= 0) {
+      if (power.lever.pos === 1) return { x: LEVER.x, y: LEVER.y, hint: 'Lever on MID: wait for 1 energy' };
+      if (power.lever.jammed) return { x: LEVER.x, y: LEVER.y, hint: 'Pull the wrench out of the lever (click its hub), then turn it to MID' };
+      const k = leverTurnSpot();                     // (its handle: a click on the lever's middle, the hub, wedges the wrench in instead)
+      return { x: k.x, y: k.y, hint: 'Turn the power lever to MID (click its handle)' };
+    }
     return null;
   }
   // anything else with a place in the ship (js/sidebar.js problemSpots)
@@ -196,18 +216,26 @@ function claimStep(key, c) {
   if (s) return { x: s.x, y: s.y, hint: s.what.charAt(0) + s.what.slice(1).toLowerCase() };
   return null;
 }
-// With the way out / in: a target outside while you're inside → the nearest outer airlock; the other way round, back in.
+// With the way out / in: a target outside while you're inside → out through an outer airlock first; the other way
+// round, back in. Which airlock: the one that makes the whole trip shortest (walking to it, then floating to the job;
+// the float is slower and goes round the hull, so in effect the airlock on the job's side, not the one next to you:
+// the right emitter used to be "out through the left airlock", 48 units round the hull instead of 4; 2026-11-10).
 const outsideShip = (x, y) => !pointInPoly(x, y) && !(typeof inDock === 'function' && inDock(x, y));
+function claimHatch(c, s, out) {
+  const d = (a, b, x, y) => Math.hypot(a - x, b - y);
+  const trip = (h) => out ? d(c.x, c.y, ...h.inside) / WALK_SPEED + d(s.x, s.y, ...h.outside) / EVA_SPEED : d(c.x, c.y, ...h.outside) / EVA_SPEED + d(s.x, s.y, ...h.inside) / WALK_SPEED;
+  return HATCHES.slice().sort((a, b) => trip(a) - trip(b))[0];
+}
 function claimTarget(key, c = me) {
   const s = claimStep(key, c);
   if (!s || !Number.isFinite(s.x) || !Number.isFinite(s.y)) return null;
   if (c.mode === 'inside' && outsideShip(s.x, s.y)) {
-    const h = nearestTo(c, HATCHES.map(h => ({ x: h.inside[0], y: h.inside[1], h })));
-    return { x: h.x, y: h.y, hint: `Out through the ${SIDE_LABEL[h.h.side].toLowerCase()} airlock, then: ${s.hint}`, via: true };
+    const h = claimHatch(c, s, true);
+    return { x: h.inside[0], y: h.inside[1], hint: `Out through the ${SIDE_LABEL[h.side].toLowerCase()} airlock, then: ${s.hint}`, via: true };
   }
   if (c.mode === 'eva' && !outsideShip(s.x, s.y) && !(typeof inDock === 'function' && inDock(s.x, s.y))) {
-    const h = nearestTo(c, HATCHES.map(h => ({ x: h.outside[0], y: h.outside[1], h })));
-    return { x: h.x, y: h.y, hint: `Back in through the ${SIDE_LABEL[h.h.side].toLowerCase()} airlock, then: ${s.hint}`, via: true };
+    const h = claimHatch(c, s, false);
+    return { x: h.outside[0], y: h.outside[1], hint: `Back in through the ${SIDE_LABEL[h.side].toLowerCase()} airlock, then: ${s.hint}`, via: true };
   }
   return s;
 }
@@ -238,7 +266,7 @@ function drawClaimGuide(view) {
   const col = me.color || '#ffe08a', z = view.zoom || 1;
   const toS = (x, y) => [view.ox + x * T * z, view.oy + y * T * z * view.sy];
   const box = { x0: SIDEBAR_X + PLATE_W + 50, y0: HUD_H + 60, x1: VW - 24, y1: (typeof invSlots === 'function' ? invSlots()[0].y : VH) - 16 };
-  const placed = [];
+  const placed = [...problemPills];                   // (the pills drawProblemMarkers put at the screen's edge this frame)
   ctx.save();
   for (const key of mine.slice(0, 3)) {
     const t = claimTarget(key, me);
@@ -273,8 +301,8 @@ function drawClaimGuide(view) {
       ctx.restore();
       ctx.beginPath(); ctx.arc(sx, sy, 18 + 4 * Math.sin(time * 5), 0, TAU); ctx.strokeStyle = col; ctx.lineWidth = 3; ctx.globalAlpha = 0.8; ctx.stroke(); ctx.globalAlpha = 1;
       let px = clamp(sx, w / 2 + 12, VW - w / 2 - 12), py = clamp(ay - f * (40 + h / 2 + 6), HUD_H + h / 2 + 8, VH - h / 2 - 8);
-      for (const q of placed) if (Math.abs(q.x - px) < (q.w + w) / 2 && Math.abs(q.y - py) < h + 4) py = q.y - h - 6;
-      placed.push({ x: px, y: py, w });
+      py = pillSpot(placed, px, py, w, h, HUD_H + h / 2 + 8, VH - h / 2 - 8);
+      placed.push({ x: px, y: py, w, h });
       rr(px - w / 2, py - h / 2, w, h, 8); ctx.fillStyle = 'rgba(12,14,20,0.92)'; ctx.fill(); stroke(2.5, col);
       ctx.fillStyle = '#ffffff'; ctx.fillText(text, px, py + 0.5);
     } else {                                         // off-screen: a big arrow at the edge, pointing to it, with the hint
@@ -285,8 +313,8 @@ function drawClaimGuide(view) {
       poly([[24, 0], [-6, -22], [-6, -9], [-26, -9], [-26, 9], [-6, 9], [-6, 22]]); ctx.fillStyle = col; ctx.fill(); stroke(2.5, 'rgba(10,12,18,0.9)');
       ctx.restore();
       let px = clamp(ex - Math.cos(a) * (w / 2 + 34), box.x0 + w / 2, box.x1 - w / 2), py = clamp(ey - Math.sin(a) * (h / 2 + 34), box.y0 + h / 2, box.y1 - h / 2);
-      for (const q of placed) if (Math.abs(q.x - px) < (q.w + w) / 2 && Math.abs(q.y - py) < h + 4) py = q.y + h + 6;
-      placed.push({ x: px, y: py, w });
+      py = pillSpot(placed, px, py, w, h, box.y0 + h / 2, box.y1 - h / 2);   // (on none of the other hints, nor the problem markers' pills: js/sidebar.js)
+      placed.push({ x: px, y: py, w, h });
       rr(px - w / 2, py - h / 2, w, h, 8); ctx.fillStyle = 'rgba(12,14,20,0.92)'; ctx.fill(); stroke(2.5, col);
       ctx.fillStyle = '#ffffff'; ctx.fillText(text, px, py + 0.5);
     }

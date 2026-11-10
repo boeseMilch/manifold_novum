@@ -567,7 +567,7 @@ function jobsFor(ev, ctx) {
     job({ ...trip(1, from, true), rel: from });
   } else if (k === 'brig') {
     const b = boarders(2, side);
-    job({ label: 'prison barge (rescue)', prio: 1, ...b, work: b.work + g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED, objective: { rescue: 1 } });
+    job({ label: 'the brig (rescue)', prio: 1, ...b, work: b.work + g.TREAT_TIME + A.BOARD_WALK / g.NPC_SPEED, objective: { rescue: 1 } });
     // Captain Red Comet in the base's quarters (js/captain.js), roughly: his HP is shared by up to CAPT_FIGHTERS crew, who hit the
     // generator in his catch-breath windows (and, phase 2, his daze); a cycle's length and hits from his own constants. His door
     // pirates (75 %, 50 %, one every CAPT_TRICKLE s in phase 2) are fought too; 2+ players: his raider at our other airlock.
@@ -941,6 +941,7 @@ function finish(build, s, real, bestOf) {
 }
 function objectiveMet(o, got, n = 1) {
   if (!o) return true;
+  if (o.kind === 'handjump' || o.kind === 'leviathan') return true;   // (c7, c8: done by jumping out, no job of its own: js/mission.js objectiveStatus)
   if (o.kind === 'ore') return (got.ore || 0) >= (o.perPlayer ? n : o.count || 1);
   if (o.kind === 'pirates' || o.kind === 'intruder') return (got[o.kind] || 0) >= o.count;
   if (o.kind === 'raiders') return (got.pirates || 0) >= o.count;   // (a raider per pirates event)
@@ -1583,8 +1584,24 @@ function calibrateAll(opts = {}) {
   return ids.map(id => fitMission(id, opts));
 }
 
+const USAGE = `usage: node tools/balance.js [options] [mission ...]     (no mission: every campaign mission)
+  --players 1,2,4     crew sizes (default: 1-4 and 8)
+  --runs N            random builds per mission and crew size (default ${A.RUNS})
+  --hit 0.5           the share of cannon shots that hit
+  --ship caps,cannons with these ship upgrades (ids from SHIP_UPGRADES)
+  --kit none          without the gear and upgrades a first campaign run can afford by then
+  --base              ignore the missions' prerequisites (base ship)
+  --energy game       the energy runs on the game's own code (slow; the fast model is checked against it)
+  --detail c4 2       one build of a mission for a crew size, job by job
+  --encounters        rate every skirmish encounter kind on its own
+  --calibration       print the measured damage rates (each encounter in the game, nobody fighting back)
+  --rates             measure them again and save tools/damage-rates.json
+  --calibrate         fit the encounter counts, fuel cells and reactor per crew size (prints MISSIONS[id].crew lines)
+  --target 0.45       --calibrate towards one flat idle share for every crew size
+  -h, --help          this text`;
 function main() {
   const args = process.argv.slice(2), opts = {}, ids = [];
+  if (args.includes('--help') || args.includes('-h')) { console.log(USAGE); return; }
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--hit') opts.hit = +args[++i];
     else if (args[i] === '--runs') opts.runs = +args[++i];
@@ -1603,6 +1620,8 @@ function main() {
   }
   if (opts.hit) A.HIT_RATE = opts.hit;
   const g = game();
+  const unknown = ids.filter(id => !g.MISSIONS[id]);                // (an option it doesn't know, a mistyped mission)
+  if (unknown.length) { console.error(`tools/balance.js: unknown ${unknown.map(u => (u.startsWith('-') ? 'option ' : 'mission ') + u).join(', ')}\n${USAGE}`); process.exitCode = 2; return; }
   if (ids.length) opts.missions = ids;
   if (opts.detail) {
     const [id, n] = opts.detail, r = runOne(id, n, 0, opts), b = setup(id, n, shipOf(id, opts), A.SEED + n);

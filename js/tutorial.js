@@ -35,7 +35,18 @@ const padPlaying = () => typeof gamepad !== 'undefined' && gamepad.index != null
 const tutGun = () => GUNS.find(g => g.id === 'port');
 const tutFoe = () => combat.enemies.find(e => e.kind === 'interceptor' && e.phase === 'fighting');
 const tutPoi = (e, id) => e?.pois.find(p => p.id === id);
-const tutPoiAt = (e, p) => { const [x, y] = enemyToWorld(e, ...p.c); return { x, y, r: 0.5 }; };
+// Where a weak spot is marked. The windshield crack: its front half. The weapon cable runs across in front of its
+// rear half, and a shot at the crack's middle often ended on the cable ("we said windshield"; 2026-11-10).
+const TUT_CRACK_AIM = [0.27, -1.65];
+const tutPoiAt = (e, p) => { const [x, y] = enemyToWorld(e, ...(p.id === 'crack' ? TUT_CRACK_AIM : p.c)); return { x, y, r: 0.5 }; };
+// The interceptor's sway (of its usual: js/enemies.js ampGoal): TUT_SWAY in training, and TUT_SWAY_FIRST while the
+// trainee lines up the very first shot: at TUT_SWAY a shot aimed straight at the marked crack, with no lead, hit it
+// one time in five and the cable two in five; this slow, it lands (tests/tutorial.js measures it).
+const TUT_SWAY = 0.7, TUT_SWAY_FIRST = 0.2;
+// Where to click the lever, for the mouse (keyboard / controller: E at the lever, so the lever as a whole): its handle
+// to turn it (leverTurnSpot), its hub for the wrench. The ring used to go round the whole lever, and a click on its
+// middle is the hub: the wrench went in on the wrong output.
+const tutLeverMark = (hub) => (tut.controls !== 'mouse' ? LEVER : hub ? { x: LEVER.x, y: LEVER.y, r: LEVER_HUB + 0.08 } : leverTurnSpot());
 const tutSys = (name) => SYSTEMS.find(s => s.name === name);
 const tutLeftCannon = () => SYSTEMS.find(s => s.ref === tutGun());
 const tutMaint = () => { const e = mission.events.find(e => e.kind === 'maintenance'); return { target: e?.sys, decoy: e?.decoy }; };
@@ -54,7 +65,7 @@ function startTutorial(controls = 'mouse') {
   tut.controls = TUT_CONTROLS.includes(controls) ? controls : 'mouse';
   try { localStorage.setItem(TUT_KEY, tut.controls); } catch (e) { /* no storage */ }
   startMission('tutorial', { ship: {} });                    // a stock ship: the numbers in the texts hold
-  combat.banner = null;
+  combat.banner = null; combat.bannerQueue.length = 0;
   const target = tutSys('Left shield button'), decoy = tutSys('Right capacitor');
   // the two "irregular readings" at the helm, from the start (warnFrom); the target breaks in the repair step
   mission.events = [{ id: 0, kind: 'maintenance', t: 1e9, t1: 1e9, sys: target, decoy, serviced: false, warnFrom: 0, radar: false, done: false }];
@@ -229,7 +240,7 @@ const TUT_STEPS = {
       const ev = mission.events.find(e => e.kind === 'interceptor'); if (ev) ev.done = true;
       tutGun().shots = 1;
       combatSpawn('interceptor', 'port', true);
-      const e = tutFoe(); e.ampMul = e.ampGoal = 0.7;            // (a bit calmer than usual: it's training)
+      const e = tutFoe(); e.ampMul = e.ampGoal = TUT_SWAY_FIRST;   // (calmer than usual: it's training; and nearly still for the first shot)
       tutSay([
         `You're in the left cannon. Welcome to the pointy end. Aim by ${tutC('moving the mouse', 'holding the *arrow keys* (or *W A S D*): the barrel turns the way you press, and a thin red *laser sight* shows where it points')}. Bottom right: your *shots*, and the energy in the capacitor that feeds this cannon.`,
         { text: 'And there\'s our interceptor. See the *glowing blue bits*? Those are its *weak spots*. Hitting the hull mostly scratches the paint; hitting a weak spot breaks something that matters.', mark: () => tutFoe() || [] },
@@ -246,7 +257,7 @@ const TUT_STEPS = {
       const e = tutFoe(), g = tutGun();
       if (!e) return;
       for (const p of e.pois) if (p.id !== 'crack' && p.hit) { p.hit = false; p.smoke = 0; tut.d.other = p.name; }   // only the windshield counts here: the rest is fixed at once
-      e.hullHits = 0; e.ampGoal = 0.7; e.omegaGoal = 1; e.shotCount = 0;
+      e.hullHits = 0; e.ampGoal = TUT_SWAY_FIRST; e.omegaGoal = 1; e.shotCount = 0;
       if (tutPoi(e, 'crack').hit) { tut.d.hitT ??= tut.t; if (tut.t - tut.d.hitT > 0.9) tutGo('advantage'); return; }
       if (g.shots > 0 || combat.shells.length) return;
       const other = tut.d.other; tut.d.other = null;
@@ -262,6 +273,7 @@ const TUT_STEPS = {
   advantage: {
     enter() {
       const e = tutFoe(), effects = e.D.pois.map(p => `*${p.name}*: ${p.effect.charAt(0).toLowerCase() + p.effect.slice(1)}`).join(' · ');
+      e.ampGoal = TUT_SWAY;                                    // (the first shot is in: from here on it sways as in training)
       tutSay([
         'Bullseye! The pirates are now *duct-taping their windshield*. While they do, they can\'t see, so they can\'t shoot.',
         `That's the deal with weak spots: *every hit on one gives you an advantage*. On an interceptor: ${effects}. Hit them all and it's done for.`,
@@ -395,7 +407,7 @@ const TUT_STEPS = {
   },
   wrench: {
     objective: () => `Pull the wrench out of the lever (${tutC('click the hub', 'hold E at the lever')})`,
-    marker: () => LEVER,
+    marker: () => tutLeverMark(true),
     allow: (w, t) => w === 'target' && tt.lever(t) && power.lever.jammed,
     tick() {
       if (power.lever.jammed) return;
@@ -426,9 +438,12 @@ const TUT_STEPS = {
   lockLeft: {
     objective: () => (power.lever.pos !== 0 ? (power.lever.jammed ? `Pull the wrench out first (${tutC('click the hub', 'hold E')})` : `Turn the lever to LEFT (${tutC('click its handle', 'tap E')}) · now ${LEVER_NAMES[power.lever.pos]}`)
       : `Wedge the wrench in (${tutC('click the hub', 'hold E')})`),
-    marker: () => LEVER,
+    marker: () => tutLeverMark(power.lever.pos === 0 || power.lever.jammed),   // (the spot to click now: the handle to turn it, the hub for the wrench)
     allow: (w, t) => w === 'target' && tt.lever(t),
     tick() {
+      // the reactor holds its breath while you work the lever: every energy it sends steps the lever on by itself, and
+      // one arriving just as you clicked turned your "LEFT" into MID (2026-11-10)
+      if (!power.lever.jammed) power.reactor.t = 0;
       if (power.lever.pos !== 0 || !power.lever.jammed) return;
       tutSay([
         'Locked on LEFT. Every energy now goes to the left capacitor, and from there into your cannon. (Training bonus: the reactor runs faster for you right now.)',

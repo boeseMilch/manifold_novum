@@ -33,7 +33,7 @@ const navcoreWanted = () => typeof mission !== 'undefined' && mission.objective?
 // ROCK_SPEED units/s (× ROCK_EASY on easy / very easy). Its centre between ROCK_REACH[0] and [1]: drillable on a spacewalk
 // (its near side within the spacewalk's reach, js/ship.js EVA_REACH; tests/dock.js checks it). ~160 s in reach at normal.
 const ROCK_Y = -7.6, ROCK_R = 2.2, ROCK_SPEED = 0.25, ROCK_EASY = [1, 0.8, 0.65], ROCK_REACH = [6.0, 45.0], ROCK_FROM = 5;
-const rockSpeed = () => ROCK_SPEED * ROCK_EASY[clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2)];
+const rockSpeed = () => ROCK_SPEED * ROCK_EASY[easyLevel()];
 const rockInReach = (r) => r.x >= ROCK_REACH[0] && r.x <= ROCK_REACH[1];
 // s until the rock's centre leaves the drillable stretch (0 once past it; before it: the whole stretch still ahead)
 const rockReachLeft = (r) => { const end = r.dir > 0 ? ROCK_REACH[1] : ROCK_REACH[0]; return Math.max(0, (end - r.x) * r.dir) / (r.v || ROCK_SPEED); };
@@ -62,7 +62,6 @@ function dockGeom(side) {
     entry: { x: mx(-7.9), y }, tubeMid: { x: mx(-2.5), y },
   };
 }
-const dockOn = () => !!dk.dock;
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const DG = () => dk.dock && (dk.dock.kind === 'base' ? baseGeom(dk.dock.side) : dockGeom(dk.dock.side));
 // The repair kit's jobs aboard a docked ship (Space / right click: js/systems.js repairPick): the pirate reactor, the
@@ -96,18 +95,16 @@ const dockName = () => dk.dock ? (dk.dock.kind === 'pirate' ? 'Pirate ship' : dk
 function dockShip(kind, side, contents = {}) {
   if (dk.dock) return false;
   if (kind === 'base') return dockBase(side);
-  // brig: the Red Comet's prison barge (EVENT_RUNNERS.brig: a pirate dock with a prisoner aboard) — looks, nothing else
-  dk.dock = { kind, side, brig: kind === 'pirate' && !!contents.npc, doors: kind === 'derelict' ? [true, false] : [false, false], crate: kind === 'pirate' ? ['fuel', 'fuel'] : [], detachT: null, overloaded: false, fires: [],
-              navcore: kind === 'pirate' && !contents.npc };   // (a raider's nav console still has its core: chapter 4 pulls it)
+  dk.dock = { kind, side, doors: kind === 'derelict' ? [true, false] : [false, false], crate: kind === 'pirate' ? ['fuel', 'fuel'] : [], detachT: null, overloaded: false, fires: [],
+              navcore: kind === 'pirate' };   // (a raider's nav console still has its core: chapter 4 pulls it)
   const g = dockGeom(side);
   if (kind === 'pirate') {
-    if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
-    for (let i = 0; i < 2; i++) dk.pirates.push({ uid: newUid(), x: g.entry.x + (side === 'port' ? -1 : 1) * i, y: g.y + (i ? 0.6 : -0.6), face: 0, walk: 0, hp: PIRATE_HP, carry: null, state: 'steal', cd: 1 + i, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 });
+    for (let i = 0; i < 2; i++) dk.pirates.push({ uid: newUid(), x: g.entry.x + (side === 'port' ? -1 : 1) * i, y: g.y + (i ? 0.6 : -0.6), face: 0, walk: 0, hp: PIRATE_HP, carry: null, cd: 1 + i, aim: 0, route: [], stuck: 0, stun: 0, flash: 0 });
     combatBanner('The pirates docked at the ' + (side === 'port' ? 'left' : 'right') + ' airlock — they\'re coming aboard!'); sfx.explosion();
   } else {
     dk.dock.fires.push({ x: g.fire.x, y: g.fire.y, hp: 1, t: 0 });
     if (contents.blackbox) ITEMS.push({ kind: 'blackbox', x: g.boxSpot.x, y: g.boxSpot.y });
-    if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
+    if (contents.npc) dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', route: [], face: 0, walk: 0 };
     dk.dock.s7 = s7Dock(side);                         // S-7, the growth (js/culture.js; it replaced the sleeping intruder)
     combatBanner('Tether locked onto the derelict — the tube is open at the ' + (side === 'port' ? 'left' : 'right') + ' airlock.'); sfx.hatch();
   }
@@ -116,12 +113,13 @@ function dockShip(kind, side, contents = {}) {
 function undock() {
   const d = dk.dock, g = DG();
   if (!d) return;
-  const lost = [];
-  for (const c of crew) if (c.mode === 'inside' && inDock(c.x, c.y) && !inRect(c.x, c.y, g.tube, -0.75)) {   // still aboard: cast adrift
+  // whoever is in the tube is pulled in to our side with it (like baseDetach and the captain's raider); still in their rooms: cast adrift
+  const inTube = (c) => inRect(c.x, c.y, g.tube) && !roomAt(c.x, c.y);
+  for (const c of crew) if (c.mode === 'inside' && inDock(c.x, c.y) && !inTube(c)) {
     c.mode = 'eva'; c.x = g.hatch.outside[0] + (d.side === 'port' ? -1.2 : 1.2); c.y = g.hatch.outside[1] + (Math.random() - 0.5);
     combatBanner(`${c.name} was cast adrift — spacewalk back in!`);
   } else if (c.mode === 'inside' && inDock(c.x, c.y)) [c.x, c.y] = g.hatch.inside;
-  for (let i = ITEMS.length - 1; i >= 0; i--) if (inDock(ITEMS[i].x, ITEMS[i].y) && !roomAt(ITEMS[i].x, ITEMS[i].y)) lost.push(ITEMS.splice(i, 1)[0].kind);
+  for (let i = ITEMS.length - 1; i >= 0; i--) if (inDock(ITEMS[i].x, ITEMS[i].y) && !roomAt(ITEMS[i].x, ITEMS[i].y)) ITEMS.splice(i, 1);
   dk.pirates = dk.pirates.filter(p => !inDock(p.x, p.y));
   boarding.invaders = boarding.invaders.filter(a => !inDock(a.x, a.y));
   if (dk.npc && inDock(dk.npc.x, dk.npc.y) && !npcAboard(dk.npc)) dk.npc = null;   // (left behind on their ship)
@@ -244,7 +242,7 @@ function dockRoute(x, y, tx, ty) {
 // A hit (b: the bolt, if it was one) shows on the pirate it hit: a flash, sparks where the bolt struck (at its
 // height), a little shove back along the shot, and the lost HP pip blinking (drawPirate).
 function hurtPirate(p, dmg, stun = 0, b = null) {
-  p.hp -= dmg; p.flash = 1; p.stun = Math.max(p.stun, stun); p.state = 'fight';
+  p.hp -= dmg; p.flash = 1; p.stun = Math.max(p.stun, stun);
   sfx.alienHurt();
   const sp = b ? Math.hypot(b.vx, b.vy) || 1 : 1, ux = b ? b.vx / sp : 0, uy = b ? b.vy / sp : 0, z = b?.z ?? 0.6;
   for (let i = 0; i < 10; i++) combatFxAt(z, p.x - ux * 0.25, p.y - uy * 0.25, -ux * 2 + (Math.random() - 0.5) * 4, -uy * 2 + (Math.random() - 0.5) * 4, 0.5, i % 3 ? '#e2574c' : '#ffe0d8', 0.1);
@@ -318,7 +316,7 @@ function updatePirate(p, dt) {
   const loot = ITEMS.filter(it => !inDock(it.x, it.y) && it.kind !== 'blackbox' && it.kind !== 'navcore');   // (not the objective)
   if (power.reserve > 0) loot.push({ x: FUEL_CRATE.x + 0.95, y: FUEL_CRATE.y, crate: true });   // (just clear of the crate: a spot they can stand on)
   if (!p.carry && !p.done && (p.loots >= PIRATE_LOOT || !loot.length)) { p.done = true; combatBanner('A pirate is done looting and heads back to their ship'); }
-  if (leaving || p.carry || p.done) { if (g) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }
+  if (leaving || p.carry || p.done) { if (g?.crate) goal = { x: g.crate.x + 1, y: g.crate.y + 1.2, home: true }; }   // (home: beside their loot crate; the base has none)
   else goal = loot.sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y))[0] || null;
   if (!goal) return;
   if (!p.route.length || p.goalKey !== `${goal.x.toFixed(1)},${goal.y.toFixed(1)}`) { p.route = dockRoute(p.x, p.y, goal.x, goal.y); p.goalKey = `${goal.x.toFixed(1)},${goal.y.toFixed(1)}`; }
@@ -326,7 +324,7 @@ function updatePirate(p, dt) {
   const moved = n ? pirateStep(p, n.x, n.y, dt) : 0;
   if (n && Math.hypot(n.x - p.x, n.y - p.y) < 0.2) p.route.shift();
   p.stuck = moved < 0.002 && Math.hypot(goal.x - p.x, goal.y - p.y) > 0.5 ? p.stuck + dt : 0;
-  if (p.stuck > 3) { p.route = []; p.stuck = 0; }    // a locked door: try again (they never bash doors)
+  if (p.stuck > 3) { p.route = []; p.stuck = 0; }    // no way through yet: look for the way again (a shut door they force: pirateStep, pryDoor)
   if (Math.hypot(goal.x - p.x, goal.y - p.y) < 0.5) {
     if (goal.home) { if (p.carry) { dk.dock.crate.push(p.carry); p.carry = null; p.loots = (p.loots || 0) + 1; sfx.clank(); } else if (p.done) p.home = true; }
     else if (goal.crate) { power.reserve--; p.carry = 'fuel'; sfx.clank(); combatBanner('A pirate grabbed a fuel cell!'); p.route = []; }
@@ -454,7 +452,7 @@ function dockClickTarget(mx, my) {
   if (N && N.state === 'down' && at(N, 0.55)) {
     if (!near(N.x, N.y)) return { text: `${cap(npcName())} — get closer`, ok: false, x: N.x, y: N.y, r: 0.55 };
     return holdTarget('npc', TREAT_TIME, `Hold click: treat ${npcName()} (${TREAT_TIME} s) — then they head for our ship`, N.x, N.y, 0.55,
-                      () => { N.state = 'follow'; N.leader = player.id; N.route = []; combatBanner('"Thanks! I\'ll make a run for your ship — cover me!"'); sfx.poi(); });
+                      () => { N.state = 'follow'; N.route = []; combatBanner('"Thanks! I\'ll make a run for your ship — cover me!"'); sfx.poi(); });
   }
   if (!d || d.kind === 'base') return null;
   if (d.kind === 'derelict') { const st = s7ClickTarget(mx, my); if (st) return st; }
@@ -473,7 +471,7 @@ function dockClickTarget(mx, my) {
     return kitJob(holdTarget('overload', OVERLOAD_TIME, `Hold Space / right click: jam their reactor into overload (${OVERLOAD_TIME} s)`, t.x, t.y, 1.0,
                       () => { d.overloaded = true; d.detachT = DETACH_TIME; sfx.alarm(); combatBanner(`Their reactor is overloading — they'll cast off in ${DETACH_TIME} s! Get back aboard!`); }));
   }
-  if (d.kind === 'pirate' && !d.brig && at(g.nav, 0.6)) {        // the nav console beside the reactor (chapter 4: pull its core)
+  if (d.kind === 'pirate' && at(g.nav, 0.6)) {        // the nav console beside the reactor (chapter 4: pull its core)
     const t = { x: g.nav.x, y: g.nav.y, r: 0.6 };
     if (!d.navcore) return { ...t, text: 'Nav console — its core is already pulled', ok: false };
     if (!navcoreWanted()) return { ...t, text: 'Nav console — the Red Comet\'s charts (nothing we need today)', ok: false };
@@ -584,7 +582,7 @@ const objectiveAboard = (kind) => crew.some(c => c.inv.item === kind && (roomAt(
 // Procedural on top: fire, the crate's pickup halo, the overload countdown, the pirates' red halo,
 // laser sight, name tag, HP pips and hurt flash. The derelict's darkness: drawDockDarkness.
 // ---------------------------------------------------------------------------
-const dockShipSprite = (d) => `dock/${d.kind === 'derelict' ? 'derelict' : d.brig ? 'brig' : 'pirate'}_${d.side}`;
+const dockShipSprite = (d) => `dock/${d.kind === 'derelict' ? 'derelict' : 'pirate'}_${d.side}`;
 function dockPropSprites(d) {
   const pir = d.kind === 'pirate', n = d.crate.length;
   return {
@@ -649,7 +647,7 @@ function drawDock(t) {
       ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(10,12,18,0.85)'; ctx.strokeText(`OVERLOAD ${Math.ceil(d.detachT)}`, 0, 0);
       ctx.fillStyle = Math.sin(t * 20) > 0 ? '#ffe08a' : '#ff7a6a'; ctx.fillText(`OVERLOAD ${Math.ceil(d.detachT)}`, 0, 0); ctx.textAlign = 'left';
     });
-    if (pir && !d.brig) drawNavConsole(d, g, t);
+    if (pir) drawNavConsole(d, g, t);
     for (const f of d.fires || []) {                   // derelict fire (the fire sprites like ours; else simple flames)
       if (GFX.on && drawFireSprite({ x: f.x, y: f.y, seed: f.x * 2.3 + f.y }, (0.55 + 0.45 * f.hp) * 1.6, t)) continue;
       for (let i = 0; i < 4; i++) { const h = L(0.6 + 0.3 * Math.sin(t * 9 + i)) * f.hp; ctx.beginPath(); ctx.ellipse(L(f.x) + (i - 1.5) * 8, L(f.y) - h / 2, 6, h / 2, 0, 0, TAU); ctx.fillStyle = i % 2 ? '#ff9a2e' : '#d8401c'; ctx.fill(); }
@@ -685,12 +683,14 @@ function drawNavConsole(d, g, t) {
   ctx.fillStyle = '#ffd0c8'; ctx.font = `800 ${T * 0.09}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.fillText('NAV', -L(0.14), L(0.32)); ctx.textAlign = 'left';
   ctx.restore();
 }
-// The nav core installed in our helm (dk.helmCore): standing in the desk's right end, glowing. GFX: the core's 2D drawing
-// as an upright canvas sprite on the desk top (drawn once), so it sits in the world like the desk; classic: on the canvas.
+// The nav core installed in our helm (dk.helmCore): standing on its plug in the desk's right end, glowing. GFX: its own
+// sprite (items/navcore_up); without it the core's 2D drawing as an upright canvas sprite on the desk top (drawn once),
+// so it sits in the world like the desk; classic: on the canvas.
 function drawHelmNavcore(t) {
   if (!dk.helmCore) return;
   const { x, y } = HELM_CORE, k = 0.75 + 0.25 * Math.sin(t * 3);
   if (GFX.on) {
+    if (GFX.sprite('items/navcore_up', 0, x, y, DESK_Z, { emissive: 0.5 + 0.4 * k, sortY: y + 0.3 })) return;
     const D = GFX.canvasSprite('helm_navcore', 48, 48, { ppu: T * 1.25, ox: 24, oy: 40 });
     if (D) {
       if (!D.drawn) { const prev = ctx; ctx = D.ctx; ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, D.w, D.h); drawItemIcon('navcore', 24, 24, 1.2, 0); ctx = prev; D.commit(); D.drawn = true; }
@@ -752,18 +752,6 @@ const DOCK_DECOR = {
               ['dock/raider_barrel_yellow', -9.75, 1.95, 'p'], ['dock/raider_barrel_red', -9.15, 2.1, 'p'],
               ['dock/raider_mutiny_board', -23.8, 2, 'w', { replaces: 'mutiny' }], ['dock/raider_hammock', -21.0, 2.2, 'p']],
   },
-  // the prison barge: the hold where they keep Dr. Varga
-  brig: {
-    props: [['props/bucket', bucket, -17.6, 3.2, 0], ['props/papers_bridge', (x, y) => papers(x, y, 71), -14.2, 3.1, 0, true], ['props/sleeping_bag', sleepingBag, -12.4, 2.9, 0],
-            ['props/soda_can', (x, y, a) => sodaCan(x, y, a, '#2e7dc9'), -20.2, -2.0, 0.7], ['props/stool', null, -9.0, -1.8, 0], ['props/duck', duck, -24.2, -2.0, 2.4]],
-    signs: [[1, -12.4, 'visiting', 1.5, [['VISITING HOURS:', 0.11], ['NEVER', 0.17]], '#2b303a', '#ff9a8a', 1.0],
-            [2, -22.0, 'mutiny', 1.5, [['DAYS WITHOUT', 0.12], ['A MUTINY:  3', 0.15]], '#2b303a', '#ffcf6b'],
-            [0, -7.9, 'refunds', 1.4, [['NO REFUNDS', 0.14], ['NO RETURNS · NO MERCY', 0.075, 700]], '#7a1f1a', '#ffe0d0']],
-    stencils: [[-14.6, -1.3, 'THE BRIG IS NOT A HOTEL', 0.16], [-18.0, 2.2, '|||| |||| ||', 0.16, 'rgba(232,236,244,0.35)'], [-23.4, 1.6, 'LICK IT. WE DARE YOU.', 0.15]],
-    sprites: [['dock/raider_skull_stencil', -14.6, 0.9, 'f'], ['dock/raider_wheel_table', -21.0, 2.0, 'p', { em: 0.3 }], ['dock/raider_rum', -19.9, 2.4, 'p'],   // (the guards' card game)
-              ['dock/raider_eyepatch_hook', -9.3, 0, 'w'], ['dock/raider_barrel_yellow', -9.75, 1.95, 'p'], ['dock/raider_barrel_red', -9.15, 2.1, 'p'],
-              ['dock/raider_mutiny_board', -23.8, 2, 'w', { replaces: 'mutiny' }]],
-  },
   // the Red Comet's base (positions for the port side, like all of these; rooms: bay, server room, barracks, brig, gun corridor,
   // captain's quarters). With sprites most of the base is drawn by drawBaseSprites (BASE_PROPS); these are the small extras
   // on top (props: our clutter sprites) and, in the 2D view, everything. spriteSigns: plaques that have a base/ sprite.
@@ -818,7 +806,7 @@ const DOCK_DECOR = {
   },
 };
 function drawDockDecor(d, g, t) {
-  const set = DOCK_DECOR[d.kind === 'derelict' ? 'derelict' : d.kind === 'base' ? 'base' : d.brig ? 'brig' : 'pirate'], mx = (x) => dockX(d.side, x);
+  const set = DOCK_DECOR[d.kind === 'derelict' ? 'derelict' : d.kind === 'base' ? 'base' : 'pirate'], mx = (x) => dockX(d.side, x);
   for (const [x, y, text, size, col] of set.stencils) stencil(L(mx(x)), L(g.y + y), text, 0, size, col || 'rgba(210,166,46,0.5)');
   for (const [name, draw, x, y, a, flat, classic] of set.props) {
     if (classic && GFX.on) continue;                   // (2D view only: the sprite view has its own: BASE_PROPS)
@@ -1081,17 +1069,16 @@ function dockBase(side) {
   const g = baseGeom(side), n = typeof crewSize === 'function' ? crewSize() : 1;
   dk.dock = { kind: 'base', side, doors: [false, true, true, false, true], blast: 'closed', crate: [], detachT: null, overloaded: false, fires: [], tube: 'docked',
               terminal: 'broken', code: String(1000 + Math.floor(Math.random() * 9000)), sentry: { state: 'idle', t: 0, shotT: 0, shots: 0 } };
-  dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', leader: null, route: [], face: 0, walk: 0 };
+  dk.npc = { x: g.npcSpot.x, y: g.npcSpot.y, state: 'down', route: [], face: 0, walk: 0 };
   ITEMS.push({ kind: 'repair', x: g.toolbox.x, y: g.toolbox.y });
   if (typeof GFX !== 'undefined' && GFX.on) GFX.preload(['base', 'dock']);   // (its sprites: drawBaseSprites)
-  const pirate = (p, more) => ({ uid: newUid(), x: p.x, y: p.y, face: side === 'port' ? 0 : Math.PI, walk: 0, hp: PIRATE_HP, carry: null, state: 'guard', cd: 1, aim: 0, route: [], stuck: 0, stun: 0, flash: 0, post: { x: p.x, y: p.y }, ...more });
+  const pirate = (p, more) => ({ uid: newUid(), x: p.x, y: p.y, face: side === 'port' ? 0 : Math.PI, walk: 0, hp: PIRATE_HP, carry: null, cd: 1, aim: 0, route: [], stuck: 0, stun: 0, flash: 0, post: { x: p.x, y: p.y }, ...more });
   g.spew.forEach((p, i) => dk.pirates.push(pirate(p, { mode: 'hunt', room: 0, drops: 'laser', cd: 1.5 + i })));
   if (typeof captainDock === 'function') captainDock(g, n);   // the captain on his throne in the quarters (js/captain.js)
   baseGuards(n, mission.easy || 0).forEach((k, r) => g.posts[r].slice(0, k).forEach(p => dk.pirates.push(pirate({ x: p.x, y: p.y }, { mode: 'guard', room: p.room ?? r, cd: 0.5 }))));
   combatBanner(`Docked to the pirate base at the ${side === 'port' ? 'left' : 'right'} airlock — two pirates are rushing out!`); sfx.explosion();
   return true;
 }
-const BASE_ROOMS = ['Docking bay', 'Server room', 'Barracks', 'Brig', 'Gun corridor', 'Captain\'s quarters'];
 const inBase = (x, y) => { const g = dk.dock?.kind === 'base' && DG(); return !!g && [...g.rooms, ...g.doors].some(q => inRect(x, y, q)); };
 const baseCrew = () => crew.filter(c => c.mode === 'inside' && inBase(c.x, c.y));
 // The base's walls stop shots (projectile space outside our hull is otherwise free: js/invader.js freeAt).
@@ -1137,7 +1124,7 @@ function sentrySees(x, y) {
 function updateSentry(dt) {
   const S = dk.dock?.sentry;
   if (!S || S.state === 'off' || dk.dock.kind !== 'base') return;
-  const G = DG().sentry, easy = clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
+  const G = DG().sentry, easy = easyLevel();
   S.t += dt;
   if (S.state === 'idle') {
     if (crew.some(c => c.mode === 'inside' && standing(c) && sentrySees(c.x, c.y))) { S.state = 'spool'; S.t = 0; }
@@ -1242,7 +1229,8 @@ function baseSpots(g) {
 }
 function basePlates(add) {
   const d = dk.dock, inside = dk.pirates.filter(p => inBase(p.x, p.y)).length, out = dk.pirates.filter(p => !p.raid).length - inside, left = baseCrew();
-  if (out) add('pirates', { icon: 'frigate', title: 'PIRATES ABOARD', sub: `${out} · rushed out of the base — fight them off`, stripe: '#e2574c', red: true });
+  const strand = dk.pirates.filter(p => p.stranded && !inBase(p.x, p.y)).length;   // (left aboard when their raider cast off: js/captain.js updateRaid)
+  if (out) add('pirates', { icon: 'frigate', title: 'PIRATES ABOARD', sub: `${out} · ${strand >= out ? 'left behind by their raider' : strand ? 'out of the base and off the raider' : 'rushed out of the base'} — fight them off`, stripe: '#e2574c', red: true });
   const sub = d.tube === 'detached' ? (left.length ? `detached · ${left.map(c => c.name).join(', ')} still inside — dock again!` : 'detached · engine free')
     : `${SIDE_LABEL[d.side].toLowerCase()} airlock · ${inside} pirate${inside === 1 ? '' : 's'} inside · engine off while docked`;
   add('base', { icon: 'frigate', title: 'PIRATE BASE', sub, stripe: '#e8c34f', red: !!left.length && d.tube === 'detached' });
@@ -1412,7 +1400,7 @@ function drawBase(d, g, t) {
 function drawGunCorridor(d, g, t) {
   const S = d.sentry || { state: 'off' }, G = g.sentry, C = g.rooms[4];
   if (S.state === 'spool' || S.state === 'fire') glowLayer(() => {
-    const k = S.state === 'fire' ? 0.22 + 0.06 * Math.sin(t * 30) : 0.06 + 0.14 * clamp(S.t / SENTRY_SPOOL[clamp(mission.easy || 0, 0, 2)], 0, 1);
+    const k = S.state === 'fire' ? 0.22 + 0.06 * Math.sin(t * 30) : 0.06 + 0.14 * clamp(S.t / SENTRY_SPOOL[easyLevel()], 0, 1);
     ctx.save(); ctx.beginPath(); ctx.rect(L(C.x), L(C.y), L(C.w), L(C.h)); ctx.clip();
     const m = G.muzzle, gr = ctx.createRadialGradient(L(m.x), L(m.y), 0, L(m.x), L(m.y), L(SENTRY_RANGE));
     gr.addColorStop(0, `rgba(255,70,50,${k})`); gr.addColorStop(1, 'rgba(255,70,50,0)');
@@ -1440,7 +1428,7 @@ function drawGunCorridor(d, g, t) {
   GFX.preload?.(['hull']);
   // 2D: a squat turret, its twin barrels down the corridor
   ctx.save(); ctx.translate(L(G.x), L(G.y)); ctx.rotate(G.dir);
-  const heat = S.state === 'fire' ? 1 : S.state === 'spool' ? clamp(S.t / SENTRY_SPOOL[clamp(mission.easy || 0, 0, 2)], 0, 1) : 0;
+  const heat = S.state === 'fire' ? 1 : S.state === 'spool' ? clamp(S.t / SENTRY_SPOOL[easyLevel()], 0, 1) : 0;
   for (const sy of [-0.12, 0.12]) { rr(0, L(sy) - 4, L(0.95), 8, 3); ctx.fillStyle = S.state === 'off' ? '#4a4d55' : `rgb(${Math.round(80 + 175 * heat)},${Math.round(84 + 40 * heat)},${Math.round(92 - 40 * heat)})`; ctx.fill(); stroke(2); }
   ctx.beginPath(); ctx.arc(0, 0, L(0.38), 0, TAU); ctx.fillStyle = S.state === 'off' ? '#3a3d45' : '#5a3a36'; ctx.fill(); stroke(3);
   ctx.beginPath(); ctx.arc(0, 0, L(0.16), 0, TAU); ctx.fillStyle = S.state === 'off' ? '#1a1c22' : S.state === 'idle' ? (Math.sin(t * 3) > 0 ? '#ffb84a' : '#7a5a2a') : '#ff4a3a'; ctx.fill();
@@ -1453,7 +1441,7 @@ const sentryHeard = { state: null, shots: 0, stop: null };
 function drawSentryFx(d, g, t) {
   const S = d.sentry;
   if (!S) return;
-  const G = g.sentry, easy = clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2), m = G.muzzle, mz = GFX.on ? 0.62 : 0;
+  const G = g.sentry, easy = easyLevel(), m = G.muzzle, mz = GFX.on ? 0.62 : 0;
   if (S.state !== sentryHeard.state) {
     if (sentryHeard.stop) { sentryHeard.stop(); sentryHeard.stop = null; }
     if (S.state === 'spool') sentryHeard.stop = sfx.charge(Math.max(0.3, SENTRY_SPOOL[easy] - S.t));

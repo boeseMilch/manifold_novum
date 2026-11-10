@@ -10,6 +10,10 @@
   @font-face { font-family: 'Patrick Hand'; src: url('assets/fonts/PatrickHand-Regular.ttf') format('truetype'); font-display: swap; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #07090f; font-family: system-ui, sans-serif; }
   canvas { display: block; cursor: crosshair; }
+  /* the game's canvas is placed by js/game.js resize() (left / top: split screen puts this page's own view beside the
+     strip, js/local.js), so it has to be positioned. js/gfx.js did that only when WebGL is on: in the classic view the
+     canvas stayed at 0 0, under the strip, and left a black band where it should have been. */
+  #c { position: fixed; left: 0; top: 0; }
   #lobby { position: fixed; inset: 0; z-index: 3; overflow: auto; color: #e8ecf4;
            background: radial-gradient(ellipse at 50% 40%, rgba(20,26,40,0.55), rgba(4,6,12,0.93) 75%); }
   #lobby[hidden] { display: none; }
@@ -51,7 +55,7 @@
   .local-row { display: flex; gap: 6px; align-items: center; margin: 5px 0; flex-wrap: wrap; }
   .local-row .local-paint { width: 22px; height: 22px; padding: 0; border-radius: 50%; flex: none; border: 2px solid #14161b; box-shadow: inset 0 0 0 2px rgba(255,255,255,0.35); cursor: pointer; }
   .local-row .local-me { flex: 1 1 90px; font-weight: 700; }
-  .local-row input { flex: 1 1 90px; width: auto; padding: 5px 8px; font-size: 14px; }
+  #lobby .local-row input { flex: 1 1 90px; width: auto; min-width: 0; padding: 6px 10px; font-size: 14px; }   /* (#lobby: over the lobby's big fields; min-width: a field's own width pushed LOCKER / ✕ onto a second line) */
   .local-row select { flex: 1 1 130px; min-width: 0; padding: 5px 6px; font-size: 13px; border-radius: 6px; border: 2px solid #14161b; background: #1c2028; color: #fff; }
   .local-row button { padding: 5px 8px; font: 800 11px system-ui, sans-serif; letter-spacing: 1px; border-radius: 6px; border: 2px solid #14161b; background: #2f3542; color: #fff; cursor: pointer; }
   .local-msg { margin: 4px 0; color: #ffb4a8; font-size: 12px; font-weight: 700; }
@@ -90,9 +94,11 @@
   #shop .item .padlock { display: inline-block; width: 11px; height: 13px; flex: none; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M4.2 8.5V5.6a3.8 3.8 0 0 1 7.6 0v2.9' fill='none' stroke='%23e3a64a' stroke-width='2.2'/%3E%3Crect x='1.5' y='8' width='13' height='9.5' rx='1.6' fill='%23e3a64a'/%3E%3Crect x='7' y='11' width='2' height='3.6' rx='1' fill='%233a2a12'/%3E%3C/svg%3E") center / contain no-repeat; }
   #shop .item.locked { cursor: not-allowed; }
   #shop .item.locked::after { content: ''; position: absolute; right: 13px; top: 50%; width: 20px; height: 23px; margin-top: -12px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 18'%3E%3Cpath d='M4.2 8.5V5.6a3.8 3.8 0 0 1 7.6 0v2.9' fill='none' stroke='%23e3a64a' stroke-width='2.2'/%3E%3Crect x='1.5' y='8' width='13' height='9.5' rx='1.6' fill='%23e3a64a'/%3E%3Crect x='7' y='11' width='2' height='3.6' rx='1' fill='%233a2a12'/%3E%3C/svg%3E") center / contain no-repeat !important; filter: none !important; }
-  html #shop #shop-body .item.locked:disabled { color: #b9bfc9 !important; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6) !important; }
-  html #shop #shop-body .item.locked:disabled span { color: #939aa6 !important; }
-  #shop .item.locked .tag.price { background: rgba(0, 0, 0, 0.35); color: #8a909b; box-shadow: none; text-decoration: line-through; }
+  html #shop #shop-body .item.locked:disabled { color: #e4e8ee !important; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6) !important; }
+  html #shop #shop-body .item.locked:disabled span { color: #c9ced8 !important; }
+  /* a locked item's price: the plain number in an outline (not on the green tag you can buy from, and not struck
+     through: that read as a discount); the padlock and the line under it say why */
+  #shop .item.locked .tag.price { background: none; color: #c9ced8; box-shadow: inset 0 0 0 1px rgba(201, 206, 216, 0.55); }
   #shop h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: 1px; color: #dfe4ec; }
   .paints { display: flex; gap: 6px; flex-wrap: wrap; } .paint { width: 26px; height: 26px; border-radius: 50%; border: 3px solid #14161b; cursor: pointer; padding: 0; }
   .paint.chosen { border-color: #fff; } #shop .note { font-size: 12px; color: #9aa3b5; }
@@ -178,7 +184,7 @@
   #sk-count { font: 800 14px ui-monospace, monospace; color: #e8ecf4; background: #2f3542; padding: 2px 10px; border-radius: 4px; }
   #lobby-builder .mission-group { display: flex; align-items: center; gap: 10px; margin: 18px 4px 8px; }
   .sk-all { margin-left: auto; display: flex; gap: 6px; }
-  .sk-all button { padding: 2px 10px; font: 700 11px system-ui, sans-serif; letter-spacing: 1px; text-transform: none; border-radius: 4px; border: 1px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
+  .sk-all button { min-height: 28px; padding: 2px 12px; font: 700 11px system-ui, sans-serif; letter-spacing: 1px; text-transform: none; border-radius: 4px; border: 1px solid #14161b; background: #2f3542; color: #e8ecf4; cursor: pointer; }
   .sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; }
   .sk-tick { display: flex !important; align-items: center; gap: 8px; margin: 0 !important; padding: 4px 4px; font: 600 13px system-ui, sans-serif !important; letter-spacing: 0 !important; color: #e8ecf4; cursor: pointer; border-radius: 4px; }
   .sk-tick:hover { background: rgba(255, 255, 255, 0.06); }
@@ -191,7 +197,7 @@
   html:is(.metal-gl, .metal-css) :is(.tabs, .sk-all) button { color: #161a21; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.4); --up: url(assets/ui/btn.png); --dn: url(assets/ui/btn_down.png); }
   html.metal-css :is(.tabs, .sk-all) button { background: none; border-color: transparent; border-image-source: var(--up); border-image-slice: 32 fill; border-image-width: 12px; }
   html.metal-css .tabs button.chosen { border-image-source: var(--dn); }
-  html.metal-css .sk-all button { border-image-width: 6px; padding: 3px 12px; }
+  html.metal-css .sk-all button { border-image-width: 6px; }
   #lobby .tabs button.chosen { color: #0f3a26; text-shadow: 0 0 6px rgba(95, 214, 160, 0.9), 0 1px 0 rgba(255, 255, 255, 0.4); box-shadow: inset 0 -4px 0 #5fd6a0 !important; }
   #room.guest #lobby-missions .mission { pointer-events: none; }
   #room.guest #lobby-missions .mission:not(.chosen) { opacity: 0.55; }
@@ -247,8 +253,14 @@
   .mission-more { padding: 0 6px 2px; }
   .mission, #shop .item { position: relative; padding: 16px 50px 16px 20px !important; border-radius: 10px; }
   .mission b { margin-bottom: 4px; }
-  #lobby-brief { padding: 22px 26px; border-radius: 10px; font-size: 14px; line-height: 1.5; max-height: max(180px, calc(100vh - 560px)); overflow-y: auto; scrollbar-color: #4a5262 transparent; }
-  #lobby-brief h3 { margin: 0 0 10px; font-size: 16px; }
+  /* the briefing (lobbyUI.render, js/progress.js): the title, the story (.brief-text: it scrolls) and under it, always
+     in view, the objective, the pay and what the mission asks for (.brief-key) */
+  #lobby-brief { padding: 22px 26px; border-radius: 10px; font-size: 14px; line-height: 1.5; max-height: max(260px, calc(100vh - 560px)); display: flex; flex-direction: column; }
+  #lobby-brief h3 { margin: 0 0 10px; font-size: 16px; flex: none; }
+  .brief-text { flex: 1 1 0; min-height: 0; overflow-y: auto; padding-right: 6px; scrollbar-color: #4a5262 transparent; }
+  .brief-text > :last-child { margin-bottom: 0; }
+  .brief-key { flex: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.14); }   /* (never cut: the story gives way, down to nothing) */
+  #lobby-brief .brief-key .obj + .obj { margin-top: 4px; }
   #lobby-players { gap: 8px 18px; min-height: 24px; }
   #lobby-start { margin-top: 28px; min-height: 64px; font-size: 18px; letter-spacing: 3px; border-radius: 10px; }
   #shop .plate { width: min(840px, calc(100vw - 32px)); max-height: calc(100vh - 40px); }
@@ -266,6 +278,58 @@
     #shop .grid { grid-template-columns: 1fr; }
     #menu-games { padding: 10px; } .game { gap: 8px; padding: 8px 8px 8px 10px; } .game .tag { display: none; }
     .room-head { align-items: flex-start; }
+  }
+  /* The game lobby (#room) fits the window's height while it has two columns (wider than 960 px): the plate fills the
+     window, the mission list (or the skirmish builder) and the briefing take the height that is left and scroll
+     inside, and LOCKER / SHIPYARD and START MISSION stay at the bottom of the right column, always in view.
+     (The plate used to be as tall as its content: at 1280 × 720 START began at y 727, in a multiplayer lobby at 826.)
+     What can't shrink at 1280 × 720, with the tighter spacing below: 40 + 24 round the plate, 2 × 37 of frame,
+     59 of head, and in the right column 61 for LOCKER / SHIPYARD and 66 for START: about 396 px are left for
+     .room-info (crew 62, difficulty 95, the briefing the rest: about 225, as before). Where even that is too little
+     (local players, a 600 px window) .room-info scrolls; the two rows under it never move.
+     One column (960 px and narrower): as before, the page scrolls. */
+  @media (min-width: 961px) {
+    #lobby > #room { height: 100%; min-height: 460px; }
+    #room .plate { flex: 1 1 auto; min-height: 0; max-height: 1040px; display: flex; flex-direction: column; }
+    #room .room-head { flex: none; }
+    #room .room-cols { flex: 1 1 0; min-height: 0; align-items: stretch; grid-template-rows: minmax(0, 1fr); }
+    #room .room-cols > div { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    #room .tabs { flex: none; }
+    #room :is(#lobby-missions, #lobby-builder) { flex: 1 1 0; min-height: 0; max-height: none; align-content: start; }
+    /* (its last 16 px fade out, over padding that is empty at the end: a row cut by the bottom edge reads as "there is more") */
+    .room-info { flex: 1 1 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; margin: 0 -6px; padding: 0 6px 16px; scrollbar-color: #4a5262 transparent;
+                 -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent); }
+    .room-info > * { flex: none; }
+    /* the briefing takes what is left; never less than its title and its key block (min-height: auto, the story's own is 0) */
+    .room-info > #lobby-brief { flex: 1 1 0; min-height: auto; max-height: none; }
+    .room-side > :is(.row, #lobby-start) { flex: none; }
+  }
+  @media (min-width: 961px) and (max-height: 800px) {      /* a low window: less air */
+    #lobby > #room { padding-bottom: 24px; }
+    #room .plate { padding-top: 34px; padding-bottom: 34px; }
+    .room-side .list-head { margin: 14px 0 8px; }
+    .room-side #lobby-brief { margin-top: 14px; padding: 14px 20px; }
+    #lobby #lobby-diff input { padding-top: 6px; padding-bottom: 6px; }
+    #lobby #room .row { margin-top: 14px; }
+    #lobby #room .row button { min-height: 44px; padding: 6px 12px; }
+    #room .row button small { display: none; }             /* (one line: at this height "gear" / "upgrades" sat on the button's bevel) */
+    #room #lobby-start { margin-top: 14px; min-height: 52px; }
+    #local-map { width: 160px; }
+  }
+  @media (min-width: 961px) and (max-height: 640px) {      /* 1024 × 600 */
+    #lobby > #room { padding-top: 36px; }
+    #room .plate { padding-top: 28px; padding-bottom: 28px; }
+    .room-head h1 { font-size: 20px; }
+    #room .tabs { margin: 10px 0 8px; }
+    .room-side .list-head { margin: 10px 0 6px; }
+    .room-side #lobby-brief { margin-top: 10px; padding: 10px 16px; font-size: 13px; line-height: 1.4; }
+    #lobby #room .row { margin-top: 10px; }
+    #lobby #room .row button { min-height: 40px; padding: 4px 12px; }
+    #room #lobby-start { margin-top: 10px; min-height: 46px; padding: 9px; }
+  }
+  @media (max-width: 960px) {                               /* one column: the briefing as tall as it needs, its story capped */
+    #lobby-brief { max-height: none; }
+    .brief-text { flex: none; max-height: max(140px, calc(100vh - 620px)); }
   }
   /* silver buttons: dark, embossed labels; the red START keeps white. Disabled / not yours to pick:
      the metal is dimmed (menugl.js) and the label greyed, but no see-through opacity */
@@ -305,8 +369,10 @@
     background: url(assets/ui/led_off.png) center / 100% 100%; }
   html.metal-css :is(.mission.chosen, #shop .item.chosen)::after { background-image: url(assets/ui/led_on.png); filter: drop-shadow(0 0 4px rgba(95, 214, 160, 0.8)); }
   html.metal-css :is(#lobby, #shop) :is(.row button, #lobby-start, .item):disabled:not(.chosen) { opacity: 1; filter: brightness(0.6) saturate(0.5); }
-  html.metal-css #shop .item.locked { filter: brightness(0.55) saturate(0.5) !important; }
-  html.metal-css #shop #shop-body .item.locked:disabled { color: #e4e8ee !important; } html.metal-css #shop #shop-body .item.locked:disabled span { color: #c9ced8 !important; }
+  /* locked: the metal darkened under the text (a dark sheet between the button's face and its label), not the whole
+     button through a filter: that dimmed the label with it, to grey on grey */
+  html.metal-css #shop .item.locked { filter: none !important; isolation: isolate; }
+  html.metal-css #shop .item.locked::before { content: ''; position: absolute; inset: -2px; z-index: -1; border-radius: 10px; background: rgba(14, 16, 22, 0.68); }
   html.metal-css #shop .item.locked .why { color: #ffc66e; }
   html.metal-css :is(#menu-you, #menu-play, #room .plate)::before { display: block; content: ''; position: absolute; pointer-events: none;
     inset: auto auto 2px calc(50% - 41.5px); width: 83px; height: 18px; background: center / 100% 100% no-repeat; }
@@ -402,17 +468,19 @@
           <div id="lobby-builder" hidden></div>
         </div>
         <div class="room-side">
-          <div id="lobby-brief"></div>
-          <div class="list-head"><label>CREW</label><span id="room-count"></span></div>
-          <ul id="lobby-players"><li>just you</li></ul>
-          <div id="local-box" hidden>
-            <div class="list-head"><label>LOCAL PLAYERS <small>split screen</small></label><button id="local-add">＋ LOCAL PLAYER</button></div>
-            <div id="local-rows"></div>
-            <div id="local-map" hidden></div>
+          <div class="room-info">
+            <div id="lobby-brief"></div>
+            <div class="list-head"><label>CREW</label><span id="room-count"></span></div>
+            <ul id="lobby-players"><li>just you</li></ul>
+            <div id="local-box" hidden>
+              <div class="list-head"><label>LOCAL PLAYERS <small>split screen</small></label><button id="local-add">＋ LOCAL PLAYER</button></div>
+              <div id="local-rows"></div>
+              <div id="local-map" hidden></div>
+            </div>
+            <div class="list-head"><label for="lobby-easy">DIFFICULTY</label><span id="lobby-easy-name"></span></div>
+            <div id="lobby-diff"><input type="range" id="lobby-easy" min="0" max="3" step="1" value="2" aria-label="Difficulty">
+              <div class="ticks"><span>Very easy</span><span>Easy</span><span>Normal</span><span>Hard</span></div></div>
           </div>
-          <div class="list-head"><label for="lobby-easy">DIFFICULTY</label><span id="lobby-easy-name"></span></div>
-          <div id="lobby-diff"><input type="range" id="lobby-easy" min="0" max="3" step="1" value="2" aria-label="Difficulty">
-            <div class="ticks"><span>Very easy</span><span>Easy</span><span>Normal</span><span>Hard</span></div></div>
           <div class="row"><button id="room-locker">LOCKER <small>gear</small></button><button id="room-shipyard">SHIPYARD <small>upgrades</small></button></div>
           <button id="lobby-start">START MISSION</button>
         </div>

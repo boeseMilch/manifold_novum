@@ -83,6 +83,69 @@ const calm = (G, keep) => () => { G.combat.shots.length = 0; G.fires.length = 0;
   check(n0 - e1 === 3 && h - n0 === 3, `three players: easy ${e1}, normal ${n0}, hard ${h} encounters (three a step)`);
 }
 
+// --- hard in a mission that keeps its written times (c5, spacing: 'written'): the extra encounters get real times too
+// (they had none, t = Infinity, and never came: hard played like normal). Normal's encounters stay where they're written.
+{
+  const { loadGame: L } = require('./harness');
+  const G = L(['crew', 'makeCrew', 'startMission', 'mission', 'paceFactor', 'COMBAT_KINDS', 'JUMP_DELAY']), bad = [], shown = [];
+  for (let n = 1; n <= 8; n++) {
+    while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
+    G.startMission('c5'); const normal = G.mission.events.map(e => e.t), pace = G.paceFactor(), jump = G.mission.jumpAt;
+    G.startMission('c5', { easy: -1 }); const hard = [...G.mission.events].sort((a, b) => a.t - b.t), reps = hard.filter(e => e.repeat);
+    const ok = hard.length === normal.length + n && reps.length === n && hard.every(e => Number.isFinite(e.t))
+      && reps.every(e => e.t > 60 && e.t <= jump - G.JUMP_DELAY)                          // while we're docked, before the jump
+      && hard.every((e, i) => !i || e.t - hard[i - 1].t >= 20)                             // never two at once
+      && normal.every(t => hard.some(e => e.t === t)) && hard.filter(e => !e.repeat).length === normal.length   // (normal's own, at their written times)
+      && G.COMBAT_KINDS.has(hard[hard.length - 1].kind) && G.mission.jumpAt === jump && Math.abs(G.paceFactor() - pace) < 1e-9 && G.mission.extraLuck === 0;
+    if (!ok) bad.push(`×${n}: ${hard.map(e => `${e.kind}@${e.t}`).join(', ')}`);
+    if (n === 1 || n === 4) shown.push(`×${n}: ${reps.map(e => `${e.kind} at ${e.t} s`).join(', ')}`);
+  }
+  check(!bad.length, `c5 on hard, 1-8 players: one more encounter per player, each at a real time while we're docked (${shown.join('; ')}), normal's kept, same reactor pace and jump${bad.length ? ' — ' + bad.join(' | ') : ''}`);
+}
+// --- every mission, crew size and difficulty: every encounter has a real time, none after the jump
+{
+  const { loadGame: L } = require('./harness');
+  const G = L(['crew', 'makeCrew', 'startMission', 'mission', 'MISSIONS', 'SYSTEMS']), bad = new Set();
+  let builds = 0;
+  for (const id of Object.keys(G.MISSIONS).filter(id => !G.MISSIONS[id].practice && !G.MISSIONS[id].tutorial)) for (let n = 1; n <= 8; n++) for (const easy of [-1, 0, 1, 2]) for (let k = 0; k < 3; k++) {
+    G.crew.length = 0; while (G.crew.length < n) G.crew.push(G.makeCrew('P' + G.crew.length));
+    for (const s of G.SYSTEMS) s.broken = false;
+    G.startMission(id, { easy }); builds++;
+    if (!Number.isFinite(G.mission.jumpAt) || !G.mission.events.length || G.mission.events.some(e => !Number.isFinite(e.t) || e.t < 0 || e.t > G.mission.jumpAt)) bad.add(`${id} ×${n} difficulty ${easy}: ${G.mission.events.map(e => `${e.kind}@${e.t}`).join(', ')}, jump ${G.mission.jumpAt}`);
+  }
+  check(!bad.size, `${builds} timelines (every mission, 1-8 players, hard to very easy): every encounter at a finite time before the jump${bad.size ? ' — ' + [...bad].slice(0, 3).join(' | ') : ''}`);
+}
+
+// --- every chapter has a goal of its own, on its objective plate. Chapters 7 and 8 had none: theirs name what those
+// missions ask for anyway (c7: the jump by hand; c8: freeing the leviathan, after which the ship jumps by itself), so
+// whoever jumps out has done it: no rule that wasn't there.
+{
+  const { loadGame: L } = require('./harness');
+  const N2 = ['MISSIONS', 'CAMPAIGN', 'mission', 'startMission', 'objectiveStatus', 'tick', 'combat', 'fires', 'SYSTEMS', 'CAPACITORS', 'JUMP_PULL', 'evs', 'encounterPlates'];
+  const G = L(N2), kinds = G.CAMPAIGN.map(id => G.MISSIONS[id].objective?.kind);
+  check(kinds.every(Boolean) && new Set(kinds).size === kinds.length, `chapters 1-8 each have their own objective: ${kinds.join(', ')}`);
+  const still = (H) => { H.combat.shots.length = 0; H.combat.enemies.length = 0; H.fires.length = 0; H.SYSTEMS.forEach(s => { s.broken = false; }); };
+  const plate = (H) => H.encounterPlates().find(p => p.key === 'objective');
+  // c7
+  G.startMission('c7'); let o = G.objectiveStatus();
+  check(!o.done && /jump out by hand/.test(o.text) && /jump coils \d\/3/.test(o.text) && /OBJECTIVE/.test(plate(G)?.title || ''), `c7 from the start, on its plate: "${o.text}"`);
+  G.mission.events.forEach(e => { e.done = true; }); G.evs.coils.forEach(c => { c.ok = true; }); G.mission.rules.tides = false; G.CAPACITORS[1].charge = 1;
+  G.mission.t = G.mission.jumpAt - 0.5; while (!G.mission.jump && G.mission.t < G.mission.jumpAt + 2) { still(G); G.tick(DT); }
+  for (let i = 0; i < 60; i++) { still(G); G.tick(DT); }
+  o = G.objectiveStatus();
+  check(G.mission.jump && !G.mission.over && !o.done && /Pull the jump handle/.test(o.text), `the drive spools, MID has energy, nobody at the handle: no jump, "${o.text}"`);
+  G.mission.jump.pull = G.JUMP_PULL; G.CAPACITORS[1].charge = 1; still(G); G.tick(DT);
+  check(G.mission.over?.won === true && G.mission.over.results.objective === true, `the handle pulled: jumped out, objective done ("${G.mission.over?.reason}")`);
+  // c8
+  G.startMission('c8'); o = G.objectiveStatus();
+  check(!o.done && /Free the leviathan/.test(o.text) && /OBJECTIVE/.test(plate(G)?.title || ''), `c8 from the start, on its plate: "${o.text}"`);
+  G.mission.events.forEach(e => { e.done = true; });
+  G.mission.autoJump = true; G.mission.coilsChecked = true; G.mission.jumpAt = G.mission.t + 0.2;   // (what freeing it does: js/leviathan.js levFree)
+  check(G.objectiveStatus().done, `the leviathan freed: "${G.objectiveStatus().text}"`);
+  for (let i = 0; i < 30 && !G.mission.over; i++) { still(G); G.tick(DT); }
+  check(G.mission.over?.won === true && G.mission.over.results.objective === true, `and the ship jumps by itself: won ("${G.mission.over?.reason}")`);
+}
+
 // --- radar: reveals the next 45 s only; unscanned imminent threats show "????"
 {
   const G = fresh();
@@ -242,12 +305,16 @@ const maintEv = (G) => G.mission.events.find(e => e.kind === 'maintenance');
   }, 1100);
 }
 
+// (a fixed seed for the blocks that count dice: the thresholds below are a few standard deviations wide, which unseeded
+// failed about one run in a hundred)
+const mulberry = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 function fireAndJumpTests() {
   // --- fires: small hits = 24% fire, 6% a broken part, 70% nothing (never both);
   //     big hits: a broken part and a fire, always;
   //     fires sit on a part, burn it out or spread to another part nearby; spray puts them out
   {
     const G = loadGame(NAMES); let n = 0, broke = 0, both = 0;
+    const unseeded = Math.random; Math.random = mulberry(20261110);
     for (let i = 0; i < 1000; i++) {
       G.fires.length = 0; G.SYSTEMS.forEach(s => { s.broken = false; }); G.shipHit('port', -0.2, 8, false);
       const f = G.fires.length > 0, b = G.SYSTEMS.some(s => s.broken); if (f) n++; if (b) broke++; if (f && b) both++;
@@ -283,6 +350,7 @@ function fireAndJumpTests() {
     G.player.x = fx.x - 1.6; G.player.y = fx.y; G.inv.weapon = 'extinguisher';
     let t = 0; while (G.fires.length && t < 5) { G.spray(fx.x, fx.y, DT); G.tick(DT); t += DT; }
     check(G.fires.length === 0, `spraying the extinguisher puts a fire out (${t.toFixed(1)} s)`);
+    Math.random = unseeded;
   }
   // --- jump / lose
   {

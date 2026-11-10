@@ -30,7 +30,7 @@ const LEECH_SUCK_ONE = 24, LEECH_BACK = 1.2;
 const LEV_ORDER = ['starGun', 'starLock', 'reactor', 'portLock', 'portGun', 'bridge'];
 
 // Organic things die in a burst of green slime.
-function slimeBurst(x, y, n = 14, size = 0.1, z = 0) {   // z: up on something (a barnacle on the wall top)
+function slimeBurst(x, y, n = 14, size = 0.1, z = 0) {   // z: up on something (a cargo pod bursting open)
   for (let i = 0; i < n; i++) { const a = Math.random() * TAU, sp = 1 + Math.random() * 4; combatFxAt(z, x, y, Math.cos(a) * sp, Math.sin(a) * sp, 0.8 + Math.random() * 0.6, ['#9cff5a', '#6ad13a', '#c8ff6e'][i % 3], size + Math.random() * size); }
   sfx.squelch?.();
 }
@@ -97,7 +97,7 @@ function cutTentacle(e, how) {
 // Too late: it rips the weakened plate off — a hull breach right where it held on — and leaves with it.
 function ripHull(e) {
   const { x, y } = e.tent;
-  breachRoom(e.tent.room || roomNearHull(e.side, y, x)); combat.shake = 1; sfx.explosion();     // a real hole, right where it held on
+  breachRoom(e.tent.room || roomNearHull(e.side, y)); combat.shake = 1; sfx.explosion();     // a real hole, right where it held on
   for (let i = 0; i < 24; i++) combatFx(x, y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.9, i % 2 ? '#8a93a5' : '#9cff5a', 0.16);
   combatBanner('The grappler ripped a hull plate off — and swims away munching on it!');
   e.tent.state = 'ripped'; e.phase = 'leaving';
@@ -121,7 +121,7 @@ ENEMY_TYPES.mother = {
   // spore cloud billows out of the mouth and hangs round the hull (evs.cloud, js/spores.js). Every gust of it
   // (MOTHER_GUSTS per scream) may get spores into an outer airlock; using an airlock while the cloud is there will.)
   update(e, dt) {
-    e.puffT = (e.puffT ?? 6) - dt; e.open = Math.max(0, (e.open || 0) - dt); e.lash = Math.max(0, (e.lash || 0) - dt);
+    e.puffT = (e.puffT ?? 6) - dt; e.open = Math.max(0, (e.open || 0) - dt);
     if (e.puffT <= 0) {
       e.puffT = PUFF_EVERY;
       const shut = e.pois.map((p, i) => i).filter(i => !e.pois[i].hit);
@@ -179,6 +179,12 @@ function startHerd(kinds = herdPair(), side = randSide()) {
   combatBanner(`Something calls from the deep… they're coming together, ${SIDE_LABEL[side].toUpperCase()} side!`);   // (…then the call)
   sfx.whale?.(); combat.shake = Math.max(combat.shake, 0.4);
 }
+// How close two segments (a → b, c → d) come to each other (0: they cross): a shell's step against the tentacle.
+function segSegDist(ax, ay, bx, by, cx, cy, dx, dy) {
+  const turn = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  if (turn(ax, ay, bx, by, cx, cy) * turn(ax, ay, bx, by, dx, dy) < 0 && turn(cx, cy, dx, dy, ax, ay) * turn(cx, cy, dx, dy, bx, by) < 0) return 0;
+  return Math.min(segDist(ax, ay, cx, cy, dx, dy), segDist(bx, by, cx, cy, dx, dy), segDist(cx, cy, ax, ay, bx, by), segDist(dx, dy, ax, ay, bx, by));
+}
 function updateOrganic(dt) {
   if (org.herd && (org.herd.t -= dt) <= 0) org.herd = null;
   // grappler tentacles: one cannon hit cuts them
@@ -186,7 +192,8 @@ function updateOrganic(dt) {
     if (e.kind !== 'grappler' || e.tent?.state !== 'attached') continue;
     if (e.phase !== 'fighting') { e.tent.state = 'idle'; continue; }
     const [bx, by] = tentacleBase(e);
-    for (const s of combat.shells) if (!s.dead && segDist(s.x, s.y, bx, by, e.tent.x, e.tent.y) < 0.35 * hitGrow(s)) {
+    // (the shell's whole step this tick, not just where it ended: see shotPassed, js/eva.js)
+    for (const s of combat.shells) if (!s.dead && segSegDist(s.x - s.vx * dt, s.y - s.vy * dt, s.x, s.y, bx, by, e.tent.x, e.tent.y) < 0.35 * hitGrow(s)) {
       s.dead = true;
       for (let i = 0; i < 6; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0.5, '#7a3a8a', 0.1);
       cutTentacle(e); break;
@@ -200,7 +207,7 @@ function updateOrganic(dt) {
       const dx = l.tx - l.x, dy = l.ty - l.y, d = Math.hypot(dx, dy);
       if (d < 0.15) { l.state = 'latched'; sfx.spit(); continue; }
       l.x += dx / d * Math.min(d, LEECH_SPEED * dt); l.y += dy / d * Math.min(d, LEECH_SPEED * dt) + Math.sin(l.t * 5) * dt * 0.6;
-      for (const s of combat.shells) if (!s.dead && Math.hypot(s.x - l.x, s.y - l.y) < 0.85 * hitGrow(s)) { s.dead = true; l.dead = true; sfx.crack(); }
+      for (const s of combat.shells) if (!s.dead && shotPassed(s, dt, l.x, l.y, 0.85 * hitGrow(s))) { s.dead = true; l.dead = true; sfx.crack(); }
     }
     l.fed = Math.max(0, (l.fed || 0) - dt * 1.2);
     // (shields don't stop them: like spores and mines they slip through. The user, 2026-10-16. Shoot them on the way in, or pry them off outside.)
@@ -799,7 +806,7 @@ function organicPlates(add) {
 // ---------------------------------------------------------------------------
 // Sprites (GFX.on): tools/blender/models/organic/*.py. The grappler and the spore mother are listed like
 // the other enemies (D.sprites, drawn by drawEnemySprite in js/enemies.js, 'under' the hull); the
-// leviathan goes there too. Leeches, the tentacle, spores and barnacles are on or at the hull: 'main'.
+// leviathan goes there too. Leeches, the tentacle and spores are on or at the hull: 'main'.
 // Weak organs project onto the game's POI circles at z = 0 (so the flat hit tests match what you see).
 // ---------------------------------------------------------------------------
 function grapplerSprites(e, t) {

@@ -18,12 +18,12 @@ function encounterPlates() {
   const add = (key, d) => out.push({ key, ...d });
   // the objective is pinned at the top
   if (mission.active && mission.objective && !mission.over) { const o = objectiveStatus(); add('objective', { icon: 'jump', title: o.done ? 'OBJECTIVE ✔' : 'OBJECTIVE', sub: o.text, stripe: o.done ? '#5fd6a0' : '#ffe08a' }); }
-  for (const t of crewTasks.custom) add(t.key, { icon: t.icon, title: t.title, sub: t.sub, stripe: t.stripe, red: t.red, wrap: true });   // task plates (js/claims.js)
+  for (const t of crewTasks.custom) add(t.key, { icon: t.icon, title: t.title, sub: t.sub, stripe: t.stripe, red: t.red });   // task plates (js/claims.js)
   if (mission.active && mission.jump && !mission.over) {
     const handle = mission.rules?.handle && (mission.jump.pull || 0) < JUMP_PULL ? `pull the handle at the helm (${Math.floor(mission.jump.pull || 0)}/${JUMP_PULL} s)` : '';
     const need = broken(CAPACITORS[1]) ? 'fix the middle capacitor, then 1 energy' : CAPACITORS[1].charge > 0 ? '' : handle ? '1 energy in MID' : 'needs 1 energy in the middle capacitor';
-    add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: [handle, need].filter(Boolean).join(' + '), stripe: need ? '#ff5a4a' : '#7af0ff', red: true, wrap: true });
-    if (mission.press?.n > 1 || mission.press?.strain) add('press', { icon: 'surge', title: 'HOT ZONE', sub: 'it only gets worse until you jump', stripe: '#ff8a2e', red: true, wrap: true });
+    add('jump', { icon: 'jump', title: 'JUMP DRIVE', sub: [handle, need].filter(Boolean).join(' + '), stripe: need ? '#ff5a4a' : '#7af0ff', red: true });
+    if (mission.press?.n > 1 || mission.press?.strain) add('press', { icon: 'surge', title: 'HOT ZONE', sub: 'it only gets worse until you jump', stripe: '#ff8a2e', red: true });
   }
   for (const e of combat.enemies) if (e.phase === 'fighting') {
     const hit = e.pois.filter(p => p.hit).length;
@@ -35,7 +35,7 @@ function encounterPlates() {
     add('pod' + p.id, { icon: 'alien', title: 'CARGO POD', sub: `something is breaking out · reactor room · ${Math.max(0, Math.ceil(POD_STIR - p.t))} s`, stripe: '#ffb36a', red: true });
   for (const a of boarding.invaders) {
     const room = (id) => ROOMS.find(r => r.id === id)?.name.toLowerCase();
-    const where = a.state === 'dormant' ? 'asleep on the derelict' : a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'
+    const where = a.state === 'entering' ? `breaking in (${a.hatch.side === 'port' ? 'left' : 'right'} airlock)` : a.state === 'fight' ? 'attacking!'
       : a.state === 'work' ? `wrecking the ${a.task.sys.name.toLowerCase()} · ${Math.ceil(a.task.need - a.task.t)} s`
       : a.state === 'sneak' || a.state === 'cloak' ? `cloaked · somewhere next to the ${room(a.room) || "airlock"}`
       : a.kind === 'saboteur' ? `in the ${room(a.room) || 'ship'}`
@@ -55,7 +55,7 @@ function encounterPlates() {
   dockPlates(add);
   for (const svc of serviceTargets()) add('failing' + svc.name, { icon: 'wrench', title: 'FAILING', sub: `${svc.name} · ${diagState(svc).text.replace('FAILING — ', '')}`, stripe: '#ff9a2e', red: true });
   const dead = SYSTEMS.filter(s => s.broken);                // (one panel for all of them: the header counts them too)
-  if (dead.length) add('broken', { icon: 'wrench', title: dead.length > 1 ? `BROKEN (${dead.length})` : 'BROKEN', sub: dead.map(s => s.outside ? `${s.name} (outside)` : s.name).join(', '), stripe: '#e2574c', red: true, wrap: true });
+  if (dead.length) add('broken', { icon: 'wrench', title: dead.length > 1 ? `BROKEN (${dead.length})` : 'BROKEN', sub: dead.map(s => s.outside ? `${s.name} (outside)` : s.name).join(', '), stripe: '#e2574c', red: true });
   if (mission.active && !mission.over) {
     const { known } = radarList();
     for (const e of known) if (!e.done) add('ev' + e.id, { icon: EVENT_ICONS[e.kind] || e.kind, title: eventLabel(e).split(' — ')[0].toUpperCase(), sub: `${eventLabel(e).split(' — ')[1]} · T-${Math.ceil(e.t - mission.t)}`, stripe: '#e8c34f' });
@@ -75,7 +75,10 @@ function updateSidebar(top, dt) {
   const list = encounterPlates(), keys = new Set(list.map(p => p.key));
   const headH = mission.active ? HEAD_H : 0, y0 = top + 10 + (headH ? headH + PLATE_GAP : 0);
   const vh = (typeof localStripH === 'function' && localStripH()) || VH;   // (split screen: the strip of its own, js/local.js)
-  const fit = Math.max(1, Math.floor((vh - 140 - y0 - 22) / (PLATE_H + PLATE_GAP)));   // (above the energy panel, room for "+n more")
+  // (above the energy panel, room for "+n more"; hurt, down or out: above your injury badge too, which sits on top of
+  //  the energy panel: it used to cover the last plate and the "+n more" line. Not in split screen's strip: no badge there.)
+  const badge = vh === VH && typeof injuryBadgeRect === 'function' ? injuryBadgeRect() : null;
+  const fit = Math.max(1, Math.floor(((badge ? badge.y - 8 : vh - 140) - y0 - 22) / (PLATE_H + PLATE_GAP)));
   const shown = list.length > fit + 1 ? list.slice(0, fit) : list;
   sideMore = list.length - shown.length;
   const shownKeys = new Set(shown.map(d => d.key));
@@ -140,6 +143,8 @@ function leftPanelRects(top) {
   for (const k of sideOrder) { const p = sidePlates.get(k); if (p && p.alpha > 0.01 && p.y != null) out.push({ x: SIDEBAR_X + p.x, y: p.y, w: PLATE_W + (p.cw || 0), h: PLATE_H }); }
   if (sideMore > 0) out.push({ x: SIDEBAR_X, y: (updateSidebar.bottom || 0) + 4, w: 140, h: 22 });
   if (typeof powerPanelRect === 'function') out.push(powerPanelRect());
+  const badge = typeof injuryBadgeRect === 'function' ? injuryBadgeRect() : null;
+  if (badge) out.push(badge);
   if (typeof invSlots === 'function' && me.mode !== 'gun') for (const b of invSlots()) out.push({ x: b.x, y: b.y, w: b.w, h: b.h });
   return out;
 }
@@ -179,22 +184,27 @@ function plateBody(x, y, w, h) {
   ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(x + 6, y + 2, w - 12, 1.5);   // a thin top highlight
 }
 
-// A plate's second line in the current font (500 13px) and `room` px: two lines if it wraps and that fits,
-// else one, cut off with '…'. Remembered per text (it was ~a dozen measureTexts per plate, every frame).
-// (measure: the text's width; tests pass their own)
+// A plate's text under its title, in the current font (500 13px) and `room` px: one line if it fits, else wrapped
+// onto two; only what still doesn't fit is cut off with '…', at the end of the second line. (Every plate wraps since
+// 2026-11-10: cut after one line, most plates lost the part that says what to do: "Destroy 2 pirate ships (0 so f…",
+// "left airlock · loot crate · jam …".) wrap false: one line, cut off. max: how many lines at most (drawPlate asks
+// for 3 in a smaller font when 2 don't hold it all). Remembered per text (it was ~a dozen measureTexts per plate,
+// every frame). (measure: the text's width; tests pass their own)
 const plateLineCache = new Map();
-function plateLines(text, room, wrap, measure = (s) => ctx.measureText(s).width) {
-  const key = room + '|' + (wrap ? 1 : 0) + '|' + text;
+function plateLines(text, room, wrap, measure = (s) => ctx.measureText(s).width, max = 2) {
+  const key = room + '|' + (wrap ? max : 0) + '|' + text;
   let out = plateLineCache.get(key);
   if (out) return out;
   const fits = (s) => measure(s) <= room;
-  const words = text.split(' '), cut = words.findIndex((_, i) => !fits(words.slice(0, i + 1).join(' ')));
-  if (wrap && cut > 0 && fits(words.slice(cut).join(' '))) out = [words.slice(0, cut).join(' '), words.slice(cut).join(' ')];   // (wrap: two lines instead of cutting it off)
-  else {
-    let sub = text; while (!fits(sub) && sub.length > 4) sub = sub.slice(0, -2);
-    if (sub !== text) sub = sub.slice(0, -1) + '…';
-    out = [sub];
+  const clip = (t) => { let sub = t; while (!fits(sub) && sub.length > 4) sub = sub.slice(0, -2); return sub === t ? t : sub.slice(0, -1) + '…'; };
+  out = [];
+  let words = text.split(' ');
+  while (wrap && out.length < max - 1) {                 // (full lines first; what's left goes on the last one)
+    const cut = words.findIndex((_, i) => !fits(words.slice(0, i + 1).join(' ')));
+    if (cut <= 0) break;
+    out.push(words.slice(0, cut).join(' ')); words = words.slice(cut);
   }
+  out.push(clip(words.join(' ')));
   if (plateLineCache.size > 400) plateLineCache.clear();      // (texts with timers in them: keep it small)
   plateLineCache.set(key, out);
   return out;
@@ -217,8 +227,12 @@ function drawPlate(p) {
   ctx.font = '800 16px system-ui, sans-serif'; ctx.fillStyle = '#ffffff';
   ctx.fillText(d.title, x + 58, y + 18);
   ctx.font = '500 13px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec';
-  const lines = plateLines(d.sub, w - 66 - (d.red ? 14 : 0), d.wrap);
-  if (lines.length > 1) { ctx.fillText(lines[0], x + 58, y + 35); ctx.fillText(lines[1], x + 58, y + 49); }
+  let lines = plateLines(d.sub, w - 66 - (d.red ? 14 : 0), true);
+  if (lines.length > 1 && lines[1].endsWith('…') && !d.sub.endsWith('…')) {   // two lines don't hold it: three, a size smaller
+    ctx.font = '500 11px system-ui, sans-serif';
+    lines = plateLines(d.sub, w - 66, true, undefined, 3);     // (under the red light: the full width)
+    lines.forEach((l, i) => ctx.fillText(l, x + 58, y + 31 + i * 10.5));
+  } else if (lines.length > 1) { ctx.fillText(lines[0], x + 58, y + 35); ctx.fillText(lines[1], x + 58, y + 49); }
   else ctx.fillText(lines[0], x + 58, y + 39);
   if (d.red) {                                       // red light: a problem that is happening right now
     const k = 0.55 + 0.45 * Math.sin(t * 6);
@@ -255,15 +269,20 @@ function drawSidebarHeader(y) {
   ctx.textBaseline = 'middle';
   const jumpIn = mission.jumpAt - mission.t;
   const stalled = typeof jumpStall === 'function' && jumpStall();
+  const big = stalled ? 'JUMP STALLED' : mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE';
   ctx.font = '800 22px system-ui, sans-serif'; ctx.fillStyle = stalled ? (Math.sin(time * 8) > 0 ? '#ff5a4a' : '#ffb0a4') : mission.jump ? '#ffe08a' : '#ffffff';
-  ctx.fillText(stalled ? 'JUMP STALLED' : mission.jump ? 'JUMPING…' : isFinite(jumpIn) ? `JUMP IN ${fmt(jumpIn)}` : MISSIONS[mission.id]?.tutorial ? 'TRAINING' : 'PRACTICE', x + 14, y + 22);
+  ctx.fillText(big, x + 14, y + 22);
+  const bigW = ctx.measureText(big).width;
   ctx.font = '13px system-ui, sans-serif'; ctx.fillStyle = '#c9ced8';
   ctx.fillText(mission.lastScan === null ? 'radar: not scanned yet' : `radar: ${Math.floor(mission.t - mission.lastScan)} s ago`, x + 14, y + 46);
   // damage lights: one per broken system; more than MAX_DAMAGE loses the ship
   const dmg = SYSTEMS.filter(s => s.broken).length;
   const gap = MAX_DAMAGE > 5 ? 13 : 15, cx = x + w - 12 - (MAX_DAMAGE - 1) * gap / 2 - 7;
-  ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = '#dfe4ec'; ctx.textAlign = 'center';
-  ctx.fillText(dmg >= MAX_DAMAGE ? 'ONE MORE = LOST' : `DAMAGE ${dmg}/${MAX_DAMAGE}`, cx, y + 17);
+  // the damage label over the lights. Its last-warning form is wider than the lights: it's moved left only as far as the
+  // header's big line leaves room, and said shorter when even that's too little (it printed across "JUMP IN 3:01")
+  ctx.font = '700 11px system-ui, sans-serif'; ctx.fillStyle = dmg >= MAX_DAMAGE ? '#ff8a7a' : '#dfe4ec'; ctx.textAlign = 'center';
+  const lab = damageLabel(dmg, x + 14 + bigW + 8, x + w - 8, cx, (s) => ctx.measureText(s).width);
+  ctx.fillText(lab.text, lab.cx, y + 17, lab.w);
   for (let i = 0; i < MAX_DAMAGE; i++) {
     const bx = cx + (i - (MAX_DAMAGE - 1) / 2) * gap, by = y + 39, on = i < dmg;
     ctx.beginPath(); ctx.arc(bx, by, 6, 0, TAU); ctx.fillStyle = on ? '#ff4a3a' : '#2b303a'; ctx.fill(); stroke(1.5, on ? '#ffb0a4' : '#5a6272');
@@ -271,6 +290,15 @@ function drawSidebarHeader(y) {
   ctx.textAlign = 'left';
 }
 
+// The header's damage label between x0 (where the big line ends) and x1 (the plate's inner edge), centred on the lights
+// (cx) when that fits, else pushed left just enough; the last warning in the longest wording that fits: { text, cx, w }.
+// Pure: tests/sidebar.js.
+const LAST_WARNING = ['ONE MORE = LOST', '1 MORE = LOST', 'LAST ONE!'];
+function damageLabel(dmg, x0, x1, cx, measure) {
+  const room = Math.max(0, x1 - x0), list = dmg >= MAX_DAMAGE ? LAST_WARNING : [`DAMAGE ${dmg}/${MAX_DAMAGE}`];
+  const text = list.find(t => measure(t) <= room) || list[list.length - 1], w = Math.min(measure(text), room);
+  return { text, w, cx: clamp(cx, x0 + w / 2, x1 - w / 2) };
+}
 // Where the asteroids come from (the rocks in flight, then the ones still to come): 'front', 'left', 'left + front' ...
 function swarmWhere() {
   const all = [...combat.asteroids.map(a => a.side || 'front'), ...(combat.swarm ? swarmSides(combat.swarm) : [])];
@@ -360,7 +388,7 @@ function problemSpots() {
   for (const s of serviceTargets()) if (s.kind === 'seam' || s.outside)   // (no part to recognize there: a hull seam, or an emitter outside)
     out.push({ key: 'failing' + s.name, x: s.x, y: s.y, icon: s.kind === 'seam' ? 'breach' : 'wrench', what: 'FAILING', room: s.kind === 'seam' ? s.name : `${s.name} (outside)`, col: '#ff9a2e' });
   for (const b of hz.breaches) if (!b.tarp) { const p = BREACH_SPOTS[b.room]; if (p) out.push({ key: 'breach' + b.room, x: p.x, y: p.y, icon: 'breach', what: 'BREACH', room: roomById(b.room).name, col: '#7ab8ff' }); }
-  for (const a of boarding.invaders) if (!['dormant', 'sneak', 'cloak'].includes(a.state))
+  for (const a of boarding.invaders) if (!['sneak', 'cloak'].includes(a.state))
     out.push({ key: 'inv' + uid(a), x: a.x, y: a.y, icon: 'alien', what: a.kind === 'saboteur' ? 'SABOTEUR' : 'INTRUDER', room: where(a.x, a.y, 'airlock'), col: '#c8ff6e' });
   for (const id of hz.surges) { const l = LINE[id]; if (l) { const [x, y] = linePoint(l, 0.5); out.push({ key: 'surge' + id, x, y, icon: 'surge', what: 'SURGE', room: where(x, y, lineName(l)), col: '#bfe8ff' }); } }
   for (const id of hz.noGrav) { const [x, y] = roomCenter(roomById(id)); out.push({ key: 'grav' + id, x, y, icon: 'surge', what: 'NO GRAVITY', room: roomById(id).name, col: '#7af0ff' }); }
@@ -372,7 +400,19 @@ function problemSpots() {
   for (const c of crew) if (c !== me && !standing(c) && c.mode !== 'gun') out.push({ key: 'down' + c.id, x: c.x, y: c.y, icon: 'alien', what: `${c.name.toUpperCase()} DOWN`, room: where(c.x, c.y, ''), col: '#ff9ab0' });
   return out;
 }
+// Where a w × h pill wanted at (px, py) goes so it lies on none of the pills placed before it ({x, y, w, h}: centres
+// and sizes): its own spot if that's free, else the nearest free one up or down from it, inside lo..hi. (It was one
+// pass that pushed a pill off the first one it touched, often straight onto the next: three or four of them printed
+// over each other at the screen's edge, 2026-11-10.) Pure: tests/sidebar.js.
+function pillSpot(placed, px, py, w, h, lo, hi, gap = 6) {
+  const free = (y) => !placed.some(q => Math.abs(q.x - px) < (q.w + w) / 2 + gap && Math.abs(q.y - y) < ((q.h || h) + h) / 2 + gap);
+  const step = (h + gap) / 2, y0 = clamp(py, lo, hi);
+  for (let i = 0; i * step <= hi - lo; i++) for (const y of i ? [y0 + i * step, y0 - i * step] : [y0]) if (y >= lo && y <= hi && free(y)) return y;
+  return y0;                                          // (no room anywhere: where it wanted to be)
+}
+let problemPills = [];                                // this frame's pills (the claim guide's hints keep off them: js/claims.js)
 function drawProblemMarkers(view) {
+  problemPills = [];
   if (!mission.active || mission.over || !me) return;
   const spots = problemSpots(), keys = new Set(spots.map(s => s.key));
   for (const k of problemSeen.keys()) if (!keys.has(k)) problemSeen.delete(k);
@@ -393,7 +433,7 @@ function drawProblemMarkers(view) {
     const g = groups.get(s.what + s.room);
     if (g) g.n++; else groups.set(s.what + s.room, { ...s, sx, sy, n: 1 });
   }
-  const placed = [];
+  const placed = problemPills;
   for (const g of [...groups.values()].slice(0, 6)) {
     const dx = g.sx - cx, dy = g.sy - cy, a = Math.atan2(dy, dx);
     const kx = dx ? (dx > 0 ? box.x1 - cx : box.x0 - cx) / dx : Infinity, ky = dy ? (dy > 0 ? box.y1 - cy : box.y0 - cy) / dy : Infinity;
@@ -403,9 +443,8 @@ function drawProblemMarkers(view) {
     ctx.font = '700 13px system-ui, sans-serif';
     const tw = ctx.measureText(text).width, w = tw + 46, h = 30;
     px = clamp(px, box.x0 + w / 2 + 14, box.x1 - w / 2 - 14);   // (the pill sits just inside the edge, the arrow points out)
-    py = clamp(py, box.y0 + h / 2 + 14, box.y1 - h / 2 - 14);
-    for (const q of placed) if (Math.abs(q.x - px) < (q.w + w) / 2 && Math.abs(q.y - py) < h + 4) py = q.y + (py >= q.y ? h + 6 : -h - 6);   // (don't stack on top of each other)
-    placed.push({ x: px, y: py, w });
+    py = pillSpot(placed, px, py, w + 30, h, box.y0 + h / 2 + 14, box.y1 - h / 2 - 14);   // (never on top of each other; + 30: the arrow heads at its ends)
+    placed.push({ x: px, y: py, w: w + 30, h });
     const pulse = 0.75 + 0.25 * Math.sin(time * 5);
     // the arrow head, on the side the problem is
     const reach = Math.min(Math.abs(w / 2 / (Math.cos(a) || 1e-6)), Math.abs(h / 2 / (Math.sin(a) || 1e-6))) + 5;

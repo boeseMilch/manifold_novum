@@ -1,5 +1,5 @@
 // Station mini-games: radar and helm (just a click now), patch board, cannon reload,
-// held shields, the jump handle, heartbeat treatment. Run: node tests/minigames.js
+// shields (holding the button adds nothing), the jump handle, heartbeat treatment, panels of the downed. Run: node tests/minigames.js
 const { loadGame } = require('./harness');
 const NAMES = ['simTick', 'me', 'crew', 'mission', 'startMission', 'withCrew', 'ui', 'inv', 'time', 'runCommand', 'clickTarget',
   'power', 'CAPACITORS', 'SYSTEMS', 'GUNS', 'combat', 'reloadCannon', 'SHIELD_BUTTONS', 'JUMP_HANDLE', 'JUMP_PULL', 'workProgress', 'hurtCrew', 'netServer', 'evs', 'enc', 'STATIONS'];
@@ -88,5 +88,40 @@ const cmd = (G, c) => G.withCrew(G.me, () => G.runCommand(c));
     G.simTick(DT); t += DT;
   }
   check(B.health === 'hurt' && t < 1.6, `clicking on the heartbeat treats faster than 2 s (${t.toFixed(2)} s)`);
+}
+// --- down or out: the open panel falls shut and its commands do nothing (2026-11-10: someone out cold kept typing the
+// vent's PIN and vented the room; ['lock', i] worked from the floor, and without the security console open)
+{
+  const G = loadGame([...NAMES, 'VENT_PANELS', 'hz', 'lockables']);
+  G.netServer.init('c7'); G.netServer.addCrew(1, 'A'); G.netServer.addCrew(2, 'B');
+  G.mission.events.forEach(e => { e.done = true; });
+  const [A, B] = G.crew, [px, py] = G.VENT_PANELS.portLock;
+  A.mode = 'inside'; A.x = px + 0.6; A.y = py - 0.8; tickN(G, 5);
+  G.withCrew(A, () => G.clickTarget(px, py).run());
+  const pin = A.ui.mini.pin;
+  G.netServer.command(1, ['mini', 'pin', 'key', +pin[0]]);
+  check(A.ui.panel === 'mini' && A.ui.mini.typed === pin[0], 'on your feet the vent\'s PIN pad takes keys');
+  G.hurtCrew(A, 3);
+  for (const d of pin.slice(1)) G.netServer.command(1, ['mini', 'pin', 'key', +d]);
+  G.netServer.command(1, ['mini', 'pin', 'ok']);
+  check(A.ui.mini.typed === pin[0] && !A.ui.mini.flash, 'out cold: the keys and OK do nothing');
+  tickN(G, 90);
+  check(!A.ui.panel && !A.ui.mini && !G.hz.vent, `…the pad falls shut and the room is not vented (panel ${A.ui.panel}, vent ${!!G.hz.vent})`);
+  // the security console: B locks a door at it; not without the console open, not from the floor
+  const locked = () => G.lockables().map(l => l.ref.locked ? 1 : 0).join('');
+  const was = locked();
+  G.netServer.command(2, ['lock', 0]);
+  check(locked() === was, '[\'lock\'] without the security console open does nothing');
+  B.ui.panel = 'security'; G.netServer.command(2, ['lock', 0]);
+  const now = locked();
+  check(now !== was, 'at the open console it locks the door');
+  B.health = 'down'; G.netServer.command(2, ['lock', 0]);
+  check(locked() === now, 'down: the console\'s buttons do nothing');
+  tickN(G, 2);
+  check(!B.ui.panel, '…and the console closes');
+  // the patch board the same
+  B.health = 'ok'; B.ui.panel = 'mini'; B.ui.mini = { kind: 'patch', pick: null }; B.health = 'out';
+  G.netServer.command(2, ['mini', 'patch', 'out', 1]); G.netServer.command(2, ['mini', 'patch', 'cap', 0]);
+  check(G.power.patch.join('') === '012', `out cold at the patch board: nothing is rerouted (${G.power.patch.join('')})`);
 }
 process.exitCode = failed ? 1 : 0;

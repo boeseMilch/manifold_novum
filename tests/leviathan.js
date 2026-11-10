@@ -174,6 +174,27 @@ for (const n of [1, 3]) {
   }
   const g2 = watch(3, 2, 30);   // (a flick warned as the gas comes is called off, not landed short after it)
   check(g2.lands.every(l => l.red >= g2.G.LEVB_FLICK_WARN - 0.02), 'the gas between: no flick lands with a cut-short warning');
+  // solo: a flick warned on the right flank as the gas comes used to stay red through the gas and land on that (right) room
+  // 3 s after it had turned to the left side. Now it's off, and warned afresh, in full, on the side it shows by then.
+  {
+    const G = fresh(1); G.startLevBoss(1);
+    const b = B(G);
+    b.fin = 0; for (const z of b.zones) z.hp = 0;
+    Object.assign(b, { step: 'right', where: 'star', phase: 'gas', gas: { warn: 10, t: 15 } }); b.flick.t = 3; b.flick.room = 'starGun';
+    G.simTick(DT);
+    check(!b.flick.room, 'solo: a flick warned as the gas comes is off');
+    const lands = []; let red = null, since = 0, t = 0;
+    for (let i = 0; i < 60 * 45 && !lands.length; i++) {
+      keepSafe(G); G.simTick(DT); t += DT;
+      const F = b.flick.room;
+      if (F && !red) since = t;
+      if (!F && red) lands.push({ room: red, side: b.where, phase: b.phase, red: t - since });
+      red = F;
+    }
+    const l = lands[0];
+    check(l && l.phase === 'p3' && l.room.startsWith(l.side) && l.red >= G.LEVB_FLICK_WARN - 0.02,
+      `solo: after the gas the flick lands on the side it shows (${l?.side}: ${l?.room}), warned ${l?.red.toFixed(1)} s ahead`);
+  }
 
   // the extras: a scripted fight start to behind, all the extras' marks recorded
   function extras(n) {

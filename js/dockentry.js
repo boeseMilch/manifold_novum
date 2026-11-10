@@ -4,7 +4,7 @@
 // so you can't get deadlocked if both airlocks are occupied." and "I.e. hit the windshield or something to get into
 // the other ship." So every ship that docks has a way in from space, the kind that fits it, forced with the manual
 // override (three good whacks / heaves) from outside:
-//   the Red Comet raider (docked pirates, the brig barge, chapter 5's raider at our other airlock): SMASH ITS CANOPY
+//   the Red Comet raider (docked pirates, chapter 5's raider at our other airlock): SMASH ITS CANOPY
 //     (the glass cockpit on the beak beside the tube). It stays smashed: the raider vents, its crew aboard get blown
 //     about (a hit and stunned), and the tube is airless now, so our pod cycles like to space. Climb in through the
 //     cockpit and drop into the tube.
@@ -80,10 +80,6 @@ function openDockEntry(e) {
   combatBanner(e.ship === 'raid' ? 'Canopy smashed — the raider vents!' : 'Canopy smashed — their ship vents!');
   const aboard = (p) => e.ship === 'raid' ? (p.raid && inRect(p.x, p.y, raidGeom(e.ref).tube)) : (inDock(p.x, p.y) && !roomAt(p.x, p.y));
   for (const p of dk.pirates) if (!p.dead && aboard(p)) hurtPirate(p, 1, 2.5);   // (stunned; then they carry on in their masks)
-  if (e.ship === 'dock' && e.ref.brig && dk.npc && inDock(dk.npc.x, dk.npc.y) && !e.ref.brigNote) {
-    e.ref.brigNote = true;
-    combatBanner('Canopy smashed! Dr. Varga\'s cell is sealed: she\'s safe.');
-  }
 }
 // Per tick: the base's hatch shutting again; the override at an entry (the crank turning, a crack / a ratchet per whack);
 // the canopy's air puffing out for a few s after it's smashed.

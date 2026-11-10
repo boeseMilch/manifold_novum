@@ -104,7 +104,7 @@ for (const { k, r } of boxes) {
 }
 
 // 6. The docked ships' sprite clutter (js/dock.js DOCK_DECOR[*].sprites: the derelict lab's aftermath, the raider's
-//    and the prison barge's pirate junk): purely visual, but nothing standing may sit in a room's walking line (the
+//    pirate junk): purely visual, but nothing standing may sit in a room's walking line (the
 //    doors' band along g.y), stick out of its room, or stand on the crate, reactor, nav console, fire, the engineer,
 //    or S-7's freezer, J1, cocoon, heart, extinguisher and tendrils. Checked as drawn, on both sides.
 {
@@ -116,7 +116,7 @@ for (const { k, r } of boxes) {
     raider_rum: [0.3, 0.22], raider_barrel_yellow: [0.25, 0.25], raider_barrel_red: [0.25, 0.25], raider_hammock: [1.1, 0.4],
   };
   let n = 0, unknown = new Set();
-  for (const [kind, brig] of [['derelict', false], ['pirate', false], ['pirate', true]]) for (const side of ['port', 'star']) {
+  for (const [kind, brig] of [['derelict', false], ['pirate', false]]) for (const side of ['port', 'star']) {
     const g = D.dockGeom(side), d = { kind, side, brig, doors: [true, false], crate: [], fires: [] }, drawn = [];
     D.GFX.on = true; D.GFX.info = () => ({ f: [0, 0, 0, 0] }); D.GFX.frameIndex = () => 0; D.GFX.canvasSprite = () => null;
     D.GFX.sprite = (name, f, x, y, z = 0, o = {}) => { drawn.push({ name, x, y, layer: o.layer || 'main' }); return true; };

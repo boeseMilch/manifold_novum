@@ -63,6 +63,16 @@ const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission
   G.withCrew(G.me, () => { for (const i of order) G.runCommand(['reboot', i]); });
   check(!G.enc.glitch && G.lockables().filter(l => l.ref.locked).length < locked.length, 'the right order (shown on the helm) reboots it and unlocks what it locked');
 }
+// a second glitch before the first one is rebooted (the skirmish builder can ask for two): one reboot frees the doors of both
+{
+  const G = fresh(); G.startGlitch();
+  for (let t = 0; t < 60 && !G.lockables().some(l => l.ref.locked); t += 1) tickN(G, 60);
+  const before = G.lockables().filter(l => l.ref.locked).length;
+  G.startGlitch();
+  G.withCrew(G.me, () => { for (const i of G.enc.glitch.order) G.rebootSwitch(i); });
+  const after = G.lockables().filter(l => l.ref.locked).length;
+  check(before > 0 && !G.enc.glitch && after === 0, `a second glitch before the reboot: the reboot unlocks the first one's doors too (${before} locked before, ${after} after)`);
+}
 // --- stealth fighter and tractor tug
 {
   const G = fresh(); G.combatSpawn('stealth', 'port'); const e = G.combat.enemies[0];
@@ -78,5 +88,16 @@ const fresh = () => { const G = loadGame(NAMES); G.startMission('c1'); G.mission
   const p = e.pois.find(p => p.id === 'emitter'); G.hitPoi(e, p, ...G.enemyToWorld(e, ...p.c));
   const at1 = G.mission.jumpAt; tickN(G, 60 * 2);
   check(G.mission.jumpAt === at1, 'shooting the emitter frees the ship');
+}
+// two tugs hold the clock, they don't turn it back (each one added the tick to the jump time: the countdown ran backwards)
+{
+  const G = fresh(); G.startMission('c1'); G.mission.events = []; G.combat.enemies.length = 0; G.combatSpawn('tractor', 'star'); G.combatSpawn('tractor', 'port');
+  const left = () => G.mission.jumpAt - G.mission.t, c0 = left(); tickN(G, 60 * 10);
+  check(Math.abs(left() - c0) < 1e-6, `two tractor tugs: the jump countdown stands still (${c0.toFixed(2)} s before, ${left().toFixed(2)} s after 10 s)`);
+  const [a, b] = G.combat.enemies, off = (e) => { const p = e.pois.find(p => p.id === 'emitter'); G.hitPoi(e, p, ...G.enemyToWorld(e, ...p.c)); };
+  off(a); const c1 = left(); tickN(G, 60 * 2);
+  check(Math.abs(left() - c1) < 1e-6, 'one emitter shot off: the other tug still holds it');
+  off(b); const at = G.mission.jumpAt; tickN(G, 60 * 2);
+  check(G.mission.jumpAt === at, 'both shot off: the clock runs again');
 }
 process.exitCode = failed ? 1 : 0;

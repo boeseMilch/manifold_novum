@@ -124,7 +124,7 @@ const LEVB_VENTS = [{ x: 24.8, y: 24.5 }, { x: 28.6, y: 24.3 }], LEVB_PANEL = { 
 const LEVB_ENGINE = { x: 22.2, y: 26.1 };
 const LEVB_SPRITES = ['organic/levb_head', 'organic/levb_seg_0', 'organic/levb_seg_1', 'organic/levb_seg_2', 'organic/levb_seg_3', 'organic/levb_seg_4', 'organic/levb_seg_5', 'organic/levb_seg_tail', 'organic/levb_fluke'];
 
-const levEasy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
+const levEasy = () => easyLevel();                   // (0 normal and hard, 1 easy, 2 very easy: js/mission.js)
 const levSideName = (s) => (s === 'port' ? 'LEFT' : s === 'star' ? 'RIGHT' : s === 'front' ? 'FRONT' : 'BEHIND');
 
 // ---------------------------------------------------------------------------
@@ -271,7 +271,7 @@ function startLevBoss(from = 1) {
     phase: 'p1', step: 'fin', s: 0, sTo: 0, out: 0, parked: false, t: 0, nz, fin: LEVB_FIN_HP, sink: 0,
     zones: [...levZoneIds('port', nz), ...levZoneIds('star', nz)].map(id => ({ id, side: id[0] === 'L' ? 'port' : 'star', hp: LEVB_ZONE_HP })),
     where: 'front', flick: { t: LEVB_FLICK, room: null }, slam: null, gas: null, p3: null,
-    brood: [], dead: [], wave: null, blast: 0, freed: 0, splat: 0,
+    brood: [], dead: [], wave: null, blast: 0, freed: 0,
     calm: 0, extras: LEVB_EXTRAS[n > 1 ? Math.min(n, LEVB_CREW_CAP) - 1 : 0].map(e => ({ ...e, at: null, done: false })),   // (crew scaling: LEVB_EXTRAS)
   };
   if (n > 1) B.flick.t = levFlickGap(n);
@@ -301,7 +301,7 @@ function levStartSide(B, side, first = false) {
 function updateLevBoss(dt) {
   const B = org.boss;
   if (!B) return;
-  B.t += dt; B.splat = Math.max(0, B.splat - dt);
+  B.t += dt;
   // swimming along the loop (speeding up gently, slowing down as it arrives); parked at its station
   if (B.s < B.sTo - 0.02) {
     const left = B.sTo - B.s;
@@ -335,7 +335,9 @@ function updateLevBoss(dt) {
       levBump(F.room || levRoomOn(B.where), false); F.t = n > 1 ? levFlickGap(n) : LEVB_FLICK; F.room = null;
       if (n > 1) B.calm = B.t + LEVB_FLICK_REST;
     }
-  } else if (n > 1 && B.flick.room) { B.flick.room = null; B.flick.t = levFlickGap(n); }   // (a crew: a flick warned as the gas came is off)
+  // a flick warned as the gas came is off (it would land on the side it has left by then). A crew: the next one a full gap
+  // later; solo: warned afresh, in full, once it's back at a flank, on the side it shows then
+  } else if (B.flick.room) { B.flick.room = null; B.flick.t = n > 1 ? levFlickGap(n) : LEVB_FLICK_WARN; }
   if (B.slam && (B.slam.t -= dt) <= 0) { levBump(B.slam.room, true, B.slam.side); B.slam = null; if (n > 1) B.calm = B.t + LEVB_FLICK_REST; }
   levExtras(B);
   if (B.phase === 'gas') levUpdateGas(B, dt);
@@ -444,7 +446,7 @@ function levShells(B) {
     for (let i = 1; i < body.length; i++) {               // across its back: a dull splat (shells don't fly through it)
       const [ax, ay] = body[i - 1], [bx, by] = body[i], w = 0.35 * levHW(i < 2 ? LEVB_HEAD * 0.6 : LEVB_JOINTS[Math.min(i - 2, LEVB_SEGS)] ?? LEVB_BODY);
       if (segDist(x1, y1, ax, ay, bx, by) < w) {
-        s.dead = true; B.splat = 0.3;
+        s.dead = true;
         for (let k = 0; k < 6; k++) combatFx(s.x, s.y, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 0.5, k % 2 ? '#2a4a5e' : '#7ab0c0', 0.12);
         sfx.clank?.(); break;
       }

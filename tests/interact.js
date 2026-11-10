@@ -95,5 +95,49 @@ for (const how of ['E', 'click']) {
   check(!G.withCrew(me, () => G.ui.panel) && d.locked, 'Esc closes the override panel');
 }
 
+// --- no hazard spot buries a station: with every room breached, every gravity breaker out and every line arcing,
+// a click on each fixed station still reaches that station (2026-11-10: the bridge breach, 0.4 from the jump handle,
+// took the handle's clicks in chapter 7; with no duct tape left the jump could not be pulled)
+{
+  const G = loadGame(['me', 'startMission', 'mission', 'hz', 'withCrew', 'inv', 'GRAV_PANELS', 'VENT_PANELS', 'BREACH_SPOTS', 'clickTarget', 'nearbyTarget', 'JUMP_HANDLE', 'PATCH_BOARD', 'LEVER', 'LEVER_HUB',
+    'SNACK', 'COFFEE_MUG', 'PLATE_CRATES', 'FUEL_CRATE', 'COOLANT_CRATE', 'POWER_LINES', 'stationSpots', 'enc', 'ITEMS', 'simTick']);
+  G.startMission('c7'); G.mission.events.forEach(e => { e.done = true; });
+  const me = G.me; me.mode = 'inside';
+  G.mission.jump = { t: 0, st: 0, fails: 0 }; G.ITEMS.length = 0;
+  const stations = [['jump handle', G.JUMP_HANDLE.x, G.JUMP_HANDLE.y, 0.45], ['patch board', G.PATCH_BOARD.x, G.PATCH_BOARD.y, 0.5], ['lever hub', G.LEVER.x, G.LEVER.y, G.LEVER_HUB - 0.01],
+    ['snack machine', G.SNACK.x, G.SNACK.y, 0.6], ['coffee mug', G.COFFEE_MUG.x, G.COFFEE_MUG.y, 0.35], ['fuel crate', G.FUEL_CRATE.x, G.FUEL_CRATE.y, 0.7], ['coolant crate', G.COOLANT_CRATE.x, G.COOLANT_CRATE.y, 0.5],
+    ...G.stationSpots().map(s => [s.name, s.x, s.y, s.r]), ...G.PLATE_CRATES.map((c, i) => ['plate crate ' + i, c.x, c.y, 0.6]), ...Object.entries(G.VENT_PANELS).map(([k, p]) => ['vent panel ' + k, p[0], p[1], 0.5])];
+  // the station a click gives: the target's own centre is the station's
+  const from = (x, y, sx, sy) => { const t = G.withCrew(me, () => G.clickTarget(x, y)); return !!t && Math.hypot(t.x - sx, t.y - sy) < 0.01; };
+  const stand = (x, y) => { me.x = x; me.y = y + 0.5; };
+  const clean = stations.filter(([, x, y]) => { stand(x, y); return from(x, y, x, y); });
+  check(clean.length === stations.length, `${clean.length} of ${stations.length} stations answer a click on their centre with nothing wrong on the ship`);
+  for (const room of Object.keys(G.BREACH_SPOTS)) G.hz.breaches.push({ room, t: 0 });
+  G.hz.noGrav = Object.keys(G.GRAV_PANELS); G.hz.surges = G.POWER_LINES.map(l => l.id);
+  for (const [tape, kit] of [[0, null], [3, null], [0, 'repair'], [3, 'repair']]) {
+    G.hz.tape = tape; G.withCrew(me, () => { G.inv.weapon = kit; });
+    const bad = [];
+    for (const [name, x, y, r] of clean) {
+      stand(x, y);
+      let n = 0, hit = 0;
+      for (let dx = -r; dx <= r; dx += r / 8) for (let dy = -r; dy <= r; dy += r / 8) { if (Math.hypot(dx, dy) > r) continue; n++; if (from(x + dx, y + dy, x, y)) hit++; }
+      if (!from(x, y, x, y) || hit < 0.8 * n) bad.push(`${name} (${Math.round(100 * hit / n)} % of its disc)`);
+    }
+    check(!bad.length, `every hazard live, ${tape} duct tape, ${kit ? 'the repair kit' : 'no kit'}: every station keeps its click${bad.length ? ' — buried: ' + bad.join(', ') : ''}`);
+  }
+  // the dead end itself: no tape, the bridge holed, the drive spooling: a click on the handle and E next to it pull it
+  G.hz.tape = 0; G.withCrew(me, () => { G.inv.weapon = null; });
+  me.x = G.JUMP_HANDLE.x; me.y = G.JUMP_HANDLE.y + 0.8;
+  const t = G.withCrew(me, () => G.clickTarget(G.JUMP_HANDLE.x, G.JUMP_HANDLE.y));
+  check(t?.hold?.id === 'jumpHandle', `bridge breach, no tape: a click on the jump handle pulls it ("${t?.text}")`);
+  me.eScan = null;
+  const e = G.withCrew(me, () => G.nearbyTarget(true));
+  check(e?.hold?.id === 'jumpHandle', 'and E next to it does too');
+  // the breach is still there for the tape: its own spot, with tape, away from the handle
+  G.hz.tape = 3; const B = G.BREACH_SPOTS.bridge; me.x = B.x - 0.3; me.y = B.y + 0.8;
+  const b = G.withCrew(me, () => G.clickTarget(B.x - 0.2, B.y));
+  check(b?.hold?.id === 'tarpbridge', 'the bridge breach can still be taped at its own spot');
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nall interaction tests passed');
 process.exit(failed ? 1 : 0);

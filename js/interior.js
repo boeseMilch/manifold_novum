@@ -1,6 +1,5 @@
 // The lived-in part of the ship: kitchen, bunk beds, a toilet, a couch, a treadmill,
 // warm ceiling lights and signs. Pure art (FURNITURE in ship.js makes it solid).
-// Also the green corner brackets that mark everything you can click.
 
 function plaque(x, y, w, h, lines, bg = '#e8e4d4', fg = '#2a2d35') {   // a screwed-on sign, centered at x, y
   ctx.save(); ctx.translate(x, y);

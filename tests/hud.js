@@ -72,4 +72,52 @@ check(!threw, `the markers draw without errors${threw ? ': ' + threw.message : '
   for (let i = 0; i < 12; i++) H.simTick(DT);
   check(!!H.eTargetOf(me2), 'with the mouse far away, the thing next to you is still E\'s target');
 }
+
+// --- the top safe margin: wherever you stand inside, you and the prompt over your head are below the banners / the
+// tutorial's objective strip (TOP_SAFE px under the top bar): at the bridge's nose (the helm, the tutorial's first
+// stop) the player stood behind the strip (2026-11-10). At several window sizes; a split-screen view is laid out as a
+// window of at least SPLIT_MIN (760 × 760, js/game.js resize), so that size stands for the smallest one.
+{
+  const K = loadGame(['tick', 'me', 'startMission', 'mission', 'camera', 'HUD_H', 'TOP_SAFE', 'PROMPT_BOX', 'promptLift', 'T', 'VW', 'VH', 'window', 'ROOMS', 'invSlots', 'STATIONS']);
+  K.startMission('c1'); K.mission.active = false;
+  const k = K.me, helm = K.STATIONS.find(q => q.name === 'Helm');
+  const settle = (x, y) => { Object.assign(k, { mode: 'inside', x, y, vx: 0, vy: 0 }); for (let i = 0; i < 60 * 4; i++) { k.x = x; k.y = y; K.tick(DT); } return K.camera(); };
+  for (const [W, Hh] of [[1600, 1000], [1280, 720], [760, 760], [640, 760], [1024, 600], [1920, 1080]]) {
+    K.window.innerWidth = W; K.window.innerHeight = Hh; K.listeners.resize?.();
+    const spots = [['at the helm', helm.x, helm.y + 1.0], ['in the bridge\'s nose', 20.6, -1.6],
+      ...K.ROOMS.map(r => { const q = r.rects[0]; return [`at the north wall of the ${r.name.toLowerCase()}`, q.x + q.w / 2, q.y + 0.35]; })];
+    const bad = [];
+    for (const [name, x, y] of spots) {
+      const v = settle(x, y), feet = v.oy + y * K.T * v.zoom * v.sy, top = feet - (K.promptLift() + K.PROMPT_BOX) * K.T * v.zoom;
+      if (top < K.HUD_H + K.TOP_SAFE - 1 || feet > K.invSlots()[0].y) bad.push(`${name}: prompt top at y ${Math.round(top)}, feet at ${Math.round(feet)}`);
+    }
+    check(K.VW === W && !bad.length, `${W}×${Hh}: standing anywhere at a room's north wall, the prompt over your head stays under the top ${K.HUD_H + K.TOP_SAFE} px and you above the inventory${bad.length ? ' — ' + bad.join('; ') : ''}`);
+  }
+  // …and the middle of a room is framed as before (the margin only acts near the top)
+  K.window.innerWidth = 1600; K.window.innerHeight = 1000; K.listeners.resize?.();
+  const v = settle(22.2, 6.4), feet = v.oy + 6.4 * K.T * v.zoom * v.sy;
+  check(Math.abs(feet - (K.HUD_H + (K.invSlots()[0].y - K.HUD_H) / 2)) < 0.2 * K.VH, `in the middle of the bridge you are near the middle of the view (y ${Math.round(feet)} of ${K.VH})`);
+}
+
+// --- the debug menu's "Restart the mission" restarts the one you're in, on the ship you have (it started chapter 1 on a
+// stock ship); and patching yourself up counts for the end screen's report ("Nobody had to be treated" after being down)
+{
+  const R = loadGame(['simTick', 'me', 'startMission', 'mission', 'withCrew', 'runCommand', 'hz', 'hurtCrew', 'SHOTS_PER_ENERGY']);
+  R.startMission('c3', { ship: { cannons: true }, easy: 1 });
+  const shots = R.SHOTS_PER_ENERGY;
+  for (let i = 0; i < 120; i++) R.simTick(DT);
+  const run0 = R.mission.runId;
+  R.withCrew(R.me, () => R.runCommand(['debug', 'm']));
+  check(R.mission.id === 'c3' && R.mission.t < 1 && R.mission.easy === 1 && R.mission.upgrades.cannons === true && R.SHOTS_PER_ENERGY === shots && R.mission.runId !== run0,
+    `restart: chapter ${R.mission.id} again from 0 s, the same difficulty and ship upgrades (${JSON.stringify(R.mission.upgrades)})`);
+  check(!R.mission.rerun, 'restarted mid-mission (nothing paid yet): not a rerun, it pays at its end');
+  R.mission.over = { won: true, results: { jumped: true, crew: [{ id: R.me.id }] } };
+  R.withCrew(R.me, () => R.runCommand(['debug', 'm']));
+  check(R.mission.rerun === true && !R.mission.over, 'restarted after its end (already paid): marked as a rerun, which pays nothing (solo too)');
+  R.mission.active = false; R.hurtCrew(R.me, 2);
+  R.me.input.keys.add('KeyE');
+  for (let i = 0; i < 60 * 25 && R.me.health === 'down'; i++) R.simTick(DT);
+  R.me.input.keys.delete('KeyE');
+  check(R.me.health === 'hurt' && R.hz.stats.selfTreated === 1 && !Object.keys(R.hz.stats.treated).length, `down, patched yourself up: counted (${R.hz.stats.selfTreated}) for the report, and nobody is "medic of the day"`);
+}
 process.exitCode = failed ? 1 : 0;

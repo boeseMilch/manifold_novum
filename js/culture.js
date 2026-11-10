@@ -34,8 +34,8 @@ const S7_CREEP_TIME = 60, S7_CREEP_SPRAY = 3, S7_CREEP_SHOT = 1, S7_WRAP_SPRAY =
 const S7_SPRITES = ['dock/s7_mat_airlock', 'dock/s7_mat_lab', 'dock/s7_mat_core', 'dock/s7_mat_airlock_husk', 'dock/s7_mat_lab_husk', 'dock/s7_mat_core_husk',
   'dock/s7_tendril', 'dock/s7_tendril_twitch', 'dock/s7_tendril_grab', 'dock/s7_tendril_recoil', 'dock/s7_tendril_husk', 'dock/s7_heart', 'dock/s7_heart_open',
   'dock/s7_heart_husk', 'dock/s7_creep_seg', 'dock/s7_creep_tip', 'dock/s7_wrap_capacitor', 'dock/s7_wrap_capacitor4', 'dock/s7_tendril_grab_front', 'dock/s7_frost_a', 'dock/s7_frost_b', 'dock/s7_freezer_off', 'dock/s7_freezer_on', 'dock/s7_junction_dead',
-  'dock/s7_junction_patched', 'dock/s7_frost', 'dock/s7_cocoon_pirate'];
-const s7Easy = () => clamp(typeof mission !== 'undefined' ? mission.easy || 0 : 0, 0, 2);
+  'dock/s7_junction_patched', 'dock/s7_cocoon_pirate'];
+const s7Easy = () => easyLevel();                    // (0 normal and hard, 1 easy, 2 very easy: js/mission.js)
 const s7Solo = () => crewSize() <= 1;
 const s7Twitch = () => S7_TWITCH + 0.3 * s7Easy() + (s7Solo() ? 0.3 : 0);           // the telegraph: longer on easier difficulty / solo
 const s7SqueezeT = () => S7_SQUEEZE + s7Easy();
@@ -109,7 +109,6 @@ function s7Body(T0, i, n = 6) {
 const s7Alive = (T0) => T0.state !== 'husk';
 const s7Holding = (c) => { const s = S7(); return !!s && s.tendrils.some(T0 => T0.state === 'grab' && T0.hold === c.id); };
 const s7Wrapped = (i) => { const s = S7(); return !!s && s.creep.wrapped && !s.creep.dead && s7Geom(dk.dock.side).capIdx === i; };
-const s7BoxHeld = () => { const s = S7(); return !!s && !s.heartOpen; };
 function s7Recoil(s, T0, time, why) {
   const held = T0.hold != null ? crew.find(c => c.id === T0.hold) : null;
   T0.t = Math.max(T0.state === 'recoil' ? T0.t : 0, time); T0.state = 'recoil'; T0.hold = null; T0.target = null; T0.sq = 0; T0.spray = 0; T0.struggle = 0; T0.flash = 1;

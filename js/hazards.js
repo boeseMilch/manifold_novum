@@ -1,5 +1,5 @@
 // Hazards and the small stuff of ship life.
-//   Small things: snack machine, coffee, intercoms, ship voice, rattling hull panels, duct tape,
+//   Small things: snack machine, coffee, ship voice, rattling hull panels, duct tape,
 //   lasting scorch marks, the end-of-mission report.
 //   Damage types (switched on per mission in mission.rules): hull breaches with blast doors and
 //   vacuum, plasma fires and venting a room, power lines that arc (surges), failed gravity plating.
@@ -43,7 +43,7 @@ const HULL_SEAMS = Object.entries(BREACH_SPOTS).map(([room, s]) => ({
 function failSeam(s) { if (breachRoom(s.room)) combatBanner(`The hull seam gave way — HULL BREACH in the ${roomById(s.room).name.toLowerCase()}!`); }
 // Every part a failing-part event can name, by index (js/net.js sends events, repairs and fires as indices into it)
 const ALL_PARTS = [...SYSTEMS, ...HULL_SEAMS];
-// Emergency vent valves (one per room) and the gravity breaker panels (under a floor plate).
+// The vent panels (the two lower side rooms) and the gravity breaker panels (under a floor plate).
 // Plasma fires only happen in the lower side rooms; the panel next to that room's outer airlock vents it.
 const VENT_PANELS = { portLock: [0.85, 16.9], starLock: [43.55, 17.1] };   // (on the outer wall, just above the outer airlock's chamber)
 const PLASMA_ROOMS = new Set(Object.keys(VENT_PANELS));
@@ -98,16 +98,18 @@ function noGravAt(x, y) { const r = roomAt(x, y); return !!r && hz.noGrav.includ
 // ---------------------------------------------------------------------------
 // Hull breaches
 // ---------------------------------------------------------------------------
-// A big hit on a side whose hull is already damaged holes a room on that side.
-function onBigHit(side, x, y) {
+// The room behind a spot on the hull: the deck it's on (the hull between the decks belongs to the lower one). The one
+// rule for everything that holes the hull at a spot: a big hit, a limpet mine (js/eva.js), the grappler (js/organic.js).
+const roomNearHull = (side, y) => side === 'front' ? 'bridge' : side === 'port' ? (y < SPINE_Y0 ? 'portGun' : 'portLock') : (y < SPINE_Y0 ? 'starGun' : 'starLock');
+// A big hit on a side whose hull is already damaged holes a room on that side: the one behind the spot, or (that one's
+// open already) the side's other one. holes: this hit holes it even if the hull was whole (a limpet mine). One hit, one room.
+function onBigHit(side, x, y, holes = false) {
   for (const b of hz.breaches) if (b.tarp && BREACH_SPOTS[b.room].side === side) { b.tarp = false; b.torn = true; combatBanner('The tarp tore — vacuum again!'); }
   if (!mission.rules?.breach) { hz.hull[side] = Math.min(hz.hull[side] + 1, 3); return; }
-  if (hz.hull[side] >= 1) {
-    const rooms = Object.entries(BREACH_SPOTS).filter(([id, s]) => s.side === side && !breachAt(id));
-    if (rooms.length) {
-      rooms.sort((a, b) => Math.abs(a[1].y - y) - Math.abs(b[1].y - y));
-      breachRoom(rooms[0][0]);
-    }
+  if (hz.hull[side] >= 1 || holes) {
+    const behind = roomNearHull(side, y);
+    const room = breachAt(behind) ? Object.keys(BREACH_SPOTS).find(id => BREACH_SPOTS[id].side === side && !breachAt(id)) : behind;
+    if (room) breachRoom(room);
   }
   hz.hull[side] = Math.min(hz.hull[side] + 1, 3);
   if (mission.rules?.surge && Math.random() < 0.35) surgeColumn(colOfSide(side));
@@ -116,7 +118,7 @@ function onBigHit(side, x, y) {
     const r = pool.sort((a, b) => Math.abs(roomCenter(a)[1] - y) - Math.abs(roomCenter(b)[1] - y))[0];
     if (r) failGravity(r.id);
   }
-  if (Math.random() < 0.5) hz.coffee = 0;            // the mug always tips over
+  if (Math.random() < 0.5) hz.coffee = 0;            // the mug tips over, half the time
 }
 function breachRoom(roomId) {
   if (breachAt(roomId) || !BREACH_SPOTS[roomId]) return false;
@@ -193,7 +195,6 @@ function updateBreaches(dt) {
 // ---------------------------------------------------------------------------
 const inPlasmaRoom = (s) => sysRooms(s).some(r => PLASMA_ROOMS.has(r.id));
 const plasmaPart = (s) => inPlasmaRoom(s) && s.kind === 'capacitor' && s.ref.charge >= 3;   // a well charged capacitor in a lower side room
-const plasmaIn = (roomId) => fires.some(f => f.plasma && f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));
 const fireIn = (roomId) => fires.some(f => f.hp > 0 && sysRooms(f.sys).some(r => r.id === roomId));   // any fire: venting works on normal fires too
 // The vent panel works any time (2026-10-22: it clears spores, js/spores.js); it lights up when there's a reason to use
 // it: a fire in its room, spores in it, in the cannon room above or on the bridge (vented on through forced doors).
@@ -201,7 +202,7 @@ const ventWanted = (roomId) => fireIn(roomId) || infested(roomId) || infested(ro
 // operator: whoever typed the vent code — their visor is already down, so they're not hurt.
 // Everyone else in the room takes one hit the moment it opens (the vacuum afterwards only slows you).
 // Hostiles in there (boarders, the saboteur, pirates) take one solid hit each and are stunned (VENT_HIT:
-// the alien loses half its health, a saboteur goes down), then the rushing air drags them towards the
+// VENT_HIT: an alien or the saboteur loses 3 health, a pirate 2), then the rushing air drags them towards the
 // open outer airlock: whoever reaches it is blown out into space (a kill, counted like any other).
 const VENT_HIT = { alien: 3, saboteur: 3, pirate: 2 }, VENT_STUN = 2.5, VENT_PULL = 2.2, VENT_OUT = 0.6;
 const ventHatch = (roomId) => HATCHES.find(h => h.side === (roomId === 'portLock' ? 'port' : 'star'));

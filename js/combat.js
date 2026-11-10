@@ -26,7 +26,7 @@ const combat = {
   shake: 0,                                         // large hit: the whole ship vibrates
   shields: { port: { up: 0, cd: 0 }, front: { up: 0, cd: 0 }, star: { up: 0, cd: 0 } },
   shieldHits: [],                                    // impacts on our shields {side, x, y, t, heavy}
-  swarm: null, banner: null,
+  swarm: null, banner: null, bannerQueue: [],   // (bannerQueue: banners pushed aside in the tick they were raised, combatBanner)
 };
 
 function segCircle(x0, y0, x1, y1, cx, cy, r) {
@@ -67,7 +67,24 @@ function drawFlip(p) {
   GFX.sprite(p.flip, Math.min(n - 1, Math.floor((1 - p.life / p.max) * n)), p.x, p.y, p.z || 0, { layer: 'top', unlit: true, scale: p.size || 1 });
 }
 // who: the crew member whose action raised it (null: the world's own; split screen shows it in their view: bannerHere)
-function combatBanner(text) { combat.banner = { text, t: 3, who: typeof acting !== 'undefined' && acting ? acting.id ?? null : null }; }
+// One banner shows at a time, the newest at once, as ever. But one raised in the very same tick as the one it replaces
+// used to wipe that one out unread (2026-11-10: "the nav core was flung clear … grab it within 60 s!" under "Pirate
+// raider destroyed!", "cast adrift — spacewalk back in!" under "The pirate ship cast off."). Now the one it pushes
+// aside waits in combat.bannerQueue and gets its 3 s afterwards (updateCombat), the latest first. Only banners of the
+// same tick queue up: a later one still replaces what's showing, so the news is never late. The queue stays in the
+// simulation: browsers get the one that shows (combat.banner, in the snapshot), with its `who`, as before.
+const BANNER_T = 3, BANNER_WAIT_MAX = 4;
+function combatBanner(text) {
+  const cur = combat.banner, Q = combat.bannerQueue;
+  for (let i = Q.length - 1; i >= 0; i--) if (Q[i].text === text) Q.splice(i, 1);   // (said again: once is enough)
+  if (cur && cur.at === time && cur.text !== text) { Q.unshift({ ...cur, t: BANNER_T }); Q.length = Math.min(Q.length, BANNER_WAIT_MAX); }
+  combat.banner = { text, t: BANNER_T, who: typeof acting !== 'undefined' && acting ? acting.id ?? null : null, at: time };
+}
+// (a tick: the banner showing runs down; when it's gone, the next one waiting shows)
+function updateBanner(dt) {
+  if (combat.banner && (combat.banner.t -= dt) <= 0) combat.banner = null;
+  if (!combat.banner && combat.bannerQueue.length) combat.banner = { ...combat.bannerQueue.shift(), at: null };
+}
 // Greedy word wrap: the lines of `text` no wider than maxW (measure: the width of a string; a single word wider than
 // maxW gets a line of its own).
 function wrapText(text, maxW, measure) {
@@ -94,7 +111,9 @@ function bannerLayout(text, room, measure) {
 // too small for a readable banner, it moves down under them instead, as wide as the screen right of the sidebar.
 const BANNER_MIN_ROOM = 340;
 function bannerBand(list, top) {
-  const x0 = SIDEBAR_X + PLATE_W + 14;
+  // (a split-screen view has no plates column of its own, they're in the shared strip: js/local.js; the band starts at
+  //  the view's left edge there, or a banner wrapped early in the narrow view with 280 px of nothing beside it)
+  const x0 = typeof splitSidebar === 'function' && !splitSidebar() ? 14 : SIDEBAR_X + PLATE_W + 14;
   let x1 = Math.min(VW - 14, list.x - 12), y = top + 10, below = list.bottom;
   const pb = typeof document !== 'undefined' && document.getElementById ? document.getElementById('practice-btn') : null;
   if (pb && !pb.hidden && pb.getBoundingClientRect) {
@@ -165,9 +184,12 @@ function combatClear() {
 // A cannon holds SHOTS_PER_ENERGY shots. When it's empty it just clicks; reloading (R or the
 // RELOAD button) takes one energy from the cannon's capacitor and refills it after a moment.
 const GUN_CAP = { front: 1, port: 0, star: 2 }, RELOAD_TIME = 3;   // s per reload (a weapons specialist gunner: 50% faster)
+// Why a capacitor gives no reload, said as it is: broken (with energy still in it: "empty" sent people to the lever
+// instead of the repair kit, 2026-11-10), wrapped by S-7, or really empty.
+const reloadBlock = (i) => capBroken(i) ? 'is BROKEN — no reload until it\'s repaired (repair kit)' : capWrapped(i) ? 'is wrapped by S-7 — no reload' : 'empty — no reload';
 function reloadCannon(g) {
   if (g.reload > 0 || g.shots >= SHOTS_PER_ENERGY || broken(g)) return false;
-  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(sporeGlitching(CAPACITORS[GUN_CAP[g.id]]) ? `Spores in the ${['left', 'middle', 'right'][GUN_CAP[g.id]]} capacitor — no energy for a moment, no reload` : `${['Left', 'Mid', 'Right'][GUN_CAP[g.id]]} capacitor empty — no reload`); return false; }
+  if (!useEnergy(GUN_CAP[g.id], 'gun_' + g.id)) { sfx.empty(); combatBanner(sporeGlitching(CAPACITORS[GUN_CAP[g.id]]) ? `Spores in the ${['left', 'middle', 'right'][GUN_CAP[g.id]]} capacitor — no energy for a moment, no reload` : `${['Left', 'Mid', 'Right'][GUN_CAP[g.id]]} capacitor ${reloadBlock(GUN_CAP[g.id])}`); return false; }
   g.reload = RELOAD_TIME; sfx.hatch();
   const gunner = crew.find(c => c.mode === 'gun' && c.gun === g); if (gunner) zap(gunner, 'gun_' + g.id);
   return true;
@@ -268,13 +290,13 @@ function shieldAbsorb(s, side, x, y) {
   combatFlip('fx/hit_spark_blue', x, y, s.heavy ? 1.6 : 1);
 }
 
-function shipHit(side, x, y, large) {
+function shipHit(side, x, y, large, holes) {         // holes: a big hit that holes the hull whatever state it's in (a limpet mine: js/hazards.js onBigHit)
   if (mission.over?.survived) return;                // (shots still in flight as the ship jumps away)
   if ((typeof tutorialHit === 'function' && tutorialHit('ship', side)) || (typeof trainHit === 'function' && trainHit('ship', side))) {   // tutorial / crew training: enemy hits are for show only (js/tutorial.js, js/tutorial-mp.js)
     combat.flashes[side] = 1; sfx.hit(false); combatFlip('fx/explosion_s', x, y, 0.7, hitSurface(x, y).z); return;
   }
   combat.hits[large ? 'large' : 'small']++;
-  if (large) { damageColumn(side, true); onBigHit(side, x, y); bigHitFire(side, x, y); }   // (the fire after a breach: no fire in vacuum)   // small hits: see smallHit (fire / damage)
+  if (large) { damageColumn(side); onBigHit(side, x, y, holes); bigHitFire(side, x, y); }   // (the fire after a breach: no fire in vacuum)   // small hits: see smallHit (fire / damage)
   // hot: when it hit (sim time), side: from where. js/hitfx.js plays the impact (sparks, smoke, debris,
   // flash) on every client when it first sees this decal, and lets the spot glow and cool from `hot`.
   combat.decals.push({ x, y, r: large ? 1.1 : 0.5, seed: Math.random() * 1000, hot: time, side });
@@ -327,7 +349,7 @@ function updateCombat(dt) {
   for (const k in combat.flashes) combat.flashes[k] = Math.max(0, combat.flashes[k] - dt * 1.3);
   for (const k in combat.bigFlashes) combat.bigFlashes[k] = Math.max(0, combat.bigFlashes[k] - dt * 0.8);
   combat.shake = Math.max(0, combat.shake - dt * 1.1);
-  if (combat.banner && (combat.banner.t -= dt) <= 0) combat.banner = null;
+  updateBanner(dt);
 
   updateQueues(dt);
   for (const e of combat.enemies) updateEnemy(e, dt);

@@ -492,7 +492,8 @@ const c4 = (id = 'c4') => { const G = fresh(); G.startMission(id); G.mission.act
 }
 // --- Dr. Varga makes it aboard: you stop right inside our airlock, she still comes all the way in
 for (const side of ['port', 'star']) {
-  const G = fresh(); G.dockShip('pirate', side, { npc: true }); G.dk.pirates.length = 0;
+  const G = fresh(); G.dockShip('derelict', side, { npc: true }); G.dk.dock.doors = [false, false]; G.dk.dock.fires = [];
+  for (const T of G.dk.dock.s7.tendrils) { T.state = 'recoil'; T.t = 999; }   // (S-7 asleep: its grabs are tested above)
   const g = G.dockGeom(side), me = G.me, N = G.dk.npc, h = g.hatch;
   me.x = N.x + (side === 'port' ? 0.8 : -0.8); me.y = g.y + 1.2;
   holdOn(G, N.x, N.y, () => N.state !== 'down');
@@ -501,7 +502,7 @@ for (const side of ['port', 'star']) {
   tickN(G, 60 * 12);
   check(N.state === 'safe' && G.roomAt(N.x, N.y) && Math.abs(N.x - h.x) > 1, `${side}: she walks through the tube and into our airlock room on her own (at ${N.x.toFixed(1)}, ${N.y.toFixed(1)})`);
   G.undock();
-  check(G.dk.npc && G.dk.npc.state === 'safe', `${side}: she stays aboard when their ship casts off`);
+  check(G.dk.npc && G.dk.npc.state === 'safe', `${side}: she stays aboard when the derelict drifts away`);
 }
 {
   const G = fresh(); G.dockShip('derelict', 'port', { npc: true }); G.boarding.invaders.length = 0; G.dk.dock.doors = [false, false]; G.dk.dock.fires = [];
@@ -619,10 +620,16 @@ for (const side of ['port', 'star']) {
   check(!/brig door code/.test(me.prompt?.text || '') && !me.prompt?.run, `at the brig door (in the quarters' back wall) while the captain's there: no keypad ("${me.prompt?.text}")`);
   G.withCrew(me, () => G.openBasePad(4)); type(d.code); G.withCrew(me, () => { me.ui.panel = null; });
   check(d.doors[4], 'the code doesn\'t open it while the captain holds the quarters');
-  G.dk.boss = null; G.simTick(DT);
+  G.dk.boss = null; me.health = 'ok'; G.simTick(DT);   // (the captain may have shot him down meanwhile: a downed player's keys do nothing, tests/minigames.js)
   check(/brig door code/.test(me.prompt?.text || ''), `without the captain: "${me.prompt?.text}"`);
   G.withCrew(me, () => G.openBasePad(4)); type(d.code);
   check(!d.doors[4] && !me.ui.panel && G.walkRects().includes(qb), `...the same code opens the brig door`);
+  // shot down while the pad still says ACCESS GRANTED: the code was accepted, the door opens all the same
+  d.doors[4] = true; me.health = 'ok';
+  G.withCrew(me, () => { G.openBasePad(4); for (const ch of d.code) G.miniCommand('pin', 'key', +ch); G.miniCommand('pin', 'ok'); });
+  me.health = 'down'; G.simTick(DT);
+  check(!d.doors[4] && !me.ui.panel, 'shot down during ACCESS GRANTED: the brig door still opens, the pad falls shut');
+  me.health = 'ok';
 }
 {
   // the engine is off while docked; detach (once she's aboard) → free; someone left over there → off again
@@ -724,7 +731,7 @@ for (const side of ['port', 'star']) {
   check(fired !== null && Math.abs(fired - G.SENTRY_SPOOL[0]) < 0.1, `then it opens fire (after ${fired?.toFixed(2)} s)`);
   check(me.health !== 'ok', `standing in the open through a burst gets you hit (${me.health})`);
   check(S.state === 'cool' && S.shots > 25, `it fires for ${G.SENTRY_BURST} s (${S.shots} shots), then cools down`);
-  tickN(G, 60 * (G.SENTRY_COOL + 0.1)); me.x = 37; me.y = 5; G.simTick(DT);
+  me.x = 37; me.y = 5; tickN(G, 60 * (G.SENTRY_COOL + 0.1)); G.simTick(DT);   // (out of its sight first: only hurt by the burst, not down, it would see him the moment it has cooled)
   check(S.state === 'idle', 'and goes back to watching');
   // cover: crouched behind each stack, a whole burst doesn't touch you
   let safe = true;
@@ -786,5 +793,21 @@ for (const side of ['port', 'star']) {
   const gun = H.me; gun.mode = 'gun'; gun.gun = { id: 'port', name: 'Left cannon', view: [0, 0, 10], hatch: [3, 8] };
   H.CAPACITORS[1].charge = 2; H.mission.t = H.mission.jumpAt + 0.1; tickN(H, 5);
   check(H.mission.over?.won, 'sitting in a cannon counts as aboard');
+}
+// --- cast-off with someone in the tube: they're pulled in to our side with it (they used to be cast adrift: the test for
+// "in the tube" shrank the 1.2-high tube by 0.75 a side, which leaves nothing); only who is still in their rooms goes outside
+for (const kind of ['pirate', 'derelict']) {
+  for (const frac of [0.1, 0.5, 0.9]) {
+    const G = loadGame(NAMES); G.startMission('practice'); G.dockShip(kind, 'port');
+    const tq = G.dockGeom('port').tube;
+    Object.assign(G.me, { mode: 'inside', x: tq.x + tq.w * frac, y: tq.y + tq.h / 2 });
+    G.undock();
+    check(G.me.mode === 'inside' && !!G.roomAt(G.me.x, G.me.y), `${kind} casts off, ${Math.round(frac * 100)} % along its tube: pulled in to our airlock room (${G.me.mode})`);
+  }
+  const G = loadGame(NAMES); G.startMission('practice'); G.dockShip(kind, 'port');
+  const q = G.dockGeom('port').rooms[1];
+  Object.assign(G.me, { mode: 'inside', x: q.x + q.w / 2, y: q.y + q.h / 2 });
+  G.undock();
+  check(G.me.mode === 'eva', `${kind} casts off with us in its hold: cast adrift`);
 }
 process.exitCode = failed ? 1 : 0;

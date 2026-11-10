@@ -23,17 +23,18 @@ const COIL_SPOTS = [{ x: -0.6, y: 13.4, name: 'left' }, { x: 45.0, y: 13.2, name
 // point shows on screen (y -2.75 - lift(1.6)), out in front of the nose where a spacewalker can reach it.
 const JAM_SPOTS = { port: [-0.8, 8.35], star: [45.2, 8.2], front: [24.0, -4.1] };
 const JAM_ROOF = { front: [-2.75, 1.6] };            // [drawn y, z] of a jam on the roof
-const roomNearHull = (side, y, x) => side === 'front' ? 'bridge' : side === 'port' ? (y < SPINE_Y0 ? 'portGun' : 'portLock') : (y < SPINE_Y0 ? 'starGun' : 'starLock');
-const sideCol = (side) => side === 'port' ? 0 : side === 'star' ? 2 : 1;
 
 function resetEva(rules = {}) {
   Object.assign(evs, { mines: [], drones: [], spores: [], cloud: null, jams: {}, antenna: true, canister: null,
                        coils: COIL_SPOTS.map(c => ({ ...c, ok: !rules.coils, a: rules.coils ? 0.6 + Math.random() * 1.6 : 1.4 })) });   // (always there; misaligned only with the rule; no random draw without it: missions' random builds stay as they were)
 }
 function freeHullSpot(side) {
-  // mines sit just off the hull: compare the places along the hull
-  const along = (x, y) => side === 'front' ? x : y, used = evs.mines.filter(u => u.side === side);
-  const pool = HULL_SPOTS[side].filter(([x, y]) => !used.some(u => Math.abs(along(u.x, u.y) - along(x, y)) < 0.8));
+  // mines sit just off the hull: compare the places along the hull (the spots are 0.8 or more apart; < 0.75, not < 0.8:
+  // the left side's two rear ones come out 0.7999… apart and blocked each other). Taken: a spot with a mine on it, and
+  // one another drone is on its way to (two drones used to pick the same one and stack their mines)
+  const along = (x, y) => side === 'front' ? x : y;
+  const used = [...evs.mines.filter(u => u.side === side).map(u => [u.x, u.y]), ...evs.drones.filter(d => d.side === side && d.spot && !d.leaving).map(d => d.spot)];
+  const pool = HULL_SPOTS[side].filter(([x, y]) => !used.some(([ux, uy]) => Math.abs(along(ux, uy) - along(x, y)) < 0.75));
   return pool[Math.floor(Math.random() * pool.length)] || null;
 }
 // Drawing only: how high the top of the hull's outer wall is at (x, y), from the wall runs of js/sprites.js
@@ -90,12 +91,15 @@ function spawnCanister(side) {
 // ---------------------------------------------------------------------------
 // Update
 // ---------------------------------------------------------------------------
+// Did this shot (a cannon shell, a laser bolt) pass within r of (cx, cy) on this tick's step? It flew v·dt just before
+// (updateCombat / updateBoarding), so the whole step is tested, like the hulls and asteroids are (segCircle, js/combat.js):
+// below 60 fps a shell moves 1.5-2 units a tick, and its end point alone skipped over tentacles, leeches, drones and mines.
+const shotPassed = (s, dt, cx, cy, r) => segCircle(s.x - s.vx * dt, s.y - s.vy * dt, s.x, s.y, cx, cy, r);
 function explodeMine(m, by) {
   evs.mines = evs.mines.filter(q => q !== m);
   for (let i = 0; i < 24; i++) combatFx(m.x, m.y, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 7, 0.7, i % 2 ? '#ffb347' : '#e2574c', 0.18);
   if (by === 'laser') { shipHit(m.side, m.x, m.y, false); combatBanner('Mine shot — it blew early, but small'); return; }
-  shipHit(m.side, m.x, m.y, true);
-  if (mission.rules?.breach) breachRoom(roomNearHull(m.side, m.y, m.x));
+  shipHit(m.side, m.x, m.y, true, true);             // (it holes the room behind it, where the mission has breaches: one room, js/hazards.js onBigHit)
   combatBanner('A limpet mine went off!');
 }
 function updateEva(dt) {
@@ -103,7 +107,7 @@ function updateEva(dt) {
   for (const d of evs.drones) {
     d.t += dt;
     if (d.leaving) { d.x += (d.side === 'port' ? -1 : 1) * 8 * dt; continue; }
-    if (!d.spot) d.spot = freeHullSpot(d.side) || HULL_SPOTS[d.side][0];
+    if (!d.spot && !(d.spot = freeHullSpot(d.side))) continue;   // (every spot taken: it waits for one, it doesn't stick a second mine on the first)
     const [tx, ty] = d.spot, dx = tx + (d.side === 'port' ? -0.9 : 0.9) - d.x, dy = ty - d.y, dist = Math.hypot(dx, dy);
     if (dist > 0.1) { const sp = Math.min(dist, 6 * dt); d.x += dx / dist * sp; d.y += dy / dist * sp; continue; }
     evs.mines.push({ uid: newUid(), side: d.side, x: tx, y: ty, t: MINE_TIME }); sfx.clank();
@@ -123,11 +127,11 @@ function updateEva(dt) {
   }
   // our cannon shells pop spore clouds and drones
   for (const sh of combat.shells) {
-    for (const s of evs.spores) if (!s.dead && Math.hypot(sh.x - s.x, sh.y - s.y) < 1.5 * hitGrow(sh)) {
+    for (const s of evs.spores) if (!s.dead && shotPassed(sh, dt, s.x, s.y, 1.5 * hitGrow(sh))) {
       s.dead = true; sh.dead = true; sfx.crack();
       for (let i = 0; i < 16; i++) combatFx(s.x, s.y, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 5, 0.8, i % 2 ? '#d8f0a0' : '#ffe0f0', 0.12);
     }
-    for (const d of evs.drones) if (!d.dead && Math.hypot(sh.x - d.x, sh.y - d.y) < 0.8 * hitGrow(sh)) {
+    for (const d of evs.drones) if (!d.dead && shotPassed(sh, dt, d.x, d.y, 0.8 * hitGrow(sh))) {
       d.dead = true; sh.dead = true; sfx.crack(); combatBanner('Mine drone shot down');
       for (let i = 0; i < 16; i++) combatFx(d.x, d.y, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6, 0.6, i % 2 ? '#ffb347' : '#6a6f7a', 0.12);
     }
@@ -138,7 +142,7 @@ function updateEva(dt) {
   // laser bolts (on a spacewalk): blow mines early
   for (const bo of boarding.bolts) {
     if (bo.owner !== 'crew' || bo.wrench) continue;
-    const m = evs.mines.find(m => Math.hypot(bo.x - m.x, bo.y - m.y) < 0.4 * hitGrow(bo));
+    const m = evs.mines.find(m => shotPassed(bo, dt, m.x, m.y, 0.4 * hitGrow(bo)));
     if (m) { bo.dead = true; explodeMine(m, 'laser'); continue; }
   }
   boarding.bolts = boarding.bolts.filter(b => !b.dead);

@@ -193,9 +193,9 @@ function toKill(G, controls, failBlock) {
   skip(G);
   check(G.tut.step === 'roam' && !G.tut.msg && G.tut.on && left === 0, 'closing it: free roam (not back to the menu)');
   check(['fire', 'reload', 'cover', 'climbDown', 'closePanel', 'weapon', 'drop'].every(w => G.tutorialAllows(w)) && G.tutorialAllows('target', { run: G.radarScan }) && G.tutorialAllows('target', { text: 'Click: take the repair kit' }), 'every gate is open');
-  const scan0 = G.mission.scanT;
+  const scan0 = G.mission.lastScan ?? -1;
   Object.assign(G.me, { mode: 'inside', gun: null, x: 22.2, y: 7.4 }); G.simTick(DT); clickAt(G, 22.2, 6.4);
-  check(G.mission.scanT > scan0, 'stations work (a radar scan)');
+  check(G.mission.lastScan > scan0, 'stations work (a radar scan)');
   const x0 = G.me.x; G.me.input.keys.add('KeyD'); tickUntil(G, () => false, 1); G.me.input.keys.delete('KeyD');
   check(G.me.x > x0 + 0.5, 'you can walk');
   climbLeft(G);
@@ -258,6 +258,63 @@ function toKill(G, controls, failBlock) {
   check(G.padWords('Aim by holding the *arrow keys* (or *W A S D*): the barrel') === 'Aim by pushing the *right stick*: the barrel', 'aiming: the right stick');
   check(G.padWords('Walk with *W A S D*. Close it with *E* or *Esc*. Press *R*, Enter') === 'Walk with the *left stick*. Close it with *A* or *B*. Press *Y*, Start', 'walk, close, reload, go on');
   check(G.padWords(G.padWords('hold Space (arrows)')) === G.padWords('hold Space (arrows)'), 'translating twice changes nothing');
+}
+
+// --- the 2026-11-10 playtest's snags: the marked windshield, the lever stepping by itself, the lever's marker
+{
+  // a seeded Math.random, so the interceptor sways the same way every run
+  let seed = 12345; const rnd = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const M = Object.create(Math); M.random = rnd;
+  const G = loadGame([...NAMES, 'tutMarks', 'fireCannon', 'TUT_STEPS', 'leverTurnSpot', 'LEVER_HUB'], { Math: M });
+  G.mission.active = false; G.startTutorial('mouse'); skip(G);
+  const g = port(G); Object.assign(G.me, { mode: 'gun', gun: g }); G.tutGo('toCannon'); G.simTick(DT); skip(G);
+  // the first shot: aimed straight at the marker, no lead, at any moment of the sway
+  const res = { crack: 0, cable: 0, miss: 0 };
+  let wait = 0, shots = 0;
+  for (let t = 0; shots < 80 && t < 200000; t++) {
+    G.simTick(DT); if (G.tut.msg) skip(G);
+    const e = foe(G);
+    if (G.tut.step !== 'shoot1') { G.tutGo('shoot1'); e.pois.forEach(p => { p.hit = false; }); continue; }
+    if (wait-- > 0) continue;
+    const m = G.tutMarks()[0];
+    g.shots = 1; g.cd = 0; g.aim = Math.atan2(m.y - g.y, m.x - g.x);
+    G.withCrew(G.me, () => G.fireCannon(g));
+    let out = null;
+    for (let i = 0; i < 200 && !out; i++) {
+      G.simTick(DT);
+      if (G.tut.step !== 'shoot1') out = 'crack';
+      else if (G.tut.msg) { out = /weapon cable/.test(allText(G)) ? 'cable' : 'miss'; skip(G); }
+    }
+    res[out || 'miss']++; shots++; wait = 37 + (shots * 53) % 200;   // (spread over the sway)
+  }
+  check(res.crack >= 0.7 * shots && res.cable === 0, `the first shot, aimed at the marked windshield without lead at any moment: ${res.crack} of ${shots} hit it, ${res.cable} the weapon cable in front of it, ${res.miss} missed`);
+  G.tutGo('advantage'); skip(G);
+  check(foe(G).ampGoal === 0.7, 'after the first hit the interceptor sways as it always did in training');
+
+  // lock LEFT: the lever never steps by itself while you're at it, and a click on the marked spot does what the line says
+  for (const [controls, start] of [['mouse', 1], ['mouse', 2], ['keyboard', 2]]) {
+    G.tut.controls = controls; G.tut.fuelLoaded = true; G.power.reactor.fuel = 5; G.power.reactor.t = 19.5;
+    G.power.bolts.length = 0; G.power.lever.pos = start; G.power.lever.jammed = false;
+    Object.assign(G.me, { mode: 'inside', gun: null, x: G.LEVER.x, y: G.LEVER.y - 0.85 });
+    G.tutGo('lockLeft');
+    const stepped = [];
+    for (let i = 0; i < 60 * 45; i++) { G.simTick(DT); if (G.power.lever.pos !== start) stepped.push(i); }
+    check(!stepped.length && !G.power.bolts.length, `${controls}, lever on ${['LEFT', 'MID', 'RIGHT'][start]}: in 45 s the reactor sends nothing and the lever stays put`);
+    if (controls !== 'mouse') { check(G.tutMarks()[0].x === G.LEVER.x && G.tutMarks()[0].y === G.LEVER.y, 'keyboard: the marker is the lever itself (you stand at it and press E)'); continue; }
+    const m0 = G.tutMarks()[0];
+    check(Math.hypot(m0.x - G.LEVER.x, m0.y - G.LEVER.y) > G.LEVER_HUB + m0.r * 0.5 && m0.r < 0.4, `mouse: the marker is a small ring on the handle, off the hub (${(m0.x - G.LEVER.x).toFixed(2)}, ${(m0.y - G.LEVER.y).toFixed(2)}, r ${m0.r})`);
+    // in the tilted view the hub's pick box covers |dx| < LEVER_HUB from 0.42 screen units above the lever to 0.15 below
+    const dx = m0.x - G.LEVER.x, dyScreen = (m0.y - G.LEVER.y) * Math.sin(50 * Math.PI / 180);
+    check(!(Math.abs(dx) < G.LEVER_HUB && dyScreen > -0.42 && dyScreen < 0.15), 'the handle\'s marker is outside the hub\'s pick box of the sprite view');
+    let clicks = 0;
+    for (; clicks < 6 && G.tut.step === 'lockLeft' && !G.tut.msg; clicks++) { const m = G.tutMarks()[0]; clickAt(G, m.x, m.y); G.simTick(DT); }
+    check(G.power.lever.pos === 0 && G.power.lever.jammed && clicks === (start === 1 ? 3 : 2), `mouse: clicking the marked spot each time turns it to LEFT and wedges it there (${clicks} clicks from ${['LEFT', 'MID', 'RIGHT'][start]})`);
+    skip(G);
+  }
+  // the wrench step marks the hub
+  G.tut.controls = 'mouse'; G.power.lever.jammed = true; G.tutGo('wrench');
+  const w = G.tutMarks()[0];
+  check(w.x === G.LEVER.x && w.y === G.LEVER.y && w.r <= G.LEVER_HUB + 0.1, `mouse, "pull the wrench out": the marker is a small ring on the hub (r ${w.r})`);
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall ok');

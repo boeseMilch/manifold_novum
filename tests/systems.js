@@ -5,7 +5,9 @@ const G = loadGame(['tick', 'time', 'ui', 'miniCommand', 'player', 'combat', 'co
   'CAPACITORS', 'CAP_MAX', 'GUNS', 'power', 'inv', 'ITEMS', 'SYSTEMS', 'clickTarget', 'repairPick', 'updateRepair', 'grab', 'lightLevel',
   'drawLights', 'fuelFraction', 'CELL_ENERGY', 'REACTOR', 'LEVER', 'FUEL_CRATE', 'ENERGY_TIME', 'boarding', 'spawnInvader', 'hurtInvader',
   'enemyToWorld', 'ENEMY_TYPES', 'hitPoi', 'mouse', 'SHIELD_COOLDOWN', 'SHIELD_UP_TIME', 'combatBanner', 'lineOfSight', 'canStand', 'walkRects', 'fires',
-  'LEVER_ANGLES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES', 'DOORS']);
+  'LEVER_ANGLES', 'LEVER_HANDLE_STEP', 'LEVER_HANDLE_FRAMES', 'DOORS'], { Math: seededMath() });
+// The game's own dice (enemy aim, the invader's moves), the same every run: a failure here is a failure, not a bad roll.
+function seededMath() { let s = 20261110; const M = Object.create(Math); M.random = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; return M; }
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -25,6 +27,13 @@ check(G.reloadCannon(pg) && G.CAPACITORS[0].charge === 0, 'reloading takes 1 ene
 run(3.2);
 check(pg.shots === 3 && fireAll(pg) === 3, 'after the reload (3 s on its own) it has 3 shots again');
 check(!G.reloadCannon(pg) && pg.shots === 0, 'with the capacitor empty, reloading does nothing');
+check(/capacitor empty — no reload/.test(G.combat.banner?.text || ''), `…and the banner says empty ("${G.combat.banner?.text}")`);
+{ // broken with energy still in it: the banner says broken and what helps, not "empty"
+  const capSys = G.SYSTEMS.find(q => q.ref === G.CAPACITORS[0]), was = G.CAPACITORS[0].charge;
+  G.CAPACITORS[0].charge = 1; capSys.broken = true; G.tick(DT);
+  check(!G.reloadCannon(pg) && /BROKEN/.test(G.combat.banner?.text || '') && /repair/.test(G.combat.banner.text) && !/empty/.test(G.combat.banner.text), `a broken capacitor with 1 energy in it: "${G.combat.banner?.text}"`);
+  capSys.broken = false; G.CAPACITORS[0].charge = was;
+}
 caps(0, 2, 0); const fg = G.GUNS.find(g => g.id === 'front'); fg.shots = 0; fg.reload = 0; G.reloadCannon(fg);
 check(G.CAPACITORS[1].charge === 1, 'the front cannon reloads from the middle capacitor');
 
@@ -182,18 +191,19 @@ G.player.mode = 'inside';
 a.x = 18.5; a.y = 9.0; a.path = []; G.player.x = 24.5; G.player.y = 9.5;   // open floor on the bridge, in view of each other
 G.hurtInvader(a, 1);
 a.hp = 100;                                              // don't let the test's own shots kill it here
-let spat = 0, dodged = 0;
+let spat = 0, dodged = 0, fought = false, shotTick = 0;   // (fought: at any moment of the fight; read at one instant it was sometimes mid-dodge or regrouping: 6 % of runs failed)
 run(8, () => {
+  fought = fought || a.state === 'fight';
   G.player.health = 'ok';                         // (its spit and touch hurt: keep the target on its feet)
   if (G.boarding.bolts.some(b => b.owner === 'alien' && !b.counted && (b.counted = true))) spat++;
   if (a.act?.kind === 'lunge' && !a.dodgeCounted) { dodged++; a.dodgeCounted = true; } else if (a.act?.kind !== 'lunge') a.dodgeCounted = false;
-  if (Math.random() < 0.03) {                     // shoot at it now and then
+  if (++shotTick % 33 === 0) {                    // shoot at it now and then (on a fixed beat: the same every run)
     const dx = a.x - G.player.x, dy = a.y - G.player.y, d = Math.hypot(dx, dy);
     G.boarding.bolts.push({ x: G.player.x, y: G.player.y, vx: dx / d * 26, vy: dy / d * 26, life: 0.9, owner: 'crew' });
   }
 });
-for (let k = 0; k < 12 && spat === 0; k++) run(1, () => { G.player.health = 'ok'; if (G.boarding.bolts.some(b => b.owner === 'alien' && !b.counted && (b.counted = true))) spat++; });   // (8 s of random shooting sometimes saw no spit yet: up to 12 s more)
-check(a.state === 'fight' && spat > 0, `provoked invader fights back (spat ${spat} times)`);
+for (let k = 0; k < 12 && spat === 0; k++) run(1, () => { G.player.health = 'ok'; fought = fought || a.state === 'fight'; if (G.boarding.bolts.some(b => b.owner === 'alien' && !b.counted && (b.counted = true))) spat++; });   // (8 s of random shooting sometimes saw no spit yet: up to 12 s more)
+check(fought && spat > 0, `provoked invader fights back (spat ${spat} times)`);
 check(dodged > 0, `invader dodges incoming shots (${dodged} dodges)`);
 a.hp = 4;
 for (let k = 0; k < 4 && !a.dead; k++) G.hurtInvader(a, 1);

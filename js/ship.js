@@ -88,8 +88,7 @@ const CAPACITORS = [
   { room: 'starLock', x: 37.6, y: 23.0, charge: 1 },
 ];
 
-// Stations (no function yet beyond being there). (x, y) is on the wall; face: operator's view.
-// The cannons themselves are manned from outside the ship (see GUNS).
+// Stations: (x, y) is on the wall; face: operator's view. (The cannons have their own list: GUNS.)
 const STATIONS = [
   { kind: 'console', name: 'Helm', x: 22.2, y: -2.4, face: -Math.PI / 2 },
   { kind: 'console', name: 'Security', x: 8.0, y: 3.4, face: -Math.PI / 2 },

@@ -9,7 +9,7 @@ const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); i
 // a browser: its cookie jar and localStorage, kept across page loads
 function browser() {
   const ls = {}, jar = {};
-  const localStorage = { getItem: (k) => (k in ls ? ls[k] : null), setItem: (k, v) => { ls[k] = String(v); }, removeItem: (k) => { delete ls[k]; } };
+  const localStorage = { getItem: (k) => (k in ls ? ls[k] : null), setItem: (k, v) => { ls[k] = String(v); }, removeItem: (k) => { delete ls[k]; }, key: (i) => Object.keys(ls)[i] ?? null, get length() { return Object.keys(ls).length; } };
   const document = {
     getElementById: () => ({ getContext: () => new Proxy(function () {}, { get: () => () => ({ width: 10 }) }), style: {}, addEventListener() {} }),
     get cookie() { return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; '); },
@@ -50,6 +50,46 @@ function browser() {
   back.withCrew(back.crew[1], () => back.radarScan());
   check(back.combat.banner?.who === 2, `a banner raised by a player's action is theirs (the radar: "${back.combat.banner?.text}" by crew 2)`);
   check(back.profile.money === 600 && !back.SPLIT && back.splitShared() && back.splitSidebar(), 'the usual game afterwards: the usual save, no split, the column in the view');
+}
+
+// A view's save never lands on the host's own (REVIEW P1 #2): whose save a page plays on is settled as it loads.
+// It was looked up again at every save, against localStorage 'mn-name': once that had become the view's name (the
+// host retyping their own, another tab of this browser) the view's next save replaced the host's profile.
+{
+  const B = browser();
+  B.ls['mn-name'] = 'Ripley';
+  const host = B.load(''); host.profile.money = 900; host.profile.done.c1 = 1; host.profile.done.c2 = 1; host.saveProfile(host.profile);
+  const cookie0 = B.jar['mn-profile'], ls0 = B.ls['mn-profile'];
+  const zoe = B.load('?split=2&name=Zoe&input=pad0');          // the local player's view, loaded while the host is Ripley
+  B.ls['mn-name'] = 'Zoe';                                     // …and then this browser's own name becomes hers
+  zoe.profile.money += 5; zoe.saveProfile(zoe.profile);         // her view saves (a locker buy, a suit colour, the mission's pay)
+  check(B.jar['mn-profile'] === cookie0 && B.ls['mn-profile'] === ls0, 'the host\'s name changed to a local player\'s after her view loaded: her save leaves the host\'s cookie and save exactly as they were');
+  check(JSON.parse(B.ls['mn-profile@Zoe']).money === 5, '…and goes to her own (mn-profile@Zoe)');
+  B.ls['mn-name'] = 'Ripley';
+  const back = B.load('');
+  check(back.profile.money === 900 && back.profile.done.c1 === 1 && back.profile.done.c2 === 1, 'the host\'s page after its reload: $900, chapters 1 and 2, as before');
+}
+// Names are the same whatever their case, here as in the lobby's "everyone needs their own name" (js/local.js): one
+// save per name. An older save keeps its key (nothing is renamed), a save from when local names had 24 characters too.
+{
+  const B = browser();
+  B.ls['mn-name'] = 'Ripley';
+  const zoe = B.load('?split=2&name=Zoe&input=pad0'); zoe.profile.money = 77; zoe.saveProfile(zoe.profile);
+  const low = B.load('?split=3&name=zoe&input=pad1');
+  check(low.profile.money === 77, '"zoe" is Zoe: her progress, not a fresh profile beside it');
+  low.profile.money = 80; low.saveProfile(low.profile);
+  check(JSON.parse(B.ls['mn-profile@Zoe']).money === 80 && !('mn-profile@zoe' in B.ls), '…saved back under the key it already had (mn-profile@Zoe), no second one');
+  const host = B.load(''); host.profile.money = 500; host.saveProfile(host.profile);
+  const rip = B.load('?split=1&name=ripley&input=kbm');
+  check(rip.profile.money === 500, 'this browser\'s own player by name, whatever the case ("ripley" for Ripley): the usual save');
+  const long = 'Bartholomew Montgomery 3';                      // 24 characters: a local player's name before the limit was the server's 20
+  B.ls['mn-profile@' + long] = JSON.stringify({ v: 4, money: 321, gear: { boots: true } });
+  const cut = B.load('?split=2&name=' + encodeURIComponent(long) + '&input=pad0');
+  check(cut.SPLIT.name === long.slice(0, 20) && cut.SPLIT.name.length === 20, `a name is 20 characters at most, like on the server ("${cut.SPLIT.name}")`);
+  check(cut.profile.money === 321 && cut.profile.gear.boots, '…and a save made under the 24-character name is still theirs');
+  cut.profile.money = 400; cut.saveProfile(cut.profile);
+  check(JSON.parse(B.ls['mn-profile@' + long]).money === 400 && Object.keys(B.ls).filter(k => k.startsWith('mn-profile@Barth')).length === 1, '…saved back under its old key');
+  check(B.load('?split=2&name=Bart&input=pad0').profile.money === 0, 'a shorter name that only begins like someone else\'s is somebody else: a fresh profile');
 }
 
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');

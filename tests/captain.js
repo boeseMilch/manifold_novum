@@ -6,7 +6,7 @@
 // Run: node tests/captain.js
 const { loadGame } = require('./harness');
 const NAMES = ['dk', 'DG', 'simTick', 'crew', 'me', 'makeCrew', 'mission', 'startMission', 'boarding', 'captainPractice', 'captGen', 'baseCodeOk', 'openBasePad', 'miniCommand',
-  'power', 'netSerialize', 'netApply', 'CAPT_BREATH', 'CAPT_TEL', 'CAPT_DAZE', 'captMaxHp', 'withCrew', 'walkRects', 'canStand', 'ITEMS', 'combat', 'roomAt', 'inBase', 'HATCHES', 'FUEL_CRATE', 'inRect', 'freeAt'];
+  'power', 'netSerialize', 'netApply', 'CAPT_BREATH', 'CAPT_TEL', 'CAPT_DAZE', 'captMaxHp', 'withCrew', 'walkRects', 'canStand', 'ITEMS', 'combat', 'roomAt', 'inBase', 'HATCHES', 'FUEL_CRATE', 'inRect', 'freeAt', 'dockShip', 'hurtPirate'];
 const DT = 1 / 60;
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -192,6 +192,39 @@ for (const [n, want] of [[1, 1], [2, 2], [4, 3]]) {
   for (const q of p) q.hp = 0, q.dead = true;
   H.dk.pirates = H.dk.pirates.filter(q => !q.dead); tick(H, 2);
   check(H.dk.raid?.state === 'gone' && !H.dk.raid.stolen.length, 'both raiders down: it casts off empty-handed');
+}
+// --- the jump comes due with the raid still on (real chapter 5, 2 players): the raider casts off, the pirate it leaves on our
+// ship stays and fights as a hunter (it used to become a looter with no loot crate to go home to: an exception every tick)
+{
+  const G = loadGame(NAMES); G.crew.push(G.makeCrew('P1')); G.startMission('c5');
+  for (const e of G.mission.events) e.done = true;                    // (no outside encounters: just the base)
+  G.dockShip('base', 'port');
+  const d = G.dk.dock, Q = G.DG().rooms[5];
+  d.doors = d.doors.map(() => false); d.terminal = 'hacked'; d.sentry.state = 'off'; G.dk.pirates = []; G.dk.npc.state = 'safe';
+  G.mission.t = G.mission.jumpAt - 30;                                 // the fight starts 30 s before the jump is due: the raid docks in between
+  Object.assign(G.crew[0], { mode: 'inside', x: Q.x + 6, y: Q.y + Q.h - 1.5 });
+  Object.assign(G.crew[1], { mode: 'inside', x: 21, y: 6 });
+  let threw = null;
+  const safeTick = () => { try { G.simTick(DT); } catch (e) { threw = threw || e; } keepSafe(G); };
+  for (let t = 0; t < 30 && !threw && !G.dk.raid; t += DT) safeTick();
+  for (let t = 0; t < 60 && !threw && !G.mission.jump; t += DT) { safeTick(); if (G.dk.raid?.leaveT != null) G.dk.raid.leaveT = 9; }   // (the raid still on when the jump comes)
+  check(!threw && G.dk.raid?.state === 'docked' && !!G.mission.jump, `the raid is on and the jump is due${threw ? ' (' + threw.message + ')' : ''}`);
+  const left = G.dk.pirates.filter(p => p.raid);
+  left.forEach((p, i) => Object.assign(p, { x: G.FUEL_CRATE.x + 0.95 + i, y: G.FUEL_CRATE.y, route: [], aim: 0, carry: i ? null : 'fuel' }));   // (both in our rooms when it casts off)
+  G.dk.raid.leaveT = null;
+  for (let t = 0; t < 3 && !threw; t += DT) safeTick();
+  check(!threw && G.dk.raid.state === 'gone', `the raider cast off with the jump due${threw ? ' (' + threw.message + ')' : ''}`);
+  check(left.length === 2 && left.every(p => G.dk.pirates.includes(p) && !p.raid && p.mode === 'hunt' && G.roomAt(p.x, p.y)), 'the two it left on our ship are hunters now');
+  const c0 = B(G).clock, P1 = G.crew[1], d0 = left.map(p => Math.hypot(p.x - P1.x, p.y - P1.y));
+  let shot = false;
+  for (let t = 0; t < 40 && !threw && !shot; t += DT) { safeTick(); shot = G.boarding.bolts.some(b => b.owner === 'pirate' && !G.inBase(b.x, b.y)); }
+  check(!threw, `no exception with them aboard${threw ? ': ' + threw.message + ' ' + threw.stack.split('\n')[1].trim() : ''}`);
+  check(B(G).clock > c0 + 1, 'the captain\'s fight goes on');
+  check(shot || left.some((p, i) => Math.hypot(p.x - P1.x, p.y - P1.y) < d0[i] - 3), 'they come after the crew member aboard and shoot');
+  for (const p of left) if (!p.dead) G.hurtPirate(p, 9);
+  check(G.ITEMS.some(it => it.kind === 'fuel' && G.roomAt(it.x, it.y)), 'shot down, the one carrying a fuel cell drops it aboard');
+  for (let t = 0; t < 1 && !threw; t += DT) safeTick();
+  check(!threw && !G.dk.pirates.some(p => left.includes(p)), 'and they are gone');
 }
 // --- the snapshot carries the fight (dk.boss, dk.raid)
 {

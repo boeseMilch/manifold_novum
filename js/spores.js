@@ -42,7 +42,6 @@ const SPORE_COL = '#b8d070';
 const sporeState = () => (hz.spores ||= { rooms: {}, glitch: [], doors: {}, shrivel: {} });
 const sporeRoom = (id) => sporeState().rooms[id] || null;
 const infested = (id) => !!sporeRoom(id);
-const cloudOutside = () => !!evs.cloud;                                 // the mother's cloud round the hull
 const sporesOutside = () => !!evs.cloud || evs.spores.length > 0;       // any spores out there (a cloud drifting in too)
 const sporeLockRoom = (side) => side === 'port' ? 'portLock' : side === 'star' ? 'starLock' : (Math.random() < 0.5 ? 'portLock' : 'starLock');
 // The parts in a room that spores get into (outside ones never: vacuum): an outer airlock belongs to its airlock room,
