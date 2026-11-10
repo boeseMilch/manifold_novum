@@ -1,10 +1,9 @@
 // The connection simulator's link and the server's flow control (tools/netlink.js), the rounded snapshots
 // (js/net.js netSnapshotText), and server.js delaying a connection like a slow link (?lag=… or --lag …).
 // Run: node tests/netlink.js
-const { spawn } = require('child_process');
-const path = require('path');
 const { makeLink, makeFlow, linkOpts } = require('../tools/netlink');
 const { measure } = require('../tools/netsim');
+const { startServer } = require('../tools/testserver');
 const { loadGame } = require('./harness');
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
@@ -34,16 +33,41 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
   F.acked(12, 720);
   check(!F.behind(720), '…until it comes back');
   F.sent(13, 800);
-  check(F.behind(1200) && !F.behind(3000), 'nothing back for 2 s (a background tab, a new page): starts over');
+  // nothing back for 2 s (a link seconds behind, a background tab): still behind, one probe a second goes out
+  const let1 = [1200, 2700, 2900, 2933, 2967, 3500, 3867, 3900, 3933, 4900].filter(t => { const go = !F.behind(t); if (go) F.sent(14 + t, t); return go; });
+  check(let1.join() === '2900,3900,4900', `nothing back for 2 s: it stays behind and lets one snapshot a second through as a probe (at ${let1.join(', ')} ms)`);
+  F.acked(14 + 3900, 5000);
+  check(!F.behind(5000) && !F.behind(5033), '…and the first probe acknowledged (the tab is back in front) ends it at once');
 }
 
-// 3. the same in the simulator: a 64 kbit/s link in a fight (too slow for every snapshot); without the rule they queue
-// up for seconds (the old rule only kicks in at 64 KB waiting: 8 s at this rate)
+// 3. the same in the simulator: a 64 kbit/s link in a fight (the snapshots are ~80 kbit/s: a quarter too much for it).
+// Without the rule the queue grows by about a quarter of a second every second, for as long as the fight lasts (the
+// old rule only kicks in at 64 KB waiting, which this link takes 8 s to send); with it they stay a round trip old.
+// 20 s, and the two compared with each other: after 12 s the run without the rule sat right on a fixed 2 s mark.
+// (The simulator's dice are seeded: the same numbers every run.)
 {
-  const on = measure('busy', { lag: 100, bw: 64, seconds: 12 }), off = measure('busy', { lag: 100, bw: 64, seconds: 12, flow: false });
-  check(on.snapshots.ageMs.p95 < 800 && off.snapshots.ageMs.p95 > 2000,
+  const on = measure('busy', { lag: 100, bw: 64, seconds: 20 }), off = measure('busy', { lag: 100, bw: 64, seconds: 20, flow: false });
+  check(on.snapshots.ageMs.p95 < 800 && off.snapshots.ageMs.p95 > 4 * on.snapshots.ageMs.p95,
     `at 64 kbit/s snapshots arrive ${on.snapshots.ageMs.mean} ms old (p95 ${on.snapshots.ageMs.p95}); without the acknowledgements ${off.snapshots.ageMs.mean} ms (p95 ${off.snapshots.ageMs.p95})`);
   check(on.snapshots.perSec > 15, `…fewer of them instead: ${on.snapshots.perSec} a second (${on.snapshots.skipped} skipped)`);
+  const once = measure('busy', { lag: 100, bw: 64, seconds: 5 }), again = measure('busy', { lag: 100, bw: 64, seconds: 5 });
+  check(JSON.stringify(again.snapshots) === JSON.stringify(once.snapshots) && once.snapshots.json.mean > 0, 'the simulator is repeatable: the same run again gives the same numbers');
+  // a link far too slow (16 kbit/s): one probe a second while nothing comes back, instead of all 30 again after 2 s
+  const thin = measure('busy', { lag: 100, bw: 16, seconds: 20 });
+  check(thin.snapshots.ageMs.mean < 3500 && thin.snapshots.perSec < 8, `at 16 kbit/s the server holds back (${thin.snapshots.perSec} a second): snapshots ${thin.snapshots.ageMs.mean} ms old on average (p95 ${thin.snapshots.ageMs.p95}; 7 s when it gave up after 2 s)`);
+}
+
+// 3b. the browser's inputs: a 144 Hz screen on a 100 kbit/s uplink. One message per drawn frame is more than the
+// uplink carries: they queue up and every key acts later and later. Sent when due (js/net.js netOutbox) they don't;
+// and on a good link at 60 frames a second nothing is later than it was.
+{
+  const fast = { lag: 100, fps: 144, up: 100, seconds: 20 };
+  const due = measure('walk', fast), each = measure('walk', { ...fast, inputs: 'frame' });
+  check(due.own.inputs.perSec < 75 && due.own.inputs.ageMs.p95 < 150 && each.own.inputs.ageMs.last > 5 * due.own.inputs.ageMs.p95,
+    `144 fps, 100 kbit/s up: ${due.own.inputs.perSec} inputs a second reach the server ${due.own.inputs.ageMs.p95} ms later (p95); one per frame: ${each.own.inputs.perSec} a second, the last one ${each.own.inputs.ageMs.last} ms late and growing`);
+  const good = measure('walk', { lag: 100, seconds: 7 }), goodEach = measure('walk', { lag: 100, seconds: 7, inputs: 'frame' });
+  check(good.own.keyToServerMs <= goodEach.own.keyToServerMs && good.own.keyToScreenMs <= goodEach.own.keyToScreenMs && good.own.offNoLag.max <= goodEach.own.offNoLag.max + 0.01 && good.own.inputs.perSec > 59,
+    `a good link at 60 fps: nothing later than with one per frame (key → server ${Math.round(good.own.keyToServerMs)} ms, was ${Math.round(goodEach.own.keyToServerMs)}; ${good.own.inputs.perSec} inputs a second)`);
 }
 
 // 4. the snapshot as sent: numbers rounded to 3 decimals, except the crew and the doors (browsers replay their walk with those)
@@ -76,12 +100,7 @@ async function rtt(port, query = '') {
   ws.close();
   return { welcome, trip };
 }
-async function server(args) {
-  const port = 8110 + Math.floor(Math.random() * 800);
-  const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), String(port), ...args], { stdio: ['ignore', 'pipe', 'inherit'] });
-  await new Promise(r => srv.stdout.on('data', d => { if (String(d).includes('port')) r(); }));
-  return { port, srv };
-}
+const server = (args) => startServer(args);          // (on a free port of its own; throws when it doesn't come up: 'server: …' below)
 (async () => {
   let a, b;
   try {

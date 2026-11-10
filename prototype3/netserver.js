@@ -11,6 +11,8 @@
 //   { t: 'snap', s: snapshot, ev: [events since the last snapshot] }  ~20 Hz while running
 // The sim ticks at 30 Hz. Joining mid-run spawns you in; leaving removes your body; when the last one
 // leaves, the run is dropped and the lobby is empty again.
+// This runs inside the game's own server process: whatever goes wrong in here (a message, a tick, a snapshot) is
+// caught and logged, and a run that throws is dropped, so the prototype can't end the real games next to it.
 'use strict';
 const crypto = require('crypto');
 const B = require('./sim.js');
@@ -25,12 +27,14 @@ function upgrade(req, socket) {
   socket.write(['HTTP/1.1 101 Switching Protocols', 'Upgrade: websocket', 'Connection: Upgrade', `Sec-WebSocket-Accept: ${accept}`, '', ''].join('\r\n'));
   socket.setNoDelay(true);
   const c = { id: nextId++, socket, name: null, color: null, alive: true, buf: Buffer.alloc(0) };
-  socket.on('data', (chunk) => { c.buf = Buffer.concat([c.buf, chunk]); readFrames(c); });
+  socket.on('data', (chunk) => { c.buf = Buffer.concat([c.buf, chunk]); guard('frame', () => readFrames(c)); });
   socket.on('close', () => drop(c));
   socket.on('error', () => drop(c));
 }
 
 // --- frames (RFC 6455, text only; copied from server.js without the compression)
+const MAX_FRAME = 1 << 20;          // bytes in one frame from a browser (the same in server.js)
+const guard = (what, fn) => { try { return fn(); } catch (e) { console.error(`[prototype 3] ${what}`, e); if (what !== 'frame' && what !== 'message') try { stop(); } catch (e2) { sim = null; } } };
 function readFrames(c) {
   for (;;) {
     const b = c.buf;
@@ -39,7 +43,7 @@ function readFrames(c) {
     let len = b[1] & 0x7f, off = 2;
     if (len === 126) { if (b.length < 4) return; len = b.readUInt16BE(2); off = 4; }
     else if (len === 127) { if (b.length < 10) return; len = Number(b.readBigUInt64BE(2)); off = 10; }
-    if (len > 1 << 20) { c.socket.destroy(); return drop(c); }
+    if (len > MAX_FRAME) { c.socket.destroy(); return drop(c); }
     const maskOff = off; if (masked) off += 4;
     if (b.length < off + len) return;
     const data = Buffer.from(b.subarray(off, off + len));
@@ -47,7 +51,7 @@ function readFrames(c) {
     c.buf = b.subarray(off + len);
     if (op === 0x8) { try { c.socket.end(); } catch (e) {} return drop(c); }
     if (op === 0x9) { sendFrame(c, data, 0xA); continue; }
-    if (op === 0x1) { let m; try { m = JSON.parse(data.toString('utf8')); } catch (e) { continue; } onMessage(c, m); }
+    if (op === 0x1) { let m; try { m = JSON.parse(data.toString('utf8')); } catch (e) { continue; } guard('message', () => onMessage(c, m)); }
   }
 }
 function sendFrame(c, payload, op = 0x1) {
@@ -83,8 +87,8 @@ function onMessage(c, m) {
     sim = B.createSim({});
     for (const p of players()) sim.addCrew(p.id, p.name, p.color);
     lastTick = Date.now();
-    tickTimer = setInterval(tick, 1000 / TICK_HZ);
-    snapTimer = setInterval(snapshot, SNAP_MS);
+    tickTimer = setInterval(() => guard('tick', tick), 1000 / TICK_HZ);
+    snapTimer = setInterval(() => guard('snapshot', snapshot), SNAP_MS);
     lobby();
     snapshot();
   } else if (m.t === 'input') {
@@ -112,9 +116,11 @@ function drop(c) {
   c.alive = false;
   try { c.socket.destroy(); } catch (e) {}
   const was = clients.delete(c.id);
-  if (sim) sim.removeCrew(c.id);
-  if (sim && players().length === 0) stop();
-  else if (was) lobby();
+  guard('leave', () => {
+    if (sim) sim.removeCrew(c.id);
+    if (sim && players().length === 0) stop();
+    else if (was) lobby();
+  });
 }
 
 module.exports = { upgrade, get sim() { return sim; } };

@@ -186,7 +186,14 @@ const netServer = {
     if (Number.isFinite(m.seq)) inp.seq = m.seq;     // (the last input this crew member's browser sent: it reconciles its own walk with it)
     inp.mouse.click ||= !!mm.click; inp.mouse.rightClick ||= !!mm.rightClick; inp.mouse.moved ||= mm.moved; inp.mouse.look ||= mm.look;
   },
-  command(id, cmd) { const c = crew.find(c => c.id === id); if (c && Array.isArray(cmd)) withCrew(c, () => runCommand(cmd)); },
+  // (a debug restart of a mission that was over, and so paid out: this second run pays nothing, js/progress.js creditMission)
+  command(id, cmd) {
+    const c = crew.find(c => c.id === id);
+    if (!c || !Array.isArray(cmd)) return;
+    const run = mission.runId, paid = !!mission.over || !!mission.rerun;
+    withCrew(c, () => runCommand(cmd));
+    if (mission.runId !== run && paid) mission.rerun = true;
+  },
   step(dt) { simTick(dt); },
 };
 
@@ -196,6 +203,8 @@ const netServer = {
 //   lobby → the host picks the mission and starts; everyone else watches the choice
 //   game  → snapshots in, input out; when the mission is over the page reloads straight back
 //           into the same game's lobby (sessionStorage 'mn-return' carries the game and seat ticket)
+//           and when the connection is lost mid-mission, straight back into the running game the same way
+//           (once the server answers again; it keeps the seat and the crew member for a moment: server.js drop)
 // ---------------------------------------------------------------------------
 if (typeof window !== 'undefined' && window.document && document.getElementById('lobby')) netClientMain();
 
@@ -254,7 +263,7 @@ function netClientMain() {
   };
   showEasy();
   chosen = CAMPAIGN.find(id => unlockedMissions().has(id) && !profile.done[id]) || 'c1';
-  const q = new URLSearchParams(location.search);    // dev: ?mission=rush&autostart
+  const q = new URLSearchParams(location.search);    // dev: ?mission=c2&autostart
   if (q.get('mission') && MISSIONS[q.get('mission')]) chosen = q.get('mission');
   markChosen();
 
@@ -334,7 +343,7 @@ function netClientMain() {
   try { ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws${linkQ ? '?' + linkQ : ''}`); } catch (e) { ws = null; }
   if (!ws) { if (q.has('autostart')) startSolo(); return; }
   netState = 'connecting'; if (phase === 'menu') renderMenu();
-  if (rejoin) { $('room-host').textContent = 'Back to the lobby…'; show('room'); }
+  if (rejoin) { $('room-host').textContent = rejoin.mid ? 'Back to the game…' : 'Back to the lobby…'; show('room'); }
   const fail = setTimeout(() => {
     if (ws.readyState === 1) return;
     ws.onclose = null; ws.close(); ws = null; netState = 'none';
@@ -349,15 +358,44 @@ function netClientMain() {
     else if (autostart) sendWs({ t: 'open', mission: chosen, easy, custom: lobbyUI.custom });           // dev: open a game and start it right away
     if (phase === 'menu') renderMenu();
   };
+  // The connection is gone in the middle of a mission (a Wi-Fi blip, the laptop slept, the tunnel hiccuped): back
+  // into the running game, not out to the main menu. Like after a mission, by a fresh page with the game and the
+  // seat ticket in 'mn-return': the server gives the same crew member back while it still holds the seat, a new one
+  // after that, the lobby if the mission ended meanwhile ("That game has closed" if the game did). The page reloads
+  // only once the server answers again: reloading into a dead link would leave the browser's error page for good.
+  // (A local player's view comes back by its own seat ticket, 'mn-seat': splitJoin.)
+  let lost = false;
+  const netLost = () => {
+    if (lost) return; lost = true;
+    clearInterval(watch);
+    if (!split) store('mn-return', JSON.stringify({ game: myGame, ticket, mid: true }));
+    const note = document.createElement('div');
+    note.textContent = 'Connection lost. Reconnecting…';
+    note.style.cssText = 'position:fixed;left:50%;top:22%;transform:translateX(-50%);z-index:50;padding:10px 18px;background:rgba(10,14,22,.88);border:1px solid #ffd38a;border-radius:6px;color:#ffd38a;font:15px sans-serif';
+    document.body.appendChild(note);
+    const knock = () => fetch(location.pathname, { method: 'HEAD', cache: 'no-store' }).then(r => { if (!r.ok) throw new Error(r.status); location.reload(); }).catch(() => setTimeout(knock, 1500));
+    setTimeout(knock, 1500);
+  };
+  // A server that vanished without a word (its machine asleep, the cable out) closes nothing: in a game, where
+  // snapshots come all the time (one a second at the very least: tools/netlink.js), NET_SILENCE seconds without any
+  // message mean it is gone. Counted in this timer's own ticks, not by the clock: a page that hung for ten seconds
+  // (loading, a hiccup) gets one tick before its waiting mail, not ten; and not counted while the tab is hidden
+  // (its timers and mail are held back).
+  let quiet = 0, watch = null;
+  const watchdog = () => {
+    if (phase !== 'game' || document.hidden) { quiet = 0; return; }
+    if (++quiet >= NET_SILENCE) { ws.onclose = null; try { ws.close(); } catch (e) { /* closed */ } netState = 'lost'; netLost(); }
+  };
   ws.onclose = () => {
     netState = netState === 'online' ? 'lost' : 'none';
-    if (phase === 'game') { setTimeout(() => location.reload(), 1500); return; }
+    if (phase === 'game') return netLost();
     if (split) { lastLobby = null; show('room'); $('room-host').textContent = 'Local player: lost the server.'; return; }
     if (!solo) { lastLobby = null; show('menu'); }
   };
   ws.onmessage = (ev) => {
+    quiet = 0;
     const m = JSON.parse(ev.data);
-    if (m.t === 'welcome') { myId = m.id; maxPlayers = m.max || 8; }
+    if (m.t === 'welcome') { myId = m.id; window.netId = myId; maxPlayers = m.max || 8; }   // (netId: js/local.js tells its players apart by id, not by name)
     else if (m.t === 'games') { games = m.games; maxPlayers = m.max || maxPlayers; if (phase === 'menu') renderMenu(); }
     else if (m.t === 'joined') { myGame = m.game; ticket = m.ticket; solo = false; lastLobby = null; if (phase !== 'game') show('room'); if (split) store('mn-seat', JSON.stringify({ game: m.game, ticket: m.ticket })); else localUI?.joined(m.game); }
     else if (m.t === 'full' || m.t === 'gone') {
@@ -368,7 +406,7 @@ function netClientMain() {
     } else if (m.t === 'lobby') {
       if (m.game !== myGame) return;
       if (phase === 'game') {                                             // mission over: fresh page, back into this game's lobby
-        if (m.phase === 'lobby') { store('mn-return', JSON.stringify({ game: myGame, ticket })); location.reload(); }
+        if (m.phase === 'lobby') { lost = true; store('mn-return', JSON.stringify({ game: myGame, ticket })); location.reload(); }   // (lost: the socket closing under the reload is no lost connection)
         return;
       }
       lastLobby = m; isHost = m.host === myId;
@@ -381,6 +419,7 @@ function netClientMain() {
       if (autostart && isHost && m.phase === 'lobby') { autostart = false; sendWs({ t: 'start' }); }
     } else if (m.t === 'start') {
       phase = 'game'; lobby.hidden = true;
+      quiet = 0; watch ??= setInterval(watchdog, 1000);
       if (!split) localUI?.start();                    // (local players: the screen splits, js/local.js)
       NET.on = true; NET.frame = netFrame;
       sendCommand = (cmd) => ws.send(JSON.stringify({ t: 'cmd', cmd }));
@@ -392,19 +431,44 @@ function netClientMain() {
     }
   };
 
-  // every frame while in a game: predict yourself, smooth the rest, browser-side update, send input
+  // every frame while in a game: predict yourself, smooth the rest, browser-side update, send input (when it's due: netOutbox)
   function netFrame(dt) {
     netBetween(dt);
     clientUpdate(dt);
     netLocalPrompt();
-    const m = localInput.mouse, seq = netRemember();
-    if (ws.readyState === 1) ws.send(JSON.stringify({
-      t: 'input', seq, ack: netSnapN, keys: debugOpen ? [] : [...localInput.keys], pressed: [...localInput.pressed], stick: debugOpen ? null : localInput.stick, pad: !!localInput.pad,
+    const m = localInput.mouse, seq = netRemember(), open = ws.readyState === 1;
+    const out = netOutbox(dt, open ? ws.bufferedAmount : 0);
+    if (out && open) ws.send(JSON.stringify({
+      t: 'input', seq, ack: netSnapN, keys: debugOpen ? [] : [...localInput.keys], pressed: out.pressed, stick: debugOpen ? null : localInput.stick, pad: !!localInput.pad,
       gunAim: me.mode === 'gun' && me.gun && standing(me) && !debugOpen ? me.gun.aim : null,   // (your cannon's aim as your laser sight shows it: the server fires down it)
-      mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: m.click, rightClick: m.rightClick, moved: m.moved, look: m.look },
+      mouse: { wx: m.wx, wy: m.wy, down: m.down && !m.suppress, right: m.right, click: out.click, rightClick: out.rightClick, moved: out.moved, look: out.look },
     }));
     localInput.pressed.clear(); m.click = false; m.rightClick = false; m.moved = 0; m.look = 0;
   }
+}
+// When an input message goes out. Not with every drawn frame (a 144 Hz screen sent 144 a second, more than the
+// snapshots coming down, and on a thin uplink they queued up: keys acting seconds late, for good): NET_SEND apart,
+// as often as the server ticks, and not at all while the last ones are still waiting to leave this browser
+// (`buffered`, the socket's bufferedAmount: the next message carries the whole state anyway). What happened once
+// must arrive once, though: key presses and clicks are collected here every frame and go out at once, in the frame
+// they happened, queue or not (they are few), and so does a held key going down or coming up (you start and stop
+// walking on the server no later than before); the mouse having moved waits for the next message with them.
+// Returns what to send of those ({ pressed, click, rightClick, moved, look }), or null: nothing this frame.
+// (tools/netsim.js sends by the same rule.)
+const NET_SEND = 1 / 60, NET_SILENCE = 8;             // s between input messages; s without a word from the server in a game: lost (netLost)
+const netOut = { due: 0, held: '', pressed: new Set(), click: false, rightClick: false, moved: 0, look: 0 };
+function netOutbox(dt, buffered) {
+  const o = netOut, m = localInput.mouse;
+  for (const k of localInput.pressed) o.pressed.add(k);
+  o.click ||= !!m.click; o.rightClick ||= !!m.rightClick; o.moved ||= m.moved; o.look ||= m.look;
+  o.due = Math.min(o.due + dt, NET_SEND);
+  const held = [...localInput.keys].join(), once = o.pressed.size || o.click || o.rightClick || held !== o.held;
+  if (!once && (o.due < NET_SEND * 0.75 || buffered > 0)) return null;   // (0.75: a 60 Hz screen's frames aren't all 16.7 ms)
+  o.held = held;
+  o.due = Math.max(-NET_SEND / 4, o.due - NET_SEND);
+  const out = { pressed: [...o.pressed], click: o.click, rightClick: o.rightClick, moved: o.moved, look: o.look };
+  o.pressed.clear(); o.click = o.rightClick = false; o.moved = o.look = 0;
+  return out;
 }
 // ---------------------------------------------------------------------------
 // Latency hiding. Your own crew member moves right away on your keys, using the same movement code as

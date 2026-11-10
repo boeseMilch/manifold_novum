@@ -4,10 +4,9 @@
 // applies a snapshot and renders it → late join / leave → 8 players per game → two games side by
 // side → host hand-over → mission over: back to that game's lobby (and a reload keeps your seat)
 // → a game closes when its last player leaves. Run: node tests/network.js
-const { spawn } = require('child_process');
-const path = require('path');
 const { loadGame } = require('./harness');
-const PORT = 8000 + Math.floor(Math.random() * 900);
+const { startServer } = require('../tools/testserver');
+let PORT = 0;                                          // (the server's own pick: any free port)
 let failed = 0;
 const check = (ok, text) => { console.log(`${ok ? 'ok  ' : 'FAIL'}  ${text}`); if (!ok) failed++; };
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -32,8 +31,8 @@ function client(name) {
 }
 
 (async () => {
-  const srv = spawn(process.execPath, [path.join(__dirname, '..', 'server.js'), String(PORT)], { stdio: ['ignore', 'pipe', 'inherit'] });
-  await new Promise(r => srv.stdout.on('data', d => { if (String(d).includes('port')) r(); }));
+  let srv;
+  try { ({ srv, port: PORT } = await startServer()); } catch (e) { check(false, e.message); process.exitCode = 1; return; }   // (no server: this test has failed, not passed with nothing checked)
   try {
     const a = client('Alice'), b = client('Bob');
     await Promise.all([a.open, b.open]); await sleep(200);
@@ -60,9 +59,12 @@ function client(name) {
     const x1 = a.state.crew.find(c => c.id === a.id).x, bx = b.state.crew.find(c => c.id === a.id).x;
     check(x1 > x0 + 1, `holding D moves Alice on the server (${x0.toFixed(1)} → ${x1.toFixed(1)})`);
     check(Math.abs(bx - x1) < 0.5, 'Bob sees Alice where she is');
-    b.send({ t: 'cmd', cmd: ['debug', 'e'] }); await sleep(150);
-    check(a.state.caps.every(([ch]) => ch === 3), 'commands (debug: fill capacitors) are run by the server for everyone');
-    b.send({ t: 'cmd', cmd: ['debug', '1'] }); b.send({ t: 'cmd', cmd: ['debug', 'p'] }); await sleep(300);   // spawn an enemy, raise a shield (makes a sound)
+    const lamp0 = a.state.crew.find(c => c.id === b.id).lamp;
+    b.send({ t: 'cmd', cmd: ['debug', 'e'] }); b.send({ t: 'cmd', cmd: ['lamp'] }); await sleep(150);
+    check(!a.state.caps.every(([ch]) => ch === 3) && a.state.crew.find(c => c.id === b.id).lamp === !lamp0, "a guest's commands are run by the server (the helmet lamp), but not the debug menu's: that is the host's");
+    a.send({ t: 'cmd', cmd: ['debug', 'e'] }); await sleep(150);
+    check(b.state.caps.every(([ch]) => ch === 3), 'commands (debug: fill capacitors) are run by the server for everyone');
+    a.send({ t: 'cmd', cmd: ['debug', '1'] }); a.send({ t: 'cmd', cmd: ['debug', 'p'] }); await sleep(300);   // spawn an enemy, raise a shield (makes a sound)
     check(a.state.combat.enemies.length >= 1 && a.sfx > 0, `an enemy spawned and sounds are sent along (${a.sfx} sound events)`);
     // a browser-side copy can apply a real snapshot and draw it
     const G = loadGame(['netApply', 'render', 'crew', 'me', 'combat']);
@@ -172,7 +174,8 @@ function client(name) {
           let len = buf[1] & 0x7f, off = 2;
           if (len === 126) { if (buf.length < 4) return; len = buf.readUInt16BE(2); off = 4; }
           if (buf.length < off + len) return;
-          const z = !!(buf[0] & 0x40), payload = buf.subarray(off, off + len); buf = buf.subarray(off + len);
+          const z = !!(buf[0] & 0x40), op = buf[0] & 0x0f, payload = buf.subarray(off, off + len); buf = buf.subarray(off + len);
+          if (op !== 0x1) continue;                    // (the server's heartbeat ping: no message)
           allZ &&= z;
           chain = chain.then(() => new Promise(r => {
             if (!z) { got.push(payload.toString()); return r(); }

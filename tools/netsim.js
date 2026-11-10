@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Connection simulator: the server's simulation and browser copies (the game scripts in Node, like the tests),
 // every message over a simulated link (tools/netlink.js: latency each way, jitter, a bandwidth limit with a
-// queue), all in virtual time, so a run is quick and repeatable. It does what server.js does per snapshot
+// queue), all in virtual time and with the game's dice seeded (Math.random: enemy fire, sides), so a run is quick
+// and repeatable. It does what server.js does per snapshot
 // (one JSON, permessage-deflate with the context kept: estimated with the last 32 KB sent as the dictionary;
 // a connection that is behind skips snapshots: --no-flow without the acknowledgement rule, makeFlow) and what a browser
-// does per frame (js/net.js netFrame). Scenarios: walk (through a doorway and about), door (into a locked doorway and
+// does per frame (js/net.js netFrame: an input message when netOutbox says it's due, the uplink's queue as the
+// socket's bufferedAmount; inputs: 'frame' sends one with every frame, as browsers did before). Scenarios: walk (through a doorway and about), door (into a locked doorway and
 // along it), frame (at an angle into a closed doorway's frame while it opens), lock (the open doorway locked as you get
 // there), busy (a fight with intruders: the snapshot sizes).
 // It measures what the guest's player experiences:
@@ -16,6 +18,7 @@
 //   node tools/netsim.js                         # 100 ms each way, no bandwidth limit, all scenarios
 //   node tools/netsim.js --lag 100 --jitter 20 --bw 2000 --scenario door
 //   node tools/netsim.js --players 4 --bw 1000 --seconds 20 --json
+//   node tools/netsim.js --fps 144 --up 100 --scenario walk      # a fast screen on a thin uplink
 // Manual play with the same link: node server.js 8110 --lag 100 --bw 2000, or open the page with ?lag=100&bw=2000.
 const zlib = require('zlib');
 const { loadGame } = require('../tests/harness');
@@ -24,14 +27,19 @@ const { makeLink, makeFlow } = require('./netlink');
 const EXPOSE_S = ['simTick', 'netServer', 'netSerialize', 'netCaptureSfx', 'crew', 'DOORS', 'combat', 'combatSpawn', 'boarding', 'spawnInvader',
   'mission', 'ITEMS', 'fires', 'withCrew', 'time', 'canStand', 'walkRects', 'netSnapshotText'];
 const EXPOSE_C = ['netApply', 'netBetween', 'netRemember', 'netLocalPrompt', 'netPlaySfx', 'localInput', 'me', 'crew', 'combat', 'boarding',
-  'DOORS', 'time', 'canStand', 'walkRects', 'netStats'];
+  'DOORS', 'time', 'canStand', 'walkRects', 'netStats', 'netOutbox'];
+// Math with its own seeded random (a session's server and browsers each get one: the same seed, the same run)
+// (and a clock that stands still: the mission's run id is made of the time of day, and a snapshot with another id
+// compresses to a byte more or less)
+class SimDate extends Date { static now() { return 1e12; } }
+const seededMath = (seed) => { let s = seed >>> 0 || 7; return Object.assign(Object.create(Math), { random: () => ((s = (s * 16807) % 2147483647) / 2147483647) }); };
 const pct = (a, p) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(p * s.length))]; };
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 
 // One session: a server and `players` browsers (player 1 the host on the same machine: no lag; the others over the link).
 // script(t, i, L, mouse, W) sets browser i's keys every frame. Returns the session; run(ms) advances it.
-function session({ lag = 100, jitter = 0, bw = 0, up, players = 2, seed = 7, setup, script, mission = 'c1', fps = 60, hostLag = 0, encode, flow = true } = {}) {
-  const S = loadGame(EXPOSE_S);
+function session({ lag = 100, jitter = 0, bw = 0, up, players = 2, seed = 7, setup, script, mission = 'c1', fps = 60, hostLag = 0, encode, flow = true, inputs = 'due' } = {}) {
+  const S = loadGame(EXPOSE_S, { Math: seededMath(seed * 1000 + 1), Date: SimDate });
   S.netServer.init(mission, {}, 0);
   const sfx = S.netCaptureSfx();
   for (let i = 1; i <= players; i++) S.netServer.addCrew(i, i === 1 ? 'Host' : 'Guest' + i);
@@ -44,9 +52,9 @@ function session({ lag = 100, jitter = 0, bw = 0, up, players = 2, seed = 7, set
   }
   setup?.(S);
   let now = 0, tick = 0, acc = 0;
-  const W = { S, clients, get now() { return now; }, stats: { snaps: [] }, encode };
+  const W = { S, clients, get now() { return now; }, stats: { snaps: [], inputs: [] }, encode };   // (inputs: the guest's, [sent at, arrived at] ms)
   const deliver = (q, at, fn) => q.push([at, fn]);
-  const loadClient = (cl) => { cl.C = loadGame(EXPOSE_C); };
+  const loadClient = (cl) => { cl.C = loadGame(EXPOSE_C, { Math: seededMath(seed * 1000 + 1 + cl.id), Date: SimDate }); };
   clients.forEach(loadClient);
   W.run = (ms, each) => {
     for (const end = now + ms; now < end - 1e-6;) {
@@ -83,11 +91,14 @@ function session({ lag = 100, jitter = 0, bw = 0, up, players = 2, seed = 7, set
         L.keys.clear();
         script?.(now, cl.id, L, mouse, W);
         C.netBetween(dt); C.netLocalPrompt();
-        const m = { t: 'input', seq: C.netRemember(), ack: cl.n, keys: [...L.keys], pressed: [...L.pressed], mouse: { ...mouse } };
+        const seq = C.netRemember(), out = C.netOutbox(dt, cl.up.backlog(now)) || (inputs === 'frame' ? { pressed: [...L.pressed] } : null);
         L.pressed.clear();
-        const json = JSON.stringify(m);
-        const at = cl.up.send(json.length + 6, now);
-        deliver(cl.toServer, at, () => { const m2 = JSON.parse(json); if (Number.isFinite(m2.ack)) cl.flow.acked(m2.ack, now); S.netServer.input(cl.id, m2); });
+        if (out) {
+          const json = JSON.stringify({ t: 'input', seq, ack: cl.n, keys: [...L.keys], pressed: out.pressed, mouse: { ...mouse } });
+          const at = cl.up.send(json.length + 6, now);
+          if (cl.id === 2) W.stats.inputs.push([now, at]);
+          deliver(cl.toServer, at, () => { const m2 = JSON.parse(json); if (Number.isFinite(m2.ack)) cl.flow.acked(m2.ack, now); S.netServer.input(cl.id, m2); });
+        }
         each?.(now, cl, fresh);
       }
     }
@@ -179,7 +190,7 @@ function measure(name, link = {}) {
   // the rubber band: how far the screen is from the no-lag walk at the same moment (both start at the same key time)
   const refAt = new Map(ref.pos.map(([t, x, y]) => [Math.round(t), [x, y]]));
   const dev = r.pos.map(([t, x, y]) => { const p = refAt.get(Math.round(t)); return p ? Math.hypot(x - p[0], y - p[1]) : 0; });
-  const snaps = r.W.stats.snaps, secs = ms / 1000 + 0.4;
+  const snaps = r.W.stats.snaps, secs = ms / 1000 + 0.4, ins = r.W.stats.inputs.map(([t, at]) => at - t);
   const C = r.W.clients[1].C;
   return {
     scenario: name, link: { lag: link.lag ?? 100, jitter: link.jitter ?? 0, bw: link.bw ?? 0, players: link.players ?? 2 },
@@ -191,6 +202,7 @@ function measure(name, link = {}) {
       ageMs: { mean: Math.round(mean(snaps.filter(s => s.age != null).map(s => s.age))), p95: Math.round(pct(snaps.filter(s => s.age != null).map(s => s.age), 0.95)) },
     },
     own: {
+      inputs: { perSec: +(ins.length / secs).toFixed(1), ageMs: { mean: Math.round(mean(ins)), p95: Math.round(pct(ins, 0.95)), last: Math.round(ins[ins.length - 1] ?? 0) } },   // (age: sent → at the server)
       keyToScreenMs: r.firstMove, keyToServerMs: r.firstSrvMove, throughDoorMs: r.pass, throughDoorMsNoLag: ref.pass,
       offNoLag: { mean: +mean(dev).toFixed(3), p95: +pct(dev, 0.95).toFixed(3), max: +Math.max(...dev).toFixed(3) },
       jumps: r.jumps, wallFrames: r.wall, wallFramesNoLag: ref.wall,
@@ -209,6 +221,7 @@ function report(m) {
   return [
     `[${m.scenario}] ${m.link.lag} ms each way${m.link.jitter ? ` + ${m.link.jitter} jitter` : ''}${m.link.bw ? `, ${m.link.bw} kbit/s` : ', no bandwidth limit'}, ${m.link.players} players`,
     `  snapshots: ${s.perSec}/s (${s.skipped} skipped), JSON ${s.json.mean} B (max ${s.json.max}), wire ${s.wire.mean} B (p95 ${s.wire.p95}, max ${s.wire.max}), ${s.kbps} kbit/s, age on arrival ${s.ageMs.mean} ms (p95 ${s.ageMs.p95})`,
+    `  inputs: ${o.inputs.perSec}/s, ${o.inputs.ageMs.mean} ms to the server (p95 ${o.inputs.ageMs.p95}, the last one ${o.inputs.ageMs.last})`,
     `  own walk: key → screen ${Math.round(o.keyToScreenMs)} ms, key → server ${Math.round(o.keyToServerMs)} ms;${o.throughDoorMs != null ? ` through the doorway at ${Math.round(o.throughDoorMs)} ms (no lag: ${Math.round(o.throughDoorMsNoLag)});` : ''} off the no-lag walk mean ${o.offNoLag.mean} m, p95 ${o.offNoLag.p95}, max ${o.offNoLag.max}; ${o.jumps} jumps; ${o.wallFrames} frames in a wall (no lag: ${o.wallFramesNoLag})`,
     ...(o.corrections?.acks ? [`  corrections: ${o.corrections.replays} replays of ${o.corrections.acks} snapshots, glided ${o.corrections.glided.toFixed(2)} m in all, largest ${o.corrections.maxErr.toFixed(2)} m, ${o.corrections.jumps} jumps`] : []),
     `  others shown off the server's now: crew mean ${x.crew.mean} m (p95 ${x.crew.p95})${x.invaders ? `, intruders ${x.invaders.mean} (p95 ${x.invaders.p95})` : ''}${x.enemies ? `, enemies ${x.enemies.mean} (p95 ${x.enemies.p95})` : ''}`,
@@ -220,6 +233,7 @@ module.exports = { session, measure, report, SCENARIOS };
 if (require.main === module) {
   const a = process.argv.slice(2), opt = (k, d) => { const i = a.indexOf('--' + k); return i >= 0 ? a[i + 1] : d; };
   const link = { lag: +opt('lag', 100), jitter: +opt('jitter', 0), bw: +opt('bw', 0), players: +opt('players', 2), seconds: opt('seconds') ? +opt('seconds') : undefined, flow: !a.includes('--no-flow') };
+  if (opt('fps')) link.fps = +opt('fps');
   if (opt('up')) link.up = +opt('up');
   const names = opt('scenario') ? [opt('scenario')] : Object.keys(SCENARIOS);
   const all = names.map(n => measure(n, link));

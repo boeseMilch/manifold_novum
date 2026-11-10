@@ -36,7 +36,7 @@ function linkOpts(get) {
 //   const F = makeFlow();  F.sent(n, now);  F.acked(n, now);  F.behind(now)
 function makeFlow({ slack = 150, window = 10000 } = {}) {
   const sentAt = new Map();
-  let lastAckSent = null, minRtt = Infinity, minNext = Infinity, windowAt = 0;
+  let lastAckSent = null, minRtt = Infinity, minNext = Infinity, windowAt = 0, probeAt = 0;
   return {
     sent(n, now) { sentAt.set(n, now); if (sentAt.size > 600) sentAt.delete(sentAt.keys().next().value); },
     acked(n, now) {
@@ -50,12 +50,16 @@ function makeFlow({ slack = 150, window = 10000 } = {}) {
     },
     // the oldest snapshot not acknowledged yet left longer ago than a round trip and some jitter: they are queueing
     // (only once this browser has acknowledged anything at all)
-    // (nothing back for 2 s: a background tab, a new page, a new game: start over rather than wait for it for ever)
+    // Nothing back for 2 s (a link seconds behind, a background tab, a new page): still behind, but one snapshot a
+    // second goes out as a probe ("not behind", once), so it isn't waited for for ever: the first one acknowledged
+    // (a tab back in front answers at once) and the flow is back. (Before 2026-11-10 it forgot everything here and
+    // sent all 30 a second again, into the link that was already the furthest behind: 7 s old at 16 kbit/s, now 2 s.)
     behind(now) {
       if (lastAckSent === null) return false;
       for (const t of sentAt.values()) {
-        if (now - t > 2000) { sentAt.clear(); lastAckSent = null; return false; }
-        return now - t > minRtt + slack;
+        if (now - t <= minRtt + slack) return false;
+        if (now - t > 2000 && now - probeAt >= 1000) { probeAt = now; return false; }
+        return true;
       }
       return false;
     },
