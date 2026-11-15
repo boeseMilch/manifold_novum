@@ -60,6 +60,41 @@ const frame = async (n = 1) => { for (let i = 0; i < n; i++) { await settle(); f
   for (let i = 0; i < 3; i++) { GFX.begin({ zoom: 1, ox: 0, oy: 0 }); GFX.lighting({ areas }); }
   check(warns.filter(w => /light areas/.test(w)).length === 1, `more light areas on screen than the shader takes: one console warning in three frames (${warns.join('; ') || 'none'})`);
 
+  // ---- the room light is a map, drawn again only when it changes (2026-11-15: it was a loop over every area for
+  // every pixel; and the first version of the map compared doubles with the floats it had kept, so it "changed" every frame)
+  {
+    const rooms = () => [{ x: 0, y: 0, w: 10, h: 8, color: [0.3, 0.33, 0.4], sun: 0 }, { x: 12, y: 0, w: 6.5, h: 8, color: [0.36, 0.26, 0.25], sun: 0.25 }];
+    const draw = (areas, ambient = [0.36, 0.4, 0.5]) => { GFX.begin({ zoom: 1, ox: 0, oy: 0 }); GFX.lighting({ ambient, areas, sun: { dir: [0, 0, 1], color: [1, 1, 1], k: 1 } }); GFX.end(); return GFX.stats.amb; };
+    const first = draw(rooms()), n0 = first.draws, [bx, by, bw, bh] = first.box;
+    check(bx <= -1 && by <= -1 && bx + bw >= 19.5 && by + bh >= 9 && first.w === bw * 16 && first.h === bh * 16, `the room-light map covers the rooms and a rim of open space, 16 texels a unit (${first.w} × ${first.h} for ${bw} × ${bh} units)`);
+    for (let i = 0; i < 5; i++) draw(rooms());
+    check(GFX.stats.amb.draws === n0, `the same rooms in the same light for five more frames: not drawn again (${GFX.stats.amb.draws - n0} times)`);
+    const dim = rooms(); dim[1].color = [0.2, 0.1, 0.1];
+    check(draw(dim).draws === n0 + 1 && draw(dim).draws === n0 + 1, 'a room\'s light changes (the power goes): drawn again, once');
+    const moved = rooms(); moved.push({ x: 20, y: 2, w: 4, h: 3, color: [0.2, 0.2, 0.2], sun: 0 });
+    check(draw(moved).draws === n0 + 2 && draw(moved).box[2] > bw, 'a ship docks (another room): drawn again, on a bigger map');
+    check(draw(moved, [0.1, 0.1, 0.12]).draws === n0 + 3, 'the light outside changes: drawn again');
+    const none = draw([]);
+    check(none.w === 1 && none.h === 1 && none.draws === n0 + 4, 'no rooms at all: one texel of the light outside');
+  }
+  // ---- the Graphics menu's settings (js/net.js): fixed resolution or automatic, simple lighting, the shadows
+  {
+    const shot = () => { GFX.begin({ zoom: 1, ox: 0, oy: 0 }); GFX.lighting({ areas: [] }); GFX.end(); return GFX.resolution(); };
+    const a = shot();
+    check(a.auto && a.w === 1280 && a.h === 720 && a.full[0] === 1280 && a.full[1] === 720, `automatic at first: a 1280 × 720 window is drawn whole (${a.w} × ${a.h})`);
+    GFX.setScale(0.5); const f = shot();
+    check(!f.auto && f.scale === 0.5 && f.w === 640 && f.h === 360 && store['mn-gfx-scale'] === '0.5', `fixed at 50 %: 640 × 360, remembered (${f.w} × ${f.h})`);
+    GFX.setScale(null); const back = shot();
+    check(back.auto && back.w === 1280 && !('mn-gfx-scale' in store), 'automatic again: the whole window, nothing kept');
+    check(GFX.simpleLight === false && GFX.shadows === true, 'full lighting with shadows to begin with');
+    let threw = null;
+    try { GFX.setSimpleLight(true); shot(); shot(); } catch (e) { threw = e; }
+    check(!threw && GFX.simpleLight === true && store['mn-gfx-light'] === 'simple', `simple lighting: on, remembered, and a frame draws${threw ? ' (' + threw.message + ')' : ''}`);
+    try { GFX.setSimpleLight(false); shot(); GFX.setShadows(false); shot(); GFX.setShadows(true); shot(); } catch (e) { threw = e; }
+    check(!threw && GFX.simpleLight === false && !('mn-gfx-light' in store) && GFX.shadows === true && store['mn-gfx-shadows'] === '1', 'and back: full lighting, the shadows off and on again');
+    check(typeof GFX.fps() === 'number', 'GFX.fps() is a number (the menu shows it)');
+  }
+
   // ---- the context is lost
   const glc = body.kids.find(k => k.tag === 'canvas');
   let prevented = 0; warns.length = 0;

@@ -4947,3 +4947,28 @@ For keyboard and controller players: the keys only know 8 directions, a stick is
 - The controller's laser sight (`handSight`, js/combat.js) shows the snapped line, so you see it lock on.
 - Tests: tests/handweapons.js (snap from either side, 6.5° no snap, a hit left alone, mouse / heavy / wrench
   untouched, two targets, a wall in between, the sight).
+
+## Cheaper lighting and a Graphics menu (2026-11-15, the user: "we can probably offer a cheaper option", "a graphics menu … where you can also set the resolution statically")
+
+- Where the GPU's time goes, measured with the chip otherwise idle (the laptop's Intel chip, 2048×1280, timer
+  queries, parts of the shader taken out at load in the test browser): 23 ms a frame, of it shadows ~5, the room
+  light (the ambient areas: a loop over all of them for every pixel of every sprite) ~5.5, the lamps ~4.5,
+  relief and highlights ~2.5, the plain picture ~5. Walls blocking light and the floor wear: nothing measurable.
+  (The 56 ms of the day before were with the user's own game on the same chip.)
+- **The room light is a map** (js/gfx.js `ambPass`, FS_AMB): the same rule (each area in turn, soft over 0.3 units)
+  drawn once into a texture of the ship, 16 texels a unit, and again only when an area, its colour or the light
+  outside changes; `lighting()` reads it with one lookup. Read back against the formula: off by 5e-4 at most (half
+  floats). 23 → 19 ms with everything on, 17.6 → 14 without shadows. No setting: the same picture for everyone.
+- **Simple lighting** (`simpleLight`; `?simplelight`, `mn-gfx-light`, `GFX.setSimpleLight`): the light on the floor,
+  lamps and room light as `lighting()` gives them for a flat floor without shadows, drawn at a quarter of the
+  resolution each way (`litePass`, FS_LITE); sprites and the lit 2D layer take their light from it with one lookup
+  at their foot (FS_SPRITE / FS_LAYER built with `SIMPLE`). No relief, highlights or shadows, but every lamp still
+  lights its surroundings (fires, alarms). 3 ms a frame: 60 fps at the full 2048×1280 on that chip.
+- **GRAPHICS in the main menu** (a button next to START OVER; js/net.js fills the Locker's frame, `#shop`): what is
+  drawn now and how fast (`GFX.fps`); Resolution: automatic, or fixed at the screen's own / 75 / 50 / 35 %, shown
+  in pixels; Lighting: full or simple; Shadows on / off (none with simple lighting). Controller: the pad starts on
+  the first dropdown (js/menupad.js). A changed setting makes the automatic resolution ask again at once
+  (`autoScaler.again`). Replaces the row of two dropdowns in the crew plate.
+- Checked in headless Chromium and Firefox: the menu, every mode solo and in 2-player split screen (the views
+  follow the host's setting), no shader or console errors. Tests: tests/gfx.js (the map's bookkeeping, the settings).
+

@@ -232,6 +232,6 @@ its usual save, the others get their own (by name, in this browser), so the same
     (solo, no lobby).
   - `index.html?classic` draws the old top-down 2D look instead of the sprites (also the automatic
     fallback without WebGL2, or when `index.html` is opened as a file). `?gfxscale=0.75` fixes the
-    sprite renderer's internal resolution (remembered; `?gfxscale=auto` or the main menu's GRAPHICS
-    setting: automatic again, at most 2048 px across the screen and less while the frames come too
-    slowly; shadows on / off is there too).
+    sprite renderer's internal resolution (remembered; `?gfxscale=auto`: automatic again, at most
+    2048 px across the screen and less while the frames come too slowly), `?noshadows` and
+    `?simplelight` switch to the cheaper lighting. All of it is in the main menu's GRAPHICS menu.

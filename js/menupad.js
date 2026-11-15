@@ -64,7 +64,7 @@ function menuPrimary(layer, cands) {
   if (layer.id === 'shop' && layer.querySelector('#prof-confirm')) return pick('[data-prof-no]') || cands[0];
   const last = (layer.id === 'menu' || layer.id === 'room') && menuPad.mem.get(layer);   // (the Locker re-renders: its top again, not DONE; the question: its preselected answer)
   if (last && cands.includes(last)) return last;
-  if (layer.id === 'shop') return pick('#shop-body button:not(:disabled)') || pick('#shop-body button') || pick('#shop-close') || cands[0];
+  if (layer.id === 'shop') return pick('#shop-body button:not(:disabled)') || pick('#shop-body button') || pick('#shop-body select') || pick('#shop-close') || cands[0];   // (select: the Graphics menu, js/net.js)
   if (layer.id === 'tut-choice') return pick('.chosen') || cands[0];
   if (layer.id === 'menu') return pick('#menu-tutorial.fresh') || pick('#menu-solo') || cands[0];
   if (layer.id === 'room') return pick('#lobby-start') || pick('.mission.chosen') || cands[0];

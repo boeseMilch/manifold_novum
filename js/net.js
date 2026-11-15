@@ -248,27 +248,41 @@ function netClientMain() {
     markChosen(); hello();
   };
   $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
-  // Graphics (this browser's own, not the profile's: js/gfx.js keeps them in localStorage): the picture's resolution
-  // (automatic, or a fixed share of the screen's own pixels) and the shadows. Split screen: every view follows.
-  if ($('lobby-gfx')) {
-    const resBox = $('lobby-res'), shBox = $('lobby-shadows'), note = $('lobby-gfx-note');
-    if (!GFX.on) $('lobby-gfx').hidden = true;         // (?classic, no WebGL2: nothing to set)
-    else {
-      const fixed = () => { const r = GFX.resolution(); return r.auto ? null : r.scale; };
-      const steps = [1, 0.75, 0.5, 0.35], cur = fixed();
-      if (cur && !steps.includes(cur)) steps.push(cur);    // (one set by hand: ?gfxscale=0.6)
-      resBox.innerHTML = '<option value="auto">Resolution: automatic</option>' + steps.sort((p, q) => q - p).map(k => `<option value="${k}">Resolution: ${Math.round(k * 100)} %</option>`).join('');
-      shBox.innerHTML = '<option value="1">Shadows: on</option><option value="0">Shadows: off (faster)</option>';
+  // The Graphics menu (this browser's own settings, not the profile's: js/gfx.js keeps them in localStorage), in the
+  // Locker's frame (#shop): the 3D picture's resolution (automatic, or fixed: a share of the screen's own pixels),
+  // the lighting (full, or simple: js/gfx.js simpleLight) and the shadows, with what is drawn now and how fast.
+  // Split screen: every view follows.
+  const gfxBtn = $('lobby-gfx');
+  if (gfxBtn && !GFX.on) { gfxBtn.disabled = true; gfxBtn.title = 'The simple 2D view is on (no WebGL2, or ?classic): nothing to set'; }
+  else if (gfxBtn) {
+    const now = () => { const r = GFX.resolution(), f = GFX.fps(); return `Drawing ${r.w} × ${r.h}${f ? ` at ${Math.round(f)} frames a second` : ''}`; };
+    gfxBtn.onclick = () => {
+      const r = GFX.resolution(), [fw, fh] = r.full, steps = [1, 0.75, 0.5, 0.35];
+      if (!r.auto && !steps.includes(r.scale)) steps.push(r.scale);   // (one set by hand: ?gfxscale=0.6)
+      $('shop-title').textContent = 'GRAPHICS';
+      $('shop-body').innerHTML = `<div class="gfx">
+        <p class="gfx-now" id="gfx-now">${now()}</p>
+        <label for="gfx-res">RESOLUTION</label>
+        <select id="gfx-res"><option value="auto">Automatic: as sharp as it runs smoothly</option>${steps.sort((p, q) => q - p).map(k => `<option value="${k}">${Math.round(fw * k)} × ${Math.round(fh * k)} · ${k === 1 ? 'the screen\'s own' : Math.round(k * 100) + ' %'}</option>`).join('')}</select>
+        <p>Of the 3D picture only: panels and text always stay sharp. Automatic lowers it while the frames come too slowly and raises it again when there is room; a fixed one stays.</p>
+        <label for="gfx-light">LIGHTING</label>
+        <select id="gfx-light"><option value="full">Full: every lamp on every surface, with relief</option><option value="simple">Simple: flat light, no relief, no shadows (much faster)</option></select>
+        <label for="gfx-shadows">SHADOWS</label>
+        <select id="gfx-shadows"><option value="1">On</option><option value="0">Off (faster)</option></select>
+      </div>`;
+      const res = $('gfx-res'), light = $('gfx-light'), sh = $('gfx-shadows');
       const show = () => {
-        const r = GFX.resolution();
-        resBox.value = r.auto ? 'auto' : String(r.scale); shBox.value = GFX.shadows ? '1' : '0';
-        note.textContent = r.w > 1 ? `${r.w} × ${r.h}` : '';
+        const q = GFX.resolution();
+        res.value = q.auto ? 'auto' : String(q.scale); light.value = GFX.simpleLight ? 'simple' : 'full';
+        sh.value = GFX.shadows ? '1' : '0'; sh.disabled = GFX.simpleLight; sh.title = GFX.simpleLight ? 'Simple lighting has no shadows' : '';
       };
-      resBox.onchange = () => { GFX.setScale(resBox.value === 'auto' ? null : +resBox.value); setTimeout(show, 100); };
-      shBox.onchange = () => { GFX.setShadows(shBox.value === '1'); show(); };
+      res.onchange = () => { GFX.setScale(res.value === 'auto' ? null : +res.value); show(); };
+      light.onchange = () => { GFX.setSimpleLight(light.value === 'simple'); show(); };
+      sh.onchange = () => { GFX.setShadows(sh.value === '1'); show(); };
       show();
-      setInterval(() => { if (!lobby.hidden && !$('menu').hidden && document.activeElement !== resBox && document.activeElement !== shBox) show(); }, 1000);   // (what "automatic" is drawing at now)
-    }
+      lobbyUI.shopKind = 'graphics'; $('shop').hidden = false;
+    };
+    setInterval(() => { const n = $('gfx-now'); if (n && !$('shop').hidden) n.textContent = now(); }, 500);
   }
   const markChosen = () => lobbyUI.render(chosen);
   // Difficulty slider (-1 hard, 0 normal, 1 easy, 2 very easy; the slider runs very easy → hard): the host's choice,
