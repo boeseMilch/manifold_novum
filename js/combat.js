@@ -657,7 +657,7 @@ function handSight() {
   if (!s || !w || w === 'extinguisher' || w === 'drill' || me.inv.item === 'blackbox') return null;   // (js/systems.js canShoot)
   if (!(me.mode === 'inside' || me.mode === 'eva') || !standing(me) || me.ui?.panel || mission.over || (typeof debugOpen !== 'undefined' && debugOpen)) return null;
   if (w === 'repair' && me.prompt?.rep) return null;   // (a part to repair in reach: Space repairs it, nothing is thrown)
-  const a = Math.atan2(s[1], s[0]), M = muzzleAt(me, a), dx = Math.cos(a), dy = Math.sin(a);
+  const a0 = Math.atan2(s[1], s[0]), M = muzzleAt(me, a0), a = w === 'laser' ? aimAssist(me, a0) : a0, dx = Math.cos(a), dy = Math.sin(a);   // (the laser's aim assist: js/invader.js)
   const range = w === 'repair' ? WRENCH_SPEED * 0.8 : BOLT_SPEED * 0.9, free = shotFree();   // (the bolts' life: js/systems.js attack)
   if (shotBlock(me.x, me.y, M.x, M.y, free) >= 0) return null;   // (the muzzle in a wall: the shot stops right there)
   const k = shotBlock(M.x, M.y, M.x + dx * range, M.y + dy * range, free);

@@ -631,6 +631,46 @@ function boltHitsBody(b, x0, y0) {
   if (!best) { if (typeof s7BoltHit === 'function' && s7BoltHit(b, x0, y0)) { b.dead = true; return true; } return false; }   // (S-7's tendrils and creep: js/culture.js)
   b.dead = true; best(); return true;
 }
+// Aim assist for the laser gun fired with the keys or a controller (the user, 2026-11-15: "if you aim within 5deg of the
+// target with the laser pistol (not turret) it snaps to the target"). Not the mouse (it points at the target itself),
+// not the heavy blaster, the wrench or a ship's cannon. boltTargets(): everything a laser bolt does something to, as
+// boltHitsBody / js/eva.js / s7BoltHit test it: { x, y, r, top } a body standing at (x, y) (segBody's capsule), `flat`
+// a circle on the ground (tested without the shot's height), ok(x0, y0, x1, y1, z) an extra test for the snapped line.
+const AIM_ASSIST = 5 * Math.PI / 180;
+function boltTargets(c) {
+  const out = [];
+  if (c.mode === 'eva') { if (typeof evs !== 'undefined') for (const m of evs.mines) out.push({ x: m.x, y: m.y, r: 0.4, top: 0, flat: true }); return out; }
+  for (const a of boarding.invaders) if (a.state !== 'entering' && a.mode === 'inside') out.push({ x: a.x, y: a.y, ...(a.kind === 'saboteur' ? HUMAN_HIT : ALIEN_HIT) });
+  if (typeof dk !== 'undefined') for (const p of dk.pirates) if (!p.dead) out.push({ x: p.x, y: p.y, ...HUMAN_HIT });
+  if (typeof levBrood === 'function') for (const w of levBrood()) if (w.hp > 0) out.push({ x: w.x, y: w.y, ...LEVB_BROOD_HIT });
+  if (typeof captainTargets === 'function') out.push(...captainTargets());
+  if (typeof s7Targets === 'function') out.push(...s7Targets());
+  return out;
+}
+// The angle crew member c's laser fires at when they aim at angle a: a itself, or, when a passes within AIM_ASSIST of
+// a target's edge (seen from the muzzle, in range, no wall in between), the angle straight at it. A shot that hits
+// someone anyway is left alone; of several near misses the closest to the aim wins. The body keeps facing a (as with
+// the mouse: aimFromMuzzle, js/systems.js); the controller's laser sight shows the same line (js/combat.js handSight).
+function aimAssist(c, a) {
+  const M = muzzleAt(c, a), lz = GFX.lift(M.z), range = BOLT_SPEED * 0.9, free = shotFree();
+  if (shotBlock(c.x, c.y, M.x, M.y, free) >= 0) return a;
+  let best = a, be = AIM_ASSIST, bd = Infinity;
+  for (const t of boltTargets(c)) {
+    const up = t.flat ? 0 : GFX.lift(t.top), n = up > 0 ? 4 : 0, r = t.r * HIT_GROW;
+    let px = 0, py = 0, pa = 0, pe = Infinity, pd = 0;   // (this target's point nearest the aim: along the capsule from feet to head)
+    for (let j = 0; j <= n; j++) {
+      const x = t.x, y = t.y + (t.flat ? 0 : lz) - (n ? up * j / n : 0), d = Math.hypot(x - M.x, y - M.y);
+      if (d < 0.3 || d > range) continue;
+      const ta = Math.atan2(y - M.y, x - M.x), off = Math.abs(Math.atan2(Math.sin(ta - a), Math.cos(ta - a)));
+      const e = Math.max(0, off - Math.asin(Math.min(1, r / d)));
+      if (e < pe || (e === pe && off < Math.abs(Math.atan2(Math.sin(pa - a), Math.cos(pa - a))))) { pe = e; px = x; py = y; pa = ta; pd = d; }
+    }
+    if (pe > AIM_ASSIST || (pe > 0 ? pe >= be : be === 0 && pd >= bd)) continue;
+    if (shotBlock(M.x, M.y, px, py, free) >= 0 || (t.ok && !t.ok(M.x, M.y, px, py, M.z))) continue;
+    best = pe > 0 ? pa : a; be = pe; bd = pd;
+  }
+  return best;
+}
 function updateBoarding(dt) {
   updatePods(dt);
   for (const a of boarding.invaders) updateInvader(a, dt);

@@ -709,6 +709,7 @@ function attack(a, blast = false, to = null) {
   player.face = a;
   const M = muzzleAt(player, a);
   if (to) a = aimFromMuzzle(player, a, to[0], to[1]);
+  else if (inv.weapon === 'laser' && typeof aimAssist === 'function') a = aimAssist(player, a);   // (keys / controller: js/invader.js)
   const dx = Math.cos(a), dy = Math.sin(a), { x, y, z } = M;
   const fast = perk(player, 'weapons') ? 0.65 : 1;
   // the muzzle poking into a wall, a closed door or a crate (standing right at it): the shot stops there (js/invader.js shotBlock)

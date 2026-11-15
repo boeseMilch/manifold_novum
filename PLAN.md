@@ -4929,3 +4929,21 @@ chip correctly", "maybe we should also have a resolution setting".
   per pixel, the wall and area loops, no early depth test because it writes gl_FragDepth) is the real cost and
   would be the next place to look; Firefox's main thread with two views (21 ms a frame) caps split screen at
   about 45 fps there whatever the GPU does.
+
+## Aim assist for the laser gun (2026-11-15, the user: "if you aim within 5deg of the target with the laser pistol (not turret) it snaps to the target")
+
+For keyboard and controller players: the keys only know 8 directions, a stick is coarse.
+- `aimAssist(c, a)` (js/invader.js): the laser fired with Space / the pad (`attack` without a mouse point, js/systems.js)
+  at angle a flies straight at a target when a passes within `AIM_ASSIST` (5°) of its **edge**, seen from the muzzle.
+  Measured from the edge, not the middle: at the ranges inside the ship a body is itself about 5° wide to either side,
+  so 5° from its middle would be no help at all. A shot that hits anyway is left alone; of several, the nearest to the
+  aim. Only in the bolt's range, only with no wall, closed door or prop in between (`shotBlock`). The body keeps
+  facing the way you aimed; only the shot turns (as with the mouse).
+- Targets (`boltTargets`): what a laser bolt does something to: intruders and the saboteur (not while cloaked),
+  pirates, the leviathan's brood, Red Comet's generator (only when the line doesn't meet his body first; his body
+  while dazed: `captainTargets`), S-7's tendrils and creep (`s7Targets`), on a spacewalk the mines.
+- Not the mouse (it points at the target itself), not the heavy blaster or the wrench (the user: the laser pistol),
+  not the cannons.
+- The controller's laser sight (`handSight`, js/combat.js) shows the snapped line, so you see it lock on.
+- Tests: tests/handweapons.js (snap from either side, 6.5° no snap, a hit left alone, mouse / heavy / wrench
+  untouched, two targets, a wall in between, the sight).

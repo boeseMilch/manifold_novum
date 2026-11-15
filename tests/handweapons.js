@@ -82,5 +82,69 @@ for (const w of ['laser', 'heavy', 'repair']) {
   check(shots >= 8 && !missing && worstA < 0.002 && worstD < 1e-9 && worstO < 1e-9, `${w}, walking and turning: ${shots} shots, each down the sight at its press (worst ${(worstA * 180 / Math.PI).toFixed(4)}°; off its line by no more than the step walked that tick${missing ? `, ${missing} sights without a shot` : ''})`);
 }
 
+// aim assist (js/invader.js aimAssist): the laser fired with the keys / a controller within 5° of a target's edge
+// flies straight at it; further off, with the mouse, with the heavy blaster or the wrench, or with a wall in
+// between, the shot goes where it was aimed
+{
+  const deg = Math.PI / 180, wd = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+  const setup = (w = 'laser', tx = 27, ty = 8) => {
+    const G = loadGame([...NAMES, 'aimAssist', 'boltHitsBody', 'GFX', 'shotBlock']), p = G.player;
+    p.x = 22; p.y = 8; p.face = 0; p.inv.weapon = w; p.inv.cd = 0; G.boarding.bolts.length = 0;
+    G.spawnInvader('port'); const t = G.boarding.invaders[0]; Object.assign(t, { x: tx, y: ty, mode: 'inside', state: 'fight', hp: 3 });
+    return { G, p, t };
+  };
+  // the angle from the muzzle to the target's middle, and its half width seen from there
+  const geom = (G, p, t, a) => { const m = G.muzzleAt(p, a), lz = G.GFX.lift(m.z), y = t.y + lz - G.GFX.lift(0.45) / 2, d = Math.hypot(t.x - m.x, y - m.y); return { to: Math.atan2(y - m.y, t.x - m.x), half: Math.asin(0.42 * 1.1 / d), m }; };
+  // the aim that passes `off` beside the target's edge (side: +1 clockwise on screen), seen from the muzzle at that aim
+  const aimAt = (G, p, t, off, side = 1) => { let a = 0; for (let i = 0; i < 20; i++) { const g = geom(G, p, t, a); a = g.to + side * (g.half + off); } return a; };
+  const shot = (G) => { const b = G.boarding.bolts.at(-1); return b && Math.atan2(b.vy, b.vx); };
+  const hits = (G, p, t) => { const b = G.boarding.bolts.at(-1), x0 = b.x, y0 = b.y; b.x += b.vx * 0.5; b.y += b.vy * 0.5; const hp = t.hp; G.boltHitsBody(b, x0, y0); return t.hp < hp; };
+  for (const side of [1, -1]) {
+    const { G, p, t } = setup(), a = aimAt(G, p, t, 4 * deg, side);
+    G.attack(a); const s = shot(G), g2 = geom(G, p, t, a);
+    check(wd(s, a) > 3 * deg && wd(s, g2.to) <= g2.half && wd(p.face, a) < 1e-12 && hits(G, p, t),
+      `laser, keys, 4° ${side > 0 ? 'right' : 'left'} of the target: the shot snaps onto it and hits (aimed ${(a / deg).toFixed(1)}°, flew ${(s / deg).toFixed(1)}°)`);
+  }
+  {
+    const { G, p, t } = setup(), a = aimAt(G, p, t, 6.5 * deg);
+    G.attack(a);
+    check(wd(shot(G), a) < 1e-12 && !hits(G, p, t), '6.5° beside it: no snap, a miss');
+  }
+  {
+    const { G, p, t } = setup(), g = geom(G, p, t, 0), a = g.to + g.half * 0.5;
+    G.attack(a);
+    check(wd(shot(G), a) < 1e-12 && hits(G, p, t), 'a shot that hits anyway is left alone');
+  }
+  {
+    const { G, p, t } = setup(), a = aimAt(G, p, t, 4 * deg), far = [p.x + Math.cos(a) * 6, p.y + Math.sin(a) * 6];
+    G.attack(a, false, far); const s = shot(G), m = G.muzzleAt(p, a);
+    check(wd(s, Math.atan2(far[1] - m.y, far[0] - m.x)) < 1e-12, 'the mouse: the shot goes to the mouse, no snap');
+  }
+  for (const w of ['heavy', 'repair']) {
+    const { G, p, t } = setup(w), a = aimAt(G, p, t, 4 * deg);
+    G.attack(a);
+    check(wd(shot(G), a) < 1e-12, `${w}: no aim assist`);
+  }
+  {   // two targets: the one nearer the aim
+    const { G, p, t } = setup(); G.spawnInvader('port'); const u = G.boarding.invaders[1]; Object.assign(u, { x: 27, y: 9.3, mode: 'inside', state: 'fight', hp: 3 });
+    const a = aimAt(G, p, u, 1.5 * deg, -1), gt = geom(G, p, t, a), gu = geom(G, p, u, a);
+    G.attack(a); const s = shot(G);
+    check(wd(s, gu.to) <= gu.half + 1e-9 && wd(a, gt.to) - gt.half > 1.5 * deg && wd(a, gt.to) - gt.half < 5 * deg, `two targets within 5°: the one nearer the aim (${((wd(a, gt.to) - gt.half) / deg).toFixed(1)}° and 1.5° beside them)`);
+  }
+  {   // a wall in between: the target in the right cannon room, you in the bridge
+    const { G, p, t } = setup();
+    p.x = 28.2; p.y = 7; t.x = 32.4; t.y = 6.6;
+    const a = aimAt(G, p, t, 3 * deg), m = G.muzzleAt(p, a);
+    G.attack(a);
+    check(G.shotBlock(m.x, m.y, t.x, t.y) >= 0 && wd(shot(G) ?? a, a) < 1e-12, 'a wall between you and the target: no snap');
+  }
+  {   // the controller's laser sight shows the snapped line
+    const { G, p, t } = setup(), a = aimAt(G, p, t, 4 * deg);
+    G.localInput.stick = { aim: [Math.cos(a), Math.sin(a)], walk: null }; p.face = a;
+    const h = G.handSight(); G.attack(a);
+    check(h && wd(h.a, shot(G)) < 1e-12 && wd(h.a, a) > 3 * deg, 'the laser sight points along the snapped shot');
+  }
+}
+
 console.log(failed ? `\n${failed} FAILED` : '\nall passed');
 process.exit(failed ? 1 : 0);

@@ -345,7 +345,16 @@ function captainBoltTest(b, x0, y0) {
   const kb = segBody(x0, y0, b.x, b.y, b.z, B.x, B.y, CAPT_BODY.r * (B.state === 'dazed' ? hitGrow(b) : 1), CAPT_BODY.top);
   if (kg < 0 && kb < 0) return null;
   const gen = kg >= 0 && (kb < 0 || kg <= kb), k = gen ? kg : kb;
-  return { k, hit: () => captBoltHit(B, b, gen) };
+  return { k, gen, hit: () => captBoltHit(B, b, gen) };
+}
+// What the laser's aim assist snaps to (js/invader.js boltTargets): the generator, as long as the line to it doesn't
+// meet his body first (from the front the shield would only ripple the shot off); dazed, his body too.
+function captainTargets() {
+  const B = dk.boss;
+  if (!B || B.hidden || B.state === 'gone' || dk.dock?.kind !== 'base') return [];
+  const G = captGen(B), out = [{ x: G.x, y: G.y - GFX.lift(CAPT_GEN_Z), r: CAPT_GEN_R, top: 0, ok: (x0, y0, x1, y1, z) => !!captainBoltTest({ x: x1, y: y1, z }, x0, y0)?.gen }];
+  if (B.state === 'dazed') out.push({ x: B.x, y: B.y, ...CAPT_BODY });
+  return out;
 }
 function captBoltHit(B, b, gen) {
   const from = crew.filter(c => c.mode === 'inside').sort((p, q) => Math.hypot(p.x - (b.ox ?? b.x), p.y - (b.oy ?? b.y)) - Math.hypot(q.x - (b.ox ?? b.x), q.y - (b.oy ?? b.y)))[0];

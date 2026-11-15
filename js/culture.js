@@ -249,6 +249,17 @@ function s7CreepPts(G, d) {
   for (let k = Math.max(0, d - S7_CREEP_HIT_LEN); k <= d + 1e-6; k += 0.25) out.push(s7PointAt(G.creep, k));
   return out;
 }
+// What the laser's aim assist snaps to (js/invader.js boltTargets): what s7BoltHit below tests, as circles on the floor.
+function s7Targets() {
+  const s = S7();
+  if (!s) return [];
+  const G = s7Geom(dk.dock.side), out = [], C = s.creep;
+  for (const [i, T0] of s.tendrils.entries()) if (s7Alive(T0)) for (const p of s7Body(T0, i, 8)) out.push({ x: p.x, y: p.y, r: 0.35, top: 0, flat: true });
+  if (C.dead) return out;
+  if (C.wrapped) { const w = G.creep[G.creep.length - 1]; out.push({ x: w.x, y: w.y, r: 0.55, top: 0, flat: true }); }
+  else for (const p of s7CreepPts(G, C.d)) out.push({ x: p.x, y: p.y, r: 0.3, top: 0, flat: true });
+  return out;
+}
 // One of our bolts (from x0, y0 to b.x, b.y this step) against S-7: true if it hit (the bolt is spent).
 function s7BoltHit(b, x0, y0) {
   const s = S7();

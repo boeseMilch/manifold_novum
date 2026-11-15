@@ -124,6 +124,9 @@ On the other panels (the patch board, the derelict lab's junction, PIN pads, the
 between the spots and A presses the highlighted one; B closes the panel.
 Aiming a hand weapon (laser, heavy blaster, the repair kit's wrench) with the right stick shows a red laser sight
 from its muzzle, up to the first wall: the shot flies right down it.
+Aim assist: the laser gun fired with Space / a controller (not with the mouse) snaps to a target when your aim passes
+within 5° of its edge, in range and with no wall in between; the laser sight shows the snapped line. The heavy blaster,
+the wrench and the ship's cannons fly exactly where you aim.
 Panels and mini-games that need the mouse still need the mouse. In the menus (main menu, lobby, local players, Locker /
 Shipyard, the tutorial's question) the stick / d-pad jumps from button to button, **A** presses (on a dropdown: its
 next choice; a slider: left / right move it), **B** closes the Locker / Shipyard, **Start** goes to PLAY SOLO / START
