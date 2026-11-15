@@ -4876,3 +4876,56 @@ Five reviewers went through every commit (code, the assets themselves, the game 
   script list from index.html (js/cables.js was never loaded); seeded dice where tests flaked.
 Left to the owner (REVIEW.md): solo balance of chapter 1 in the playtest, the model's 1.3 parts per big hit, one-shot
 knock-outs in a cannon, pirates taking the last repair kit, pay by difficulty, the cel-shaded explosions.
+
+## Split screen in Chrome; integrated graphics: automatic resolution, a Graphics setting (2026-11-14)
+
+Request: "2player split screen is broken" (seen on a Mac with Chrome; fine in Firefox), then "it's a slideshow".
+- **Chrome: a local player's view showed its HUD over nothing.** A local player's view is a hidden iframe until the
+  mission starts (js/local.js), so its window is 0 × 0; Chromium runs its frames all the same, Firefox doesn't.
+  js/game.js `resize()` made the layout 0 / 0 = NaN × NaN, and since the camera keeps the prompt below the top bar
+  (2026-11-10, `cameraTarget`'s `south`, which uses VH) its y target was NaN for those frames; the camera glides from
+  where it was, so its y stayed NaN for good: nothing in GL, the 2D marks wherever the last transform was. Now a view
+  without a size is `VIEW.off`: it keeps the layout it had (760 × 760 before its first), draws nothing (`frame`
+  skips `render`: no more hidden views drawn in the lobby either), and `updateCamera` starts from its target
+  whenever the camera isn't a number. Reproduced and checked in headless Chromium (the view's `cam.y` null before,
+  the ship on screen after); tests/local.js (fails on the code before).
+
+The slideshow: 2-player split screen was a slideshow on a laptop without a graphics card (Core Ultra 7 365, the small Intel
+chip, 2880×1800 at 120 Hz, Firefox at devicePixelRatio 1); "probably we are just not using the integrated graphics
+chip correctly", "maybe we should also have a resolution setting".
+- Measured (headless Chromium on the real GPU: `--use-angle=gl --ignore-gpu-blocklist`, timer queries per render
+  pass; headless Firefox over WebDriver BiDi; the user's own Firefox was running the game on the same GPU, so the
+  absolute numbers are high): solo 12 fps, of an 83 ms frame 5 ms script. The GL passes at 2048×1280: ~56 ms of GPU
+  (lit floor and wall sprites ~27, shadows ~17, the lit 'mid' layer ~5, bloom ~3); `?noshadows` 29 ms; at half the
+  pixels 33 ms; floor wear off: no difference. Split screen was worse for a second reason: each view was capped at
+  2048 px wide on its own, so two halves of that screen drew 4.7 million pixels where solo drew 2.6. Headless
+  Firefox: solo 8 fps (script 13 ms), two views 6 fps (script 21 ms).
+- **Split views share the screen's scale** (js/gfx.js `screenPx`): a view is drawn at the scale the whole screen
+  would get (2048 px across the screen, not across the view), so 2-4 views together cost what solo does.
+- **Automatic resolution** (the default; js/gfx.js `autoScaler`, steered once a frame by `GFX.pace` from js/game.js
+  `frame`): a factor on the internal resolution, 0.4 … 1 of the cap (never under 800 px across the screen). Frames
+  slower than 50 a second (mean of a 0.6 s window, hitches left out) for two windows: down, by what the frame time
+  asks, until they are 55 a second. A step that makes them no faster means it wasn't the pixels: back, and that
+  frame time is what the machine does (`best`). Not slow for a while: it asks for a step up (or, when only as good
+  as `best`, in turn a step down: do fewer pixels help by now?); an ask that fails is taken back and the wait
+  doubles (5 s … 5 min). The page's own script taking most of the frame (times the views on its thread: `splitViews`)
+  never counts as slow. What it found is kept in localStorage `mn-gfx-auto` (every mission is a fresh page). In
+  split screen the host's page steers and the views take its factor (`window.gfxAutoFactor`), so the halves are
+  equally sharp. A fast machine never leaves the full resolution (same picture as before).
+- **GRAPHICS in the main menu** (index.html `#lobby-gfx`, js/net.js): Resolution (automatic, or 100 / 75 / 50 /
+  35 % of the screen's own pixels: `mn-gfx-scale`, as `?gfxscale=` always did; `?gfxscale=auto` clears it) and
+  Shadows on / off (`mn-gfx-shadows`, as `?noshadows`), with what is drawn now next to it. This browser's, not the
+  profile's (no save format change). Views follow a change at once (the `storage` event). The HUD canvas stays at
+  the screen's resolution: text and panels are as sharp as ever.
+- The shadow blur reads only the layers that hold a light's channel this frame (`uLayers`; 2 of 7 usually): the
+  same picture; the frame's GL passes 56 → 52 ms in one (noisy) measurement at 2048×1280.
+- After (same laptop, same load): headless Chromium solo 12 → 28 fps and two views 12 → 28-30 (that harness tops out
+  at 30 at this window size: an empty 2D canvas page gets 38 there); headless Firefox solo 8 → 35, two views 6 → 30.
+  It settles at about 900×560 for the 3D picture with shadows on (soft, the HUD sharp); shadows off buys the
+  sharpness back.
+- Tests: tests/gfxauto.js (model machines: fast, integrated, a little slow, script-bound, a limit that isn't the
+  pixels, hopeless, hitches, what is remembered).
+- Not done: measured in the user's own (windowed) Firefox; the lit sprite shader itself (every light of the tile
+  per pixel, the wall and area loops, no early depth test because it writes gl_FragDepth) is the real cost and
+  would be the next place to look; Firefox's main thread with two views (21 ms a frame) caps split screen at
+  about 45 fps there whatever the GPU does.

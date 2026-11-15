@@ -228,5 +228,7 @@ its usual save, the others get their own (by name, in this browser), so the same
   - `index.html#do=4,8&w=5` runs debug-menu entries 4 and 8 and fast-forwards 5 seconds
     (solo, no lobby).
   - `index.html?classic` draws the old top-down 2D look instead of the sprites (also the automatic
-    fallback without WebGL2, or when `index.html` is opened as a file). `?gfxscale=0.75` changes the
-    sprite renderer's internal resolution (remembered; the default renders at most 2048 px wide).
+    fallback without WebGL2, or when `index.html` is opened as a file). `?gfxscale=0.75` fixes the
+    sprite renderer's internal resolution (remembered; `?gfxscale=auto` or the main menu's GRAPHICS
+    setting: automatic again, at most 2048 px across the screen and less while the frames come too
+    slowly; shadows on / off is there too).

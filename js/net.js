@@ -248,6 +248,28 @@ function netClientMain() {
     markChosen(); hello();
   };
   $('room-shipyard').onclick = () => lobbyUI.shop('shipyard');
+  // Graphics (this browser's own, not the profile's: js/gfx.js keeps them in localStorage): the picture's resolution
+  // (automatic, or a fixed share of the screen's own pixels) and the shadows. Split screen: every view follows.
+  if ($('lobby-gfx')) {
+    const resBox = $('lobby-res'), shBox = $('lobby-shadows'), note = $('lobby-gfx-note');
+    if (!GFX.on) $('lobby-gfx').hidden = true;         // (?classic, no WebGL2: nothing to set)
+    else {
+      const fixed = () => { const r = GFX.resolution(); return r.auto ? null : r.scale; };
+      const steps = [1, 0.75, 0.5, 0.35], cur = fixed();
+      if (cur && !steps.includes(cur)) steps.push(cur);    // (one set by hand: ?gfxscale=0.6)
+      resBox.innerHTML = '<option value="auto">Resolution: automatic</option>' + steps.sort((p, q) => q - p).map(k => `<option value="${k}">Resolution: ${Math.round(k * 100)} %</option>`).join('');
+      shBox.innerHTML = '<option value="1">Shadows: on</option><option value="0">Shadows: off (faster)</option>';
+      const show = () => {
+        const r = GFX.resolution();
+        resBox.value = r.auto ? 'auto' : String(r.scale); shBox.value = GFX.shadows ? '1' : '0';
+        note.textContent = r.w > 1 ? `${r.w} × ${r.h}` : '';
+      };
+      resBox.onchange = () => { GFX.setScale(resBox.value === 'auto' ? null : +resBox.value); setTimeout(show, 100); };
+      shBox.onchange = () => { GFX.setShadows(shBox.value === '1'); show(); };
+      show();
+      setInterval(() => { if (!lobby.hidden && !$('menu').hidden && document.activeElement !== resBox && document.activeElement !== shBox) show(); }, 1000);   // (what "automatic" is drawing at now)
+    }
+  }
   const markChosen = () => lobbyUI.render(chosen);
   // Difficulty slider (-1 hard, 0 normal, 1 easy, 2 very easy; the slider runs very easy → hard): the host's choice,
   // remembered in this browser.

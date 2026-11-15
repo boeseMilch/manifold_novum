@@ -505,6 +505,10 @@ const bannerHere = (b) => {
 };
 // the shared column in this view: not in a split mission (the host's page draws it in a strip of its own, js/local.js)
 const splitSidebar = () => !SPLIT && !(typeof localSplit === 'function' && localSplit());
+// how many views are drawn on this screen (by this one thread): 1, or a split mission's 2-4 (js/gfx.js pace)
+const splitViews = () => {
+  try { const f = SPLIT ? window.parent.localViews : (typeof localViews === 'function' ? localViews : null); return (f && f()) || 1; } catch (e) { return 1; }
+};
 const splitOwnKey = () => {                          // null: the usual profile; else this player's own localStorage key
   if (!SPLIT) return null;
   let own = null; try { own = localStorage.getItem('mn-name'); } catch (e) { /* none */ }

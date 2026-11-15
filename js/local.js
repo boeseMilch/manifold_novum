@@ -298,6 +298,7 @@ const localUI = (() => {
   window.localIds = () => [typeof me !== 'undefined' ? me.id : null, ...players.map(p => { try { return p.frame?.contentWindow?.splitApi?.id; } catch (e) { return null; } })].filter(x => x != null);   // (who plays at this screen: js/progress.js bannerHere)
   window.localSharedSlot = () => (inGame && active() ? order.find(s => s !== undefined) : 1);   // (the banners: the top-left view)
   window.localSplit = () => inGame && active();      // (in a split mission no view draws the shared column: the strip does)
+  window.localViews = () => (inGame && active() ? 1 + players.length : 1);   // (how many views this screen draws: js/progress.js splitViews)
   // The strip: the shared column drawn here, every frame (js/game.js render), on a canvas of its own; a click on a
   // plate claims it as in a view (js/claims.js)
   let sc = null;

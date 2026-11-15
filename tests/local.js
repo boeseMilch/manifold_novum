@@ -73,6 +73,29 @@ function page({ w = 1280, h = 720, stored = {}, name = 'Ripley' } = {}) {
   check(full.s === 1, 'half of a 1920 × 1080 screen: full size');
   check(quarter.s > 0.45 && quarter.vh >= 760, `a quarter (555 × 359): as tall a layout as before (${quarter.vh} px at ${quarter.s.toFixed(2)})`);
 }
+// --- a view that isn't shown yet: a local player's view is a hidden iframe (0 × 0) until the mission starts, and
+// Chromium runs its frames all the same. Its layout was 0 / 0 = NaN, the camera's y took the NaN and kept it: the
+// second player's view in Chrome was its HUD over nothing (2026-11-14; Firefox runs no frames in a hidden iframe).
+{
+  const win = { addEventListener: (n, f) => { win.on[n] = f; }, on: {}, innerWidth: 0, innerHeight: 0, devicePixelRatio: 1 };
+  const G = loadGame(['VIEW', 'VW', 'VH', 'cam', 'updateCamera', 'camera', 'player', 'startMission', 'mission'], { window: win, URLSearchParams, location: { hash: '', search: '?split=2&name=Zoe&input=kbm' } });
+  check(G.VIEW.off && G.VW > 0 && G.VH > 0, `a hidden view (0 × 0): marked as not shown, with a layout it can work with (${G.VW} × ${G.VH}, not NaN)`);
+  G.startMission('c1');
+  for (let i = 0; i < 30; i++) G.updateCamera(1 / 60);
+  const hidden = G.camera();
+  check([G.cam.x, G.cam.y, G.cam.zoom, hidden.ox, hidden.oy].every(Number.isFinite), 'its camera stays on numbers while it is hidden');
+  win.innerWidth = 694; win.innerHeight = 900; win.on.resize();          // the mission starts: the view gets its half of the screen
+  for (let i = 0; i < 30; i++) G.updateCamera(1 / 60);
+  const shown = G.camera();
+  check(!G.VIEW.off && G.VW === 760 && Math.abs(G.VIEW.s - 694 / 760) < 1e-9 && [shown.ox, shown.oy, shown.zoom].every(Number.isFinite) && Math.abs(G.cam.y - G.player.y) < 6,
+    `shown: laid out for its part of the screen (${G.VW} × ${G.VH} at ${G.VIEW.s.toFixed(2)}), the camera at its player (y ${G.cam.y.toFixed(1)})`);
+  win.innerWidth = 0; win.innerHeight = 0; win.on.resize();              // hidden again (back in the lobby): it keeps its layout
+  check(G.VIEW.off && G.VW === 760 && G.VH > 0, 'hidden again: the layout it had');
+  G.cam.x = NaN; G.cam.y = NaN; G.updateCamera(1 / 60);
+  check(Number.isFinite(G.cam.x) && Number.isFinite(G.cam.y), 'a camera that did end up on NaN is back on its target with the next frame (it used to glide from NaN, to NaN)');
+  const src = fs.readFileSync(path.join(ROOT, 'js', 'game.js'), 'utf8');
+  check(/if \(!VIEW\.off\) try \{ render\(/.test(src), 'and a view that isn\'t shown draws nothing (js/game.js frame)');
+}
 // --- colours go by the player's id in the game, not by name: a guest named like a local player has their own
 {
   const P = page(); P.add();

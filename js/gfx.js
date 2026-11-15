@@ -110,8 +110,10 @@
 // shown within R of the emitter at grow. Drawn after all sprites (before the bloom), additive, unlit,
 // depth-tested against the walls and the crew; up to 8 impacts flare the cells around them and ripple.
 
-// Internal resolution: min(1, 2048 / physical width) of the screen, upscaled with linear filtering;
-// change it with ?gfxscale=0.75 (remembered) or GFX.setScale(k) (null = default).
+// Internal resolution: automatic by default: at most 2048 px across the whole screen (a split-screen view gets the
+// screen's scale, not its own), less when the frames come too slowly (autoScaler, GFX.pace), upscaled with linear
+// filtering; fixed with the menu's Resolution setting, ?gfxscale=0.75 (remembered; ?gfxscale=auto: automatic again)
+// or GFX.setScale(k) (null = automatic). GFX.resolution(): what it is now.
 // Other helpers: GFX.has(name), GFX.ready(name), GFX.info(name) (the sprites.json entry),
 // GFX.frameIndex(name, angle, f), GFX.toScreen(x, y, z) (CSS px), GFX.onScreen(x, y, z, r) (can anything within r of it show), GFX.lift(z) (how many ground-y
 // units a height z shifts things up on screen; 0 in the classic view), GFX.pickAt(cssX, cssY), GFX.stats.
@@ -124,6 +126,7 @@ const GFX = (() => {
     begin: noop, end: noop, sprite: () => false, lighting: noop, backdrop: noop, overlay: () => false, dome: noop, layer2d: () => null, canvasSprite: () => null, text: () => null,
     has: () => false, ready: () => false, info: () => null, frameIndex: () => 0, preload: noop, stream: noop, streaming: () => 0,
     setScale: noop, setShadows: noop, setScratches: noop, setPathScratches: noop, toScreen: () => [0, 0], onScreen: () => true, pickAt: () => null, disable: noop,
+    pace: noop, resolution: () => null,
   };
   api.lift = (z) => (api.on ? z * COS / SIN : 0);    // 0 in the classic view
   // The lighting's ambient areas: the shader takes MAX_AREAS of them. Our ship has 18, with the pirate base docked
@@ -145,6 +148,94 @@ const GFX = (() => {
     return out;
   }
   api.MAX_AREAS = MAX_AREAS; api.fitAreas = fitAreas;
+  // The automatic resolution (the default; 2026-11-14, a laptop with integrated graphics: 12 fps solo, 6 in split
+  // screen, nearly all of it the GPU shading 2.6 million pixels of lit sprites and shadows). A factor `a` (min..1)
+  // on the internal resolution, steered by how long the frames really take (a window of at least 0.6 s and 8
+  // frames):
+  //   - slower than SLOW ms a frame (under 50 a second), two windows running: a goes down, by what the frame time
+  //     says is needed (pixels ∝ a²; at most to 0.7 of itself per step), a step a window, until the frames are
+  //     GOOD (55 a second: of a 60 Hz screen's frames, one in twelve late at most).
+  //   - a step that doesn't make the frames at least a tenth faster: it wasn't the pixels (the browser putting
+  //     the page together, another program on the GPU, a screen that only shows every second frame). Back one
+  //     step; that frame time is `best`, what this machine does, and counts as fine from then on (until frames
+  //     come faster again). The same at the floor.
+  //   - not slow for `wait` seconds: it asks for something. A step up (it stays if the next window is still fine,
+  //     and the next step follows at once), or, when the frames aren't GOOD, only as good as `best`, in turn a
+  //     step down (do fewer pixels help by now?). An ask that fails is taken back and `wait` doubles (5 s … 5 min):
+  //     a machine that can't do more is asked about once a mission, not every few seconds.
+  //   - the page's own script is what takes the time (its share of the frame, times the views sharing this
+  //     thread, is CPU_BOUND or more): fewer pixels wouldn't help, so that is fine, never slow.
+  // Frames more than a second apart (a hidden tab, a hiccup) and the first few after a change (the render
+  // targets are rebuilt) aren't counted. frame() → true when a changed; rev counts every change worth
+  // remembering (a, wait, best). No DOM: tests/gfxauto.js runs it.
+  const AUTO = { GOOD: 18, SLOW: 20, AIM: 15, CPU_BOUND: 0.7, DOWN: [0.7, 0.92], UP: [1.1, 1.25], WAIT: [5, 300], SETTLE: 6, WINDOW: [600, 8], WORST: 250, BEST: [1.15, 1.3], RECHECK: 20 };
+  function autoScaler(from = {}) {
+    const clampN = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const S = { a: clampN(+from.a || 1, 0.05, 1), wait: clampN(+from.wait || AUTO.WAIT[0], AUTO.WAIT[0], AUTO.WAIT[1]), best: +from.best > AUTO.GOOD ? Math.min(+from.best, AUTO.WORST) : 0, rev: 0, last: null };
+    if (S.best) S.wait = Math.min(S.wait, AUTO.RECHECK);   // (a limit from an earlier page: checked early on this one; it may be gone)
+    let buf = [], js = 0, span = 0, settle = 0, slowRuns = 0, fineFor = 0, upNext = true;
+    let mode = 'hold', was = null;                       // 'up' / 'down': a step being tried, from `was` { a, med, test }
+    const set = (a) => { S.a = a; S.rev++; settle = AUTO.SETTLE; buf = []; js = 0; span = 0; return true; };
+    const learn = (ms) => { S.best = ms > AUTO.GOOD ? Math.min(ms, AUTO.WORST) : 0; S.rev++; };
+    const later = () => { S.wait = Math.min(AUTO.WAIT[1], S.wait * 2); S.rev++; };
+    const down = (med, min) => Math.max(min, S.a * clampN(Math.sqrt(AUTO.AIM / med), AUTO.DOWN[0], AUTO.DOWN[1]));
+    S.frame = (dt, jsMs = 0, views = 1, min = 0.4) => {
+      if (S.a < min) { mode = 'hold'; return set(min); }   // (the window got smaller: its floor is higher)
+      if (!(dt > 0) || dt > 1000) return false;
+      if (settle > 0) { settle--; return false; }
+      buf.push(dt); js += jsMs; span += dt;
+      if (!(buf.length >= AUTO.WINDOW[1] && span >= AUTO.WINDOW[0]) && !(buf.length >= 3 && span >= 2000)) return false;
+      // (the frame time: the mean. A screen shows whole refreshes only, so a GPU that needs 20 ms shows frames of
+      //  17 and 33 in turn: their median jumps between the two, their mean says 20. Without the hitches: frames
+      //  three times the median and more)
+      const sorted = buf.slice().sort((p, q) => p - q), cut = sorted[sorted.length >> 1] * 3, secs = span / 1000;
+      let med = 0, n = 0; for (const v of sorted) if (v < cut) { med += v; n++; }
+      med /= n;
+      const script = js / buf.length * views / med >= AUTO.CPU_BOUND;
+      buf = []; js = 0; span = 0;
+      if (S.best && med < S.best) learn(med);            // (it does better than we thought it could)
+      const fine = med <= Math.max(AUTO.GOOD, S.best * AUTO.BEST[0]) || script, slow = med > Math.max(AUTO.SLOW, S.best * AUTO.BEST[1]) && !script;
+      S.last = { med, script, slow, fine, mode };
+      if (mode === 'up') {                               // the step up: keep it (and try the next at once), or back and ask later
+        mode = 'hold'; fineFor = 0;
+        if (fine) { S.wait = AUTO.WAIT[0]; S.rev++; fineFor = S.wait; return false; }
+        later();
+        return set(was.a);
+      }
+      if (mode === 'down') {                             // the step down: did it help?
+        if (script || med <= AUTO.GOOD) { mode = 'hold'; fineFor = 0; if (was.test) { S.wait = AUTO.WAIT[0]; S.rev++; } return false; }
+        if (med > was.med * 0.9) {                       // no: not the pixels. Back, and that is what it does
+          mode = 'hold'; fineFor = 0; learn(was.med); if (was.test) later();
+          return set(was.a);
+        }
+        if (S.a <= min) { mode = 'hold'; learn(med); S.wait = AUTO.WAIT[0]; fineFor = S.wait; return false; }   // the floor: now the sharpest picture that keeps this
+        was = { a: S.a, med, test: false };
+        return set(down(med, min));
+      }
+      if (slow) {
+        fineFor = 0;
+        if (++slowRuns < 2) return false;
+        slowRuns = 0;
+        if (S.a <= min) { learn(med); return false; }    // at the floor already: this is what it does
+        mode = 'down'; was = { a: S.a, med, test: false };
+        return set(down(med, min));
+      }
+      slowRuns = 0;
+      fineFor += secs;                                   // (not slow: time to ask for something?)
+      if (fineFor < S.wait) return false;
+      const canUp = fine && S.a < 1, canDown = med > AUTO.GOOD && !script && S.a > min;   // (down: not GOOD, only as good as `best`)
+      if (canUp && (!canDown || upNext)) {
+        upNext = false; mode = 'up'; was = { a: S.a, med };
+        return set(Math.min(1, S.a * clampN(Math.sqrt(AUTO.AIM / med), AUTO.UP[0], AUTO.UP[1])));
+      }
+      if (canDown) { upNext = true; mode = 'down'; was = { a: S.a, med, test: true }; return set(down(med, min)); }
+      return false;
+    };
+    return S;
+  }
+  // How small the automatic resolution may get (of the screen's cap): 0.4, but never under 800 px across the screen
+  const autoFloor = (capPx) => Math.max(0.4, Math.min(1, 800 / Math.max(1, capPx)));
+  api.AUTO = AUTO; api.autoScaler = autoScaler; api.autoFloor = autoFloor;
   const off = (why) => { api.reason = why; return api; };
   if (typeof window === 'undefined' || typeof document === 'undefined' || typeof document.createElement !== 'function') return off('no DOM');
   const search = (typeof location !== 'undefined' && location.search) || '';
@@ -896,6 +987,7 @@ precision highp float;
 uniform highp sampler2DArray uV;
 uniform highp sampler2D uD;
 uniform ivec2 uDir;
+uniform int uLayers;      // the layers that hold a light's channel this frame (cullLights): only those are read and blurred, the rest stay 1
 ${Array.from({ length: SH_LAYERS }, (_, i) => `layout(location = ${i}) out vec4 outV${i};`).join('\n')}
 layout(location = ${SH_LAYERS}) out vec4 outD;
 vec4 v[${SH_LAYERS}];
@@ -910,10 +1002,10 @@ void main() {
     float fi = float(i), dd = (texelFetch(uD, q, 0).r - d0) / (0.08 + 0.04 * abs(fi));
     float w = exp(-fi * fi / 8.0 - dd * dd);
     if (w < 0.004) continue;
-    for (int j = 0; j < ${SH_LAYERS}; j++) v[j] += texelFetch(uV, ivec3(q, j), 0) * w;
+    for (int j = 0; j < ${SH_LAYERS}; j++) { if (j >= uLayers) break; v[j] += texelFetch(uV, ivec3(q, j), 0) * w; }
     ws += w;
   }
-  for (int j = 0; j < ${SH_LAYERS}; j++) v[j] = ws > 0.0 ? v[j] / ws : vec4(1.0);
+  for (int j = 0; j < ${SH_LAYERS}; j++) v[j] = ws > 0.0 && j < uLayers ? v[j] / ws : vec4(1.0);
   ${Array.from({ length: SH_LAYERS }, (_, i) => `outV${i} = v[${i}];`).join(' ')}
 }`;
   const FS_BRIGHT = `#version 300 es
@@ -1441,8 +1533,55 @@ void main() {
   const ovGeo = new Float32Array(MAX_OV * 4), ovT = new Float32Array(MAX_OV * 4), ovCol = new Float32Array(MAX_OV * 12);
   let numOv = 0;                                     // this frame's GFX.overlay()s
   let light = { ambient: [1, 1, 1], sun: null, areas: [], lights: [] };
+  // The internal resolution. userScale: a fixed share of the screen's own pixels (the menu's Resolution setting,
+  // ?gfxscale=0.75, GFX.setScale(k); remembered in 'mn-gfx-scale'). None (?gfxscale=auto, GFX.setScale(null)): automatic,
+  // the cap (2048 px across the whole screen) times the factor autoScaler() steers by the frame times
+  // (GFX.pace, called once a frame by js/game.js); what it found is remembered ('mn-gfx-auto': every mission is a
+  // fresh page, which would otherwise start at the full resolution and stutter down again each time).
   let userScale = null;
-  try { const q = search.match(/[?&]gfxscale=([\d.]+)/); if (q) { userScale = +q[1]; localStorage.setItem('mn-gfx-scale', q[1]); } else { const s = localStorage.getItem('mn-gfx-scale'); if (s) userScale = +s; } } catch (e) { /* no storage */ }
+  const okScale = (v) => (Number.isFinite(+v) && +v > 0 ? Math.max(0.1, Math.min(2, +v)) : null);
+  try {
+    const q = search.match(/[?&]gfxscale=([\d.]+|auto)/);
+    if (q && q[1] === 'auto') localStorage.removeItem('mn-gfx-scale');
+    else if (q) { userScale = okScale(q[1]); localStorage.setItem('mn-gfx-scale', q[1]); }
+    else userScale = okScale(localStorage.getItem('mn-gfx-scale'));
+  } catch (e) { /* no storage */ }
+  let auto = autoScaler();
+  try { auto = autoScaler(JSON.parse(localStorage.getItem('mn-gfx-auto')) || {}); } catch (e) { /* no storage, or not ours */ }
+  // The whole screen's width in its own pixels: a split-screen view (an iframe on the host's page, js/local.js) is
+  // drawn at the scale the whole screen would get, so two to four views together cost what one full view does
+  // (each used to be capped on its own: two halves of a 2880 px screen drew 1.8 times the pixels of the solo game).
+  const screenPx = () => {
+    let w = window.innerWidth;
+    try { if (window.parent !== window && window.parent.innerWidth > w) w = window.parent.innerWidth; } catch (e) { /* not our page */ }
+    return Math.max(1, w * (window.devicePixelRatio || 1));
+  };
+  // A split-screen view takes the factor of the host's page: one controller for the whole screen (the views share
+  // its thread and its GPU; each steering by itself, one view's try for more looked like the other's slow frames,
+  // and the two halves ended up at different sharpness)
+  // (window.gfxAutoFactor: GFX itself is a const, not a property of the window, so the views can't reach it)
+  const hostFactor = () => {
+    try { const f = window.parent !== window && window.parent.gfxAutoFactor; return typeof f === 'function' ? f : null; } catch (e) { return null; }
+  };
+  const autoA = () => { const f = hostFactor(); return f ? f() : auto.a; };
+  window.gfxAutoFactor = () => auto.a;
+  let paceAt = 0, paceFrame = -1;
+  // Once a frame, after it is drawn (js/game.js frame): jsMs, how long this page's script took for it; views, how
+  // many views share this thread (split screen). Steers the automatic resolution.
+  function pace(jsMs, views = 1) {
+    const now = performance.now(), dt = paceAt ? now - paceAt : 0, drew = frameNo !== paceFrame;
+    paceAt = now; paceFrame = frameNo;
+    if (userScale || !drew || document.hidden || gl.isContextLost() || hostFactor()) return;
+    const cap = Math.min(screenPx(), 2048);
+    const rev = auto.rev;
+    auto.frame(dt, jsMs, Math.max(1, views | 0), autoFloor(cap));
+    if (auto.rev !== rev) try { localStorage.setItem('mn-gfx-auto', JSON.stringify({ a: +auto.a.toFixed(3), wait: auto.wait, best: +auto.best.toFixed(1) })); } catch (e) { /* no storage */ }
+  }
+  // the settings changed in another view of this screen (the host's menu; js/local.js's views are pages of their own)
+  if (typeof window.addEventListener === 'function') window.addEventListener('storage', (e) => {
+    if (e.key === 'mn-gfx-scale') userScale = okScale(e.newValue);
+    else if (e.key === 'mn-gfx-shadows') { shadowsWanted = e.newValue !== '0'; if (RT) RT.w = -1; }
+  });
 
   // 2D layers composited into the GL picture. What each frame's drawing covers is kept per DT x DT tile
   // (L.tiles: 1 = drawn this frame, 2 = drawn last frame, so cleared now and uploaded again) and as one box,
@@ -1678,7 +1817,7 @@ void main() {
     const Vs = typeof VIEW !== 'undefined' ? VIEW : { x: 0, y: 0, s: 1 };
     const vw = Math.max(1, typeof VW !== 'undefined' && VW ? VW : window.innerWidth), vh = Math.max(1, typeof VH !== 'undefined' && VH ? VH : window.innerHeight);
     const dpr = (window.devicePixelRatio || 1) * Vs.s;
-    const scale = userScale || Math.min(1, 2048 / (vw * dpr));
+    const scale = userScale || Math.min(1, 2048 / screenPx()) * autoA();
     W = Math.max(1, Math.round(vw * dpr * scale)); H = Math.max(1, Math.round(vh * dpr * scale));
     if (glc.width !== W || glc.height !== H) { glc.width = W; glc.height = H; }
     glc.style.width = vw * Vs.s + 'px'; glc.style.height = vh * Vs.s + 'px'; glc.style.left = Vs.x + 'px'; glc.style.top = Vs.y + 'px';
@@ -1798,6 +1937,7 @@ void main() {
   // no other light whose screen box (plus the blur's reach) overlaps uses; the rest (-1) march per pixel.
   const SH_MARGIN = (SH_BLUR + 2) * SH_DIV;
   const chBoxes = Array.from({ length: SH_CH }, () => []);
+  let shLayers = SH_LAYERS;
   function cullLights(softOn) {
     const vis = [];
     for (const l of light.lights || []) {
@@ -1850,6 +1990,10 @@ void main() {
     else gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, tileW, tileH, gl.RED_INTEGER, gl.UNSIGNED_BYTE, tileData);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     api.stats.lights = vis.length;
+    // the layers of the soft-shadow buffers in use (channels are handed out lowest first): the blur reads only those
+    // (7 layers × 9 taps × 2 passes for the 2 that usually hold something was a fifth of the shadows' GPU time)
+    shLayers = 0;
+    chBoxes.forEach((B, c) => { if (B.length) shLayers = (c >> 2) + 1; });
     api.stats.shadow = { soft: chBoxes.reduce((n, B) => n + B.length, 0), channels: chBoxes.filter(B => B.length).length, marched };
   }
 
@@ -1887,7 +2031,7 @@ void main() {
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.useProgram(P.shBlur.p);
     const ub = P.shBlur.u;
-    gl.uniform1i(ub.uV, 0); gl.uniform1i(ub.uD, 1);
+    gl.uniform1i(ub.uV, 0); gl.uniform1i(ub.uD, 1); gl.uniform1i(ub.uLayers, shLayers);
     for (const [src, dst, dx, dy] of [[A, B, 1, 0], [B, A, 0, 1]]) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
       bindArr(0, src.v); bindTex(1, src.d);
@@ -2131,7 +2275,10 @@ void main() {
     preload: (groups) => { if (META) for (const g of groups) (META.pages[g] || []).forEach((_, i) => page(g, i)); },
     stream,
     streaming: () => STREAM.length + Object.values(PAGES).filter(p => p.state !== 'ready' && p.state !== 'failed').length,   // (pages still to come)
-    setScale: (k) => { userScale = k || null; try { if (k) localStorage.setItem('mn-gfx-scale', String(k)); else localStorage.removeItem('mn-gfx-scale'); } catch (e) { /* no storage */ } },
+    setScale: (k) => { userScale = okScale(k); try { if (userScale) localStorage.setItem('mn-gfx-scale', String(userScale)); else localStorage.removeItem('mn-gfx-scale'); } catch (e) { /* no storage */ } },
+    pace,
+    // what the picture is drawn at now: { auto (true: steered by the frame times), scale (of the screen's own pixels), w, h }
+    resolution: () => ({ auto: !userScale, scale: userScale || Math.min(1, 2048 / screenPx()) * autoA(), w: W, h: H }),
     toScreen: (x, y, z = 0) => { const [sx, sy] = toDev(x, y, z); return [sx / K, sy / K]; },
     // whether anything within r (layout units, on screen) of (x, y, z) can show this frame (between begin and end)
     onScreen: (x, y, z = 0, r = 1) => { const [sx, sy] = toDev(x, y, z), R = r * Sdev; return sx + R >= 0 && sx - R <= W && sy + R >= 0 && sy - R <= H; },
@@ -2141,6 +2288,7 @@ void main() {
   // reload; GFX.manifest was null for good)
   Object.defineProperties(api, {
     scratches: { get: () => scratchOn, enumerable: true },
+    shadows: { get: () => shadowsWanted, enumerable: true },
     pathScratches: { get: () => pathScratchOn, enumerable: true },
     manifest: { get: () => MAN, enumerable: true },
   });

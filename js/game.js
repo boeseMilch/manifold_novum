@@ -12,10 +12,16 @@ let VW = 0, VH = 0, DPR = 1;
 // (760 wide, not a whole window's 1280: a split view has no plates column, that's in the strip (js/local.js), and what
 //  is left needs 688: the energy panel, 14 + 262, and the two inventory slots, 16 + 382 + 14 (js/systems.js invSlots).
 //  At 1280 a half of a 1280 × 720 screen, 555 px, was drawn at 0.43: the HUD's 12 px text came out at 5 px; now 0.73, 9 px.)
-const VIEW = { x: 0, y: 0, s: 1 }, SPLIT_MIN = [760, 760];
+// A view that isn't shown has no size (VIEW.off): a local player's view is a hidden iframe until the mission starts
+// or its locker opens, 0 × 0, and Chromium runs its frames all the same (Firefox doesn't). It keeps the layout it
+// had and draws nothing. (0 / 0 made VW and VH NaN, and since the camera minds the top bar, 2026-11-10, one such
+// frame left the camera's y NaN for good: in Chrome the second player's view was its HUD over nothing.)
+const VIEW = { x: 0, y: 0, s: 1, off: false }, SPLIT_MIN = [760, 760];
 function resize() {
   const R = (typeof localViewRect === 'function' && localViewRect()) || (typeof SPLIT !== 'undefined' && SPLIT ? { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight } : null);
   const w = R ? R.w : window.innerWidth, h = R ? R.h : window.innerHeight;
+  VIEW.off = !(w > 0 && h > 0);
+  if (VIEW.off) { if (!(VW > 0 && VH > 0)) { VW = SPLIT_MIN[0]; VH = SPLIT_MIN[1]; } return; }
   VIEW.x = R ? R.x : 0; VIEW.y = R ? R.y : 0; VIEW.s = R ? Math.min(1, w / SPLIT_MIN[0], h / SPLIT_MIN[1]) : 1;
   DPR = (window.devicePixelRatio || 1) * VIEW.s;
   VW = Math.round(w / VIEW.s); VH = Math.round(h / VIEW.s);
@@ -728,7 +734,7 @@ function updateCamera(dt) {
   const vh = VH - HUD_H;
   const zShip = Math.min(VW / ((VIEW_SHIP.x1 - VIEW_SHIP.x0) * T), vh / ((VIEW_SHIP.y1 - VIEW_SHIP.y0) * T * viewSy()));
   const k = cam.zoom ? 1 - Math.exp(-2.6 * dt) : 1;
-  cam.x = lerp(cam.x, tx, k); cam.y = lerp(cam.y, ty, k);
+  cam.x = lerp(isFinite(cam.x) ? cam.x : tx, tx, k); cam.y = lerp(isFinite(cam.y) ? cam.y : ty, ty, k);   // (never stuck on a NaN: it glides from wherever it was, and NaN stays NaN)
   cam.baseZoom = lerp(cam.baseZoom || tz, tz, k);
   cam.zoom = cam.baseZoom * Math.pow(zShip / cam.baseZoom, o);
   cam.ox = lerp(0, (VIEW_SHIP.x0 + VIEW_SHIP.x1) / 2 - cam.x, o);
@@ -1428,13 +1434,16 @@ const NET = { on: false, frame: null };
 function backToLobby() { location.reload(); }
 let last = performance.now();
 function frame(now) {
+  const began = performance.now();
   const dt = clamp((now - last) / 1000, 0, 0.05); last = now;   // (the first frame's timestamp can be a hair before `last`)
   if (NET.on) NET.frame(dt);
   else if (typeof tutorialPaused === 'function' && tutorialPaused()) tutorialClient(dt);   // a tutorial message is open: the game is paused
   else if (!lobbyOpen()) tick(dt); else { clientUpdate(dt); localInput.pressed.clear(); }   // (menus: a key counts once, so M mutes once, not every frame)
   // a drawing error must never stop the game loop (the end of a mission, its rewards: clientUpdate above)
-  try { render(now / 1000); } catch (e) { if (!frame.err) { frame.err = true; console.error('render error', e); } }
+  // (a view that isn't shown draws nothing: VIEW.off)
+  if (!VIEW.off) try { render(now / 1000); } catch (e) { if (!frame.err) { frame.err = true; console.error('render error', e); } }
   if (typeof localStrip === 'function') localStrip();   // (split screen: the shared column's strip, js/local.js)
+  GFX.pace(performance.now() - began, splitViews());   // (the automatic resolution: how long this frame's script took, js/gfx.js)
   requestAnimationFrame(frame);
 }
 mission.active = false;                              // the lobby starts a mission
